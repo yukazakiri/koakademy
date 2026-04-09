@@ -9,7 +9,7 @@ import {
     CommandShortcut,
 } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { getRoutesForRole } from "@/config/admin-routes";
+import { getRoutesForRoleWithModules, type ModuleAdminRoute } from "@/config/admin-routes";
 import type { User } from "@/types/user";
 import { router, usePage } from "@inertiajs/react";
 import {
@@ -112,6 +112,7 @@ interface PageProps {
     auth?: {
         user?: User | null;
     };
+    moduleAdminRoutes?: ModuleAdminRoute[];
 }
 
 interface GlobalCommandPaletteProps {
@@ -244,14 +245,15 @@ export function GlobalCommandContent({
     const studentDialogAbortController = useRef<AbortController | null>(null);
 
     const isAdminContext = typeof window !== "undefined" && window.location.pathname.startsWith("/administrators");
+    const moduleAdminRoutes = props.moduleAdminRoutes ?? [];
     const sharedAuthUser = props.auth?.user;
     const resolvedUserRole = sharedAuthUser?.role ?? user.role ?? "";
     const resolvedUserPermissions = sharedAuthUser?.permissions ?? user.permissions ?? [];
     const isInstructor = /faculty|instructor/i.test(resolvedUserRole);
     const isStudentContext = !isAdminContext && !isInstructor;
     const allowedAdminRoutes = useMemo(
-        () => getRoutesForRole(resolvedUserRole, resolvedUserPermissions),
-        [resolvedUserPermissions, resolvedUserRole],
+        () => getRoutesForRoleWithModules(resolvedUserRole, resolvedUserPermissions, moduleAdminRoutes),
+        [moduleAdminRoutes, resolvedUserPermissions, resolvedUserRole],
     );
     const allowedAdminRouteIds = useMemo(() => new Set(allowedAdminRoutes.map((route) => route.id)), [allowedAdminRoutes]);
 
@@ -344,7 +346,20 @@ export function GlobalCommandContent({
                     onSelect: () => router.visit("/help"),
                 },
             ];
-            const navigation = navigationCandidates.filter((item) => !item.routeId || allowedAdminRouteIds.has(item.routeId));
+            const moduleNavigation = allowedAdminRoutes
+                .filter((route) => route.moduleSource)
+                .filter((route) => !navigationCandidates.some((candidate) => candidate.routeId === route.id))
+                .map((route) => ({
+                    id: `nav:${route.id}`,
+                    routeId: route.id,
+                    label: route.title,
+                    keywords: `${route.title} ${route.moduleSource ?? ""}`.trim(),
+                    icon: route.icon ?? <IconGridDots className="h-4 w-4" />,
+                    onSelect: () => router.visit(route.link),
+                }));
+            const navigation = [...navigationCandidates, ...moduleNavigation].filter(
+                (item) => !item.routeId || allowedAdminRouteIds.has(item.routeId),
+            );
 
             return { navigation, productivity: [] };
         }
@@ -566,7 +581,7 @@ export function GlobalCommandContent({
         const productivity = isInstructor ? [...productivityInstructor, ...productivityBase] : productivityStudent;
 
         return { navigation, productivity };
-    }, [allowedAdminRouteIds, isAdminContext, isInstructor, user.email, user.role]);
+    }, [allowedAdminRouteIds, allowedAdminRoutes, isAdminContext, isInstructor, user.email, user.role]);
 
     const filteredNavigation = useMemo(() => filterActions(actions.navigation, searchText), [actions.navigation, searchText]);
     const filteredProductivity = useMemo(() => filterActions(actions.productivity, searchText), [actions.productivity, searchText]);

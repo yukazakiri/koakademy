@@ -19,7 +19,7 @@ use Modules\Announcement\Http\Controllers\AnnouncementController;
 Route::group([
     'prefix' => 'administrators/announcements',
     'as' => 'administrators.announcements.',
-    'middleware' => ['web', 'auth', 'role:admin|super_admin|developer'],
+    'middleware' => ['web', 'auth', 'administrators.only'],
 ], function () {
     Route::get('/', [AnnouncementController::class, 'index'])->name('index');
     Route::post('/', [AnnouncementController::class, 'store'])->name('store');

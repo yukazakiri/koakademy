@@ -5,10 +5,24 @@ declare(strict_types=1);
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Modules\Announcement\Models\Announcement;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
+
+function announcementRole(string $name, array $permissions): Role
+{
+    $role = Role::create(['name' => $name]);
+
+    foreach ($permissions as $permission) {
+        Permission::findOrCreate($permission, 'web');
+    }
+
+    $role->givePermissionTo($permissions);
+
+    return $role;
+}
 
 it('requires authentication to view announcements page', function () {
     $response = $this->get(route('administrators.announcements.index'));
@@ -18,7 +32,7 @@ it('requires authentication to view announcements page', function () {
 
 it('can list announcements', function () {
     config(['inertia.testing.ensure_pages_exist' => false]);
-    $role = Role::create(['name' => 'admin']);
+    $role = announcementRole('admin', ['view_announcements']);
     $admin = User::factory()->create(['role' => 'admin']);
     $admin->assignRole($role);
     Announcement::factory()->count(3)->create(['created_by' => $admin->id]);
@@ -35,7 +49,7 @@ it('can list announcements', function () {
 });
 
 it('can create an announcement', function () {
-    $role = Role::create(['name' => 'admin']);
+    $role = announcementRole('admin', ['manage_announcements']);
     $admin = User::factory()->create(['role' => 'admin']);
     $admin->assignRole($role);
 
@@ -58,7 +72,7 @@ it('can create an announcement', function () {
 });
 
 it('can update an announcement', function () {
-    $role = Role::create(['name' => 'developer']);
+    $role = announcementRole('developer', ['manage_announcements']);
     $admin = User::factory()->create(['role' => 'developer']);
     $admin->assignRole($role);
 
@@ -87,7 +101,7 @@ it('can update an announcement', function () {
 });
 
 it('can delete an announcement', function () {
-    $role = Role::create(['name' => 'super_admin']);
+    $role = announcementRole('super_admin', ['manage_announcements']);
     $admin = User::factory()->create(['role' => 'super_admin']);
     $admin->assignRole($role);
 

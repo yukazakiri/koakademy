@@ -46,6 +46,44 @@ import {
     IconUsersGroup,
 } from "@tabler/icons-react";
 
+const ROUTE_ICON_MAP = {
+    bell: <IconBell className="size-4" />,
+    book: <IconBook className="size-4" />,
+    books: <IconBooks className="size-4" />,
+    briefcase: <IconBriefcase className="size-4" />,
+    building: <IconBuilding className="size-4" />,
+    calendar_event: <IconCalendarEvent className="size-4" />,
+    calendar_stats: <IconCalendarStats className="size-4" />,
+    cash: <IconCash className="size-4" />,
+    certificate: <IconCertificate className="size-4" />,
+    chart_bar: <IconChartBar className="size-4" />,
+    checklist: <IconChecklist className="size-4" />,
+    clipboard_check: <IconClipboardCheck className="size-4" />,
+    dashboard: <IconDashboard className="size-4" />,
+    file_analytics: <IconFileAnalytics className="size-4" />,
+    file_description: <IconFileDescription className="size-4" />,
+    gavel: <IconGavel className="size-4" />,
+    help: <IconHelp className="size-4" />,
+    history: <IconHistory className="size-4" />,
+    medical_cross: <IconMedicalCross className="size-4" />,
+    news: <IconNews className="size-4" />,
+    report_analytics: <IconReportAnalytics className="size-4" />,
+    school: <IconSchool className="size-4" />,
+    server: <IconServer className="size-4" />,
+    settings: <IconSettings className="size-4" />,
+    shield_lock: <IconShieldLock className="size-4" />,
+    sparkles: <IconSparkles className="size-4" />,
+    tools: <IconTools className="size-4" />,
+    user: <IconUser className="size-4" />,
+    user_check: <IconUserCheck className="size-4" />,
+    user_circle: <IconUserCircle className="size-4" />,
+    user_plus: <IconUserPlus className="size-4" />,
+    users: <IconUsers className="size-4" />,
+    users_group: <IconUsersGroup className="size-4" />,
+} as const;
+
+export type AdminRouteIconKey = keyof typeof ROUTE_ICON_MAP;
+
 /**
  * Extended Route type with role-based access control and permission-based access
  */
@@ -62,6 +100,28 @@ export interface AdminRoute extends Route {
      * If specified, user must have at least one of these permissions.
      */
     requiredPermission?: string | string[];
+    moduleSource?: string;
+}
+
+export interface ModuleAdminRoute {
+    id: string;
+    title: string;
+    link: string;
+    section?: RouteSection;
+    icon?: AdminRouteIconKey;
+    badge?: string | null;
+    requiredPermission?: string | string[];
+    allowedRoles?: UserRole[];
+    separator?: boolean;
+    module?: string;
+    subs?: {
+        title: string;
+        link: string;
+        icon?: AdminRouteIconKey;
+        disabled?: boolean;
+        disabledTooltip?: string;
+        badge?: string | null;
+    }[];
 }
 
 /**
@@ -156,13 +216,6 @@ export const ADMIN_ROUTES: AdminRoute[] = [
         title: "Notifications Center",
         icon: <IconBell className="size-4" />,
         link: "/administrators/notifications",
-        section: "core",
-    },
-    {
-        id: "admin-announcements",
-        title: "Announcements",
-        icon: <IconNews className="size-4" />,
-        link: "/administrators/announcements",
         section: "core",
     },
 
@@ -768,6 +821,47 @@ export function canAccessRoute(route: AdminRoute, userRole: string, userPermissi
  */
 export function getRoutesForRole(userRole: string, userPermissions: string[] = []): AdminRoute[] {
     return ADMIN_ROUTES.filter((route) => canAccessRoute(route, userRole, userPermissions));
+}
+
+function resolveRouteIcon(icon?: AdminRouteIconKey): React.ReactNode | undefined {
+    return icon ? ROUTE_ICON_MAP[icon] : undefined;
+}
+
+function hydrateModuleRoutes(moduleRoutes: ModuleAdminRoute[]): AdminRoute[] {
+    return moduleRoutes.map((route) => ({
+        id: route.id,
+        title: route.title,
+        link: route.link,
+        section: route.section,
+        icon: resolveRouteIcon(route.icon),
+        badge: route.badge ?? undefined,
+        requiredPermission: route.requiredPermission,
+        allowedRoles: route.allowedRoles,
+        separator: route.separator,
+        moduleSource: route.module,
+        subs: route.subs?.map((subRoute) => ({
+            title: subRoute.title,
+            link: subRoute.link,
+            icon: resolveRouteIcon(subRoute.icon),
+            disabled: subRoute.disabled,
+            disabledTooltip: subRoute.disabledTooltip,
+            badge: subRoute.badge ?? undefined,
+        })),
+    }));
+}
+
+export function getResolvedAdminRoutes(moduleRoutes: ModuleAdminRoute[] = []): AdminRoute[] {
+    const deduplicatedRoutes = new Map<string, AdminRoute>();
+
+    for (const route of [...ADMIN_ROUTES, ...hydrateModuleRoutes(moduleRoutes)]) {
+        deduplicatedRoutes.set(route.id, route);
+    }
+
+    return [...deduplicatedRoutes.values()];
+}
+
+export function getRoutesForRoleWithModules(userRole: string, userPermissions: string[] = [], moduleRoutes: ModuleAdminRoute[] = []): AdminRoute[] {
+    return getResolvedAdminRoutes(moduleRoutes).filter((route) => canAccessRoute(route, userRole, userPermissions));
 }
 
 /**

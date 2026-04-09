@@ -3,7 +3,7 @@
 import { GlobalCommandContent } from "@/components/global-command-palette";
 import { Command } from "@/components/ui/command";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer";
-import { getRoutesForRole, type AdminRoute } from "@/config/admin-routes";
+import { getRoutesForRoleWithModules, type AdminRoute, type ModuleAdminRoute } from "@/config/admin-routes";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import type { User } from "@/types/user";
@@ -24,8 +24,9 @@ const ADMIN_PRIMARY_ROUTE_PRIORITY = [
 
 export function AdminMobileBottomNav() {
     const isMobile = useIsMobile();
-    const { props, url } = usePage();
+    const { props, url } = usePage<{ auth?: { user?: User | null }; user?: User; moduleAdminRoutes?: ModuleAdminRoute[] }>();
     const user = (props.auth as any)?.user || ((props as any).user as User | undefined);
+    const moduleAdminRoutes = props.moduleAdminRoutes ?? [];
     const [drawerOpen, setDrawerOpen] = useState(false);
 
     const primaryRoutes = useMemo(() => {
@@ -33,13 +34,13 @@ export function AdminMobileBottomNav() {
             return [];
         }
 
-        const allowedRoutes = getRoutesForRole(user.role, user.permissions ?? []).filter((route) => !route.disabled);
+        const allowedRoutes = getRoutesForRoleWithModules(user.role, user.permissions ?? [], moduleAdminRoutes).filter((route) => !route.disabled);
         const prioritizedRoutes = ADMIN_PRIMARY_ROUTE_PRIORITY.map((id) => allowedRoutes.find((route) => route.id === id)).filter(
             Boolean,
         ) as AdminRoute[];
 
         return (prioritizedRoutes.length > 0 ? prioritizedRoutes : allowedRoutes).slice(0, 4);
-    }, [user]);
+    }, [moduleAdminRoutes, user]);
 
     if (!isMobile || !user) {
         return null;

@@ -10,6 +10,9 @@ export default defineConfig({
             config: {
                 content: [
                     "./app/Filament/**/*.php",
+                    "./Modules/**/app/Filament/**/*.php",
+                    "./Modules/**/resources/views/**/*.blade.php",
+                    "./Modules/**/resources/assets/js/**/*.tsx",
                     "./resources/views/**/*.blade.php",
                     "./vendor/filament/**/*.blade.php",
                     "./resources/js/**/*.tsx",

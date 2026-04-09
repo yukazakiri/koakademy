@@ -9,6 +9,7 @@ use App\Http\Controllers\StudentDashboardController;
 use App\Http\Controllers\StudentGlobalSearchController;
 use App\Http\Controllers\UserSettingController;
 use Illuminate\Support\Facades\Route;
+use Modules\Announcement\Http\Controllers\PortalAnnouncementController;
 
 /*
 |--------------------------------------------------------------------------
@@ -72,7 +73,7 @@ Route::middleware(['auth', 'student.only', 'ensure.feature'])->prefix('student')
     Route::get('/tuition/soa', [App\Http\Controllers\StudentTuitionController::class, 'soa'])->name('tuition.soa');
 
     // Announcements
-    Route::get('/announcements', [App\Http\Controllers\AnnouncementController::class, 'index'])->name('announcements.index');
+    Route::get('/announcements', [PortalAnnouncementController::class, 'index'])->name('announcements.index');
 
     // Notifications
     Route::post('/notifications/{id}/read', [App\Http\Controllers\NotificationController::class, 'markAsRead'])->name('notifications.read');

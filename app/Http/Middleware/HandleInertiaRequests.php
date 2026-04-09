@@ -9,15 +9,16 @@ use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\User;
 use App\Services\AnalyticsSettingsService;
-use App\Services\AnnouncementShareService;
 use App\Services\FacultyClassShareService;
 use App\Services\GeneralSettingsService;
+use App\Services\ModuleAdminNavigationService;
 use App\Services\NotificationShareService;
 use App\Services\OnboardingShareService;
 use App\Services\SettingsShareService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Inertia\Middleware;
+use Modules\Announcement\Services\AnnouncementDataService;
 
 final class HandleInertiaRequests extends Middleware
 {
@@ -45,8 +46,9 @@ final class HandleInertiaRequests extends Middleware
         $notificationService = app(NotificationShareService::class);
         $onboardingService = app(OnboardingShareService::class);
         $facultyClassService = app(FacultyClassShareService::class);
-        $announcementService = app(AnnouncementShareService::class);
+        $announcementService = app(AnnouncementDataService::class);
         $analyticsService = app(AnalyticsSettingsService::class);
+        $moduleAdminNavigationService = app(ModuleAdminNavigationService::class);
 
         $featureValues = $onboardingService->getAllFeatureValues($user);
 
@@ -79,9 +81,10 @@ final class HandleInertiaRequests extends Middleware
                 'unreadNotificationsCount' => $notificationService->getUnreadCount($user),
                 'unresolvedHelpTicketsCount' => $onboardingService->getUnresolvedHelpTicketsCount($user),
                 'adminSidebarCounts' => $this->getAdminSidebarCounts($user),
+                'moduleAdminRoutes' => $moduleAdminNavigationService->getRoutes(),
             ],
             [
-                'announcements' => $announcementService->getActiveAnnouncements(...),
+                'announcements' => $announcementService->getSharedBannerAnnouncements(...),
             ]
         );
     }

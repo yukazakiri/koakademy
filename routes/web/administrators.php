@@ -73,8 +73,7 @@ Route::middleware(['auth', 'administrators.only'])
                     'title' => 'Create announcement',
                     'description' => 'Draft and publish an announcement.',
                     'href' => '/administrators/announcements',
-                    'disabled' => true,
-                    'disabledTooltip' => 'Admin announcements coming soon',
+                    'disabled' => false,
                 ],
             ];
 

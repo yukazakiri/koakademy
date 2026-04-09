@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Support;
 
-use App\Models\Announcement;
 use App\Models\ClassAttendanceSession;
 use App\Models\ClassEnrollment;
 use App\Models\Classes;
@@ -13,6 +12,7 @@ use App\Models\Event;
 use App\Models\Faculty;
 use App\Models\User;
 use Carbon\Carbon;
+use Modules\Announcement\Services\AnnouncementDataService;
 use Spatie\Activitylog\Models\Activity;
 
 final class FacultyPortalData
@@ -180,22 +180,7 @@ final class FacultyPortalData
         // Fetch real activities for this faculty's classes from activity log
         $recentActivity = self::getRecentActivities($facultyClassIds);
 
-        // Fetch real global announcements from database
-        $announcements = Announcement::query()
-            ->global()
-            ->published()
-            ->active()
-            ->latest()
-            ->take(5)
-            ->get()
-            ->map(fn (Announcement $announcement): array => [
-                'id' => $announcement->id,
-                'title' => $announcement->title,
-                'content' => strip_tags($announcement->content),
-                'date' => $announcement->created_at->format('M d'),
-                'type' => $announcement->type,
-            ])
-            ->all();
+        $announcements = app(AnnouncementDataService::class)->getDashboardItems();
 
         // Get attendance chart data for the dashboard
         $attendanceChart = self::getAttendanceChartData($classesQuery->clone()->get());

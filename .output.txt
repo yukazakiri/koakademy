@@ -1,0 +1,463 @@
+Laravel Framework 12.53.0
+Usage:
+  command [options] [arguments]
+Options:
+  -h, --help            Display help for the given command. When no command is given display help for the list command
+      --silent          Do not output any message
+  -q, --quiet           Only errors are displayed. All other output is suppressed
+  -V, --version         Display this application version
+      --ansi|--no-ansi  Force (or disable --no-ansi) ANSI output
+  -n, --no-interaction  Do not ask any interactive question
+      --env[=ENV]       The environment the command should run under
+  -v|vv|vvv, --verbose  Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
+Available commands:
+  about                                       Display basic information about your application
+  clear-compiled                              Remove the compiled class file
+  completion                                  Dump the shell completion script
+  db                                          Start a new database CLI session
+  db-sync                                     Sync new and updated records from Laravel Forge to local. Use --status to view sync history per table. By default, all tables are transferred in a single file for efficiency.
+  docs                                        Access the Laravel documentation
+  down                                        Put the application into maintenance / demo mode
+  env                                         Display the current framework environment
+  help                                        Display help for a command
+  horizon                                     Start a master supervisor in the foreground
+  inspire                                     Display an inspiring quote
+  list                                        List commands
+  migrate                                     Run the database migrations
+  optimize                                    Cache framework bootstrap, configuration, and metadata to increase performance
+  reload                                      Reload running services
+  serve                                       Serve the application on the PHP development server
+  test                                        Run the application tests
+  tinker                                      Interact with your application
+  up                                          Bring the application out of maintenance mode
+ activitylog
+  activitylog:clean                           Clean up old records from the activity log.
+ app
+  app:test-connections                        Test connections to all configured services (R2, Redis, PostgreSQL, Minio, Pusher, etc.)
+  app:test-mail-command                       Command description
+  app:test-pusher                             Test Pusher WebSocket broadcasting
+ auth
+  auth:clear-resets                           Flush expired password reset tokens
+ backup
+  backup:clean                                Remove all backups older than specified number of days in config.
+  backup:list                                 Display a list of all backups.
+  backup:monitor                              Monitor the health of all backups.
+  backup:restore                              Restore a database backup dump from a given disk to a database connection.
+  backup:run                                  Run the backup.
+ blade-fontawesome
+  blade-fontawesome:sync-icons                [blade-fontawesome:sync-pro] Synchronise Font Awesome icons from npm
+ boost
+  boost:install
+  boost:mcp                                   Starts Laravel Boost (usually from mcp.json)
+  boost:update                                Update the Laravel Boost guidelines to the latest guidance
+ cache
+  cache:clear                                 Flush the application cache
+  cache:forget                                Remove an item from the cache
+  cache:prune-stale-tags                      Prune stale cache tags from the cache (Redis only)
+ channel
+  channel:list                                List all registered private broadcast channels
+ classes
+  classes:backfill-subject-codes              Backfill null subject_code values from relationships
+  classes:cleanup-duplicate-subjects          Remove duplicate subject IDs from classes subject_ids array
+  classes:update-subject-codes                Update subject_code field for classes that have subject_ids but missing subject_code
+ config
+  config:cache                                Create a cache file for faster configuration loading
+  config:clear                                Remove the configuration cache file
+  config:publish                              Publish configuration files to your application
+  config:show                                 Display all of the values for a given configuration file or key
+ data
+  data:cache-structures                       Cache the internal data structures
+ db
+  db:monitor                                  Monitor the number of connections on the specified database
+  db:production-sync                          Sync production database with local
+  db:remote-sync                              Alias of the db:production-sync command.
+  db:seed                                     Seed the database with records
+  db:set-timezone                             Set the PostgreSQL database timezone to match the application timezone
+  db:show                                     Display information about the given database
+  db:table                                    Display information about the given database table
+  db:wipe                                     Drop all tables, views, and types
+ debugbar
+  debugbar:clear                              Clear the Debugbar Storage
+ env
+  env:decrypt                                 Decrypt an environment file
+  env:encrypt                                 Encrypt an environment file
+ erag
+  erag:install-pwa                            Publish Service Worker Manifest File for a Laravel PWA Application
+  erag:update-manifest                        Update the manifest.json file for the PWA.
+ event
+  event:cache                                 Discover and cache the application's events and listeners
+  event:clear                                 Clear all cached events and listeners
+  event:list                                  List the application's events and listeners
+ filament
+  filament:about                              Display basic information about Filament packages that are installed
+  filament:assets                             Set up Filament assets
+  filament:cache-components                   Cache all components
+  filament:check-translations                 Check for missing and removed translations
+  filament:clear-cached-components            Clear all cached components
+  filament:install                            [install:filament] Install Filament
+  filament:optimize                           Cache components and Blade icons to increase performance
+  filament:optimize-clear                     Remove the cached components and Blade icons
+  filament:upgrade                            Upgrade Filament to the latest version
+  filament:upgrade-directory-structure-to-v4  Upgrade Filament directory structure from v3 to v4
+ filament-activity-log
+  filament-activity-log:install               Install the Filament Activity Log package and its dependencies
+ horizon
+  horizon:clear                               Delete all of the jobs from the specified queue
+  horizon:clear-metrics                       Delete metrics for all jobs and queues
+  horizon:continue                            Instruct the master supervisor to continue processing jobs
+  horizon:continue-supervisor                 Instruct the supervisor to continue processing jobs
+  horizon:forget                              Delete a failed queue job
+  horizon:install                             Install all of the Horizon resources
+  horizon:list                                List all of the deployed machines
+  horizon:listen                              Run Horizon and automatically restart workers on file changes
+  horizon:pause                               Pause the master supervisor
+  horizon:pause-supervisor                    Pause a supervisor
+  horizon:publish                             Publish all of the Horizon resources
+  horizon:purge                               Terminate any rogue Horizon processes
+  horizon:snapshot                            Store a snapshot of the queue metrics
+  horizon:status                              Get the current status of Horizon
+  horizon:supervisor-status                   Show the status for a given supervisor
+  horizon:supervisors                         List all of the supervisors
+  horizon:terminate                           Terminate the master supervisor so it can be restarted
+ icons
+  icons:cache                                 Discover icon sets and generate a manifest file
+  icons:clear                                 Remove the blade icons manifest file
+ ide-helper
+  ide-helper:eloquent                         Add \Eloquent helper to \Eloquent\Model
+  ide-helper:generate                         Generate a new IDE Helper file.
+  ide-helper:meta                             Generate metadata for PhpStorm
+  ide-helper:models                           Generate autocompletion for models
+ inertia
+  inertia:check-ssr                           Check the Inertia SSR server health status
+  inertia:middleware                          Create a new Inertia middleware
+  inertia:start-ssr                           Start the Inertia SSR server
+  inertia:stop-ssr                            Stop the Inertia SSR server
+ install
+  install:api                                 Create an API routes file and install Laravel Sanctum or Laravel Passport
+  install:broadcasting                        Create a broadcasting channel routes file
+ key
+  key:generate                                Set the application key
+ lang
+  lang:publish                                Publish all language files that are available for customization
+ livewire
+  livewire:attribute                          Create a new Livewire attribute class
+  livewire:configure-s3-upload-cleanup        Configure temporary file upload s3 directory to automatically cleanup files older than 24hrs
+  livewire:copy                               Copy a Livewire component
+  livewire:delete                             Delete a Livewire component
+  livewire:form                               Create a new Livewire form class
+  livewire:layout                             Create a new app layout file
+  livewire:make                               Create a new Livewire component
+  livewire:move                               Move a Livewire component
+  livewire:publish                            Publish Livewire configuration
+  livewire:stubs                              Publish Livewire stubs
+  livewire:upgrade                            Interactive upgrade helper to migrate from v2 to v3
+ mail
+  mail:bounce-rate                            Check if the bounce rate is higher than the configured limit and send a notification if it is.
+  mail:monitor                                Monitor for sent mails
+  mail:prune                                  Prune logged sent emails
+  mail:resend                                 Resend mail
+  mail:webhooks                               Register event webhooks for email provider
+ make
+  make:cache-table                            [cache:table] Create a migration for the cache database table
+  make:cast                                   Create a new custom Eloquent cast class
+  make:channel                                Create a new channel class
+  make:class                                  Create a new class
+  make:command                                Create a new Artisan command
+  make:component                              Create a new view component class
+  make:config                                 [config:make] Create a new configuration file
+  make:controller                             Create a new controller class
+  make:data                                   Create a new data class
+  make:edit-profile-form                      Create a new Livewire component containing a Filament form
+  make:enum                                   Create a new enum
+  make:event                                  Create a new event class
+  make:exception                              Create a new custom exception class
+  make:export                                 Create a new export class
+  make:factory                                Create a new model factory
+  make:filament-api-handler                   Create a new API Handler for supporting filamentphp Resource
+  make:filament-api-request                   Create a new API Request
+  make:filament-api-service                   Create a new API Service for supporting filamentphp Resource
+  make:filament-api-transformer               Create a Transformer for your API response
+  make:filament-cluster                       [filament:cluster|filament:make-cluster] Create a new Filament cluster class
+  make:filament-exporter                      [filament:exporter] Create a new Filament exporter class
+  make:filament-form                          [filament:form] Create a new Filament form schema class
+  make:filament-form-field                    [filament:field|filament:form-field|forms:field|forms:make-field|make:filament-field|make:form-field] Create a new form field class and view
+  make:filament-importer                      [filament:importer] Create a new Filament importer class
+  make:filament-infolist-entry                [filament:entry|filament:infolist-entry|infolists:entry|infolists:make-entry|make:filament-entry|make:infolist-entry] Create a new infolist entry class and view
+  make:filament-issue                         [filament:issue|filament:make-issue] Generates a link to the Filament issue page and pre-fills the version numbers.
+  make:filament-livewire-form                 [filament:livewire-form|make:livewire-form] Create a new Livewire component containing a Filament form
+  make:filament-livewire-schema               [filament:infolist-schema|filament:livewire-schema|make:filament-infolist-schema|make:infolist-schema|make:livewire-schema] Create a new Livewire component containing a Filament schema
+  make:filament-livewire-table                [filament:livewire-table|make:livewire-table] Create a new Livewire component containing a Filament table
+  make:filament-page                          [filament:make-page|filament:page] Create a new Filament page class and view
+  make:filament-panel                         [filament:make-panel|filament:panel] Create a new Filament panel
+  make:filament-relation-manager              [filament:make-relation-manager|filament:relation-manager] Create a new Filament relation manager class for a resource
+  make:filament-resource                      [filament:make-resource|filament:resource] Create a new Filament resource class and default page classes
+  make:filament-rich-content-custom-block     [filament:rich-content-custom-block|filament:rich-editor-custom-block|filament:custom-block|forms:rich-content-custom-block|forms:rich-editor-custom-block|forms:make-custom-block|make:filament-rich-editor-custom-block|make:filament-custom-block|make:rich-content-custom-block|make:rich-editor-custom-block|make:custom-block] Create a new rich editor custom block class and view
+  make:filament-schema                        [filament:infolist|filament:schema|make:filament-infolist] Create a new Filament schema class
+  make:filament-schema-component              [filament:component|filament:layout|filament:form-layout|filament:infolist-layout|filament:schema-component|filament:schema-layout|forms:layout|forms:make-layout|infolists:layout|infolists:make-layout|make:filament-layout|make:filament-schema-layout|make:infolist-layout|make:form-layout] Create a new schema component class and view
+  make:filament-settings-page                 [filament:settings|filament:settings-page|make:filament-settings] Create a new Filament settings page class
+  make:filament-table                         [filament:table] Create a new Filament table class
+  make:filament-table-column                  [filament:column|filament:table-column|make:table-column] Create a new table column class and cell view
+  make:filament-theme                         [filament:make-theme|filament:theme] Create a new Filament panel theme
+  make:filament-user                          [filament:make-user|filament:user] Create a new Filament user
+  make:filament-widget                        [filament:make-widget|filament:widget] Create a new Filament widget class
+  make:import                                 Create a new import class
+  make:interface                              Create a new interface
+  make:job                                    Create a new job class
+  make:job-middleware                         Create a new job middleware class
+  make:listener                               Create a new event listener class
+  make:livewire                               Create a new Livewire component
+  make:mail                                   Create a new email class
+  make:mcp-prompt                             Create a new MCP prompt class
+  make:mcp-resource                           Create a new MCP resource class
+  make:mcp-server                             Create a new MCP server class
+  make:mcp-tool                               Create a new MCP tool class
+  make:middleware                             Create a new HTTP middleware class
+  make:migration                              Create a new migration file
+  make:model                                  Create a new Eloquent model class
+  make:notification                           Create a new notification class
+  make:notifications-table                    [notifications:table] Create a migration for the notifications table
+  make:observer                               Create a new observer class
+  make:policy                                 Create a new policy class
+  make:provider                               Create a new service provider class
+  make:queue-batches-table                    [queue:batches-table] Create a migration for the batches database table
+  make:queue-failed-table                     [queue:failed-table] Create a migration for the failed queue jobs database table
+  make:queue-table                            [queue:table] Create a migration for the queue jobs database table
+  make:request                                Create a new form request class
+  make:resource                               Create a new resource
+  make:rule                                   Create a new validation rule
+  make:scope                                  Create a new scope class
+  make:seeder                                 Create a new seeder class
+  make:session-table                          [session:table] Create a migration for the session database table
+  make:setting                                Create a new Settings Class
+  make:settings-migration                     Create a new settings migration file
+  make:spotlight                              Create a new Spotlight command class
+  make:test                                   Create a new test class
+  make:trait                                  Create a new trait
+  make:view                                   Create a new view
+ mcp
+  mcp:inspector                               Open the MCP Inspector tool to debug and test MCP Servers
+  mcp:start                                   Start the MCP Server for a given handle
+ media-library
+  media-library:clean                         Clean deprecated conversions and files without related model.
+  media-library:clear                         Delete all items in a media collection.
+  media-library:regenerate                    Regenerate the derived images of media
+ migrate
+  migrate:fresh                               Drop all tables and re-run all migrations
+  migrate:install                             Create the migration repository
+  migrate:refresh                             Reset and re-run all migrations
+  migrate:reset                               Rollback all database migrations
+  migrate:rollback                            Rollback the last database migration
+  migrate:status                              Show the status of each migration
+ model
+  model:prune                                 Prune models that are no longer needed
+  model:show                                  Show information about an Eloquent model
+ module
+  module:composer-update                      update autoload of composer.json file
+  module:delete                               Delete a module from the application
+  module:disable                              Disable an array of modules.
+  module:dump                                 Dump-autoload the specified module or for all module.
+  module:enable                               Enable the specified module.
+  module:filament:install                     Add Filament Support to a Module
+  module:install                              Install the specified module by given package name (vendor/name).
+  module:lang                                 Check missing language keys in the specified module.
+  module:list                                 Show list of all modules.
+  module:list-commands                        List all commands in the specified module(s)
+  module:make                                 Create a new module.
+  module:make-action                          Create a new action class for the specified module.
+  module:make-cast                            Create a new Eloquent cast class for the specified module.
+  module:make-channel                         Create a new channel class for the specified module.
+  module:make-class                           Create a new class
+  module:make-command                         Generate new Artisan command for the specified module.
+  module:make-component                       Create a new component-class for the specified module.
+  module:make-component-view                  Create a new component-view for the specified module.
+  module:make-controller                      Generate new restful controller for the specified module.
+  module:make-enum                            Create a new enum class for the specified module.
+  module:make-event                           Create a new event class for the specified module
+  module:make-event-provider                  Create a new event service provider class for the specified module.
+  module:make-exception                       Create a new exception class for the specified module.
+  module:make-factory                         Create a new model factory for the specified module.
+  module:make-helper                          Create a new helper class for the specified module.
+  module:make-interface                       Create a new interface class for the specified module.
+  module:make-job                             Create a new job class for the specified module
+  module:make-listener                        Create a new event listener class for the specified module
+  module:make-mail                            Create a new email class for the specified module
+  module:make-middleware                      Create a new middleware class for the specified module.
+  module:make-migration                       Create a new migration for the specified module.
+  module:make-model                           Create a new model for the specified module.
+  module:make-notification                    Create a new notification class for the specified module.
+  module:make-observer                        Create a new observer for the specified module.
+  module:make-policy                          Create a new policy class for the specified module.
+  module:make-provider                        Create a new service provider class for the specified module.
+  module:make-repository                      Create a new repository class for the specified module.
+  module:make-request                         Create a new form request class for the specified module.
+  module:make-resource                        Create a new resource class for the specified module.
+  module:make-rule                            Create a new validation rule for the specified module.
+  module:make-scope                           Create a new scope class for the specified module.
+  module:make-seed                            Create a new seeder for the specified module.
+  module:make-service                         Create a new service class for the specified module.
+  module:make-test                            Create a new test class for the specified module.
+  module:make-trait                           Create a new trait class for the specified module.
+  module:make-view                            Create a new view for the specified module.
+  module:make:filament-cluster                [module:filament:make-cluster|module:filament:cluster] Create a new Filament cluster class in the module
+  module:make:filament-page                   [module:filament:page|module:filament:make-page] Create a new Filament page class in the specified module
+  module:make:filament-panel                  [module:filament:make-panel|module:filament:panel] Create a new Filament panel class in the specified module
+  module:make:filament-plugin                 [module:filament:plugin|module:filament:make-plugin] Create a new Filament Plugin class in the module
+  module:make:filament-resource               [module:filament:resource|module:filament:make-resource] Create a new Filament resource class in the specified module
+  module:make:filament-theme                  [filament:make-theme|filament:theme] Create a new Filament theme in a module
+  module:make:filament-widget                 [module:filament:widget|module:filament:make-widget] Create a new Filament Widget class in the module
+  module:migrate                              Migrate the migrations from the specified module or from all modules.
+  module:migrate-fresh                        Reset all database tables and re-run the modules migrations.
+  module:migrate-refresh                      Rollback & re-migrate the modules migrations.
+  module:migrate-reset                        Reset the modules migrations.
+  module:migrate-rollback                     Rollback the modules migrations.
+  module:migrate-status                       Status for all module migrations
+  module:model-show                           Show information about an Eloquent model in modules
+  module:prune                                Prune models by module that are no longer needed
+  module:publish                              Publish a module's assets to the application
+  module:publish-config                       Publish a module's config files to the application
+  module:publish-migration                    Publish a module's migrations to the application
+  module:publish-translation                  Publish a module's translations to the application
+  module:route-provider                       Create a new route service provider for the specified module.
+  module:seed                                 Run database seeder from the specified module or from all modules.
+  module:setup                                Setting up modules folders for first use.
+  module:unuse                                Forget the used module with module:use
+  module:update                               Update dependencies for the specified module or for all modules.
+  module:update-phpunit-coverage              Update phpunit.xml source/include path with enabled modules
+  module:use                                  Use the specified module.
+  module:v6:migrate                           Migrate laravel-modules v5 modules statuses to v6.
+ nightwatch
+  nightwatch:agent                            Run the Nightwatch agent.
+  nightwatch:status                           Get the current status of the Nightwatch agent.
+ notification
+  notification:test                           Send a test database notification to a user
+ octane
+  octane:install                              Install the Octane components and resources
+  octane:reload                               Reload the Octane workers
+  octane:start                                Start the Octane server
+  octane:status                               Get the current status of the Octane server
+  octane:stop                                 Stop the Octane server
+ open-graphy
+  open-graphy:clear                           Clears generated open graph images
+  open-graphy:generate                        Generate the Open Graph image
+ optimize
+  optimize:clear                              Remove the cached bootstrap files
+ package
+  package:discover                            Rebuild the cached package manifest
+ pennant
+  pennant:feature                             Create a new feature class
+  pennant:purge                               [pennant:clear] Delete Pennant features from storage
+ permission
+  permission:assign-role                      Assign a role to a user
+  permission:cache-reset                      Reset the permission cache
+  permission:create-permission                Create a permission
+  permission:create-role                      Create a role
+  permission:setup-teams                      Setup the teams feature by generating the associated migration.
+  permission:show                             Show a table of roles and permissions per guard
+ pest
+  pest:dataset                                Create a new dataset file
+  pest:test                                   Create a new test file
+ pulse
+  pulse:check                                 Take a snapshot of the current server's pulse
+  pulse:clear                                 [pulse:purge] Delete all Pulse data from storage
+  pulse:restart                               Restart any running "work" and "check" commands
+  pulse:work                                  Process incoming Pulse data from the ingest stream
+ queue
+  queue:clear                                 Delete all of the jobs from the specified queue
+  queue:failed                                List all of the failed queue jobs
+  queue:flush                                 Flush all of the failed queue jobs
+  queue:forget                                Delete a failed queue job
+  queue:listen                                Listen to a given queue
+  queue:monitor                               Monitor the size of the specified queues
+  queue:pause                                 Pause job processing for a specific queue
+  queue:prune-batches                         Prune stale entries from the batches database
+  queue:prune-failed                          Prune stale entries from the failed jobs table
+  queue:restart                               Restart queue worker daemons after their current job
+  queue:resume                                [queue:continue] Resume job processing for a paused queue
+  queue:retry                                 Retry a failed queue job
+  queue:retry-batch                           Retry the failed jobs for a batch
+  queue:work                                  Start processing jobs on the queue as a daemon
+ redis
+  redis:monitor                               Monitor Redis connections to check if they are online or failed
+ roster
+  roster:scan                                 Detect packages & approaches in use and output as JSON
+ route
+  route:cache                                 Create a route cache file for faster route registration
+  route:clear                                 Remove the route cache file
+  route:list                                  List all registered routes
+ sail
+  sail:add                                    Add a service to an existing Sail installation
+  sail:install                                Install Laravel Sail's default Docker Compose file
+  sail:publish                                Publish the Laravel Sail Docker files
+ sanctum
+  sanctum:prune-expired                       Prune tokens expired for more than specified number of hours
+ sanity
+  sanity:sync                                 Sync content from Sanity CMS to the local database
+ schedule
+  schedule:clear-cache                        Delete the cached mutex files created by scheduler
+  schedule:interrupt                          Interrupt the current schedule run
+  schedule:list                               List all scheduled tasks
+  schedule:run                                Run the scheduled commands
+  schedule:test                               Run a scheduled command
+  schedule:work                               Start the schedule worker
+ schema
+  schema:dump                                 Dump the given database schema
+ scout
+  scout:delete-all-indexes                    Delete all indexes
+  scout:delete-index                          Delete an index
+  scout:flush                                 Flush all of the model's records from the index
+  scout:import                                Import the given model into the search index
+  scout:index                                 Create an index
+  scout:queue-import                          Import the given model into the search index via chunked, queued jobs
+  scout:sync-index-settings                   Sync your configured index settings with your search engine (Meilisearch)
+ scramble
+  scramble:analyze                            Analyzes the documentation generation process to surface any issues.
+  scramble:export                             Export the OpenAPI document to a JSON file.
+ sentry
+  sentry:publish                              Publishes and configures the Sentry config.
+  sentry:test                                 Generate a test event and send it to Sentry
+ settings
+  settings:clear-cache                        Clear cached settings
+  settings:clear-discovered                   Clear cached auto discovered registered settings classes
+  settings:discover                           Cache all auto discovered settings
+ shield
+  shield:generate                             Generate Permissions and/or Policies for Filament entities.
+  shield:install                              Install and configure shield for the given Filament Panel
+  shield:publish                              Publish Shield's Resource.
+  shield:seeder                               Create a seeder file from existing/configured roles and permissions, with optional tenant and user support.
+  shield:setup                                Setup and install core requirements for Shield
+  shield:super-admin                          Assign the super admin role to a user
+  shield:translation                          Generate a translation file for permission labels for the given locale.
+ storage
+  storage:link                                Create the symbolic links configured for the application
+  storage:unlink                              Delete existing symbolic links configured for the application
+ structure-scouts
+  structure-scouts:cache                      Cache discoverers within your application
+  structure-scouts:clear                      Clear cached discoverers within your application
+ stub
+  stub:publish                                Publish all stubs that are available for customization
+ student
+  student:sync-ids                            Sync the id column with the student_id column in the students table
+ students
+  students:fix-college-ids                    Fix college students with 7 or 8 digit IDs and convert them to proper 6-digit IDs starting with 206***
+  students:set-college-type                   Set all existing students to College type
+ telescope
+  telescope:clear                             Delete all Telescope data from storage
+  telescope:install                           Install all of the Telescope resources
+  telescope:pause                             Pause all Telescope watchers
+  telescope:prune                             Prune stale entries from the Telescope database
+  telescope:publish                           Publish all of the Telescope resources
+  telescope:resume                            Unpause all Telescope watchers
+ theme
+  theme:add                                   Download and install a new theme from a JSON definition
+  theme:import                                Import a shadcn theme from a tweakcn.com JSON URL
+  theme:remove                                Remove a theme from the application
+ vendor
+  vendor:publish                              Publish any publishable assets from vendor packages
+ view
+  view:cache                                  Compile all of the application's Blade templates
+  view:clear                                  Clear all compiled view files
+ wayfinder
+  wayfinder:generate
+ ziggy
+  ziggy:generate                              Generate a JavaScript file containing Ziggy’s routes and configuration.
+⏎

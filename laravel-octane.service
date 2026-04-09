@@ -1,0 +1,26 @@
+[Unit]
+Description=Laravel Octane Server
+After=network.target
+Requires=network.target
+
+[Service]
+Type=simple
+User=yuuki
+Group=yuuki
+WorkingDirectory=/home/yuuki/DccpAdminV3
+ExecStart=/usr/bin/php artisan octane:start --server=frankenphp --host=127.0.0.1 --port=8000 --no-interaction
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=laravel-octane
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Environment variables
+Environment=APP_ENV=production
+Environment=LARAVEL_OCTANE_WATCH=false
+
+[Install]
+WantedBy=multi-user.target

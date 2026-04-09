@@ -1,0 +1,268 @@
+---
+title: Student Verification API
+description: Check if a student exists in our system
+title-nav: Verification API
+---
+
+# Student Verification API
+
+**Simple way to check if a student is registered**
+
+This API lets you verify if a student exists in our system using their student ID and email. It's perfect for login systems or checking enrollment status.
+
+<!-- title-nav: When to Use This API? -->
+
+## When to Use This API?
+
+- Building a login system
+- Checking if a student is enrolled
+- Validating student credentials
+- Verifying student identity
+
+<!-- title-nav: Quick Example -->
+
+## Quick Example
+
+```javascript
+// JavaScript - Verify a student
+const response = await fetch("/api/students/verify", {
+    method: "POST",
+    headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer YOUR_TOKEN_HERE",
+    },
+    body: JSON.stringify({
+        student_id: "STU-2024-001",
+        email: "john@example.com",
+    }),
+});
+
+const data = await response.json();
+console.log(data.data.exists); // true or false
+```
+
+<!-- title-nav: API Details -->
+
+## API Details
+
+| Info                | Value                  |
+| ------------------- | ---------------------- |
+| **Endpoint**        | `/api/students/verify` |
+| **Method**          | POST                   |
+| **Auth Required**   | Yes                    |
+| **Response Format** | JSON                   |
+
+<!-- title-nav: Request -->
+
+## Request
+
+### Headers
+
+```http
+Content-Type: application/json
+Accept: application/json
+Authorization: Bearer YOUR_TOKEN_HERE
+```
+
+### Body Parameters
+
+| Parameter    | Type   | Required | Description                         |
+| ------------ | ------ | -------- | ----------------------------------- |
+| `student_id` | string | Yes      | Student's ID (e.g., "STU-2024-001") |
+| `email`      | string | Yes      | Student's email address             |
+
+<!-- title-nav: Response Examples -->
+
+## Response Examples
+
+### ✅ Student Found (200 OK)
+
+```json
+{
+    "message": "Student verified successfully",
+    "data": {
+        "exists": true,
+        "student_id": "STU-2024-001",
+        "email": "john@example.com",
+        "full_name": "John Doe",
+        "status": "enrolled",
+        "student_type": "college"
+    }
+}
+```
+
+### ❌ Student Not Found (404)
+
+```json
+{
+    "message": "Student not found",
+    "data": {
+        "exists": false,
+        "student_id": "STU-2024-999",
+        "email": "notfound@example.com"
+    }
+}
+```
+
+### ⚠️ Validation Error (422)
+
+```json
+{
+    "message": "Validation failed",
+    "errors": {
+        "student_id": ["The student id field is required."],
+        "email": ["The email field is required."]
+    }
+}
+```
+
+<!-- title-nav: Complete Code Examples -->
+
+## Complete Code Examples
+
+### JavaScript
+
+```javascript
+async function verifyStudent(token, studentId, email) {
+    const response = await fetch("/api/students/verify", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+            student_id: studentId,
+            email: email,
+        }),
+    });
+
+    const data = await response.json();
+
+    if (data.data && data.data.exists) {
+        console.log("Student is valid!");
+        console.log("Name:", data.data.full_name);
+        console.log("Status:", data.data.status);
+        return true;
+    } else {
+        console.log("Student not found");
+        return false;
+    }
+}
+
+// Usage
+verifyStudent("your-token", "STU-2024-001", "john@example.com");
+```
+
+### PHP
+
+```php
+$response = Http::withToken($token)
+    ->post('/api/students/verify', [
+        'student_id' => 'STU-2024-001',
+        'email' => 'john@example.com'
+    ]);
+
+$data = $response->json();
+
+if ($data['data']['exists'] ?? false) {
+    echo "Student: " . $data['data']['full_name'];
+    echo "Status: " . $data['data']['status'];
+}
+```
+
+### Python
+
+```python
+import requests
+
+def verify_student(token, student_id, email):
+    response = requests.post(
+        'https://api.koakademy.edu/api/students/verify',
+        headers={
+            'Authorization': f'Bearer {token}',
+            'Content-Type': 'application/json'
+        },
+        json={
+            'student_id': student_id,
+            'email': email
+        }
+    )
+
+    data = response.json()
+
+    if data.get('data', {}).get('exists'):
+        print(f"Student: {data['data']['full_name']}")
+        print(f"Status: {data['data']['status']}")
+        return True
+
+    return False
+
+# Usage
+verify_student('your-token', 'STU-2024-001', 'john@example.com')
+```
+
+<!-- title-nav: Common Use Cases -->
+
+## Common Use Cases
+
+### 1. Student Login
+
+```javascript
+async function studentLogin(studentId, email, password) {
+    // First verify the student
+    const verified = await verifyStudent(token, studentId, email);
+
+    if (!verified) {
+        return { success: false, message: "Invalid student credentials" };
+    }
+
+    // Then check password (your own logic)
+    // ... check password logic here ...
+
+    return { success: true, message: "Login successful" };
+}
+```
+
+### 2. Check Enrollment Status
+
+```javascript
+async function checkEnrollment(studentId, email) {
+    const response = await fetch("/api/students/verify", {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ student_id: studentId, email }),
+    });
+
+    const data = await response.json();
+
+    if (data.data?.exists) {
+        return data.data.status === "enrolled";
+    }
+
+    return false;
+}
+```
+
+<Note>Both `student_id` and `email` must match exactly. If either one is wrong, the verification will fail.</Note>
+
+<Warning>You need a valid authentication token to use this API. Contact your administrator to get one.</Warning>
+
+<!-- title-nav: Error Codes -->
+
+## Error Codes
+
+| Code | Meaning          | What to Do                   |
+| ---- | ---------------- | ---------------------------- |
+| 200  | Success          | Student found                |
+| 401  | Unauthorized     | Check your token             |
+| 404  | Not Found        | Student ID or email is wrong |
+| 422  | Validation Error | Missing required fields      |
+
+<!-- title-nav: Related APIs -->
+
+## Related APIs
+
+- [Student Management API](./student-api.mdx) - Full student CRUD operations

@@ -1,0 +1,18 @@
+{
+  "version": "1.55.0",
+  "image": "docker.io/yukazaki/dccpadminv3:v1.55.0",
+  "commit": "e276cee5d7299839abaf6aa52f75cdd2ff250543",
+  "branch": "main",
+  "timestamp": "2026-04-09T06:05:25Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24175077203",
+  "release_type": "official",
+  "changelog": {
+    "current": "Version 1.55.0 - manual release",
+    "previous": "1.54.0-dev.6.18"
+  },
+  "metadata": {
+    "author": "yukazakiri",
+    "workflow": "Manual Official Release",
+    "repository": "yukazakiri/koakademy"
+  }
+}

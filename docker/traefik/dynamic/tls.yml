@@ -1,0 +1,104 @@
+http:
+  routers:
+    # Portal (Laravel app)
+    portal-secure:
+      rule: "Host(`portal.dccp.test`)"
+      entrypoints:
+        - websecure
+      service: app
+      tls: true
+    portal-http:
+      rule: "Host(`portal.dccp.test`)"
+      entrypoints:
+        - web
+      service: app
+      middlewares:
+        - redirect-websecure
+
+    # Admin (Laravel app)
+    admin-secure:
+      rule: "Host(`admin.dccp.test`)"
+      entrypoints:
+        - websecure
+      service: app
+      tls: true
+    admin-http:
+      rule: "Host(`admin.dccp.test`)"
+      entrypoints:
+        - web
+      service: app
+      middlewares:
+        - redirect-websecure
+
+    # MinIO
+    minio-secure:
+      rule: "Host(`minio.local.test`)"
+      entrypoints:
+        - websecure
+      service: minio
+      tls: true
+    minio-http:
+      rule: "Host(`minio.local.test`)"
+      entrypoints:
+        - web
+      service: minio
+
+    # MinIO Console
+    minio-console-secure:
+      rule: "Host(`minio-console.local.test`)"
+      entrypoints:
+        - websecure
+      service: minio-console
+      tls: true
+    minio-console-http:
+      rule: "Host(`minio-console.local.test`)"
+      entrypoints:
+        - web
+      service: minio-console
+
+    # Mailpit
+    mailpit-secure:
+      rule: "Host(`mailpit.local.test`)"
+      entrypoints:
+        - websecure
+      service: mailpit
+      tls: true
+    mailpit-http:
+      rule: "Host(`mailpit.local.test`)"
+      entrypoints:
+        - web
+      service: mailpit
+
+  services:
+    app:
+      loadBalancer:
+        servers:
+          - url: "http://laravel:80"
+    minio:
+      loadBalancer:
+        servers:
+          - url: "http://minio:9000"
+    minio-console:
+      loadBalancer:
+        servers:
+          - url: "http://minio:8900"
+    mailpit:
+      loadBalancer:
+        servers:
+          - url: "http://mailpit:8025"
+
+  middlewares:
+    redirect-websecure:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+tls:
+  certificates:
+    - certFile: /etc/traefik/certs/dccp.test.pem
+      keyFile: /etc/traefik/certs/dccp.test-key.pem
+  stores:
+    default:
+      defaultCertificate:
+        certFile: /etc/traefik/certs/dccp.test.pem
+        keyFile: /etc/traefik/certs/dccp.test-key.pem

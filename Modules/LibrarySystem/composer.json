@@ -1,0 +1,27 @@
+{
+    "name": "nwidart/librarysystem",
+    "description": "",
+    "authors": [
+        {
+            "name": "Nicolas Widart",
+            "email": "n.widart@gmail.com"
+        }
+    ],
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Modules\\LibrarySystem\\Providers\\LibrarySystemServiceProvider"
+            ],
+            "aliases": {
+
+            }
+        }
+    },
+    "autoload": {
+        "psr-4": {
+            "Modules\\LibrarySystem\\": "app/",
+            "Modules\\LibrarySystem\\Database\\Factories\\": "database/factories/",
+            "Modules\\LibrarySystem\\Database\\Seeders\\": "database/seeders/"
+        }
+    }
+}

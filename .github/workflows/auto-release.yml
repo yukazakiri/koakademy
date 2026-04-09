@@ -2,7 +2,7 @@ name: Auto Pre-release and Docker Tag
 
 on:
   push:
-    branches: [ develop, main ]
+    branches: [ develop, main, master ]
 
 permissions:
   contents: write
@@ -14,7 +14,7 @@ env:
 
 jobs:
   optimize_ci:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     outputs:
       skip: ${{ steps.check_skip.outputs.skip }}
     steps:
@@ -25,7 +25,7 @@ jobs:
           echo 'skip=false' >> "$GITHUB_OUTPUT"
 
   analyze-commit:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     needs: optimize_ci
     if: github.actor != 'github-actions[bot]' && needs.optimize_ci.outputs.skip == 'false'
     outputs:
@@ -149,7 +149,7 @@ jobs:
           echo "is_main=false" >> "$GITHUB_OUTPUT"
 
   build-and-push:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     needs: analyze-commit
     if: always() && needs.analyze-commit.result == 'success'
 
@@ -200,7 +200,7 @@ jobs:
             APP_URL=https://koacademy.yukazaki.com
 
   create-release:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     needs: [analyze-commit, build-and-push]
     if: needs.build-and-push.result == 'success' && needs.analyze-commit.outputs.should_release == 'true'
 
@@ -289,7 +289,7 @@ jobs:
           generate_release_notes: false
 
   update-version:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     needs: [analyze-commit, build-and-push, create-release]
     if: always() && needs.analyze-commit.result == 'success' && needs.build-and-push.result == 'success' && (needs.create-release.result == 'success' || needs.create-release.result == 'skipped')
 
@@ -340,7 +340,7 @@ jobs:
           git push
 
   notify:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     needs: [analyze-commit, build-and-push, create-release, update-version, optimize_ci]
     if: always() && needs.optimize_ci.outputs.skip == 'false'
     env:

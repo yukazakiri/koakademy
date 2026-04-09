@@ -17,6 +17,7 @@ use App\Support\FacultyPortalData;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+use Modules\Announcement\Http\Controllers\PortalAnnouncementController;
 
 /*
 |--------------------------------------------------------------------------
@@ -176,7 +177,7 @@ Route::middleware(['auth', 'faculty.verified', 'faculty.only', 'ensure.feature']
         Route::post('/help/{helpTicket}/reply', [App\Http\Controllers\HelpTicketController::class, 'reply'])->name('help.reply');
 
         // Announcements
-        Route::get('/announcements', [App\Http\Controllers\AnnouncementController::class, 'index'])->name('announcements.index');
+        Route::get('/announcements', [PortalAnnouncementController::class, 'index'])->name('announcements.index');
 
         // Notifications
         Route::post('/notifications/{id}/read', [App\Http\Controllers\NotificationController::class, 'markAsRead'])->name('notifications.read');

@@ -48,7 +48,7 @@ env:
 
 jobs:
   prepare:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.prepare.outputs.version }}
       tag: ${{ steps.prepare.outputs.tag }}
@@ -70,8 +70,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ "${{ github.ref_name }}" != "main" ]; then
-            echo "This workflow must be run from main (current: ${{ github.ref_name }})."
+          DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
+
+          if [ "${{ github.ref_name }}" != "$DEFAULT_BRANCH" ]; then
+            echo "This workflow must be run from ${DEFAULT_BRANCH} (current: ${{ github.ref_name }})."
             exit 1
           fi
 
@@ -113,7 +115,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   build-and-push:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     needs: prepare
     if: needs.prepare.result == 'success'
 
@@ -164,7 +166,7 @@ jobs:
             APP_URL=https://koakademy.yukazaki.com
 
   create-release:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     needs: [prepare, build-and-push]
     if: needs.build-and-push.result == 'success'
 
@@ -424,7 +426,7 @@ jobs:
           generate_release_notes: false
 
   update-version:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     needs: [prepare, build-and-push, create-release]
     if: always() && needs.build-and-push.result == 'success' && (needs.create-release.result == 'success' || needs.create-release.result == 'skipped') && needs.prepare.outputs.update_version_file == 'true'
 
@@ -473,7 +475,7 @@ jobs:
           git push
 
   notify:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     needs: [prepare, build-and-push, create-release, update-version]
     if: always()
     env:

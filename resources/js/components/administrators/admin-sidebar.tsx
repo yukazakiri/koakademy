@@ -22,7 +22,7 @@ import {
     SidebarMenuSubItem,
     useSidebar,
 } from "@/components/ui/sidebar";
-import { getRoutesForRole, ROUTE_SECTIONS, type AdminRoute, type RouteSection } from "@/config/admin-routes";
+import { getRoutesForRoleWithModules, ROUTE_SECTIONS, type AdminRoute, type ModuleAdminRoute, type RouteSection } from "@/config/admin-routes";
 import type { User } from "@/types/user";
 import { USER_ROLE_LABELS, UserRole } from "@/types/user-role";
 import { Link, usePage } from "@inertiajs/react";
@@ -40,6 +40,7 @@ interface PageProps {
     };
     unresolvedHelpTicketsCount?: number;
     adminSidebarCounts?: AdminSidebarCounts | null;
+    moduleAdminRoutes?: ModuleAdminRoute[];
     [key: string]: unknown;
 }
 
@@ -106,10 +107,10 @@ interface SearchableRoute extends AdminRoute {
 /**
  * Get routes organized by section for a specific user role and permissions
  */
-function useOrganizedRoutes(userRole: string, userPermissions: string[] = []) {
+function useOrganizedRoutes(userRole: string, userPermissions: string[] = [], moduleRoutes: ModuleAdminRoute[] = []) {
     return React.useMemo(() => {
         const normalizedRole = normalizeRole(userRole);
-        const allowedRoutes = getRoutesForRole(normalizedRole, userPermissions);
+        const allowedRoutes = getRoutesForRoleWithModules(normalizedRole, userPermissions, moduleRoutes);
 
         // Group routes by section
         const groupedRoutes = new Map<RouteSection, AdminRoute[]>();
@@ -161,7 +162,7 @@ function useOrganizedRoutes(userRole: string, userPermissions: string[] = []) {
         });
 
         return { groupedRoutes, sectionsWithRoutes, allSearchableRoutes, normalizedRole };
-    }, [userRole, userPermissions]);
+    }, [moduleRoutes, userPermissions, userRole]);
 }
 
 function isRouteActive(currentUrl: string, routeLink: string, exact = false): boolean {
@@ -219,6 +220,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
     const unresolvedHelpTicketsCount = props.unresolvedHelpTicketsCount || 0;
     const branding = props.branding;
     const adminSidebarCounts = props.adminSidebarCounts ?? null;
+    const moduleAdminRoutes = props.moduleAdminRoutes ?? [];
     const appName = branding?.appName || "School Portal";
     const organizationShortName = branding?.organizationShortName || "UNI";
     const sharedAuthUser = props.auth?.user;
@@ -228,7 +230,11 @@ export function AdministratorSidebar({ user }: { user: User }) {
     const resolvedUserEmail = sharedAuthUser?.email ?? user.email ?? "";
     const resolvedUserAvatar = sharedAuthUser?.avatar ?? user.avatar ?? "";
 
-    const { groupedRoutes, sectionsWithRoutes, allSearchableRoutes } = useOrganizedRoutes(resolvedUserRole, resolvedUserPermissions);
+    const { groupedRoutes, sectionsWithRoutes, allSearchableRoutes } = useOrganizedRoutes(
+        resolvedUserRole,
+        resolvedUserPermissions,
+        moduleAdminRoutes,
+    );
 
     // Derive active section from current URL
     const activeSection = React.useMemo(() => {

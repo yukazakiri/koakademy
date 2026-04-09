@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
-use App\Models\Announcement;
 use App\Models\GeneralSetting;
 use App\Models\Student;
 use App\Models\User;
@@ -14,6 +13,7 @@ use DateTimeInterface;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use Modules\Announcement\Services\AnnouncementDataService;
 
 final class StudentDashboardController extends Controller
 {
@@ -94,23 +94,7 @@ final class StudentDashboardController extends Controller
             $studentData['clearance_status'] = $student->hasCurrentClearance();
         }
 
-        // Get announcements
-        $announcements = Announcement::query()
-            ->published() // Uses scopePublished: status='published' and published_at check
-            ->active()    // Uses scopeActive: expires_at check
-            ->orderByDesc('created_at')
-            ->limit(5)
-            ->get()
-            ->map(fn ($announcement): array => [
-                'id' => $announcement->id,
-                'title' => $announcement->title,
-                'content' => $announcement->content ?? $announcement->body ?? '',
-                'date' => $announcement->created_at->format('M d, Y'),
-                'type' => $announcement->type ?? 'info',
-            ])
-            ->toArray();
-
-        $studentData['announcements'] = $announcements;
+        $studentData['announcements'] = app(AnnouncementDataService::class)->getDashboardItems();
 
         // Generate ID card data
         $idCardService = app(DigitalIdCardService::class);

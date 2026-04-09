@@ -1,0 +1,11 @@
+{
+    "name": "StudentMedicalRecords",
+    "alias": "studentmedicalrecords",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\StudentMedicalRecords\\Providers\\StudentMedicalRecordsServiceProvider"
+    ],
+    "files": []
+}

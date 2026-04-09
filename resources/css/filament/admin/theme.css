@@ -1,0 +1,152 @@
+@import "../../../../vendor/filament/filament/resources/css/theme.css";
+@import "../../../../vendor/guava/calendar/resources/css/theme.css";
+
+@source '../../../../app/Filament/**/*';
+@source '../../../../resources/views/filament/**/*';
+@source '../../../../vendor/guava/calendar/resources/**/*';
+@source '../../../**/*.blade.php';
+@source '../**/*.js';
+@source '../views';
+
+/* Custom Calendar Styling for Better UX */
+/* Calendar Container */
+.fi-wi-calendar {
+    @apply rounded-xl border border-gray-200 shadow-sm dark:border-gray-700;
+}
+
+/* Calendar Header */
+.fc-toolbar {
+    @apply rounded-t-xl border-b border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800;
+}
+
+.fc-toolbar-title {
+    @apply text-xl font-semibold text-gray-900 dark:text-gray-100;
+}
+
+.fc-button-group .fc-button {
+    @apply focus:ring-primary-500 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 dark:focus:ring-offset-gray-800;
+}
+
+.fc-button-primary {
+    @apply bg-primary-600 border-primary-600 hover:bg-primary-700 hover:border-primary-700 dark:bg-primary-500 dark:border-primary-500 dark:hover:bg-primary-600 dark:hover:border-primary-600 text-white;
+}
+
+/* Calendar Days */
+.fc-day-custom {
+    @apply cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-700;
+}
+
+.fc-day-today {
+    @apply bg-primary-50 dark:bg-primary-900/20 border-primary-200 dark:border-primary-800;
+}
+
+.fc-daygrid-day-number {
+    @apply p-2 text-sm font-medium text-gray-700 dark:text-gray-300;
+}
+
+.fc-day-today .fc-daygrid-day-number {
+    @apply text-primary-700 dark:text-primary-300 font-bold;
+}
+
+/* Default Event Styling */
+.fc-event {
+    @apply cursor-pointer rounded-lg border-0 px-2 py-1 shadow-sm transition-all duration-200 hover:shadow-md;
+}
+
+.fc-event .fc-event-time {
+    @apply text-xs font-medium opacity-90;
+}
+
+.fc-event .fc-event-title {
+    @apply text-sm font-semibold;
+}
+
+/* Event Display */
+.fc-event-title-container {
+    @apply flex flex-col;
+}
+
+.fc-event-location {
+    @apply truncate text-xs opacity-75;
+}
+
+/* Basic Event Styling for different types */
+.fc-event[data-event-type="meeting"] {
+    @apply bg-blue-600 text-white;
+}
+
+.fc-event[data-event-type="deadline"] {
+    @apply bg-red-600 text-white;
+}
+
+.fc-event[data-event-type="exam"] {
+    @apply bg-amber-600 text-white;
+}
+
+.fc-event[data-event-type="holiday"] {
+    @apply bg-emerald-600 text-white;
+}
+
+.fc-event[data-event-type="workshop"] {
+    @apply bg-purple-600 text-white;
+}
+
+.fc-event[data-event-type="conference"] {
+    @apply bg-pink-600 text-white;
+}
+
+.fc-event[data-event-type="other"] {
+    @apply bg-gray-600 text-white;
+}
+
+/* More Link Styling */
+.fc-more-link-custom {
+    @apply text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-200 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded px-2 py-1 text-xs font-medium transition-colors;
+}
+
+/* Time Grid Styling */
+.fc-timegrid-slot {
+    @apply border-gray-100 dark:border-gray-700;
+}
+
+.fc-timegrid-slot-label {
+    @apply text-sm text-gray-500 dark:text-gray-400;
+}
+
+.fc-timegrid-now-indicator-line {
+    @apply border-t-2 border-red-500;
+}
+
+.fc-timegrid-now-indicator-arrow {
+    @apply border-red-500;
+}
+
+/* Weekend Styling */
+.fc-day-sat,
+.fc-day-sun {
+    @apply bg-gray-50/50 dark:bg-gray-800/50;
+}
+
+/* Selection Styling */
+.fc-highlight {
+    @apply bg-primary-100 dark:bg-primary-900/30 border-primary-300 dark:border-primary-700 border;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .fc-toolbar {
+        @apply flex-col space-y-2;
+    }
+
+    .fc-toolbar-chunk {
+        @apply flex justify-center;
+    }
+
+    .fc-event-custom .fc-event-title {
+        @apply text-xs;
+    }
+
+    .fc-event-custom .fc-event-time {
+        @apply text-xs;
+    }
+}

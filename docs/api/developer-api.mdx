@@ -1,0 +1,304 @@
+---
+title: Developer API Documentation
+description: Reference documentation for integrating with KoAkademy APIs
+title-nav: Developer API
+---
+
+# KoAkademy Developer API
+
+Use this page as the entry point for KoAkademy API integration. It summarizes authentication, endpoint groups, response conventions, and links to focused endpoint docs.
+
+## Scope
+
+The API is primarily read-oriented for student and enrollment data, with authenticated write access on allowed resources.
+
+<!-- title-nav: Quick Links -->
+
+## Quick Links
+
+- [API Documentation Page](/api-docs) - Interactive documentation
+- [Student Verification API](./student-verification-api.mdx) - Verify student credentials
+- [Student Management API](./student-api.mdx) - Full CRUD operations
+
+<!-- title-nav: Overview -->
+
+## Overview
+
+Our API is a **RESTful API** that provides access to student academic data. It's designed primarily for **read-only** operations, with limited write access to your own data.
+
+### Base URL
+
+```
+https://api.koakademy.edu/api
+```
+
+### Key Features
+
+- **RESTful Design** - Uses standard HTTP methods (GET, POST, PUT, DELETE)
+- **JSON Responses** - All data is returned in JSON format
+- **Authentication** - Secure token-based authentication
+- **Pagination** - Efficient data fetching with pagination
+- **Filtering & Sorting** - Flexible query options
+
+<!-- title-nav: Available Endpoints -->
+
+## Available Endpoints
+
+### Student Verification
+
+| Method | Endpoint           | Description                           |
+| ------ | ------------------ | ------------------------------------- |
+| POST   | `/students/verify` | Verify student exists by ID and email |
+
+### Student Data
+
+| Method | Endpoint         | Description                   |
+| ------ | ---------------- | ----------------------------- |
+| GET    | `/students`      | List all students (paginated) |
+| GET    | `/students/{id}` | Get student details           |
+| PUT    | `/students/{id}` | Update student profile        |
+| POST   | `/students`      | Create new student            |
+| DELETE | `/students/{id}` | Delete student                |
+
+### Enrollments
+
+| Method | Endpoint                       | Description            |
+| ------ | ------------------------------ | ---------------------- |
+| GET    | `/enrollments`                 | List enrollments       |
+| GET    | `/enrollments/{id}`            | Get enrollment details |
+| GET    | `/enrollments/{id}/schedule`   | Get student schedule   |
+| GET    | `/enrollments/{id}/assessment` | Get tuition/assessment |
+
+### Settings
+
+| Method | Endpoint                     | Description             |
+| ------ | ---------------------------- | ----------------------- |
+| GET    | `/settings`                  | Get all settings        |
+| GET    | `/settings/current`          | Get current settings    |
+| GET    | `/settings/service`          | Get service settings    |
+| GET    | `/settings/key/{key}`        | Get specific setting    |
+| GET    | `/settings/user/preferences` | Get user preferences    |
+| PATCH  | `/settings/user/preferences` | Update user preferences |
+
+<!-- title-nav: Authentication -->
+
+## Authentication
+
+All API requests require authentication using **Laravel Sanctum tokens**.
+
+### Getting Your Token
+
+After logging into the portal, your application receives an authentication token. Include this token in every request:
+
+```http
+Authorization: Bearer YOUR_API_TOKEN
+```
+
+### Example
+
+```javascript
+fetch("https://api.koakademy.edu/api/settings", {
+    headers: {
+        Authorization: "Bearer your-token-here",
+        Accept: "application/json",
+    },
+});
+```
+
+<!-- title-nav: Code Examples -->
+
+## Code Examples
+
+### JavaScript
+
+```javascript
+const API_BASE = "https://api.koakademy.edu/api";
+const TOKEN = "your-token";
+
+async function getStudent(id) {
+    const response = await fetch(`${API_BASE}/students/${id}`, {
+        headers: {
+            Authorization: `Bearer ${TOKEN}`,
+            Accept: "application/json",
+        },
+    });
+    return response.json();
+}
+
+// Verify a student
+async function verifyStudent(studentId, email) {
+    const response = await fetch(`${API_BASE}/students/verify`, {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${TOKEN}`,
+            "Content-Type": "application/json",
+            Accept: "application/json",
+        },
+        body: JSON.stringify({ student_id: studentId, email }),
+    });
+    return response.json();
+}
+```
+
+### Python
+
+```python
+import requests
+
+API_BASE = 'https://api.koakademy.edu/api'
+TOKEN = 'your-token'
+
+headers = {
+    'Authorization': f'Bearer {TOKEN}',
+    'Accept': 'application/json'
+}
+
+# Get student details
+response = requests.get(f'{API_BASE}/students/123', headers=headers)
+student = response.json()
+
+# Verify student
+response = requests.post(
+    f'{API_BASE}/students/verify',
+    json={'student_id': '123', 'email': 'student@koakademy.edu'},
+    headers=headers
+)
+```
+
+### PHP
+
+```php
+<?php
+$apiBase = 'https://api.koakademy.edu/api';
+$token = 'your-token';
+
+$headers = [
+    'Authorization: Bearer ' . $token,
+    'Accept: application/json'
+];
+
+$response = file_get_contents(
+    $apiBase . '/students/123',
+    false,
+    stream_context_create(['http' => ['header' => implode("\r\n", $headers)])
+);
+
+$data = json_decode($response, true);
+```
+
+<!-- title-nav: Response Format -->
+
+## Response Format
+
+### Success Response (200)
+
+```json
+{
+    "message": "Student verified successfully",
+    "data": {
+        "exists": true,
+        "student_id": "STU-2024-001",
+        "full_name": "John Doe",
+        "status": "enrolled"
+    }
+}
+```
+
+### Error Responses
+
+**401 Unauthorized**
+
+```json
+{
+    "message": "Unauthenticated."
+}
+```
+
+**404 Not Found**
+
+```json
+{
+    "message": "Student not found",
+    "data": {
+        "exists": false
+    }
+}
+```
+
+**422 Validation Error**
+
+```json
+{
+    "message": "Validation failed",
+    "errors": {
+        "email": ["The email field is required."]
+    }
+}
+```
+
+<!-- title-nav: Important Notes -->
+
+## Important Notes
+
+<Warning>
+    **Read-Only Focus**: This API is primarily for reading data. While you can update your own profile information, you cannot access or modify other
+    students' data.
+</Warning>
+
+<Note>**Authentication Required**: All endpoints require a valid authentication token. Sign up or log in to get started.</Note>
+
+<!-- title-nav: Best Practices -->
+
+## Best Practices
+
+1. **Use HTTPS Always** - Never send requests over plain HTTP
+2. **Store Tokens Securely** - Use environment variables, never hardcode
+3. **Handle Errors** - Always check response status and handle errors gracefully
+4. **Pagination** - Use pagination when fetching lists to improve performance
+5. **Rate Limiting** - Be respectful with the number of requests
+
+<!-- title-nav: Project Ideas -->
+
+## Project Ideas
+
+Here are some project ideas you can build using this API:
+
+1. **Personal Dashboard** - Display your grades, schedule, and tuition balance
+2. **Schedule App** - Mobile-friendly class schedule view
+3. **Grade Tracker** - Track grades and calculate GPA
+4. **Payment Reminder** - Get notified about tuition payments
+5. **Academic Calendar** - Display important dates
+
+<!-- title-nav: Security Tips -->
+
+## Security Tips
+
+- Never share your API token
+- Don't commit tokens to GitHub/public repos
+- Use environment variables (`.env` files)
+- Rotate tokens periodically
+- Use HTTPS for all requests
+
+<!-- title-nav: Getting Help -->
+
+## Getting Help
+
+If you have questions:
+
+- Check the [interactive docs](/api-docs)
+- Review the code examples above
+- Contact IT support for technical issues
+
+<!-- title-nav: Related Documentation -->
+
+## Related Documentation
+
+- [Student Verification API](./student-verification-api.mdx)
+- [Student Management API](./student-api.mdx)
+- [General Settings API](./general-settings-api.md)
+- [Class Enrollment API](./general-settings-api-enhanced.md)
+
+---
+
+**Version**: 1.0.0  
+**Last Updated**: February 2026

@@ -1,0 +1,34 @@
+{
+    "agents": [
+        "claude_code",
+        "codex",
+        "cursor",
+        "gemini",
+        "opencode"
+    ],
+    "guidelines": true,
+    "herd_mcp": false,
+    "mcp": true,
+    "nightwatch_mcp": false,
+    "packages": [
+        "filament/filament",
+        "spatie/laravel-pdf"
+    ],
+    "sail": true,
+    "skills": [
+        "laravel-best-practices",
+        "configuring-horizon",
+        "configure-nightwatch",
+        "pennant-development",
+        "pulse-development",
+        "scout-development",
+        "socialite-development",
+        "wayfinder-development",
+        "pest-testing",
+        "inertia-react-development",
+        "echo-react-development",
+        "echo-development",
+        "tailwindcss-development",
+        "laravel-pdf"
+    ]
+}

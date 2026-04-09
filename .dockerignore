@@ -1,0 +1,155 @@
+# =============================================================================
+# .dockerignore for KoAcademy Multi-Stage Build
+# =============================================================================
+# Optimized for FrankenPHP multi-stage builds
+# Excludes unnecessary files to speed up builds and reduce image sizes
+
+# -----------------------------------------------------------------------------
+# Version Control
+# -----------------------------------------------------------------------------
+.git
+.gitignore
+.gitattributes
+
+# -----------------------------------------------------------------------------
+# Environment & Secrets
+# -----------------------------------------------------------------------------
+.env
+.env.*
+.env.production.example
+
+# -----------------------------------------------------------------------------
+# Dependencies (installed in Dockerfile stages)
+# -----------------------------------------------------------------------------
+node_modules/
+vendor/
+
+# -----------------------------------------------------------------------------
+# IDE & Editor
+# -----------------------------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+.editorconfig
+
+# -----------------------------------------------------------------------------
+# Storage & Cache (mounted as volumes)
+# -----------------------------------------------------------------------------
+storage/app/*
+!storage/app/.gitignore
+!storage/app/public
+storage/framework/cache/*
+!storage/framework/cache/.gitignore
+storage/framework/sessions/*
+!storage/framework/sessions/.gitignore
+storage/framework/testing/*
+!storage/framework/testing/.gitignore
+storage/framework/views/*
+!storage/framework/views/.gitignore
+storage/logs/*
+!storage/logs/.gitignore
+bootstrap/cache/*
+!bootstrap/cache/.gitignore
+
+# -----------------------------------------------------------------------------
+# Database & Data Directories
+# -----------------------------------------------------------------------------
+.pgsql-data/
+.redis-data/
+.minio-data/
+.storage/
+*.sqlite
+*.sqlite-journal
+
+# -----------------------------------------------------------------------------
+# Build Artifacts & Compiled Assets
+# -----------------------------------------------------------------------------
+public/hot
+public/storage
+public/build
+!public/build/.gitkeep
+
+# -----------------------------------------------------------------------------
+# Logs
+# -----------------------------------------------------------------------------
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+logs/
+
+# -----------------------------------------------------------------------------
+# Testing & Coverage
+# -----------------------------------------------------------------------------
+tests/
+phpunit.xml
+.phpunit.result.cache
+.phpunit.cache
+coverage/
+*.lcov
+.nyc_output
+
+# -----------------------------------------------------------------------------
+# CI/CD
+# -----------------------------------------------------------------------------
+.github/
+.husky/
+.gitlab-ci.yml
+.travis.yml
+
+# -----------------------------------------------------------------------------
+# Documentation
+# -----------------------------------------------------------------------------
+README.md
+CHANGELOG.md
+CONTRIBUTING.md
+LICENSE
+
+
+# -----------------------------------------------------------------------------
+# Code Quality Tools
+# -----------------------------------------------------------------------------
+.php_cs
+.php-cs-fixer.php
+.php-cs-fixer.dist.php
+.php-cs-fixer.cache
+psalm.xml
+phpstan.neon
+.phpstorm.meta.php
+
+# -----------------------------------------------------------------------------
+# Docker Files (except those needed for build)
+# -----------------------------------------------------------------------------
+docker-compose.override.yml
+compose.override.yml
+compose.yaml
+.docker/
+
+# -----------------------------------------------------------------------------
+# Runtime & Temporary Files
+# -----------------------------------------------------------------------------
+pids/
+*.pid
+*.seed
+*.pid.lock
+tmp/
+temp/
+*.tmp
+*.bak
+*.backup
+*.old
+
+# -----------------------------------------------------------------------------
+# OS Files
+# -----------------------------------------------------------------------------
+Desktop.ini
+$RECYCLE.BIN/
+ehthumbs.db
+
+# Note: Build configs (vite.config.js, tailwind.config.js, postcss.config.js)
+# are kept as they're needed for the assets stage in multi-stage build

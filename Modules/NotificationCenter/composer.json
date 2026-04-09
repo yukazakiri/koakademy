@@ -1,0 +1,30 @@
+{
+    "name": "nwidart/notificationcenter",
+    "description": "",
+    "authors": [
+        {
+            "name": "Nicolas Widart",
+            "email": "n.widart@gmail.com"
+        }
+    ],
+    "extra": {
+        "laravel": {
+            "providers": [],
+            "aliases": {
+
+            }
+        }
+    },
+    "autoload": {
+        "psr-4": {
+            "Modules\\NotificationCenter\\": "app/",
+            "Modules\\NotificationCenter\\Database\\Factories\\": "database/factories/",
+            "Modules\\NotificationCenter\\Database\\Seeders\\": "database/seeders/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Modules\\NotificationCenter\\Tests\\": "tests/"
+        }
+    }
+}

@@ -1,0 +1,11 @@
+{
+    "name": "NotificationCenter",
+    "alias": "notificationcenter",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\NotificationCenter\\Providers\\NotificationCenterServiceProvider"
+    ],
+    "files": []
+}

@@ -1,0 +1,17 @@
+{
+    "mcpServers": {
+        "laravel-boost": {
+            "command": "vendor/bin/sail",
+            "args": [
+                "artisan",
+                "boost:mcp"
+            ]
+        },
+        "devdb-mcp-server": {
+            "command": "node",
+            "args": [
+                "/home/yuuki/.cursor/extensions/damms005.devdb-2.8.8-linux-x64/dist/services/mcp/server.js"
+            ]
+        }
+    }
+}

@@ -1,0 +1,471 @@
+name: Auto Pre-release and Docker Tag
+
+on:
+  push:
+    branches: [ develop, main ]
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: yukazaki/koakademy
+
+jobs:
+  optimize_ci:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    outputs:
+      skip: ${{ steps.check_skip.outputs.skip }}
+    steps:
+      - name: Set CI optimization fallback
+        id: check_skip
+        shell: bash
+        run: |
+          echo 'skip=false' >> "$GITHUB_OUTPUT"
+
+  analyze-commit:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    needs: optimize_ci
+    if: github.actor != 'github-actions[bot]' && needs.optimize_ci.outputs.skip == 'false'
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      release_type: ${{ steps.version.outputs.release_type }}
+      should_release: ${{ steps.version.outputs.should_release }}
+      is_main: ${{ steps.version.outputs.is_main }}
+      commit_message: ${{ steps.version.outputs.commit_message }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Analyze commit and determine version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch --tags --force
+
+          # Get commit message (first line only)
+          COMMIT_MSG=$(git log -1 --pretty=%B | head -n1)
+          echo "Commit message: $COMMIT_MSG"
+          {
+            echo 'commit_message<<EOF'
+            echo "$COMMIT_MSG"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+          # Determine bump based on commit message
+          if [[ "$COMMIT_MSG" =~ ^(feat|feature)[:\(] ]]; then
+            RELEASE_TYPE="feature"
+            BUMP="minor"
+          elif [[ "$COMMIT_MSG" =~ ^(fix|bugfix)[:\(] ]]; then
+            RELEASE_TYPE="bugfix"
+            BUMP="patch"
+          elif [[ "$COMMIT_MSG" =~ ^(break|major|breaking)[:\(] ]]; then
+            RELEASE_TYPE="major"
+            BUMP="major"
+          elif [[ "$COMMIT_MSG" =~ ^(chore|docs|style|refactor|test)[:\(] ]]; then
+            RELEASE_TYPE="chore"
+            BUMP="patch"
+          else
+            RELEASE_TYPE="patch"
+            BUMP="patch"
+          fi
+
+          echo "Release type: $RELEASE_TYPE"
+          echo "Bump type: $BUMP"
+          echo "release_type=$RELEASE_TYPE" >> "$GITHUB_OUTPUT"
+
+          # Base version from latest *stable* semver tag (ignores prerelease tags)
+          # We keep this version stable and only increment the dev suffix
+          LATEST_STABLE_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true)
+          if [ -n "${LATEST_STABLE_TAG:-}" ]; then
+            BASE_VERSION="${LATEST_STABLE_TAG#v}"
+          else
+            BASE_VERSION="1.0.0"
+          fi
+
+          echo "Base version (stable): $BASE_VERSION"
+
+          # Dev releases use format: v{BASE}-dev.{MINOR}.{PATCH}
+          # - Feature/Major commits: increment MINOR, reset PATCH to 0
+          # - Patch/Fix/Chore commits: increment PATCH only
+          PRERELEASE_PREFIX="dev"
+
+          # Find the latest dev tag for this base version with format v{BASE}-dev.X.Y
+          LATEST_DEV_TAG=$(git tag -l "v${BASE_VERSION}-${PRERELEASE_PREFIX}.*.*" --sort=-v:refname | head -n1 || true)
+
+          if [ -n "${LATEST_DEV_TAG:-}" ]; then
+            # Extract the dev minor and patch from the tag (e.g., v1.2.3-dev.2.5 -> 2 and 5)
+            DEV_SUFFIX="${LATEST_DEV_TAG#v${BASE_VERSION}-${PRERELEASE_PREFIX}.}"
+            DEV_MINOR=$(echo "$DEV_SUFFIX" | cut -d'.' -f1)
+            DEV_PATCH=$(echo "$DEV_SUFFIX" | cut -d'.' -f2)
+
+            # Validate we got numbers, default to 0 if not
+            [[ "$DEV_MINOR" =~ ^[0-9]+$ ]] || DEV_MINOR=0
+            [[ "$DEV_PATCH" =~ ^[0-9]+$ ]] || DEV_PATCH=0
+          else
+            # No existing dev tags, start at 0.0
+            DEV_MINOR=0
+            DEV_PATCH=0
+          fi
+
+          echo "Current dev version: ${DEV_MINOR}.${DEV_PATCH}"
+
+          # Bump based on commit type
+          case "$BUMP" in
+            major|minor)
+              # Feature/Major: increment dev minor, reset patch
+              DEV_MINOR=$((DEV_MINOR + 1))
+              DEV_PATCH=0
+              ;;
+            patch|*)
+              # Patch/Fix/Chore: increment dev patch only
+              DEV_PATCH=$((DEV_PATCH + 1))
+              ;;
+          esac
+
+          TAG="v${BASE_VERSION}-${PRERELEASE_PREFIX}.${DEV_MINOR}.${DEV_PATCH}"
+
+          # Ensure tag doesn't already exist (safety check)
+          while git rev-parse "$TAG" >/dev/null 2>&1; do
+            DEV_PATCH=$((DEV_PATCH + 1))
+            TAG="v${BASE_VERSION}-${PRERELEASE_PREFIX}.${DEV_MINOR}.${DEV_PATCH}"
+          done
+
+          VERSION="${BASE_VERSION}-${PRERELEASE_PREFIX}.${DEV_MINOR}.${DEV_PATCH}"
+
+          echo "Resolved prerelease tag: $TAG"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          # This workflow runs on develop only
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
+          echo "is_main=false" >> "$GITHUB_OUTPUT"
+
+  build-and-push:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    needs: analyze-commit
+    if: always() && needs.analyze-commit.result == 'success'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@v1
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ needs.analyze-commit.outputs.tag }}
+            type=raw,value=dev-latest
+            type=raw,value=${{ needs.analyze-commit.outputs.release_type }}-${{ github.sha }}
+            type=ref,event=branch
+          labels: |
+            org.opencontainers.image.version=${{ needs.analyze-commit.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+            org.opencontainers.image.title=KoAcademy
+            org.opencontainers.image.description=Divine Cross College Portal - Admin Dashboard V3
+            org.opencontainers.image.vendor=KOA
+
+      - name: Build and push Docker image
+        uses: useblacksmith/build-push-action@v2
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64
+          build-args: |
+            APP_NAME=KoAcademy
+            APP_ENV=production
+            APP_DEBUG=false
+            APP_URL=https://koacademy.yukazaki.com
+
+  create-release:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    needs: [analyze-commit, build-and-push]
+    if: needs.build-and-push.result == 'success' && needs.analyze-commit.outputs.should_release == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION="${{ needs.analyze-commit.outputs.version }}"
+          TAG="${{ needs.analyze-commit.outputs.tag }}"
+          RELEASE_TYPE="${{ needs.analyze-commit.outputs.release_type }}"
+          COMMIT_MSG="${{ needs.analyze-commit.outputs.commit_message }}"
+
+          # Get commits since last tag (if any)
+          LAST_TAG=$(git describe --tags --abbrev=0 --match "v*" HEAD^ 2>/dev/null || echo "")
+
+          if [ -n "$LAST_TAG" ]; then
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" ${LAST_TAG}..HEAD)
+          else
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" HEAD)
+          fi
+
+          cat > RELEASE_NOTES.md << EOF
+          # KoAcademy ${TAG} (Pre-release)
+
+          🚧 **Channel:** Develop / Rolling pre-release
+          🚀 **Release Type:** ${RELEASE_TYPE^}
+          📦 **Version:** ${VERSION}
+          🐳 **Docker Image:** ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${TAG}
+          🐳 **Docker Alias:** ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-latest
+
+          ## 📋 Changes
+          ${CHANGELOG}
+
+          ## 🎯 Latest Commit
+          ${COMMIT_MSG}
+
+          ## 🐳 Docker Deployment
+          \`\`\`bash
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${TAG}
+
+          # Or pull the rolling develop alias
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-latest
+          \`\`\`
+
+          ---
+          🤖 *Auto-generated pre-release from commit ${{ github.sha }}*
+          📊 *Build: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}*
+          EOF
+
+      - name: Create Git tag (idempotent)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG="${{ needs.analyze-commit.outputs.tag }}"
+
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists; skipping creation."
+            exit 0
+          fi
+
+          git tag -a "$TAG" -m "Pre-release $TAG"
+          git push origin "$TAG"
+
+      - name: Create GitHub Pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.analyze-commit.outputs.tag }}
+          name: KoAcademy Pre-release ${{ needs.analyze-commit.outputs.tag }}
+          body_path: RELEASE_NOTES.md
+          draft: false
+          prerelease: true
+          files: |
+            version.json
+          generate_release_notes: false
+
+  update-version:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    needs: [analyze-commit, build-and-push, create-release]
+    if: always() && needs.analyze-commit.result == 'success' && needs.build-and-push.result == 'success' && (needs.create-release.result == 'success' || needs.create-release.result == 'skipped')
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Update version.json
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION="${{ needs.analyze-commit.outputs.version }}"
+          TAG="${{ needs.analyze-commit.outputs.tag }}"
+          RELEASE_TYPE="${{ needs.analyze-commit.outputs.release_type }}"
+          COMMIT_MSG="${{ needs.analyze-commit.outputs.commit_message }}"
+
+          PREVIOUS_VERSION="1.0.0"
+          if [ -f "version.json" ]; then
+            PREVIOUS_VERSION=$(jq -r '.version // "1.0.0"' version.json 2>/dev/null || echo "1.0.0")
+          fi
+
+          cat > version.json << EOF
+          {
+            "version": "${VERSION}",
+            "image": "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${TAG}",
+            "commit": "${{ github.sha }}",
+            "branch": "${{ github.ref_name }}",
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "build_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+            "release_type": "${RELEASE_TYPE}",
+            "changelog": {
+              "current": "Version ${VERSION} - ${COMMIT_MSG}",
+              "previous": "${PREVIOUS_VERSION}"
+            },
+            "metadata": {
+              "author": "${{ github.actor }}",
+              "workflow": "${{ github.workflow }}",
+              "repository": "${{ github.repository }}"
+            }
+          }
+          EOF
+
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add version.json
+          git diff --staged --quiet || git commit -m "chore: update version to ${VERSION} [skip ci]"
+          git push
+
+  notify:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    needs: [analyze-commit, build-and-push, create-release, update-version, optimize_ci]
+    if: always() && needs.optimize_ci.outputs.skip == 'false'
+    env:
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 50
+
+      - name: Send notification
+        shell: bash
+        run: |
+          echo "📢 Auto Pre-release Summary"
+          echo "=========================="
+
+          echo "📦 Version: ${{ needs.analyze-commit.outputs.version }}"
+          echo "🏷️  Tag: ${{ needs.analyze-commit.outputs.tag }}"
+          echo "🎯 Type: ${{ needs.analyze-commit.outputs.release_type }}"
+          echo "🐳 Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.analyze-commit.outputs.tag }}"
+          echo "🐳 Alias: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-latest"
+          echo "👤 Author: ${{ github.actor }}"
+          echo "🌿 Branch: ${{ github.ref_name }}"
+          echo "📝 Commit: ${{ needs.analyze-commit.outputs.commit_message }}"
+
+          echo "📊 Build: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          echo "🎉 Pre-release: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.analyze-commit.outputs.tag }}"
+
+      - name: Send Discord notification
+        if: ${{ env.DISCORD_WEBHOOK_URL != '' }}
+        env:
+          BUILD_RESULT: ${{ needs.build-and-push.result }}
+          RELEASE_RESULT: ${{ needs.create-release.result }}
+          VERSION_RESULT: ${{ needs.update-version.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "No Discord webhook configured; skipping notification"
+            exit 0
+          fi
+
+          status_icon() {
+            case "$1" in
+              success) echo "✅" ;;
+              skipped) echo "⏭️" ;;
+              cancelled) echo "⚪" ;;
+              *) echo "❌" ;;
+            esac
+          }
+
+          BUILD_ICON=$(status_icon "$BUILD_RESULT")
+          RELEASE_ICON=$(status_icon "$RELEASE_RESULT")
+          VERSION_ICON=$(status_icon "$VERSION_RESULT")
+
+          if [ "$BUILD_RESULT" = "success" ]; then
+            COLOR=5763719
+            SUMMARY="Build succeeded"
+          else
+            COLOR=15548997
+            SUMMARY="Build failed"
+          fi
+
+          RECENT_CHANGES=$(git log -5 --pretty=format:"- %s (%an)" HEAD 2>/dev/null || true)
+          if [ -z "${RECENT_CHANGES:-}" ]; then
+            RECENT_CHANGES="(No additional commits detected)"
+          fi
+
+          CONTRIBUTORS=$(git log -20 --pretty=format:"%an" HEAD 2>/dev/null | awk '!seen[$0]++' | head -n 10 | paste -sd ', ' - 2>/dev/null || true)
+          if [ -z "${CONTRIBUTORS:-}" ]; then
+            CONTRIBUTORS="${{ github.actor }}"
+          fi
+
+          RELEASE_URL="${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.analyze-commit.outputs.tag }}"
+
+          PAYLOAD=$(jq -n \
+            --arg summary "$SUMMARY" \
+            --arg build "$BUILD_ICON Build: $BUILD_RESULT" \
+            --arg release "$RELEASE_ICON Release: $RELEASE_RESULT" \
+            --arg version "$VERSION_ICON Version File: $VERSION_RESULT" \
+            --arg versionLabel "${{ needs.analyze-commit.outputs.version }}" \
+            --arg tag "${{ needs.analyze-commit.outputs.tag }}" \
+            --arg type "${{ needs.analyze-commit.outputs.release_type }}" \
+            --arg branch "${{ github.ref_name }}" \
+            --arg actor "${{ github.actor }}" \
+            --arg commit "${{ needs.analyze-commit.outputs.commit_message }}" \
+            --arg buildUrl "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --arg docker "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.analyze-commit.outputs.tag }}" \
+            --arg dockerAlias "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-latest" \
+            --arg releaseUrl "$RELEASE_URL" \
+            --arg changes "$RECENT_CHANGES" \
+            --arg contributors "$CONTRIBUTORS" \
+            --argjson color "$COLOR" \
+            '{
+              "username": "Koamishin Release Bot",
+              "embeds": [
+                {
+                  "title": "Develop Pre-release • \($summary)",
+                  "color": $color,
+                  "description": "**Version:** \($versionLabel)\n**Tag:** \($tag)\n**Type:** \($type)",
+                  "fields": [
+                    { "name": "Pipeline", "value": $buildUrl, "inline": false },
+                    { "name": "Docker Image", "value": $docker, "inline": false },
+                    { "name": "Docker Alias", "value": $dockerAlias, "inline": false },
+                    { "name": "Build Stage", "value": $build, "inline": true },
+                    { "name": "Release Stage", "value": $release, "inline": true },
+                    { "name": "Version File", "value": $version, "inline": true },
+                    { "name": "Branch", "value": $branch, "inline": true },
+                    { "name": "Actor", "value": $actor, "inline": true },
+                    { "name": "Commit", "value": $commit, "inline": false },
+                    { "name": "Latest Changes", "value": $changes, "inline": false },
+                    { "name": "Contributors", "value": $contributors, "inline": false }
+                  ],
+                  "footer": {
+                    "text": "Pre-release details - \($releaseUrl)"
+                  },
+                  "timestamp": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"
+                }
+              ]
+            }')
+
+          curl -X POST \
+            "$DISCORD_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d "$PAYLOAD"

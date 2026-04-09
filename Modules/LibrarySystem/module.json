@@ -1,0 +1,11 @@
+{
+    "name": "LibrarySystem",
+    "alias": "librarysystem",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\LibrarySystem\\Providers\\LibrarySystemServiceProvider"
+    ],
+    "files": []
+}

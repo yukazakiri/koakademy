@@ -1,0 +1,35 @@
+# Files and folders to exclude from dev container mount
+# This improves performance by preventing large directories from being synced
+
+node_modules
+vendor
+.git
+.env.local
+storage/logs
+storage/app/backups
+bootstrap/cache
+public/hot
+.vscode-server
+dist
+build
+coverage
+.pytest_cache
+__pycache__
+.DS_Store
+.env.*.php
+Thumbs.db
+*.log
+.idea
+.sonarlint
+.turbo
+.next
+.nuxt
+*.swp
+*.swo
+*~
+.env.testing
+.env.*.local
+*.db
+*.sqlite
+*.sqlite3
+.env.backup

@@ -1,0 +1,183 @@
+{
+    "$schema": "https://getcomposer.org/schema.json",
+    "name": "yukazakiri/koacademy",
+    "type": "project",
+    "description": "KoAcademy is a comprehensive Laravel-based learning management system built with Filament, featuring modular architecture, advanced admin panels, and integrated tools for course management, user engagement, and analytics.",
+    "keywords": [
+        "laravel",
+        "framework",
+        "filament",
+        "flirt-kit",
+        "starter-kit",
+        "rilt"
+    ],
+    "license": "AGPL-3.0-or-later",
+    "require": {
+        "php": "^8.4",
+        "achyutn/filament-log-viewer": "^2.0",
+        "alizharb/filament-activity-log": "^1.0",
+        "andreia/filament-nord-theme": "^3.0",
+        "awcodes/filament-gravatar": "^4.0",
+        "backstage/mails": "^3.0",
+        "barryvdh/laravel-debugbar": "^3.16",
+        "barryvdh/laravel-snappy": "^1.0",
+        "bezhansalleh/filament-shield": "^4.0",
+        "binary-cats/laravel-sku": "^0.8.0",
+        "coolsam/modules": "^5.0",
+        "cweagans/composer-patches": "^1.7",
+        "dcblogdev/laravel-db-sync": "^1.1",
+        "endroid/qr-code": "^6.0",
+        "erag/laravel-pwa": "^1.9",
+        "filafly/brisk": "^1.0",
+        "filament/filament": "^5.0",
+        "filament/spatie-laravel-media-library-plugin": "^5.0",
+        "filament/spatie-laravel-settings-plugin": "^5.0",
+        "flowframe/laravel-trend": "*",
+        "google/apiclient": "^2.19",
+        "guava/calendar": "^3.0",
+        "guava/filament-icon-select-column": "^3.0",
+        "guzzlehttp/guzzle": "^7.10",
+        "http-interop/http-factory-guzzle": "^1.2",
+        "inertiajs/inertia-laravel": "^2.0",
+        "joaopaulolndev/filament-edit-profile": "^3.0",
+        "joaopaulolndev/filament-general-settings": "^3.0",
+        "laravel/framework": "^12.0",
+        "laravel/horizon": "^5.34",
+        "laravel/nightwatch": "^1.22",
+        "laravel/octane": "^2.13",
+        "laravel/pennant": "^1.18",
+        "laravel/pulse": "^1.4",
+        "laravel/sail": "^1.46",
+        "laravel/sanctum": "^4.0",
+        "laravel/scout": "^10.23",
+        "laravel/socialite": "^5.24",
+        "laravel/telescope": "^5.12",
+        "laravel/tinker": "^3.0",
+        "laravel/wayfinder": "^0.1.12",
+        "maatwebsite/excel": "^3.1",
+        "mansoor/filament-versionable": "5.x-dev",
+        "marcelweidum/filament-passkeys": "^2.0",
+        "meilisearch/meilisearch-php": "^1.16",
+        "moataz-01/filament-notification-sound": "^1.0",
+        "nativephp/desktop": "^2.1",
+        "owenvoke/blade-fontawesome": "^2.9",
+        "predis/predis": "^3.2",
+        "pusher/pusher-php-server": "^7.2",
+        "pxlrbt/filament-environment-indicator": "^3.0",
+        "pxlrbt/filament-spotlight": "^2.0",
+        "resend/resend-laravel": "^1.1",
+        "reusser/laravel-cloudflare-r2": "^1.0",
+        "robertogallea/pulse-api": "^1.0",
+        "rupadana/filament-api-service": "dev-copilot/update-to-filament-v5",
+        "saasykit/laravel-open-graphy": "^1.2",
+        "sanity/sanity-php": "^1.5",
+        "sentry/sentry-laravel": "^4.20",
+        "setasign/fpdf": "^1.8",
+        "setasign/fpdi": "^2.6",
+        "shuvroroy/filament-spatie-laravel-backup": "^3.0",
+        "spatie/browsershot": "^5.0",
+        "spatie/laravel-activitylog": "^4.10",
+        "spatie/laravel-pdf": "^2.2",
+        "spatie/laravel-permission": "^6.21",
+        "spatie/laravel-tags": "^4.10",
+        "stechstudio/filament-impersonate": "^4.0",
+        "stephenjude/filament-debugger": "^5.0",
+        "tightenco/ziggy": "^2.5",
+        "wnx/laravel-backup-restore": "^1.8",
+        "ysfkaya/filament-phone-input": "^4.0"
+    },
+    "require-dev": {
+        "barryvdh/laravel-ide-helper": "^3.6",
+        "driftingly/rector-laravel": "^2.0",
+        "fakerphp/faker": "^1.23",
+        "larastan/larastan": "^3.0",
+        "laravel/boost": "^2.0",
+        "laravel/pint": "^1.24",
+        "mockery/mockery": "^1.6",
+        "nunomaduro/collision": "^8.6",
+        "nunomaduro/pao": "^0.1",
+        "pestphp/pest": "^4.0",
+        "pestphp/pest-plugin-laravel": "^4.0",
+        "yukazakiri/laravel-database-sync": "^0.1.0"
+    },
+    "autoload": {
+        "files": [
+            "app/helpers.php"
+        ],
+        "psr-4": {
+            "App\\": "app/",
+            "Database\\Factories\\": "database/factories/",
+            "Database\\Seeders\\": "database/seeders/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "post-autoload-dump": [
+            "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
+            "@php artisan package:discover --ansi",
+            "@php artisan filament:upgrade"
+        ],
+        "post-update-cmd": [
+            "@php artisan vendor:publish --tag=laravel-assets --ansi --force",
+            "@php artisan native:install --force --quiet --publish"
+        ],
+        "post-root-package-install": [
+            "@php -r \"file_exists('.env') || copy('.env.example', '.env');\""
+        ],
+        "post-create-project-cmd": [
+            "@php artisan key:generate --ansi",
+            "@php -r \"file_exists('database/database.sqlite') || touch('database/database.sqlite');\"",
+            "@php artisan migrate --graceful --ansi"
+        ],
+        "dev": [
+            "Composer\\Config::disableProcessTimeout",
+            "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"php artisan serve\" \"php artisan queue:listen --tries=1\" \"php artisan pail --timeout=0\" \"npm run dev\" --names=server,queue,logs,vite"
+        ],
+        "test": [
+            "@php artisan config:clear --ansi",
+            "@php artisan test"
+        ],
+        "lint": [
+            "rector --debug",
+            "pint"
+        ],
+        "pint": [
+            "vendor/bin/pint"
+        ],
+        "stan": [
+            "php -d memory_limit=-1 vendor/bin/phpstan analyse"
+        ],
+        "native:dev": [
+            "Composer\\Config::disableProcessTimeout",
+            "npx concurrently -k -c \"#93c5fd,#c4b5fd\" \"php artisan native:run --no-interaction\" \"npm run dev\" --names=app,vite"
+        ]
+    },
+    "extra": {
+        "laravel": {
+            "dont-discover": []
+        },
+        "merge-plugin": {
+            "include": [
+                "Modules/*/composer.json"
+            ]
+        },
+        "patches": {}
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "preferred-install": "dist",
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true,
+            "php-http/discovery": true,
+            "wikimedia/composer-merge-plugin": true,
+            "cweagans/composer-patches": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

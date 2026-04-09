@@ -1,0 +1,351 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Database\Seeders;
+
+use App\Enums\SubjectEnrolledEnum;
+use App\Models\Subject;
+use Illuminate\Database\Seeder;
+
+final class SubjectSeeder extends Seeder
+{
+    /**
+     * Run the database seeds.
+     */
+    public function run(): void
+    {
+        $subjects = [
+            // Information Technology Subjects - BSIT (Course ID: 1)
+            // First Year
+            [
+                'classification' => SubjectEnrolledEnum::CREDITED,
+                'code' => 'IT111',
+                'title' => 'Introduction to Computing',
+                'units' => 3,
+                'lecture' => 2,
+                'laboratory' => 1,
+                'academic_year' => 1,
+                'semester' => 1,
+                'course_id' => 1,
+                'is_credited' => true,
+            ],
+            [
+                'classification' => SubjectEnrolledEnum::CREDITED,
+                'code' => 'IT112',
+                'title' => 'Computer Programming 1',
+                'units' => 3,
+                'lecture' => 2,
+                'laboratory' => 1,
+                'academic_year' => 1,
+                'semester' => 1,
+                'course_id' => 1,
+                'is_credited' => true,
+            ],
+            [
+                'classification' => SubjectEnrolledEnum::CREDITED,
+                'code' => 'MATH111',
+                'title' => 'College Algebra',
+                'units' => 3,
+                'lecture' => 3,
+                'laboratory' => 0,
+                'academic_year' => 1,
+                'semester' => 1,
+                'course_id' => 1,
+                'is_credited' => true,
+            ],
+            [
+                'classification' => SubjectEnrolledEnum::CREDITED,
+                'code' => 'ENG111',
+                'title' => 'English Communication Skills',
+                'units' => 3,
+                'lecture' => 3,
+                'laboratory' => 0,
+                'academic_year' => 1,
+                'semester' => 1,
+                'course_id' => 1,
+                'is_credited' => true,
+            ],
+            [
+                'classification' => SubjectEnrolledEnum::NON_CREDITED,
+                'code' => 'PATHFIT1',
+                'title' => 'Physical Activities Towards Health and Fitness 1',
+                'units' => 2,
+                'lecture' => 1,
+                'laboratory' => 1,
+                'academic_year' => null, // Can be taken by any year
+                'semester' => 1,
+                'course_id' => 1,
+                'is_credited' => false,
+            ],
+
+            // Second Semester
+            [
+                'classification' => SubjectEnrolledEnum::CREDITED,
+                'code' => 'IT121',
+                'title' => 'Computer Programming 2',
+                'units' => 3,
+                'lecture' => 2,
+                'laboratory' => 1,
+                'academic_year' => 1,
+                'semester' => 2,
+                'course_id' => 1,
+                'pre_riquisite' => ['IT112'],
+                'is_credited' => true,
+            ],
+            [
+                'classification' => SubjectEnrolledEnum::CREDITED,
+                'code' => 'IT122',
+                'title' => 'Web Development 1',
+                'units' => 3,
+                'lecture' => 2,
+                'laboratory' => 1,
+                'academic_year' => 1,
+                'semester' => 2,
+                'course_id' => 1,
+                'is_credited' => true,
+            ],
+            [
+                'classification' => SubjectEnrolledEnum::CREDITED,
+                'code' => 'MATH121',
+                'title' => 'Discrete Mathematics',
+                'units' => 3,
+                'lecture' => 3,
+                'laboratory' => 0,
+                'academic_year' => 1,
+                'semester' => 2,
+                'course_id' => 1,
+                'pre_riquisite' => ['MATH111'],
+                'is_credited' => true,
+            ],
+
+            // Second Year
+            [
+                'classification' => SubjectEnrolledEnum::CREDITED,
+                'code' => 'IT211',
+                'title' => 'Data Structures and Algorithms',
+                'units' => 3,
+                'lecture' => 2,
+                'laboratory' => 1,
+                'academic_year' => 2,
+                'semester' => 1,
+                'course_id' => 1,
+                'pre_riquisite' => ['IT121'],
+                'is_credited' => true,
+            ],
+            [
+                'classification' => SubjectEnrolledEnum::CREDITED,
+                'code' => 'IT212',
+                'title' => 'Database Management Systems',
+                'units' => 3,
+                'lecture' => 2,
+                'laboratory' => 1,
+                'academic_year' => 2,
+                'semester' => 1,
+                'course_id' => 1,
+                'is_credited' => true,
+            ],
+            [
+                'classification' => SubjectEnrolledEnum::CREDITED,
+                'code' => 'IT213',
+                'title' => 'Object-Oriented Programming',
+                'units' => 3,
+                'lecture' => 2,
+                'laboratory' => 1,
+                'academic_year' => 2,
+                'semester' => 1,
+                'course_id' => 1,
+                'pre_riquisite' => ['IT121'],
+                'is_credited' => true,
+            ],
+
+            // Business Administration Subjects - BSBA-MM (Course ID: 4)
+            [
+                'classification' => SubjectEnrolledEnum::CREDITED,
+                'code' => 'BA111',
+                'title' => 'Fundamentals of Business',
+                'units' => 3,
+                'lecture' => 3,
+                'laboratory' => 0,
+                'academic_year' => 1,
+                'semester' => 1,
+                'course_id' => 4,
+                'is_credited' => true,
+            ],
+            [
+                'classification' => SubjectEnrolledEnum::CREDITED,
+                'code' => 'BA112',
+                'title' => 'Principles of Marketing',
+                'units' => 3,
+                'lecture' => 3,
+                'laboratory' => 0,
+                'academic_year' => 1,
+                'semester' => 1,
+                'course_id' => 4,
+                'is_credited' => true,
+            ],
+            [
+                'classification' => SubjectEnrolledEnum::CREDITED,
+                'code' => 'ACC111',
+                'title' => 'Fundamentals of Accounting',
+                'units' => 3,
+                'lecture' => 2,
+                'laboratory' => 1,
+                'academic_year' => 1,
+                'semester' => 1,
+                'course_id' => 4,
+                'is_credited' => true,
+            ],
+
+            // Hotel Management Subjects - BSHM (Course ID: 2)
+            [
+                'classification' => SubjectEnrolledEnum::CREDITED,
+                'code' => 'HM111',
+                'title' => 'Introduction to Hospitality Management',
+                'units' => 3,
+                'lecture' => 3,
+                'laboratory' => 0,
+                'academic_year' => 1,
+                'semester' => 1,
+                'course_id' => 2,
+                'is_credited' => true,
+            ],
+            [
+                'classification' => SubjectEnrolledEnum::CREDITED,
+                'code' => 'HM112',
+                'title' => 'Food Service Operations',
+                'units' => 3,
+                'lecture' => 2,
+                'laboratory' => 1,
+                'academic_year' => 1,
+                'semester' => 1,
+                'course_id' => 2,
+                'is_credited' => true,
+            ],
+            [
+                'classification' => SubjectEnrolledEnum::CREDITED,
+                'code' => 'HM113',
+                'title' => 'Front Office Operations',
+                'units' => 3,
+                'lecture' => 2,
+                'laboratory' => 1,
+                'academic_year' => 1,
+                'semester' => 1,
+                'course_id' => 2,
+                'is_credited' => true,
+            ],
+
+            // General Education Subjects (for multiple courses)
+            [
+                'classification' => SubjectEnrolledEnum::CREDITED,
+                'code' => 'RIZAL',
+                'title' => 'Life and Works of Rizal',
+                'units' => 3,
+                'lecture' => 3,
+                'laboratory' => 0,
+                'academic_year' => 3,
+                'semester' => 1,
+                'course_id' => 1,
+                'is_credited' => true,
+            ],
+            [
+                'classification' => SubjectEnrolledEnum::CREDITED,
+                'code' => 'ETHICS',
+                'title' => 'Ethics',
+                'units' => 3,
+                'lecture' => 3,
+                'laboratory' => 0,
+                'academic_year' => 2,
+                'semester' => 2,
+                'course_id' => 1,
+                'is_credited' => true,
+            ],
+
+            // Third Year IT Subjects
+            [
+                'classification' => SubjectEnrolledEnum::CREDITED,
+                'code' => 'IT311',
+                'title' => 'Software Engineering',
+                'units' => 3,
+                'lecture' => 2,
+                'laboratory' => 1,
+                'academic_year' => 3,
+                'semester' => 1,
+                'course_id' => 1,
+                'pre_riquisite' => ['IT213'],
+                'is_credited' => true,
+            ],
+            [
+                'classification' => SubjectEnrolledEnum::CREDITED,
+                'code' => 'IT312',
+                'title' => 'Network Administration',
+                'units' => 3,
+                'lecture' => 2,
+                'laboratory' => 1,
+                'academic_year' => 3,
+                'semester' => 1,
+                'course_id' => 1,
+                'is_credited' => true,
+            ],
+            [
+                'classification' => SubjectEnrolledEnum::CREDITED,
+                'code' => 'IT313',
+                'title' => 'Mobile Application Development',
+                'units' => 3,
+                'lecture' => 2,
+                'laboratory' => 1,
+                'academic_year' => 3,
+                'semester' => 1,
+                'course_id' => 1,
+                'pre_riquisite' => ['IT213'],
+                'is_credited' => true,
+            ],
+
+            // Fourth Year IT Subjects
+            [
+                'classification' => SubjectEnrolledEnum::CREDITED,
+                'code' => 'IT411',
+                'title' => 'Capstone Project 1',
+                'units' => 3,
+                'lecture' => 1,
+                'laboratory' => 2,
+                'academic_year' => 4,
+                'semester' => 1,
+                'course_id' => 1,
+                'pre_riquisite' => ['IT311'],
+                'is_credited' => true,
+            ],
+            [
+                'classification' => SubjectEnrolledEnum::CREDITED,
+                'code' => 'IT412',
+                'title' => 'IT Project Management',
+                'units' => 3,
+                'lecture' => 3,
+                'laboratory' => 0,
+                'academic_year' => 4,
+                'semester' => 1,
+                'course_id' => 1,
+                'is_credited' => true,
+            ],
+            [
+                'classification' => SubjectEnrolledEnum::CREDITED,
+                'code' => 'IT421',
+                'title' => 'Capstone Project 2',
+                'units' => 3,
+                'lecture' => 1,
+                'laboratory' => 2,
+                'academic_year' => 4,
+                'semester' => 2,
+                'course_id' => 1,
+                'pre_riquisite' => ['IT411'],
+                'is_credited' => true,
+            ],
+        ];
+
+        foreach ($subjects as $subject) {
+            Subject::query()->create($subject);
+        }
+
+        $this->command->info('Subjects seeded successfully!');
+    }
+}

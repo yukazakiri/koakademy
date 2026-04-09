@@ -1,0 +1,97 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Database\Seeders;
+
+use App\Models\ShsStrand;
+use App\Models\ShsTrack;
+use App\Models\StrandSubject;
+use Illuminate\Database\Seeder;
+
+final class ABMCurriculumSeeder extends Seeder
+{
+    public function run(): void
+    {
+        // Create or update ABM track
+        $abmTrack = ShsTrack::updateOrCreate(
+            ['track_name' => 'ABM'],
+            ['description' => 'Accountancy, Business, and Management Track']
+        );
+
+        // Create or update ABM strand
+        $abmStrand = ShsStrand::updateOrCreate(
+            [
+                'strand_name' => 'ABM',
+                'track_id' => $abmTrack->id,
+            ],
+            ['description' => 'Accountancy, Business, and Management Strand']
+        );
+
+        // Define all ABM subjects with strand-specific codes
+        $subjects = [
+            // Grade 11 - First Semester
+            ['title' => 'Oral Communication', 'grade_year' => 11, 'semester' => 1, 'category' => 'CORE'],
+            ['title' => 'Komunikasyon at Pananaliksik sa Wika at Kulturang Filipino', 'grade_year' => 11, 'semester' => 1, 'category' => 'CORE'],
+            ['title' => 'General Mathematics', 'grade_year' => 11, 'semester' => 1, 'category' => 'CORE'],
+            ['title' => 'Earth and Life Science', 'grade_year' => 11, 'semester' => 1, 'category' => 'CORE'],
+            ['title' => '21st Century Literature from the Philippines and the World', 'grade_year' => 11, 'semester' => 1, 'category' => 'CORE'],
+            ['title' => 'Physical Education and Health 1', 'grade_year' => 11, 'semester' => 1, 'category' => 'CORE'],
+            ['title' => 'Applied Economics', 'grade_year' => 11, 'semester' => 1, 'category' => 'SPECIALIZED'],
+            ['title' => 'Fundamentals of Accounting, Business and Management 1', 'grade_year' => 11, 'semester' => 1, 'category' => 'SPECIALIZED'],
+
+            // Grade 11 - Second Semester
+            ['title' => 'Reading & Writing', 'grade_year' => 11, 'semester' => 2, 'category' => 'CORE'],
+            ['title' => "Pagbasa at Pagsulat ng Iba't Ibang Teksto Tungo sa Pananaliksik", 'grade_year' => 11, 'semester' => 2, 'category' => 'CORE'],
+            ['title' => 'Statistics & Probability', 'grade_year' => 11, 'semester' => 2, 'category' => 'CORE'],
+            ['title' => 'Understanding Culture, Society and Politics', 'grade_year' => 11, 'semester' => 2, 'category' => 'CORE'],
+            ['title' => 'Physical Education and Health 2', 'grade_year' => 11, 'semester' => 2, 'category' => 'CORE'],
+            ['title' => 'Empowerment Technologies', 'grade_year' => 11, 'semester' => 2, 'category' => 'APPLIED'],
+            ['title' => 'Practical Research 1', 'grade_year' => 11, 'semester' => 2, 'category' => 'APPLIED'],
+            ['title' => 'Organization and Management', 'grade_year' => 11, 'semester' => 2, 'category' => 'SPECIALIZED'],
+            ['title' => 'Fundamentals of Accounting, Business and Management 2', 'grade_year' => 11, 'semester' => 2, 'category' => 'SPECIALIZED'],
+
+            // Grade 12 - First Semester
+            ['title' => 'Contemporary Philippine Arts and from the Regions', 'grade_year' => 12, 'semester' => 1, 'category' => 'CORE'],
+            ['title' => 'Personal Development', 'grade_year' => 12, 'semester' => 1, 'category' => 'CORE'],
+            ['title' => 'Physical Science', 'grade_year' => 12, 'semester' => 1, 'category' => 'CORE'],
+            ['title' => 'Physical Education and Health 3', 'grade_year' => 12, 'semester' => 1, 'category' => 'CORE'],
+            ['title' => 'Filipino sa Piling Larang', 'grade_year' => 12, 'semester' => 1, 'category' => 'APPLIED'],
+            ['title' => 'Practical Research 2', 'grade_year' => 12, 'semester' => 1, 'category' => 'APPLIED'],
+            ['title' => 'Principles of Marketing', 'grade_year' => 12, 'semester' => 1, 'category' => 'SPECIALIZED'],
+            ['title' => 'Business Finance', 'grade_year' => 12, 'semester' => 1, 'category' => 'SPECIALIZED'],
+            ['title' => 'Business Mathematics', 'grade_year' => 12, 'semester' => 1, 'category' => 'SPECIALIZED'],
+
+            // Grade 12 - Second Semester
+            ['title' => 'Media & Information Literacy', 'grade_year' => 12, 'semester' => 2, 'category' => 'CORE'],
+            ['title' => 'Introduction to the Philosophy of the Human Person', 'grade_year' => 12, 'semester' => 2, 'category' => 'CORE'],
+            ['title' => 'Physical Education and Health 4', 'grade_year' => 12, 'semester' => 2, 'category' => 'CORE'],
+            ['title' => 'Inquiries, Investigation and Immersion', 'grade_year' => 12, 'semester' => 2, 'category' => 'APPLIED'],
+            ['title' => 'Business Operations/Application', 'grade_year' => 12, 'semester' => 2, 'category' => 'SPECIALIZED'],
+            ['title' => 'Business Ethics', 'grade_year' => 12, 'semester' => 2, 'category' => 'SPECIALIZED'],
+        ];
+
+        // Insert all subjects (code will be auto-generated by the model)
+        foreach ($subjects as $subject) {
+            $category = $subject['category'];
+
+            $subjectData = [
+                'title' => $subject['title'],
+                'description' => $category.' Subject',
+                'grade_year' => $subject['grade_year'],
+                'semester' => $subject['semester'],
+                'strand_id' => $abmStrand->id,
+            ];
+
+            StrandSubject::create($subjectData);
+        }
+
+        $this->command->info('ABM curriculum seeded successfully!');
+        $this->command->info("- Track: {$abmTrack->track_name} (ID: {$abmTrack->id})");
+        $this->command->info("- Strand: {$abmStrand->strand_name} (ID: {$abmStrand->id})");
+        $this->command->info('- Subjects created: '.count($subjects));
+        $this->command->info('  * CORE subjects: '.count(array_filter($subjects, fn (array $s): bool => ($s['category'] ?? '') === 'CORE')));
+        $this->command->info('  * APPLIED subjects: '.count(array_filter($subjects, fn (array $s): bool => ($s['category'] ?? '') === 'APPLIED')));
+        $this->command->info('  * SPECIALIZED subjects: '.count(array_filter($subjects, fn (array $s): bool => ($s['category'] ?? '') === 'SPECIALIZED')));
+    }
+}

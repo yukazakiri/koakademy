@@ -1,0 +1,7 @@
+{
+    "Cashier": true,
+    "LibrarySystem": true,
+    "StudentMedicalRecords": true,
+    "NotificationCenter": true,
+    "Announcement": true
+}

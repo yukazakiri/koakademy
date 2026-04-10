@@ -12,7 +12,7 @@ permissions:
   pull-requests: read
 
 env:
-  REGISTRY: docker.io
+  REGISTRY: ghcr.io
   IMAGE_NAME: yukazaki/koakademy
 
 jobs:
@@ -60,11 +60,11 @@ jobs:
       - name: Setup Blacksmith Builder
         uses: useblacksmith/setup-docker-builder@v1
 
-      - name: Log in to Docker Hub
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata
         id: meta

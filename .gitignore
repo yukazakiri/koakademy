@@ -10,6 +10,7 @@
 /storage/*.key
 /storage/pail
 /storage/framework/views/*
+!/storage/framework/views/.gitignore
 /storage/framework/cache/*
 /vendor
 .DS_Store

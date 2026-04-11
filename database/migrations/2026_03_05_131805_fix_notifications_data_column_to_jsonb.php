@@ -3,16 +3,27 @@
 declare(strict_types=1);
 
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
-        DB::statement('ALTER TABLE notifications ALTER COLUMN data TYPE jsonb USING data::jsonb');
+        $driver = Schema::getConnection()->getDriverName();
+
+        if ($driver === 'sqlite') {
+            Schema::table('notifications', function (Blueprint $table) {
+                $table->dropColumn('data');
+            });
+            Schema::table('notifications', function (Blueprint $table) {
+                $table->json('data')->nullable();
+            });
+        } else {
+            Schema::table('notifications', function (Blueprint $table) {
+                $table->jsonb('data')->change();
+            });
+        }
     }
 
     /**
@@ -20,6 +31,19 @@ return new class extends Migration
      */
     public function down(): void
     {
-        DB::statement('ALTER TABLE notifications ALTER COLUMN data TYPE text');
+        $driver = Schema::getConnection()->getDriverName();
+
+        if ($driver === 'sqlite') {
+            Schema::table('notifications', function (Blueprint $table) {
+                $table->dropColumn('data');
+            });
+            Schema::table('notifications', function (Blueprint $table) {
+                $table->text('data')->nullable();
+            });
+        } else {
+            Schema::table('notifications', function (Blueprint $table) {
+                $table->text('data')->change();
+            });
+        }
     }
 };

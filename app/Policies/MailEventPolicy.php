@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use Backstage\Mails\Models\MailEvent;
-use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
+use Backstage\Mails\Laravel\Models\MailEvent;
+use Illuminate\Auth\Access\HandlesAuthorization;
 
-final class MailEventPolicy
+class MailEventPolicy
 {
     use HandlesAuthorization;
-
+    
     public function viewAny(AuthUser $authUser): bool
     {
         return $authUser->can('ViewAny:MailEvent');
@@ -66,4 +66,5 @@ final class MailEventPolicy
     {
         return $authUser->can('Reorder:MailEvent');
     }
+
 }

@@ -1,18 +1,15 @@
 import { Link, useForm, usePage } from "@inertiajs/react";
-import { GalleryVerticalEnd } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldSeparator } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { resolveBranding, type Branding } from "@/lib/branding";
 import { cn } from "@/lib/utils";
 
-interface Branding {
-    appName: string;
-}
-
 export function SignupForm({ className, ...props }: React.ComponentProps<"div">) {
-    const { props: pageProps } = usePage<{ branding?: Branding }>();
-    const appName = pageProps.branding?.appName || "School Portal";
+    const { props: pageProps } = usePage<{ branding?: Partial<Branding> | null }>();
+    const branding = resolveBranding(pageProps.branding);
+    const appName = branding.appName;
 
     const { data, setData, post, processing, errors } = useForm({
         name: "",
@@ -32,8 +29,8 @@ export function SignupForm({ className, ...props }: React.ComponentProps<"div">)
                 <FieldGroup>
                     <div className="flex flex-col items-center gap-2 text-center">
                         <a href="#" className="flex flex-col items-center gap-2 font-medium">
-                            <div className="flex size-8 items-center justify-center rounded-md">
-                                <GalleryVerticalEnd className="size-6" />
+                            <div className="flex size-8 items-center justify-center overflow-hidden rounded-md bg-white">
+                                <img src={branding.logo} alt={`${branding.organizationShortName} Logo`} className="size-6 object-contain" />
                             </div>
                             <span className="sr-only">{appName}</span>
                         </a>

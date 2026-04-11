@@ -16,6 +16,7 @@ import {
     SidebarMenuItem,
     useSidebar,
 } from "@/components/ui/sidebar";
+import { resolveBranding, type Branding } from "@/lib/branding";
 import { isFacultyPortalRole, isStudentPortalRole, normalizePortalRole } from "@/lib/portal-role";
 import { cn } from "@/lib/utils";
 import { User } from "@/types/user";
@@ -45,11 +46,7 @@ interface PageProps {
         experimentalKeys?: string[];
         enabledRoutes?: Record<string, boolean>;
     };
-    branding?: {
-        appName: string;
-        appShortName: string;
-        organizationShortName: string;
-    };
+    branding?: Partial<Branding> | null;
     facultyClasses?: FacultyClass[];
     [key: string]: unknown;
 }
@@ -164,9 +161,9 @@ function getSecondaryRoutes(isStudent: boolean, isStaff: boolean): NavItem[] {
 
 export function PortalSidebar({ user, ...props }: React.ComponentProps<typeof Sidebar> & { user?: User }) {
     const { props: pageProps, url } = usePage<PageProps>();
-    const branding = pageProps.branding;
-    const appName = branding?.appName || "School Portal";
-    const organizationShortName = branding?.organizationShortName || "UNI";
+    const branding = resolveBranding(pageProps.branding);
+    const appName = branding.appName;
+    const organizationShortName = branding.organizationShortName;
     const version = pageProps.version || "1.0.0";
     const facultyClasses = pageProps.facultyClasses || [];
     const pathname = url.split("?")[0];
@@ -205,7 +202,7 @@ export function PortalSidebar({ user, ...props }: React.ComponentProps<typeof Si
                         <SidebarMenuButton size="lg" asChild>
                             <Link href={getDashboardUrl()}>
                                 <div className="flex aspect-square size-8 items-center justify-center overflow-hidden rounded-lg bg-white">
-                                    <img src="/web-app-manifest-192x192.png" alt={`${organizationShortName} Logo`} className="size-5 object-contain" />
+                                    <img src={branding.logo} alt={`${organizationShortName} Logo`} className="size-5 object-contain" />
                                 </div>
                                 <div className="grid flex-1 text-left text-sm leading-tight">
                                     <span className="truncate font-semibold">{appName}</span>

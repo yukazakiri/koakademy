@@ -90,7 +90,7 @@ final class AnnouncementDataService
 
     private function applyPortalOrdering(Builder $query): Builder
     {
-        if ($this->hasAnnouncementColumn('published_at')) {
+        if (Announcement::schemaHasCachedColumn('published_at')) {
             $query->orderByDesc('published_at');
         }
 
@@ -99,20 +99,11 @@ final class AnnouncementDataService
 
     private function applyBannerOrdering(Builder $query): Builder
     {
-        if ($this->hasAnnouncementColumn('priority')) {
+        if (Announcement::schemaHasCachedColumn('priority')) {
             $query->orderByDesc('priority');
         }
 
         return $this->applyPortalOrdering($query);
-    }
-
-    private function hasAnnouncementColumn(string $column): bool
-    {
-        return Announcement::query()
-            ->getModel()
-            ->getConnection()
-            ->getSchemaBuilder()
-            ->hasColumn('announcements', $column);
     }
 
     /**

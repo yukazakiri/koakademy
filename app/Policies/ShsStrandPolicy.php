@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
+use Illuminate\Foundation\Auth\User as AuthUser;
 use App\Models\ShsStrand;
 use Illuminate\Auth\Access\HandlesAuthorization;
-use Illuminate\Foundation\Auth\User as AuthUser;
 
-final class ShsStrandPolicy
+class ShsStrandPolicy
 {
     use HandlesAuthorization;
-
+    
     public function viewAny(AuthUser $authUser): bool
     {
         return $authUser->can('ViewAny:ShsStrand');
@@ -66,4 +66,5 @@ final class ShsStrandPolicy
     {
         return $authUser->can('Reorder:ShsStrand');
     }
+
 }

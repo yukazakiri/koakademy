@@ -1,21 +1,17 @@
 import { SignupStepper } from "@/components/signup-stepper";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { TransitionWrapper } from "@/components/transition-wrapper";
+import { resolveBranding, type Branding } from "@/lib/branding";
 import { usePage } from "@inertiajs/react";
-
-interface Branding {
-    appName: string;
-    appShortName: string;
-    organizationShortName: string;
-}
 
 export default function SignupPage() {
     const { branding } = usePage<{
-        branding?: Branding;
+        branding?: Partial<Branding> | null;
     }>().props;
 
-    const appName = branding?.appName || "School Portal";
-    const organizationShortName = branding?.organizationShortName || "UNI";
+    const resolvedBranding = resolveBranding(branding);
+    const appName = resolvedBranding.appName;
+    const organizationShortName = resolvedBranding.organizationShortName;
 
     return (
         <div className="bg-background flex min-h-svh flex-col items-center justify-center p-6 md:p-10">
@@ -26,7 +22,7 @@ export default function SignupPage() {
                 <div className="mb-8 flex flex-col items-center text-center">
                     <a href="#" className="mb-2 flex items-center gap-2 font-medium">
                         <div className="flex h-8 w-8 items-center justify-center rounded-md">
-                            <img src="/web-app-manifest-192x192.png" alt={`${organizationShortName} Logo`} className="h-8 w-8" />
+                            <img src={resolvedBranding.logo} alt={`${organizationShortName} Logo`} className="h-8 w-8 object-contain" />
                         </div>
                         <span className="text-foreground text-xl font-bold tracking-tight">{appName}</span>
                     </a>

@@ -1,14 +1,14 @@
 {
-  "version": "1.0.0-dev.0.4",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.0.0-dev.0.4",
-  "commit": "642f37025dbe87922fd9f97ea5312c35814350d7",
+  "version": "1.0.0-dev.0.5",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.0.0-dev.0.5",
+  "commit": "1f8bea4029c287bd95870d0d032e90239d66243a",
   "branch": "master",
-  "timestamp": "2026-04-11T09:22:41Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24279421657",
+  "timestamp": "2026-04-11T16:35:20Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24286660242",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.0.0-dev.0.4 - removes the duplicated relation-sync block that was running twice (#4)",
-    "previous": "1.0.0-dev.0.3"
+    "current": "Version 1.0.0-dev.0.5 - Merge pull request #5 from yukazakiri/04-11-refactor_document_urls_and_migrate_mcp_to_sail",
+    "previous": "1.0.0-dev.0.4"
   },
   "metadata": {
     "author": "yukazakiri",

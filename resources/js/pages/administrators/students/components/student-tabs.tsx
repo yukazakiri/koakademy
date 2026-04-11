@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useFeatureFlags } from "@/hooks/use-feature-flags";
 import { Link, usePage } from "@inertiajs/react";
 import { Printer, AlertCircle, Banknote, BookOpen, Calendar as CalendarIcon, CheckCircle, Clock, FileText, GraduationCap, ShieldCheck, User as UserIcon, XCircle } from "lucide-react";
 import React from "react";
@@ -22,6 +23,7 @@ interface StudentTabsProps {
 
 export function StudentTabs({ student, options }: StudentTabsProps) {
     const { props } = usePage<{ branding?: Branding }>();
+    const flags = useFeatureFlags();
     const currency = props.branding?.currency || "PHP";
     const zeroString = currency === "USD" ? "$ 0.00" : "₱ 0.00";
 
@@ -167,7 +169,7 @@ export function StudentTabs({ student, options }: StudentTabsProps) {
                                     <Card>
                                         <CardHeader>
                                             <CardTitle>Documents</CardTitle>
-                                            <CardDescription>Manage required files and capture the student signature.</CardDescription>
+                                            <CardDescription>Manage required files{flags.studentSignaturePad ? " and capture the student signature" : ""}.</CardDescription>
                                         </CardHeader>
                                         <CardContent className="space-y-6">
                                             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -182,13 +184,17 @@ export function StudentTabs({ student, options }: StudentTabsProps) {
                                                     </Link>
                                                 </Button>
                                             </div>
-                                            <Separator />
-                                            <div className="max-w-xs">
-                                                <div className="text-muted-foreground mb-1.5 flex items-center gap-1.5 text-xs font-medium tracking-wider uppercase">
-                                                    Signature
-                                                </div>
-                                                <StudentSignaturePad studentId={student.id} signatureUrl={student.signature_url} />
-                                            </div>
+                                            {flags.studentSignaturePad && (
+                                                <>
+                                                    <Separator />
+                                                    <div className="max-w-xs">
+                                                        <div className="text-muted-foreground mb-1.5 flex items-center gap-1.5 text-xs font-medium tracking-wider uppercase">
+                                                            Signature
+                                                        </div>
+                                                        <StudentSignaturePad studentId={student.id} signatureUrl={student.signature_url} />
+                                                    </div>
+                                                </>
+                                            )}
                                         </CardContent>
                                     </Card>
                                 </TabsContent>

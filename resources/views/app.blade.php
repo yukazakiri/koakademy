@@ -7,6 +7,21 @@
         use Illuminate\Support\Facades\Storage;
 
         $siteSettings = app(SiteSettings::class);
+        $resolveAssetUrl = static function (?string $value): ?string {
+            if (! is_string($value) || mb_trim($value) === '') {
+                return null;
+            }
+
+            if (filter_var($value, FILTER_VALIDATE_URL)) {
+                return $value;
+            }
+
+            if (str_starts_with($value, '/')) {
+                return $value;
+            }
+
+            return Storage::disk('r2')->url($value);
+        };
 
         // Detect current domain and select appropriate settings
         $currentHost = request()->getHost();
@@ -38,16 +53,16 @@
                 
             // Use portal-specific OG image if on portal domain
             if ($isPortalDomain && $siteSettings->portal_og_image) {
-                $ogImage = Storage::disk('r2')->url($siteSettings->portal_og_image);
+                $ogImage = $resolveAssetUrl($siteSettings->portal_og_image);
             } elseif ($siteSettings->og_image) {
-                $ogImage = Storage::disk('r2')->url($siteSettings->og_image);
+                $ogImage = $resolveAssetUrl($siteSettings->og_image);
             } else {
                 $ogImage = null;
             }
         }
 
         // Generate proper URLs for R2-stored files
-        $faviconUrl = $siteSettings->favicon ? Storage::disk('r2')->url($siteSettings->favicon) : null;
+        $faviconUrl = $resolveAssetUrl($siteSettings->favicon);
         
         // Current URL for canonical and OG
         $currentUrl = url()->current();

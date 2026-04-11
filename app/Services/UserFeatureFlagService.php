@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Enums\UserRole;
+use App\Features\Onboarding\FeatureClassRegistry;
 use App\Models\User;
 use Laravel\Pennant\Feature;
 
@@ -71,7 +72,11 @@ final class UserFeatureFlagService
     public function selectedFeatureKeysForUser(User $user, UserRole|string|null $role): array
     {
         return collect($this->featureKeysForRole($role))
-            ->filter(fn (string $featureKey): bool => Feature::for($user)->active($featureKey))
+            ->filter(function (string $featureKey) use ($user): bool {
+                $featureClass = FeatureClassRegistry::classForKey($featureKey);
+
+                return Feature::for($user)->active($featureClass ?? $featureKey);
+            })
             ->values()
             ->all();
     }
@@ -93,32 +98,44 @@ final class UserFeatureFlagService
 
         $scopedFeatures = Feature::for($user);
 
+        // Convert stale string keys to class references for Pennant
         $staleFeatureKeys = array_values(array_diff($allFeatureKeys, $applicableFeatureKeys));
 
         if ($staleFeatureKeys !== []) {
-            $scopedFeatures->forget($staleFeatureKeys);
+            $staleClasses = collect($staleFeatureKeys)
+                ->map(fn (string $key): string => FeatureClassRegistry::classForKey($key) ?? $key)
+                ->all();
+            $scopedFeatures->forget($staleClasses);
         }
 
         if ($resetToRoleDefaults) {
             if ($applicableFeatureKeys !== []) {
-                $scopedFeatures->forget($applicableFeatureKeys);
+                $applicableClasses = collect($applicableFeatureKeys)
+                    ->map(fn (string $key): string => FeatureClassRegistry::classForKey($key) ?? $key)
+                    ->all();
+                $scopedFeatures->forget($applicableClasses);
             }
 
             if ($selected !== []) {
-                $scopedFeatures->activate($selected);
+                $selectedClasses = collect($selected)
+                    ->map(fn (string $key): string => FeatureClassRegistry::classForKey($key) ?? $key)
+                    ->all();
+                $scopedFeatures->activate($selectedClasses);
             }
 
             return;
         }
 
         foreach ($applicableFeatureKeys as $featureKey) {
+            $featureRef = FeatureClassRegistry::classForKey($featureKey) ?? $featureKey;
+
             if (in_array($featureKey, $selected, true)) {
-                $scopedFeatures->activate($featureKey);
+                $scopedFeatures->activate($featureRef);
 
                 continue;
             }
 
-            $scopedFeatures->deactivate($featureKey);
+            $scopedFeatures->deactivate($featureRef);
         }
     }
 

@@ -157,6 +157,7 @@ final class Student extends Model
         'emergency_contact',
         'remarks',
         'profile_url',
+        'signature_path',
         'student_contact_id',
         'student_parent_info',
         'student_education_id',
@@ -215,6 +216,7 @@ final class Student extends Model
         'emergency_contact',
         'remarks',
         'profile_url',
+        'signature_path',
         'student_contact_id',
         'student_parent_info',
         'student_education_id',
@@ -1485,7 +1487,11 @@ final class Student extends Model
 
     protected function studentPicture(): Attribute
     {
-        return Attribute::make(get: fn () => $this->DocumentLocation->picture_1x1 ?? '');
+        return Attribute::make(get: function (): string {
+            $documentLocation = $this->DocumentLocation;
+
+            return $documentLocation?->resolveDocumentUrl($documentLocation->picture_1x1) ?? '';
+        });
     }
 
     protected function fullName(): Attribute
@@ -1499,7 +1505,11 @@ final class Student extends Model
 
     protected function picture1x1(): Attribute
     {
-        return Attribute::make(get: fn () => $this->DocumentLocation->picture_1x1 ?? '');
+        return Attribute::make(get: function (): string {
+            $documentLocation = $this->DocumentLocation;
+
+            return $documentLocation?->resolveDocumentUrl($documentLocation->picture_1x1) ?? '';
+        });
     }
 
     protected function formattedAcademicYear(): Attribute
@@ -1551,6 +1561,7 @@ final class Student extends Model
             'attrition_category' => AttritionCategory::class,
             'shs_strand_id' => 'integer',
             'shs_track_id' => 'integer',
+            'signature_path' => 'encrypted',
         ];
     }
 

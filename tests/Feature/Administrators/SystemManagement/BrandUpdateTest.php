@@ -4,19 +4,15 @@ declare(strict_types=1);
 
 use App\Enums\UserRole;
 use App\Models\User;
+use App\Settings\SiteSettings;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Permission;
 
 use function Pest\Laravel\actingAs;
 
-test('system brand management uploads logo to default disk', function () {
-    $defaultDisk = config('filesystems.default');
-
-    Storage::fake($defaultDisk);
-    if ($defaultDisk !== 'public') {
-        Storage::fake('public');
-    }
+test('system brand management uploads logo to r2 disk and stores relative path', function () {
+    Storage::fake('r2');
 
     $user = User::factory()->create([
         'role' => UserRole::Admin,
@@ -41,12 +37,13 @@ test('system brand management uploads logo to default disk', function () {
         ->assertRedirect()
         ->assertSessionHas('success');
 
-    // It should be stored on the default disk
-    $files = Storage::disk($defaultDisk)->allFiles('branding');
+    $files = Storage::disk('r2')->allFiles('branding');
     expect($files)->not->toBeEmpty();
 
-    // If default is not public, it should not be on public disk
-    if ($defaultDisk !== 'public') {
-        expect(Storage::disk('public')->allFiles('branding'))->toBeEmpty();
-    }
+    $savedLogo = app(SiteSettings::class)->logo;
+    expect($savedLogo)
+        ->toBeString()
+        ->toStartWith('branding/')
+        ->not->toStartWith('http://')
+        ->not->toStartWith('https://');
 });

@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Features\Onboarding\FeatureClassRegistry;
 use App\Models\OnboardingFeature;
+use App\Models\User;
+use DB;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -41,6 +45,7 @@ final class AdministratorOnboardingFeatureController extends Controller
             ->get()
             ->map(function (OnboardingFeature $feature): array {
                 $steps = is_array($feature->steps) ? $feature->steps : [];
+                $featureClass = FeatureClassRegistry::classForKey($feature->feature_key);
 
                 return [
                     'id' => $feature->id,
@@ -57,6 +62,15 @@ final class AdministratorOnboardingFeatureController extends Controller
                     'is_active' => $feature->is_active,
                     'created_at' => format_timestamp($feature->created_at),
                     'updated_at' => format_timestamp($feature->updated_at),
+                    // Pennant metadata
+                    'pennant_class' => $featureClass,
+                    'pennant_type' => $featureClass ? 'class' : 'string',
+                    'pennant_global_state' => $featureClass
+                        ? $this->isGloballyActivated($featureClass)
+                        : false,
+                    'pennant_user_overrides_count' => $featureClass
+                        ? $this->getUserOverrideCount($featureClass)
+                        : 0,
                 ];
             });
 
@@ -94,7 +108,7 @@ final class AdministratorOnboardingFeatureController extends Controller
         $feature = OnboardingFeature::create($validated);
 
         if ($feature->is_active) {
-            Feature::activateForEveryone($feature->feature_key);
+            $this->activateFeature($feature->feature_key);
         }
 
         return redirect()
@@ -139,9 +153,9 @@ final class AdministratorOnboardingFeatureController extends Controller
 
         // Sync Pennant feature flag
         if ($onboardingFeature->is_active) {
-            Feature::activateForEveryone($onboardingFeature->feature_key);
+            $this->activateFeature($onboardingFeature->feature_key);
         } else {
-            Feature::deactivateForEveryone($onboardingFeature->feature_key);
+            $this->deactivateFeature($onboardingFeature->feature_key);
         }
 
         return redirect()
@@ -161,9 +175,9 @@ final class AdministratorOnboardingFeatureController extends Controller
         $onboardingFeature->save();
 
         if ($onboardingFeature->is_active) {
-            Feature::activateForEveryone($onboardingFeature->feature_key);
+            $this->activateFeature($onboardingFeature->feature_key);
         } else {
-            Feature::deactivateForEveryone($onboardingFeature->feature_key);
+            $this->deactivateFeature($onboardingFeature->feature_key);
         }
 
         $status = $onboardingFeature->is_active ? 'activated' : 'deactivated';
@@ -183,7 +197,7 @@ final class AdministratorOnboardingFeatureController extends Controller
         $featureKey = $onboardingFeature->feature_key;
 
         // Deactivate the feature flag before deletion
-        Feature::deactivateForEveryone($featureKey);
+        $this->deactivateFeature($featureKey);
 
         $onboardingFeature->delete();
 
@@ -210,6 +224,102 @@ final class AdministratorOnboardingFeatureController extends Controller
             'url' => Storage::disk('public')->url($path),
             'path' => $path,
         ]);
+    }
+
+    /**
+     * Activate a feature for a specific user (Pennant per-user override).
+     */
+    public function activateForUser(Request $request, OnboardingFeature $onboardingFeature): \Illuminate\Http\JsonResponse
+    {
+        $validated = $request->validate([
+            'user_id' => ['required', 'integer', 'exists:users,id'],
+        ]);
+
+        $featureClass = FeatureClassRegistry::classForKey($onboardingFeature->feature_key);
+        $featureRef = $featureClass ?? $onboardingFeature->feature_key;
+
+        $user = User::findOrFail($validated['user_id']);
+        Feature::for($user)->activate($featureRef);
+
+        return response()->json([
+            'message' => "Feature activated for user {$user->name}.",
+        ]);
+    }
+
+    /**
+     * Deactivate a feature for a specific user (Pennant per-user override).
+     */
+    public function deactivateForUser(Request $request, OnboardingFeature $onboardingFeature): \Illuminate\Http\JsonResponse
+    {
+        $validated = $request->validate([
+            'user_id' => ['required', 'integer', 'exists:users,id'],
+        ]);
+
+        $featureClass = FeatureClassRegistry::classForKey($onboardingFeature->feature_key);
+        $featureRef = $featureClass ?? $onboardingFeature->feature_key;
+
+        $user = User::findOrFail($validated['user_id']);
+        Feature::for($user)->deactivate($featureRef);
+
+        return response()->json([
+            'message' => "Feature deactivated for user {$user->name}.",
+        ]);
+    }
+
+    /**
+     * Purge all per-user overrides for a feature (reset to default resolution).
+     */
+    public function purgeOverrides(OnboardingFeature $onboardingFeature): \Illuminate\Http\JsonResponse
+    {
+        $featureClass = FeatureClassRegistry::classForKey($onboardingFeature->feature_key);
+        $featureRef = $featureClass ?? $onboardingFeature->feature_key;
+
+        Feature::forget($featureRef);
+
+        return response()->json([
+            'message' => 'All per-user overrides have been purged.',
+        ]);
+    }
+
+    /**
+     * Get users with overrides for a feature.
+     */
+    public function overriddenUsers(OnboardingFeature $onboardingFeature): \Illuminate\Http\JsonResponse
+    {
+        $featureClass = FeatureClassRegistry::classForKey($onboardingFeature->feature_key);
+
+        if (! $featureClass) {
+            return response()->json(['users' => []]);
+        }
+
+        // Find user IDs with explicit overrides in the features table
+        $userScopes = DB::table('features')
+            ->where('name', $featureClass)
+            ->where('scope', 'not like', '%__laravel_null%')
+            ->pluck('scope')
+            ->all();
+
+        // Parse scope format: "App\Models\User|{id}"
+        $userIds = collect($userScopes)
+            ->map(fn (string $scope) => Str::afterLast($scope, '|'))
+            ->filter()
+            ->map(fn (string $id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        $users = User::query()
+            ->whereIn('id', $userIds)
+            ->get()
+            ->map(fn (User $user): array => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'role' => $user->role?->value,
+                'is_active' => Feature::for($user)->active($featureClass),
+            ]);
+
+        return response()->json(['users' => $users]);
     }
 
     /**
@@ -260,5 +370,56 @@ final class AdministratorOnboardingFeatureController extends Controller
             'faculty' => 'Faculty',
             'all' => 'All Users',
         ];
+    }
+
+    /**
+     * Activate a feature via its Pennant class.
+     */
+    private function activateFeature(string $featureKey): void
+    {
+        $featureClass = FeatureClassRegistry::classForKey($featureKey);
+
+        if ($featureClass) {
+            Feature::activateForEveryone($featureClass);
+        } else {
+            Feature::activateForEveryone($featureKey);
+        }
+    }
+
+    /**
+     * Deactivate a feature via its Pennant class.
+     */
+    private function deactivateFeature(string $featureKey): void
+    {
+        $featureClass = FeatureClassRegistry::classForKey($featureKey);
+
+        if ($featureClass) {
+            Feature::deactivateForEveryone($featureClass);
+        } else {
+            Feature::deactivateForEveryone($featureKey);
+        }
+    }
+
+    /**
+     * Count users with explicit overrides for a feature.
+     */
+    private function getUserOverrideCount(string $featureClass): int
+    {
+        return DB::table('features')
+            ->where('name', $featureClass)
+            ->where('scope', 'not like', '%__laravel_null%')
+            ->count();
+    }
+
+    /**
+     * Check if a feature is force-activated for everyone (global override).
+     */
+    private function isGloballyActivated(string $featureClass): bool
+    {
+        return DB::table('features')
+            ->where('name', $featureClass)
+            ->where('scope', '__laravel_null')
+            ->where('value', 'true')
+            ->exists();
     }
 }

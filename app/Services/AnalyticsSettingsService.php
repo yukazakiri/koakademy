@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use App\Models\GeneralSetting;
-
 final class AnalyticsSettingsService
 {
+    public function __construct(
+        private readonly GeneralSettingsService $generalSettingsService,
+    ) {}
+
     /**
      * @return array{
      *     enabled: bool,
@@ -34,7 +36,7 @@ final class AnalyticsSettingsService
      */
     public function getFrontendConfig(): array
     {
-        $generalSetting = GeneralSetting::query()->first();
+        $generalSetting = $this->generalSettingsService->getGlobalSettingsModel();
         $analyticsSettings = is_array($generalSetting?->analytics_settings)
             ? $generalSetting->analytics_settings
             : [];

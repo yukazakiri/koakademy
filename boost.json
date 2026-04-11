@@ -4,17 +4,17 @@
         "codex",
         "cursor",
         "gemini",
-        "opencode"
+        "opencode",
+        "amp"
     ],
     "guidelines": true,
-    "herd_mcp": false,
     "mcp": true,
-    "nightwatch_mcp": false,
+    "nightwatch_mcp": true,
     "packages": [
         "filament/filament",
         "spatie/laravel-pdf"
     ],
-    "sail": true,
+    "sail": false,
     "skills": [
         "laravel-best-practices",
         "configuring-horizon",

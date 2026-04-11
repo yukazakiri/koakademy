@@ -20,6 +20,34 @@ it('uses koakademy defaults when site branding settings are empty', function ():
         ->and($settings->getOrganizationShortName())->toBe('KOA');
 });
 
+it('shares normalized branding values for frontend consumers', function (): void {
+    $settings = app(SiteSettings::class);
+    $settings->app_name = 'Campus Suite';
+    $settings->app_short_name = 'CS';
+    $settings->organization_name = 'Campus Suite University';
+    $settings->organization_short_name = 'CSU';
+    $settings->tagline = 'Built for modern campuses';
+    $settings->theme_color = '#225588';
+    $settings->currency = 'USD';
+    $settings->logo = '/storage/branding/logo.png';
+    $settings->favicon = '/storage/branding/favicon.png';
+
+    $branding = app(SettingsShareService::class)->getBranding();
+
+    expect($branding)
+        ->toMatchArray([
+            'appName' => 'Campus Suite',
+            'appShortName' => 'CS',
+            'organizationName' => 'Campus Suite University',
+            'organizationShortName' => 'CSU',
+            'tagline' => 'Built for modern campuses',
+            'themeColor' => '#225588',
+            'currency' => 'USD',
+            'logo' => '/storage/branding/logo.png',
+            'favicon' => '/storage/branding/favicon.png',
+        ]);
+});
+
 it('detects the configured portal host and prefers the portal name on that domain', function (): void {
     config(['app.portal_host' => 'portal.koakademy.test']);
 

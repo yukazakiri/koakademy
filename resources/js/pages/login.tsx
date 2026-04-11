@@ -1,29 +1,22 @@
 import { Head, usePage } from "@inertiajs/react";
 
+import { resolveBranding, type Branding } from "@/lib/branding";
 import { LoginForm } from "@/components/login-form";
 import { OnboardingPanel } from "@/components/onboarding-panel";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { TransitionWrapper } from "@/components/transition-wrapper";
 
-interface Branding {
-    appName: string;
-    appShortName: string;
-    organizationName: string;
-    organizationShortName: string;
-    tagline: string | null;
-    logo?: string | null;
-}
-
 export default function LoginPage() {
     const { errors, status, branding } = usePage<{
         errors?: Record<string, string>;
-        status?: string;
-        branding?: Branding;
+        status?: string | null;
+        branding?: Partial<Branding> | null;
     }>().props;
 
-    const appName = branding?.appName || "School Portal";
-    const organizationName = branding?.organizationName || "University";
-    const organizationShortName = branding?.organizationShortName || "UNI";
+    const resolvedBranding = resolveBranding(branding);
+    const appName = resolvedBranding.appName;
+    const organizationName = resolvedBranding.organizationName;
+    const organizationShortName = resolvedBranding.organizationShortName;
 
     return (
         <div className="grid min-h-svh lg:grid-cols-2">
@@ -37,7 +30,7 @@ export default function LoginPage() {
                 <div className="flex items-center justify-between md:justify-start">
                     <a href="#" className="flex items-center gap-2 font-medium">
                         <div className="flex h-10 w-10 items-center justify-center rounded-md">
-                            <img src={branding?.logo || "/web-app-manifest-192x192.png"} alt={`${organizationShortName} Logo`} className="h-10 w-10" />
+                            <img src={resolvedBranding.logo} alt={`${organizationShortName} Logo`} className="h-10 w-10 object-contain" />
                         </div>
                         <span className="text-foreground text-4xl font-extrabold tracking-tight">{appName}</span>
                     </a>

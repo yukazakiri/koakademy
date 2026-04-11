@@ -11,12 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-
-interface Branding {
-    appName: string;
-    appShortName: string;
-    organizationShortName: string;
-}
+import { resolveBranding, type Branding } from "@/lib/branding";
 
 type VerificationMethod = "select" | "passkey" | "authenticator" | "email" | "recovery";
 
@@ -43,11 +38,12 @@ export default function TwoFactorChallengePage() {
         has_app_auth: boolean;
         has_email_auth: boolean;
         has_passkeys: boolean;
-        branding?: Branding;
+        branding?: Partial<Branding> | null;
     }>().props;
 
-    const appName = branding?.appName || "School Portal";
-    const orgShortName = branding?.organizationShortName || "UNI";
+    const resolvedBranding = resolveBranding(branding);
+    const appName = resolvedBranding.appName;
+    const orgShortName = resolvedBranding.organizationShortName;
 
     const browserSupportsPasskeys = supportsWebAuthn();
     const passkeyAvailable = has_passkeys && browserSupportsPasskeys;
@@ -444,7 +440,7 @@ export default function TwoFactorChallengePage() {
                 <div className="flex items-center justify-between md:justify-start">
                     <a href="#" className="flex items-center gap-2 font-medium">
                         <div className="flex h-10 w-10 items-center justify-center rounded-md">
-                            <img src="/web-app-manifest-192x192.png" alt={`${orgShortName} Logo`} className="h-10 w-10" />
+                            <img src={resolvedBranding.logo} alt={`${orgShortName} Logo`} className="h-10 w-10 object-contain" />
                         </div>
                         <span className="text-foreground text-4xl font-extrabold tracking-tight">{appName}</span>
                     </a>

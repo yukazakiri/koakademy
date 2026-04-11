@@ -5,7 +5,7 @@
             "type": "local",
             "enabled": true,
             "command": [
-                "vendor/bin/sail",
+                "php",
                 "artisan",
                 "boost:mcp"
             ]
@@ -17,6 +17,12 @@
                 "gt",
                 "mcp"
             ]
+        },
+        "nightwatch": {
+            "type": "remote",
+            "enabled": true,
+            "url": "https://nightwatch.laravel.com/mcp",
+            "oauth": {}
         }
     }
 }

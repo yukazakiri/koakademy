@@ -23,6 +23,7 @@ import {
     useSidebar,
 } from "@/components/ui/sidebar";
 import { getRoutesForRoleWithModules, ROUTE_SECTIONS, type AdminRoute, type ModuleAdminRoute, type RouteSection } from "@/config/admin-routes";
+import { resolveBranding, type Branding } from "@/lib/branding";
 import type { User } from "@/types/user";
 import { USER_ROLE_LABELS, UserRole } from "@/types/user-role";
 import { Link, usePage } from "@inertiajs/react";
@@ -32,12 +33,7 @@ interface PageProps {
         user?: User | null;
     };
     version?: string;
-    branding?: {
-        appName: string;
-        appShortName: string;
-        organizationShortName: string;
-        logo?: string | null;
-    };
+    branding?: Partial<Branding> | null;
     unresolvedHelpTicketsCount?: number;
     adminSidebarCounts?: AdminSidebarCounts | null;
     moduleAdminRoutes?: ModuleAdminRoute[];
@@ -218,11 +214,11 @@ export function AdministratorSidebar({ user }: { user: User }) {
     const { setOpen } = useSidebar();
     const version = props.version || "1.0.0";
     const unresolvedHelpTicketsCount = props.unresolvedHelpTicketsCount || 0;
-    const branding = props.branding;
+    const branding = resolveBranding(props.branding);
     const adminSidebarCounts = props.adminSidebarCounts ?? null;
     const moduleAdminRoutes = props.moduleAdminRoutes ?? [];
-    const appName = branding?.appName || "School Portal";
-    const organizationShortName = branding?.organizationShortName || "UNI";
+    const appName = branding.appName;
+    const organizationShortName = branding.organizationShortName;
     const sharedAuthUser = props.auth?.user;
     const resolvedUserPermissions = sharedAuthUser?.permissions ?? user.permissions ?? [];
     const resolvedUserRole = sharedAuthUser?.role ?? user.role ?? "";
@@ -356,7 +352,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                     <Link href="/administrators/dashboard">
                                         <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center overflow-hidden rounded-lg">
                                             <img
-                                                src={branding?.logo || "/web-app-manifest-192x192.png"}
+                                                src={branding.logo}
                                                 alt={`${organizationShortName} Logo`}
                                                 className="size-5 object-contain"
                                             />

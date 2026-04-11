@@ -1,14 +1,14 @@
 {
-  "version": "1.0.0-dev.0.2",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.0.0-dev.0.2",
-  "commit": "c10740bfb3d3f3d1fa1d6453969a56c72d9b40e1",
+  "version": "1.0.0-dev.0.3",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.0.0-dev.0.3",
+  "commit": "f2f717bf50145e9a5004eda331bacfd440867a86",
   "branch": "master",
-  "timestamp": "2026-04-10T12:31:59Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24242842528",
+  "timestamp": "2026-04-11T08:04:55Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24278140365",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.0.0-dev.0.2 - Track storage framework views directory",
-    "previous": "1.0.0-dev.0.1"
+    "current": "Version 1.0.0-dev.0.3 - fix branding",
+    "previous": "1.0.0-dev.0.2"
   },
   "metadata": {
     "author": "yukazakiri",

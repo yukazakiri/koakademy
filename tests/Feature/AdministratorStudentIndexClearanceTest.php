@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\StudentStatus;
 use App\Enums\UserRole;
+use App\Models\DocumentLocation;
 use App\Models\GeneralSetting;
 use App\Models\Student;
 use App\Models\StudentClearance;
@@ -142,5 +143,42 @@ it('uses current semester status records for student list', function (): void {
             ->has('students.data', 2)
             ->where('students.data.0.status', StudentStatus::Enrolled->value)
             ->where('students.data.1.status', StudentStatus::Graduated->value)
+        );
+});
+
+it('includes avatar urls for listed students', function (): void {
+    GeneralSetting::factory()->create([
+        'semester' => 2,
+        'school_starting_date' => '2024-08-01',
+        'school_ending_date' => '2025-05-31',
+        'enable_clearance_check' => true,
+    ]);
+
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+
+    $documentLocation = DocumentLocation::query()->create([
+        'picture_1x1' => '/storage/students/avatar-1.png',
+    ]);
+
+    Student::factory()->create([
+        'first_name' => 'Ari',
+        'last_name' => 'Aardvark',
+        'document_location_id' => $documentLocation->id,
+    ]);
+
+    Student::factory()->create([
+        'first_name' => 'Zoe',
+        'last_name' => 'Zephyr',
+        'document_location_id' => null,
+    ]);
+
+    actingAs($user)
+        ->get(portalUrlForAdministrators('/administrators/students'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->component('administrators/students/index', false)
+            ->has('students.data', 2)
+            ->where('students.data.0.avatar_url', '/storage/students/avatar-1.png')
+            ->where('students.data.1.avatar_url', null)
         );
 });

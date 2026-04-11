@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Features\Onboarding\FacultyDeveloperMode;
+use App\Features\Onboarding\FeatureClassRegistry;
+use App\Features\Onboarding\StudentDeveloperMode;
 use App\Http\Requests\ToggleExperimentalFeaturesRequest;
 use App\Models\ConnectedAccount;
 use App\Models\Faculty;
@@ -79,8 +82,8 @@ final class ProfileController extends Controller
             ->all();
 
         $developerModeFeature = $isFaculty
-            ? 'onboarding-faculty-developer-mode'
-            : 'onboarding-student-developer-mode';
+            ? FacultyDeveloperMode::class
+            : StudentDeveloperMode::class;
 
         $developerModeEnabled = Feature::for($user)->active($developerModeFeature);
 
@@ -126,7 +129,11 @@ final class ProfileController extends Controller
             ],
             'feature_flags' => [
                 'experimental' => collect($availableForRole)
-                    ->filter(fn (string $featureKey): bool => (bool) Feature::for($user)->active($featureKey))
+                    ->filter(function (string $featureKey) use ($user): bool {
+                        $featureClass = FeatureClassRegistry::classForKey($featureKey);
+
+                        return (bool) Feature::for($user)->active($featureClass ?? $featureKey);
+                    })
                     ->values()
                     ->all(),
                 'experimental_available' => $availableForRole,
@@ -291,13 +298,15 @@ final class ProfileController extends Controller
         $requestedFeatures = array_values(array_intersect($request->input('features', []), $allowedFeatures));
 
         foreach ($allowedFeatures as $featureKey) {
+            $featureRef = FeatureClassRegistry::classForKey($featureKey) ?? $featureKey;
+
             if (in_array($featureKey, $requestedFeatures, true)) {
-                Feature::for($user)->activate($featureKey);
+                Feature::for($user)->activate($featureRef);
 
                 continue;
             }
 
-            Feature::for($user)->deactivate($featureKey);
+            Feature::for($user)->deactivate($featureRef);
         }
 
         return back()->with('flash', [

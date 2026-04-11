@@ -64,3 +64,14 @@ it('detects the configured portal host and prefers the portal name on that domai
         ->and($service->isPortalDomain($adminRequest))->toBeFalse()
         ->and($service->getAppName($adminRequest))->toBe('KoAkademy');
 });
+
+it('resolves relative branding asset paths to r2 URLs and preserves absolute URLs', function (): void {
+    config(['filesystems.disks.r2.url' => 'https://r2.dccp.edu.ph']);
+
+    $settings = app(SiteSettings::class);
+    $settings->logo = 'branding/logo.png';
+    $settings->favicon = 'https://cdn.example.com/favicon.png';
+
+    expect($settings->getLogo())->toBe('https://r2.dccp.edu.ph/branding/logo.png')
+        ->and($settings->getFavicon())->toBe('https://cdn.example.com/favicon.png');
+});

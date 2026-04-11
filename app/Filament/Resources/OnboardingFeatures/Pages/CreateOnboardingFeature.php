@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\OnboardingFeatures\Pages;
 
+use App\Features\Onboarding\FeatureClassRegistry;
 use App\Filament\Resources\OnboardingFeatures\OnboardingFeatureResource;
 use Exception;
 use Filament\Notifications\Notification;
@@ -20,7 +21,8 @@ final class CreateOnboardingFeature extends CreateRecord
 
         try {
             if ($record->is_active) {
-                Feature::activateForEveryone($record->feature_key);
+                $featureClass = FeatureClassRegistry::classForKey($record->feature_key);
+                Feature::activateForEveryone($featureClass ?? $record->feature_key);
             }
 
             Notification::make()

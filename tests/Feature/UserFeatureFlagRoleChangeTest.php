@@ -3,6 +3,10 @@
 declare(strict_types=1);
 
 use App\Enums\UserRole;
+use App\Features\Onboarding\FacultyToolkit;
+use App\Features\Onboarding\StudentClasses;
+use App\Features\Onboarding\StudentSchedule;
+use App\Features\Onboarding\StudentTuition;
 use App\Models\OnboardingFeature;
 use App\Models\User;
 use App\Services\UserFeatureFlagService;
@@ -60,11 +64,11 @@ it('resets stale feature overrides when a user role changes', function (): void 
         'role' => UserRole::Instructor,
     ]);
 
-    Feature::for($user)->activate('onboarding-faculty-toolkit');
+    Feature::for($user)->activate(FacultyToolkit::class);
     Feature::for($user)->deactivate([
-        'onboarding-student-classes',
-        'onboarding-student-schedule',
-        'onboarding-student-tuition',
+        StudentClasses::class,
+        StudentSchedule::class,
+        StudentTuition::class,
     ]);
 
     $user->update([
@@ -78,10 +82,10 @@ it('resets stale feature overrides when a user role changes', function (): void 
         resetToRoleDefaults: true,
     );
 
-    expect(Feature::for($user)->active('onboarding-student-classes'))->toBeTrue()
-        ->and(Feature::for($user)->active('onboarding-student-schedule'))->toBeTrue()
-        ->and(Feature::for($user)->active('onboarding-student-tuition'))->toBeTrue()
-        ->and(Feature::for($user)->active('onboarding-faculty-toolkit'))->toBeFalse();
+    expect(Feature::for($user)->active(StudentClasses::class))->toBeTrue()
+        ->and(Feature::for($user)->active(StudentSchedule::class))->toBeTrue()
+        ->and(Feature::for($user)->active(StudentTuition::class))->toBeTrue()
+        ->and(Feature::for($user)->active(FacultyToolkit::class))->toBeFalse();
 });
 
 it('restores role defaults before applying selected overrides', function (): void {
@@ -102,5 +106,5 @@ it('restores role defaults before applying selected overrides', function (): voi
         resetToRoleDefaults: true,
     );
 
-    expect(Feature::for($user)->active('onboarding-student-schedule'))->toBeTrue();
+    expect(Feature::for($user)->active(StudentSchedule::class))->toBeTrue();
 });

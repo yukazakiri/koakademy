@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Features\Onboarding\FeatureClassRegistry;
 use Closure;
 use Illuminate\Http\Request;
 use Laravel\Pennant\Feature;
@@ -58,7 +59,8 @@ final class EnsureFeatureEnabled
                 continue;
             }
             // If the feature is inactive for the current user, abort
-            if (! Feature::inactive($featureKey)) {
+            $featureRef = FeatureClassRegistry::classForKey($featureKey) ?? $featureKey;
+            if (! Feature::inactive($featureRef)) {
                 continue;
             }
             // You might want to redirect or show a specific error page

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Enums\UserRole;
+use App\Features\Onboarding\StudentSchedule;
 use App\Models\Student;
 use App\Models\User;
 
@@ -152,5 +153,5 @@ it('can toggle experimental features', function (): void {
         ]);
 
     $response->assertRedirect();
-    expect(Laravel\Pennant\Feature::for($this->user)->active('onboarding-student-schedule'))->toBeTrue();
+    expect(Laravel\Pennant\Feature::for($this->user)->active(StudentSchedule::class))->toBeTrue();
 });

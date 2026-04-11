@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Enums\UserRole;
+use App\Features\Onboarding\FeatureClassRegistry;
 use App\Models\HelpTicket;
 use App\Models\OnboardingDismissal;
 use App\Models\OnboardingFeature;
@@ -65,10 +66,25 @@ final class OnboardingShareService
             array_keys(self::FEATURE_TO_ROUTES)
         ));
 
-        $featureValues = Feature::for($user)->values($allFeatureKeys);
+        // Resolve feature values using class-based Pennant features
+        $featureClasses = collect($allFeatureKeys)
+            ->map(fn (string $key): ?string => FeatureClassRegistry::classForKey($key))
+            ->filter()
+            ->values()
+            ->all();
+
+        $featureValues = Feature::for($user)->values($featureClasses);
 
         return $features
-            ->filter(fn (OnboardingFeature $feature): bool => (bool) ($featureValues[$feature->feature_key] ?? false))
+            ->filter(function (OnboardingFeature $feature) use ($featureValues): bool {
+                $featureClass = FeatureClassRegistry::classForKey($feature->feature_key);
+
+                if ($featureClass) {
+                    return (bool) ($featureValues[$featureClass] ?? false);
+                }
+
+                return (bool) ($featureValues[$feature->feature_key] ?? false);
+            })
             ->reject(fn (OnboardingFeature $feature): bool => in_array($feature->feature_key, $dismissed, true))
             ->values()
             ->map(fn (OnboardingFeature $feature): array => [
@@ -96,7 +112,8 @@ final class OnboardingShareService
         $enabledRoutes = [];
 
         foreach (self::FEATURE_TO_ROUTES as $featureKey => $routeIds) {
-            $isActive = (bool) ($featureValues[$featureKey] ?? false);
+            $featureClass = FeatureClassRegistry::classForKey($featureKey);
+            $isActive = (bool) ($featureValues[$featureClass ?? $featureKey] ?? false);
 
             foreach ($routeIds as $routeId) {
                 $enabledRoutes[$routeId] ??= false;
@@ -120,9 +137,13 @@ final class OnboardingShareService
             return [];
         }
 
-        $allFeatureKeys = array_keys(self::FEATURE_TO_ROUTES);
+        $featureClasses = collect(array_keys(self::FEATURE_TO_ROUTES))
+            ->map(fn (string $key): ?string => FeatureClassRegistry::classForKey($key))
+            ->filter()
+            ->values()
+            ->all();
 
-        return Feature::for($user)->values($allFeatureKeys);
+        return Feature::for($user)->values($featureClasses);
     }
 
     /**

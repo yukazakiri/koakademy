@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Features\Onboarding\FacultyDeveloperMode;
+use App\Features\Onboarding\StudentDeveloperMode;
 use App\Http\Requests\ApiKeyRequest;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -124,8 +126,8 @@ final class ApiKeyController extends Controller
         }
 
         $developerModeFeature = $isFaculty
-            ? 'onboarding-faculty-developer-mode'
-            : 'onboarding-student-developer-mode';
+            ? FacultyDeveloperMode::class
+            : StudentDeveloperMode::class;
 
         return Feature::for($user)->active($developerModeFeature);
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\OnboardingFeatures\Pages;
 
+use App\Features\Onboarding\FeatureClassRegistry;
 use App\Filament\Resources\OnboardingFeatures\OnboardingFeatureResource;
 use Exception;
 use Filament\Notifications\Notification;
@@ -19,10 +20,13 @@ final class EditOnboardingFeature extends EditRecord
         $record = $this->record;
 
         try {
+            $featureClass = FeatureClassRegistry::classForKey($record->feature_key);
+            $featureRef = $featureClass ?? $record->feature_key;
+
             if ($record->is_active) {
-                Feature::activateForEveryone($record->feature_key);
+                Feature::activateForEveryone($featureRef);
             } else {
-                Feature::deactivateForEveryone($record->feature_key);
+                Feature::deactivateForEveryone($featureRef);
             }
 
             Notification::make()

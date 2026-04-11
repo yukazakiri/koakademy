@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Features\StudentAvatarUpload;
+use App\Features\StudentSignaturePad;
 use App\Models\Faculty;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
@@ -18,6 +20,7 @@ use App\Services\SettingsShareService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Inertia\Middleware;
+use Laravel\Pennant\Feature;
 use Modules\Announcement\Services\AnnouncementDataService;
 
 final class HandleInertiaRequests extends Middleware
@@ -75,6 +78,8 @@ final class HandleInertiaRequests extends Middleware
                 'featureFlags' => [
                     'experimentalKeys' => config('onboarding.experimental_feature_keys', []),
                     'enabledRoutes' => $onboardingService->getSidebarFeatureFlags($featureValues),
+                    'studentSignaturePad' => $user ? Feature::for($user)->active(StudentSignaturePad::class) : false,
+                    'studentAvatarUpload' => $user ? Feature::for($user)->active(StudentAvatarUpload::class) : false,
                 ],
                 'facultyClasses' => $facultyClassService->getFacultyClasses($user),
                 'notifications' => $notificationService->transformNotifications($user),

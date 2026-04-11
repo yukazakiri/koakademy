@@ -276,7 +276,7 @@ export default function StudentDocuments({ auth, student, fixed_documents, dynam
                                                             {hasFile && (
                                                                 <Button variant="outline" size="sm" asChild>
                                                                     <a
-                                                                        href={`/storage/${fixed_documents[doc.key]}`}
+                                                                        href={fixed_documents[doc.key]}
                                                                         target="_blank"
                                                                         rel="noopener noreferrer"
                                                                     >

@@ -480,13 +480,14 @@ final class GeneralSettingsService
     {
         if (! $this->generalSetting instanceof GeneralSetting) {
             $this->generalSetting = GeneralSetting::query()->first();
-
-            return $this->generalSetting;
         }
 
-        $this->generalSetting->refresh();
-
         return $this->generalSetting;
+    }
+
+    public function replaceGlobalSettings(?GeneralSetting $generalSetting): void
+    {
+        $this->generalSetting = $generalSetting;
     }
 
     /**

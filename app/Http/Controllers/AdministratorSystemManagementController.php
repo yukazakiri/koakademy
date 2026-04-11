@@ -712,14 +712,16 @@ final class AdministratorSystemManagementController extends Controller
      */
     private function getSystemManagementPayload(string $activeSection): array
     {
-        $settings = GeneralSetting::first();
+        $generalSettingsService = app(GeneralSettingsService::class);
+        $settings = $generalSettingsService->getGlobalSettingsModel();
+
         if (! $settings) {
-            $settings = GeneralSetting::create([
+            $settings = GeneralSetting::query()->create([
                 'site_name' => $this->siteSettings->getAppName(),
             ]);
+            GeneralSetting::clearCache();
+            $generalSettingsService->replaceGlobalSettings($settings);
         }
-
-        $generalSettingsService = app(GeneralSettingsService::class);
         $activeSchoolId = $generalSettingsService->getActiveSchoolId();
         $activeSchool = $activeSchoolId
             ? School::find($activeSchoolId)

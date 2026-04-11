@@ -42,6 +42,24 @@ final class Announcement extends Model
         'attachments',
     ];
 
+    /**
+     * Per-request cache for Schema::hasColumn checks (SQLite issues many pragma queries per call).
+     *
+     * @var array<string, bool>|null
+     */
+    private static ?array $schemaColumnCache = null;
+
+    public static function schemaHasCachedColumn(string $column): bool
+    {
+        self::$schemaColumnCache ??= [];
+
+        if (! array_key_exists($column, self::$schemaColumnCache)) {
+            self::$schemaColumnCache[$column] = Schema::hasColumn('announcements', $column);
+        }
+
+        return self::$schemaColumnCache[$column];
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
@@ -64,14 +82,14 @@ final class Announcement extends Model
 
     public function scopeGlobal(Builder $query): Builder
     {
-        if ($this->hasAnnouncementColumn('is_global')) {
+        if (self::schemaHasCachedColumn('is_global')) {
             $query->where(function (Builder $builder): void {
                 $builder->where('is_global', true)
                     ->orWhereNull('is_global');
             });
         }
 
-        if ($this->hasAnnouncementColumn('class_id')) {
+        if (self::schemaHasCachedColumn('class_id')) {
             $query->whereNull('class_id');
         }
 
@@ -80,13 +98,13 @@ final class Announcement extends Model
 
     public function scopePublished(Builder $query): Builder
     {
-        if ($this->hasAnnouncementColumn('status')) {
+        if (self::schemaHasCachedColumn('status')) {
             $query->where(function (Builder $builder): void {
                 $builder->where('status', 'published')
                     ->orWhere(function (Builder $legacyBuilder): void {
                         $legacyBuilder->whereNull('status');
 
-                        if ($this->hasAnnouncementColumn('is_active')) {
+                        if (self::schemaHasCachedColumn('is_active')) {
                             $legacyBuilder->where(function (Builder $activeBuilder): void {
                                 $activeBuilder->where('is_active', true)
                                     ->orWhereNull('is_active');
@@ -96,14 +114,14 @@ final class Announcement extends Model
             });
         }
 
-        if ($this->hasAnnouncementColumn('published_at')) {
+        if (self::schemaHasCachedColumn('published_at')) {
             $query->where(function (Builder $builder): void {
                 $builder->whereNull('published_at')
                     ->orWhere('published_at', '<=', now());
             });
         }
 
-        if ($this->hasAnnouncementColumn('starts_at')) {
+        if (self::schemaHasCachedColumn('starts_at')) {
             $query->where(function (Builder $builder): void {
                 $builder->whereNull('starts_at')
                     ->orWhere('starts_at', '<=', now());
@@ -115,21 +133,21 @@ final class Announcement extends Model
 
     public function scopeActive(Builder $query): Builder
     {
-        if ($this->hasAnnouncementColumn('is_active')) {
+        if (self::schemaHasCachedColumn('is_active')) {
             $query->where(function (Builder $builder): void {
                 $builder->where('is_active', true)
                     ->orWhereNull('is_active');
             });
         }
 
-        if ($this->hasAnnouncementColumn('expires_at')) {
+        if (self::schemaHasCachedColumn('expires_at')) {
             $query->where(function (Builder $builder): void {
                 $builder->whereNull('expires_at')
                     ->orWhere('expires_at', '>', now());
             });
         }
 
-        if ($this->hasAnnouncementColumn('ends_at')) {
+        if (self::schemaHasCachedColumn('ends_at')) {
             $query->where(function (Builder $builder): void {
                 $builder->whereNull('ends_at')
                     ->orWhere('ends_at', '>=', now());
@@ -183,10 +201,5 @@ final class Announcement extends Model
             'expires_at' => 'datetime',
             'attachments' => 'array',
         ];
-    }
-
-    private function hasAnnouncementColumn(string $column): bool
-    {
-        return Schema::hasColumn($this->getTable(), $column);
     }
 }

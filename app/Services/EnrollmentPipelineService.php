@@ -5,14 +5,27 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Enums\EnrollStat;
-use App\Models\GeneralSetting;
 use App\Models\User;
 
 final class EnrollmentPipelineService
 {
+    /**
+     * @var array<string, mixed>|null
+     */
+    private ?array $configurationCache = null;
+
+    /**
+     * @var array<string, mixed>|null
+     */
+    private ?array $statsConfigurationCache = null;
+
+    public function __construct(
+        private readonly GeneralSettingsService $generalSettingsService,
+    ) {}
+
     public function hasWorkflowSetup(): bool
     {
-        $settings = GeneralSetting::query()->first();
+        $settings = $this->generalSettingsService->getGlobalSettingsModel();
         $raw = data_get($settings?->more_configs, 'enrollment_pipeline', []);
 
         if (! is_array($raw)) {
@@ -43,14 +56,20 @@ final class EnrollmentPipelineService
      */
     public function getConfiguration(): array
     {
-        $settings = GeneralSetting::query()->first();
+        if ($this->configurationCache !== null) {
+            return $this->configurationCache;
+        }
+
+        $settings = $this->generalSettingsService->getGlobalSettingsModel();
         $raw = data_get($settings?->more_configs, 'enrollment_pipeline', []);
 
         if (! is_array($raw)) {
             $raw = [];
         }
 
-        return $this->sanitizeForStorage($raw);
+        $this->configurationCache = $this->sanitizeForStorage($raw);
+
+        return $this->configurationCache;
     }
 
     /**
@@ -58,14 +77,20 @@ final class EnrollmentPipelineService
      */
     public function getStatsConfiguration(): array
     {
-        $settings = GeneralSetting::query()->first();
+        if ($this->statsConfigurationCache !== null) {
+            return $this->statsConfigurationCache;
+        }
+
+        $settings = $this->generalSettingsService->getGlobalSettingsModel();
         $raw = data_get($settings?->more_configs, 'enrollment_stats', []);
 
         if (! is_array($raw)) {
             $raw = [];
         }
 
-        return $this->sanitizeStatsForStorage($raw);
+        $this->statsConfigurationCache = $this->sanitizeStatsForStorage($raw);
+
+        return $this->statsConfigurationCache;
     }
 
     /**

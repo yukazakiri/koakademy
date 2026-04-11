@@ -1,5 +1,5 @@
 {
-    "mcpServers": {
+    "amp.mcpServers": {
         "laravel-boost": {
             "command": "php",
             "args": [
@@ -8,12 +8,7 @@
             ]
         },
         "nightwatch": {
-            "command": "npx",
-            "args": [
-                "-y",
-                "mcp-remote",
-                "https://nightwatch.laravel.com/mcp"
-            ]
+            "url": "https://nightwatch.laravel.com/mcp"
         }
     }
 }

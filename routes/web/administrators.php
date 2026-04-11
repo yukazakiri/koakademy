@@ -381,6 +381,10 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/onboarding-features/{onboardingFeature}/toggle', [App\Http\Controllers\AdministratorOnboardingFeatureController::class, 'toggle'])->name('onboarding-features.toggle');
         Route::delete('/onboarding-features/{onboardingFeature}', [App\Http\Controllers\AdministratorOnboardingFeatureController::class, 'destroy'])->name('onboarding-features.destroy');
         Route::post('/onboarding-features/upload-image', [App\Http\Controllers\AdministratorOnboardingFeatureController::class, 'uploadImage'])->name('onboarding-features.upload-image');
+        Route::post('/onboarding-features/{onboardingFeature}/activate-for-user', [App\Http\Controllers\AdministratorOnboardingFeatureController::class, 'activateForUser'])->name('onboarding-features.activate-for-user');
+        Route::post('/onboarding-features/{onboardingFeature}/deactivate-for-user', [App\Http\Controllers\AdministratorOnboardingFeatureController::class, 'deactivateForUser'])->name('onboarding-features.deactivate-for-user');
+        Route::post('/onboarding-features/{onboardingFeature}/purge-overrides', [App\Http\Controllers\AdministratorOnboardingFeatureController::class, 'purgeOverrides'])->name('onboarding-features.purge-overrides');
+        Route::get('/onboarding-features/{onboardingFeature}/overridden-users', [App\Http\Controllers\AdministratorOnboardingFeatureController::class, 'overriddenUsers'])->name('onboarding-features.overridden-users');
 
         // System Management
         Route::get('/system-management', [App\Http\Controllers\AdministratorSystemManagementController::class, 'index'])->name('system-management.index');

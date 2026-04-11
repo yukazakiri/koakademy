@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Students\Schemas;
 
 use App\Enums\GradeEnum;
+use App\Features\StudentSignaturePad;
 use App\Filament\Infolists\Components\TimetableEntry;
 use App\Models\Student;
 use Exception;
@@ -18,6 +19,7 @@ use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Schema;
 use Filament\Support\Enums\FontWeight;
+use Laravel\Pennant\Feature;
 use Ysfkaya\FilamentPhoneInput\Infolists\PhoneEntry;
 use Ysfkaya\FilamentPhoneInput\PhoneInputNumberType;
 
@@ -85,6 +87,11 @@ final class StudentInfolist
                                     ->badge()
 
                                     ->label('Course'),
+                                ImageEntry::make('signature_path')
+                                    ->label('Signature')
+                                    ->visible(fn (): bool => Feature::active(StudentSignaturePad::class))
+                                    ->visibility('private')
+                                    ->defaultImageUrl(fn (): string => ''),
                             ]),
 
                         Fieldset::make('Address Information')->schema([

@@ -38,24 +38,21 @@ import {
     X,
     Zap,
 } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { useDebouncedCallback } from "use-debounce";
 
 declare let route: any;
 
 interface OnboardingStep {
-    type: string;
-    data: {
-        title: string;
-        summary: string;
-        badge?: string;
-        accent?: string;
-        icon?: string;
-        image?: string;
-        highlights?: string[];
-        stats?: { label: string; value: string }[];
-    };
+    title: string;
+    summary: string;
+    badge?: string;
+    accent?: string;
+    icon?: string;
+    image?: string | null;
+    highlights?: string[];
+    stats?: { label: string; value: string }[];
 }
 
 interface OnboardingFeature {
@@ -119,7 +116,7 @@ const audienceConfig = {
     },
 };
 
-export default function OnboardingFeaturesIndex({ auth, features, experimental_keys, filters }: Props) {
+export default function OnboardingFeaturesIndex({ auth, features: initialFeatures, experimental_keys, filters }: Props) {
     const [search, setSearch] = useState(filters.search || "");
     const [deleteTarget, setDeleteTarget] = useState<OnboardingFeature | null>(null);
     const [previewFeature, setPreviewFeature] = useState<OnboardingFeature | null>(null);
@@ -127,6 +124,7 @@ export default function OnboardingFeaturesIndex({ auth, features, experimental_k
     const [overriddenUsers, setOverriddenUsers] = useState<OverriddenUser[]>([]);
     const [loadingOverrides, setLoadingOverrides] = useState(false);
     const [userIdInput, setUserIdInput] = useState("");
+    const [localFeatures, setLocalFeatures] = useState<OnboardingFeature[]>(initialFeatures);
 
     const handleSearch = useDebouncedCallback((term: string) => {
         router.get(route("administrators.onboarding-features.index"), { ...filters, search: term || null }, { preserveState: true, replace: true });
@@ -141,33 +139,60 @@ export default function OnboardingFeaturesIndex({ auth, features, experimental_k
         setSearch("");
     };
 
-    const handleToggle = (feature: OnboardingFeature) => {
+    const handleToggle = useCallback((feature: OnboardingFeature) => {
+        const newActive = !feature.is_active;
+        // Optimistic: instantly flip the switch locally
+        setLocalFeatures((prev) =>
+            prev.map((f) =>
+                f.id === feature.id
+                    ? { ...f, is_active: newActive, pennant_global_state: newActive }
+                    : f,
+            ),
+        );
+
         router.post(
             route("administrators.onboarding-features.toggle", feature.id),
             {},
             {
                 preserveState: true,
                 onSuccess: () => {
-                    toast.success(`${feature.name} ${feature.is_active ? "deactivated" : "activated"}`);
+                    toast.success(`${feature.name} ${newActive ? "activated" : "deactivated"}`);
                 },
-                onError: () => toast.error("Failed to toggle feature"),
+                onError: () => {
+                    // Roll back on error
+                    setLocalFeatures((prev) =>
+                        prev.map((f) =>
+                            f.id === feature.id ? { ...f, is_active: !newActive, pennant_global_state: !newActive } : f,
+                        ),
+                    );
+                    toast.error("Failed to toggle feature");
+                },
             },
         );
-    };
+    }, []);
 
-    const handleDelete = () => {
+    const handleDelete = useCallback(() => {
         if (!deleteTarget) return;
-        router.delete(route("administrators.onboarding-features.destroy", deleteTarget.id), {
+        const target = deleteTarget;
+
+        // Optimistic: instantly remove the row
+        setLocalFeatures((prev) => prev.filter((f) => f.id !== target.id));
+
+        router.delete(route("administrators.onboarding-features.destroy", target.id), {
             preserveState: true,
             onSuccess: () => {
-                toast.success(`"${deleteTarget.name}" deleted`);
+                toast.success(`"${target.name}" deleted`);
                 setDeleteTarget(null);
             },
-            onError: () => toast.error("Failed to delete feature"),
+            onError: () => {
+                // Roll back: re-add the feature
+                setLocalFeatures((prev) => [...prev, target]);
+                toast.error("Failed to delete feature");
+            },
         });
-    };
+    }, [deleteTarget]);
 
-    const loadOverrides = async (feature: OnboardingFeature) => {
+    const loadOverrides = useCallback(async (feature: OnboardingFeature) => {
         if (!feature.pennant_class) {
             toast.error("No class-based feature registered for this key");
             return;
@@ -183,9 +208,24 @@ export default function OnboardingFeaturesIndex({ auth, features, experimental_k
         } finally {
             setLoadingOverrides(false);
         }
-    };
+    }, []);
 
-    const handleActivateForUser = (feature: OnboardingFeature, userId: number) => {
+    const handleActivateForUser = useCallback((feature: OnboardingFeature, userId: number) => {
+        // Optimistic: instantly show user in override list
+        setOverriddenUsers((prev) => {
+            const existing = prev.find((u) => u.id === userId);
+            if (existing) {
+                return prev.map((u) => (u.id === userId ? { ...u, is_active: true } : u));
+            }
+            return [...prev, { id: userId, name: `User #${userId}`, email: "", role: "", is_active: true }];
+        });
+        // Update override count
+        setLocalFeatures((prev) =>
+            prev.map((f) =>
+                f.id === feature.id ? { ...f, pennant_user_overrides_count: f.pennant_user_overrides_count + 1 } : f,
+            ),
+        );
+
         router.post(
             route("administrators.onboarding-features.activate-for-user", feature.id),
             { user_id: userId },
@@ -195,12 +235,26 @@ export default function OnboardingFeaturesIndex({ auth, features, experimental_k
                     toast.success("Feature activated for user");
                     if (overridesFeature) loadOverrides(overridesFeature);
                 },
-                onError: () => toast.error("Failed to activate for user"),
+                onError: () => {
+                    // Roll back
+                    setOverriddenUsers((prev) => prev.filter((u) => u.id !== userId));
+                    setLocalFeatures((prev) =>
+                        prev.map((f) =>
+                            f.id === feature.id ? { ...f, pennant_user_overrides_count: Math.max(0, f.pennant_user_overrides_count - 1) } : f,
+                        ),
+                    );
+                    toast.error("Failed to activate for user");
+                },
             },
         );
-    };
+    }, [overridesFeature, loadOverrides]);
 
-    const handleDeactivateForUser = (feature: OnboardingFeature, userId: number) => {
+    const handleDeactivateForUser = useCallback((feature: OnboardingFeature, userId: number) => {
+        // Optimistic: instantly flip user's state
+        setOverriddenUsers((prev) =>
+            prev.map((u) => (u.id === userId ? { ...u, is_active: false } : u)),
+        );
+
         router.post(
             route("administrators.onboarding-features.deactivate-for-user", feature.id),
             { user_id: userId },
@@ -210,12 +264,24 @@ export default function OnboardingFeaturesIndex({ auth, features, experimental_k
                     toast.success("Feature deactivated for user");
                     if (overridesFeature) loadOverrides(overridesFeature);
                 },
-                onError: () => toast.error("Failed to deactivate for user"),
+                onError: () => {
+                    // Roll back
+                    setOverriddenUsers((prev) =>
+                        prev.map((u) => (u.id === userId ? { ...u, is_active: true } : u)),
+                    );
+                    toast.error("Failed to deactivate for user");
+                },
             },
         );
-    };
+    }, [overridesFeature, loadOverrides]);
 
-    const handlePurgeOverrides = (feature: OnboardingFeature) => {
+    const handlePurgeOverrides = useCallback((feature: OnboardingFeature) => {
+        // Optimistic: instantly clear overrides
+        setOverriddenUsers([]);
+        setLocalFeatures((prev) =>
+            prev.map((f) => (f.id === feature.id ? { ...f, pennant_user_overrides_count: 0 } : f)),
+        );
+
         router.post(
             route("administrators.onboarding-features.purge-overrides", feature.id),
             {},
@@ -223,14 +289,18 @@ export default function OnboardingFeaturesIndex({ auth, features, experimental_k
                 preserveState: true,
                 onSuccess: () => {
                     toast.success("All per-user overrides purged");
-                    setOverriddenUsers([]);
                 },
-                onError: () => toast.error("Failed to purge overrides"),
+                onError: () => {
+                    // Reload to get accurate state
+                    if (overridesFeature) loadOverrides(overridesFeature);
+                    toast.error("Failed to purge overrides");
+                },
             },
         );
-    };
+    }, [overridesFeature, loadOverrides]);
 
     const activeFilterCount = Object.values(filters).filter(Boolean).length - (filters.search ? 1 : 0);
+    const features = localFeatures;
     const activeCount = features.filter((f) => f.is_active).length;
     const inactiveCount = features.length - activeCount;
     const classBasedCount = features.filter((f) => f.pennant_type === "class").length;
@@ -691,11 +761,11 @@ export default function OnboardingFeaturesIndex({ auth, features, experimental_k
                                                         {index + 1}
                                                     </div>
                                                     <div className="min-w-0 flex-1">
-                                                        <p className="text-xs font-medium leading-tight">{step.data.title}</p>
-                                                        <p className="text-muted-foreground mt-0.5 line-clamp-2 text-[11px]">{step.data.summary}</p>
-                                                        {step.data.highlights && step.data.highlights.length > 0 && (
+                                                        <p className="text-xs font-medium leading-tight">{step.title}</p>
+                                                        <p className="text-muted-foreground mt-0.5 line-clamp-2 text-[11px]">{step.summary}</p>
+                                                        {step.highlights && step.highlights.length > 0 && (
                                                             <div className="mt-1.5 flex flex-wrap gap-1">
-                                                                {step.data.highlights.filter(Boolean).map((h, i) => (
+                                                                {step.highlights.filter(Boolean).map((h, i) => (
                                                                     <Badge key={i} variant="secondary" className="text-[9px]">
                                                                         {h}
                                                                     </Badge>

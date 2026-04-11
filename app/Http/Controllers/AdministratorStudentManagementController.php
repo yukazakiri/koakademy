@@ -954,90 +954,74 @@ final class AdministratorStudentManagementController extends Controller
 
             $student->save();
 
-            // Update Relations - Guardian Contact
-            $student->studentContactsInfo()->updateOrCreate(
-                ['id' => $student->student_contact_id],
-                [
-                    'personal_contact' => $validated['personal_contact'],
-                    'emergency_contact_name' => $validated['emergency_contact_name'],
-                    'emergency_contact_phone' => $validated['emergency_contact_phone'],
-                    'emergency_contact_address' => $validated['emergency_contact_address'] ?? null,
-                ]
-            );
+            $contactData = [
+                'personal_contact' => $validated['personal_contact'],
+                'emergency_contact_name' => $validated['emergency_contact_name'],
+                'emergency_contact_phone' => $validated['emergency_contact_phone'],
+                'emergency_contact_address' => $validated['emergency_contact_address'] ?? null,
+            ];
 
-            $student->studentParentInfo()->updateOrCreate(
-                ['id' => $student->student_parent_info],
-                [
-                    'fathers_name' => $validated['fathers_name'],
-                    'mothers_name' => $validated['mothers_name'],
-                ]
-            );
+            if ($student->studentContactsInfo !== null) {
+                $student->studentContactsInfo->update($contactData);
+            } else {
+                $studentContact = \App\Models\StudentContact::query()->create($contactData);
+                $student->student_contact_id = $studentContact->id;
+            }
 
-            $student->studentEducationInfo()->updateOrCreate(
-                ['id' => $student->student_education_id],
-                [
-                    'elementary_school' => $validated['elementary_school'] ?? null,
-                    'elementary_graduate_year' => $validated['elementary_graduate_year'] ?? null,
-                    'elementary_school_address' => $validated['elementary_school_address'] ?? null,
-                    'junior_high_school_name' => $validated['junior_high_school_name'] ?? null,
-                    'junior_high_graduation_year' => $validated['junior_high_graduation_year'] ?? null,
-                    'junior_high_school_address' => $validated['junior_high_school_address'] ?? null,
-                    'senior_high_name' => $validated['senior_high_name'] ?? null,
-                    'senior_high_graduate_year' => $validated['senior_high_graduate_year'] ?? null,
-                    'senior_high_address' => $validated['senior_high_address'] ?? null,
-                ]
-            );
+            $parentData = [
+                'father_name' => $validated['fathers_name'],
+                'mother_name' => $validated['mothers_name'],
+            ];
 
-            $student->personalInfo()->updateOrCreate(
-                ['id' => $student->student_personal_id],
-                [
-                    'current_adress' => $validated['current_address'],
-                    'permanent_address' => $validated['permanent_address'],
-                    'birthplace' => $validated['birthplace'] ?? null,
-                    'civil_status' => $validated['civil_status'] ?? null,
-                    'citizenship' => $validated['citizenship'] ?? null,
-                    'religion' => $validated['religion'] ?? null,
-                    'weight' => $validated['weight'] ?? null,
-                    'height' => $validated['height'] ?? null,
-                ]
-            );
+            if ($student->studentParentInfo !== null) {
+                $student->studentParentInfo->update($parentData);
+            } else {
+                $studentParentInfo = \App\Models\StudentParentsInfo::query()->create($parentData);
+                $student->student_parent_info = $studentParentInfo->id;
+            }
 
-            $student->studentParentInfo()->updateOrCreate(
-                ['id' => $student->student_parent_info],
-                [
-                    'fathers_name' => $validated['fathers_name'],
-                    'mothers_name' => $validated['mothers_name'],
-                ]
-            );
+            $educationData = [
+                'elementary_school' => $validated['elementary_school'] ?? null,
+                'elementary_year_graduated' => $validated['elementary_graduate_year'] ?? null,
+                'high_school' => $validated['junior_high_school_name'] ?? null,
+                'high_school_year_graduated' => $validated['junior_high_graduation_year'] ?? null,
+                'senior_high_school' => $validated['senior_high_name'] ?? null,
+                'senior_high_year_graduated' => $validated['senior_high_graduate_year'] ?? null,
+            ];
 
-            $student->studentEducationInfo()->updateOrCreate(
-                ['id' => $student->student_education_id],
-                [
-                    'elementary_school' => $validated['elementary_school'] ?? null,
-                    'elementary_graduate_year' => $validated['elementary_graduate_year'] ?? null,
-                    'elementary_school_address' => $validated['elementary_school_address'] ?? null,
-                    'junior_high_school_name' => $validated['junior_high_school_name'] ?? null,
-                    'junior_high_graduation_year' => $validated['junior_high_graduation_year'] ?? null,
-                    'junior_high_school_address' => $validated['junior_high_school_address'] ?? null,
-                    'senior_high_name' => $validated['senior_high_name'] ?? null,
-                    'senior_high_graduate_year' => $validated['senior_high_graduate_year'] ?? null,
-                    'senior_high_address' => $validated['senior_high_address'] ?? null,
-                ]
-            );
+            if ($student->studentEducationInfo !== null) {
+                $student->studentEducationInfo->update($educationData);
+            } else {
+                $studentEducationInfo = \App\Models\StudentEducationInfo::query()->create($educationData);
+                $student->student_education_id = $studentEducationInfo->id;
+            }
 
-            $student->personalInfo()->updateOrCreate(
-                ['id' => $student->student_personal_id],
-                [
-                    'current_adress' => $validated['current_address'],
-                    'permanent_address' => $validated['permanent_address'],
-                    'birthplace' => $validated['birthplace'] ?? null,
-                    'civil_status' => $validated['civil_status'] ?? null,
-                    'citizenship' => $validated['citizenship'] ?? null,
-                    'religion' => $validated['religion'] ?? null,
-                    'weight' => $validated['weight'] ?? null,
-                    'height' => $validated['height'] ?? null,
-                ]
-            );
+            $personalInfoData = [
+                'current_adress' => $validated['current_address'],
+                'permanent_address' => $validated['permanent_address'],
+                'birthplace' => $validated['birthplace'] ?? null,
+                'civil_status' => $validated['civil_status'] ?? null,
+                'citizenship' => $validated['citizenship'] ?? null,
+                'religion' => $validated['religion'] ?? null,
+                'weight' => $validated['weight'] ?? null,
+                'height' => $validated['height'] ?? null,
+            ];
+
+            if ($student->personalInfo !== null) {
+                $student->personalInfo->update($personalInfoData);
+            } else {
+                $studentPersonalInfo = \App\Models\StudentsPersonalInfo::query()->create($personalInfoData);
+                $student->student_personal_id = $studentPersonalInfo->id;
+            }
+
+            if ($student->isDirty([
+                'student_contact_id',
+                'student_parent_info',
+                'student_education_id',
+                'student_personal_id',
+            ])) {
+                $student->save();
+            }
         });
 
         $message = 'Student updated successfully.';

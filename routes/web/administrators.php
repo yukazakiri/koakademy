@@ -230,6 +230,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/students/courses/{course}/subjects', [AdministratorStudentManagementController::class, 'getCourseSubjects'])->name('students.courses.subjects');
         Route::post('/students/{student}/retry-enrollment', [AdministratorStudentManagementController::class, 'retryClassEnrollment'])->name('students.retry-enrollment');
         Route::patch('/students/{student}/update-tuition', [AdministratorStudentManagementController::class, 'updateTuition'])->name('students.update-tuition');
+        Route::post('/students/{student}/signature', [AdministratorStudentManagementController::class, 'updateSignature'])->name('students.signature.update');
         Route::post('/students/{student}/manage-clearance', [AdministratorStudentManagementController::class, 'manageClearance'])->name('students.manage-clearance');
         Route::patch('/students/{student}/update-status', [AdministratorStudentManagementController::class, 'updateStatus'])->name('students.update-status');
         Route::delete('/students/{student}', [AdministratorStudentManagementController::class, 'destroy'])->name('students.destroy');

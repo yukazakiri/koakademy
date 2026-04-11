@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import type { StudentDetail } from "../types";
 import { TextEntry } from "./text-entry";
 import { Button } from "@/components/ui/button";
+import { StudentSignaturePad } from "./student-signature-pad";
 
 interface StudentDetailsCardProps {
     student: StudentDetail;
@@ -88,27 +89,23 @@ export function StudentDetailsCard({ student }: StudentDetailsCardProps) {
                         <TextEntry label="Phone" value={student.contacts?.personal_contact} />
                         <TextEntry label="Birth Date" value={student.birth_date} />
                     </div>
-                    <div className="flex justify-center md:justify-end">
-                        <div className="relative group h-32 w-32 overflow-hidden rounded-full border-2 border-gray-200 bg-gray-100 cursor-pointer">
-                            <input 
-                                type="file" 
-                                ref={fileInputRef} 
-                                className="hidden" 
-                                accept="image/*" 
+                    <div className="flex w-full flex-col items-center gap-5 md:items-end">
+                        <div className="group relative h-32 w-32 cursor-pointer overflow-hidden rounded-full border-2 border-gray-200 bg-gray-100">
+                            <input
+                                type="file"
+                                ref={fileInputRef}
+                                className="hidden"
+                                accept="image/*"
                                 onChange={handleFileChange}
                                 disabled={processing}
                             />
-                            
+
                             {processing ? (
                                 <div className="flex h-full w-full items-center justify-center bg-gray-100/80">
                                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
                                 </div>
                             ) : profilePhotoUrl ? (
-                                <img
-                                    src={profilePhotoUrl}
-                                    alt={student.name}
-                                    className="h-full w-full object-cover transition-opacity group-hover:opacity-50"
-                                />
+                                <img src={profilePhotoUrl} alt={student.name} className="h-full w-full object-cover transition-opacity group-hover:opacity-50" />
                             ) : (
                                 <div className="flex h-full w-full items-center justify-center text-gray-400 transition-colors group-hover:text-primary">
                                     <UserIcon className="h-12 w-12" />
@@ -116,13 +113,20 @@ export function StudentDetailsCard({ student }: StudentDetailsCardProps) {
                             )}
 
                             {!processing && (
-                                <div 
+                                <div
                                     onClick={() => fileInputRef.current?.click()}
                                     className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100"
                                 >
                                     <Camera className="h-8 w-8 text-white" />
                                 </div>
                             )}
+                        </div>
+
+                        <div className="w-full max-w-[200px]">
+                            <div className="text-muted-foreground mb-1 flex items-center gap-1.5 text-[10px] font-medium tracking-wider uppercase">
+                                Signature
+                            </div>
+                            <StudentSignaturePad studentId={student.id} signatureUrl={student.signature_url} />
                         </div>
                     </div>
                 </div>

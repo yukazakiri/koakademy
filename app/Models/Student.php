@@ -1485,7 +1485,11 @@ final class Student extends Model
 
     protected function studentPicture(): Attribute
     {
-        return Attribute::make(get: fn () => $this->DocumentLocation->picture_1x1 ?? '');
+        return Attribute::make(get: function (): string {
+            $documentLocation = $this->DocumentLocation;
+
+            return $documentLocation?->resolveDocumentUrl($documentLocation->picture_1x1) ?? '';
+        });
     }
 
     protected function fullName(): Attribute
@@ -1499,7 +1503,11 @@ final class Student extends Model
 
     protected function picture1x1(): Attribute
     {
-        return Attribute::make(get: fn () => $this->DocumentLocation->picture_1x1 ?? '');
+        return Attribute::make(get: function (): string {
+            $documentLocation = $this->DocumentLocation;
+
+            return $documentLocation?->resolveDocumentUrl($documentLocation->picture_1x1) ?? '';
+        });
     }
 
     protected function formattedAcademicYear(): Attribute

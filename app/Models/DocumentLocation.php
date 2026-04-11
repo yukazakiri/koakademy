@@ -10,6 +10,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Class DocumentLocation
@@ -22,11 +23,7 @@ use Illuminate\Database\Eloquent\Model;
  */
 final class DocumentLocation extends Model
 {
-    public $timestamps = false;
-
-    protected $table = 'document_locations';
-
-    protected $fillable = [
+    public const array DOCUMENT_FIELDS = [
         'birth_certificate',
         'form_138',
         'form_137',
@@ -35,4 +32,43 @@ final class DocumentLocation extends Model
         'transcript_records',
         'picture_1x1',
     ];
+
+    public $timestamps = false;
+
+    protected $table = 'document_locations';
+
+    protected $fillable = self::DOCUMENT_FIELDS;
+
+    public function resolveDocumentUrl(?string $path): ?string
+    {
+        if (! is_string($path) || mb_trim($path) === '') {
+            return null;
+        }
+
+        if (filter_var($path, FILTER_VALIDATE_URL)) {
+            return $path;
+        }
+
+        if (str_starts_with($path, '/')) {
+            return $path;
+        }
+
+        return Storage::disk('r2')->url($path);
+    }
+
+    /**
+     * @return array<string, string|null>
+     */
+    public function toResolvedDocumentArray(): array
+    {
+        $documents = [];
+
+        foreach (self::DOCUMENT_FIELDS as $field) {
+            /** @var mixed $value */
+            $value = $this->getAttribute($field);
+            $documents[$field] = is_string($value) ? $this->resolveDocumentUrl($value) : null;
+        }
+
+        return $documents;
+    }
 }

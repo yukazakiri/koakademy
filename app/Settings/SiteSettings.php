@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Settings;
 
+use Illuminate\Support\Facades\Storage;
 use Spatie\LaravelSettings\Settings;
 
 final class SiteSettings extends Settings
@@ -176,7 +177,7 @@ final class SiteSettings extends Settings
      */
     public function getLogo(): string
     {
-        return $this->logo ?? '/web-app-manifest-192x192.png';
+        return $this->resolveAssetUrl($this->logo, '/web-app-manifest-192x192.png');
     }
 
     /**
@@ -184,7 +185,7 @@ final class SiteSettings extends Settings
      */
     public function getFavicon(): string
     {
-        return $this->favicon ?? '/web-app-manifest-192x192.png';
+        return $this->resolveAssetUrl($this->favicon, '/web-app-manifest-192x192.png');
     }
 
     /**
@@ -209,5 +210,22 @@ final class SiteSettings extends Settings
             'logo' => $this->getLogo(),
             'favicon' => $this->getFavicon(),
         ];
+    }
+
+    private function resolveAssetUrl(?string $value, string $fallback): string
+    {
+        if (! is_string($value) || mb_trim($value) === '') {
+            return $fallback;
+        }
+
+        if (filter_var($value, FILTER_VALIDATE_URL)) {
+            return $value;
+        }
+
+        if (str_starts_with($value, '/')) {
+            return $value;
+        }
+
+        return Storage::disk('r2')->url($value);
     }
 }

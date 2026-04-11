@@ -30,10 +30,12 @@ use App\Services\StudentIdUpdateService;
 use Exception;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -602,6 +604,7 @@ final class AdministratorStudentManagementController extends Controller
                 'education' => $student->studentEducationInfo,
                 'personal_info' => $student->personalInfo,
                 'documents' => $student->DocumentLocation?->toResolvedDocumentArray(),
+                'signature_url' => $this->resolveStoredFileUrl($student->signature_path),
                 'current_clearance' => $currentClearance,
                 'previous_clearance_validation' => $previousClearanceValidation,
                 'clearance_history' => $student->clearances()->orderBy('created_at', 'desc')->get(),
@@ -1395,6 +1398,46 @@ final class AdministratorStudentManagementController extends Controller
         return back()->with('success', 'Tuition updated successfully.');
     }
 
+    public function updateSignature(Request $request, Student $student): RedirectResponse
+    {
+        $validated = $request->validate([
+            'signature' => ['required', 'file', 'mimetypes:image/png', 'max:2048'],
+        ]);
+
+        /** @var UploadedFile $signature */
+        $signature = $validated['signature'];
+
+        $disk = config('filesystems.default');
+        $newPath = $signature->store("students/{$student->id}/signatures");
+
+        if (! is_string($newPath) || $newPath === '') {
+            return back()->with('error', 'Failed to store signature.');
+        }
+
+        $oldPath = $student->signature_path;
+        if (
+            is_string($oldPath) &&
+            $oldPath !== '' &&
+            ! filter_var($oldPath, FILTER_VALIDATE_URL) &&
+            ! str_starts_with($oldPath, '/') &&
+            is_string($disk) &&
+            Storage::disk($disk)->exists($oldPath)
+        ) {
+            Storage::disk($disk)->delete($oldPath);
+        }
+
+        $student->update([
+            'signature_path' => $newPath,
+        ]);
+
+        $student->refresh();
+
+        return back()->with([
+            'success' => 'Student signature saved successfully.',
+            'signature_url' => $this->resolveStoredFileUrl($student->signature_path),
+        ]);
+    }
+
     public function manageClearance(Request $request, Student $student): RedirectResponse
     {
         $validated = $request->validate([
@@ -1670,6 +1713,25 @@ final class AdministratorStudentManagementController extends Controller
             'regions' => $this->getPhilippineRegions(),
             'subjects' => Subject::all(['id', 'code', 'title', 'units'])->map(fn ($s): array => ['value' => $s->id, 'label' => "{$s->code} - {$s->title} ({$s->units} units)"])->all(),
         ];
+    }
+
+    private function resolveStoredFileUrl(?string $path): ?string
+    {
+        if (! is_string($path) || mb_trim($path) === '') {
+            return null;
+        }
+
+        if (filter_var($path, FILTER_VALIDATE_URL) || str_starts_with($path, '/')) {
+            return $path;
+        }
+
+        $disk = config('filesystems.default');
+
+        if (! is_string($disk)) {
+            return null;
+        }
+
+        return Storage::disk($disk)->url($path);
     }
 
     private function getPhilippineRegions(): array

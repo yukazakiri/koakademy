@@ -157,6 +157,7 @@ final class Student extends Model
         'emergency_contact',
         'remarks',
         'profile_url',
+        'signature_path',
         'student_contact_id',
         'student_parent_info',
         'student_education_id',
@@ -215,6 +216,7 @@ final class Student extends Model
         'emergency_contact',
         'remarks',
         'profile_url',
+        'signature_path',
         'student_contact_id',
         'student_parent_info',
         'student_education_id',
@@ -1559,6 +1561,7 @@ final class Student extends Model
             'attrition_category' => AttritionCategory::class,
             'shs_strand_id' => 'integer',
             'shs_track_id' => 'integer',
+            'signature_path' => 'encrypted',
         ];
     }
 

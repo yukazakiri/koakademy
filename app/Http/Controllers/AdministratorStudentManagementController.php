@@ -63,6 +63,7 @@ final class AdministratorStudentManagementController extends Controller
         $studentsQuery = Student::query()
             ->with([
                 'Course',
+                'DocumentLocation',
                 'clearances' => function ($query) use ($currentPeriod): void {
                     $query->where('academic_year', $currentPeriod['academic_year'])
                         ->where('semester', $currentPeriod['semester']);
@@ -199,6 +200,7 @@ final class AdministratorStudentManagementController extends Controller
                 'is_indigenous_person' => $student->is_indigenous_person,
                 'region_of_origin' => $student->region_of_origin,
                 'previous_sem_clearance' => $currentClearanceStatus,
+                'avatar_url' => $student->picture1x1 !== '' ? $student->picture1x1 : null,
                 'created_at' => format_timestamp($student->created_at),
                 'filament' => [
                     'view_url' => route('filament.admin.resources.students.view', $student),

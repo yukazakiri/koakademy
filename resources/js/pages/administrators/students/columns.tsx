@@ -1,4 +1,4 @@
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -21,6 +21,7 @@ export type Student = {
     id: number;
     student_id: number | string | null;
     name: string;
+    avatar_url: string | null;
     course: string | null;
     course_title: string | null;
     academic_year: string;
@@ -112,6 +113,7 @@ export const columns: ColumnDef<Student>[] = [
             return (
                 <div className="flex items-center gap-3">
                     <Avatar className="h-8 w-8 border">
+                        <AvatarImage src={student.avatar_url ?? undefined} alt={student.name} />
                         <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">{getInitials(student.name)}</AvatarFallback>
                     </Avatar>
                     <div className="flex flex-col">

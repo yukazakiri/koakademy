@@ -1,14 +1,14 @@
 {
-  "version": "1.0.0-dev.0.3",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.0.0-dev.0.3",
-  "commit": "f2f717bf50145e9a5004eda331bacfd440867a86",
+  "version": "1.0.0-dev.0.4",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.0.0-dev.0.4",
+  "commit": "642f37025dbe87922fd9f97ea5312c35814350d7",
   "branch": "master",
-  "timestamp": "2026-04-11T08:04:55Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24278140365",
+  "timestamp": "2026-04-11T09:22:41Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24279421657",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.0.0-dev.0.3 - fix branding",
-    "previous": "1.0.0-dev.0.2"
+    "current": "Version 1.0.0-dev.0.4 - removes the duplicated relation-sync block that was running twice (#4)",
+    "previous": "1.0.0-dev.0.3"
   },
   "metadata": {
     "author": "yukazakiri",

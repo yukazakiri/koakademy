@@ -1,6 +1,6 @@
 import AdminLayout from "@/components/administrators/admin-layout";
 import { Filters, type FilterFieldConfig, type Filter as FilterType } from "@/components/reui/filters";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
@@ -406,6 +406,7 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
                                         >
                                             <CardHeader className="flex flex-row items-center gap-4 space-y-0 pb-2">
                                                 <Avatar className="h-12 w-12 border">
+                                                    <AvatarImage src={row.avatar_url ?? undefined} alt={row.name} />
                                                     <AvatarFallback className="bg-primary/10 text-primary text-lg font-medium">
                                                         {getInitials(row.name)}
                                                     </AvatarFallback>

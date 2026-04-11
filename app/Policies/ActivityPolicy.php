@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
 use Spatie\Activitylog\Models\Activity;
+use Illuminate\Auth\Access\HandlesAuthorization;
 
-final class ActivityPolicy
+class ActivityPolicy
 {
     use HandlesAuthorization;
-
+    
     public function viewAny(AuthUser $authUser): bool
     {
         return $authUser->can('ViewAny:Activity');
@@ -66,4 +66,5 @@ final class ActivityPolicy
     {
         return $authUser->can('Reorder:Activity');
     }
+
 }

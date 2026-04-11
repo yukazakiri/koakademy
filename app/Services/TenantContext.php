@@ -36,56 +36,40 @@ final class TenantContext
             return $this->currentSchool;
         }
 
-        // Only cache the result once auth is actually available
         if (! Auth::hasUser() && ! Session::isStarted()) {
             return null;
         }
 
-        $this->resolved = true;
-
-        // First, try to get from session
         $schoolId = Session::get(self::SESSION_KEY);
 
-        // Fallback to GeneralSettingsService (user_settings)
         if (! $schoolId) {
             try {
-                $settingsService = app(GeneralSettingsService::class);
-                $schoolId = $settingsService->getActiveSchoolId();
-            } catch (Exception) {
-                // Ignore if service not available
-            }
-        }
-
-        $this->resolved = true;
-
-        // First, try to get from session
-        $schoolId = Session::get(self::SESSION_KEY);
-
-        // Fallback to GeneralSettingsService (user_settings)
-        if (! $schoolId) {
-            try {
-                $settingsService = app(GeneralSettingsService::class);
-                $schoolId = $settingsService->getActiveSchoolId();
+                $schoolId = app(GeneralSettingsService::class)->getActiveSchoolId();
             } catch (Exception) {
                 // Ignore if service not available
             }
         }
 
         if ($schoolId) {
-            $this->currentSchool = School::find($schoolId);
+            $this->currentSchool = School::query()->find($schoolId);
 
             if ($this->currentSchool instanceof School) {
+                $this->resolved = true;
+
                 return $this->currentSchool;
             }
         }
 
-        // Fallback to the authenticated user's school
         $user = Auth::user();
 
         if ($user && $user->school_id) {
             $this->currentSchool = $user->school;
             $this->setCurrentSchool($this->currentSchool);
+
+            return $this->currentSchool;
         }
+
+        $this->resolved = true;
 
         return $this->currentSchool;
     }

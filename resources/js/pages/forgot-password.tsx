@@ -3,20 +3,16 @@ import { TransitionWrapper } from "@/components/transition-wrapper";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { resolveBranding, type Branding } from "@/lib/branding";
 import { Link, useForm, usePage } from "@inertiajs/react";
 import { useEffect } from "react";
 import { toast } from "sonner";
 
-interface Branding {
-    appName: string;
-    appShortName: string;
-    organizationShortName: string;
-}
-
 export default function ForgotPasswordPage() {
-    const { props } = usePage<{ branding?: Branding }>();
-    const appName = props.branding?.appName || "School Portal";
-    const orgShortName = props.branding?.organizationShortName || "UNI";
+    const { props } = usePage<{ branding?: Partial<Branding> | null }>();
+    const branding = resolveBranding(props.branding);
+    const appName = branding.appName;
+    const orgShortName = branding.organizationShortName;
 
     const { data, setData, post, processing, errors } = useForm({
         email: "",
@@ -41,7 +37,7 @@ export default function ForgotPasswordPage() {
                 <div className="flex items-center justify-between md:justify-start">
                     <a href="#" className="flex items-center gap-2 font-medium">
                         <div className="flex h-10 w-10 items-center justify-center rounded-md">
-                            <img src="/web-app-manifest-192x192.png" alt={`${orgShortName} Logo`} className="h-10 w-10" />
+                            <img src={branding.logo} alt={`${orgShortName} Logo`} className="h-10 w-10 object-contain" />
                         </div>
                         <span className="text-foreground text-4xl font-extrabold tracking-tight">{appName}</span>
                     </a>

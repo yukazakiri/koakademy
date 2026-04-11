@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use Backstage\Mails\Models\Mail;
-use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
+use Backstage\Mails\Laravel\Models\Mail;
+use Illuminate\Auth\Access\HandlesAuthorization;
 
-final class MailPolicy
+class MailPolicy
 {
     use HandlesAuthorization;
-
+    
     public function viewAny(AuthUser $authUser): bool
     {
         return $authUser->can('ViewAny:Mail');
@@ -66,4 +66,5 @@ final class MailPolicy
     {
         return $authUser->can('Reorder:Mail');
     }
+
 }

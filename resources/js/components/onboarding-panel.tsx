@@ -1,10 +1,6 @@
 import { cn } from "@/lib/utils";
-import { usePage } from "@inertiajs/react";
+import { useBranding } from "@/lib/branding";
 import { useEffect, useState } from "react";
-
-interface Branding {
-    organizationShortName: string;
-}
 
 interface Quote {
     id: string;
@@ -69,8 +65,7 @@ interface OnboardingPanelProps {
 }
 
 export function OnboardingPanel({ className }: OnboardingPanelProps) {
-    const { props } = usePage<{ branding?: Branding }>();
-    const orgShortName = props.branding?.organizationShortName || "UNI";
+    const { organizationShortName: orgShortName, themeColor } = useBranding();
 
     const [currentIndex, setCurrentIndex] = useState(0);
     const [isAnimating, setIsAnimating] = useState(false);
@@ -109,7 +104,7 @@ export function OnboardingPanel({ className }: OnboardingPanelProps) {
                 </blockquote>
 
                 <div className="flex items-center gap-3">
-                    <div className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600"></div>
+                    <div className="h-8 w-8 rounded-full" style={{ background: `linear-gradient(135deg, ${themeColor}, #ffffff)` }}></div>
                     <div>
                         <div className="text-sm font-semibold">Faculty Member</div>
                         <div className="text-muted-foreground text-xs">{orgShortName} Faculty</div>

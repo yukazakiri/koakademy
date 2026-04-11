@@ -1,7 +1,7 @@
 {
     "mcpServers": {
         "laravel-boost": {
-            "command": "vendor/bin/sail",
+            "command": "php",
             "args": [
                 "artisan",
                 "boost:mcp"
@@ -11,6 +11,14 @@
             "command": "node",
             "args": [
                 "/home/yuuki/.cursor/extensions/damms005.devdb-2.8.8-linux-x64/dist/services/mcp/server.js"
+            ]
+        },
+        "nightwatch": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "mcp-remote",
+                "https://nightwatch.laravel.com/mcp"
             ]
         }
     }

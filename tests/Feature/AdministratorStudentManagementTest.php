@@ -10,6 +10,8 @@ use App\Models\StudentEnrollment;
 use App\Models\Subject;
 use App\Models\SubjectEnrollment;
 use App\Models\User;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia;
 
 use function Pest\Laravel\actingAs;
@@ -199,4 +201,36 @@ it('shows standalone non credited records separately from the checklist payload'
             ->where('student.non_credited_subjects.0.external_subject_code', 'EXT-101')
             ->where('student.non_credited_subjects.0.linked_subject', null)
             ->where('student.checklist.0.semesters.0.subjects.0.code', 'MATH101'));
+});
+
+it('stores student signature on the default filesystem and returns a show-page signature url', function (): void {
+    $defaultDisk = config('filesystems.default');
+
+    if (! is_string($defaultDisk)) {
+        throw new RuntimeException('The default filesystem disk must be a string.');
+    }
+
+    Storage::fake($defaultDisk);
+
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $student = Student::factory()->create();
+    $signatureFile = UploadedFile::fake()->image('signature.png', 700, 200);
+
+    actingAs($user)
+        ->post(route('administrators.students.signature.update', $student->id), [
+            'signature' => $signatureFile,
+        ])
+        ->assertRedirect();
+
+    $student->refresh();
+
+    expect($student->signature_path)->not->toBeNull();
+    Storage::disk($defaultDisk)->assertExists((string) $student->signature_path);
+
+    actingAs($user)
+        ->get(route('administrators.students.show', $student->id))
+        ->assertSuccessful()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->component('administrators/students/show', false)
+            ->where('student.signature_url', Storage::disk($defaultDisk)->url((string) $student->signature_path)));
 });

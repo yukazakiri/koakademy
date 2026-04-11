@@ -747,9 +747,8 @@ final class OnboardingFeatureSeeder extends Seeder
             OnboardingFeature::query()->firstOrCreate(['feature_key' => $featureKey], $attributes);
 
             if ($feature['is_active']) {
-                \Laravel\Pennant\Feature::activateForEveryone($featureKey);
-            } else {
-                \Laravel\Pennant\Feature::deactivateForEveryone($featureKey);
+                $featureClass = \App\Features\Onboarding\FeatureClassRegistry::classForKey($featureKey);
+                \Laravel\Pennant\Feature::activateForEveryone($featureClass ?? $featureKey);
             }
         }
     }

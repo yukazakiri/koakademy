@@ -36,4 +36,10 @@ yarn-error.log
 /.junie
 /.windsurf
 /.agents
-/.ai
+/.ai/*
+/.amp
+/.cursor
+/.gemini
+CLAUDE.md
+GEMINI.md
+AGENTS.md

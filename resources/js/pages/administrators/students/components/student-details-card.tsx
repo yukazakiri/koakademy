@@ -15,8 +15,14 @@ interface StudentDetailsCardProps {
 export function StudentDetailsCard({ student }: StudentDetailsCardProps) {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [processing, setProcessing] = useState(false);
+    const picture1x1 = student.documents?.picture_1x1 ?? null;
+    const profilePhotoUrl =
+        typeof picture1x1 === "string" && picture1x1.length > 0
+            ? picture1x1.startsWith("http://") || picture1x1.startsWith("https://") || picture1x1.startsWith("/")
+                ? picture1x1
+                : `/storage/${picture1x1}`
+            : null;
 
-    
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -97,9 +103,9 @@ export function StudentDetailsCard({ student }: StudentDetailsCardProps) {
                                 <div className="flex h-full w-full items-center justify-center bg-gray-100/80">
                                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
                                 </div>
-                            ) : student.documents?.picture_1x1 ? (
+                            ) : profilePhotoUrl ? (
                                 <img
-                                    src={`/storage/${student.documents.picture_1x1}`}
+                                    src={profilePhotoUrl}
                                     alt={student.name}
                                     className="h-full w-full object-cover transition-opacity group-hover:opacity-50"
                                 />

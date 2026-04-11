@@ -14,7 +14,7 @@
         "filament/filament",
         "spatie/laravel-pdf"
     ],
-    "sail": false,
+    "sail": true,
     "skills": [
         "laravel-best-practices",
         "configuring-horizon",

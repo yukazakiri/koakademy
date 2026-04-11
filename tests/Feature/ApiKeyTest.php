@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Enums\UserRole;
+use App\Features\Onboarding\FacultyDeveloperMode;
+use App\Features\Onboarding\StudentDeveloperMode;
 use App\Models\User;
 use Laravel\Pennant\Feature;
 
@@ -40,7 +42,7 @@ describe('API Keys - Student Portal', function (): void {
         config(['onboarding.experimental_feature_keys' => ['onboarding-student-developer-mode']]);
         config(['onboarding.experimental_features_roles' => ['onboarding-student-developer-mode' => ['student']]]);
 
-        Feature::for($this->user)->activate('onboarding-student-developer-mode');
+        Feature::for($this->user)->activate(StudentDeveloperMode::class);
 
         $response = $this
             ->actingAs($this->user)
@@ -54,7 +56,7 @@ describe('API Keys - Student Portal', function (): void {
         config(['onboarding.experimental_feature_keys' => ['onboarding-student-developer-mode']]);
         config(['onboarding.experimental_features_roles' => ['onboarding-student-developer-mode' => ['student']]]);
 
-        Feature::for($this->user)->activate('onboarding-student-developer-mode');
+        Feature::for($this->user)->activate(StudentDeveloperMode::class);
 
         $response = $this
             ->actingAs($this->user)
@@ -75,7 +77,7 @@ describe('API Keys - Student Portal', function (): void {
         config(['onboarding.experimental_feature_keys' => ['onboarding-student-developer-mode']]);
         config(['onboarding.experimental_features_roles' => ['onboarding-student-developer-mode' => ['student']]]);
 
-        Feature::for($this->user)->activate('onboarding-student-developer-mode');
+        Feature::for($this->user)->activate(StudentDeveloperMode::class);
 
         $token = $this->user->createToken('Test Token');
 
@@ -91,7 +93,7 @@ describe('API Keys - Student Portal', function (): void {
         config(['onboarding.experimental_feature_keys' => ['onboarding-student-developer-mode']]);
         config(['onboarding.experimental_features_roles' => ['onboarding-student-developer-mode' => ['student']]]);
 
-        Feature::for($this->user)->activate('onboarding-student-developer-mode');
+        Feature::for($this->user)->activate(StudentDeveloperMode::class);
 
         $response = $this
             ->actingAs($this->user)
@@ -113,7 +115,7 @@ describe('API Keys - Student Portal', function (): void {
         config(['onboarding.experimental_feature_keys' => ['onboarding-student-developer-mode']]);
         config(['onboarding.experimental_features_roles' => ['onboarding-student-developer-mode' => ['student']]]);
 
-        Feature::for($this->user)->activate('onboarding-student-developer-mode');
+        Feature::for($this->user)->activate(StudentDeveloperMode::class);
 
         $response = $this
             ->actingAs($this->user)
@@ -145,7 +147,7 @@ describe('API Keys - Faculty Portal', function (): void {
         config(['onboarding.experimental_feature_keys' => ['onboarding-faculty-developer-mode']]);
         config(['onboarding.experimental_features_roles' => ['onboarding-faculty-developer-mode' => ['faculty']]]);
 
-        Feature::for($this->user)->activate('onboarding-faculty-developer-mode');
+        Feature::for($this->user)->activate(FacultyDeveloperMode::class);
 
         $response = $this
             ->actingAs($this->user)
@@ -159,7 +161,7 @@ describe('API Keys - Faculty Portal', function (): void {
         config(['onboarding.experimental_feature_keys' => ['onboarding-faculty-developer-mode']]);
         config(['onboarding.experimental_features_roles' => ['onboarding-faculty-developer-mode' => ['faculty']]]);
 
-        Feature::for($this->user)->activate('onboarding-faculty-developer-mode');
+        Feature::for($this->user)->activate(FacultyDeveloperMode::class);
 
         $response = $this
             ->actingAs($this->user)

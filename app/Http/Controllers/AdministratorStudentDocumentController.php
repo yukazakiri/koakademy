@@ -55,7 +55,7 @@ final class AdministratorStudentDocumentController extends Controller
                 'course' => $student->course ? ['code' => $student->course->code, 'title' => $student->course->title] : null,
                 'student_type' => $student->student_type,
             ],
-            'fixed_documents' => $student->DocumentLocation ?: new DocumentLocation(),
+            'fixed_documents' => $student->DocumentLocation?->toResolvedDocumentArray() ?? (new DocumentLocation())->toResolvedDocumentArray(),
             'dynamic_documents' => $student->resources,
         ]);
     }
@@ -70,7 +70,7 @@ final class AdministratorStudentDocumentController extends Controller
         $type = $request->input('document_type');
         $file = $request->file('file');
 
-        $path = $file->store("students/{$student->id}/documents", 'public');
+        $path = $file->store("students/{$student->id}/documents", 'r2');
 
         if (! $student->DocumentLocation) {
             $docLocation = DocumentLocation::create([$type => $path]);
@@ -79,8 +79,12 @@ final class AdministratorStudentDocumentController extends Controller
         } else {
             // Delete old file if exists
             $oldPath = $student->DocumentLocation->$type;
-            if ($oldPath && Storage::disk('public')->exists($oldPath)) {
-                Storage::disk('public')->delete($oldPath);
+            if (is_string($oldPath) && $oldPath !== '' && ! filter_var($oldPath, FILTER_VALIDATE_URL) && ! str_starts_with($oldPath, '/')) {
+                foreach (['r2', 'public'] as $disk) {
+                    if (Storage::disk($disk)->exists($oldPath)) {
+                        Storage::disk($disk)->delete($oldPath);
+                    }
+                }
             }
 
             $student->DocumentLocation->update([$type => $path]);

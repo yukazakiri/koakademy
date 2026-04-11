@@ -146,15 +146,7 @@ final class StudentTransformer extends JsonResource
             ])),
 
             // Document Location
-            'documents' => [
-                'picture_1x1' => $this->resource->DocumentLocation?->picture_1x1,
-                'transcript_records' => $this->resource->DocumentLocation?->transcript_records,
-                'transfer_credentials' => $this->resource->DocumentLocation?->transfer_credentials,
-                'good_moral_cert' => $this->resource->DocumentLocation?->good_moral_cert,
-                'form_137' => $this->resource->DocumentLocation?->form_137,
-                'form_138' => $this->resource->DocumentLocation?->form_138,
-                'birth_certificate' => $this->resource->DocumentLocation?->birth_certificate,
-            ],
+            'documents' => $this->resource->DocumentLocation?->toResolvedDocumentArray(),
 
             // Demographic & Statistical Information
             'demographic_information' => [

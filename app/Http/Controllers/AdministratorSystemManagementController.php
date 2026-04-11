@@ -27,7 +27,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Redirect;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 use RuntimeException;
@@ -419,13 +418,13 @@ final class AdministratorSystemManagementController extends Controller
 
         // Handle File Uploads
         if ($request->hasFile('logo')) {
-            $path = $request->file('logo')->store('branding');
-            $this->siteSettings->logo = Storage::url($path);
+            $path = $request->file('logo')->store('branding', 'r2');
+            $this->siteSettings->logo = $path;
         }
 
         if ($request->hasFile('favicon')) {
-            $path = $request->file('favicon')->store('branding');
-            $this->siteSettings->favicon = Storage::url($path);
+            $path = $request->file('favicon')->store('branding', 'r2');
+            $this->siteSettings->favicon = $path;
         }
 
         // Update Spatie Settings

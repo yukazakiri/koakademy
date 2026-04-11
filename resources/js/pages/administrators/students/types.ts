@@ -98,6 +98,7 @@ export type StudentDetail = {
     education: any;
     personal_info: any;
     documents: any;
+    signature_url: string | null;
     current_clearance: any;
     previous_clearance_validation: any;
     clearance_history: any[];

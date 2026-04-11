@@ -10,11 +10,14 @@ import { Printer, AlertCircle, Banknote, BookOpen, Calendar as CalendarIcon, Che
 import React from "react";
 import { Cell, Legend, Pie, PieChart, Tooltip as RechartsTooltip, ResponsiveContainer } from "recharts";
 import type { Branding, StudentDetail } from "../types";
+import { StudentSignaturePad } from "./student-signature-pad";
 import { TextEntry } from "./text-entry";
 
 interface StudentTabsProps {
     student: StudentDetail;
-    options: any;
+    options: {
+        statuses?: { value: string; label: string }[];
+    };
 }
 
 export function StudentTabs({ student, options }: StudentTabsProps) {
@@ -24,11 +27,12 @@ export function StudentTabs({ student, options }: StudentTabsProps) {
 
     return (
                         <Tabs defaultValue="academic" className="w-full">
-                            <TabsList className="grid h-auto w-full grid-cols-2 lg:grid-cols-6">
+                            <TabsList className="grid h-auto w-full grid-cols-2 lg:grid-cols-7">
                                 <TabsTrigger value="academic">Academic</TabsTrigger>
                                 <TabsTrigger value="parents">Parents</TabsTrigger>
                                 <TabsTrigger value="school">School</TabsTrigger>
                                 <TabsTrigger value="contact">Contact</TabsTrigger>
+                                <TabsTrigger value="documents">Documents</TabsTrigger>
                                 <TabsTrigger value="tuition">Tuition</TabsTrigger>
                                 <TabsTrigger value="clearance">Clearance</TabsTrigger>
                             </TabsList>
@@ -53,7 +57,7 @@ export function StudentTabs({ student, options }: StudentTabsProps) {
                                                 }
                                                 className="capitalize"
                                             >
-                                                {options.statuses?.find((s: any) => s.value === student.status)?.label || student.status}
+                                                {options.statuses?.find((statusOption) => statusOption.value === student.status)?.label || student.status}
                                             </Badge>
                                         </CardHeader>
                                         <Separator />
@@ -156,6 +160,35 @@ export function StudentTabs({ student, options }: StudentTabsProps) {
                                             <TextEntry label="Emergency Contact" value={student.contacts?.emergency_contact_name} />
                                             <TextEntry label="Emergency Phone" value={student.contacts?.emergency_contact_phone} />
                                             <TextEntry label="Emergency Address" value={student.contacts?.emergency_contact_address} />
+                                        </CardContent>
+                                    </Card>
+                                </TabsContent>
+                                <TabsContent value="documents">
+                                    <Card>
+                                        <CardHeader>
+                                            <CardTitle>Documents</CardTitle>
+                                            <CardDescription>Manage required files and capture the student signature.</CardDescription>
+                                        </CardHeader>
+                                        <CardContent className="space-y-6">
+                                            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                                                <div className="space-y-1">
+                                                    <p className="text-sm font-medium">Document Manager</p>
+                                                    <p className="text-muted-foreground text-xs">Upload and manage required student files.</p>
+                                                </div>
+                                                <Button asChild variant="outline" size="sm">
+                                                    <Link href={route("administrators.students.documents.index", student.id)}>
+                                                        <FileText className="mr-2 h-4 w-4" />
+                                                        Open Manager
+                                                    </Link>
+                                                </Button>
+                                            </div>
+                                            <Separator />
+                                            <div className="max-w-xs">
+                                                <div className="text-muted-foreground mb-1.5 flex items-center gap-1.5 text-xs font-medium tracking-wider uppercase">
+                                                    Signature
+                                                </div>
+                                                <StudentSignaturePad studentId={student.id} signatureUrl={student.signature_url} />
+                                            </div>
                                         </CardContent>
                                     </Card>
                                 </TabsContent>
@@ -314,7 +347,7 @@ export function StudentTabs({ student, options }: StudentTabsProps) {
                                                                             <Cell fill="#f59e0b" /> {/* amber-500 */}
                                                                         </Pie>
                                                                         <RechartsTooltip
-                                                                            formatter={(value: any) =>
+                                                                            formatter={(value: number | string) =>
                                                                                 new Intl.NumberFormat(currency === "USD" ? "en-US" : "en-PH", {
                                                                                     style: "currency",
                                                                                     currency: currency,

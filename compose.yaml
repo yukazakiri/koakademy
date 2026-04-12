@@ -16,12 +16,8 @@ services:
         networks:
             - sail
         volumes:
-            - "/var/run/docker.sock:/var/run/docker.sock:ro"
             - "./docker/traefik/dynamic:/etc/traefik/dynamic:ro"
             - "./docker/traefik/certs:/etc/traefik/certs:ro"
-        labels:
-            - traefik.enable=true
-            - traefik.http.middlewares.redirect-websecure.redirectscheme.scheme=https
     laravel.test:
         build:
             context: ./vendor/laravel/sail/runtimes/8.5
@@ -46,15 +42,6 @@ services:
             sail:
                 aliases:
                     - laravel
-        labels:
-            - traefik.enable=true
-            - traefik.http.routers.laravel.rule=Host(`koakademy.test`)
-            - traefik.http.routers.laravel.entrypoints=web
-            - traefik.http.routers.laravel.middlewares=redirect-websecure
-            - traefik.http.routers.laravel-secure.rule=Host(`koakademy.test`)
-            - traefik.http.routers.laravel-secure.entrypoints=websecure
-            - traefik.http.routers.laravel-secure.tls=true
-            - traefik.http.services.laravel.loadbalancer.server.port=80
         depends_on:
             - pgsql
             - redis

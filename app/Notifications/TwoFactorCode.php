@@ -22,9 +22,7 @@ final class TwoFactorCode extends Notification
     public function toMail($notifiable): MailMessage
     {
         return (new MailMessage)
-            ->subject('Two Factor Authentication Code')
-            ->line('Your two factor authentication code is: '.$this->code)
-            ->line('This code will expire in 5 minutes.')
-            ->line('If you did not request this code, no further action is required.');
+            ->subject(config('app.name').' — Two-Factor Authentication Code')
+            ->view('emails.two-factor-code', ['code' => $this->code]);
     }
 }

@@ -1,14 +1,14 @@
 {
-  "version": "1.0.0-dev.0.6",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.0.0-dev.0.6",
-  "commit": "d49441df9a15f9f0f221ed2c63d1a406313aa683",
+  "version": "1.0.0-dev.0.7",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.0.0-dev.0.7",
+  "commit": "5e60a3e18202c8e4bb4e17aca7fc2dfca7b240e5",
   "branch": "master",
-  "timestamp": "2026-04-13T00:44:58Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24320374828",
+  "timestamp": "2026-04-13T03:49:51Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24324660378",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.0.0-dev.0.6 - removed passkey prompts (#6)",
-    "previous": "1.0.0-dev.0.5"
+    "current": "Version 1.0.0-dev.0.7 - Merge pull request #7 from yukazakiri/04-13-removed_passkey_prompts",
+    "previous": "1.0.0-dev.0.6"
   },
   "metadata": {
     "author": "yukazakiri",

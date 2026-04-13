@@ -31,11 +31,11 @@ it('resolves TESDA enrollment feature class from registry', function (): void {
 it('college enrollment feature resolves true when active', function (): void {
     OnboardingFeature::firstOrCreate(
         ['feature_key' => 'online-college-enrollment'],
-        ['name' => 'Online College Enrollment', 'audience' => 'student', 'steps' => [], 'is_active' => true],
+        ['name' => 'Online College Enrollment', 'audience' => 'all', 'steps' => [], 'is_active' => true],
     )->update(['is_active' => true]);
 
     $feature = new OnlineCollegeEnrollment;
-    $user = User::factory()->create(['role' => 'student']);
+    $user = User::factory()->create();
 
     expect($feature->resolve($user))->toBeTrue();
 });
@@ -43,11 +43,11 @@ it('college enrollment feature resolves true when active', function (): void {
 it('college enrollment feature returns false when inactive', function (): void {
     OnboardingFeature::firstOrCreate(
         ['feature_key' => 'online-college-enrollment'],
-        ['name' => 'Online College Enrollment', 'audience' => 'student', 'steps' => [], 'is_active' => false],
+        ['name' => 'Online College Enrollment', 'audience' => 'all', 'steps' => [], 'is_active' => false],
     )->update(['is_active' => false]);
 
     $feature = new OnlineCollegeEnrollment;
-    $user = User::factory()->create(['role' => 'student']);
+    $user = User::factory()->create();
 
     expect($feature->resolve($user))->toBeFalse();
 });
@@ -57,7 +57,7 @@ it('college enrollment feature returns false when no record exists', function ()
     OnboardingFeature::where('feature_key', 'online-college-enrollment')->delete();
 
     $feature = new OnlineCollegeEnrollment;
-    $user = User::factory()->create(['role' => 'student']);
+    $user = User::factory()->create();
 
     expect($feature->resolve($user))->toBeFalse();
 });
@@ -65,11 +65,11 @@ it('college enrollment feature returns false when no record exists', function ()
 it('TESDA enrollment feature resolves true when active', function (): void {
     OnboardingFeature::firstOrCreate(
         ['feature_key' => 'online-tesda-enrollment'],
-        ['name' => 'Online TESDA Enrollment', 'audience' => 'student', 'steps' => [], 'is_active' => true],
+        ['name' => 'Online TESDA Enrollment', 'audience' => 'all', 'steps' => [], 'is_active' => true],
     )->update(['is_active' => true]);
 
     $feature = new OnlineTesdaEnrollment;
-    $user = User::factory()->create(['role' => 'student']);
+    $user = User::factory()->create();
 
     expect($feature->resolve($user))->toBeTrue();
 });
@@ -77,11 +77,11 @@ it('TESDA enrollment feature resolves true when active', function (): void {
 it('TESDA enrollment feature returns false when inactive', function (): void {
     OnboardingFeature::firstOrCreate(
         ['feature_key' => 'online-tesda-enrollment'],
-        ['name' => 'Online TESDA Enrollment', 'audience' => 'student', 'steps' => [], 'is_active' => false],
+        ['name' => 'Online TESDA Enrollment', 'audience' => 'all', 'steps' => [], 'is_active' => false],
     )->update(['is_active' => false]);
 
     $feature = new OnlineTesdaEnrollment;
-    $user = User::factory()->create(['role' => 'student']);
+    $user = User::factory()->create();
 
     expect($feature->resolve($user))->toBeFalse();
 });
@@ -111,7 +111,7 @@ it('can deactivate college enrollment via Pennant', function (): void {
 it('enrollment features can be toggled from Filament resource', function (): void {
     $feature = OnboardingFeature::firstOrCreate(
         ['feature_key' => 'online-college-enrollment'],
-        ['name' => 'Online College Enrollment', 'audience' => 'student', 'steps' => [], 'is_active' => true],
+        ['name' => 'Online College Enrollment', 'audience' => 'all', 'steps' => [], 'is_active' => true],
     );
     $feature->update(['is_active' => true]);
 

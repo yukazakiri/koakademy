@@ -30,7 +30,7 @@ final class CourseTransformer extends JsonResource
             // Course Information
             'course_information' => [
                 'description' => $this->resource->description,
-                'department' => $this->resource->department,
+                'department' => $this->resource->department?->code,
                 'curriculum_year' => $this->resource->curriculum_year,
                 'remarks' => $this->resource->remarks,
                 'is_active' => $this->resource->is_active,

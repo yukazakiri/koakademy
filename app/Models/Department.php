@@ -113,14 +113,10 @@ final class Department extends Model
 
     /**
      * Get all courses belonging to this department
-     * Matches by both department code and name for flexibility
      */
-    public function courses()
+    public function courses(): HasMany
     {
-        return Course::where(function ($query): void {
-            $query->where('department', $this->code)
-                ->orWhere('department', $this->name);
-        });
+        return $this->hasMany(Course::class, 'department_id');
     }
 
     /**
@@ -179,9 +175,7 @@ final class Department extends Model
      */
     public function getCoursesCount(): int
     {
-        return Course::where('department', $this->code)
-            ->orWhere('department', $this->name)
-            ->count();
+        return $this->courses()->count();
     }
 
     /**
@@ -262,9 +256,7 @@ final class Department extends Model
      */
     public function hasCourses(): bool
     {
-        return Course::where('department', $this->code)
-            ->orWhere('department', $this->name)
-            ->exists();
+        return $this->courses()->exists();
     }
 
     /**
@@ -293,10 +285,8 @@ final class Department extends Model
                 ->orWhere('department', $department->name)
                 ->update(['department' => null]);
 
-            // Handle course records - set department field to null for courses in this department (by code or name)
-            Course::where('department', $department->code)
-                ->orWhere('department', $department->name)
-                ->update(['department' => null]);
+            // Set courses' department_id to null instead of deleting courses
+            $department->courses()->update(['department_id' => null]);
         });
     }
 

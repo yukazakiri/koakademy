@@ -1,14 +1,14 @@
 {
-  "version": "1.0.0-dev.0.7",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.0.0-dev.0.7",
-  "commit": "5e60a3e18202c8e4bb4e17aca7fc2dfca7b240e5",
+  "version": "1.0.0-dev.0.8",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.0.0-dev.0.8",
+  "commit": "93cd99884a131aca104455a5be0739f0417c76d9",
   "branch": "master",
-  "timestamp": "2026-04-13T03:49:51Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24324660378",
+  "timestamp": "2026-04-13T13:12:03Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24344997006",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.0.0-dev.0.7 - Merge pull request #7 from yukazakiri/04-13-removed_passkey_prompts",
-    "previous": "1.0.0-dev.0.6"
+    "current": "Version 1.0.0-dev.0.8 - Add online enrollment features and UI/tests",
+    "previous": "1.0.0-dev.0.7"
   },
   "metadata": {
     "author": "yukazakiri",

@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\OnboardingFeatures\Pages;
 
-use App\Features\Onboarding\FeatureClassRegistry;
 use App\Filament\Resources\OnboardingFeatures\OnboardingFeatureResource;
 use Exception;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
-use Laravel\Pennant\Feature;
 
 final class EditOnboardingFeature extends EditRecord
 {
@@ -20,13 +18,10 @@ final class EditOnboardingFeature extends EditRecord
         $record = $this->record;
 
         try {
-            $featureClass = FeatureClassRegistry::classForKey($record->feature_key);
-            $featureRef = $featureClass ?? $record->feature_key;
-
             if ($record->is_active) {
-                Feature::activateForEveryone($featureRef);
+                OnboardingFeatureResource::activateFeature($record->feature_key);
             } else {
-                Feature::deactivateForEveryone($featureRef);
+                OnboardingFeatureResource::deactivateFeature($record->feature_key);
             }
 
             Notification::make()

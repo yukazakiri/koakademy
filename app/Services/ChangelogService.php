@@ -79,11 +79,176 @@ final readonly class ChangelogService
     }
 
     /**
+     * Get changelog entries formatted for the Filament Feature Showcase config.
+     *
+     * Only includes stable releases (no pre-releases) and maps GitHub release
+     * data into the title/description/features structure the showcase modal expects.
+     *
+     * @return array<string, array{title: string, description: string, features: array<int, array{icon: string, title: string, description: string}>}>
+     */
+    public function getShowcaseChangelog(): array
+    {
+        return Cache::remember('showcase_changelog', self::CACHE_TTL, function () {
+            $releases = $this->getChangelog(limit: 30, includePrereleases: false);
+
+            if ($releases->isEmpty()) {
+                return config('filament-feature-showcase.changelog', []);
+            }
+
+            return $releases->mapWithKeys(function (array $release): array {
+                $version = $release['version'];
+                $date = $release['date'];
+                $type = $release['type'];
+
+                $features = $this->buildShowcaseFeatures($release['changes']);
+
+                if ($features === []) {
+                    $features = [
+                        [
+                            'icon' => 'heroicon-o-arrow-path',
+                            'title' => 'Improvements',
+                            'description' => 'Various improvements and updates.',
+                        ],
+                    ];
+                }
+
+                return [
+                    $version => [
+                        'title' => "Version {$version}",
+                        'description' => "Released on {$date}",
+                        'features' => $features,
+                    ],
+                ];
+            })->all();
+        });
+    }
+
+    /**
+     * Get the latest stable version from GitHub releases.
+     */
+    public function getLatestStableVersion(): ?string
+    {
+        return Cache::remember('latest_stable_version', self::CACHE_TTL, function (): ?string {
+            $releases = $this->getChangelog(limit: 1, includePrereleases: false);
+
+            $first = $releases->first();
+
+            return $first['version'] ?? null;
+        });
+    }
+
+    /**
      * Clear the changelog cache.
      */
     public function clearCache(): void
     {
         Cache::forget(self::CACHE_KEY);
+        Cache::forget('showcase_changelog');
+        Cache::forget('latest_stable_version');
+    }
+
+    /**
+     * Build showcase-ready feature entries from parsed GitHub changes.
+     *
+     * Cleans up raw GitHub content (URLs, @mentions, PR refs) and produces
+     * concise title + description pairs that fit the showcase modal.
+     *
+     * @param  array<int, array{type: string, description: string}>  $changes
+     * @return array<int, array{icon: string, title: string, description: string}>
+     */
+    private function buildShowcaseFeatures(array $changes): array
+    {
+        return collect($changes)
+            ->filter(fn (array $change): bool => mb_strlen($this->cleanShowcaseText($change['description'])) > 0)
+            ->groupBy('type')
+            ->flatMap(function (Collection $group, string $type): array {
+                $icon = match ($type) {
+                    'feature' => 'heroicon-o-sparkles',
+                    'fix' => 'heroicon-o-bug-ant',
+                    'breaking' => 'heroicon-o-exclamation-triangle',
+                    'security' => 'heroicon-o-shield-check',
+                    default => 'heroicon-o-arrow-path',
+                };
+
+                $typeLabel = match ($type) {
+                    'feature' => 'New Features',
+                    'fix' => 'Bug Fixes',
+                    'breaking' => 'Breaking Changes',
+                    'security' => 'Security',
+                    default => 'Improvements',
+                };
+
+                if ($group->count() === 1) {
+                    $raw = $group->first()['description'];
+                    $cleaned = $this->cleanShowcaseText($raw);
+                    $short = $this->summarizeShowcaseTitle($cleaned);
+
+                    return [[
+                        'icon' => $icon,
+                        'title' => $short,
+                        'description' => $cleaned,
+                    ]];
+                }
+
+                $summaries = $group->map(fn (array $change): string => $this->summarizeShowcaseTitle($this->cleanShowcaseText($change['description'])))->filter()->values();
+
+                return [[
+                    'icon' => $icon,
+                    'title' => $typeLabel,
+                    'description' => $summaries->implode("\n"),
+                ]];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Clean raw GitHub release text for the showcase modal.
+     * Strips URLs, @mentions, PR/commit references, and extra whitespace.
+     */
+    private function cleanShowcaseText(string $text): string
+    {
+        // Remove full URLs (http/https)
+        $text = preg_replace('/https?:\/\/\S+/', '', $text);
+        // Remove @mentions
+        $text = preg_replace('/@[\w-]+/', '', $text);
+        // Remove PR references like (#123)
+        $text = preg_replace('/\(#\d+\)/', '', $text);
+        // Remove commit hash references
+        $text = preg_replace('/\b[0-9a-f]{7,40}\b/', '', $text);
+        // Remove markdown bold/italic
+        $text = preg_replace('/[*_]+/', '', $text);
+        // Collapse whitespace
+        $text = preg_replace('/\s+/', ' ', mb_trim($text));
+        // Remove trailing punctuation artifacts
+        $text = mb_rtrim($text, ' ,;-');
+
+        return $text;
+    }
+
+    /**
+     * Create a short title from a cleaned description.
+     * Takes the first sentence or truncates to a reasonable length.
+     */
+    private function summarizeShowcaseTitle(string $cleanedText): string
+    {
+        if ($cleanedText === '') {
+            return '';
+        }
+
+        // Take first sentence (up to period, colon, or semicolon)
+        if (preg_match('/^(.+?)[.:;]/', $cleanedText, $match)) {
+            $short = mb_trim($match[1]);
+        } else {
+            $short = $cleanedText;
+        }
+
+        // Cap at 60 chars
+        if (mb_strlen($short) > 60) {
+            $short = mb_substr($short, 0, 57).'...';
+        }
+
+        return ucfirst($short);
     }
 
     /**
@@ -94,11 +259,8 @@ final readonly class ChangelogService
         $repo = $this->githubRepo ?? config('services.github.repo');
         $token = $this->githubToken ?? config('services.github.token');
 
-        if (! $repo || ! $token) {
-            Log::warning('ChangelogService: Missing GitHub configuration', [
-                'repo' => $repo ?: 'not set',
-                'token' => $token ? 'set (hidden)' : 'not set',
-            ]);
+        if (! $repo) {
+            Log::warning('ChangelogService: Missing GitHub repository configuration');
 
             return [];
         }
@@ -107,13 +269,19 @@ final readonly class ChangelogService
             Log::info('ChangelogService: Fetching releases from GitHub', [
                 'repo' => $repo,
                 'limit' => $limit,
+                'authenticated' => (bool) $token,
             ]);
 
+            $headers = [
+                'Accept' => 'application/vnd.github.v3+json',
+            ];
+
+            if ($token) {
+                $headers['Authorization'] = "Bearer {$token}";
+            }
+
             $response = Http::timeout(10)
-                ->withHeaders([
-                    'Accept' => 'application/vnd.github.v3+json',
-                    'Authorization' => "Bearer {$token}",
-                ])
+                ->withHeaders($headers)
                 ->get("https://api.github.com/repos/{$repo}/releases", [
                     'per_page' => $limit,
                 ]);

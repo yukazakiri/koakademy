@@ -12,8 +12,10 @@ use App\Filament\Resources\Courses\RelationManagers\SubjectsRelationManager;
 use App\Filament\Resources\Courses\Schemas\CourseForm;
 use App\Filament\Resources\Courses\Tables\CoursesTable;
 use App\Models\Course;
+use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use UnitEnum;
 
@@ -22,6 +24,8 @@ final class CourseResource extends Resource
     protected static ?string $model = Course::class;
 
     protected static ?string $recordTitleAttribute = 'code';
+
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
 
     protected static string|UnitEnum|null $navigationGroup = 'Academics';
 

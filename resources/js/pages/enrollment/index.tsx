@@ -106,6 +106,8 @@ interface EnrollmentCreateProps {
     departments: Department[];
     courses: Course[];
     flash?: Flash;
+    college_enrollment_enabled?: boolean;
+    tesda_enrollment_enabled?: boolean;
 }
 
 const steps = [
@@ -209,7 +211,7 @@ interface Branding {
 const sanitizeNumberInput = (value: string) => value.replace(/\D/g, "");
 const sanitizeNameInput = (value: string) => value.replace(/[^a-zA-Z\s.-]/g, "");
 
-export default function EnrollmentCreate({ departments, courses, flash }: EnrollmentCreateProps) {
+export default function EnrollmentCreate({ departments, courses, flash, college_enrollment_enabled = false, tesda_enrollment_enabled = true }: EnrollmentCreateProps) {
     const { props } = usePage<{ branding?: Branding }>();
     const appName = props.branding?.appName || "School Portal";
     const orgShortName = props.branding?.organizationShortName || "UNI";
@@ -233,7 +235,7 @@ export default function EnrollmentCreate({ departments, courses, flash }: Enroll
     }, [availableDocuments]);
 
     const { data, setData, post, processing, errors, reset } = useForm<EnrollmentFormData>({
-        student_type: "tesda", // Default to TESDA
+        student_type: tesda_enrollment_enabled ? "tesda" : "college",
         department: "TESDA",
         course_id: "",
         academic_year: "",
@@ -737,17 +739,20 @@ export default function EnrollmentCreate({ departments, courses, flash }: Enroll
                                     <RadioGroup
                                         value={data.student_type}
                                         onValueChange={(val: "college" | "tesda") => {
-                                            if (val === "college") return;
                                             setData("student_type", val);
                                         }}
                                         className="grid grid-cols-1 gap-4 sm:grid-cols-2"
                                     >
-                                        {/* ... existing radio items ... */}
-                                        <div className="relative opacity-60">
-                                            <RadioGroupItem value="college" id="type-college" className="peer sr-only" disabled />
+                                        <div className={cn("relative", !college_enrollment_enabled && "opacity-60")}>
+                                            <RadioGroupItem value="college" id="type-college" className="peer sr-only" disabled={!college_enrollment_enabled} />
                                             <Label
                                                 htmlFor="type-college"
-                                                className="border-muted bg-card flex cursor-not-allowed items-center gap-4 rounded-xl border-2 p-4 grayscale hover:bg-transparent"
+                                                className={cn(
+                                                    "border-muted bg-card flex items-center gap-4 rounded-xl border-2 p-4",
+                                                    college_enrollment_enabled
+                                                        ? "cursor-pointer hover:bg-accent peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/5 shadow-sm transition-all"
+                                                        : "cursor-not-allowed grayscale hover:bg-transparent",
+                                                )}
                                             >
                                                 <div className="bg-primary/10 shrink-0 rounded-full p-3">
                                                     <BookOpen className="text-primary h-6 w-6" />
@@ -759,18 +764,25 @@ export default function EnrollmentCreate({ departments, courses, flash }: Enroll
                                                     </p>
                                                 </div>
                                             </Label>
-                                            <Badge variant="destructive" className="absolute top-2 right-2 px-1.5 py-0 text-[10px]">
-                                                Closed
-                                            </Badge>
+                                            {!college_enrollment_enabled && (
+                                                <Badge variant="destructive" className="absolute top-2 right-2 px-1.5 py-0 text-[10px]">
+                                                    Closed
+                                                </Badge>
+                                            )}
                                         </div>
-                                        <div>
-                                            <RadioGroupItem value="tesda" id="type-tesda" className="peer sr-only" />
+                                        <div className={cn("relative", !tesda_enrollment_enabled && "opacity-60")}>
+                                            <RadioGroupItem value="tesda" id="type-tesda" className="peer sr-only" disabled={!tesda_enrollment_enabled} />
                                             <Label
                                                 htmlFor="type-tesda"
-                                                className="border-muted bg-card hover:bg-accent peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/5 flex cursor-pointer items-center gap-4 rounded-xl border-2 p-4 shadow-sm transition-all"
+                                                className={cn(
+                                                    "border-muted bg-card flex items-center gap-4 rounded-xl border-2 p-4",
+                                                    tesda_enrollment_enabled
+                                                        ? "cursor-pointer hover:bg-accent peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/5 shadow-sm transition-all"
+                                                        : "cursor-not-allowed grayscale hover:bg-transparent",
+                                                )}
                                             >
-                                                <div className="shrink-0 rounded-full bg-orange-500/10 p-3">
-                                                    <Sparkles className="h-6 w-6 text-orange-600" />
+                                                <div className={cn("shrink-0 rounded-full p-3", tesda_enrollment_enabled ? "bg-orange-500/10" : "bg-muted")}>
+                                                    <Sparkles className={cn("h-6 w-6", tesda_enrollment_enabled ? "text-orange-600" : "text-muted-foreground")} />
                                                 </div>
                                                 <div className="space-y-1">
                                                     <span className="font-semibold">TESDA Scholar</span>
@@ -779,6 +791,11 @@ export default function EnrollmentCreate({ departments, courses, flash }: Enroll
                                                     </p>
                                                 </div>
                                             </Label>
+                                            {!tesda_enrollment_enabled && (
+                                                <Badge variant="destructive" className="absolute top-2 right-2 px-1.5 py-0 text-[10px]">
+                                                    Closed
+                                                </Badge>
+                                            )}
                                         </div>
                                     </RadioGroup>
                                 </div>
@@ -791,8 +808,8 @@ export default function EnrollmentCreate({ departments, courses, flash }: Enroll
                                                 value={data.course_id}
                                                 onValueChange={(val) => setData("course_id", val)}
                                                 options={courseOptions}
-                                                placeholder="Select a TESDA course..."
-                                                emptyText="No TESDA courses found."
+                                                placeholder={data.student_type === "tesda" ? "Select a TESDA course..." : "Select a college program..."}
+                                                emptyText={data.student_type === "tesda" ? "No TESDA courses found." : "No college programs found."}
                                                 className="w-full"
                                             />
                                             {selectedCourse?.description && (

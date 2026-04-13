@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Courses\Tables;
 
-use App\Models\Department;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -20,7 +19,7 @@ final class CoursesTable
     public static function configure(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with(['school'])->withCount('subjects'))
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with(['school', 'department'])->withCount('subjects'))
             ->defaultSort('code')
             ->striped()
             ->columns([
@@ -37,7 +36,7 @@ final class CoursesTable
                     ->searchable()
                     ->sortable()
                     ->wrap(),
-                TextColumn::make('department')
+                TextColumn::make('department.code')
                     ->label('Department')
                     ->badge()
                     ->color('gray')
@@ -107,12 +106,9 @@ final class CoursesTable
                     ->placeholder('All programs')
                     ->trueLabel('Active only')
                     ->falseLabel('Inactive only'),
-                SelectFilter::make('department')
+                SelectFilter::make('department_id')
                     ->label('Department')
-                    ->options(fn (): array => Department::query()
-                        ->orderBy('name')
-                        ->pluck('name', 'code')
-                        ->all())
+                    ->relationship('department', 'name')
                     ->searchable(),
             ])
             ->recordActions([

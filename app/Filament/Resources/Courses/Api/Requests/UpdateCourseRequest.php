@@ -27,7 +27,7 @@ final class UpdateCourseRequest extends FormRequest
             'code' => 'required',
             'title' => 'required',
             'description' => 'required|string',
-            'department' => 'required',
+            'department_id' => 'required|exists:departments,id',
             'lec_per_unit' => 'required',
             'lab_per_unit' => 'required',
             'remarks' => 'required|string',

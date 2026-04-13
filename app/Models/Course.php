@@ -76,7 +76,7 @@ final class Course extends Model
         'code',
         'title',
         'description',
-        'department',
+        'department_id',
         'units',
         'lec_per_unit',
         'lab_per_unit',
@@ -95,9 +95,9 @@ final class Course extends Model
 
     public static function getCourseDetails($courseId): string
     {
-        $course = self::query()->find($courseId);
+        $course = self::query()->with('department')->find($courseId);
 
-        return $course ? sprintf('%s (Code: %s, Department: %s)', $course->title, $course->code, $course->department) : 'Course details not available';
+        return $course ? sprintf('%s (Code: %s, Department: %s)', $course->title, $course->code, $course->department?->code ?? 'N/A') : 'Course details not available';
     }
 
     /**
@@ -109,14 +109,14 @@ final class Course extends Model
             'courses.id',
             'courses.code',
             'courses.title',
-            'courses.department',
+            'courses.department_id',
             DB::raw('COUNT(students.id) as student_count'),
         ])
             ->leftJoin('students', function ($join): void {
                 $join->on('courses.id', '=', 'students.course_id')
                     ->whereNull('students.deleted_at');
             })
-            ->groupBy('courses.id', 'courses.code', 'courses.title', 'courses.department')
+            ->groupBy('courses.id', 'courses.code', 'courses.title', 'courses.department_id')
             ->orderBy('courses.code')
             ->get();
     }
@@ -132,17 +132,16 @@ final class Course extends Model
             'id' => (int) $this->id,
             'code' => $this->code,
             'title' => $this->title,
-            'department' => $this->department,
+            'department' => $this->department?->code,
         ];
     }
 
     /**
      * Get the department this course belongs to
-     * Matches by department code since course table stores department as string
      */
     public function department(): BelongsTo
     {
-        return $this->belongsTo(Department::class, 'department', 'code');
+        return $this->belongsTo(Department::class, 'department_id');
     }
 
     public function subjects()

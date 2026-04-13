@@ -6,10 +6,10 @@ namespace App\Http\Controllers;
 
 use App\Enums\StudentStatus;
 use App\Enums\StudentType;
-use App\Features\OnlineCollegeEnrollment;
-use App\Features\OnlineTesdaEnrollment;
 use App\Http\Requests\StoreEnrollmentRegistrationRequest;
 use App\Models\Course;
+use App\Models\Department;
+use App\Models\OnboardingFeature;
 use App\Models\Student;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\UploadedFile;
@@ -19,14 +19,20 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
-use Laravel\Pennant\Feature;
 
 final class EnrollmentRegistrationController extends Controller
 {
     public function create(): Response
     {
-        $collegeEnabled = Feature::active(OnlineCollegeEnrollment::class);
-        $tesdaEnabled = Feature::active(OnlineTesdaEnrollment::class);
+        $collegeEnabled = OnboardingFeature::query()
+            ->where('feature_key', 'online-college-enrollment')
+            ->where('is_active', true)
+            ->value('is_active') ?? false;
+
+        $tesdaEnabled = OnboardingFeature::query()
+            ->where('feature_key', 'online-tesda-enrollment')
+            ->where('is_active', true)
+            ->value('is_active') ?? false;
 
         if (! $collegeEnabled && ! $tesdaEnabled) {
             return Inertia::render('enrollment/closed', [
@@ -36,22 +42,32 @@ final class EnrollmentRegistrationController extends Controller
 
         $courses = Course::query()
             ->where('is_active', true)
-            ->select(['id', 'code', 'title', 'department', 'description'])
-            ->orderBy('department')
+            ->with('department')
+            ->when(! $tesdaEnabled, fn ($q) => $q->whereHas('department', fn ($q) => $q->whereRaw('UPPER(TRIM(code)) != ?', ['TESDA'])))
+            ->when(! $collegeEnabled, fn ($q) => $q->whereHas('department', fn ($q) => $q->whereRaw('UPPER(TRIM(code)) = ?', ['TESDA'])))
             ->orderBy('title')
             ->get();
 
-        $departments = [
-            ['code' => 'IT', 'label' => 'Information Technology'],
-            ['code' => 'HM', 'label' => 'Hospitality Management'],
-            ['code' => 'BA', 'label' => 'Business Administration'],
-            ['code' => 'HRM', 'label' => 'Human Resource Management'],
-            ['code' => 'TESDA', 'label' => 'TESDA'],
-        ];
+        $departments = Department::query()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get()
+            ->map(fn (Department $dept): array => [
+                'code' => $dept->code,
+                'label' => $dept->name,
+            ])
+            ->values()
+            ->all();
 
         return Inertia::render('enrollment/index', [
             'departments' => $departments,
-            'courses' => $courses,
+            'courses' => $courses->map(fn (Course $course): array => [
+                'id' => $course->id,
+                'code' => $course->code,
+                'title' => $course->title,
+                'department' => $course->department?->code,
+                'description' => $course->description,
+            ])->all(),
             'flash' => session('flash'),
             'college_enrollment_enabled' => $collegeEnabled,
             'tesda_enrollment_enabled' => $tesdaEnabled,
@@ -64,13 +80,19 @@ final class EnrollmentRegistrationController extends Controller
         $studentTypeValue = $payload['student_type'] ?? '';
 
         // Check feature flags before allowing submission
-        if ($studentTypeValue === 'college' && ! Feature::active(OnlineCollegeEnrollment::class)) {
+        if ($studentTypeValue === 'college' && ! OnboardingFeature::query()
+            ->where('feature_key', 'online-college-enrollment')
+            ->where('is_active', true)
+            ->exists()) {
             return redirect()->back()->with('flash', [
                 'error' => 'College online registration is currently unavailable.',
             ]);
         }
 
-        if ($studentTypeValue === 'tesda' && ! Feature::active(OnlineTesdaEnrollment::class)) {
+        if ($studentTypeValue === 'tesda' && ! OnboardingFeature::query()
+            ->where('feature_key', 'online-tesda-enrollment')
+            ->where('is_active', true)
+            ->exists()) {
             return redirect()->back()->with('flash', [
                 'error' => 'TESDA online registration is currently unavailable.',
             ]);
@@ -84,7 +106,7 @@ final class EnrollmentRegistrationController extends Controller
         $courseId = (int) $payload['course_id'];
         $course = Course::query()->findOrFail($courseId);
 
-        if ($studentType === StudentType::TESDA && mb_strtoupper(mb_trim((string) $course->department)) !== 'TESDA') {
+        if ($studentType === StudentType::TESDA && mb_strtoupper(mb_trim((string) ($course->department?->code ?? ''))) !== 'TESDA') {
             return redirect()->back()->with('flash', [
                 'error' => 'TESDA applicants must select a TESDA course/program.',
             ]);

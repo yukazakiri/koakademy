@@ -337,7 +337,11 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
             if (data.student_type === "tesda") {
                 return courseDepartment === "TESDA";
             }
-            return normalizedDepartment.length > 0 && courseDepartment === normalizedDepartment;
+            // For college: show all non-TESDA courses if no department selected, otherwise filter by department
+            if (normalizedDepartment.length === 0) {
+                return courseDepartment !== "TESDA";
+            }
+            return courseDepartment === normalizedDepartment;
         });
     }, [courses, data.department, data.student_type]);
 
@@ -799,6 +803,34 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                         </div>
                                     </RadioGroup>
                                 </div>
+
+                                {data.student_type === "college" && availableDepartments.length > 0 && (
+                                    <div className="space-y-3">
+                                        <Label className="text-base font-semibold">Department</Label>
+                                        <Card className="border shadow-sm">
+                                            <CardContent className="p-4">
+                                                <Combobox
+                                                    value={data.department}
+                                                    onValueChange={(val) => {
+                                                        setData("department", val);
+                                                        setData("course_id", "");
+                                                    }}
+                                                    options={availableDepartments.map((dept) => ({
+                                                        value: dept.code,
+                                                        label: dept.label,
+                                                        searchText: `${dept.code} ${dept.label}`,
+                                                    }))}
+                                                    placeholder="Select a department (optional)..."
+                                                    emptyText="No departments found."
+                                                    className="w-full"
+                                                />
+                                                <p className="text-muted-foreground mt-2 text-xs">
+                                                    Filter by department or leave empty to see all college programs.
+                                                </p>
+                                            </CardContent>
+                                        </Card>
+                                    </div>
+                                )}
 
                                 <div className="space-y-3">
                                     <Label className="text-base font-semibold">Course / Program</Label>

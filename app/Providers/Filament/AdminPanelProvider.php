@@ -33,6 +33,7 @@ use Filament\Support\Enums\Platform;
 use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
 use Filament\Widgets\AccountWidget;
+use HeliosLive\FilamentFeatureShowcase\FeatureShowcasePlugin;
 use Illuminate\Contracts\View\Factory;
 use Illuminate\Contracts\View\View;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
@@ -133,6 +134,10 @@ final class AdminPanelProvider extends PanelProvider
                 ->authorize(condition: fn (): bool => Auth::user()?->hasRole(UserRole::SuperAdmin)),
             SpotlightPlugin::make(),
             PasskeysPlugin::make(),
+            FeatureShowcasePlugin::make()
+                ->showSidebarVersion(true)     // Show version in sidebar footer (default: true)
+                ->showButton(true)             // Show the floating "What's New" button (default: true)
+                ->buttonPosition('bottom-left'),
         ];
 
         $isTestingEnvironment = ($_ENV['APP_ENV'] ?? $_SERVER['APP_ENV'] ?? null) === 'testing';

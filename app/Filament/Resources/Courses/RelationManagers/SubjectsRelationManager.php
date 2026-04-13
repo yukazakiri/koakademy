@@ -14,16 +14,19 @@ use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
 // use Filament\Forms\Components\Tabs;
 // use Filament\Forms\Components\Section;
-use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 
 final class SubjectsRelationManager extends RelationManager
@@ -169,12 +172,48 @@ final class SubjectsRelationManager extends RelationManager
     {
         return $table
             ->recordTitleAttribute('code')
+            ->defaultSort('academic_year')
+            ->striped()
             ->columns([
-                TextColumn::make('code')->label('Code'),
-                TextColumn::make('title')->label('Title'),
-                TextColumn::make('units')->label('Units'),
-                TextColumn::make('academic_year')->label('Academic Year'),
-                TextColumn::make('semester')->label('Semester'),
+                TextColumn::make('code')
+                    ->label('Code')
+                    ->searchable()
+                    ->sortable()
+                    ->weight('medium'),
+                TextColumn::make('title')
+                    ->label('Title')
+                    ->searchable()
+                    ->wrap(),
+                TextColumn::make('units')
+                    ->label('Units')
+                    ->numeric()
+                    ->sortable()
+                    ->alignEnd(),
+                TextColumn::make('academic_year')
+                    ->label('Year')
+                    ->formatStateUsing(fn (?int $state): string => match ($state) {
+                        1 => '1st year',
+                        2 => '2nd year',
+                        3 => '3rd year',
+                        4 => '4th year',
+                        default => $state !== null ? (string) $state : '—',
+                    })
+                    ->sortable(),
+                TextColumn::make('semester')
+                    ->label('Semester')
+                    ->formatStateUsing(fn (?int $state): string => match ($state) {
+                        1 => '1st sem.',
+                        2 => '2nd sem.',
+                        3 => 'Summer',
+                        default => $state !== null ? (string) $state : '—',
+                    })
+                    ->sortable(),
+                IconColumn::make('is_credited')
+                    ->label('Credited')
+                    ->boolean()
+                    ->trueIcon(Heroicon::OutlinedCheckCircle)
+                    ->falseIcon(Heroicon::OutlinedXCircle)
+                    ->alignCenter(),
                 TextColumn::make('pre_riquisite')
                     ->label('Prerequisites')
                     ->formatStateUsing(function ($state) {
@@ -183,30 +222,45 @@ final class SubjectsRelationManager extends RelationManager
                         }
 
                         if (! is_array($state)) {
-                            $state = json_decode($state, true);
+                            $state = json_decode((string) $state, true);
                         }
 
-                        if (empty($state)) {
+                        if (empty($state) || ! is_array($state)) {
                             return 'None';
                         }
 
                         $prerequisites = Subject::whereIn('id', $state)
                             ->get()
-                            ->map(fn ($subject): string => "{$subject->code} - {$subject->title}");
+                            ->map(fn ($subject): string => "{$subject->code} — {$subject->title}");
 
                         return $prerequisites->implode(', ');
                     })
                     ->wrap()
-                    ->sortable(),
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                //
+                SelectFilter::make('academic_year')
+                    ->label('Year level')
+                    ->options([
+                        1 => '1st year',
+                        2 => '2nd year',
+                        3 => '3rd year',
+                        4 => '4th year',
+                    ]),
+                SelectFilter::make('semester')
+                    ->label('Semester')
+                    ->options([
+                        1 => '1st semester',
+                        2 => '2nd semester',
+                        3 => 'Summer',
+                    ]),
             ])
             ->headerActions([
                 CreateAction::make(),
             ])
             ->recordActions([
-                EditAction::make(),
+                EditAction::make()
+                    ->icon(Heroicon::PencilSquare),
                 DeleteAction::make(),
             ])
             ->toolbarActions([

@@ -7,12 +7,16 @@ namespace App\Providers;
 use App\Features\Onboarding\FeatureClassRegistry;
 use App\Filament\Handlers\ExportFailureHandler;
 use App\Models\User;
+use App\Services\ChangelogService;
 use App\Services\GeneralSettingsService;
+use App\Services\VersionService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Pennant\Feature;
+use Log;
+use Throwable;
 
 final class AppServiceProvider extends ServiceProvider
 {
@@ -45,6 +49,48 @@ final class AppServiceProvider extends ServiceProvider
         // namespaces (App\Features\Onboarding\*) must be registered explicitly.
         foreach (FeatureClassRegistry::allClasses() as $featureClass) {
             Feature::define($featureClass);
+        }
+
+        // Dynamically populate the Filament Feature Showcase config from
+        // GitHub releases (stable only) and version.json so the changelog
+        // stays in sync without manual config edits.
+        $this->syncFeatureShowcaseConfig();
+    }
+
+    /**
+     * Dynamically sync the Filament Feature Showcase config with GitHub
+     * releases (stable only) and the local version.json file.
+     */
+    private function syncFeatureShowcaseConfig(): void
+    {
+        try {
+            $changelogService = app(ChangelogService::class);
+            $versionService = app(VersionService::class);
+
+            $versionData = $versionService->getVersionData();
+            $showcaseChangelog = $changelogService->getShowcaseChangelog();
+            $latestStable = $changelogService->getLatestStableVersion();
+
+            // Prefer version.json version; fall back to latest GitHub stable release
+            $currentVersion = ($versionData['version'] ?? null)
+                ?? $latestStable
+                ?? config('filament-feature-showcase.current');
+
+            config([
+                'filament-feature-showcase.current' => $currentVersion,
+            ]);
+
+            // Only override changelog if GitHub returned data; otherwise keep config fallback
+            if ($showcaseChangelog !== []) {
+                config([
+                    'filament-feature-showcase.changelog' => $showcaseChangelog,
+                ]);
+            }
+        } catch (Throwable $e) {
+            // Silently keep static config as fallback if dynamic fetch fails
+            Log::warning('Failed to sync feature showcase config dynamically', [
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 }

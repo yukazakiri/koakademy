@@ -85,6 +85,8 @@ final class Course extends Model
         'school_year',
         'curriculum_year',
         'miscellaneous',
+        'miscelaneous',
+        'remarks',
         'is_active',
         'school_id',
     ];

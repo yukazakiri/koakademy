@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "9eb585f84dffd10ab9c613f55696c7e0",
+    "content-hash": "91c617a2fc5c3fd99ef01a731bbad87f",
     "packages": [
         {
             "name": "achyutn/filament-log-viewer",
@@ -4851,6 +4851,64 @@
                 }
             ],
             "time": "2025-08-22T14:27:06+00:00"
+        },
+        {
+            "name": "helios-live/filament-feature-showcase",
+            "version": "v1.2.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/helios-live/filament-feature-showcase.git",
+                "reference": "0e8fd0401551f87a4dc6a36a0da2ed818a736672"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/helios-live/filament-feature-showcase/zipball/0e8fd0401551f87a4dc6a36a0da2ed818a736672",
+                "reference": "0e8fd0401551f87a4dc6a36a0da2ed818a736672",
+                "shasum": ""
+            },
+            "require": {
+                "filament/filament": "^3.0 || ^4.0 || ^5.0",
+                "php": "^8.1",
+                "spatie/laravel-package-tools": "^1.14"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "HeliosLive\\FilamentFeatureShowcase\\FeatureShowcaseServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "HeliosLive\\FilamentFeatureShowcase\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Helios Live",
+                    "email": "hello@helios.live"
+                }
+            ],
+            "description": "A Filament plugin that displays a beautiful version changelog modal with an always-accessible 'What's New' button.",
+            "homepage": "https://github.com/helios-live/filament-feature-showcase",
+            "keywords": [
+                "changelog",
+                "feature-showcase",
+                "filament",
+                "laravel",
+                "version",
+                "whats-new"
+            ],
+            "support": {
+                "issues": "https://github.com/helios-live/filament-feature-showcase/issues",
+                "source": "https://github.com/helios-live/filament-feature-showcase/tree/v1.2.0"
+            },
+            "time": "2026-04-06T22:18:50+00:00"
         },
         {
             "name": "http-interop/http-factory-guzzle",

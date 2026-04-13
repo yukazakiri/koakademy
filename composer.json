@@ -37,6 +37,7 @@
         "guava/calendar": "^3.0",
         "guava/filament-icon-select-column": "^3.0",
         "guzzlehttp/guzzle": "^7.10",
+        "helios-live/filament-feature-showcase": "^1.2",
         "http-interop/http-factory-guzzle": "^1.2",
         "inertiajs/inertia-laravel": "^2.0",
         "joaopaulolndev/filament-edit-profile": "^3.0",

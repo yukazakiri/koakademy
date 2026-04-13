@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { Link, useForm } from "@inertiajs/react";
 import axios from "axios";
 import { Eye, EyeOff, Key, Loader2, Lock, Mail } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 // Helper to check if WebAuthn is supported
@@ -32,8 +32,6 @@ export function LoginForm({
     const [showPassword, setShowPassword] = useState(false);
     const [loggingInWithPasskey, setLoggingInWithPasskey] = useState(false);
     const [passkeyAvailable, setPasskeyAvailable] = useState(false);
-    const [showPasskeyPrompt, setShowPasskeyPrompt] = useState(false);
-    const hasPromptedRef = useRef(false);
 
     // Check if passkeys are available on mount
     useEffect(() => {
@@ -46,15 +44,6 @@ export function LoginForm({
             }
 
             setPasskeyAvailable(supported);
-
-            // Show prompt if passkeys are supported and we haven't prompted yet
-            if (supported && !hasPromptedRef.current) {
-                hasPromptedRef.current = true;
-                // Small delay to let the page render first
-                setTimeout(() => {
-                    setShowPasskeyPrompt(true);
-                }, 500);
-            }
         };
         checkPasskeySupport();
     }, []);
@@ -93,7 +82,6 @@ export function LoginForm({
         if (loggingInWithPasskey) return;
 
         setLoggingInWithPasskey(true);
-        setShowPasskeyPrompt(false);
 
         try {
             // 1. Get options from backend (no email needed for discoverable credentials)
@@ -196,47 +184,6 @@ export function LoginForm({
 
     return (
         <div className={cn("flex flex-col gap-6", className)} {...props}>
-            {/* Passkey prompt banner */}
-            {showPasskeyPrompt && passkeyAvailable && (
-                <div className="border-primary/20 bg-primary/5 animate-in fade-in slide-in-from-top-2 rounded-lg border p-4 duration-300">
-                    <div className="flex items-start gap-3">
-                        <div className="bg-primary/10 rounded-full p-2">
-                            <Key className="text-primary h-4 w-4" />
-                        </div>
-                        <div className="flex-1 space-y-2">
-                            <p className="text-foreground text-sm font-medium">Sign in faster with a passkey</p>
-                            <p className="text-muted-foreground text-xs">
-                                Use your fingerprint, face, or device PIN to sign in securely without a password.
-                            </p>
-                            <div className="flex gap-2 pt-1">
-                                <Button type="button" size="sm" onClick={handlePasskeyLogin} disabled={loggingInWithPasskey} className="h-8">
-                                    {loggingInWithPasskey ? (
-                                        <>
-                                            <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                                            Verifying...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Key className="mr-2 h-3 w-3" />
-                                            Use passkey
-                                        </>
-                                    )}
-                                </Button>
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => setShowPasskeyPrompt(false)}
-                                    className="text-muted-foreground h-8"
-                                >
-                                    Not now
-                                </Button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
             <form onSubmit={submit}>
                 <div className="flex flex-col gap-6">
                     <div className="flex flex-col items-center gap-2">

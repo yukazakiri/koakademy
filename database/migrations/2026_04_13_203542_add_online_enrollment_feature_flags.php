@@ -17,7 +17,7 @@ return new class extends Migration
         $tesda = OnboardingFeature::create([
             'feature_key' => 'online-tesda-enrollment',
             'name' => 'Online TESDA Enrollment',
-            'audience' => 'student',
+            'audience' => 'all',
             'summary' => 'Enable or disable online enrollment for TESDA scholarship programs.',
             'badge' => 'TESDA',
             'accent' => 'text-orange-600',
@@ -47,7 +47,7 @@ return new class extends Migration
         $college = OnboardingFeature::create([
             'feature_key' => 'online-college-enrollment',
             'name' => 'Online College Enrollment',
-            'audience' => 'student',
+            'audience' => 'all',
             'summary' => 'Enable or disable online enrollment for college degree programs (BSIT, BSHM, BSBA).',
             'badge' => 'College',
             'accent' => 'text-primary',

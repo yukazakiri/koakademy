@@ -19,7 +19,7 @@ final class UpdateCurriculumProgramRequest extends FormRequest
             'code' => ['required', 'string', 'max:255'],
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
-            'department' => ['required', 'string', 'max:255'],
+            'department_id' => ['required', 'integer', 'exists:departments,id'],
             'lec_per_unit' => ['nullable', 'numeric', 'min:0'],
             'lab_per_unit' => ['nullable', 'numeric', 'min:0'],
             'remarks' => ['nullable', 'string'],
@@ -33,7 +33,7 @@ final class UpdateCurriculumProgramRequest extends FormRequest
         return [
             'code.required' => 'Program code is required.',
             'title.required' => 'Program title is required.',
-            'department.required' => 'Department is required.',
+            'department_id.required' => 'Department is required.',
             'lec_per_unit.numeric' => 'Lecture per unit must be a number.',
             'lab_per_unit.numeric' => 'Lab per unit must be a number.',
             'miscelaneous.numeric' => 'Miscellaneous fee must be a number.',

@@ -17,14 +17,6 @@ final class OnlineTesdaEnrollment
     }
 
     /**
-     * @return array<int, string>
-     */
-    public function audienceRoles(): array
-    {
-        return ['student'];
-    }
-
-    /**
      * Resolve the feature's initial value.
      */
     public function resolve(User $scope): bool

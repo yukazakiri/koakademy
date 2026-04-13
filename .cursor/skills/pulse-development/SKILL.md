@@ -18,8 +18,8 @@ Pulse stores data in your application's database. The current package supports M
 
 ```bash
 composer require laravel/pulse
-vendor/bin/sail artisan vendor:publish --provider="Laravel\Pulse\PulseServiceProvider"
-vendor/bin/sail artisan migrate
+php artisan vendor:publish --provider="Laravel\Pulse\PulseServiceProvider"
+php artisan migrate
 ```
 
 The dashboard is available at `/pulse`. 
@@ -101,13 +101,13 @@ PULSE_REDIS_CONNECTION=pulse
 Run a worker to drain the Redis stream into the database:
 
 ```bash
-vendor/bin/sail artisan pulse:work
+php artisan pulse:work
 ```
 
 Signal a graceful restart during deployment (requires a working cache driver):
 
 ```bash
-vendor/bin/sail artisan pulse:restart
+php artisan pulse:restart
 ```
 
 ## Custom Cards

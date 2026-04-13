@@ -1,14 +1,14 @@
 {
-  "version": "1.0.0-dev.0.8",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.0.0-dev.0.8",
-  "commit": "93cd99884a131aca104455a5be0739f0417c76d9",
+  "version": "1.0.0-dev.0.9",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.0.0-dev.0.9",
+  "commit": "bfbc40cff96df77f0c247e9ef271a823a59d2d9c",
   "branch": "master",
-  "timestamp": "2026-04-13T13:12:03Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24344997006",
+  "timestamp": "2026-04-13T13:57:01Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24347122102",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.0.0-dev.0.8 - Add online enrollment features and UI/tests",
-    "previous": "1.0.0-dev.0.7"
+    "current": "Version 1.0.0-dev.0.9 - Create 2026_04_13_213045_add_department_id_to_courses_table.php",
+    "previous": "1.0.0-dev.0.8"
   },
   "metadata": {
     "author": "yukazakiri",

@@ -1,14 +1,14 @@
 {
-  "version": "1.0.0-dev.0.5",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.0.0-dev.0.5",
-  "commit": "1f8bea4029c287bd95870d0d032e90239d66243a",
+  "version": "1.0.0-dev.0.6",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.0.0-dev.0.6",
+  "commit": "d49441df9a15f9f0f221ed2c63d1a406313aa683",
   "branch": "master",
-  "timestamp": "2026-04-11T16:35:20Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24286660242",
+  "timestamp": "2026-04-13T00:44:58Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24320374828",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.0.0-dev.0.5 - Merge pull request #5 from yukazakiri/04-11-refactor_document_urls_and_migrate_mcp_to_sail",
-    "previous": "1.0.0-dev.0.4"
+    "current": "Version 1.0.0-dev.0.6 - removed passkey prompts (#6)",
+    "previous": "1.0.0-dev.0.5"
   },
   "metadata": {
     "author": "yukazakiri",

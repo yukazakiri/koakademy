@@ -278,7 +278,7 @@ Use `search-docs` for detailed code examples. This section covers what's availab
 ### Creating Broadcast Events
 
 ```bash
-vendor/bin/sail artisan make:event OrderShipped
+php artisan make:event OrderShipped
 ```
 
 <!-- Broadcast Event -->
@@ -321,13 +321,13 @@ Broadcast::channel('orders.{orderId}', function (User $user, int $orderId) {
 Create a channel class for complex authorization:
 
 ```bash
-vendor/bin/sail artisan make:channel OrderChannel
+php artisan make:channel OrderChannel
 ```
 
 List all registered channels:
 
 ```bash
-vendor/bin/sail artisan channel:list
+php artisan channel:list
 ```
 
 ### Channel Types
@@ -365,7 +365,7 @@ vendor/bin/sail artisan channel:list
 
 - Closure-based in `routes/channels.php` — use for simple authorization logic (e.g., checking ownership).
 - Model binding: `Broadcast::channel('orders.{order}', fn (User $user, Order $order) => ...)` — use when authorization depends on the model instance (auto-resolves from route parameter).
-- Channel classes via `vendor/bin/sail artisan make:channel` — use for complex authorization logic that benefits from dependency injection or reusable logic across channels.
+- Channel classes via `php artisan make:channel` — use for complex authorization logic that benefits from dependency injection or reusable logic across channels.
 - Multiple guards: `['guards' => ['web', 'admin']]` — use when the channel should be accessible by users authenticated via different guards (e.g., both regular users and admins).
 
 ### Model Broadcasting (Server-Side)
@@ -378,9 +378,9 @@ vendor/bin/sail artisan channel:list
 ### Running Required Processes
 
 ```bash
-vendor/bin/sail artisan queue:work    # Required for ShouldBroadcast events
+php artisan queue:work    # Required for ShouldBroadcast events
 
-vendor/bin/sail artisan reverb:start  # Required for Reverb driver
+php artisan reverb:start  # Required for Reverb driver
 
 ```
 
@@ -392,7 +392,7 @@ vendor/bin/sail artisan reverb:start  # Required for Reverb driver
 - Dot prefix rule: When using `broadcastAs()`, client must prefix with `.` (e.g., `.listen('.custom.name')`). Without the dot, Echo looks for `App\Events\custom.name` which silently fails.
 - CORS: When frontend/backend are on different origins, add `broadcasting/auth` to `config/cors.php` paths and set `supports_credentials` to `true`.
 - `channels.php` not loaded: Verify it's included in `withRouting()` in `bootstrap/app.php`.
-- Reverb is long-running: Code changes require `vendor/bin/sail artisan reverb:restart`.
+- Reverb is long-running: Code changes require `php artisan reverb:restart`.
 - Call `configureEcho` before any hooks render. Place it in your app entry point (e.g., `app.tsx`), not inside a component.
 - Hooks auto-cleanup on unmount — do NOT manually call `leave()` or `stopListening()` in cleanup effects.
 - `X-Socket-ID` header is NOT auto-sent with Inertia requests. Manually add `echo().socketId()` when using `broadcast()->toOthers()`.

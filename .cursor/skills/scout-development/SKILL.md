@@ -50,7 +50,7 @@ Before installing, check if Scout is already in the project — look for `larave
 
 ```bash
 composer require laravel/scout
-vendor/bin/sail artisan vendor:publish --provider="Laravel\Scout\ScoutServiceProvider"
+php artisan vendor:publish --provider="Laravel\Scout\ScoutServiceProvider"
 ```
 
 ### 2. Add the Searchable trait
@@ -122,7 +122,7 @@ public function searchableAs(): string
 For Algolia/Meilisearch/Typesense: configure index settings (filterable, sortable, searchable attributes) in `config/scout.php`, then sync:
 
 ```bash
-vendor/bin/sail artisan scout:sync-index-settings
+php artisan scout:sync-index-settings
 ```
 
 ## Searching
@@ -154,12 +154,12 @@ Use `search-docs` for advanced querying — `whereIn`, `whereNotIn`, soft delete
 
 | Command | Purpose |
 |---------|---------|
-| `vendor/bin/sail artisan scout:import "App\Models\Post"` | Import model records into search index |
-| `vendor/bin/sail artisan scout:queue-import "App\Models\Post"` | Import via queued jobs (large datasets) |
-| `vendor/bin/sail artisan scout:flush "App\Models\Post"` | Remove all model records from search index |
-| `vendor/bin/sail artisan scout:sync-index-settings` | Sync index settings to the search engine |
-| `vendor/bin/sail artisan scout:index posts` | Create a search index |
-| `vendor/bin/sail artisan scout:delete-index posts` | Delete a search index |
+| `php artisan scout:import "App\Models\Post"` | Import model records into search index |
+| `php artisan scout:queue-import "App\Models\Post"` | Import via queued jobs (large datasets) |
+| `php artisan scout:flush "App\Models\Post"` | Remove all model records from search index |
+| `php artisan scout:sync-index-settings` | Sync index settings to the search engine |
+| `php artisan scout:index posts` | Create a search index |
+| `php artisan scout:delete-index posts` | Delete a search index |
 
 ## Testing
 

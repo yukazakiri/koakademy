@@ -136,6 +136,10 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
         'app_authentication_recovery_codes',
     ];
 
+    protected $casts = [
+        'preferences' => 'array',
+    ];
+
     /**
      * Get the channels that event should broadcast on.
      *

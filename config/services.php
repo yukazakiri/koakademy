@@ -38,7 +38,7 @@ return [
     ],
 
     'github' => [
-        'repo' => env('GITHUB_REPO', 'dccp-developers/DccpAdminV3'),
+        'repo' => env('GITHUB_REPO', 'yukazakiri/koakademy'),
         'token' => env('GITHUB_TOKEN'),
         'client_id' => env('GITHUB_CLIENT_ID'),
         'client_secret' => env('GITHUB_CLIENT_SECRET'),

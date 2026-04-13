@@ -6,6 +6,8 @@ namespace App\Http\Controllers;
 
 use App\Enums\StudentStatus;
 use App\Enums\StudentType;
+use App\Features\OnlineCollegeEnrollment;
+use App\Features\OnlineTesdaEnrollment;
 use App\Http\Requests\StoreEnrollmentRegistrationRequest;
 use App\Models\Course;
 use App\Models\Student;
@@ -17,11 +19,21 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
+use Laravel\Pennant\Feature;
 
 final class EnrollmentRegistrationController extends Controller
 {
     public function create(): Response
     {
+        $collegeEnabled = Feature::active(OnlineCollegeEnrollment::class);
+        $tesdaEnabled = Feature::active(OnlineTesdaEnrollment::class);
+
+        if (! $collegeEnabled && ! $tesdaEnabled) {
+            return Inertia::render('enrollment/closed', [
+                'message' => 'Online enrollment is currently unavailable. Please check back later or visit the registrar\'s office.',
+            ]);
+        }
+
         $courses = Course::query()
             ->where('is_active', true)
             ->select(['id', 'code', 'title', 'department', 'description'])
@@ -41,16 +53,26 @@ final class EnrollmentRegistrationController extends Controller
             'departments' => $departments,
             'courses' => $courses,
             'flash' => session('flash'),
+            'college_enrollment_enabled' => $collegeEnabled,
+            'tesda_enrollment_enabled' => $tesdaEnabled,
         ]);
     }
 
     public function store(StoreEnrollmentRegistrationRequest $request): RedirectResponse
     {
         $payload = $request->validated();
+        $studentTypeValue = $payload['student_type'] ?? '';
 
-        if (($payload['student_type'] ?? '') === 'college') {
+        // Check feature flags before allowing submission
+        if ($studentTypeValue === 'college' && ! Feature::active(OnlineCollegeEnrollment::class)) {
             return redirect()->back()->with('flash', [
                 'error' => 'College online registration is currently unavailable.',
+            ]);
+        }
+
+        if ($studentTypeValue === 'tesda' && ! Feature::active(OnlineTesdaEnrollment::class)) {
+            return redirect()->back()->with('flash', [
+                'error' => 'TESDA online registration is currently unavailable.',
             ]);
         }
 

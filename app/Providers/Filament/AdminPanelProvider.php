@@ -52,7 +52,6 @@ use pxlrbt\FilamentEnvironmentIndicator\EnvironmentIndicatorPlugin;
 use pxlrbt\FilamentSpotlight\SpotlightPlugin;
 use Rupadana\ApiService\ApiServicePlugin;
 use ShuvroRoy\FilamentSpatieLaravelBackup\FilamentSpatieLaravelBackupPlugin;
-use Spatie\LaravelSettings\Settings;
 use Stephenjude\FilamentDebugger\DebuggerPlugin;
 
 final class AdminPanelProvider extends PanelProvider

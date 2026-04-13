@@ -57,6 +57,10 @@ final class FeatureClassRegistry
         // Student detail features (non-onboarding, but class-based)
         'student-signature-pad' => \App\Features\StudentSignaturePad::class,
         'student-avatar-upload' => \App\Features\StudentAvatarUpload::class,
+
+        // Enrollment features
+        'online-college-enrollment' => \App\Features\OnlineCollegeEnrollment::class,
+        'online-tesda-enrollment' => \App\Features\OnlineTesdaEnrollment::class,
     ];
 
     /**

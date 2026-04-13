@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -13,16 +13,15 @@ return new class extends Migration
         $driver = Schema::getConnection()->getDriverName();
 
         if ($driver === 'sqlite') {
-            Schema::table('notifications', function (Blueprint $table) {
+            Schema::table('notifications', function (Illuminate\Database\Schema\Blueprint $table) {
                 $table->dropColumn('data');
             });
-            Schema::table('notifications', function (Blueprint $table) {
+            Schema::table('notifications', function (Illuminate\Database\Schema\Blueprint $table) {
                 $table->json('data')->nullable();
             });
         } else {
-            Schema::table('notifications', function (Blueprint $table) {
-                $table->jsonb('data')->change();
-            });
+            DB::statement('ALTER TABLE notifications ALTER COLUMN data TYPE jsonb USING data::jsonb');
+            DB::statement('ALTER TABLE notifications ALTER COLUMN data SET NOT NULL');
         }
     }
 
@@ -34,16 +33,15 @@ return new class extends Migration
         $driver = Schema::getConnection()->getDriverName();
 
         if ($driver === 'sqlite') {
-            Schema::table('notifications', function (Blueprint $table) {
+            Schema::table('notifications', function (Illuminate\Database\Schema\Blueprint $table) {
                 $table->dropColumn('data');
             });
-            Schema::table('notifications', function (Blueprint $table) {
+            Schema::table('notifications', function (Illuminate\Database\Schema\Blueprint $table) {
                 $table->text('data')->nullable();
             });
         } else {
-            Schema::table('notifications', function (Blueprint $table) {
-                $table->text('data')->change();
-            });
+            DB::statement('ALTER TABLE notifications ALTER COLUMN data TYPE text USING data::text');
+            DB::statement('ALTER TABLE notifications ALTER COLUMN data DROP NOT NULL');
         }
     }
 };

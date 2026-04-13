@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\OnboardingFeatures\Pages;
 
-use App\Features\Onboarding\FeatureClassRegistry;
 use App\Filament\Resources\OnboardingFeatures\OnboardingFeatureResource;
 use Exception;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
-use Laravel\Pennant\Feature;
 
 final class CreateOnboardingFeature extends CreateRecord
 {
@@ -21,8 +19,7 @@ final class CreateOnboardingFeature extends CreateRecord
 
         try {
             if ($record->is_active) {
-                $featureClass = FeatureClassRegistry::classForKey($record->feature_key);
-                Feature::activateForEveryone($featureClass ?? $record->feature_key);
+                OnboardingFeatureResource::activateFeature($record->feature_key);
             }
 
             Notification::make()

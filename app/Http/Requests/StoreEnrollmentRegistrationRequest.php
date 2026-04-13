@@ -20,7 +20,7 @@ final class StoreEnrollmentRegistrationRequest extends FormRequest
     {
         return [
             'student_type' => ['required', 'in:college,tesda'],
-            'department' => ['required_if:student_type,college', 'in:IT,HM,BA,HRM'],
+            'department' => ['required_if:student_type,college', 'exists:departments,code'],
             'course_id' => ['required', 'integer', 'exists:courses,id'],
             'academic_year' => ['required_if:student_type,college', 'integer', 'in:1,2,3,4'],
 
@@ -78,7 +78,7 @@ final class StoreEnrollmentRegistrationRequest extends FormRequest
             'student_type.required' => 'Please choose whether the applicant is a College or TESDA student.',
             'student_type.in' => 'Please choose a valid student type.',
             'department.required_if' => 'Please select a department for College applicants.',
-            'department.in' => 'Please select a valid department (IT, HM, BA, or HRM).',
+            'department.exists' => 'Please select a valid department.',
             'academic_year.required_if' => 'Please select the applicant\'s year level (1st to 4th year).',
             'academic_year.in' => 'Please select a valid year level (1 to 4).',
             'course_id.required' => 'Please select a course/program.',

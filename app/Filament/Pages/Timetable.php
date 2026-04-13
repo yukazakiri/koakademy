@@ -804,9 +804,11 @@ final class Timetable extends Page implements HasForms, HasTable
             'course' => Course::query()
                 ->orderBy('code')
                 ->get()
-                ->mapWithKeys(fn ($course): array => [
-                    $course->id => "{$course->code} - {$course->title} ({$course->department})",
-                ])
+                ->mapWithKeys(function ($course): array {
+                    $deptCode = $course->department?->code ?? 'N/A';
+
+                    return [$course->id => "{$course->code} - {$course->title} ({$deptCode})"];
+                })
                 ->toArray(),
 
             'faculty' => Faculty::query()

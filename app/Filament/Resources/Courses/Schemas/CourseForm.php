@@ -51,17 +51,40 @@ final class CourseForm
                                             ->maxLength(255)
                                             ->columnSpanFull()
                                             ->placeholder('e.g., Bachelor of Science in Information Technology'),
-                                        Select::make('department')
+                                        Select::make('department_id')
                                             ->label('Department')
-                                            ->options(fn (): array => Department::query()
-                                                ->where('is_active', true)
-                                                ->orderBy('name')
-                                                ->pluck('name', 'code')
-                                                ->all())
+                                            ->relationship('department', 'name')
                                             ->searchable()
                                             ->preload()
                                             ->required()
-                                            ->helperText('Department code is stored on the program record.'),
+                                            ->createOptionForm([
+                                                TextInput::make('code')
+                                                    ->label('Department code')
+                                                    ->required()
+                                                    ->maxLength(255)
+                                                    ->unique(Department::class, 'code')
+                                                    ->placeholder('e.g., IT')
+                                                    ->helperText('Stored in uppercase. Must be unique.')
+                                                    ->afterStateUpdated(function (mixed $state, callable $set): void {
+                                                        if (is_string($state)) {
+                                                            $set('code', mb_strtoupper($state));
+                                                        }
+                                                    }),
+                                                TextInput::make('name')
+                                                    ->label('Department name')
+                                                    ->required()
+                                                    ->maxLength(255)
+                                                    ->placeholder('e.g., Information Technology'),
+                                                Textarea::make('description')
+                                                    ->label('Description')
+                                                    ->rows(3)
+                                                    ->columnSpanFull()
+                                                    ->placeholder('Optional department description.'),
+                                                Checkbox::make('is_active')
+                                                    ->label('Active')
+                                                    ->default(true),
+                                            ])
+                                            ->helperText('Department offering this program. Create a new one inline if needed.'),
                                         Select::make('school_id')
                                             ->label('School')
                                             ->relationship('school', 'name')

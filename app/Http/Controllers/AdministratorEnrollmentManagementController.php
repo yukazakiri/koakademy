@@ -155,8 +155,9 @@ final class AdministratorEnrollmentManagementController extends Controller
             ->where('student_enrollment.semester', $currentSemester)
             ->where('student_enrollment.status', '!=', $pendingStatus)
             ->join('courses', DB::raw('CAST(student_enrollment.course_id AS BIGINT)'), '=', 'courses.id')
-            ->selectRaw('TRIM(courses.department) as department, count(*) as count')
-            ->groupByRaw('TRIM(courses.department)')
+            ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
+            ->selectRaw('TRIM(departments.code) as department, count(*) as count')
+            ->groupByRaw('TRIM(departments.code)')
             ->get();
 
         $enrolledByYearLevel = fn () => StudentEnrollment::query()
@@ -251,8 +252,9 @@ final class AdministratorEnrollmentManagementController extends Controller
                 $query->whereExists(function ($subquery) use ($departmentFilter): void {
                     $subquery->select(DB::raw(1))
                         ->from('courses')
+                        ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
                         ->whereRaw('CAST(NULLIF(student_enrollment.course_id, \'\') AS BIGINT) = courses.id')
-                        ->whereRaw('TRIM(courses.department) = ?', [mb_trim($departmentFilter)]);
+                        ->whereRaw('TRIM(departments.code) = ?', [mb_trim($departmentFilter)]);
                 });
             })
             ->when($yearLevelFilter !== 'all', function ($query) use ($yearLevelFilter): void {
@@ -279,7 +281,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'student_id' => $enrollment->student_id,
                 'student_name' => $enrollment->student?->full_name,
                 'course' => $enrollment->course?->code,
-                'department' => $enrollment->course?->department,
+                'department' => $enrollment->course?->department?->code,
                 'status' => $enrollment->status ?? 'N/A',
                 'school_year' => $enrollment->school_year,
                 'semester' => $enrollment->semester,
@@ -396,8 +398,9 @@ final class AdministratorEnrollmentManagementController extends Controller
             })
             ->when(in_array($sort, ['course', 'department']), function ($query) use ($sort, $direction): void {
                 $query->leftJoin('courses', 'students.course_id', '=', 'courses.id')
+                    ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
                     ->select('students.*')
-                    ->orderBy($sort === 'course' ? 'courses.code' : 'courses.department', $direction);
+                    ->orderBy($sort === 'course' ? 'courses.code' : 'departments.code', $direction);
             })
             ->when($sort === 'created_at', function ($query) use ($direction): void {
                 $query->orderBy('students.created_at', $direction);
@@ -412,7 +415,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'name' => $student->full_name,
                 'student_type' => is_object($student->student_type) ? $student->student_type->value : $student->student_type,
                 'course' => $student->Course?->code,
-                'department' => $student->Course?->department,
+                'department' => $student->Course?->department?->code,
                 'academic_year' => $student->academic_year,
                 'scholarship_type' => $student->scholarship_type,
                 'created_at' => $student->created_at?->toDateTimeString(),
@@ -1895,7 +1898,8 @@ final class AdministratorEnrollmentManagementController extends Controller
 
         if ($department !== 'all') {
             $query->join('courses', DB::raw('CAST(NULLIF(student_enrollment.course_id, \'\') AS BIGINT)'), '=', 'courses.id')
-                ->whereRaw('TRIM(courses.department) = ?', [mb_trim($department)]);
+                ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
+                ->whereRaw('TRIM(departments.code) = ?', [mb_trim($department)]);
         }
 
         $yearLevelData = $query
@@ -1931,8 +1935,8 @@ final class AdministratorEnrollmentManagementController extends Controller
         }
 
         $departmentData = $query
-            ->selectRaw('TRIM(courses.department) as department, count(*) as count')
-            ->groupByRaw('TRIM(courses.department)')
+            ->selectRaw('TRIM(departments.code) as department, count(*) as count')
+            ->groupByRaw('TRIM(departments.code)')
             ->get()
             ->map(fn ($item): array => [
                 'department' => $item->department ?? 'Unknown',
@@ -2108,7 +2112,7 @@ final class AdministratorEnrollmentManagementController extends Controller
             ->where('school_year', $schoolYearString)
             ->where('semester', $semester)
             ->whereHas('course')
-            ->with('course:id,code,title,department')
+            ->with('course:id,code,title,department_id')
             ->select('course_id')
             ->distinct()
             ->get()
@@ -2116,7 +2120,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'id' => $se->course_id,
                 'code' => $se->course?->code,
                 'title' => $se->course?->title,
-                'department' => $se->course?->department,
+                'department' => $se->course?->department?->code,
                 'label' => $se->course?->code.' - '.$se->course?->title,
             ])
             ->sortBy('code')
@@ -2544,7 +2548,7 @@ final class AdministratorEnrollmentManagementController extends Controller
             'student_id' => $e->student?->student_id,
             'full_name' => $e->student?->full_name,
             'course' => $e->course?->code,
-            'department' => $e->course?->department,
+            'department' => $e->course?->department?->code,
             'year_level' => $e->academic_year,
             'subjects_count' => $e->subjectsEnrolled->count(),
             'status' => $e->status,
@@ -2654,7 +2658,7 @@ final class AdministratorEnrollmentManagementController extends Controller
         $totalEnrolled = $enrollments->count();
 
         // By department
-        $byDepartment = $enrollments->groupBy(fn (StudentEnrollment $e): string => $e->course?->department ?? 'Unknown')
+        $byDepartment = $enrollments->groupBy(fn (StudentEnrollment $e): string => $e->course?->department?->code ?? 'Unknown')
             ->map(fn (Collection $items, string $dept): array => [
                 'department' => $dept,
                 'count' => $items->count(),
@@ -2665,7 +2669,7 @@ final class AdministratorEnrollmentManagementController extends Controller
             ->map(fn (Collection $items, string $code): array => [
                 'course_code' => $code,
                 'course_title' => $items->first()?->course?->title ?? 'Unknown',
-                'department' => $items->first()?->course?->department ?? 'Unknown',
+                'department' => $items->first()?->course?->department?->code ?? 'Unknown',
                 'count' => $items->count(),
             ])->sortByDesc('count')->values()->all();
 

@@ -573,7 +573,7 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
 
     public function isSuperAdmin(): Attribute
     {
-        return Attribute::make(get: fn (): bool => $this->hasRoles([UserRole::Developer, UserRole::SuperAdmin, UserRole::Admin]));
+        return Attribute::make(get: fn (): bool => $this->hasRole(UserRole::SuperAdmin) || $this->hasRole(UserRole::Developer) || $this->hasRole(UserRole::Admin));
     }
 
     /**

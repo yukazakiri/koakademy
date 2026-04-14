@@ -131,21 +131,25 @@ final class CourseForm
                                     ->schema([
                                         Select::make('year_level')
                                             ->label('Default year level')
+                                            ->required()
+                                            ->default(1)
                                             ->options([
                                                 1 => '1st year',
                                                 2 => '2nd year',
                                                 3 => '3rd year',
                                                 4 => '4th year',
                                             ])
-                                            ->helperText('Optional default for reporting and forms.'),
+                                            ->helperText('Default year level for this program.'),
                                         Select::make('semester')
                                             ->label('Default semester')
+                                            ->required()
+                                            ->default(1)
                                             ->options([
                                                 1 => '1st semester',
                                                 2 => '2nd semester',
                                                 3 => 'Summer',
                                             ])
-                                            ->helperText('Optional default for new records.'),
+                                            ->helperText('Default semester for this program.'),
                                         TextInput::make('school_year')
                                             ->label('School year label')
                                             ->maxLength(255)

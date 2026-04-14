@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace App\Filament\Resources\Courses\RelationManagers;
@@ -191,6 +190,7 @@ final class SubjectsRelationManager extends RelationManager
                     ->alignEnd(),
                 TextColumn::make('academic_year')
                     ->label('Year')
+                    ->sortable()
                     ->formatStateUsing(fn (?int $state): string => match ($state) {
                         1 => '1st year',
                         2 => '2nd year',

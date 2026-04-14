@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useForm } from "@inertiajs/react";
 import { AppWindow, Briefcase, Image as ImageIcon, Loader2, Palette, PhoneCall, Save, Scale } from "lucide-react";
+import { FormEvent, useEffect, useState } from "react";
 
 import { submitSystemForm } from "./form-submit";
 import SystemManagementLayout from "./layout";
@@ -25,7 +26,6 @@ interface BrandFormData {
     theme_color: string;
     currency: string;
     logo: File | null;
-    favicon: File | null;
 }
 
 export default function SystemManagementBrandPage({ user, branding, access }: SystemManagementPageProps) {
@@ -42,8 +42,9 @@ export default function SystemManagementBrandPage({ user, branding, access }: Sy
         theme_color: branding?.theme_color || "#0f172a",
         currency: branding?.currency || "PHP",
         logo: null,
-        favicon: null,
     });
+
+    const [brandLogoPreview, setBrandLogoPreview] = useState<string | null>(null);
 
     const primaryColor = brandForm.data.theme_color || "#0f172a";
 
@@ -73,7 +74,7 @@ export default function SystemManagementBrandPage({ user, branding, access }: Sy
                                     hasFiles: true,
                                 })
                             }
-                            disabled={brandForm.processing || (!brandForm.isDirty && brandForm.data.logo === null && brandForm.data.favicon === null)}
+                            disabled={brandForm.processing || (!brandForm.isDirty && brandForm.data.logo === null)}
                             className="w-full shrink-0 shadow-sm sm:w-auto"
                         >
                             {brandForm.processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
@@ -250,49 +251,55 @@ export default function SystemManagementBrandPage({ user, branding, access }: Sy
                                     </div>
                                     <div>
                                         <CardTitle className="text-base">Aesthetics & Icons</CardTitle>
-                                        <CardDescription className="mt-0.5 text-xs">Colors, favicons, and portal branding marks.</CardDescription>
+                                        <CardDescription className="mt-0.5 text-xs">Upload a single logo — favicon, PWA icons, and OG image are auto-generated.</CardDescription>
                                     </div>
                                 </div>
                             </CardHeader>
                             <CardContent className="space-y-6 p-5">
-                                <div className="grid gap-6 sm:grid-cols-2">
-                                    <div className="space-y-3">
-                                        <Label htmlFor="logo" className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-                                            Brand Logo
-                                        </Label>
-                                        <div className="bg-muted/30 group border-muted-foreground/20 hover:border-primary/50 relative flex h-28 items-center justify-center overflow-hidden rounded-xl border-2 border-dashed transition-colors">
-                                            <img
-                                                src={branding?.logo || "/web-app-manifest-192x192.png"}
-                                                alt="Current logo"
-                                                className="max-h-full max-w-full object-contain p-4 drop-shadow-sm transition-transform group-hover:scale-105"
-                                            />
-                                        </div>
-                                        <Input
-                                            id="logo"
-                                            type="file"
-                                            accept="image/*"
-                                            onChange={(event) => brandForm.setData("logo", event.target.files?.[0] || null)}
-                                            className="file:bg-primary/10 file:text-primary hover:file:bg-primary/20 h-9 cursor-pointer text-xs file:mr-4 file:rounded-md file:border-0 file:px-3 file:py-1"
+                                <div className="space-y-3">
+                                    <Label htmlFor="logo" className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+                                        Institution Logo
+                                    </Label>
+                                    <div
+                                        className="bg-muted/30 border-muted-foreground/20 hover:border-primary/50 group relative flex h-36 cursor-pointer items-center justify-center overflow-hidden rounded-xl border-2 border-dashed transition-colors"
+                                        onClick={() => document.getElementById("logo")?.click()}
+                                    >
+                                        <img
+                                            src={brandLogoPreview || branding?.logo || "/web-app-manifest-192x192.png"}
+                                            alt="Current logo"
+                                            className="max-h-full max-w-full object-contain p-4 drop-shadow-sm transition-transform group-hover:scale-105"
                                         />
+                                        <div className="bg-foreground/70 text-background absolute right-2 bottom-2 rounded-md px-2 py-1 text-[10px] font-medium opacity-0 transition-opacity group-hover:opacity-100">
+                                            Click to replace
+                                        </div>
                                     </div>
-                                    <div className="space-y-3">
-                                        <Label htmlFor="favicon" className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-                                            Browser Favicon
-                                        </Label>
-                                        <div className="bg-muted/30 group border-muted-foreground/20 hover:border-primary/50 relative flex h-28 items-center justify-center overflow-hidden rounded-xl border-2 border-dashed transition-colors">
-                                            <img
-                                                src={branding?.favicon || "/web-app-manifest-192x192.png"}
-                                                alt="Current favicon"
-                                                className="h-16 w-16 object-contain drop-shadow-sm transition-transform group-hover:scale-110"
-                                            />
-                                        </div>
-                                        <Input
-                                            id="favicon"
-                                            type="file"
-                                            accept="image/*"
-                                            onChange={(event) => brandForm.setData("favicon", event.target.files?.[0] || null)}
-                                            className="file:bg-primary/10 file:text-primary hover:file:bg-primary/20 h-9 cursor-pointer text-xs file:mr-4 file:rounded-md file:border-0 file:px-3 file:py-1"
-                                        />
+                                    <input
+                                        id="logo"
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={(event) => {
+                                            const file = event.target.files?.[0] || null;
+                                            brandForm.setData("logo", file);
+                                            if (file) {
+                                                const reader = new FileReader();
+                                                reader.onload = (ev) => setBrandLogoPreview(ev.target?.result as string);
+                                                reader.readAsDataURL(file);
+                                            } else {
+                                                setBrandLogoPreview(null);
+                                            }
+                                        }}
+                                    />
+                                    <div className="border-primary/20 bg-primary/5 flex items-start gap-2.5 rounded-lg border p-3">
+                                        <ImageIcon className="text-primary mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                        <p className="text-muted-foreground text-xs leading-relaxed">
+                                            One upload generates all formats:{" "}
+                                            <span className="text-foreground font-medium">favicon.ico</span>,{" "}
+                                            <span className="text-foreground font-medium">16/32/96px PNGs</span>,{" "}
+                                            <span className="text-foreground font-medium">Apple touch icon</span>,{" "}
+                                            <span className="text-foreground font-medium">PWA manifest icons</span>, and{" "}
+                                            <span className="text-foreground font-medium">OG image</span> for social sharing.
+                                        </p>
                                     </div>
                                 </div>
                                 <div className="space-y-2.5">
@@ -400,7 +407,7 @@ export default function SystemManagementBrandPage({ user, branding, access }: Sy
                                         <div className="pointer-events-none absolute top-0 left-0 h-1/2 w-full bg-gradient-to-b from-white/10 to-transparent" />
                                         <div className="z-10 mb-3 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white p-1 shadow-sm md:h-12 md:w-12">
                                             <img
-                                                src={branding?.logo || "/web-app-manifest-192x192.png"}
+                                                src={brandLogoPreview || branding?.logo || "/web-app-manifest-192x192.png"}
                                                 alt="Preview logo"
                                                 className="max-h-full max-w-full object-contain"
                                             />
@@ -419,7 +426,7 @@ export default function SystemManagementBrandPage({ user, branding, access }: Sy
                                 {/* Header mockup */}
                                 <div className="bg-background flex w-full items-center justify-between border-b p-4">
                                     <div className="flex items-center gap-2">
-                                        <img src={branding?.favicon || "/web-app-manifest-192x192.png"} className="h-5 w-5 rounded-sm object-contain" />
+                                        <img src={brandLogoPreview || branding?.logo || "/web-app-manifest-192x192.png"} className="h-5 w-5 rounded-sm object-contain" />
                                         <span className="max-w-[140px] truncate text-sm font-semibold">
                                             {brandForm.data.app_short_name || brandForm.data.app_name || "Portal"}
                                         </span>

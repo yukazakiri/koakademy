@@ -4,65 +4,74 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
+use App\Models\User;
 use Illuminate\Auth\Access\HandlesAuthorization;
-use Illuminate\Foundation\Auth\User as AuthUser;
 
 final class SubjectPolicy
 {
     use HandlesAuthorization;
 
-    public function viewAny(AuthUser $authUser): bool
+    public function before(User $user, string $ability): ?bool
     {
-        return $authUser->can('ViewAny:Subject');
+        if ($user->hasRole('super_admin')) {
+            return true;
+        }
+
+        return null;
     }
 
-    public function view(AuthUser $authUser): bool
+    public function viewAny(User $user): bool
     {
-        return $authUser->can('View:Subject');
+        return $user->can('ViewAny:Subject');
     }
 
-    public function create(AuthUser $authUser): bool
+    public function view(User $user): bool
     {
-        return $authUser->can('Create:Subject');
+        return $user->can('View:Subject');
     }
 
-    public function update(AuthUser $authUser): bool
+    public function create(User $user): bool
     {
-        return $authUser->can('Update:Subject');
+        return $user->can('Create:Subject');
     }
 
-    public function delete(AuthUser $authUser): bool
+    public function update(User $user): bool
     {
-        return $authUser->can('Delete:Subject');
+        return $user->can('Update:Subject');
     }
 
-    public function restore(AuthUser $authUser): bool
+    public function delete(User $user): bool
     {
-        return $authUser->can('Restore:Subject');
+        return $user->can('Delete:Subject');
     }
 
-    public function forceDelete(AuthUser $authUser): bool
+    public function restore(User $user): bool
     {
-        return $authUser->can('ForceDelete:Subject');
+        return $user->can('Restore:Subject');
     }
 
-    public function forceDeleteAny(AuthUser $authUser): bool
+    public function forceDelete(User $user): bool
     {
-        return $authUser->can('ForceDeleteAny:Subject');
+        return $user->can('ForceDelete:Subject');
     }
 
-    public function restoreAny(AuthUser $authUser): bool
+    public function forceDeleteAny(User $user): bool
     {
-        return $authUser->can('RestoreAny:Subject');
+        return $user->can('ForceDeleteAny:Subject');
     }
 
-    public function replicate(AuthUser $authUser): bool
+    public function restoreAny(User $user): bool
     {
-        return $authUser->can('Replicate:Subject');
+        return $user->can('RestoreAny:Subject');
     }
 
-    public function reorder(AuthUser $authUser): bool
+    public function replicate(User $user): bool
     {
-        return $authUser->can('Reorder:Subject');
+        return $user->can('Replicate:Subject');
+    }
+
+    public function reorder(User $user): bool
+    {
+        return $user->can('Reorder:Subject');
     }
 }

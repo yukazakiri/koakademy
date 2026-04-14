@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Services\AnalyticsSettingsService;
 use App\Services\EnrollmentPipelineService;
 use App\Services\GeneralSettingsService;
+use App\Services\LogoConversionService;
 use App\Settings\SiteSettings;
 use App\Support\SystemManagementPermissions;
 use Exception;
@@ -412,19 +413,15 @@ final class AdministratorSystemManagementController extends Controller
             'copyright_text' => 'nullable|string|max:255',
             'theme_color' => 'nullable|string|max:50',
             'currency' => 'nullable|string|in:PHP,USD',
-            'logo' => 'nullable|image|max:2048',
-            'favicon' => 'nullable|image|max:1024',
+            'logo' => 'nullable|image|max:5120',
         ]);
 
-        // Handle File Uploads
+        // Handle single logo upload — generates all formats automatically
         if ($request->hasFile('logo')) {
-            $path = $request->file('logo')->store('branding', 'r2');
-            $this->siteSettings->logo = $path;
-        }
-
-        if ($request->hasFile('favicon')) {
-            $path = $request->file('favicon')->store('branding', 'r2');
-            $this->siteSettings->favicon = $path;
+            $paths = app(LogoConversionService::class)->process($request->file('logo'));
+            $this->siteSettings->logo = $paths['logo'];
+            $this->siteSettings->favicon = $paths['favicon'];
+            $this->siteSettings->og_image = $paths['og_image'];
         }
 
         // Update Spatie Settings
@@ -441,7 +438,7 @@ final class AdministratorSystemManagementController extends Controller
         $this->siteSettings->currency = $validated['currency'] ?? null;
         $this->siteSettings->save();
 
-        return Redirect::back()->with('success', 'Brand settings updated successfully.');
+        return Redirect::back()->with('success', 'Brand settings updated successfully. Logo has been converted for all formats — favicon, PWA icons, and OG image.');
     }
 
     public function updateSanity(Request $request)

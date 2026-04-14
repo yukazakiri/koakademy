@@ -1,14 +1,14 @@
 {
-  "version": "1.0.0-dev.0.9",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.0.0-dev.0.9",
-  "commit": "bfbc40cff96df77f0c247e9ef271a823a59d2d9c",
+  "version": "1.0.0-dev.0.10",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.0.0-dev.0.10",
+  "commit": "8d02ff947fed3f6a5a378847d6eb30efd6e89573",
   "branch": "master",
-  "timestamp": "2026-04-13T13:57:01Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24347122102",
+  "timestamp": "2026-04-14T12:24:53Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24398522069",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.0.0-dev.0.9 - Create 2026_04_13_213045_add_department_id_to_courses_table.php",
-    "previous": "1.0.0-dev.0.8"
+    "current": "Version 1.0.0-dev.0.10 - Add LogoConversionService for logo processing (#8)",
+    "previous": "1.0.0-dev.0.9"
   },
   "metadata": {
     "author": "yukazakiri",

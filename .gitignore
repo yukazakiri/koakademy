@@ -38,8 +38,11 @@ yarn-error.log
 /.agents
 /.ai/*
 /.amp
-/.cursor
+/.cursor/**
 /.gemini
+/.mcp.json
 CLAUDE.md
 GEMINI.md
 AGENTS.md
+boost.json
+opencode.json

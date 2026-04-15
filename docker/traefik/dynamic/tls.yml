@@ -2,13 +2,13 @@ http:
   routers:
     # Portal (Laravel app)
     portal-secure:
-      rule: "Host(`portal.dccp.test`)"
+      rule: "Host(`portal.koakademy.test`)"
       entrypoints:
         - websecure
       service: app
       tls: true
     portal-http:
-      rule: "Host(`portal.dccp.test`)"
+      rule: "Host(`portal.koakademy.test`)"
       entrypoints:
         - web
       service: app
@@ -17,13 +17,13 @@ http:
 
     # Admin (Laravel app)
     admin-secure:
-      rule: "Host(`admin.dccp.test`)"
+      rule: "Host(`admin.koakademy.test`)"
       entrypoints:
         - websecure
       service: app
       tls: true
     admin-http:
-      rule: "Host(`admin.dccp.test`)"
+      rule: "Host(`admin.koakademy.test`)"
       entrypoints:
         - web
       service: app
@@ -95,10 +95,10 @@ http:
 
 tls:
   certificates:
-    - certFile: /etc/traefik/certs/dccp.test.pem
-      keyFile: /etc/traefik/certs/dccp.test-key.pem
+    - certFile: /etc/traefik/certs/koakademy.test.pem
+      keyFile: /etc/traefik/certs/koakademy.test-key.pem
   stores:
     default:
       defaultCertificate:
-        certFile: /etc/traefik/certs/dccp.test.pem
-        keyFile: /etc/traefik/certs/dccp.test-key.pem
+        certFile: /etc/traefik/certs/koakademy.test.pem
+        keyFile: /etc/traefik/certs/koakademy.test-key.pem

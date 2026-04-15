@@ -566,7 +566,7 @@ export function SignupStepper({ className, ...props }: React.ComponentProps<"div
 
                         {/* Navigation Buttons */}
                         {currentStep > 0 && (
-                            <div className="flex justify-between gap-4">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
                                 <Button type="button" variant="ghost" onClick={handlePrev} className="w-full">
                                     Back
                                 </Button>

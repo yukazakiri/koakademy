@@ -39,6 +39,7 @@ final class DatabaseSeeder extends Seeder
             CGCurriculumSeeder::class,       // SHS Caregiving Curriculum (foundational academic data)
             RolesSeeder::class,              // Sync UserRole enum with Spatie roles
             UserSeeder::class,               // Users (admins, staff)
+            OnboardingFeatureSeeder::class,  // Onboarding features & Pennant flags
             CourseSeeder::class,             // Courses
             RoomSeeder::class,               // Rooms
             FacultySeeder::class,            // faculty members

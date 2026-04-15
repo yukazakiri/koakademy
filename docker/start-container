@@ -321,9 +321,16 @@ run_primary_startup_tasks() {
     ensure_storage_link
     ensure_vendor_view_dirs
     run_migrations_if_enabled
+}
+
+run_background_startup_tasks() {
+    log_section "Running background startup tasks"
+
     run_docker_scripts_if_enabled
     run_scout_indexing
     optimize_application
+
+    echo "Background startup tasks completed."
 }
 
 bootstrap_container() {
@@ -381,6 +388,7 @@ fi
 bootstrap_container
 
 if is_primary_container; then
+    run_background_startup_tasks &
     start_http_container
 fi
 

@@ -72,7 +72,9 @@ return new class extends Migration
 
             if ($feature['is_active']) {
                 $featureClass = FeatureClassRegistry::classForKey($featureKey);
-                Feature::activateForEveryone($featureClass ?? $featureKey);
+                if ($featureClass) {
+                    Feature::purge($featureClass);
+                }
             }
         }
     }
@@ -89,7 +91,7 @@ return new class extends Migration
         foreach ($keys as $key) {
             $featureClass = FeatureClassRegistry::classForKey($key);
             if ($featureClass) {
-                Feature::deactivateForEveryone($featureClass);
+                Feature::purge($featureClass);
             }
         }
     }

@@ -2,16 +2,26 @@
 set -e
 
 container_mode=${CONTAINER_MODE:-"http"}
-octane_server=${OCTANE_SERVER}
+octane_server=${OCTANE_SERVER:-""}
 
 # Production deployment settings
 # RUN_MIGRATIONS: Set to "true" to run migrations on container start (http container only)
-# PRODUCTION_SEEDERS: Comma-separated list of production-safe seeders to run (e.g., "RolesSeeder,BackupPermissionSeeder")
+# PRODUCTION_SEEDERS: Comma-separated list of production-safe seeders to run
 # RUN_DOCKER_SCRIPTS: Set to "true" to run scripts in docker-scripts folder on container start
+# RUN_SCOUT_INDEX: Set to "true" to sync Scout indexes on the primary http container
+# RUN_OPTIMIZE: Set to "true" to rebuild Laravel caches on the primary http container
+# FORCE_OPTIMIZE_CLEAR: Set to "true" to clear caches before rebuilding them
+# SCOUT_AUTO_DETECT: Set to "false" to disable Scout driver auto-detection
 run_migrations=${RUN_MIGRATIONS:-"true"}
 production_seeders=${PRODUCTION_SEEDERS:-""}
 run_docker_scripts=${RUN_DOCKER_SCRIPTS:-"false"}
 run_scout_index=${RUN_SCOUT_INDEX:-"true"}
+run_optimize=${RUN_OPTIMIZE:-"true"}
+force_optimize_clear=${FORCE_OPTIMIZE_CLEAR:-"false"}
+scout_auto_detect=${SCOUT_AUTO_DETECT:-"true"}
+connection_max_tries=${CONNECTION_MAX_TRIES:-"30"}
+connection_retry_sleep=${CONNECTION_RETRY_SLEEP:-"1"}
+service_connect_timeout=${SERVICE_CONNECT_TIMEOUT:-"2"}
 
 # Provide sane defaults for service env vars so health checks don't fail when
 # project .env hasn't been loaded into the container environment yet.
@@ -21,9 +31,20 @@ DB_HOST="${DB_HOST:-pgsql}"
 DB_PORT="${DB_PORT:-5432}"
 export REDIS_HOST REDIS_PORT DB_HOST DB_PORT
 
+log_section() {
+    echo ""
+    echo "==> $1"
+}
+
+is_primary_container() {
+    [ "${container_mode}" = "http" ]
+}
+
 is_http_url_reachable() {
     php -r "
         \$url = \$argv[1] ?? '';
+        \$timeout = (float) (\$argv[2] ?? '2');
+
         if (\$url === '') {
             exit(1);
         }
@@ -31,7 +52,7 @@ is_http_url_reachable() {
         \$healthUrl = rtrim(\$url, '/') . '/health';
         \$context = stream_context_create([
             'http' => [
-                'timeout' => 2,
+                'timeout' => \$timeout,
                 'ignore_errors' => true,
             ],
         ]);
@@ -43,11 +64,20 @@ is_http_url_reachable() {
         }
 
         exit(0);
-    " "$1"
+    " "$1" "${service_connect_timeout}"
 }
 
 configure_scout_driver() {
     resolved_scout_driver="${SCOUT_DRIVER:-}"
+
+    if [ "${scout_auto_detect}" != "true" ]; then
+        if [ -z "${resolved_scout_driver}" ]; then
+            export SCOUT_DRIVER="collection"
+        fi
+
+        echo "Scout driver: ${SCOUT_DRIVER}"
+        return 0
+    fi
 
     if [ -z "${resolved_scout_driver}" ] || [ "${resolved_scout_driver}" = "collection" ] || [ "${resolved_scout_driver}" = "null" ]; then
         meilisearch_host="${MEILISEARCH_HOST:-}"
@@ -57,9 +87,9 @@ configure_scout_driver() {
         elif is_http_url_reachable "http://meilisearch:7700"; then
             resolved_scout_driver="meilisearch"
             meilisearch_host="http://meilisearch:7700"
-        elif [ -n "${TYPESENSE_HOST}" ] && [ -n "${TYPESENSE_API_KEY}" ]; then
+        elif [ -n "${TYPESENSE_HOST:-}" ] && [ -n "${TYPESENSE_API_KEY:-}" ]; then
             resolved_scout_driver="typesense"
-        elif [ -n "${ALGOLIA_APP_ID}" ] && [ -n "${ALGOLIA_SECRET}" ]; then
+        elif [ -n "${ALGOLIA_APP_ID:-}" ] && [ -n "${ALGOLIA_SECRET:-}" ]; then
             resolved_scout_driver="algolia"
         else
             resolved_scout_driver="${resolved_scout_driver:-collection}"
@@ -79,8 +109,180 @@ configure_scout_driver() {
     fi
 }
 
+check_redis_connection() {
+    echo "Testing Redis connection to ${REDIS_HOST}:${REDIS_PORT}..."
+
+    php -r "
+        \$maxTries = (int) getenv('CONNECTION_MAX_TRIES');
+        \$retrySleep = (int) getenv('CONNECTION_RETRY_SLEEP');
+        \$timeout = (float) getenv('SERVICE_CONNECT_TIMEOUT');
+
+        for (\$i = 0; \$i < \$maxTries; \$i++) {
+            try {
+                \$redis = new Redis();
+                \$redis->connect(getenv('REDIS_HOST'), (int) getenv('REDIS_PORT'), \$timeout);
+
+                if (\$redis->ping()) {
+                    echo 'Redis connection successful.' . PHP_EOL;
+                    exit(0);
+                }
+            } catch (Throwable \$exception) {
+            }
+
+            sleep(\$retrySleep);
+        }
+
+        echo 'Failed to connect to Redis.' . PHP_EOL;
+        exit(1);
+    "
+}
+
+check_database_connection() {
+    echo "Testing Database connection to ${DB_HOST}:${DB_PORT}..."
+
+    if [ -z "${DB_DATABASE:-}" ] || [ -z "${DB_USERNAME:-}" ]; then
+        echo "Skipping Database check (DB_DATABASE/DB_USERNAME not set in environment)."
+        return 0
+    fi
+
+    php -r "
+        \$maxTries = (int) getenv('CONNECTION_MAX_TRIES');
+        \$retrySleep = (int) getenv('CONNECTION_RETRY_SLEEP');
+        \$timeout = (float) getenv('SERVICE_CONNECT_TIMEOUT');
+
+        for (\$i = 0; \$i < \$maxTries; \$i++) {
+            try {
+                \$dsn = sprintf(
+                    'pgsql:host=%s;port=%s;dbname=%s;connect_timeout=%d',
+                    getenv('DB_HOST'),
+                    getenv('DB_PORT'),
+                    getenv('DB_DATABASE'),
+                    max(1, (int) ceil(\$timeout))
+                );
+
+                new PDO(\$dsn, getenv('DB_USERNAME'), getenv('DB_PASSWORD'));
+                echo 'Database connection successful.' . PHP_EOL;
+                exit(0);
+            } catch (Throwable \$exception) {
+            }
+
+            sleep(\$retrySleep);
+        }
+
+        echo 'Failed to connect to Database.' . PHP_EOL;
+        exit(1);
+    "
+}
+
+check_storage_permissions() {
+    echo "Testing Storage permissions..."
+
+    php -r "
+        \$path = '/var/www/html/storage/framework/testing/connection_test';
+        @mkdir(dirname(\$path), 0777, true);
+
+        if (@file_put_contents(\$path, 'test') !== false && @unlink(\$path)) {
+            echo 'Storage is writable and readable.' . PHP_EOL;
+            exit(0);
+        }
+
+        echo 'Storage is NOT writable or readable.' . PHP_EOL;
+        exit(1);
+    "
+}
+
+check_opcache_directory() {
+    echo "Testing OPcache directory..."
+
+    php -r "
+        \$opcacheDir = '/tmp/opcache-file-cache';
+
+        if (! is_dir(\$opcacheDir)) {
+            mkdir(\$opcacheDir, 0777, true);
+        }
+
+        if (is_dir(\$opcacheDir) && is_writable(\$opcacheDir)) {
+            echo 'OPcache directory is accessible and writable.' . PHP_EOL;
+            exit(0);
+        }
+
+        echo 'OPcache directory is NOT accessible or writable.' . PHP_EOL;
+        exit(1);
+    "
+}
+
+check_connections() {
+    log_section "Checking dependencies"
+
+    export CONNECTION_MAX_TRIES="${connection_max_tries}"
+    export CONNECTION_RETRY_SLEEP="${connection_retry_sleep}"
+    export SERVICE_CONNECT_TIMEOUT="${service_connect_timeout}"
+
+    check_redis_connection
+    check_database_connection
+    check_storage_permissions
+    check_opcache_directory
+}
+
+ensure_storage_link() {
+    if [ -e "public/storage" ] || [ -L "public/storage" ]; then
+        echo "Storage link already exists, skipping."
+        return 0
+    fi
+
+    php artisan storage:link
+}
+
+ensure_vendor_view_dirs() {
+    if [ -d "vendor/moataz-01/filament-notification-sound" ]; then
+        mkdir -p "vendor/moataz-01/filament-notification-sound/resources/views"
+    fi
+}
+
+run_production_seeders() {
+    if [ -z "${production_seeders}" ]; then
+        return 0
+    fi
+
+    echo "Running production seeders: ${production_seeders}"
+
+    printf '%s' "${production_seeders}" | tr ',' '\n' | while IFS= read -r seeder; do
+        seeder=$(echo "${seeder}" | xargs)
+
+        if [ -n "${seeder}" ]; then
+            echo "  Running seeder: ${seeder}"
+            php artisan db:seed --class="${seeder}" --force --no-interaction
+        fi
+    done
+
+    echo "Production seeders completed."
+}
+
+run_migrations_if_enabled() {
+    if [ "${run_migrations}" != "true" ]; then
+        echo "Database migrations disabled, skipping."
+        return 0
+    fi
+
+    echo "Running database migrations..."
+    php artisan migrate --force --no-interaction
+    echo "Migrations completed successfully."
+
+    run_production_seeders
+}
+
+run_docker_scripts_if_enabled() {
+    if [ "${run_docker_scripts}" != "true" ]; then
+        return 0
+    fi
+
+    echo "Running Docker setup scripts..."
+    /usr/local/bin/run-scripts.sh run
+    echo "Docker scripts completed."
+}
+
 run_scout_indexing() {
-    if [ "${container_mode}" != "http" ] || [ "${run_scout_index}" != "true" ]; then
+    if [ "${run_scout_index}" != "true" ]; then
         return 0
     fi
 
@@ -100,176 +302,86 @@ run_scout_indexing() {
     /bin/sh docker/docker-scripts/scout-index.sh
 }
 
-ensure_storage_link() {
-    # "php artisan storage:link" fails if the link exists.
-    if [ -e "public/storage" ] || [ -L "public/storage" ]; then
-        echo "Storage link already exists, skipping."
+optimize_application() {
+    if [ "${run_optimize}" != "true" ]; then
+        echo "Laravel optimize step disabled, skipping."
         return 0
     fi
 
-    php artisan storage:link
-}
-
-ensure_vendor_view_dirs() {
-    # Some vendor packages ship empty view directories that may be missing in dist archives.
-    # If the directory is missing, view caching fails.
-    if [ -d "vendor/moataz-01/filament-notification-sound" ]; then
-        mkdir -p "vendor/moataz-01/filament-notification-sound/resources/views"
+    if [ "${force_optimize_clear}" = "true" ]; then
+        php artisan optimize:clear
     fi
+
+    php artisan optimize
 }
 
-initialStuff() {
-    echo "Container mode: $container_mode"
+run_primary_startup_tasks() {
+    log_section "Running primary container startup tasks"
+
+    ensure_storage_link
+    ensure_vendor_view_dirs
+    run_migrations_if_enabled
+    run_docker_scripts_if_enabled
+    run_scout_indexing
+    optimize_application
+}
+
+bootstrap_container() {
+    echo "Container mode: ${container_mode}"
 
     check_connections
     configure_scout_driver
 
-    ensure_storage_link
-    ensure_vendor_view_dirs
-
-    # Run migrations ONLY on the http container to prevent race conditions
-    # when multiple container replicas start simultaneously
-    if [ "${container_mode}" = "http" ] && [ "${run_migrations}" = "true" ]; then
-        echo "Running database migrations..."
-        php artisan migrate --force --no-interaction
-        echo "Migrations completed successfully."
-
-        # Run production-safe seeders if specified
-        if [ -n "${production_seeders}" ]; then
-            echo "Running production seeders: ${production_seeders}"
-            # Split comma-separated seeders and run each one
-            echo "${production_seeders}" | tr ',' '\n' | while read -r seeder; do
-                seeder=$(echo "$seeder" | xargs)  # Trim whitespace
-                if [ -n "$seeder" ]; then
-                    echo "  Running seeder: ${seeder}"
-                    php artisan db:seed --class="${seeder}" --force --no-interaction
-                fi
-            done
-            echo "Production seeders completed."
-        fi
+    if is_primary_container; then
+        run_primary_startup_tasks
     fi
-
-    # Run Docker scripts ONLY on the http container to prevent race conditions
-    # when multiple container replicas start simultaneously
-    if [ "${container_mode}" = "http" ] && [ "${run_docker_scripts}" = "true" ]; then
-        echo "Running Docker setup scripts..."
-        /usr/local/bin/run-scripts.sh run
-        echo "Docker scripts completed."
-    fi
-
-    run_scout_indexing
-
-    php artisan optimize:clear
-    php artisan optimize
 }
 
-check_connections() {
-    echo "Checking connections..."
+start_http_container() {
+    echo "Octane Server: ${octane_server}"
 
-    # Check Redis
-    echo "Testing Redis connection to ${REDIS_HOST}:${REDIS_PORT}..."
-    php -r "
-        \$maxTries = 30;
-        for (\$i = 0; \$i < \$maxTries; \$i++) {
-            try {
-                \$redis = new Redis();
-                \$redis->connect(getenv('REDIS_HOST'), getenv('REDIS_PORT'));
-                if (\$redis->ping()) {
-                    echo 'Redis connection successful.' . PHP_EOL;
-                    exit(0);
-                }
-            } catch (Exception \$e) {}
-            sleep(1);
-        }
-        echo 'Failed to connect to Redis.' . PHP_EOL;
-        exit(1);
-    "
-
-    # Check Database
-    echo "Testing Database connection to ${DB_HOST}:${DB_PORT}..."
-    if [ -z "${DB_DATABASE}" ] || [ -z "${DB_USERNAME}" ]; then
-        echo "Skipping Database check (DB_DATABASE/DB_USERNAME not set in environment)."
-    else
-        php -r "
-            \$maxTries = 30;
-            for (\$i = 0; \$i < \$maxTries; \$i++) {
-                try {
-                    \$dsn = 'pgsql:host=' . getenv('DB_HOST') . ';port=' . getenv('DB_PORT') . ';dbname=' . getenv('DB_DATABASE');
-                    \$pdo = new PDO(\$dsn, getenv('DB_USERNAME'), getenv('DB_PASSWORD'));
-                    echo 'Database connection successful.' . PHP_EOL;
-                    exit(0);
-                } catch (Exception \$e) {}
-                sleep(1);
-            }
-            echo 'Failed to connect to Database.' . PHP_EOL;
-            exit(1);
-        "
+    if [ "${octane_server}" = "frankenphp" ]; then
+        exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.frankenphp.conf
+    elif [ "${octane_server}" = "swoole" ]; then
+        exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.swoole.conf
+    elif [ "${octane_server}" = "roadrunner" ]; then
+        exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.roadrunner.conf
     fi
 
-    # Check Storage
-    echo "Testing Storage permissions..."
-    php -r "
-        \$path = '/var/www/html/storage/framework/testing/connection_test';
-        @mkdir(dirname(\$path), 0777, true);
-        if (@file_put_contents(\$path, 'test') !== false && @unlink(\$path)) {
-            echo 'Storage is writable and readable.' . PHP_EOL;
-            exit(0);
-        }
-        echo 'Storage is NOT writable or readable.' . PHP_EOL;
-        exit(1);
-    "
+    echo "Invalid Octane server supplied."
+    exit 1
+}
 
-    # Check OPcache directory
-    echo "Testing OPcache directory..."
-    php -r "
-        \$opcacheDir = '/tmp/opcache-file-cache';
-        if (!is_dir(\$opcacheDir)) {
-            mkdir(\$opcacheDir, 0777, true);
-        }
-        if (is_dir(\$opcacheDir) && is_writable(\$opcacheDir)) {
-            echo 'OPcache directory is accessible and writable.' . PHP_EOL;
-            exit(0);
-        }
-        echo 'OPcache directory is NOT accessible or writable.' . PHP_EOL;
-        exit(1);
-    "
+start_non_http_container() {
+    if [ "${container_mode}" = "horizon" ]; then
+        exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.horizon.conf
+    elif [ "${container_mode}" = "reverb" ]; then
+        exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.reverb.conf
+    elif [ "${container_mode}" = "scheduler" ]; then
+        exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.scheduler.conf
+    elif [ "${container_mode}" = "nightwatch" ]; then
+        exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.nightwatch.conf
+    elif [ "${container_mode}" = "worker" ]; then
+        if [ -z "${WORKER_COMMAND:-}" ]; then
+            echo "WORKER_COMMAND is undefined."
+            exit 1
+        fi
+
+        exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.worker.conf
+    fi
+
+    echo "Container mode mismatched."
+    exit 1
 }
 
 if [ "$1" != "" ]; then
     exec "$@"
-elif [ "${container_mode}" = "http" ]; then
-    initialStuff
-    echo "Octane Server: $octane_server"
-    if [ "${octane_server}"  = "frankenphp" ]; then
-        exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.frankenphp.conf
-    elif [ "${octane_server}"  = "swoole" ]; then
-        exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.swoole.conf
-    elif [ "${octane_server}"  = "roadrunner" ]; then
-        exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.roadrunner.conf
-    else
-        echo "Invalid Octane server supplied."
-        exit 1
-    fi
-elif [ "${container_mode}" = "horizon" ]; then
-    initialStuff
-    exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.horizon.conf
-elif [ "${container_mode}" = "reverb" ]; then
-    initialStuff
-    exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.reverb.conf
-elif [ "${container_mode}" = "scheduler" ]; then
-    initialStuff
-    exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.scheduler.conf
-elif [ "${container_mode}" = "nightwatch" ]; then
-    initialStuff
-    exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.nightwatch.conf
-elif [ "${container_mode}" = "worker" ]; then
-    if [ -z "${WORKER_COMMAND}" ]; then
-        echo "WORKER_COMMAND is undefined."
-        exit 1
-    fi
-    initialStuff
-    exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.worker.conf
-else
-    echo "Container mode mismatched."
-    exit 1
 fi
+
+bootstrap_container
+
+if is_primary_container; then
+    start_http_container
+fi
+
+start_non_http_container

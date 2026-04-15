@@ -6,12 +6,16 @@ namespace Database\Seeders;
 
 use App\Models\OnboardingFeature;
 use Illuminate\Database\Seeder;
+use Laravel\Pennant\Feature;
 
 final class OnboardingFeatureSeeder extends Seeder
 {
-    public function run(): void
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public static function featureData(): array
     {
-        $features = [
+        return [
             [
                 'feature_key' => 'onboarding-faculty-dashboard',
                 'name' => 'Faculty Dashboard',
@@ -738,18 +742,18 @@ final class OnboardingFeatureSeeder extends Seeder
                 'is_active' => true,
             ],
         ];
+    }
 
-        foreach ($features as $feature) {
+    public function run(): void
+    {
+        foreach (self::featureData() as $feature) {
             $featureKey = $feature['feature_key'];
             $attributes = $feature;
             unset($attributes['feature_key']);
 
-            OnboardingFeature::query()->firstOrCreate(['feature_key' => $featureKey], $attributes);
-
-            if ($feature['is_active']) {
-                $featureClass = \App\Features\Onboarding\FeatureClassRegistry::classForKey($featureKey);
-                \Laravel\Pennant\Feature::activateForEveryone($featureClass ?? $featureKey);
-            }
+            OnboardingFeature::query()->updateOrCreate(['feature_key' => $featureKey], $attributes);
         }
+
+        Feature::purge();
     }
 }

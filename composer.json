@@ -23,6 +23,7 @@
         "barryvdh/laravel-snappy": "^1.0",
         "bezhansalleh/filament-shield": "^4.0",
         "binary-cats/laravel-sku": "^0.8.0",
+        "binarybuilds/laritor-client": "^3.0",
         "coolsam/modules": "^5.0",
         "cweagans/composer-patches": "^1.7",
         "dcblogdev/laravel-db-sync": "^1.1",

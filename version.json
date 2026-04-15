@@ -1,14 +1,14 @@
 {
-  "version": "1.0.0-dev.0.11",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.0.0-dev.0.11",
-  "commit": "1d7688eb806637f959cfffa07a9a0ae4a073c084",
+  "version": "1.0.0-dev.0.12",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.0.0-dev.0.12",
+  "commit": "3ca4fbf5bf67c3dd29deb3a7dd238f2707d73632",
   "branch": "master",
-  "timestamp": "2026-04-15T01:36:15Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24431721701",
+  "timestamp": "2026-04-15T01:49:27Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24432065252",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.0.0-dev.0.11 - Remove AI tool config files from git tracking",
-    "previous": "1.0.0-dev.0.10"
+    "current": "Version 1.0.0-dev.0.12 - Merge pull request #9 from yukazakiri/fix(container)-optimized-container-when-running",
+    "previous": "1.0.0-dev.0.11"
   },
   "metadata": {
     "author": "yukazakiri",

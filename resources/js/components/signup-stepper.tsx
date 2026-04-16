@@ -1,14 +1,13 @@
 import { Link, router, useForm } from "@inertiajs/react";
 import axios from "axios";
 import { Check, Loader2, Mail } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { Toaster } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
 
 type UserType = "faculty" | "student" | null;
@@ -18,10 +17,8 @@ interface EmailLookupResult {
     found: boolean;
     type?: "faculty" | "student";
     name?: string;
-    // Faculty fields
     faculty_id_number?: string;
     department?: string;
-    // Student fields
     student_type?: string;
     is_shs?: boolean;
     student_id?: number;
@@ -32,29 +29,106 @@ interface EmailLookupResult {
     message?: string;
 }
 
+const STORAGE_KEY = "signup_form_state";
+
+interface PersistedState {
+    currentStep: number;
+    userType: UserType;
+    studentType: StudentType;
+    name: string;
+    email: string;
+    password: string;
+    password_confirmation: string;
+    faculty_id_number: string;
+    student_id: string;
+    lrn: string;
+    role: string;
+    user_type: "" | "faculty" | "student";
+    student_type: "" | "college" | "shs";
+    record_id: string | number;
+}
+
+function loadPersistedState(): PersistedState | null {
+    try {
+        const raw = sessionStorage.getItem(STORAGE_KEY);
+        return raw ? JSON.parse(raw) : null;
+    } catch {
+        return null;
+    }
+}
+
+function persistState(state: PersistedState) {
+    try {
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch {}
+}
+
+function clearPersistedState() {
+    try {
+        sessionStorage.removeItem(STORAGE_KEY);
+    } catch {}
+}
+
 export function SignupStepper({ className, ...props }: React.ComponentProps<"div">) {
-    const [currentStep, setCurrentStep] = useState(0);
+    const saved = useRef(loadPersistedState());
+
+    const [currentStep, setCurrentStep] = useState(saved.current?.currentStep ?? 0);
     const [isCheckingEmail, setIsCheckingEmail] = useState(false);
     const [emailLookupResult, setEmailLookupResult] = useState<EmailLookupResult | null>(null);
-    const [userType, setUserType] = useState<UserType>(null);
-    const [studentType, setStudentType] = useState<StudentType>(null);
-
+    const [userType, setUserType] = useState<UserType>(saved.current?.userType ?? null);
+    const [studentType, setStudentType] = useState<StudentType>(saved.current?.studentType ?? null);
     const [otpSent, setOtpSent] = useState(false);
 
     const { data, setData, post, processing, errors } = useForm({
-        name: "",
-        email: "",
-        password: "",
-        password_confirmation: "",
-        faculty_id_number: "",
-        student_id: "",
-        lrn: "",
-        role: "",
+        name: saved.current?.name ?? "",
+        email: saved.current?.email ?? "",
+        password: saved.current?.password ?? "",
+        password_confirmation: saved.current?.password_confirmation ?? "",
+        faculty_id_number: saved.current?.faculty_id_number ?? "",
+        student_id: saved.current?.student_id ?? "",
+        lrn: saved.current?.lrn ?? "",
+        role: saved.current?.role ?? "",
         otp: "",
-        user_type: "" as "faculty" | "student" | "",
-        student_type: "" as "college" | "shs" | "",
-        record_id: "" as string | number,
+        user_type: saved.current?.user_type ?? ("" as "faculty" | "student" | ""),
+        student_type: saved.current?.student_type ?? ("" as "college" | "shs" | ""),
+        record_id: saved.current?.record_id ?? ("" as string | number),
     });
+
+    const isRestored = useRef(saved.current !== null);
+
+    const persistFormState = useCallback(() => {
+        persistState({
+            currentStep,
+            userType,
+            studentType,
+            name: data.name,
+            email: data.email,
+            password: data.password,
+            password_confirmation: data.password_confirmation,
+            faculty_id_number: data.faculty_id_number,
+            student_id: data.student_id,
+            lrn: data.lrn,
+            role: data.role,
+            user_type: data.user_type,
+            student_type: data.student_type,
+            record_id: data.record_id,
+        });
+    }, [currentStep, userType, studentType, data]);
+
+    useEffect(() => {
+        persistFormState();
+    }, [persistFormState]);
+
+    useEffect(() => {
+        if (isRestored.current && emailLookupResult === null) {
+            setEmailLookupResult(
+                saved.current?.email?.length
+                    ? { found: true, type: saved.current.userType ?? undefined, name: saved.current.name || undefined }
+                    : null,
+            );
+        }
+        isRestored.current = false;
+    }, []);
 
     // Show error notifications
     useEffect(() => {
@@ -277,6 +351,7 @@ export function SignupStepper({ className, ...props }: React.ComponentProps<"div
 
         post("/signup", {
             onSuccess: () => {
+                clearPersistedState();
                 toast.success("Account created successfully!", {
                     description: "Redirecting to dashboard...",
                 });
@@ -566,8 +641,8 @@ export function SignupStepper({ className, ...props }: React.ComponentProps<"div
 
                         {/* Navigation Buttons */}
                         {currentStep > 0 && (
-                            <div className="flex justify-between gap-4">
-                                <Button type="button" variant="ghost" onClick={handlePrev} className="w-full">
+                            <div className="flex gap-3">
+                                <Button type="button" variant="ghost" onClick={handlePrev} className="shrink-0">
                                     Back
                                 </Button>
 
@@ -579,7 +654,7 @@ export function SignupStepper({ className, ...props }: React.ComponentProps<"div
                                             (currentStep === 1 && !canProceedFromDetails) ||
                                             (currentStep === 2 && userType === "faculty" && !canProceedFromRole)
                                         }
-                                        className="w-full"
+                                        className="min-w-0 flex-1"
                                     >
                                         Continue
                                     </Button>
@@ -591,12 +666,12 @@ export function SignupStepper({ className, ...props }: React.ComponentProps<"div
                                             userType === "student" &&
                                             ((studentType === "shs" && !data.lrn) || (studentType === "college" && !data.student_id))
                                         }
-                                        className="w-full"
+                                        className="min-w-0 flex-1"
                                     >
                                         Send Verification Code
                                     </Button>
                                 ) : (
-                                    <Button type="submit" disabled={processing || !data.otp || data.otp.length < 6} className="w-full">
+                                    <Button type="submit" disabled={processing || !data.otp || data.otp.length < 6} className="min-w-0 flex-1">
                                         {processing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                         Verify & Create Account
                                     </Button>
@@ -613,7 +688,6 @@ export function SignupStepper({ className, ...props }: React.ComponentProps<"div
                     </div>
                 </div>
             </form>
-            <Toaster position="top-right" richColors />
         </div>
     );
 }

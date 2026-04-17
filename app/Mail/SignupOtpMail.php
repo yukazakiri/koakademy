@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mail;
 
+use App\Settings\SiteSettings;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
@@ -15,15 +16,21 @@ final class SignupOtpMail extends Mailable
     use Queueable;
     use SerializesModels;
 
-    public function __construct(public string $otp) {}
+    public string $appName;
+
+    public string $orgName;
+
+    public function __construct(public string $otp)
+    {
+        $settings = app(SiteSettings::class);
+        $this->appName = $settings->getAppName();
+        $this->orgName = $settings->getOrganizationName();
+    }
 
     public function envelope(): Envelope
     {
-        $settings = app(\App\Settings\SiteSettings::class);
-        $appName = $settings->getAppName();
-
         return new Envelope(
-            subject: "{$appName} - Signup Verification Code",
+            subject: "{$this->appName} — Verify Your Email",
         );
     }
 

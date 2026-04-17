@@ -13,22 +13,23 @@ return new class extends Migration
      */
     public function up(): void
     {
-        if (! Schema::hasTable(config('mails.database.tables.events'))) {
-            Schema::table(config('mails.database.tables.events', 'mail_events'), function (Blueprint $table): void {
+        Schema::table(config('mails.database.tables.events', 'mail_events'), function (Blueprint $table): void {
+            if (! Schema::hasColumn(config('mails.database.tables.events', 'mail_events'), 'unsuppressed_at')) {
                 $table->timestamp('unsuppressed_at')
                     ->nullable()
                     ->after('occurred_at');
-            });
-        }
-        if (! Schema::hasTable(config('mails.database.tables.mails'))) {
-            Schema::table(config('mails.database.tables.mails', 'mails'), function (Blueprint $table): void {
+            }
+        });
+        Schema::table(config('mails.database.tables.mails', 'mails'), function (Blueprint $table): void {
+            if (! Schema::hasColumn(config('mails.database.tables.mails', 'mails'), 'mailer')) {
                 $table->string('mailer')
                     ->after('uuid');
-
+            }
+            if (! Schema::hasColumn(config('mails.database.tables.mails', 'mails'), 'stream_id')) {
                 $table->string('stream_id')
                     ->nullable()
                     ->after('mailer');
-            });
-        }
+            }
+        });
     }
 };

@@ -10,12 +10,12 @@ return new class extends Migration
 {
     public function up(): void
     {
-        if (! Schema::hasTable(config('mails.database.tables.mails'))) {
-            Schema::table(config('mails.database.tables.mails', 'mails'), function (Blueprint $table): void {
+        Schema::table(config('mails.database.tables.mails', 'mails'), function (Blueprint $table): void {
+            if (! Schema::hasColumn(config('mails.database.tables.mails', 'mails'), 'transport')) {
                 $table->string('transport')
                     ->nullable()
                     ->after('mailer');
-            });
-        }
+            }
+        });
     }
 };

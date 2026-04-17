@@ -10,22 +10,18 @@ return new class extends Migration
 {
     public function up(): void
     {
-        if (! Schema::hasTable(config('mails.database.tables.mails'))) {
-            Schema::table(config('mails.database.tables.mails'), function (Blueprint $table): void {
-                $table->longText('html')->nullable()->change();
-                $table->longText('text')->nullable()->change();
-            });
-        }
+        Schema::table(config('mails.database.tables.mails', 'mails'), function (Blueprint $table): void {
+            $table->longText('html')->nullable()->change();
+            $table->longText('text')->nullable()->change();
+        });
 
     }
 
     public function down(): void
     {
-        if (! Schema::hasTable(config('mails.database.tables.mails'))) {
-            Schema::table(config('mails.database.tables.mails'), function (Blueprint $table): void {
-                $table->text('html')->nullable()->change();
-                $table->text('text')->nullable()->change();
-            });
-        }
+        Schema::table(config('mails.database.tables.mails', 'mails'), function (Blueprint $table): void {
+            $table->text('html')->nullable()->change();
+            $table->text('text')->nullable()->change();
+        });
     }
 };

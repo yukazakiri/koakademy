@@ -413,7 +413,7 @@ final class AdministratorSystemManagementController extends Controller
             'copyright_text' => 'nullable|string|max:255',
             'theme_color' => 'nullable|string|max:50',
             'currency' => 'nullable|string|in:PHP,USD',
-            'logo' => 'nullable|image|max:5120',
+            'logo' => 'nullable|file|mimes:jpeg,png,gif,webp,svg|max:5120',
         ]);
 
         // Handle single logo upload — generates all formats automatically

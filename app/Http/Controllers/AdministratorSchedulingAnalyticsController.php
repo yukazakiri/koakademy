@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\UpdateScheduleRequest;
 use App\Models\Classes;
 use App\Models\Course;
 use App\Models\Faculty;
 use App\Models\Room;
+use App\Models\Schedule;
 use App\Models\Student;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -101,6 +103,7 @@ final class AdministratorSchedulingAnalyticsController extends Controller
                 'course_ids' => $class->course_codes, // Pass IDs for accurate filtering
                 'student_count' => $class->class_students_count,
                 'schedules' => $class->Schedule->map(fn ($schedule): array => [
+                    'id' => $schedule->id,
                     'day_of_week' => $schedule->day_of_week,
                     'start_time' => $schedule->formatted_start_time,
                     'end_time' => $schedule->formatted_end_time,
@@ -271,6 +274,49 @@ final class AdministratorSchedulingAnalyticsController extends Controller
     }
 
     /**
+     * Update a schedule entry's day and/or time (drag-and-drop).
+     */
+    public function updateSchedule(UpdateScheduleRequest $request, Schedule $schedule): JsonResponse
+    {
+        $validated = $request->validated();
+
+        $schedule->update([
+            'day_of_week' => $validated['day_of_week'],
+            'start_time' => $validated['start_time'],
+            'end_time' => $validated['end_time'],
+        ]);
+
+        $schedule->refresh();
+        $schedule->load('room');
+
+        // Re-detect conflicts for the class that owns this schedule
+        $class = Classes::currentAcademicPeriod()
+            ->with(['Subject', 'Faculty', 'Room', 'Schedule.room'])
+            ->find($schedule->class_id);
+
+        $conflicts = [];
+        if ($class) {
+            $allClasses = Classes::currentAcademicPeriod()
+                ->with(['Subject', 'Faculty', 'Room', 'Schedule.room'])
+                ->get();
+
+            $conflicts = $this->detectScheduleConflicts($allClasses);
+        }
+
+        return response()->json([
+            'schedule' => [
+                'day_of_week' => $schedule->day_of_week,
+                'start_time' => $schedule->formatted_start_time,
+                'end_time' => $schedule->formatted_end_time,
+                'time_range' => $schedule->time_range,
+                'room' => $schedule->room?->name,
+                'room_id' => $schedule->room_id,
+            ],
+            'conflicts' => $conflicts,
+        ]);
+    }
+
+    /**
      * Detect scheduling conflicts (room or faculty double-booked)
      *
      * @param  \Illuminate\Database\Eloquent\Collection<int, Classes>  $classes
@@ -279,48 +325,69 @@ final class AdministratorSchedulingAnalyticsController extends Controller
     private function detectScheduleConflicts($classes): array
     {
         $conflicts = [];
-        $scheduleMap = [];
+        $allSchedules = [];
 
+        // Flatten all schedules to easily compare pairs
         foreach ($classes as $class) {
             foreach ($class->Schedule as $schedule) {
-                $startTime = $schedule->start_time?->format('H:i') ?? '';
-                $endTime = $schedule->end_time?->format('H:i') ?? '';
-                $key = $schedule->day_of_week.'-'.$startTime.'-'.$endTime;
+                if (! $schedule->start_time || ! $schedule->end_time) {
+                    continue;
+                }
 
-                if (isset($scheduleMap[$key])) {
-                    $existingData = $scheduleMap[$key];
-                    $existingSchedule = $existingData['schedule'];
-                    $existingClass = $existingData['class'];
+                $allSchedules[] = [
+                    'class' => $class,
+                    'schedule' => $schedule,
+                    'day' => $schedule->day_of_week,
+                    'start_min' => (int) $schedule->start_time->format('H') * 60 + (int) $schedule->start_time->format('i'),
+                    'end_min' => (int) $schedule->end_time->format('H') * 60 + (int) $schedule->end_time->format('i'),
+                ];
+            }
+        }
 
-                    // Check if it's a room conflict or faculty conflict
-                    $roomConflict = $schedule->room_id && $existingSchedule->room_id && $schedule->room_id === $existingSchedule->room_id;
-                    $facultyConflict = $class->faculty_id && $existingClass->faculty_id &&
-                                     $class->faculty_id === $existingClass->faculty_id;
+        $count = count($allSchedules);
+        for ($i = 0; $i < $count; $i++) {
+            for ($j = $i + 1; $j < $count; $j++) {
+                $a = $allSchedules[$i];
+                $b = $allSchedules[$j];
+
+                // Must be on the same day
+                if ($a['day'] !== $b['day']) {
+                    continue;
+                }
+
+                // Skip checking against itself
+                if ($a['schedule']->id === $b['schedule']->id) {
+                    continue;
+                }
+
+                // Check for overlapping times (StartA < EndB and EndA > StartB)
+                if ($a['start_min'] < $b['end_min'] && $a['end_min'] > $b['start_min']) {
+                    $roomConflict = $a['schedule']->room_id && $b['schedule']->room_id && $a['schedule']->room_id === $b['schedule']->room_id;
+                    $facultyConflict = $a['class']->faculty_id && $b['class']->faculty_id && $a['class']->faculty_id === $b['class']->faculty_id;
 
                     if ($roomConflict || $facultyConflict) {
+                        $timeA = $a['schedule']->time_range;
+                        $timeB = $b['schedule']->time_range;
+                        $timeStr = $timeA === $timeB ? $timeA : "{$timeA} vs {$timeB}";
+
                         $conflicts[] = [
-                            'day' => $schedule->day_of_week,
-                            'time' => $schedule->time_range,
+                            'day' => $a['day'],
+                            'time' => $timeStr,
                             'class_1' => [
-                                'subject_code' => $class->subject_code,
-                                'section' => $class->section,
-                                'room' => $schedule->room?->name,
-                                'faculty' => $class->Faculty ? $class->Faculty->first_name.' '.$class->Faculty->last_name : null,
+                                'subject_code' => $a['class']->subject_code,
+                                'section' => $a['class']->section,
+                                'room' => $a['schedule']->room?->name,
+                                'faculty' => $a['class']->Faculty ? $a['class']->Faculty->first_name.' '.$a['class']->Faculty->last_name : null,
                             ],
                             'class_2' => [
-                                'subject_code' => $existingClass->subject_code,
-                                'section' => $existingClass->section,
-                                'room' => $existingSchedule->room?->name,
-                                'faculty' => $existingClass->Faculty ? $existingClass->Faculty->first_name.' '.$existingClass->Faculty->last_name : null,
+                                'subject_code' => $b['class']->subject_code,
+                                'section' => $b['class']->section,
+                                'room' => $b['schedule']->room?->name,
+                                'faculty' => $b['class']->Faculty ? $b['class']->Faculty->first_name.' '.$b['class']->Faculty->last_name : null,
                             ],
                             'conflict_type' => $roomConflict ? 'room' : 'faculty',
                         ];
                     }
-                } else {
-                    $scheduleMap[$key] = [
-                        'schedule' => $schedule,
-                        'class' => $class,
-                    ];
                 }
             }
         }

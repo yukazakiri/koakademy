@@ -15,18 +15,24 @@ final class LogoConversionService
     /**
      * Process a single logo upload and generate all required formats.
      *
-     * Generated outputs stored on the 'r2' disk:
-     *   - branding/logo.png                     (max 512x512)
-     *   - branding/favicon.ico                   (32x32)
-     *   - branding/favicon-16x16.png
-     *   - branding/favicon-32x32.png
-     *   - branding/favicon-96x96.png
-     *   - branding/apple-touch-icon.png          (180x180)
-     *   - branding/web-app-manifest-192x192.png
-     *   - branding/web-app-manifest-512x512.png
-     *   - branding/og-image.png                  (1200x630)
+     * Generated outputs stored on the 'r2' disk under a timestamped subdirectory:
+     *   - branding/{ts}/logo.png                     (max 512x512)
+     *   - branding/{ts}/favicon.ico                   (32x32)
+     *   - branding/{ts}/favicon-16x16.png
+     *   - branding/{ts}/favicon-32x32.png
+     *   - branding/{ts}/favicon-96x96.png
+     *   - branding/{ts}/apple-touch-icon.png          (180x180)
+     *   - branding/{ts}/web-app-manifest-192x192.png
+     *   - branding/{ts}/web-app-manifest-512x512.png
+     *   - branding/{ts}/og-image.png                  (1200x630)
      *
-     * Also copies PWA files to public/ for direct access.
+     * SVG uploads are rasterized via rsvg-convert before GD processing.
+     * The original SVG is also stored verbatim as branding/{ts}/logo.svg.
+     *
+     * Each upload uses a unique timestamp-based subdirectory so previous uploads
+     * are never overwritten — reverting the database leaves old logo files intact.
+     *
+     * Also copies PWA files to public/ for direct browser access.
      *
      * @return array{logo: string, favicon: string, og_image: string}
      */
@@ -38,16 +44,27 @@ final class LogoConversionService
             File::makeDirectory($tmpDir, 0755, true);
         }
 
+        $ts = (string) time();
+        $prefix = "branding/{$ts}";
         $sourcePath = $file->getRealPath();
+
+        // ── SVG: store original and rasterize to PNG for GD processing ──
+        if ($this->isSvg($file)) {
+            Storage::disk($disk)->put("{$prefix}/logo.svg", file_get_contents($sourcePath));
+            $rasterPath = $tmpDir.'/source-rasterized.png';
+            $this->rasterizeSvg($sourcePath, $rasterPath, 512, 512);
+            $sourcePath = $rasterPath;
+        }
+
         $sourceImage = $this->loadImage($sourcePath);
 
         if ($sourceImage === false) {
-            throw new RuntimeException('Unable to read uploaded image. Ensure it is a valid PNG, JPG, WEBP, or GIF.');
+            throw new RuntimeException('Unable to read uploaded image. Ensure it is a valid PNG, JPG, WEBP, GIF, or SVG.');
         }
 
         // ── 1. Main logo (512x512 max) ──
         $this->resizeAndSavePng($sourceImage, 512, 512, $tmpDir.'/logo.png');
-        Storage::disk($disk)->put('branding/logo.png', file_get_contents($tmpDir.'/logo.png'));
+        Storage::disk($disk)->put("{$prefix}/logo.png", file_get_contents($tmpDir.'/logo.png'));
 
         // ── 2. Favicon sizes ──
         $faviconSizes = [
@@ -58,16 +75,16 @@ final class LogoConversionService
 
         foreach ($faviconSizes as $name => $size) {
             $this->resizeAndSavePng($sourceImage, $size, $size, $tmpDir.'/'.$name);
-            Storage::disk($disk)->put('branding/'.$name, file_get_contents($tmpDir.'/'.$name));
+            Storage::disk($disk)->put("{$prefix}/{$name}", file_get_contents($tmpDir.'/'.$name));
         }
 
         // favicon.ico — browsers accept PNG favicons served as ico
-        $faviconPath = 'branding/favicon.ico';
+        $faviconPath = "{$prefix}/favicon.ico";
         Storage::disk($disk)->put($faviconPath, file_get_contents($tmpDir.'/favicon-32x32.png'));
 
         // ── 3. Apple touch icon (180x180) ──
         $this->resizeAndSavePng($sourceImage, 180, 180, $tmpDir.'/apple-touch-icon.png');
-        Storage::disk($disk)->put('branding/apple-touch-icon.png', file_get_contents($tmpDir.'/apple-touch-icon.png'));
+        Storage::disk($disk)->put("{$prefix}/apple-touch-icon.png", file_get_contents($tmpDir.'/apple-touch-icon.png'));
 
         // ── 4. PWA manifest icons ──
         $manifestSizes = [
@@ -77,12 +94,12 @@ final class LogoConversionService
 
         foreach ($manifestSizes as $name => $size) {
             $this->resizeAndSavePng($sourceImage, $size, $size, $tmpDir.'/'.$name);
-            Storage::disk($disk)->put('branding/'.$name, file_get_contents($tmpDir.'/'.$name));
+            Storage::disk($disk)->put("{$prefix}/{$name}", file_get_contents($tmpDir.'/'.$name));
         }
 
         // ── 5. OG image (1200x630, centered logo on dark bg) ──
         $this->createOgImage($sourceImage, $tmpDir.'/og-image.png');
-        Storage::disk($disk)->put('branding/og-image.png', file_get_contents($tmpDir.'/og-image.png'));
+        Storage::disk($disk)->put("{$prefix}/og-image.png", file_get_contents($tmpDir.'/og-image.png'));
 
         // ── 6. Copy PWA icons to public/ ──
         $this->copyToPublic($tmpDir);
@@ -93,10 +110,54 @@ final class LogoConversionService
         imagedestroy($sourceImage);
 
         return [
-            'logo' => 'branding/logo.png',
+            'logo' => "{$prefix}/logo.png",
             'favicon' => $faviconPath,
-            'og_image' => 'branding/og-image.png',
+            'og_image' => "{$prefix}/og-image.png",
         ];
+    }
+
+    /**
+     * Determine whether the uploaded file is an SVG.
+     */
+    private function isSvg(UploadedFile $file): bool
+    {
+        $mimeType = $file->getMimeType() ?? '';
+        $extension = mb_strtolower($file->getClientOriginalExtension());
+
+        return $mimeType === 'image/svg+xml'
+            || $mimeType === 'text/html'  // some servers report SVG as text/html
+            || $extension === 'svg';
+    }
+
+    /**
+     * Rasterize an SVG file to a PNG using rsvg-convert.
+     *
+     * @throws RuntimeException when rsvg-convert is unavailable or fails.
+     */
+    private function rasterizeSvg(string $svgPath, string $destPath, int $width, int $height): void
+    {
+        $rsvg = '/usr/bin/rsvg-convert';
+
+        if (! file_exists($rsvg)) {
+            throw new RuntimeException('rsvg-convert is not available. Cannot process SVG uploads.');
+        }
+
+        $cmd = sprintf(
+            '%s -w %d -h %d -f png -o %s %s 2>&1',
+            escapeshellarg($rsvg),
+            $width,
+            $height,
+            escapeshellarg($destPath),
+            escapeshellarg($svgPath),
+        );
+
+        $output = [];
+        $exitCode = 0;
+        exec($cmd, $output, $exitCode);
+
+        if ($exitCode !== 0 || ! file_exists($destPath)) {
+            throw new RuntimeException('SVG rasterization failed: '.implode(' ', $output));
+        }
     }
 
     /**

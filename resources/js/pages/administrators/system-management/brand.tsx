@@ -276,7 +276,7 @@ export default function SystemManagementBrandPage({ user, branding, access }: Sy
                                     <input
                                         id="logo"
                                         type="file"
-                                        accept="image/*"
+                                        accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
                                         className="hidden"
                                         onChange={(event) => {
                                             const file = event.target.files?.[0] || null;

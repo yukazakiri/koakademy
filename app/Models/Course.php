@@ -77,6 +77,7 @@ final class Course extends Model
         'title',
         'description',
         'department_id',
+        'course_type_id',
         'units',
         'lec_per_unit',
         'lab_per_unit',
@@ -142,6 +143,11 @@ final class Course extends Model
     public function department(): BelongsTo
     {
         return $this->belongsTo(Department::class, 'department_id');
+    }
+
+    public function courseType(): BelongsTo
+    {
+        return $this->belongsTo(CourseType::class);
     }
 
     public function subjects()

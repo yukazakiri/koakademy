@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\UserRole;
 use App\Models\Course;
+use App\Models\CourseType;
 use App\Models\Department;
 use App\Models\User;
 
@@ -14,12 +15,14 @@ it('allows an administrator to store a new curriculum program', function () {
     ]);
 
     $department = Department::factory()->create();
+    $courseType = CourseType::firstOrCreate(['name' => 'College Undergraduate']);
 
     $payload = [
         'code' => 'BSE',
         'title' => 'Bachelor of Secondary Education',
         'description' => 'Test description',
         'department_id' => $department->id,
+        'course_type_id' => $courseType->id,
         'lec_per_unit' => 500,
         'lab_per_unit' => 600,
         'remarks' => 'Test remarks',
@@ -37,6 +40,7 @@ it('allows an administrator to store a new curriculum program', function () {
         'code' => 'BSE',
         'title' => 'Bachelor of Secondary Education',
         'department_id' => $department->id,
+        'course_type_id' => $courseType->id,
         'is_active' => true,
         'lec_per_unit' => 500,
         'lab_per_unit' => 600,
@@ -50,11 +54,13 @@ it('prevents non-administrators from creating a curriculum program', function ()
     ]);
 
     $department = Department::factory()->create();
+    $courseType = CourseType::firstOrCreate(['name' => 'College Undergraduate']);
 
     $payload = [
         'code' => 'BSE',
         'title' => 'Bachelor of Secondary Education',
         'department_id' => $department->id,
+        'course_type_id' => $courseType->id,
     ];
 
     $response = $this->actingAs($student)
@@ -79,5 +85,6 @@ it('validates required fields when creating a curriculum program', function () {
         'code',
         'title',
         'department_id',
+        'course_type_id',
     ]);
 });

@@ -24,7 +24,7 @@ final class CourseFactory extends Factory
             'code' => $this->faker->unique()->regexify('[A-Z]{2,4}'),
             'title' => $this->faker->sentence(6),
             'description' => $this->faker->paragraph(),
-            'department' => $this->faker->randomElement($departments),
+            'department_id' => \App\Models\Department::factory(),
             'units' => $this->faker->numberBetween(120, 180),
             'lec_per_unit' => $this->faker->numberBetween(100, 300),
             'lab_per_unit' => $this->faker->numberBetween(100, 300),

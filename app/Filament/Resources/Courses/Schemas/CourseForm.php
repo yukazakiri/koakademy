@@ -85,6 +85,12 @@ final class CourseForm
                                                     ->default(true),
                                             ])
                                             ->helperText('Department offering this program. Create a new one inline if needed.'),
+                                        Select::make('course_type_id')
+                                            ->label('Course Type')
+                                            ->relationship('courseType', 'name')
+                                            ->searchable()
+                                            ->preload()
+                                            ->helperText('Classification of the program (e.g., College Undergraduate, TESDA, Masters).'),
                                         Select::make('school_id')
                                             ->label('School')
                                             ->relationship('school', 'name')

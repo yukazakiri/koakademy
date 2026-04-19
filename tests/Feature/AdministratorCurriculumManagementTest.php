@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Enums\SubjectEnrolledEnum;
 use App\Enums\UserRole;
 use App\Models\Course;
+use App\Models\CourseType;
 use App\Models\Subject;
 use App\Models\User;
 use Inertia\Testing\AssertableInertia;
@@ -20,10 +21,13 @@ it('allows administrative users to view curriculum management pages', function (
         'role' => UserRole::Admin,
     ]);
 
+    $courseType = CourseType::factory()->create();
+
     $primaryProgram = Course::factory()->create([
         'code' => 'BSCS',
         'curriculum_year' => '2024 - 2025',
         'is_active' => true,
+        'course_type_id' => $courseType->id,
     ]);
 
     $secondaryProgram = Course::factory()->create([
@@ -113,10 +117,14 @@ it('updates program details and manages subjects', function (): void {
     $department1 = \App\Models\Department::factory()->create(['code' => 'CBA']);
     $department2 = \App\Models\Department::factory()->create(['code' => 'CCS']);
 
+    $courseType1 = CourseType::factory()->create();
+    $courseType2 = CourseType::factory()->create();
+
     $program = Course::factory()->create([
         'code' => 'BSBA',
         'title' => 'Business Administration',
         'department_id' => $department1->id,
+        'course_type_id' => $courseType1->id,
     ]);
 
     $prerequisite = Subject::factory()->for($program)->create([
@@ -129,6 +137,7 @@ it('updates program details and manages subjects', function (): void {
             'title' => 'Information Technology',
             'description' => 'Updated program description',
             'department_id' => $department2->id,
+            'course_type_id' => $courseType2->id,
             'lec_per_unit' => 120,
             'lab_per_unit' => 80,
             'remarks' => 'Revised curriculum',

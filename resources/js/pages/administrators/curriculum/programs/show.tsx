@@ -20,7 +20,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { route } from "ziggy-js";
 
 type DepartmentOption = { id: number; name: string; code: string };
-type ProgramPayload = { id: number; code: string; title: string; description: string | null; department_id: number | null; department_name: string | null; department_code: string | null; lec_per_unit: string | number | null; remarks: string | null; curriculum_year: string | null; miscelaneous: string | number | null };
+type ProgramPayload = { id: number; code: string; title: string; description: string | null; department_id: number | null; department_name: string | null; department_code: string | null; course_type_id: number | null; course_type_name: string | null; lec_per_unit: string | number | null; remarks: string | null; curriculum_year: string | null; miscelaneous: string | number | null };
 type SubjectPayload = { id: number; code: string; title: string; classification: string | null; units: number | null; lecture: number | null; laboratory: number | null; academic_year: number | null; semester: number | null; group: string | null; is_credited: boolean; pre_riquisite: number[] };
 type SubjectOption = { id: number; code: string; title: string };
 type ClassificationOption = { value: string; label: string };
@@ -34,6 +34,7 @@ interface Props {
     subject_options: SubjectOption[];
     classification_options: ClassificationOption[];
     departments: DepartmentOption[];
+    course_types: { id: number; name: string }[];
 }
 
 const yearOptions = [{ value: "1", label: "1st Year" }, { value: "2", label: "2nd Year" }, { value: "3", label: "3rd Year" }, { value: "4", label: "4th Year" }];
@@ -41,7 +42,7 @@ const semesterOptions = [{ value: "1", label: "1st Semester" }, { value: "2", la
 const fmt = (v: string | number | null): string => (v === null || v === undefined ? "" : String(v));
 const FieldError = ({ message }: { message?: string }) => (message ? <p className="text-destructive mt-1 text-xs font-medium">{message}</p> : null);
 
-export default function CurriculumProgramShow({ user, program, stats, subjects, subject_options, classification_options, departments }: Props) {
+export default function CurriculumProgramShow({ user, program, stats, subjects, subject_options, classification_options, departments, course_types }: Props) {
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [editSubject, setEditSubject] = useState<SubjectPayload | null>(null);
     const [deleteSubject, setDeleteSubject] = useState<SubjectPayload | null>(null);
@@ -57,6 +58,7 @@ export default function CurriculumProgramShow({ user, program, stats, subjects, 
         title: program.title,
         description: program.description ?? "",
         department_id: program.department_id ? String(program.department_id) : "",
+        course_type_id: program.course_type_id ? String(program.course_type_id) : "",
         lec_per_unit: fmt(program.lec_per_unit),
         remarks: program.remarks ?? "",
         curriculum_year: program.curriculum_year ?? "",
@@ -183,6 +185,14 @@ export default function CurriculumProgramShow({ user, program, stats, subjects, 
                                                 <SelectContent>{departments.map((d) => <SelectItem key={d.id} value={String(d.id)}>{d.code} — {d.name}</SelectItem>)}</SelectContent>
                                             </Select>
                                             <FieldError message={programForm.errors.department_id} />
+                                        </div>
+                                        <div className="grid gap-2 lg:col-span-2">
+                                            <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Course Type</Label>
+                                            <Select value={programForm.data.course_type_id} onValueChange={(v) => programForm.setData("course_type_id", v)}>
+                                                <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
+                                                <SelectContent>{course_types.map((t) => <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>)}</SelectContent>
+                                            </Select>
+                                            <FieldError message={programForm.errors.course_type_id} />
                                         </div>
                                         <div className="grid gap-2 lg:col-span-2"><Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Curriculum Year</Label><Input value={programForm.data.curriculum_year} onChange={(e) => programForm.setData("curriculum_year", e.target.value)} /><FieldError message={programForm.errors.curriculum_year} /></div>
                                         <div className="grid gap-2"><Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Lec per Unit</Label><Input type="number" value={programForm.data.lec_per_unit} onChange={(e) => programForm.setData("lec_per_unit", e.target.value)} /><FieldError message={programForm.errors.lec_per_unit} /></div>

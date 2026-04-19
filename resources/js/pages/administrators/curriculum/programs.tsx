@@ -54,6 +54,7 @@ interface CurriculumProgramsProps {
     };
     programs: ProgramSummary[];
     departments: DepartmentOption[];
+    course_types: { id: number; name: string }[];
     versions: CurriculumVersion[];
 }
 
@@ -64,6 +65,8 @@ type ProgramSummary = {
     department: string | null;
     department_id: number | null;
     department_name: string | null;
+    course_type_id: number | null;
+    course_type_name: string | null;
     curriculum_year: string | null;
     subjects_count: number;
     total_units: number;
@@ -102,7 +105,7 @@ function getDepartmentColor(code: string): string {
 const FieldError = ({ message }: { message?: string }) =>
     message ? <p className="text-destructive mt-1 text-xs font-medium">{message}</p> : null;
 
-export default function CurriculumPrograms({ user, stats, programs, departments }: CurriculumProgramsProps) {
+export default function CurriculumPrograms({ user, stats, programs, departments, course_types }: CurriculumProgramsProps) {
     const [sorting, setSorting] = useState<SortingState>([]);
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
     const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
@@ -145,6 +148,7 @@ export default function CurriculumPrograms({ user, stats, programs, departments 
         title: "",
         description: "",
         department_id: "",
+        course_type_id: "",
         curriculum_year: "",
         lec_per_unit: "",
         lab_per_unit: "",
@@ -226,6 +230,11 @@ export default function CurriculumPrograms({ user, stats, programs, departments 
                                 {program.curriculum_year && (
                                     <Badge variant="outline" className="bg-background h-4 px-1.5 py-0 text-[10px]">
                                         {program.curriculum_year}
+                                    </Badge>
+                                )}
+                                {program.course_type_name && (
+                                    <Badge variant="outline" className="h-4 border-primary/20 bg-primary/5 px-1.5 py-0 text-[10px] text-primary">
+                                        {program.course_type_name}
                                     </Badge>
                                 )}
                             </div>
@@ -482,7 +491,6 @@ export default function CurriculumPrograms({ user, stats, programs, departments 
                     )}
                 </Card>
             </div>
-
             {/* Create Course Dialog */}
             <Dialog
                 open={isCreateOpen}
@@ -535,17 +543,40 @@ export default function CurriculumPrograms({ user, stats, programs, departments 
                                 <FieldError message={createForm.errors.department_id} />
                             </div>
                         </div>
-                        <div className="grid gap-2">
-                            <Label htmlFor="create-title" className="text-foreground/80 font-semibold">
-                                Program Title
-                            </Label>
-                            <Input
-                                id="create-title"
-                                placeholder="e.g. Bachelor of Science in Information Technology"
-                                value={createForm.data.title}
-                                onChange={(e) => createForm.setData("title", e.target.value)}
-                            />
-                            <FieldError message={createForm.errors.title} />
+                        <div className="grid gap-4 md:grid-cols-2">
+                            <div className="grid gap-2">
+                                <Label htmlFor="create-course-type" className="text-foreground/80 font-semibold">
+                                    Course Type
+                                </Label>
+                                <Select
+                                    value={createForm.data.course_type_id}
+                                    onValueChange={(value) => createForm.setData("course_type_id", value)}
+                                >
+                                    <SelectTrigger id="create-course-type">
+                                        <SelectValue placeholder="Select type" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {course_types.map((type) => (
+                                            <SelectItem key={type.id} value={String(type.id)}>
+                                                {type.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <FieldError message={createForm.errors.course_type_id} />
+                            </div>
+                            <div className="grid gap-2">
+                                <Label htmlFor="create-title" className="text-foreground/80 font-semibold">
+                                    Program Title
+                                </Label>
+                                <Input
+                                    id="create-title"
+                                    placeholder="e.g. Bachelor of Science in Information Technology"
+                                    value={createForm.data.title}
+                                    onChange={(e) => createForm.setData("title", e.target.value)}
+                                />
+                                <FieldError message={createForm.errors.title} />
+                            </div>
                         </div>
                         <div className="grid gap-4 md:grid-cols-2">
                             <div className="grid gap-2">

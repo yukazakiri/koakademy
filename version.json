@@ -1,14 +1,14 @@
 {
-  "version": "1.0.1-dev.0.2",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.0.1-dev.0.2",
-  "commit": "08df27defa96bed4c01db8cea47727406b0c7c06",
+  "version": "1.0.1-dev.0.3",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.0.1-dev.0.3",
+  "commit": "123b2c9050dd049a04f8764fd258e2981944ab28",
   "branch": "master",
-  "timestamp": "2026-04-19T05:42:29Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24621989760",
+  "timestamp": "2026-04-19T08:08:05Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24624388756",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.0.1-dev.0.2 - Merge pull request #13 from yukazakiri/use-departmentsAdd-POST-route-for-curriculum-programs",
-    "previous": "1.0.1-dev.0.1"
+    "current": "Version 1.0.1-dev.0.3 - Merge pull request #14 from yukazakiri/feat/program-course-type-field",
+    "previous": "1.0.1-dev.0.2"
   },
   "metadata": {
     "author": "yukazakiri",

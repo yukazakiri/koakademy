@@ -321,6 +321,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/scheduling-analytics', [AdministratorSchedulingAnalyticsController::class, 'index'])->name('scheduling-analytics.index');
         Route::get('/scheduling-analytics/students/search', [AdministratorSchedulingAnalyticsController::class, 'searchStudents'])->name('scheduling-analytics.students.search');
         Route::get('/scheduling-analytics/students/{studentId}/schedule', [AdministratorSchedulingAnalyticsController::class, 'getStudentSchedule'])->name('scheduling-analytics.students.schedule');
+        Route::patch('/scheduling-analytics/schedules/{schedule}', [AdministratorSchedulingAnalyticsController::class, 'updateSchedule'])->name('scheduling-analytics.schedules.update');
 
         // Faculty Management
         Route::get('/faculties', [AdministratorFacultyManagementController::class, 'index'])->name('faculties.index');

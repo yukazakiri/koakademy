@@ -72,7 +72,7 @@ final class AdministratorCurriculumManagementController extends Controller
     public function programs(): Response
     {
         $programs = Course::query()
-            ->with('department:id,name,code')
+            ->with(['department:id,name,code', 'courseType:id,name'])
             ->withCount([
                 'subjects',
                 'subjects as prerequisites_count' => fn ($query) => $query->whereNotNull('pre_riquisite'),
@@ -101,6 +101,8 @@ final class AdministratorCurriculumManagementController extends Controller
                 ...$this->programPayload($course),
                 'department_id' => $course->department_id,
                 'department_name' => $course->department?->name,
+                'course_type_id' => $course->course_type_id,
+                'course_type_name' => $course->courseType?->name,
                 'updated_at' => $course->updated_at?->toDateString(),
             ]),
             'departments' => $departments->map(fn (Department $dept): array => [
@@ -109,6 +111,7 @@ final class AdministratorCurriculumManagementController extends Controller
                 'code' => $dept->code,
             ]),
             'versions' => $versions,
+            'course_types' => \App\Models\CourseType::query()->select(['id', 'name'])->orderBy('name')->get(),
         ]);
     }
 
@@ -120,6 +123,7 @@ final class AdministratorCurriculumManagementController extends Controller
                 ->orderBy('semester')
                 ->orderBy('code'),
             'department:id,name,code',
+            'courseType:id,name',
         ]);
 
         $subjects = $course->subjects;
@@ -159,6 +163,7 @@ final class AdministratorCurriculumManagementController extends Controller
                 'name' => $dept->name,
                 'code' => $dept->code,
             ]),
+            'course_types' => \App\Models\CourseType::query()->select(['id', 'name'])->orderBy('name')->get(),
         ]);
     }
 
@@ -260,6 +265,8 @@ final class AdministratorCurriculumManagementController extends Controller
             'department_id' => $course->department_id,
             'department_name' => $course->department?->name,
             'department_code' => $course->department?->code,
+            'course_type_id' => $course->course_type_id,
+            'course_type_name' => $course->courseType?->name,
             'lec_per_unit' => $course->lec_per_unit,
             'remarks' => $course->remarks,
             'curriculum_year' => $course->curriculum_year,

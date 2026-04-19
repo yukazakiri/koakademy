@@ -1,14 +1,14 @@
 {
-  "version": "1.0.1-dev.0.1",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.0.1-dev.0.1",
-  "commit": "47d737e399895e51359919fc534c24599308d25f",
+  "version": "1.0.1-dev.0.2",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.0.1-dev.0.2",
+  "commit": "08df27defa96bed4c01db8cea47727406b0c7c06",
   "branch": "master",
-  "timestamp": "2026-04-17T00:51:32Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24541780507",
+  "timestamp": "2026-04-19T05:42:29Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24621989760",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.0.1-dev.0.1 - Merge pull request #12 from yukazakiri/safely/remove-indexes-and-updateAdd-idempotent-index-creation-and-dropping-for-mail-and-event,",
-    "previous": "1.0.1"
+    "current": "Version 1.0.1-dev.0.2 - Merge pull request #13 from yukazakiri/use-departmentsAdd-POST-route-for-curriculum-programs",
+    "previous": "1.0.1-dev.0.1"
   },
   "metadata": {
     "author": "yukazakiri",

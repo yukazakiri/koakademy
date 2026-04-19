@@ -309,6 +309,7 @@ Route::middleware(['auth', 'administrators.only'])
         // Curriculum & Program Management
         Route::get('/curriculum', [AdministratorCurriculumManagementController::class, 'index'])->name('curriculum.index');
         Route::get('/curriculum/programs', [AdministratorCurriculumManagementController::class, 'programs'])->name('curriculum.programs.index');
+        Route::post('/curriculum/programs', [AdministratorCurriculumManagementController::class, 'storeProgram'])->name('curriculum.programs.store');
         Route::get('/curriculum/programs/{course}', [AdministratorCurriculumManagementController::class, 'showProgram'])->name('curriculum.programs.show');
         Route::put('/curriculum/programs/{course}', [AdministratorCurriculumManagementController::class, 'updateProgram'])->name('curriculum.programs.update');
         Route::put('/curriculum/programs/{course}/toggle-status', [AdministratorCurriculumManagementController::class, 'toggleProgramStatus'])->name('curriculum.programs.toggle-status');

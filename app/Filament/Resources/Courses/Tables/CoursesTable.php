@@ -19,7 +19,7 @@ final class CoursesTable
     public static function configure(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with(['school', 'department'])->withCount('subjects'))
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with(['school', 'department', 'courseType'])->withCount('subjects'))
             ->defaultSort('code')
             ->striped()
             ->columns([
@@ -40,6 +40,12 @@ final class CoursesTable
                     ->label('Department')
                     ->badge()
                     ->color('gray')
+                    ->searchable()
+                    ->sortable(),
+                TextColumn::make('courseType.name')
+                    ->label('Type')
+                    ->badge()
+                    ->color('info')
                     ->searchable()
                     ->sortable(),
                 TextColumn::make('school.name')
@@ -109,6 +115,10 @@ final class CoursesTable
                 SelectFilter::make('department_id')
                     ->label('Department')
                     ->relationship('department', 'name')
+                    ->searchable(),
+                SelectFilter::make('course_type_id')
+                    ->label('Course Type')
+                    ->relationship('courseType', 'name')
                     ->searchable(),
             ])
             ->recordActions([

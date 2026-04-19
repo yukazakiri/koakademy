@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Enums\SubjectEnrolledEnum;
+use App\Http\Requests\StoreCurriculumProgramRequest;
 use App\Http\Requests\StoreCurriculumSubjectRequest;
 use App\Http\Requests\UpdateCurriculumProgramRequest;
 use App\Http\Requests\UpdateCurriculumSubjectRequest;
 use App\Models\Course;
+use App\Models\Department;
 use App\Models\Subject;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
@@ -22,15 +24,23 @@ final class AdministratorCurriculumManagementController extends Controller
 {
     public function index(): Response
     {
-        $latestPrograms = Course::query()
+        $departments = Department::query()
             ->withCount([
-                'subjects',
-                'subjects as prerequisites_count' => fn ($query) => $query->whereNotNull('pre_riquisite'),
+                'courses',
+                'courses as active_courses_count' => fn ($query) => $query->where('is_active', true),
             ])
-            ->withSum('subjects', 'units')
-            ->orderByDesc('updated_at')
-            ->limit(6)
+            ->withSum('courses as total_subjects_count', 'id')
+            ->orderBy('name')
             ->get();
+
+        // Get subject counts per department via courses
+        $departmentIds = $departments->pluck('id');
+        $subjectCounts = Course::query()
+            ->whereIn('department_id', $departmentIds)
+            ->withCount('subjects')
+            ->get()
+            ->groupBy('department_id')
+            ->map(fn (Collection $courses): int => (int) $courses->sum('subjects_count'));
 
         $versions = $this->buildVersions(
             Course::query()->withCount('subjects')->get()
@@ -39,34 +49,41 @@ final class AdministratorCurriculumManagementController extends Controller
         return Inertia::render('administrators/curriculum/index', [
             ...$this->userProps(),
             'stats' => [
+                'departments' => Department::count(),
+                'active_departments' => Department::where('is_active', true)->count(),
                 'programs' => Course::count(),
                 'active_programs' => Course::where('is_active', true)->count(),
                 'subjects' => Subject::count(),
-                'subjects_with_requisites' => Subject::query()
-                    ->whereNotNull('pre_riquisite')
-                    ->count(),
                 'curriculum_versions' => count($versions),
             ],
-            'latest_programs' => $latestPrograms->map(fn (Course $course): array => $this->programPayload($course)),
+            'departments' => $departments->map(fn (Department $dept) => [
+                'id' => $dept->id,
+                'name' => $dept->name,
+                'code' => $dept->code,
+                'is_active' => $dept->is_active,
+                'courses_count' => $dept->courses_count,
+                'active_courses_count' => $dept->active_courses_count,
+                'subjects_count' => $subjectCounts->get($dept->id, 0),
+            ]),
             'versions' => $versions,
-            'filament' => [
-                'courses' => [
-                    'index_url' => route('filament.admin.resources.courses.index'),
-                    'create_url' => route('filament.admin.resources.courses.create'),
-                ],
-            ],
         ]);
     }
 
     public function programs(): Response
     {
         $programs = Course::query()
+            ->with('department:id,name,code')
             ->withCount([
                 'subjects',
                 'subjects as prerequisites_count' => fn ($query) => $query->whereNotNull('pre_riquisite'),
             ])
             ->withSum('subjects', 'units')
             ->orderBy('code')
+            ->get();
+
+        $departments = Department::query()
+            ->select(['id', 'name', 'code'])
+            ->orderBy('name')
             ->get();
 
         $versions = $this->buildVersions($programs);
@@ -82,15 +99,16 @@ final class AdministratorCurriculumManagementController extends Controller
             ],
             'programs' => $programs->map(fn (Course $course): array => [
                 ...$this->programPayload($course),
+                'department_id' => $course->department_id,
+                'department_name' => $course->department?->name,
                 'updated_at' => $course->updated_at?->toDateString(),
             ]),
+            'departments' => $departments->map(fn (Department $dept): array => [
+                'id' => $dept->id,
+                'name' => $dept->name,
+                'code' => $dept->code,
+            ]),
             'versions' => $versions,
-            'filament' => [
-                'courses' => [
-                    'index_url' => route('filament.admin.resources.courses.index'),
-                    'create_url' => route('filament.admin.resources.courses.create'),
-                ],
-            ],
         ]);
     }
 
@@ -101,12 +119,18 @@ final class AdministratorCurriculumManagementController extends Controller
                 ->orderBy('academic_year')
                 ->orderBy('semester')
                 ->orderBy('code'),
+            'department:id,name,code',
         ]);
 
         $subjects = $course->subjects;
         $subjectsWithRequisites = $subjects
             ->filter(fn (Subject $subject): bool => $this->normalizeRequisites($subject->pre_riquisite) !== [])
             ->count();
+
+        $departments = Department::query()
+            ->select(['id', 'name', 'code'])
+            ->orderBy('name')
+            ->get();
 
         return Inertia::render('administrators/curriculum/programs/show', [
             ...$this->userProps(),
@@ -130,7 +154,22 @@ final class AdministratorCurriculumManagementController extends Controller
                     'label' => ucwords(str_replace('_', ' ', $option->value)),
                 ])
                 ->values(),
+            'departments' => $departments->map(fn (Department $dept): array => [
+                'id' => $dept->id,
+                'name' => $dept->name,
+                'code' => $dept->code,
+            ]),
         ]);
+    }
+
+    public function storeProgram(StoreCurriculumProgramRequest $request): RedirectResponse
+    {
+        $validated = $request->validated();
+        $validated['is_active'] = true;
+
+        Course::create($validated);
+
+        return Redirect::back()->with('success', 'Program created successfully.');
     }
 
     public function updateProgram(UpdateCurriculumProgramRequest $request, Course $course): RedirectResponse
@@ -218,7 +257,9 @@ final class AdministratorCurriculumManagementController extends Controller
             'code' => $course->code,
             'title' => $course->title,
             'description' => $course->description,
-            'department' => $course->department?->code,
+            'department_id' => $course->department_id,
+            'department_name' => $course->department?->name,
+            'department_code' => $course->department?->code,
             'lec_per_unit' => $course->lec_per_unit,
             'remarks' => $course->remarks,
             'curriculum_year' => $course->curriculum_year,

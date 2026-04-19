@@ -60,9 +60,8 @@ it('allows administrative users to view curriculum management pages', function (
             ->has('stats')
             ->where('stats.programs', 2)
             ->where('stats.subjects', 3)
-            ->where('stats.subjects_with_requisites', 1)
             ->has('versions', 2)
-            ->has('latest_programs', 2),
+            ->has('departments'),
     ],
     'programs' => [
         '/administrators/curriculum/programs',
@@ -74,8 +73,7 @@ it('allows administrative users to view curriculum management pages', function (
             ->where('stats.subjects_with_requisites', 1)
             ->has('versions', 2)
             ->has('programs', 2)
-            ->has('filament.courses.index_url')
-            ->has('filament.courses.create_url'),
+            ->has('departments'),
     ],
 ]);
 
@@ -112,10 +110,13 @@ it('updates program details and manages subjects', function (): void {
         'role' => UserRole::Admin,
     ]);
 
+    $department1 = \App\Models\Department::factory()->create(['code' => 'CBA']);
+    $department2 = \App\Models\Department::factory()->create(['code' => 'CCS']);
+
     $program = Course::factory()->create([
         'code' => 'BSBA',
         'title' => 'Business Administration',
-        'department' => 'CBA',
+        'department_id' => $department1->id,
     ]);
 
     $prerequisite = Subject::factory()->for($program)->create([
@@ -127,7 +128,7 @@ it('updates program details and manages subjects', function (): void {
             'code' => 'BSIT',
             'title' => 'Information Technology',
             'description' => 'Updated program description',
-            'department' => 'CCS',
+            'department_id' => $department2->id,
             'lec_per_unit' => 120,
             'lab_per_unit' => 80,
             'remarks' => 'Revised curriculum',
@@ -139,7 +140,7 @@ it('updates program details and manages subjects', function (): void {
     expect($program->refresh())
         ->code->toBe('BSIT')
         ->title->toBe('Information Technology')
-        ->department->toBe('CCS');
+        ->department_id->toBe($department2->id);
 
     actingAs($user)
         ->post(portalUrlForAdministrators("/administrators/curriculum/programs/{$program->id}/subjects"), [

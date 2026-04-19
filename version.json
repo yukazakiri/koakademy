@@ -1,14 +1,14 @@
 {
-  "version": "1.0.1-dev.0.4",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.0.1-dev.0.4",
-  "commit": "fd0924d8126f16183737adb06f22287b482c6223",
+  "version": "1.0.1-dev.0.5",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.0.1-dev.0.5",
+  "commit": "fc76e14e652b28b43a004a16602c9e334f7a9c7d",
   "branch": "master",
-  "timestamp": "2026-04-19T12:35:24Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24629008970",
+  "timestamp": "2026-04-19T12:45:27Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24629326356",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.0.1-dev.0.4 - Merge pull request #15 from yukazakiri/actor-admin-sidebars",
-    "previous": "1.0.1-dev.0.3"
+    "current": "Version 1.0.1-dev.0.5 - Merge pull request #17 from yukazakiri/test/brand-upload-permissions-storage-paths",
+    "previous": "1.0.1-dev.0.4"
   },
   "metadata": {
     "author": "yukazakiri",

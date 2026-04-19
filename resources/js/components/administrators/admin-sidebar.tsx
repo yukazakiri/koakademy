@@ -63,13 +63,13 @@ const SECTION_ICONS: Record<RouteSection, React.ElementType> = {
 // Section labels for tooltips
 const SECTION_LABELS: Record<RouteSection, string> = {
     core: "Overview",
-    academic: "Academic",
-    student_services: "Students",
+    academic: "Academics",
+    student_services: "Registrar",
     finance: "Finance",
     hr: "HR",
     system: "System",
     library: "Library",
-    inventory: "Inventory",
+    inventory: "Property",
     support: "Support",
 };
 

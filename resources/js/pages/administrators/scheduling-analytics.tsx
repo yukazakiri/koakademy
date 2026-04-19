@@ -1,4 +1,5 @@
 import AdminLayout from "@/components/administrators/admin-layout";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,18 +9,22 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { User } from "@/types/user";
+import { DndContext, DragOverlay, MouseSensor, TouchSensor, useDraggable, useDroppable, useSensor, useSensors } from "@dnd-kit/core";
+import type { DragEndEvent, DragStartEvent, Modifier } from "@dnd-kit/core";
 import { Head, router } from "@inertiajs/react";
+import axios from "axios";
 import {
     AlertTriangle,
     BookOpen,
     Building2,
     Calendar,
-    ChevronDown,
     Clock,
     GraduationCap,
+    GripVertical,
     LayoutGrid,
     List,
     Loader2,
@@ -31,17 +36,27 @@ import {
     X,
 } from "lucide-react";
 import * as React from "react";
+import { toast } from "sonner";
 import { route } from "ziggy-js";
 
 // ── Types ──────────────────────────────────────────────────────────
 
 type ScheduleEntry = {
+    id?: number;
     day_of_week: string;
     start_time: string;
     end_time: string;
     time_range: string;
     room: string | null;
     room_id?: number | null;
+};
+
+type DragData = {
+    block: Block;
+    scheduleId: number;
+    originalDay: string;
+    originalStartTime: string;
+    originalEndTime: string;
 };
 
 type ClassScheduleData = {
@@ -216,6 +231,48 @@ function buildBlocks(data: ClassScheduleData[]): Block[] {
     return result;
 }
 
+/** Convert total minutes from midnight to "HH:MM" (24h) */
+function minutesToHHMM(totalMin: number): string {
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+/** Convert total minutes from midnight to "h:mm AM/PM" */
+function minutesToDisplay(totalMin: number): string {
+    let h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    const ap = h >= 12 ? "PM" : "AM";
+    if (h === 0) h = 12;
+    else if (h > 12) h -= 12;
+    return `${h}:${String(m).padStart(2, "0")} ${ap}`;
+}
+
+const SNAP_MINUTES = 15;
+
+// ── DraggableBlock ─────────────────────────────────────────────────
+
+function DraggableBlock({ id, data, className, style, children }: { id: string; data: DragData; className?: string; style?: React.CSSProperties; children: React.ReactNode }) {
+    const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id, data });
+    return (
+        <div ref={setNodeRef} {...listeners} {...attributes} className={`${className || ""} ${isDragging ? "opacity-30" : ""}`} style={style}>
+            {children}
+        </div>
+    );
+}
+
+// ── DroppableDay ───────────────────────────────────────────────────
+
+function DroppableDay({ dayIdx, children, isOver }: { dayIdx: number; children: React.ReactNode; isOver?: boolean }) {
+    const { setNodeRef, isOver: dropIsOver } = useDroppable({ id: `day-${dayIdx}`, data: { dayIdx } });
+    const active = isOver ?? dropIsOver;
+    return (
+        <div ref={setNodeRef} className={`relative border-r last:border-r-0 transition-colors duration-150 ${active ? "bg-primary/5" : ""}`}>
+            {children}
+        </div>
+    );
+}
+
 // ── ClassDetailsDialog ──────────────────────────────────────────────
 
 function ClassDetailsDialog({ classItem, open, onOpenChange }: { classItem: ClassScheduleData | null; open: boolean; onOpenChange: (o: boolean) => void }) {
@@ -269,16 +326,24 @@ function InfoField({ icon, label, value }: { icon?: React.ReactNode; label: stri
     return (
         <div className="space-y-0.5">
             <Label className="text-muted-foreground text-[10px] tracking-wider uppercase">{label}</Label>
-            <div className="flex items-center gap-1.5 text-sm font-medium">{icon && <span className="text-muted-foreground">{icon}</span>}{value}</div>
+            <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">{icon && <span className="text-muted-foreground">{icon}</span>}{value}</div>
         </div>
     );
 }
 // ── WeeklyTimetable ─────────────────────────────────────────────────
 
-function WeeklyTimetable({ data, onBlockClick }: { data: ClassScheduleData[]; onBlockClick: (c: ClassScheduleData) => void }) {
+function WeeklyTimetable({ data, onBlockClick, conflicts = [], editMode = false, onResizeStart, dropPreview }: { data: ClassScheduleData[]; onBlockClick: (c: ClassScheduleData) => void; conflicts?: ScheduleConflict[]; editMode?: boolean; onResizeStart?: (scheduleId: number, edge: "top" | "bottom", initialY: number, startMin: number, endMin: number) => void; dropPreview?: { day: string; startMin: number; duration: number; subject: string; pal: { bg: string; border: string; text: string; accent: string; badge: string; } } | null }) {
     const hours = React.useMemo(() => Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_START + i), []);
     const blocks = React.useMemo(() => buildBlocks(data), [data]);
     const totalH = (HOUR_END - HOUR_START + 1) * CELL_H;
+
+    const getConflicts = (cls: ClassScheduleData) => {
+        return conflicts.filter(
+            (c) =>
+                (c.class_1.subject_code === cls.subject_code && c.class_1.section === cls.section) ||
+                (c.class_2.subject_code === cls.subject_code && c.class_2.section === cls.section),
+        );
+    };
     const blocksByDay = React.useMemo(() => {
         const m = new Map<number, Block[]>();
         for (let d = 0; d < 6; d++) m.set(d, []);
@@ -306,6 +371,116 @@ function WeeklyTimetable({ data, onBlockClick }: { data: ClassScheduleData[]; on
             </div>
         );
     }
+
+    const renderBlock = (b: Block, i: number) => {
+        const classConflicts = getConflicts(b.cls);
+        const hasConflict = classConflicts.length > 0;
+        const schedId = b.sched.id;
+        
+        const pal = getPalette(b.cls.subject_code);
+        const w = b.totalCols > 1 ? `calc(${100 / b.totalCols}% - 2px)` : "calc(100% - 4px)";
+        const l = b.totalCols > 1 ? `calc(${(b.col / b.totalCols) * 100}% + 2px)` : "2px";
+        const blockStyle = { top: b.topPx, height: Math.max(b.heightPx - 2, 18), width: w, left: l };
+
+        const blockInner = (
+            <>
+                {editMode && <GripVertical className="absolute top-0.5 right-0.5 h-3 w-3 text-muted-foreground opacity-60" />}
+                {hasConflict && !editMode && <AlertTriangle className="absolute top-0.5 right-0.5 h-3 w-3 text-red-500 animate-pulse" />}
+                
+                {editMode && onResizeStart && (
+                    <>
+                        <div 
+                            className="absolute top-0 left-0 right-0 h-2.5 cursor-ns-resize z-30 opacity-0 hover:bg-black/10 dark:hover:bg-white/10 transition-colors" 
+                            onPointerDown={(e) => { e.stopPropagation(); onResizeStart(schedId, "top", e.clientY, parseMinutes(b.sched.start_time), parseMinutes(b.sched.end_time)); }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onTouchStart={(e) => e.stopPropagation()}
+                        />
+                        <div 
+                            className="absolute bottom-0 left-0 right-0 h-2.5 cursor-ns-resize z-30 opacity-0 hover:bg-black/10 dark:hover:bg-white/10 transition-colors" 
+                            onPointerDown={(e) => { e.stopPropagation(); onResizeStart(schedId, "bottom", e.clientY, parseMinutes(b.sched.start_time), parseMinutes(b.sched.end_time)); }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onTouchStart={(e) => e.stopPropagation()}
+                        />
+                    </>
+                )}
+
+                <div className={`truncate text-[11px] font-bold leading-tight ${hasConflict ? "text-red-700 dark:text-red-300" : pal.text}`}>{b.cls.subject_code}</div>
+                {b.heightPx > 28 && <div className="text-muted-foreground truncate text-[10px] leading-tight">{b.cls.section}</div>}
+                {b.heightPx > 48 && <div className="text-muted-foreground mt-0.5 flex items-center gap-0.5 truncate text-[9px]"><MapPin className="h-2.5 w-2.5 shrink-0" />{b.sched.room || "—"}</div>}
+                {b.heightPx > 64 && b.cls.faculty_name && <div className="text-muted-foreground mt-0.5 flex items-center gap-0.5 truncate text-[9px]"><UserIcon className="h-2.5 w-2.5 shrink-0" />{b.cls.faculty_name}</div>}
+            </>
+        );
+
+        const baseClassName = `absolute overflow-hidden rounded-md border-l-[3px] ${hasConflict ? "border-l-red-500 ring-2 ring-red-400/50 dark:ring-red-500/40" : pal.accent} ${hasConflict ? "bg-red-500/12 dark:bg-red-400/15" : pal.bg} p-1 text-left transition-all hover:z-20 hover:shadow-lg hover:brightness-95`;
+
+        if (editMode && schedId) {
+            const dragData: DragData = {
+                block: b,
+                scheduleId: schedId,
+                originalDay: b.sched.day_of_week,
+                originalStartTime: b.sched.start_time,
+                originalEndTime: b.sched.end_time,
+            };
+            return (
+                <DraggableBlock 
+                    key={`${b.cls.id}-${schedId}-${i}`} 
+                    id={`sched-${schedId}`} 
+                    data={dragData}
+                    className={`${baseClassName} cursor-grab active:cursor-grabbing`}
+                    style={blockStyle}
+                >
+                    {blockInner}
+                </DraggableBlock>
+            );
+        }
+
+        return (
+            <Tooltip key={`${b.cls.id}-${i}`}>
+                <TooltipTrigger asChild>
+                    <button
+                        onClick={() => onBlockClick(b.cls)}
+                        className={`${baseClassName} cursor-pointer active:scale-[0.98]`}
+                        style={blockStyle}
+                    >
+                        {blockInner}
+                    </button>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="max-w-[260px] space-y-2 p-3">
+                    <div>
+                        <div className="font-bold">{b.cls.subject_code}</div>
+                        <div className="text-muted-foreground text-xs">{b.cls.subject_title}</div>
+                    </div>
+                    <div className="grid gap-0.5">
+                        <div className="text-muted-foreground text-xs">Section: <span className="text-foreground font-medium">{b.cls.section}</span></div>
+                        <div className="text-muted-foreground text-xs">Time: <span className="text-foreground font-medium">{b.sched.time_range}</span></div>
+                        {b.sched.room && <div className="text-muted-foreground text-xs">Room: <span className="text-foreground font-medium">{b.sched.room}</span></div>}
+                        <div className="text-muted-foreground text-xs">Faculty: <span className="text-foreground font-medium">{b.cls.faculty_name || "TBA"}</span></div>
+                    </div>
+                    {hasConflict && (
+                        <div className="mt-2 rounded border border-red-200 bg-red-50 p-2 dark:border-red-900/50 dark:bg-red-950/30">
+                            <div className="mb-1 flex items-center gap-1 font-semibold text-red-600 dark:text-red-400 text-xs">
+                                <AlertTriangle className="h-3 w-3" /> Conflicts
+                            </div>
+                            <ul className="grid gap-1">
+                                {classConflicts.map((c, idx) => {
+                                    const otherClass = c.class_1.subject_code === b.cls.subject_code && c.class_1.section === b.cls.section ? c.class_2 : c.class_1;
+                                    return (
+                                        <li key={idx} className="text-muted-foreground flex gap-1.5 text-xs">
+                                            <span className="mt-0.5 text-red-500">•</span>
+                                            <span>
+                                                <span className="font-medium text-red-600 dark:text-red-400">{otherClass.subject_code} ({otherClass.section})</span>
+                                                {" "}— Same {c.conflict_type === "room" ? "Room" : "Faculty"}
+                                            </span>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        </div>
+                    )}
+                </TooltipContent>
+            </Tooltip>
+        );
+    };
 
     return (
         <TooltipProvider delayDuration={200}>
@@ -336,45 +511,44 @@ function WeeklyTimetable({ data, onBlockClick }: { data: ClassScheduleData[]; on
                         </div>
 
                         {/* Day columns */}
-                        {DAYS.map((_, dayIdx) => (
-                            <div key={dayIdx} className="relative border-r last:border-r-0" style={{ height: totalH }}>
-                                {/* Hour gridlines */}
-                                {hours.map((h) => (
-                                    <div key={h} className="border-border/40 absolute w-full border-b border-dashed" style={{ top: (h - HOUR_START) * CELL_H }} />
-                                ))}
+                        {DAYS.map((dayName, dayIdx) => {
+                            const dayContent = (
+                                <>
+                                    {/* Hour gridlines */}
+                                    {hours.map((h) => (
+                                        <div key={h} className="border-border/40 absolute w-full border-b border-dashed" style={{ top: (h - HOUR_START) * CELL_H }} />
+                                    ))}
+                                    {/* Schedule blocks */}
+                                    {(blocksByDay.get(dayIdx) || []).map((b, i) => renderBlock(b, i))}
+                                    
+                                    {/* The Ghost Drop Placeholder */}
+                                    {dropPreview && dropPreview.day === dayName && (
+                                        <div 
+                                            className={`absolute left-[2px] right-[2px] rounded-md border-[2.5px] border-dashed ${dropPreview.pal.accent.replace('border-l-[3px]', 'border-current')} bg-background/60 z-10 pointer-events-none flex items-start p-1.5 backdrop-blur-[1px] opacity-80`}
+                                            style={{
+                                                top: ((dropPreview.startMin / 60) - HOUR_START) * CELL_H,
+                                                height: (dropPreview.duration / 60) * CELL_H
+                                            }}
+                                        >
+                                            <span className={`text-[10px] font-bold tracking-tight uppercase opacity-70 ${dropPreview.pal.text}`}>{dropPreview.subject} (Drop Here)</span>
+                                        </div>
+                                    )}
+                                </>
+                            );
 
-                                {/* Schedule blocks */}
-                                {(blocksByDay.get(dayIdx) || []).map((b, i) => {
-                                    const pal = getPalette(b.cls.subject_code);
-                                    const w = b.totalCols > 1 ? `calc(${100 / b.totalCols}% - 2px)` : "calc(100% - 4px)";
-                                    const l = b.totalCols > 1 ? `calc(${(b.col / b.totalCols) * 100}% + 2px)` : "2px";
-                                    return (
-                                        <Tooltip key={`${b.cls.id}-${i}`}>
-                                            <TooltipTrigger asChild>
-                                                <button
-                                                    onClick={() => onBlockClick(b.cls)}
-                                                    className={`absolute overflow-hidden rounded-md border-l-[3px] ${pal.accent} ${pal.bg} cursor-pointer p-1 text-left transition-all hover:z-20 hover:shadow-lg hover:brightness-95 active:scale-[0.98]`}
-                                                    style={{ top: b.topPx, height: Math.max(b.heightPx - 2, 18), width: w, left: l }}
-                                                >
-                                                    <div className={`truncate text-[11px] font-bold leading-tight ${pal.text}`}>{b.cls.subject_code}</div>
-                                                    {b.heightPx > 28 && <div className="text-muted-foreground truncate text-[10px] leading-tight">{b.cls.section}</div>}
-                                                    {b.heightPx > 48 && <div className="text-muted-foreground mt-0.5 flex items-center gap-0.5 truncate text-[9px]"><MapPin className="h-2.5 w-2.5 shrink-0" />{b.sched.room || "—"}</div>}
-                                                    {b.heightPx > 64 && b.cls.faculty_name && <div className="text-muted-foreground mt-0.5 flex items-center gap-0.5 truncate text-[9px]"><UserIcon className="h-2.5 w-2.5 shrink-0" />{b.cls.faculty_name}</div>}
-                                                </button>
-                                            </TooltipTrigger>
-                                            <TooltipContent side="right" className="max-w-[220px] space-y-0.5">
-                                                <div className="font-bold">{b.cls.subject_code}</div>
-                                                <div className="text-xs">{b.cls.subject_title}</div>
-                                                <div className="text-muted-foreground text-xs">Section: {b.cls.section}</div>
-                                                <div className="text-muted-foreground text-xs">{b.sched.time_range}</div>
-                                                {b.sched.room && <div className="text-muted-foreground text-xs">Room: {b.sched.room}</div>}
-                                                <div className="text-muted-foreground text-xs">Faculty: {b.cls.faculty_name || "TBA"}</div>
-                                            </TooltipContent>
-                                        </Tooltip>
-                                    );
-                                })}
-                            </div>
-                        ))}
+                            if (editMode) {
+                                return (
+                                    <DroppableDay key={dayIdx} dayIdx={dayIdx}>
+                                        <div style={{ height: totalH }}>{dayContent}</div>
+                                    </DroppableDay>
+                                );
+                            }
+                            return (
+                                <div key={dayIdx} className="relative border-r last:border-r-0" style={{ height: totalH }}>
+                                    {dayContent}
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
             </ScrollArea>
@@ -464,6 +638,153 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
     const [selectedClass, setSelectedClass] = React.useState<ClassScheduleData | null>(null);
     const [conflictsExpanded, setConflictsExpanded] = React.useState(false);
 
+    const [editMode, setEditMode] = React.useState(false);
+    const [activeDrag, setActiveDrag] = React.useState<(DragData & { width: number; height: number }) | null>(null);
+    const [activeDragDelta, setActiveDragDelta] = React.useState(0);
+    const [hoveredDay, setHoveredDay] = React.useState<string | null>(null);
+    const [pendingMove, setPendingMove] = React.useState<{
+        scheduleId: number;
+        subjectCode: string;
+        section: string;
+        fromDay: string;
+        toDay: string;
+        fromTime: string;
+        toTime: string;
+        newStartTime: string;
+        newEndTime: string;
+    } | null>(null);
+    const [isSaving, setIsSaving] = React.useState(false);
+    const [localData, setLocalData] = React.useState<ClassScheduleData[]>(schedule_data);
+    const [resizing, setResizing] = React.useState<{ scheduleId: number; edge: "top" | "bottom"; initialY: number; originalStartMin: number; originalEndMin: number; currentStartMin?: number; currentEndMin?: number; } | null>(null);
+    const localDataRef = React.useRef(localData);
+    const resizeTooltipRef = React.useRef<HTMLDivElement>(null);
+
+    // Sync localData when server data changes
+    React.useEffect(() => {
+        setLocalData(schedule_data);
+    }, [schedule_data]);
+
+    React.useEffect(() => {
+        localDataRef.current = localData;
+    }, [localData]);
+
+    // DnD sensors
+    const mouseSensor = useSensor(MouseSensor, { activationConstraint: { distance: 8 } });
+    const touchSensor = useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } });
+    React.useEffect(() => {
+        if (!resizing) return;
+
+        const handlePointerMove = (e: PointerEvent) => {
+            const deltaY = e.clientY - resizing.initialY;
+            const pxPerMin = CELL_H / 60;
+            const deltaMin = Math.round(deltaY / pxPerMin);
+
+            let nStart = resizing.originalStartMin;
+            let nEnd = resizing.originalEndMin;
+            
+            if (resizing.edge === "top") {
+                nStart += deltaMin;
+                nStart = Math.round(nStart / SNAP_MINUTES) * SNAP_MINUTES;
+                nStart = Math.max(HOUR_START * 60, Math.min(nStart, nEnd - SNAP_MINUTES));
+            } else {
+                nEnd += deltaMin;
+                nEnd = Math.round(nEnd / SNAP_MINUTES) * SNAP_MINUTES;
+                nEnd = Math.max(nStart + SNAP_MINUTES, Math.min(nEnd, HOUR_END * 60));
+            }
+
+            // Only trigger re-render if the snapped 15-min interval actually changed
+            if (nStart !== resizing.currentStartMin || nEnd !== resizing.currentEndMin) {
+                resizing.currentStartMin = nStart;
+                resizing.currentEndMin = nEnd;
+                
+                setLocalData(prev => prev.map(cls => ({
+                    ...cls,
+                    schedules: cls.schedules.map(s => {
+                        if (s.id === resizing.scheduleId) {
+                            return {
+                                ...s,
+                                start_time: minutesToDisplay(nStart),
+                                end_time: minutesToDisplay(nEnd),
+                                time_range: `${minutesToDisplay(nStart)} - ${minutesToDisplay(nEnd)}`
+                            };
+                        }
+                        return s;
+                    })
+                })));
+            }
+
+            // Update DOM tooltip directly to avoid React lag
+            if (resizeTooltipRef.current) {
+                resizeTooltipRef.current.style.opacity = "1";
+                resizeTooltipRef.current.style.transform = `translate(${e.clientX + 16}px, ${e.clientY - 16}px)`;
+                resizeTooltipRef.current.innerText = `${minutesToDisplay(nStart)} - ${minutesToDisplay(nEnd)}`;
+            }
+        };
+
+        const handlePointerUp = () => {
+            if (resizeTooltipRef.current) resizeTooltipRef.current.style.opacity = "0";
+            setResizing(null);
+            
+            const targetCls = localDataRef.current.find(c => c.schedules.some(s => s.id === resizing.scheduleId));
+            const targetSched = targetCls?.schedules.find(s => s.id === resizing.scheduleId);
+            if (!targetCls || !targetSched) return;
+
+            const newStartMin = parseMinutes(targetSched.start_time);
+            const newEndMin = parseMinutes(targetSched.end_time);
+
+            if (newStartMin !== resizing.originalStartMin || newEndMin !== resizing.originalEndMin) {
+                const moveData = {
+                    scheduleId: resizing.scheduleId,
+                    subjectCode: targetCls.subject_code,
+                    section: targetCls.section,
+                    fromDay: targetSched.day_of_week,
+                    toDay: targetSched.day_of_week,
+                    fromTime: minutesToDisplay(resizing.originalStartMin),
+                    toTime: minutesToDisplay(newStartMin),
+                    newStartTime: minutesToHHMM(newStartMin),
+                    newEndTime: minutesToHHMM(newEndMin),
+                };
+
+                let hasConflict = false;
+                for (const c of localDataRef.current) {
+                    for (const s of c.schedules) {
+                        if (s.id === resizing.scheduleId) continue;
+                        if (s.day_of_week !== targetSched.day_of_week) continue;
+
+                        const sameRoom = targetSched.room_id && s.room_id === targetSched.room_id;
+                        const sameFaculty = targetCls.faculty_id && c.faculty_id === targetCls.faculty_id;
+
+                        if (sameRoom || sameFaculty) {
+                            const sStart = parseMinutes(s.start_time);
+                            const sEnd = parseMinutes(s.end_time);
+                            if (newStartMin < sEnd && newEndMin > sStart) {
+                                hasConflict = true;
+                            }
+                        }
+                    }
+                }
+
+                if (hasConflict) setPendingMove(moveData);
+                else executeMove(moveData);
+            }
+        };
+
+        window.addEventListener("pointermove", handlePointerMove);
+        window.addEventListener("pointerup", handlePointerUp);
+
+        return () => {
+            window.removeEventListener("pointermove", handlePointerMove);
+            window.removeEventListener("pointerup", handlePointerUp);
+        };
+    }, [resizing]);
+
+    const handleResizeStart = React.useCallback((scheduleId: number, edge: "top" | "bottom", initialY: number, originalStartMin: number, originalEndMin: number) => {
+        if (!editMode) return;
+        setResizing({ scheduleId, edge, initialY, originalStartMin, originalEndMin });
+    }, [editMode]);
+
+    const sensors = useSensors(mouseSensor, touchSensor);
+
     // Student search handlers
     const searchStudents = React.useCallback(async (q: string) => {
         if (q.length < 2) { setStudentResults([]); return; }
@@ -491,9 +812,178 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
         } catch { /* ignore */ } finally { setIsLoadingStudent(false); }
     };
 
+    // ── Drag-and-drop handlers ──────────────────────────────────────
+    const handleDragStart = (event: DragStartEvent) => {
+        const data = event.active.data.current as DragData;
+        const rect = event.active.rect.current.initial;
+        setActiveDrag({
+            ...data,
+            width: rect?.width || 200,
+            height: rect?.height || 50,
+        });
+        setActiveDragDelta(0);
+    };
+
+    const handleDragMove = React.useCallback((event: DragMoveEvent) => {
+        setActiveDragDelta(event.delta.y);
+    }, []);
+
+    const handleDragOver = React.useCallback((event: DragOverEvent) => {
+        const overDayIdx = event.over?.data?.current?.dayIdx;
+        if (overDayIdx !== undefined) {
+            setHoveredDay(DAYS[overDayIdx]);
+        } else {
+            setHoveredDay(null);
+        }
+    }, []);
+
+    const handleDragEnd = (event: DragEndEvent) => {
+        setActiveDrag(null);
+        setActiveDragDelta(0);
+        setHoveredDay(null);
+        const { active, over, delta } = event;
+        if (!over || !active.data.current) return;
+
+        const data = active.data.current as DragData;
+        const overData = over.data.current as { dayIdx?: number } | undefined;
+        const newDayIdx = overData?.dayIdx;
+        if (newDayIdx === undefined) return;
+
+        const newDay = DAYS[newDayIdx];
+        const b = data.block;
+
+        // Calculate new time from vertical delta
+        const pxPerMin = CELL_H / 60;
+        const deltaMin = Math.round(delta.y / pxPerMin);
+        const oldStartMin = parseMinutes(data.originalStartTime);
+        const oldEndMin = parseMinutes(data.originalEndTime);
+        const duration = oldEndMin - oldStartMin;
+
+        let newStartMin = oldStartMin + deltaMin;
+        // Snap to 15-minute grid
+        newStartMin = Math.round(newStartMin / SNAP_MINUTES) * SNAP_MINUTES;
+        // Clamp to valid range
+        newStartMin = Math.max(HOUR_START * 60, Math.min(newStartMin, HOUR_END * 60 - duration));
+        const newEndMin = newStartMin + duration;
+
+        // If nothing changed, skip
+        if (newDay === data.originalDay && newStartMin === oldStartMin) return;
+
+        const moveData = {
+            scheduleId: data.scheduleId,
+            subjectCode: b.cls.subject_code,
+            section: b.cls.section,
+            fromDay: data.originalDay,
+            toDay: newDay,
+            fromTime: minutesToDisplay(oldStartMin),
+            toTime: minutesToDisplay(newStartMin),
+            newStartTime: minutesToHHMM(newStartMin),
+            newEndTime: minutesToHHMM(newEndMin),
+        };
+
+        const targetCls = localData.find((c) => c.schedules.some((s) => s.id === data.scheduleId));
+        const targetSched = targetCls?.schedules.find((s) => s.id === data.scheduleId);
+        
+        let hasConflict = false;
+        if (targetCls && targetSched) {
+            for (const c of localData) {
+                for (const s of c.schedules) {
+                    if (s.id === data.scheduleId) continue;
+                    if (s.day_of_week !== newDay) continue;
+
+                    const sameRoom = targetSched.room_id && s.room_id === targetSched.room_id;
+                    const sameFaculty = targetCls.faculty_id && c.faculty_id === targetCls.faculty_id;
+
+                    if (sameRoom || sameFaculty) {
+                        const sStart = parseMinutes(s.start_time);
+                        const sEnd = parseMinutes(s.end_time);
+                        if (newStartMin < sEnd && newEndMin > sStart) {
+                            hasConflict = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (hasConflict) {
+            setPendingMove(moveData);
+        } else {
+            executeMove(moveData);
+        }
+    };
+
+    const executeMove = async (move: NonNullable<typeof pendingMove>) => {
+        setPendingMove(null);
+        setIsSaving(true);
+
+        // Optimistic update
+        const prevData = [...localData];
+        setLocalData((prev) =>
+            prev.map((cls) => ({
+                ...cls,
+                schedules: cls.schedules.map((s) => {
+                    if (s.id === move.scheduleId) {
+                        return {
+                            ...s,
+                            day_of_week: move.toDay,
+                            start_time: minutesToDisplay(parseInt(move.newStartTime.split(":")[0]) * 60 + parseInt(move.newStartTime.split(":")[1])),
+                            end_time: minutesToDisplay(parseInt(move.newEndTime.split(":")[0]) * 60 + parseInt(move.newEndTime.split(":")[1])),
+                            time_range: `${minutesToDisplay(parseInt(move.newStartTime.split(":")[0]) * 60 + parseInt(move.newStartTime.split(":")[1]))} - ${minutesToDisplay(parseInt(move.newEndTime.split(":")[0]) * 60 + parseInt(move.newEndTime.split(":")[1]))}`,
+                        };
+                    }
+                    return s;
+                }),
+            })),
+        );
+
+        try {
+            const res = await axios.patch(
+                route("administrators.scheduling-analytics.schedules.update", { schedule: move.scheduleId }),
+                {
+                    day_of_week: move.toDay,
+                    start_time: move.newStartTime,
+                    end_time: move.newEndTime,
+                }
+            );
+
+            const result = res.data;
+            toast.success(`Moved ${move.subjectCode} (${move.section}) to ${move.toDay} at ${move.toTime}`);
+
+            if (result.conflicts?.length > 0) {
+                toast.warning(`${result.conflicts.length} schedule conflict${result.conflicts.length > 1 ? "s" : ""} detected after move.`);
+            }
+
+            // Reload data from server to get accurate state
+            router.reload({ only: ["schedule_data", "stats", "filters"] });
+        } catch (error: unknown) {
+            console.error("Schedule update failed", error);
+            // Rollback optimistic update
+            setLocalData(prevData);
+            
+            let msg = "An unexpected error occurred.";
+            if (axios.isAxiosError(error) && error.response?.data?.message) {
+                msg = error.response.data.message;
+            } else if (error instanceof Error) {
+                msg = error.message;
+            }
+
+            toast.error("Failed to update schedule", {
+                description: msg,
+            });
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const confirmMove = () => {
+        if (pendingMove) executeMove(pendingMove);
+    };
+
+    const cancelMove = () => setPendingMove(null);
+
     // Combined filtering
     const filteredData = React.useMemo(() => {
-        let d = schedule_data;
+        let d = localData;
 
         if (search) {
             const q = search.toLowerCase();
@@ -506,8 +996,7 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
             );
         }
         if (courseFilter !== "all") {
-            const id = parseInt(courseFilter);
-            d = d.filter((c) => c.course_ids?.includes(id));
+            d = d.filter((c) => c.course_ids?.some((cid) => String(cid) === courseFilter));
         }
         if (yearFilter !== "all") d = d.filter((c) => c.grade_level === yearFilter);
         if (sectionFilter !== "all") d = d.filter((c) => c.section === sectionFilter);
@@ -524,7 +1013,7 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
         }
 
         return d;
-    }, [schedule_data, search, courseFilter, yearFilter, sectionFilter, roomFilter, facultyFilter, activeStudent]);
+    }, [localData, search, courseFilter, yearFilter, sectionFilter, roomFilter, facultyFilter, activeStudent]);
 
     const hasFilters = search || courseFilter !== "all" || yearFilter !== "all" || sectionFilter !== "all" || roomFilter !== "all" || facultyFilter !== "all" || activeStudent;
 
@@ -595,14 +1084,25 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
                             </div>
                         </CardHeader>
                         <CardContent>
+                            <p className="text-muted-foreground mb-3 text-xs">Conflicting classes share the same {conflicts.some((c) => c.conflict_type === "room") ? "room" : ""}{conflicts.some((c) => c.conflict_type === "room") && conflicts.some((c) => c.conflict_type === "faculty") ? " or " : ""}{conflicts.some((c) => c.conflict_type === "faculty") ? "faculty member" : ""} at the same time. Look for blocks with <span className="inline-flex items-center gap-0.5 font-medium text-red-600 dark:text-red-400"><AlertTriangle className="inline h-3 w-3" /> red outlines</span> on the timetable.</p>
                             <div className="grid gap-2">
                                 {conflicts.map((c, i) => (
-                                    <div key={i} className="bg-destructive/5 flex items-center gap-3 rounded-lg border p-3 text-sm">
-                                        <Badge variant="outline" className="shrink-0 text-[10px]">{c.conflict_type === "room" ? "Room" : "Faculty"}</Badge>
-                                        <span className="text-muted-foreground">{c.day} {c.time}</span>
-                                        <span className="font-medium">{c.class_1.subject_code} ({c.class_1.section})</span>
-                                        <span className="text-muted-foreground">vs</span>
-                                        <span className="font-medium">{c.class_2.subject_code} ({c.class_2.section})</span>
+                                    <div key={i} className="grid grid-cols-[auto_1fr_auto_1fr] items-center gap-2 rounded-lg border border-red-200 bg-red-50/50 p-3 text-sm dark:border-red-900/50 dark:bg-red-950/20">
+                                        <Badge variant="outline" className="border-red-300 text-red-700 dark:border-red-800 dark:text-red-300 shrink-0 text-[10px]">
+                                            {c.conflict_type === "room" ? <><Building2 className="mr-0.5 h-3 w-3" />Room</> : <><UserIcon className="mr-0.5 h-3 w-3" />Faculty</>}
+                                        </Badge>
+                                        <div>
+                                            <div className="font-semibold">{c.class_1.subject_code} <span className="text-muted-foreground font-normal">({c.class_1.section})</span></div>
+                                            <div className="text-muted-foreground text-xs">{c.class_1.faculty || "TBA"} · {c.class_1.room || "No room"}</div>
+                                        </div>
+                                        <div className="text-muted-foreground flex flex-col items-center text-[10px]">
+                                            <span className="font-semibold text-red-600 dark:text-red-400">{c.day.slice(0, 3)}</span>
+                                            <span>{c.time}</span>
+                                        </div>
+                                        <div>
+                                            <div className="font-semibold">{c.class_2.subject_code} <span className="text-muted-foreground font-normal">({c.class_2.section})</span></div>
+                                            <div className="text-muted-foreground text-xs">{c.class_2.faculty || "TBA"} · {c.class_2.room || "No room"}</div>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
@@ -706,32 +1206,157 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
                 </Card>
 
                 {/* ── Main schedule view ── */}
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between pb-3">
-                        <div>
-                            <CardTitle className="text-base">Weekly Schedule</CardTitle>
-                            <CardDescription className="text-xs">Click any block for details</CardDescription>
-                        </div>
-                        <div className="bg-muted flex rounded-lg p-0.5">
-                            <Button variant={viewMode === "timetable" ? "secondary" : "ghost"} size="sm" onClick={() => setViewMode("timetable")} className="h-7 rounded-md px-2.5 text-xs">
-                                <LayoutGrid className="mr-1 h-3.5 w-3.5" /> Timetable
-                            </Button>
-                            <Button variant={viewMode === "list" ? "secondary" : "ghost"} size="sm" onClick={() => setViewMode("list")} className="h-7 rounded-md px-2.5 text-xs">
-                                <List className="mr-1 h-3.5 w-3.5" /> List
-                            </Button>
-                        </div>
-                    </CardHeader>
-                    <CardContent className="pt-0">
-                        {viewMode === "timetable" ? (
-                            <WeeklyTimetable data={filteredData} onBlockClick={setSelectedClass} />
-                        ) : (
-                            <ScheduleListView data={filteredData} onClassClick={setSelectedClass} />
-                        )}
-                    </CardContent>
-                </Card>
+                <DndContext sensors={sensors} onDragStart={handleDragStart} onDragMove={handleDragMove} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
+                    {/* Global resize tooltip */}
+                    <div 
+                        ref={resizeTooltipRef}
+                        className="fixed top-0 left-0 z-[9999] pointer-events-none opacity-0 whitespace-nowrap text-foreground font-semibold text-xs bg-background/95 px-2.5 py-1.5 rounded-md shadow-2xl border dark:border-border/50 backdrop-blur-md transition-opacity duration-150 ease-out"
+                    />
+
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between pb-3">
+                            <div>
+                                <CardTitle className="text-base flex items-center gap-2">
+                                    Weekly Schedule
+                                    {editMode && <Badge variant="outline" className="bg-primary/10 text-primary hover:bg-primary/10 border-primary/20 text-[10px]">Edit Mode</Badge>}
+                                </CardTitle>
+                                <CardDescription className="text-xs">
+                                    {editMode ? "Drag and drop classes to reschedule them." : "Click any block for details."}
+                                </CardDescription>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                {viewMode === "timetable" && (
+                                    <div className="flex items-center gap-2">
+                                        <Label htmlFor="edit-mode" className="text-xs font-medium cursor-pointer">Edit Mode</Label>
+                                        <Switch id="edit-mode" checked={editMode} onCheckedChange={setEditMode} />
+                                    </div>
+                                )}
+                                <div className="bg-muted flex rounded-lg p-0.5">
+                                    <Button variant={viewMode === "timetable" ? "secondary" : "ghost"} size="sm" onClick={() => { setViewMode("timetable"); }} className="h-7 rounded-md px-2.5 text-xs">
+                                        <LayoutGrid className="mr-1 h-3.5 w-3.5" /> Timetable
+                                    </Button>
+                                    <Button variant={viewMode === "list" ? "secondary" : "ghost"} size="sm" onClick={() => { setViewMode("list"); setEditMode(false); }} className="h-7 rounded-md px-2.5 text-xs">
+                                        <List className="mr-1 h-3.5 w-3.5" /> List
+                                    </Button>
+                                </div>
+                            </div>
+                        </CardHeader>
+                        <CardContent className="pt-0">
+                            {viewMode === "timetable" ? (() => {
+                                let dropPreview = null;
+                                if (activeDrag) {
+                                    const pxPerMin = CELL_H / 60;
+                                    const deltaMin = Math.round(activeDragDelta / pxPerMin);
+                                    const snappedDeltaMin = Math.round(deltaMin / SNAP_MINUTES) * SNAP_MINUTES;
+                                    
+                                    const oldStartMin = parseMinutes(activeDrag.originalStartTime);
+                                    const duration = parseMinutes(activeDrag.originalEndTime) - oldStartMin;
+                                    
+                                    let newStartMin = oldStartMin + snappedDeltaMin;
+                                    newStartMin = Math.max(HOUR_START * 60, Math.min(newStartMin, HOUR_END * 60 - duration));
+                                    
+                                    dropPreview = {
+                                        day: hoveredDay || activeDrag.originalDay,
+                                        startMin: newStartMin,
+                                        duration: duration,
+                                        subject: activeDrag.block.cls.subject_code,
+                                        pal: getPalette(activeDrag.block.cls.subject_code)
+                                    };
+                                }
+                                return <WeeklyTimetable data={filteredData} onBlockClick={setSelectedClass} conflicts={conflicts} editMode={editMode} onResizeStart={handleResizeStart} dropPreview={dropPreview} />;
+                            })() : (
+                                <ScheduleListView data={filteredData} onClassClick={setSelectedClass} />
+                            )}
+                        </CardContent>
+                    </Card>
+
+                    <DragOverlay dropAnimation={null}>
+                        {activeDrag ? (() => {
+                            const pal = getPalette(activeDrag.block.cls.subject_code);
+                            const classConflicts = conflicts.filter(
+                                (c) =>
+                                    (c.class_1.subject_code === activeDrag.block.cls.subject_code && c.class_1.section === activeDrag.block.cls.section) ||
+                                    (c.class_2.subject_code === activeDrag.block.cls.subject_code && c.class_2.section === activeDrag.block.cls.section)
+                            );
+                            const hasConflict = classConflicts.length > 0;
+                            const baseClassName = `overflow-hidden rounded-md border-l-[3px] ${hasConflict ? "border-l-red-500 ring-2 ring-red-400/50 dark:ring-red-500/40" : pal.accent} ${hasConflict ? "bg-red-500/12 dark:bg-red-400/15" : pal.bg} p-1 text-left shadow-2xl opacity-90`;
+
+                            const pxPerMin = CELL_H / 60;
+                            const deltaMin = Math.round(activeDragDelta / pxPerMin);
+                            const snappedDeltaMin = Math.round(deltaMin / SNAP_MINUTES) * SNAP_MINUTES;
+                            
+                            const oldStartMin = parseMinutes(activeDrag.originalStartTime);
+                            const oldEndMin = parseMinutes(activeDrag.originalEndTime);
+                            const duration = oldEndMin - oldStartMin;
+                            
+                            let newStartMin = oldStartMin + snappedDeltaMin;
+                            newStartMin = Math.max(HOUR_START * 60, Math.min(newStartMin, HOUR_END * 60 - duration));
+                            const newEndMin = newStartMin + duration;
+
+                            return (
+                                <div style={{ position: 'relative', width: activeDrag.width, height: activeDrag.height, transform: "scale(1.02) rotate(1deg)", transformOrigin: "top left", transition: "transform 0.15s ease-out", zIndex: 9999 }}>
+                                    {/* The mirrored block */}
+                                    <div
+                                        className={baseClassName}
+                                        style={{ width: '100%', height: '100%', boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.4)" }}
+                                    >
+                                        <div className={`truncate text-[11px] font-bold leading-tight ${hasConflict ? "text-red-700 dark:text-red-300" : pal.text}`}>{activeDrag.block.cls.subject_code}</div>
+                                        {activeDrag.block.heightPx > 28 && <div className="text-muted-foreground truncate text-[10px] leading-tight">{activeDrag.block.cls.section}</div>}
+                                        {activeDrag.block.heightPx > 48 && <div className="text-muted-foreground mt-0.5 flex items-center gap-0.5 truncate text-[9px]"><MapPin className="h-2.5 w-2.5 shrink-0" />{activeDrag.block.sched.room || "—"}</div>}
+                                        {activeDrag.block.heightPx > 64 && activeDrag.block.cls.faculty_name && <div className="text-muted-foreground mt-0.5 flex items-center gap-0.5 truncate text-[9px]"><UserIcon className="h-2.5 w-2.5 shrink-0" />{activeDrag.block.cls.faculty_name}</div>}
+                                    </div>
+                                    
+                                    {/* The floating tooltip positioned below the block */}
+                                    <div className="absolute top-[calc(100%+8px)] left-1/2 -translate-x-1/2 whitespace-nowrap text-foreground font-semibold text-xs bg-background/95 px-2.5 py-1.5 rounded-md shadow-2xl border dark:border-border/50 backdrop-blur-md z-[10000] flex items-center gap-2">
+                                        <div className="flex items-center gap-1.5">
+                                            <Calendar className="w-3.5 h-3.5 text-primary" />
+                                            <span className="text-primary">{hoveredDay || activeDrag.originalDay}</span>
+                                        </div>
+                                        <div className="w-1 h-1 rounded-full bg-border mx-0.5" />
+                                        <div className="flex items-center gap-1.5 text-muted-foreground">
+                                            <Clock className="w-3.5 h-3.5" />
+                                            <span>{minutesToDisplay(newStartMin)} - {minutesToDisplay(newEndMin)}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })() : null}
+                    </DragOverlay>
+                </DndContext>
             </div>
 
             <ClassDetailsDialog classItem={selectedClass} open={!!selectedClass} onOpenChange={(o) => !o && setSelectedClass(null)} />
+
+            {/* Move Confirmation Dialog */}
+            <AlertDialog open={!!pendingMove} onOpenChange={(o) => !o && cancelMove()}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Confirm Schedule Change</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Are you sure you want to move <strong>{pendingMove?.subjectCode} ({pendingMove?.section})</strong>?
+                            <div className="mt-4 space-y-2 rounded-lg bg-muted p-3">
+                                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-sm">
+                                    <div className="text-right">
+                                        <div className="font-semibold">{pendingMove?.fromDay}</div>
+                                        <div className="text-muted-foreground">{pendingMove?.fromTime}</div>
+                                    </div>
+                                    <div className="text-muted-foreground px-2">→</div>
+                                    <div>
+                                        <div className="font-semibold text-primary">{pendingMove?.toDay}</div>
+                                        <div className="text-primary font-medium">{pendingMove?.toTime}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={isSaving}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={confirmMove} disabled={isSaving}>
+                            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Confirm Move"}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </AdminLayout>
     );
 }

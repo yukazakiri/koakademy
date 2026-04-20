@@ -9,6 +9,7 @@
 /resources/js/wayfinder
 /storage/*.key
 /storage/pail
+/docker/traefik/certs/*
 /storage/framework/views/*
 !/storage/framework/views/.gitignore
 /storage/framework/cache/*

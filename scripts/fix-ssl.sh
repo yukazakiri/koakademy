@@ -34,8 +34,8 @@ if [ -f "$ENV_FILE" ]; then
 fi
 
 # Determine main domain from env or fallback
-PORTAL_HOST=${PORTAL_HOST:-portal.dccp.test}
-ADMIN_HOST=${ADMIN_HOST:-admin.dccp.test}
+PORTAL_HOST=${PORTAL_HOST:-portal.koakademy.test}
+ADMIN_HOST=${ADMIN_HOST:-admin.koakademy.test}
 MAILPIT_HOST=${MAILPIT_HOST:-mailpit.local.test}
 MINIO_HOST=${MINIO_HOST:-minio.local.test}
 MINIO_CONSOLE_HOST=${MINIO_CONSOLE_HOST:-minio-console.local.test}

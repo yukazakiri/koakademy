@@ -131,16 +131,17 @@ function EnrolledByCourseReport({ report }: { report: Record<string, unknown> })
 
     const tableStyle: CSSProperties = { width: "100%", borderCollapse: "collapse", marginBottom: 12, fontSize: "8pt" };
     const thStyle: CSSProperties = {
-        background: "#1a1a2e",
-        color: "#fff",
+        background: "#f3f4f6",
+        color: "#111827",
         padding: "4px 6px",
         textAlign: "left",
         fontWeight: "bold",
         fontSize: "8pt",
         textTransform: "uppercase",
+        borderBottom: "1px solid #d1d5db",
     };
-    const tdStyle: CSSProperties = { padding: "4px 6px", borderBottom: "1px solid #ddd" };
-    const tdAltStyle: CSSProperties = { ...tdStyle, background: "#f8f8f8" };
+    const tdStyle: CSSProperties = { padding: "4px 6px", borderBottom: "1px solid #e5e7eb" };
+    const tdAltStyle: CSSProperties = { ...tdStyle, background: "#fafafa" };
 
     return (
         <div>
@@ -222,16 +223,17 @@ function EnrolledBySubjectReport({ report }: { report: Record<string, unknown> }
 
     const tableStyle: CSSProperties = { width: "100%", borderCollapse: "collapse", marginBottom: 12, fontSize: "8pt" };
     const thStyle: CSSProperties = {
-        background: "#1a1a2e",
-        color: "#fff",
+        background: "#f3f4f6",
+        color: "#111827",
         padding: "4px 6px",
         textAlign: "left",
         fontWeight: "bold",
         fontSize: "8pt",
         textTransform: "uppercase",
+        borderBottom: "1px solid #d1d5db",
     };
-    const tdStyle: CSSProperties = { padding: "4px 6px", borderBottom: "1px solid #ddd" };
-    const tdAltStyle: CSSProperties = { ...tdStyle, background: "#f8f8f8" };
+    const tdStyle: CSSProperties = { padding: "4px 6px", borderBottom: "1px solid #e5e7eb" };
+    const tdAltStyle: CSSProperties = { ...tdStyle, background: "#fafafa" };
 
     return (
         <div>
@@ -302,16 +304,17 @@ function EnrollmentSummaryReport({ report }: { report: Record<string, unknown> }
 
     const tableStyle: CSSProperties = { width: "100%", borderCollapse: "collapse", marginBottom: 12, fontSize: "8pt" };
     const thStyle: CSSProperties = {
-        background: "#1a1a2e",
-        color: "#fff",
+        background: "#f3f4f6",
+        color: "#111827",
         padding: "4px 6px",
         textAlign: "left",
         fontWeight: "bold",
         fontSize: "8pt",
         textTransform: "uppercase",
+        borderBottom: "1px solid #d1d5db",
     };
-    const tdStyle: CSSProperties = { padding: "4px 6px", borderBottom: "1px solid #ddd" };
-    const tdAltStyle: CSSProperties = { ...tdStyle, background: "#f8f8f8" };
+    const tdStyle: CSSProperties = { padding: "4px 6px", borderBottom: "1px solid #e5e7eb" };
+    const tdAltStyle: CSSProperties = { ...tdStyle, background: "#fafafa" };
 
     return (
         <div>

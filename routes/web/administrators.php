@@ -170,6 +170,7 @@ Route::middleware(['auth', 'administrators.only'])
         // Enrollment Reports
         Route::post('/enrollments/reports/bulk-assessments', [AdministratorEnrollmentManagementController::class, 'generateBulkAssessments'])->name('enrollments.reports.bulk-assessments');
         Route::get('/enrollments/reports/data', [AdministratorEnrollmentManagementController::class, 'enrollmentReportData'])->name('enrollments.reports.data');
+        Route::get('/enrollments/reports/preview-pdf', [AdministratorEnrollmentManagementController::class, 'enrollmentReportPreviewPdf'])->name('enrollments.reports.preview-pdf');
         Route::get('/enrollments/reports/export', [AdministratorEnrollmentManagementController::class, 'enrollmentReportExport'])->name('enrollments.reports.export');
         Route::get('/enrollments/reports/subject-options', [AdministratorEnrollmentManagementController::class, 'reportSubjectOptions'])->name('enrollments.reports.subject-options');
         Route::get('/enrollments/reports/course-options', [AdministratorEnrollmentManagementController::class, 'reportCourseOptions'])->name('enrollments.reports.course-options');

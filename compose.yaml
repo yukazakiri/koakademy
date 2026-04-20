@@ -118,7 +118,7 @@ services:
             - redis
         command: "php artisan pulse:check & php artisan pulse:work"
     meilisearch:
-        image: "getmeili/meilisearch:latest"
+        image: "getmeili/meilisearch:v1.42"
         ports:
             - "${FORWARD_MEILISEARCH_PORT:-7700}:7700"
         environment:

@@ -175,28 +175,36 @@ type ReportPreviewDialogProps = {
 export function ReportPreviewDialog({ open, onOpenChange, onClose, onPrint, reportData, reportPrintRef }: ReportPreviewDialogProps) {
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="flex h-[90vh] w-[92vw] max-w-6xl flex-col p-0">
-                <div className="flex items-center justify-between border-b px-6 py-4">
+            <DialogContent showCloseButton={false} className="flex h-[95vh] w-[96vw] max-w-[96vw] flex-col overflow-hidden p-0 sm:max-w-[96vw] lg:max-w-[1280px]">
+                <div className="flex items-start justify-between border-b border-slate-200 bg-white px-4 py-3 sm:px-6">
                     <div>
-                        <DialogTitle className="flex items-center gap-2">
-                            <FileText className="h-5 w-5" />
+                        <DialogTitle className="flex items-center gap-2 text-base font-semibold tracking-tight text-slate-900">
+                            <FileText className="h-4 w-4" />
                             Report Preview
                         </DialogTitle>
-                        <DialogDescription className="mt-1">Review the report below, then print or close.</DialogDescription>
+                        <DialogDescription className="mt-1 text-xs text-slate-500">
+                            Landscape view for easier review. Use Print for final export.
+                        </DialogDescription>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <Button variant="outline" size="sm" onClick={onPrint}>
+                    <div className="flex items-center gap-2 pt-0.5">
+                        <Button variant="outline" size="sm" onClick={onPrint} className="border-slate-300 bg-white text-slate-700 hover:bg-slate-50">
                             <Printer className="mr-2 h-4 w-4" />
                             Print
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={onClose}>
-                            <X className="h-4 w-4" />
+                        <Button variant="ghost" size="sm" onClick={onClose} className="text-slate-600 hover:bg-slate-100 hover:text-slate-900">
+                            <X className="mr-1 h-4 w-4" />
+                            Close
                         </Button>
                     </div>
                 </div>
-                <div className="flex-1 overflow-auto bg-gray-100 p-6 dark:bg-gray-900">
-                    <div className="mx-auto min-h-[210mm] max-w-[297mm] rounded-sm bg-white p-10 shadow-lg dark:bg-white" ref={reportPrintRef}>
-                        {reportData && <ReportContent data={reportData} />}
+                <div className="flex-1 overflow-auto bg-slate-100/70 px-3 py-4 sm:px-6 sm:py-6">
+                    <div className="mx-auto w-full max-w-[1200px] overflow-x-auto">
+                        <div
+                            className="mx-auto min-h-[210mm] min-w-[980px] max-w-[297mm] rounded-md border border-slate-200 bg-white p-6 shadow-sm sm:p-8 lg:p-10"
+                            ref={reportPrintRef}
+                        >
+                            {reportData && <ReportContent data={reportData} />}
+                        </div>
                     </div>
                 </div>
             </DialogContent>

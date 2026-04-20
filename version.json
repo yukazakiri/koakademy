@@ -1,14 +1,14 @@
 {
-  "version": "1.0.1-dev.0.5",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.0.1-dev.0.5",
-  "commit": "fc76e14e652b28b43a004a16602c9e334f7a9c7d",
+  "version": "1.0.1-dev.0.6",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.0.1-dev.0.6",
+  "commit": "f718c29abc94c2baa0dcb57228152cf222fdae6d",
   "branch": "master",
-  "timestamp": "2026-04-19T12:45:27Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24629326356",
+  "timestamp": "2026-04-20T10:08:44Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24660509069",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.0.1-dev.0.5 - Merge pull request #17 from yukazakiri/test/brand-upload-permissions-storage-paths",
-    "previous": "1.0.1-dev.0.4"
+    "current": "Version 1.0.1-dev.0.6 - wip",
+    "previous": "1.0.1-dev.0.5"
   },
   "metadata": {
     "author": "yukazakiri",

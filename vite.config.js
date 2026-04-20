@@ -6,6 +6,26 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
     plugins: [
+        {
+            name: "sanitize-tabler-icons",
+            enforce: "pre",
+            transform(code, id) {
+                if (!id.includes("/node_modules/@tabler/icons-react/dist/esm/")) {
+                    return null;
+                }
+
+                const sanitizedCode = code.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
+
+                if (sanitizedCode === code) {
+                    return null;
+                }
+
+                return {
+                    code: sanitizedCode,
+                    map: null,
+                };
+            },
+        },
         tailwindcss({
             config: {
                 content: [
@@ -35,8 +55,8 @@ export default defineConfig({
     server: {
         cors: true,
     },
-    esbuild: {
-        jsx: "automatic",
+    optimizeDeps: {
+        exclude: ["@tabler/icons-react"],
     },
     build: {
         cssCodeSplit: true,

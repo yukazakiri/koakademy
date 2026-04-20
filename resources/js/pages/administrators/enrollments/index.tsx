@@ -6,19 +6,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import type { ComboboxOption } from "@/components/ui/combobox";
 import { Head, Link, router, usePage } from "@inertiajs/react";
 import { ChevronRight, CreditCard, Settings2, UserPlus, Users } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useDebouncedCallback } from "use-debounce";
 import { route } from "ziggy-js";
 import { EnrollmentAnalyticsSection } from "./analytics-section";
 import { createColumns, type EnrollmentRow } from "./columns";
-import {
-    BulkReportsDialog,
-    DeleteEnrollmentDialog,
-    ForceDeleteEnrollmentDialog,
-    ReportPreviewDialog,
-    RestoreEnrollmentDialog,
-} from "./enrollment-dialogs";
+import { BulkReportsDialog, DeleteEnrollmentDialog, ForceDeleteEnrollmentDialog, RestoreEnrollmentDialog } from "./enrollment-dialogs";
 import { EnrollmentsCard } from "./enrollments-card";
 import { ReportsSection } from "./reports-section";
 import type { Branding, BulkReportFilters, EnrollmentManagementProps, ReportFilters } from "./types";
@@ -79,14 +73,11 @@ export default function AdministratorEnrollmentsIndex({
         status_filter: "active",
     });
     const [isLoadingReport, setIsLoadingReport] = useState(false);
-    const [reportData, setReportData] = useState<Record<string, unknown> | null>(null);
-    const [isReportPreviewOpen, setIsReportPreviewOpen] = useState(false);
     const [availableSubjects, setAvailableSubjects] = useState<
         { id: number; code: string; title: string; units: number; label: string; enrolled_count: number; class_count: number; sections: string[] }[]
     >([]);
     const [availableCourses, setAvailableCourses] = useState<{ id: number; code: string; title: string; department: string; label: string }[]>([]);
     const [isLoadingFilterOptions, setIsLoadingFilterOptions] = useState(false);
-    const reportPrintRef = useRef<HTMLDivElement>(null);
 
     // Sync local state with filters prop when it changes (e.g. after navigation)
     useEffect(() => {
@@ -337,26 +328,26 @@ export default function AdministratorEnrollmentsIndex({
         ];
     }, [availableCourses]);
 
-    const handleGenerateReport = async () => {
+    const handleGenerateReport = () => {
         setIsLoadingReport(true);
         try {
             const params = new URLSearchParams({
                 report_type: reportType,
                 ...reportFilters,
             });
-            const response = await fetch(route("administrators.enrollments.reports.data") + `?${params.toString()}`);
-            if (response.ok) {
-                const data = await response.json();
-                setReportData(data);
-                setActiveReportCard(null);
-                setIsReportPreviewOpen(true);
-            } else {
-                const errorData = await response.json().catch(() => null);
-                toast.error(errorData?.message || "Failed to generate report.");
+
+            const url = route("administrators.enrollments.reports.preview-pdf") + `?${params.toString()}`;
+            const pdfWindow = window.open(url, "_blank", "noopener");
+
+            if (!pdfWindow) {
+                toast.error("Please allow popups to preview the PDF report.");
+                return;
             }
+
+            setActiveReportCard(null);
         } catch (error) {
             console.error("Failed to generate report:", error);
-            toast.error("Failed to generate report. Please try again.");
+            toast.error("Failed to open PDF preview. Please try again.");
         } finally {
             setIsLoadingReport(false);
         }
@@ -370,79 +361,6 @@ export default function AdministratorEnrollmentsIndex({
         });
         const url = route("administrators.enrollments.reports.export") + `?${params.toString()}`;
         window.open(url, "_blank", "noopener");
-    };
-
-    const handlePrintReport = () => {
-        const printContent = reportPrintRef.current;
-        if (!printContent) return;
-
-        const printWindow = window.open("", "_blank", "width=900,height=700");
-        if (!printWindow) {
-            toast.error("Please allow popups to print the report.");
-            return;
-        }
-
-        const reportType = (reportData?.report as { type?: string } | undefined)?.type;
-        const printScale = reportType === "enrolled_by_subject" ? 0.72 : 0.82;
-
-        printWindow.document.write(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Enrollment Report</title>
-                <style>
-                    @page { size: A4 landscape; margin: 6mm 8mm; }
-                    :root { --print-scale: ${printScale}; }
-                    * { margin: 0; padding: 0; box-sizing: border-box; }
-                    html, body { width: 297mm; height: 210mm; }
-                    body { font-family: 'Times New Roman', Times, serif; font-size: 9pt; color: #000; line-height: 1.3; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-                    .print-root { transform: scale(var(--print-scale)); transform-origin: top left; width: calc(100% / var(--print-scale)); }
-                    .report-header { text-align: center; margin-bottom: 15px; border-bottom: 2px solid #000; padding-bottom: 10px; }
-                    .report-header img { height: 50px; margin-bottom: 4px; }
-                    .report-header h1 { font-size: 14pt; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 2px; }
-                    .report-header .address { font-size: 8pt; color: #333; margin-bottom: 2px; }
-                    .report-header .contact { font-size: 8pt; color: #333; }
-                    .report-title { text-align: center; margin: 12px 0 6px; }
-                    .report-title h2 { font-size: 12pt; font-weight: bold; text-transform: uppercase; }
-                    .report-title .subtitle { font-size: 10pt; color: #333; margin-top: 2px; }
-                    .report-meta { display: flex; justify-content: space-between; font-size: 8pt; color: #555; margin-bottom: 10px; border-bottom: 1px solid #ccc; padding-bottom: 6px; }
-                    .report-meta .filters { display: flex; gap: 10px; flex-wrap: wrap; }
-                    .report-meta .filter-tag { background: #f0f0f0; padding: 2px 6px; border-radius: 3px; }
-                    table { width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 8pt; }
-                    th { background: #1a1a2e; color: #fff; padding: 5px 6px; text-align: left; font-weight: bold; font-size: 8pt; text-transform: uppercase; }
-                    td { padding: 4px 6px; border-bottom: 1px solid #ddd; }
-                    tr:nth-child(even) td { background: #f8f8f8; }
-                    .summary-section { margin-top: 12px; page-break-inside: avoid; }
-                    .summary-section h3 { font-size: 10pt; font-weight: bold; margin-bottom: 6px; border-bottom: 1px solid #333; padding-bottom: 3px; }
-                    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
-                    .summary-card { border: 1px solid #ddd; padding: 8px; text-align: center; border-radius: 4px; }
-                    .summary-card .value { font-size: 16pt; font-weight: bold; }
-                    .summary-card .label { font-size: 8pt; color: #555; text-transform: uppercase; }
-                    .subject-group { margin-bottom: 16px; page-break-inside: avoid; }
-                    .subject-group-header { background: #f0f0f0; padding: 6px 8px; font-weight: bold; border: 1px solid #ddd; border-bottom: none; font-size: 9pt; }
-                    .subject-group-header .count { font-weight: normal; color: #555; font-size: 8pt; }
-                    .total-row { font-weight: bold; background: #f0f0f0 !important; }
-                    .total-row td { border-top: 2px solid #333; }
-                    .report-footer { margin-top: 20px; border-top: 1px solid #ccc; padding-top: 8px; display: flex; justify-content: space-between; font-size: 8pt; color: #555; }
-                    .signature-section { margin-top: 30px; display: flex; justify-content: space-between; }
-                    .signature-block { text-align: center; width: 180px; }
-                    .signature-line { border-top: 1px solid #000; margin-top: 30px; padding-top: 4px; font-size: 9pt; }
-                    @media print {
-                        @page { size: A4 landscape; margin: 6mm 8mm; }
-                        html, body { width: 297mm; height: 210mm; }
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="print-root">${printContent.innerHTML}</div>
-            </body>
-            </html>
-        `);
-        printWindow.document.close();
-        printWindow.focus();
-        setTimeout(() => {
-            printWindow.print();
-        }, 500);
     };
 
     // Create enrollment columns with action handlers
@@ -670,19 +588,6 @@ export default function AdministratorEnrollmentsIndex({
                         onFiltersChange={setBulkReportFilters}
                         isGenerating={isGeneratingBulkReport}
                         onGenerate={handleGenerateBulkAssessments}
-                    />
-
-                    {/* PDF Report Preview Modal */}
-                    <ReportPreviewDialog
-                        open={isReportPreviewOpen}
-                        onOpenChange={setIsReportPreviewOpen}
-                        onPrint={handlePrintReport}
-                        onClose={() => {
-                            setIsReportPreviewOpen(false);
-                            setReportData(null);
-                        }}
-                        reportData={reportData}
-                        reportPrintRef={reportPrintRef}
                     />
 
                     {/* Delete Enrollment Confirmation Dialog */}

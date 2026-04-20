@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\UserRole;
 use App\Models\Course;
+use App\Models\Department;
 use App\Models\GeneralSetting;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
@@ -242,8 +243,11 @@ it('validates report type is required', function (): void {
 it('filters enrolled by course report by department', function (): void {
     $user = User::factory()->create(['role' => UserRole::Admin]);
 
-    $bsit = Course::factory()->create(['code' => 'BSIT', 'department' => 'IT']);
-    $bshm = Course::factory()->create(['code' => 'BSHM', 'department' => 'HM']);
+    $itDepartment = Department::factory()->withNameAndCode('Information Technology', 'IT')->create();
+    $hmDepartment = Department::factory()->withNameAndCode('Hospitality Management', 'HM')->create();
+
+    $bsit = Course::factory()->create(['code' => 'BSIT', 'department_id' => $itDepartment->id]);
+    $bshm = Course::factory()->create(['code' => 'BSHM', 'department_id' => $hmDepartment->id]);
 
     $student1 = Student::factory()->create(['course_id' => $bsit->id]);
     $student2 = Student::factory()->create(['course_id' => $bshm->id]);
@@ -270,4 +274,89 @@ it('filters enrolled by course report by department', function (): void {
     $response->assertOk()
         ->assertJsonPath('report.total_count', 1)
         ->assertJsonPath('report.students.0.department', 'IT');
+});
+
+it('returns department analytics by year level without SQL errors', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+
+    $itDepartment = Department::factory()->withNameAndCode('Information Technology', 'IT')->create();
+    $course = Course::factory()->create(['code' => 'BSIT', 'department_id' => $itDepartment->id]);
+    $student = Student::factory()->create(['course_id' => $course->id]);
+
+    StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'school_year' => '2024 - 2025',
+        'semester' => 1,
+        'academic_year' => 1,
+        'status' => 'Verified By Cashier',
+    ]);
+
+    $response = $this->actingAs($user)
+        ->getJson(portalUrlForAdministrators('/administrators/enrollments/api/department-by-year-level?year_level=all'));
+
+    $response->assertOk()
+        ->assertJsonStructure([
+            'by_department' => [['department', 'count']],
+            'year_level',
+        ]);
+});
+
+it('filters enrolled by course report by course and year level', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+
+    $department = Department::factory()->withNameAndCode('Information Technology', 'IT')->create();
+    $course = Course::factory()->create(['code' => 'BSIT', 'department_id' => $department->id]);
+
+    $firstYearStudent = Student::factory()->create(['course_id' => $course->id]);
+    $secondYearStudent = Student::factory()->create(['course_id' => $course->id]);
+
+    StudentEnrollment::factory()->create([
+        'student_id' => $firstYearStudent->id,
+        'course_id' => $course->id,
+        'school_year' => '2024 - 2025',
+        'semester' => 1,
+        'academic_year' => 1,
+        'status' => 'Verified By Cashier',
+    ]);
+
+    StudentEnrollment::factory()->create([
+        'student_id' => $secondYearStudent->id,
+        'course_id' => $course->id,
+        'school_year' => '2024 - 2025',
+        'semester' => 1,
+        'academic_year' => 2,
+        'status' => 'Verified By Cashier',
+    ]);
+
+    $response = $this->actingAs($user)
+        ->getJson(portalUrlForAdministrators('/administrators/enrollments/reports/data?report_type=enrolled_by_course&course_filter=BSIT&department_filter=all&year_level_filter=1&subject_filter=all&status_filter=active'));
+
+    $response->assertOk()
+        ->assertJsonPath('report.total_count', 1)
+        ->assertJsonPath('report.students.0.year_level', 1)
+        ->assertJsonPath('report.students.0.course', 'BSIT');
+});
+
+it('returns enrollment report preview as pdf', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+
+    $department = Department::factory()->withNameAndCode('Information Technology', 'IT')->create();
+    $course = Course::factory()->create(['code' => 'BSIT', 'department_id' => $department->id]);
+    $student = Student::factory()->create(['course_id' => $course->id]);
+
+    StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'school_year' => '2024 - 2025',
+        'semester' => 1,
+        'academic_year' => 1,
+        'status' => 'Verified By Cashier',
+    ]);
+
+    $response = $this->actingAs($user)
+        ->get(portalUrlForAdministrators('/administrators/enrollments/reports/preview-pdf?report_type=enrolled_by_course&course_filter=all&department_filter=all&year_level_filter=all&subject_filter=all&status_filter=active'));
+
+    $response->assertOk();
+    expect($response->headers->get('Content-Type'))->toContain('application/pdf');
 });

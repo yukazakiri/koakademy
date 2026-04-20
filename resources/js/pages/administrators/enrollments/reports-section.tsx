@@ -46,7 +46,7 @@ export function ReportsSection({
                             <FileText className="h-5 w-5" />
                             Reports & Exports
                         </CardTitle>
-                        <CardDescription>Select a report type below to configure filters and generate a printable PDF report</CardDescription>
+                        <CardDescription>Select a report type, apply filters, then open a direct landscape PDF preview</CardDescription>
                     </div>
                     <Button onClick={onOpenBulkReports}>
                         <Download className="mr-2 h-4 w-4" />
@@ -133,7 +133,7 @@ export function ReportsSection({
                                     {activeReportCard === "enrolled_by_subject" && "Configure: Students by Subject"}
                                     {activeReportCard === "enrollment_summary" && "Configure: Enrollment Summary"}
                                 </h4>
-                                <p className="text-muted-foreground text-xs">Adjust the filters below, then generate the report preview.</p>
+                                <p className="text-muted-foreground text-xs">Adjust filters below, then open the PDF preview in a new tab.</p>
                             </div>
                             <Button variant="ghost" size="sm" onClick={onCancelInlineFilters}>
                                 <X className="h-4 w-4" />
@@ -252,7 +252,7 @@ export function ReportsSection({
                                 ) : (
                                     <>
                                         <Eye className="mr-2 h-4 w-4" />
-                                        Preview Report
+                                        Preview PDF
                                     </>
                                 )}
                             </Button>

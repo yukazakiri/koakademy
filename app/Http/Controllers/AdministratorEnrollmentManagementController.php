@@ -21,8 +21,10 @@ use App\Models\User;
 use App\Services\EnrollmentPipelineService;
 use App\Services\EnrollmentService;
 use App\Services\GeneralSettingsService;
+use App\Settings\SiteSettings;
 use Closure;
 use Exception;
+use FPDF;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -35,6 +37,7 @@ use Inertia\Response;
 use Maatwebsite\Excel\Facades\Excel;
 use Spatie\Activitylog\Models\Activity;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Throwable;
 
 final class AdministratorEnrollmentManagementController extends Controller
 {
@@ -154,7 +157,7 @@ final class AdministratorEnrollmentManagementController extends Controller
             ->where('student_enrollment.school_year', $currentSchoolYearString)
             ->where('student_enrollment.semester', $currentSemester)
             ->where('student_enrollment.status', '!=', $pendingStatus)
-            ->join('courses', DB::raw('CAST(student_enrollment.course_id AS BIGINT)'), '=', 'courses.id')
+            ->join('courses', DB::raw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT)'), '=', 'courses.id')
             ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
             ->selectRaw('TRIM(departments.code) as department, count(*) as count')
             ->groupByRaw('TRIM(departments.code)')
@@ -233,7 +236,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                         $q->whereExists(function ($subquery) use ($search): void {
                             $subquery->select(DB::raw(1))
                                 ->from('courses')
-                                ->whereRaw('CAST(NULLIF(student_enrollment.course_id, \'\') AS BIGINT) = courses.id')
+                                ->whereRaw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT) = courses.id')
                                 ->where('code', 'like', "%{$search}%");
                         });
                     });
@@ -253,7 +256,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                     $subquery->select(DB::raw(1))
                         ->from('courses')
                         ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
-                        ->whereRaw('CAST(NULLIF(student_enrollment.course_id, \'\') AS BIGINT) = courses.id')
+                        ->whereRaw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT) = courses.id')
                         ->whereRaw('TRIM(departments.code) = ?', [mb_trim($departmentFilter)]);
                 });
             })
@@ -1897,7 +1900,7 @@ final class AdministratorEnrollmentManagementController extends Controller
             ->where('student_enrollment.status', '!=', $this->enrollmentPipelineService->getPendingStatus());
 
         if ($department !== 'all') {
-            $query->join('courses', DB::raw('CAST(NULLIF(student_enrollment.course_id, \'\') AS BIGINT)'), '=', 'courses.id')
+            $query->join('courses', DB::raw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT)'), '=', 'courses.id')
                 ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
                 ->whereRaw('TRIM(departments.code) = ?', [mb_trim($department)]);
         }
@@ -1928,7 +1931,8 @@ final class AdministratorEnrollmentManagementController extends Controller
             ->where('student_enrollment.school_year', $currentSchoolYearString)
             ->where('student_enrollment.semester', $currentSemester)
             ->where('student_enrollment.status', '!=', $this->enrollmentPipelineService->getPendingStatus())
-            ->join('courses', DB::raw('CAST(NULLIF(student_enrollment.course_id, \'\') AS BIGINT)'), '=', 'courses.id');
+            ->join('courses', DB::raw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT)'), '=', 'courses.id')
+            ->leftJoin('departments', 'courses.department_id', '=', 'departments.id');
 
         if ($yearLevel !== 'all') {
             $query->where('student_enrollment.academic_year', (int) $yearLevel);
@@ -1959,83 +1963,84 @@ final class AdministratorEnrollmentManagementController extends Controller
      */
     public function enrollmentReportData(Request $request, GeneralSettingsService $settingsService): JsonResponse
     {
-        $validated = $request->validate([
-            'report_type' => ['required', 'string', 'in:enrolled_by_course,enrolled_by_subject,enrollment_summary'],
-            'course_filter' => ['nullable', 'string'],
-            'subject_filter' => ['nullable', 'string'],
-            'department_filter' => ['nullable', 'string'],
-            'year_level_filter' => ['nullable', 'string'],
-            'status_filter' => ['nullable', 'string'],
-        ]);
+        $validated = $this->validateEnrollmentReportFilters($request);
+        $payload = $this->buildEnrollmentReportPayload($validated, $settingsService);
 
-        $settingsService->getCurrentSchoolYearStart();
-        $schoolYearString = $settingsService->getCurrentSchoolYearString();
-        $semester = $settingsService->getCurrentSemester();
-        $generalSettings = $settingsService->getGlobalSettingsModel();
+        return response()->json($payload);
+    }
 
-        $school = [
-            'name' => $generalSettings?->school_portal_title ?? $generalSettings?->site_name ?? app(\App\Settings\SiteSettings::class)->getOrganizationName(),
-            'logo' => $generalSettings?->school_portal_logo ?? asset('logo.png'),
-            'contact' => $generalSettings?->support_phone ?? app(\App\Settings\SiteSettings::class)->getSupportPhone() ?? '',
-            'email' => $generalSettings?->support_email ?? app(\App\Settings\SiteSettings::class)->getSupportEmail() ?? '',
-            'address' => app(\App\Settings\SiteSettings::class)->getOrganizationAddress() ?? '',
-        ];
+    public function enrollmentReportPreviewPdf(Request $request, GeneralSettingsService $settingsService): BinaryFileResponse|\Illuminate\Http\Response
+    {
+        $validated = $this->validateEnrollmentReportFilters($request);
+        $payload = $this->buildEnrollmentReportPayload($validated, $settingsService);
+        $reportType = Str::slug((string) (($payload['report']['type'] ?? 'enrollment-report')));
 
-        $baseQuery = StudentEnrollment::query()
-            ->where('school_year', $schoolYearString)
-            ->where('semester', $semester);
+        $downloadName = sprintf('enrollment-report-%s-%s.pdf', $reportType, now()->format('Y-m-d_His'));
 
-        if (($validated['status_filter'] ?? 'active') === 'active') {
-            $baseQuery->whereNull('deleted_at');
-        } elseif (($validated['status_filter'] ?? null) === 'all') {
-            $baseQuery->withTrashed();
+        $tempBasePath = tempnam(sys_get_temp_dir(), 'enrollment_report_');
+
+        if ($tempBasePath === false) {
+            abort(500, 'Failed to allocate temporary file for PDF generation.');
         }
 
-        $reportData = match ($validated['report_type']) {
-            'enrolled_by_course' => $this->getEnrolledByCourseReport($baseQuery, $validated),
-            'enrolled_by_subject' => $this->getEnrolledBySubjectReport($validated, $schoolYearString, $semester),
-            'enrollment_summary' => $this->getEnrollmentSummaryReport($baseQuery, $validated),
-        };
+        $tempPath = $tempBasePath.'.pdf';
+        rename($tempBasePath, $tempPath);
 
-        return response()->json([
-            'report' => $reportData,
-            'school' => $school,
-            'school_year' => $schoolYearString,
-            'semester' => $settingsService->getAvailableSemesters()[$semester] ?? '',
-            'generated_at' => now()->format('F d, Y'),
-            'generated_by' => Auth::user()?->name ?? 'System',
-        ]);
+        try {
+            $pdfService = app(\App\Services\PdfGenerationService::class);
+
+            $pdfService->generatePdfFromView('pdf.enrollment-report', ['data' => $payload], $tempPath, [
+                'headless' => true,
+                'no-sandbox' => true,
+                'disable-dev-shm-usage' => true,
+                'disable-gpu' => true,
+                'no-first-run' => true,
+                'disable-background-timer-throttling' => true,
+                'disable-backgrounding-occluded-windows' => true,
+                'disable-renderer-backgrounding' => true,
+                'print-to-pdf-no-header' => true,
+                'run-all-compositor-stages-before-draw' => true,
+                'disable-extensions' => true,
+                'virtual-time-budget' => 10000,
+            ]);
+
+            return response()->file($tempPath, [
+                'Content-Type' => 'application/pdf',
+                'Content-Disposition' => 'inline; filename="'.$downloadName.'"',
+            ])->deleteFileAfterSend(true);
+        } catch (Exception $e) {
+            \Illuminate\Support\Facades\Log::warning('Primary renderer failed for enrollment report preview PDF. Falling back to FPDF.', [
+                'error' => $e->getMessage(),
+                'filters' => $validated,
+            ]);
+
+            if (file_exists($tempPath)) {
+                unlink($tempPath);
+            }
+
+            try {
+                $pdfBinary = $this->generateEnrollmentReportPdfFallback($payload);
+
+                return response($pdfBinary, 200, [
+                    'Content-Type' => 'application/pdf',
+                    'Content-Disposition' => 'inline; filename="'.$downloadName.'"',
+                ]);
+            } catch (Exception $fallbackException) {
+                \Illuminate\Support\Facades\Log::error('Fallback renderer also failed for enrollment report preview PDF', [
+                    'error' => $fallbackException->getMessage(),
+                    'filters' => $validated,
+                ]);
+
+                abort(500, 'Failed to generate PDF preview.');
+            }
+        }
     }
 
     public function enrollmentReportExport(Request $request, GeneralSettingsService $settingsService): BinaryFileResponse
     {
-        $validated = $request->validate([
-            'report_type' => ['required', 'string', 'in:enrolled_by_course,enrolled_by_subject,enrollment_summary'],
-            'course_filter' => ['nullable', 'string'],
-            'subject_filter' => ['nullable', 'string'],
-            'department_filter' => ['nullable', 'string'],
-            'year_level_filter' => ['nullable', 'string'],
-            'status_filter' => ['nullable', 'string'],
-        ]);
-
-        $schoolYearString = $settingsService->getCurrentSchoolYearString();
-        $semester = $settingsService->getCurrentSemester();
-
-        $baseQuery = StudentEnrollment::query()
-            ->where('school_year', $schoolYearString)
-            ->where('semester', $semester);
-
-        if (($validated['status_filter'] ?? 'active') === 'active') {
-            $baseQuery->whereNull('deleted_at');
-        } elseif (($validated['status_filter'] ?? null) === 'all') {
-            $baseQuery->withTrashed();
-        }
-
-        $reportData = match ($validated['report_type']) {
-            'enrolled_by_course' => $this->getEnrolledByCourseReport($baseQuery, $validated),
-            'enrolled_by_subject' => $this->getEnrolledBySubjectReport($validated, $schoolYearString, $semester),
-            'enrollment_summary' => $this->getEnrollmentSummaryReport($baseQuery, $validated),
-        };
+        $validated = $this->validateEnrollmentReportFilters($request);
+        $payload = $this->buildEnrollmentReportPayload($validated, $settingsService);
+        $reportData = $payload['report'];
 
         [$headings, $rows] = $this->buildEnrollmentReportExportData($reportData);
 
@@ -2127,6 +2132,313 @@ final class AdministratorEnrollmentManagementController extends Controller
             ->values();
 
         return response()->json(['courses' => $courses]);
+    }
+
+    /**
+     * @return array{
+     *     report_type: string,
+     *     course_filter?: string,
+     *     subject_filter?: string,
+     *     department_filter?: string,
+     *     year_level_filter?: string,
+     *     status_filter?: string
+     * }
+     */
+    private function validateEnrollmentReportFilters(Request $request): array
+    {
+        /** @var array{
+         *     report_type: string,
+         *     course_filter?: string,
+         *     subject_filter?: string,
+         *     department_filter?: string,
+         *     year_level_filter?: string,
+         *     status_filter?: string
+         * } $validated
+         */
+        $validated = $request->validate([
+            'report_type' => ['required', 'string', 'in:enrolled_by_course,enrolled_by_subject,enrollment_summary'],
+            'course_filter' => ['nullable', 'string'],
+            'subject_filter' => ['nullable', 'string'],
+            'department_filter' => ['nullable', 'string'],
+            'year_level_filter' => ['nullable', 'string'],
+            'status_filter' => ['nullable', 'string'],
+        ]);
+
+        return $validated;
+    }
+
+    /**
+     * @param  array{
+     *     report_type: string,
+     *     course_filter?: string,
+     *     subject_filter?: string,
+     *     department_filter?: string,
+     *     year_level_filter?: string,
+     *     status_filter?: string
+     * }  $validated
+     * @return array{
+     *     report: array<string, mixed>,
+     *     school: array{name: string, logo: string, contact: string, email: string, address: string},
+     *     school_year: string,
+     *     semester: string,
+     *     generated_at: string,
+     *     generated_by: string
+     * }
+     */
+    private function buildEnrollmentReportPayload(array $validated, GeneralSettingsService $settingsService): array
+    {
+        $schoolYearString = $settingsService->getCurrentSchoolYearString();
+        $semester = $settingsService->getCurrentSemester();
+        $generalSettings = $settingsService->getGlobalSettingsModel();
+        $siteSettings = app(SiteSettings::class);
+
+        $school = [
+            'name' => $generalSettings?->school_portal_title ?? $generalSettings?->site_name ?? $siteSettings->getOrganizationName(),
+            'logo' => $this->resolveReportLogoFromSettings($generalSettings?->school_portal_logo, $siteSettings),
+            'contact' => $generalSettings?->support_phone ?? $siteSettings->getSupportPhone() ?? '',
+            'email' => $generalSettings?->support_email ?? $siteSettings->getSupportEmail() ?? '',
+            'address' => $siteSettings->getOrganizationAddress() ?? '',
+        ];
+
+        $baseQuery = StudentEnrollment::query()
+            ->where('school_year', $schoolYearString)
+            ->where('semester', $semester);
+
+        if (($validated['status_filter'] ?? 'active') === 'active') {
+            $baseQuery->whereNull('deleted_at');
+        } elseif (($validated['status_filter'] ?? null) === 'all') {
+            $baseQuery->withTrashed();
+        }
+
+        $reportData = match ($validated['report_type']) {
+            'enrolled_by_course' => $this->getEnrolledByCourseReport($baseQuery, $validated),
+            'enrolled_by_subject' => $this->getEnrolledBySubjectReport($validated, $schoolYearString, $semester),
+            'enrollment_summary' => $this->getEnrollmentSummaryReport($baseQuery, $validated),
+        };
+
+        return [
+            'report' => $reportData,
+            'school' => $school,
+            'school_year' => $schoolYearString,
+            'semester' => $settingsService->getAvailableSemesters()[$semester] ?? '',
+            'generated_at' => now()->format('F d, Y'),
+            'generated_by' => Auth::user()?->name ?? 'System',
+        ];
+    }
+
+    private function resolveReportLogoFromSettings(?string $generalSettingsLogo, SiteSettings $siteSettings): string
+    {
+        $logoValue = $generalSettingsLogo;
+        if (! is_string($logoValue) || mb_trim($logoValue) === '') {
+            $logoValue = $siteSettings->logo;
+        }
+
+        if (! is_string($logoValue) || mb_trim($logoValue) === '') {
+            return '';
+        }
+
+        if (filter_var($logoValue, FILTER_VALIDATE_URL)) {
+            return $logoValue;
+        }
+
+        if (str_starts_with($logoValue, '/')) {
+            return $logoValue;
+        }
+
+        try {
+            return \Illuminate\Support\Facades\Storage::disk('r2')->url($logoValue);
+        } catch (Throwable) {
+            return $logoValue;
+        }
+    }
+
+    /**
+     * @param  array{
+     *     report: array<string, mixed>,
+     *     school: array{name: string, logo: string, contact: string, email: string, address: string},
+     *     school_year: string,
+     *     semester: string,
+     *     generated_at: string,
+     *     generated_by: string
+     * }  $payload
+     */
+    private function generateEnrollmentReportPdfFallback(array $payload): string
+    {
+        $pdf = new FPDF('L', 'mm', 'A4');
+        $pdf->SetAutoPageBreak(true, 10);
+        $pdf->AddPage();
+
+        /** @var array<string, mixed> $report */
+        $report = $payload['report'];
+        /** @var array<string, mixed> $school */
+        $school = $payload['school'];
+        $reportType = (string) ($report['type'] ?? '');
+
+        $pdf->SetFont('Arial', 'B', 13);
+        $pdf->Cell(0, 7, $this->pdfText((string) ($school['name'] ?? 'KoAkademy')), 0, 1, 'C');
+        $pdf->SetFont('Arial', '', 9);
+        $pdf->Cell(0, 5, $this->pdfText((string) ($school['address'] ?? '')), 0, 1, 'C');
+        $pdf->Cell(0, 5, $this->pdfText('Tel: '.($school['contact'] ?? '').' | Email: '.($school['email'] ?? '')), 0, 1, 'C');
+        $pdf->Ln(2);
+        $pdf->Line(10, $pdf->GetY(), 287, $pdf->GetY());
+        $pdf->Ln(3);
+
+        $pdf->SetFont('Arial', 'B', 11);
+        $pdf->Cell(0, 6, $this->pdfText((string) ($report['title'] ?? 'Enrollment Report')), 0, 1, 'C');
+        $pdf->SetFont('Arial', '', 9);
+        $pdf->Cell(0, 5, $this->pdfText((string) ($report['subtitle'] ?? '')), 0, 1, 'C');
+        $pdf->Ln(1);
+
+        $metaLeft = 'School Year: '.($payload['school_year'] ?? '').' | Semester: '.($payload['semester'] ?? '');
+        $metaRight = 'Generated: '.($payload['generated_at'] ?? '').' | By: '.($payload['generated_by'] ?? '');
+        $pdf->Cell(140, 5, $this->pdfText($metaLeft), 0, 0, 'L');
+        $pdf->Cell(137, 5, $this->pdfText($metaRight), 0, 1, 'R');
+        $pdf->Ln(2);
+
+        if ($reportType === 'enrolled_by_course') {
+            /** @var array<int, array<string, mixed>> $students */
+            $students = $report['students'] ?? [];
+            $this->renderPdfTable(
+                $pdf,
+                ['No.', 'Student ID', 'Full Name', 'Course', 'Department', 'Year Level', 'Subjects', 'Status'],
+                [10, 24, 55, 52, 22, 18, 18, 35],
+                collect($students)->map(function (array $student): array {
+                    return [
+                        (string) ($student['no'] ?? '—'),
+                        (string) ($student['student_id'] ?? '—'),
+                        Str::limit((string) ($student['full_name'] ?? '—'), 36),
+                        Str::limit((string) ($student['course'] ?? '—'), 30),
+                        (string) ($student['department'] ?? '—'),
+                        isset($student['year_level']) ? 'Year '.$student['year_level'] : '—',
+                        (string) ($student['subjects_count'] ?? '—'),
+                        Str::limit((string) ($student['status'] ?? '—'), 20),
+                    ];
+                })->all()
+            );
+        } elseif ($reportType === 'enrolled_by_subject') {
+            /** @var array<int, array<string, mixed>> $subjectGroups */
+            $subjectGroups = $report['subject_groups'] ?? [];
+
+            foreach ($subjectGroups as $group) {
+                if ($pdf->GetY() > 170) {
+                    $pdf->AddPage();
+                }
+
+                $pdf->SetFont('Arial', 'B', 9);
+                $heading = ($group['subject_code'] ?? '—').' - '.($group['subject_title'] ?? 'Unknown Subject');
+                $pdf->Cell(0, 6, $this->pdfText(Str::limit((string) $heading, 120)), 1, 1, 'L');
+
+                /** @var array<int, array<string, mixed>> $students */
+                $students = $group['students'] ?? [];
+                $this->renderPdfTable(
+                    $pdf,
+                    ['No.', 'Student ID', 'Full Name', 'Course', 'Year', 'Section', 'Schedule'],
+                    [10, 24, 56, 40, 16, 24, 64],
+                    collect($students)->map(function (array $student): array {
+                        return [
+                            (string) ($student['no'] ?? '—'),
+                            (string) ($student['student_id'] ?? '—'),
+                            Str::limit((string) ($student['full_name'] ?? '—'), 34),
+                            Str::limit((string) ($student['course'] ?? '—'), 22),
+                            isset($student['year_level']) ? (string) $student['year_level'] : '—',
+                            (string) ($student['section'] ?? '—'),
+                            Str::limit((string) ($student['class_schedule'] ?? '—'), 40),
+                        ];
+                    })->all()
+                );
+                $pdf->Ln(1);
+            }
+        } elseif ($reportType === 'enrollment_summary') {
+            $total = (int) ($report['total_enrolled'] ?? 0);
+            $pdf->SetFont('Arial', 'B', 10);
+            $pdf->Cell(0, 6, $this->pdfText('Total Enrolled: '.$total), 0, 1, 'L');
+            $pdf->Ln(1);
+
+            /** @var array<int, array<string, mixed>> $byDepartment */
+            $byDepartment = $report['by_department'] ?? [];
+            $this->renderPdfTable(
+                $pdf,
+                ['Department', 'Count', 'Percentage'],
+                [90, 35, 40],
+                collect($byDepartment)->map(function (array $item) use ($total): array {
+                    $count = (int) ($item['count'] ?? 0);
+                    $percentage = $total > 0 ? round(($count / $total) * 100, 1).'%' : '0%';
+
+                    return [(string) ($item['department'] ?? 'Unknown'), (string) $count, $percentage];
+                })->all()
+            );
+
+            /** @var array<int, array<string, mixed>> $byCourse */
+            $byCourse = $report['by_course'] ?? [];
+            $this->renderPdfTable(
+                $pdf,
+                ['Course', 'Title', 'Department', 'Count', 'Percentage'],
+                [34, 78, 28, 24, 30],
+                collect($byCourse)->map(function (array $item) use ($total): array {
+                    $count = (int) ($item['count'] ?? 0);
+                    $percentage = $total > 0 ? round(($count / $total) * 100, 1).'%' : '0%';
+
+                    return [
+                        (string) ($item['course_code'] ?? '—'),
+                        Str::limit((string) ($item['course_title'] ?? '—'), 46),
+                        (string) ($item['department'] ?? '—'),
+                        (string) $count,
+                        $percentage,
+                    ];
+                })->all()
+            );
+        }
+
+        $pdf->Ln(2);
+        $pdf->SetFont('Arial', '', 8);
+        $pdf->Cell(0, 5, $this->pdfText('This is a system-generated report.'), 0, 1, 'R');
+
+        /** @var string|bool $pdfOutput */
+        $pdfOutput = $pdf->Output('S');
+        if (! is_string($pdfOutput)) {
+            throw new Exception('FPDF failed to generate report output.');
+        }
+
+        return $pdfOutput;
+    }
+
+    /**
+     * @param  array<int, string>  $headers
+     * @param  array<int, int>  $widths
+     * @param  array<int, array<int, string>>  $rows
+     */
+    private function renderPdfTable(FPDF $pdf, array $headers, array $widths, array $rows): void
+    {
+        $pdf->SetFont('Arial', 'B', 8);
+
+        foreach ($headers as $index => $header) {
+            $pdf->Cell($widths[$index] ?? 20, 6, $this->pdfText($header), 1, 0, 'L');
+        }
+        $pdf->Ln();
+
+        $pdf->SetFont('Arial', '', 8);
+        foreach ($rows as $row) {
+            if ($pdf->GetY() > 185) {
+                $pdf->AddPage();
+            }
+
+            foreach ($headers as $index => $header) {
+                $value = $row[$index] ?? '—';
+                $pdf->Cell($widths[$index] ?? 20, 6, $this->pdfText($value), 1, 0, 'L');
+            }
+            $pdf->Ln();
+        }
+
+        if ($rows === []) {
+            $pdf->Cell(array_sum($widths), 6, $this->pdfText('No data available.'), 1, 1, 'C');
+        }
+
+        $pdf->Ln(2);
+    }
+
+    private function pdfText(string $value): string
+    {
+        return mb_convert_encoding($value, 'ISO-8859-1', 'UTF-8');
     }
 
     /**
@@ -2467,6 +2779,7 @@ final class AdministratorEnrollmentManagementController extends Controller
 
         // General settings
         $generalSettings = $settingsService->getGlobalSettingsModel();
+        $siteSettings = app(SiteSettings::class);
 
         return [
             'student' => [
@@ -2500,11 +2813,11 @@ final class AdministratorEnrollmentManagementController extends Controller
             ] : null,
             'total_amount' => $totalAmount,
             'school' => [
-                'name' => $generalSettings?->school_portal_title ?? $generalSettings?->site_name ?? app(\App\Settings\SiteSettings::class)->getOrganizationName(),
-                'logo' => $generalSettings?->school_portal_logo ?? asset('logo.png'),
-                'contact' => $generalSettings?->support_phone ?? app(\App\Settings\SiteSettings::class)->getSupportPhone() ?? '',
-                'email' => $generalSettings?->support_email ?? app(\App\Settings\SiteSettings::class)->getSupportEmail() ?? '',
-                'address' => app(\App\Settings\SiteSettings::class)->getOrganizationAddress() ?? '',
+                'name' => $generalSettings?->school_portal_title ?? $generalSettings?->site_name ?? $siteSettings->getOrganizationName(),
+                'logo' => $this->resolveReportLogoFromSettings($generalSettings?->school_portal_logo, $siteSettings),
+                'contact' => $generalSettings?->support_phone ?? $siteSettings->getSupportPhone() ?? '',
+                'email' => $generalSettings?->support_email ?? $siteSettings->getSupportEmail() ?? '',
+                'address' => $siteSettings->getOrganizationAddress() ?? '',
             ],
             'generated_at' => now()->format('m-d-Y'),
         ];
@@ -2521,14 +2834,21 @@ final class AdministratorEnrollmentManagementController extends Controller
         $query = clone $baseQuery;
 
         if (! empty($filters['course_filter']) && $filters['course_filter'] !== 'all') {
-            $query->whereHas('course', function ($q) use ($filters): void {
-                $q->where('code', $filters['course_filter']);
+            $query->whereExists(function ($subquery) use ($filters): void {
+                $subquery->select(DB::raw(1))
+                    ->from('courses')
+                    ->whereRaw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT) = courses.id')
+                    ->where('code', (string) $filters['course_filter']);
             });
         }
 
         if (! empty($filters['department_filter']) && $filters['department_filter'] !== 'all') {
-            $query->whereHas('course', function ($q) use ($filters): void {
-                $q->where('department', $filters['department_filter']);
+            $query->whereExists(function ($subquery) use ($filters): void {
+                $subquery->select(DB::raw(1))
+                    ->from('courses')
+                    ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
+                    ->whereRaw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT) = courses.id')
+                    ->whereRaw('TRIM(departments.code) = ?', [mb_trim((string) $filters['department_filter'])]);
             });
         }
 
@@ -2649,8 +2969,12 @@ final class AdministratorEnrollmentManagementController extends Controller
         $query = clone $baseQuery;
 
         if (! empty($filters['department_filter']) && $filters['department_filter'] !== 'all') {
-            $query->whereHas('course', function ($q) use ($filters): void {
-                $q->where('department', $filters['department_filter']);
+            $query->whereExists(function ($subquery) use ($filters): void {
+                $subquery->select(DB::raw(1))
+                    ->from('courses')
+                    ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
+                    ->whereRaw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT) = courses.id')
+                    ->whereRaw('TRIM(departments.code) = ?', [mb_trim((string) $filters['department_filter'])]);
             });
         }
 

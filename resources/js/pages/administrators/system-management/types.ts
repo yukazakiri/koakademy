@@ -13,7 +13,35 @@ export type SystemManagementSectionKey =
     | "mail"
     | "api"
     | "notifications"
+    | "grading"
     | "pulse";
+
+export interface GradingConfigPayload {
+    scale: "point" | "percent" | "auto";
+    point_passing_grade: number;
+    percent_passing_grade: number;
+    point_decimal_places: number;
+    percent_decimal_places: number;
+    include_failed_in_gwa: boolean;
+    excluded_keywords: string[];
+    excluded_subject_ids: number[];
+}
+
+export interface CourseSubjectSummary {
+    id: number;
+    code: string;
+    title: string;
+    units: number;
+    year_level: number;
+    semester: number;
+}
+
+export interface CourseWithSubjects {
+    id: number;
+    code: string;
+    title: string;
+    subjects: CourseSubjectSummary[];
+}
 
 export interface School {
     id: number;
@@ -281,6 +309,8 @@ export interface SystemManagementPageProps {
     enrollment_pipeline: EnrollmentPipelineSettings;
     enrollment_stats: EnrollmentStatsSettings;
     api_management: ApiManagementConfig;
+    grading_config: GradingConfigPayload;
+    courses_with_subjects: CourseWithSubjects[];
     public_api_url: string;
     public_api_fields: Record<string, PublicApiFieldDefinition>;
     available_roles: string[];

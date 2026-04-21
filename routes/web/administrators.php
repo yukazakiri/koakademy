@@ -213,6 +213,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::delete('/students/bulk', [AdministratorStudentManagementController::class, 'bulkDestroy'])->name('students.bulk-destroy');
         Route::get('/students/documents', [AdministratorStudentDocumentController::class, 'listAll'])->name('students.documents.list');
         Route::get('/students/{student}', [AdministratorStudentManagementController::class, 'show'])->name('students.show');
+        Route::get('/students/{student}/tuition/soa', [AdministratorStudentManagementController::class, 'printSoa'])->name('students.tuition.soa');
         Route::get('/students/{student}/documents', [AdministratorStudentDocumentController::class, 'index'])->name('students.documents.index');
         Route::post('/students/{student}/documents/fixed', [AdministratorStudentDocumentController::class, 'updateFixed'])->name('students.documents.fixed.update');
         Route::post('/students/{student}/documents/dynamic', [AdministratorStudentDocumentController::class, 'storeDynamic'])->name('students.documents.dynamic.store');

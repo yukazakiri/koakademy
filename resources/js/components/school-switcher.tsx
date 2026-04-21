@@ -33,6 +33,8 @@ export function SchoolSwitcher() {
             endpoint = "/administrators/settings/active-school";
         } else if (pathname.startsWith("/student")) {
             endpoint = "/student/settings/active-school";
+        } else if (pathname.startsWith("/faculty")) {
+            endpoint = "/faculty/settings/active-school";
         }
 
         router.put(endpoint, { school_id: parseInt(value) }, { preserveScroll: true });

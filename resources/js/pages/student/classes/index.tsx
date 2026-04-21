@@ -8,6 +8,7 @@ import { Progress } from "@/components/ui/progress";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useGradingConfig } from "@/hooks/use-grading-config";
 import { computeGwa, formatGwa, gradeScaleLabel, gwaToneClass, type GwaResult } from "@/lib/gwa";
 import { cn } from "@/lib/utils";
 import { User as UserType } from "@/types/user";
@@ -79,6 +80,7 @@ const GwaChip = ({
     size?: "sm" | "md";
     className?: string;
 }) => {
+    const gradingConfig = useGradingConfig();
     const scaleLabel = gradeScaleLabel(result.scale);
     const valueSize = size === "sm" ? "text-sm" : "text-base";
     return (
@@ -91,11 +93,14 @@ const GwaChip = ({
             <span className="font-semibold">{label}</span>
             <span className="flex items-baseline gap-1">
                 <span className="text-muted-foreground uppercase">GWA</span>
-                <span className={cn("font-mono font-bold", valueSize, gwaToneClass(result))}>{formatGwa(result)}</span>
+                <span className={cn("font-mono font-bold", valueSize, gwaToneClass(result, gradingConfig))}>
+                    {formatGwa(result, gradingConfig)}
+                </span>
                 {scaleLabel && <span className="text-muted-foreground">({scaleLabel})</span>}
             </span>
             <span className="text-muted-foreground">
                 {result.gradedCount}/{result.itemCount} • {result.gradedUnits}/{result.totalUnits}u
+                {result.excludedCount > 0 && <span className="ml-1 text-amber-600">• {result.excludedCount} excl</span>}
             </span>
         </div>
     );
@@ -421,6 +426,8 @@ export default function StudentClasses({ user, student_name, course_name, progre
         [curriculum],
     );
 
+    const gradingConfig = useGradingConfig();
+
     // GWA computations (overall, per year, per year+semester)
     const { overallGwa, yearGwaMap, semesterGwaMap } = useMemo(() => {
         const yearMap = new Map<number, GwaResult>();
@@ -434,20 +441,20 @@ export default function StudentClasses({ user, student_name, course_name, progre
             Object.entries(sems).forEach(([semStr, subs]) => {
                 const semester = parseInt(semStr);
                 const subjects = subs as CurriculumSubject[];
-                semesterMap.set(`${year}-${semester}`, computeGwa(subjects));
+                semesterMap.set(`${year}-${semester}`, computeGwa(subjects, { config: gradingConfig }));
                 yearSubjects.push(...subjects);
             });
 
-            yearMap.set(year, computeGwa(yearSubjects));
+            yearMap.set(year, computeGwa(yearSubjects, { config: gradingConfig }));
             all.push(...yearSubjects);
         });
 
         return {
-            overallGwa: computeGwa(all),
+            overallGwa: computeGwa(all, { config: gradingConfig }),
             yearGwaMap: yearMap,
             semesterGwaMap: semesterMap,
         };
-    }, [curriculum]);
+    }, [curriculum, gradingConfig]);
 
     const activeYearGwa = selectedYear === "all" ? null : yearGwaMap.get(selectedYear) ?? null;
 
@@ -563,8 +570,8 @@ export default function StudentClasses({ user, student_name, course_name, progre
                                             <Sparkles className="h-6 w-6" />
                                         </div>
                                         <div>
-                                            <div className={cn("text-3xl font-bold font-mono", gwaToneClass(overallGwa))}>
-                                                {formatGwa(overallGwa)}
+                                            <div className={cn("text-3xl font-bold font-mono", gwaToneClass(overallGwa, gradingConfig))}>
+                                                {formatGwa(overallGwa, gradingConfig)}
                                             </div>
                                             <p className="text-muted-foreground text-sm">
                                                 Overall GWA

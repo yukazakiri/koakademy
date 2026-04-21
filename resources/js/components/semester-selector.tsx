@@ -29,6 +29,9 @@ export function SemesterSelector({
             if (pathname.startsWith("/student")) {
                 return `/student/settings/${path}`;
             }
+            if (pathname.startsWith("/faculty")) {
+                return `/faculty/settings/${path}`;
+            }
         }
 
         return `/settings/${path}`;

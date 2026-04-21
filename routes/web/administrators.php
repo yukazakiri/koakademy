@@ -420,6 +420,8 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/system-management/mail/test', [App\Http\Controllers\AdministratorSystemManagementController::class, 'sendTestEmail'])->name('system-management.mail.test');
         Route::get('/system-management/notifications', [App\Http\Controllers\AdministratorSystemManagementController::class, 'notifications'])->name('system-management.notifications.index');
         Route::put('/system-management/notifications', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateNotificationChannels'])->name('system-management.notifications.update');
+        Route::get('/system-management/grading', [App\Http\Controllers\AdministratorSystemManagementController::class, 'grading'])->name('system-management.grading.index');
+        Route::put('/system-management/grading', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateGrading'])->name('system-management.grading.update');
 
         // Help Tickets
         Route::get('/help-tickets', [App\Http\Controllers\AdministratorHelpTicketController::class, 'index'])->name('help-tickets.index');

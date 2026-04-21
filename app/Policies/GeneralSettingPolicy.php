@@ -126,6 +126,16 @@ final class GeneralSettingPolicy
         return $this->canViewSection($user, 'pulse');
     }
 
+    public function viewGrading(User $user): bool
+    {
+        return $this->canViewSection($user, 'grading');
+    }
+
+    public function updateGrading(User $user): bool
+    {
+        return $this->canUpdateSection($user, 'grading');
+    }
+
     private function canViewSection(User $user, string $section): bool
     {
         if ($this->hasFullSystemManagementAccess($user)) {

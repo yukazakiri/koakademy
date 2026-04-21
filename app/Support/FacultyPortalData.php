@@ -91,6 +91,7 @@ final class FacultyPortalData
                     'semester' => $class->semester ?? 'N/A',
                     'room' => $class->Room?->name ?? 'TBA',
                     'students_count' => $class->class_enrollments_count ?? 0,
+                    'classification' => $class->classification ?? 'college',
                 ];
             })
             ->values()

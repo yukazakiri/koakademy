@@ -44,6 +44,8 @@ Route::middleware(['auth', 'faculty.verified', 'faculty.only', 'ensure.feature']
             $faculty = App\Models\Faculty::where('email', $user->email)->first();
             $idCardData = $faculty ? $idCardService->generateFacultyIdCard($faculty) : null;
 
+            $settingsService = app(App\Services\GeneralSettingsService::class);
+
             return Inertia::render('faculty/dashboard', [
                 'user' => [
                     'name' => $user->name,
@@ -53,6 +55,8 @@ Route::middleware(['auth', 'faculty.verified', 'faculty.only', 'ensure.feature']
                 ],
                 'faculty_data' => $facultyData,
                 'id_card' => $idCardData,
+                'current_semester' => (string) $settingsService->getCurrentSemester(),
+                'current_school_year' => $settingsService->getCurrentSchoolYearString(),
                 'flash' => session('flash'),
             ]);
         })->name('dashboard');

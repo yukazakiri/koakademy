@@ -116,7 +116,7 @@ services:
         depends_on:
             - pgsql
             - redis
-        command: "php artisan pulse:check & php artisan pulse:work"
+        command: ["/bin/bash", "-c", "php artisan pulse:check & php artisan pulse:work"]
     meilisearch:
         image: "getmeili/meilisearch:v1.42"
         ports:

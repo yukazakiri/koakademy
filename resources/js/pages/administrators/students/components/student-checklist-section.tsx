@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileText, Plus } from "lucide-react";
 import { Fragment, useMemo } from "react";
 import { Badge as ReuiBadge } from "@/components/ui/badge";
+import { useGradingConfig } from "@/hooks/use-grading-config";
 import { computeGwa, formatGwa, gradeScaleLabel, gwaToneClass, type GwaResult } from "@/lib/gwa";
 import type { ChecklistHistoryRecord, ChecklistSemesterGroup, ChecklistSubject, ChecklistYearGroup, StudentDetail } from "../types";
 
@@ -64,6 +65,7 @@ interface GwaSummaryProps {
 }
 
 function GwaSummary({ label, result, className }: GwaSummaryProps) {
+    const gradingConfig = useGradingConfig();
     return (
         <div
             className={`flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border bg-muted/30 px-3 py-2 text-sm ${className ?? ""}`}
@@ -71,7 +73,9 @@ function GwaSummary({ label, result, className }: GwaSummaryProps) {
             <span className="font-semibold">{label}</span>
             <span className="flex items-baseline gap-1">
                 <span className="text-muted-foreground text-xs uppercase">GWA</span>
-                <span className={`font-mono text-base font-bold ${gwaToneClass(result)}`}>{formatGwa(result)}</span>
+                <span className={`font-mono text-base font-bold ${gwaToneClass(result, gradingConfig)}`}>
+                    {formatGwa(result, gradingConfig)}
+                </span>
                 {gradeScaleLabel(result.scale) && (
                     <span className="text-muted-foreground text-xs">
                         ({gradeScaleLabel(result.scale)})
@@ -95,28 +99,33 @@ export function StudentChecklistSection({
     onSubjectClick,
     classificationBadgeVariant,
 }: StudentChecklistSectionProps) {
+    const gradingConfig = useGradingConfig();
+
     const overallGwa = useMemo(
-        () => computeGwa(student.checklist.flatMap(collectYearSubjects)),
-        [student.checklist],
+        () => computeGwa(student.checklist.flatMap(collectYearSubjects), { config: gradingConfig }),
+        [student.checklist, gradingConfig],
     );
 
     const yearGwaMap = useMemo(() => {
         const map = new Map<number, GwaResult>();
         for (const yearGroup of student.checklist) {
-            map.set(yearGroup.year, computeGwa(collectYearSubjects(yearGroup)));
+            map.set(yearGroup.year, computeGwa(collectYearSubjects(yearGroup), { config: gradingConfig }));
         }
         return map;
-    }, [student.checklist]);
+    }, [student.checklist, gradingConfig]);
 
     const semesterGwaMap = useMemo(() => {
         const map = new Map<string, GwaResult>();
         for (const yearGroup of student.checklist) {
             for (const semesterGroup of yearGroup.semesters) {
-                map.set(`${yearGroup.year}-${semesterGroup.semester}`, computeGwa(semesterGroup.subjects));
+                map.set(
+                    `${yearGroup.year}-${semesterGroup.semester}`,
+                    computeGwa(semesterGroup.subjects, { config: gradingConfig }),
+                );
             }
         }
         return map;
-    }, [student.checklist]);
+    }, [student.checklist, gradingConfig]);
 
     return (
         <div className="space-y-4">
@@ -164,8 +173,8 @@ export function StudentChecklistSection({
                                                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
                                                     <span className="flex items-baseline gap-1">
                                                         <span className="text-muted-foreground text-xs uppercase">GWA</span>
-                                                        <span className={`font-mono text-sm font-bold ${gwaToneClass(semesterResult)}`}>
-                                                            {formatGwa(semesterResult)}
+                                                        <span className={`font-mono text-sm font-bold ${gwaToneClass(semesterResult, gradingConfig)}`}>
+                                                            {formatGwa(semesterResult, gradingConfig)}
                                                         </span>
                                                         {gradeScaleLabel(semesterResult.scale) && (
                                                             <span className="text-muted-foreground text-xs">

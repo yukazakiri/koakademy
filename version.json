@@ -1,14 +1,14 @@
 {
-  "version": "1.0.1-dev.0.7",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.0.1-dev.0.7",
-  "commit": "39e9ebeb13a3031cf15c26e423e8659e62a4391c",
+  "version": "1.0.1-dev.0.8",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.0.1-dev.0.8",
+  "commit": "b29398c1b29fb98732824765838ba73ee1bef10a",
   "branch": "master",
-  "timestamp": "2026-04-21T02:24:52Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24700636041",
+  "timestamp": "2026-04-21T02:55:11Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24701410826",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.0.1-dev.0.7 - Merge pull request #18 from yukazakiri/feat/pdf-gwa-ui-chip",
-    "previous": "1.0.1-dev.0.6"
+    "current": "Version 1.0.1-dev.0.8 - Merge pull request #19 from yukazakiri/feat/docker-supervis-stopwaits-scout-controls",
+    "previous": "1.0.1-dev.0.7"
   },
   "metadata": {
     "author": "yukazakiri",

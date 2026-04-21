@@ -8,17 +8,41 @@ octane_server=${OCTANE_SERVER:-""}
 # RUN_MIGRATIONS: Set to "true" to run migrations on container start (http container only)
 # PRODUCTION_SEEDERS: Comma-separated list of production-safe seeders to run
 # RUN_DOCKER_SCRIPTS: Set to "true" to run scripts in docker-scripts folder on container start
-# RUN_SCOUT_INDEX: Set to "true" to sync Scout indexes on the primary http container
-# RUN_OPTIMIZE: Set to "true" to rebuild Laravel caches on the primary http container
+# RUN_SCOUT_SETTINGS: Set to "true" to sync Scout index settings on boot (fast, blocking). Default "true".
+# RUN_SCOUT_IMPORT: Controls the full scout:import (re)indexing step.
+#   - "queued" (default): dispatch per-chunk MakeSearchable jobs to the queue (fast, foreground).
+#     Horizon processes them in the background. Requires Horizon to be running and SCOUT_QUEUE-friendly
+#     connection. This is the recommended mode when Horizon is enabled.
+#   - "background": start a full inline reindex after Octane boots; logs stream to container stdout.
+#   - "foreground": block startup until an inline reindex completes (old behaviour, slow on large datasets).
+#   - "false" / "off" / "skip": do not run scout:import at all (recommended for steady-state redeploys;
+#     run it out-of-band when the search schema changes).
+# RUN_OPTIMIZE: "foreground" (default) | "background" | "false" — rebuild Laravel caches.
 # FORCE_OPTIMIZE_CLEAR: Set to "true" to clear caches before rebuilding them
 # SCOUT_AUTO_DETECT: Set to "false" to disable Scout driver auto-detection
 run_migrations=${RUN_MIGRATIONS:-"true"}
 production_seeders=${PRODUCTION_SEEDERS:-""}
 run_docker_scripts=${RUN_DOCKER_SCRIPTS:-"false"}
-run_scout_index=${RUN_SCOUT_INDEX:-"true"}
-run_optimize=${RUN_OPTIMIZE:-"true"}
+run_scout_settings=${RUN_SCOUT_SETTINGS:-"true"}
+run_scout_import=${RUN_SCOUT_IMPORT:-"queued"}
+run_optimize=${RUN_OPTIMIZE:-"foreground"}
 force_optimize_clear=${FORCE_OPTIMIZE_CLEAR:-"false"}
 scout_auto_detect=${SCOUT_AUTO_DETECT:-"true"}
+
+# Back-compat: legacy RUN_SCOUT_INDEX env still honoured. "true" => background import,
+# "false" => skip settings + import entirely (old all-or-nothing semantics).
+if [ -n "${RUN_SCOUT_INDEX:-}" ]; then
+    case "${RUN_SCOUT_INDEX}" in
+        true|1|yes)
+            run_scout_settings="true"
+            run_scout_import="${run_scout_import:-queued}"
+            ;;
+        false|0|no|off|skip)
+            run_scout_settings="false"
+            run_scout_import="false"
+            ;;
+    esac
+fi
 connection_max_tries=${CONNECTION_MAX_TRIES:-"30"}
 connection_retry_sleep=${CONNECTION_RETRY_SLEEP:-"1"}
 service_connect_timeout=${SERVICE_CONNECT_TIMEOUT:-"2"}
@@ -281,38 +305,148 @@ run_docker_scripts_if_enabled() {
     echo "Docker scripts completed."
 }
 
-run_scout_indexing() {
-    if [ "${run_scout_index}" != "true" ]; then
+scout_needs_external_index() {
+    case "${SCOUT_DRIVER}" in
+        database|collection|null|"")
+            return 1
+            ;;
+    esac
+    return 0
+}
+
+run_scout_settings_sync() {
+    if [ "${run_scout_settings}" != "true" ]; then
         return 0
     fi
 
+    if ! scout_needs_external_index; then
+        echo "Scout driver ${SCOUT_DRIVER:-unset} does not require index settings sync."
+        return 0
+    fi
+
+    echo "Syncing Scout index settings (${SCOUT_DRIVER})..."
+    php artisan scout:sync-index-settings --no-interaction || {
+        echo "WARN: scout:sync-index-settings failed; continuing startup."
+    }
+}
+
+run_scout_import_foreground() {
     if [ ! -f "docker/docker-scripts/scout-index.sh" ]; then
         echo "Scout indexing script not found, skipping."
         return 0
     fi
 
-    case "${SCOUT_DRIVER}" in
-        database|collection|null)
-            echo "Scout driver ${SCOUT_DRIVER} does not require external indexing."
-            return 0
-            ;;
-    esac
-
-    echo "Running Scout index sync..."
-    /bin/sh docker/docker-scripts/scout-index.sh
-}
-
-optimize_application() {
-    if [ "${run_optimize}" != "true" ]; then
-        echo "Laravel optimize step disabled, skipping."
+    if ! scout_needs_external_index; then
+        echo "Scout driver ${SCOUT_DRIVER:-unset} does not require external indexing."
         return 0
     fi
 
+    echo "Running Scout full import (foreground)..."
+    SCOUT_SKIP_SETTINGS_SYNC=1 /bin/sh docker/docker-scripts/scout-index.sh
+}
+
+run_scout_import_queued() {
+    if [ ! -f "docker/docker-scripts/scout-index.sh" ]; then
+        echo "Scout indexing script not found, skipping."
+        return 0
+    fi
+
+    if ! scout_needs_external_index; then
+        echo "Scout driver ${SCOUT_DRIVER:-unset} does not require external indexing."
+        return 0
+    fi
+
+    echo "Dispatching Scout import jobs to the queue (Horizon will process them)..."
+    SCOUT_SKIP_SETTINGS_SYNC=1 SCOUT_IMPORT_QUEUE=1 /bin/sh docker/docker-scripts/scout-index.sh
+}
+
+# Schedule scout:import to run AFTER supervisord/Octane has taken over PID 1.
+# The child process becomes a subreaper child of supervisord and writes to the
+# container stdout via /proc/1/fd/1 so the logs remain visible.
+schedule_scout_import_background() {
+    if [ ! -f "docker/docker-scripts/scout-index.sh" ]; then
+        return 0
+    fi
+
+    if ! scout_needs_external_index; then
+        return 0
+    fi
+
+    echo "Scheduling Scout full import in background (will start after Octane boots)..."
+
+    # Fire-and-forget: sleep briefly so Octane is already accepting traffic,
+    # then kick off the import. Output is redirected to PID 1 so it surfaces
+    # in `docker logs`.
+    (
+        sleep 15
+        echo "[scout-bg] Starting background Scout import at $(date -Iseconds)"
+        SCOUT_SKIP_SETTINGS_SYNC=1 /bin/sh docker/docker-scripts/scout-index.sh \
+            && echo "[scout-bg] Background Scout import completed at $(date -Iseconds)" \
+            || echo "[scout-bg] Background Scout import FAILED at $(date -Iseconds)"
+    ) >/proc/1/fd/1 2>&1 </dev/null &
+
+    # Detach so it survives the upcoming `exec supervisord`.
+    disown 2>/dev/null || true
+}
+
+run_optimize_foreground() {
     if [ "${force_optimize_clear}" = "true" ]; then
         php artisan optimize:clear
     fi
 
     php artisan optimize
+}
+
+schedule_optimize_background() {
+    echo "Scheduling Laravel optimize in background..."
+    (
+        sleep 5
+        if [ "${force_optimize_clear}" = "true" ]; then
+            php artisan optimize:clear
+        fi
+        php artisan optimize \
+            && echo "[optimize-bg] optimize completed at $(date -Iseconds)" \
+            || echo "[optimize-bg] optimize FAILED at $(date -Iseconds)"
+    ) >/proc/1/fd/1 2>&1 </dev/null &
+    disown 2>/dev/null || true
+}
+
+dispatch_optimize() {
+    case "${run_optimize}" in
+        foreground|true|1|yes)
+            run_optimize_foreground
+            ;;
+        background|bg|async)
+            schedule_optimize_background
+            ;;
+        false|0|no|off|skip|"")
+            echo "Laravel optimize step disabled, skipping."
+            ;;
+        *)
+            echo "Unknown RUN_OPTIMIZE=${run_optimize}, running in foreground."
+            run_optimize_foreground
+            ;;
+    esac
+}
+
+dispatch_scout_import() {
+    case "${run_scout_import}" in
+        queued|queue|horizon)
+            run_scout_import_queued
+            ;;
+        foreground|true|1|yes|sync)
+            run_scout_import_foreground
+            ;;
+        background|bg|async)
+            schedule_scout_import_background
+            ;;
+        false|0|no|off|skip|"")
+            echo "Scout full import disabled (RUN_SCOUT_IMPORT=${run_scout_import:-false}); only settings sync will run."
+            ;;
+        *)
+            echo "Unknown RUN_SCOUT_IMPORT=${run_scout_import}, skipping full import."
+            ;;
+    esac
 }
 
 run_primary_startup_tasks() {
@@ -322,8 +456,11 @@ run_primary_startup_tasks() {
     ensure_vendor_view_dirs
     run_migrations_if_enabled
     run_docker_scripts_if_enabled
-    run_scout_indexing
-    optimize_application
+    run_scout_settings_sync
+    dispatch_optimize
+    # Scout import is scheduled last so the background sleep gives Octane
+    # the full startup window before we start hammering the DB.
+    dispatch_scout_import
 }
 
 bootstrap_container() {

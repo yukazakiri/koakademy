@@ -2,17 +2,59 @@
 set -e
 
 container_mode=${CONTAINER_MODE:-"http"}
+
+# Schedule all Scout tasks to run after services are already running under
+# supervisord. This prevents search indexing from delaying first request time.
+schedule_scout_tasks_post_start() {
+    if [ "${run_scout_settings}" != "true" ] && [ "${run_scout_import}" = "false" -o "${run_scout_import}" = "0" -o "${run_scout_import}" = "no" -o "${run_scout_import}" = "off" -o "${run_scout_import}" = "skip" -o "${run_scout_import}" = "" ]; then
+        return 0
+    fi
+
+    echo "Scheduling Scout tasks post-start (after Octane/services boot)..."
+
+    (
+        sleep 20
+        echo "[scout-post-start] Running Scout tasks at $(date -Iseconds)"
+
+        if [ "${run_scout_settings}" = "true" ]; then
+            run_scout_settings_sync
+        fi
+
+        case "${run_scout_import}" in
+            queued|queue|horizon)
+                run_scout_import_queued || echo "[scout-post-start] WARN: queued Scout import failed."
+                ;;
+            foreground|true|1|yes|sync)
+                run_scout_import_foreground || echo "[scout-post-start] WARN: foreground Scout import failed."
+                ;;
+            background|bg|async)
+                # Already running in a background post-start worker, so execute
+                # inline here to avoid nested detached workers and extra delay.
+                run_scout_import_foreground || echo "[scout-post-start] WARN: background Scout import failed."
+                ;;
+            false|0|no|off|skip|"")
+                echo "[scout-post-start] Scout full import disabled; settings-only mode."
+                ;;
+            *)
+                echo "[scout-post-start] Unknown RUN_SCOUT_IMPORT=${run_scout_import}, skipping full import."
+                ;;
+        esac
+
+        echo "[scout-post-start] Scout post-start tasks finished at $(date -Iseconds)"
+    ) >/proc/1/fd/1 2>&1 </dev/null &
+
+    disown 2>/dev/null || true
+}
 octane_server=${OCTANE_SERVER:-""}
 
 # Production deployment settings
 # RUN_MIGRATIONS: Set to "true" to run migrations on container start (http container only)
 # PRODUCTION_SEEDERS: Comma-separated list of production-safe seeders to run
 # RUN_DOCKER_SCRIPTS: Set to "true" to run scripts in docker-scripts folder on container start
-# RUN_SCOUT_SETTINGS: Set to "true" to sync Scout index settings on boot (fast, blocking). Default "true".
+# RUN_SCOUT_SETTINGS: Set to "true" to sync Scout index settings after services boot (post-start). Default "true".
 # RUN_SCOUT_IMPORT: Controls the full scout:import (re)indexing step.
-#   - "queued" (default): dispatch per-chunk MakeSearchable jobs to the queue (fast, foreground).
-#     Horizon processes them in the background. Requires Horizon to be running and SCOUT_QUEUE-friendly
-#     connection. This is the recommended mode when Horizon is enabled.
+#   - "queued" (default): after services boot, dispatch per-chunk MakeSearchable jobs to queue.
+#     Horizon processes them in background. Recommended when Horizon is enabled.
 #   - "background": start a full inline reindex after Octane boots; logs stream to container stdout.
 #   - "foreground": block startup until an inline reindex completes (old behaviour, slow on large datasets).
 #   - "false" / "off" / "skip": do not run scout:import at all (recommended for steady-state redeploys;
@@ -460,11 +502,9 @@ run_primary_startup_tasks() {
     ensure_vendor_view_dirs
     run_migrations_if_enabled
     run_docker_scripts_if_enabled
-    run_scout_settings_sync
     dispatch_optimize
-    # Scout import is scheduled last so the background sleep gives Octane
-    # the full startup window before we start hammering the DB.
-    dispatch_scout_import
+    # Scout is intentionally deferred until after supervisord/Octane starts.
+    schedule_scout_tasks_post_start
 }
 
 bootstrap_container() {

@@ -60,7 +60,7 @@ import_model() {
 
     if [ "${scout_import_queue}" = "1" ]; then
         echo "Dispatching queued import for ${model_class}..."
-        php artisan scout:import "${model_class}" --queue --no-interaction
+        SCOUT_QUEUE=true php artisan scout:import "${model_class}" --no-interaction
         echo "Queued import dispatched for ${model_class}."
     else
         echo "Importing ${model_class}..."

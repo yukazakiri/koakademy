@@ -2,13 +2,13 @@ http:
   routers:
     # Portal (Laravel app)
     portal-secure:
-      rule: "Host(`portal.koakademy.test`)"
+      rule: "Host(`portal.dccp.test`)"
       entrypoints:
         - websecure
       service: app
       tls: true
     portal-http:
-      rule: "Host(`portal.koakademy.test`)"
+      rule: "Host(`portal.dccp.test`)"
       entrypoints:
         - web
       service: app
@@ -17,44 +17,18 @@ http:
 
     # Admin (Laravel app)
     admin-secure:
-      rule: "Host(`admin.koakademy.test`)"
+      rule: "Host(`admin.dccp.test`)"
       entrypoints:
         - websecure
       service: app
       tls: true
     admin-http:
-      rule: "Host(`admin.koakademy.test`)"
+      rule: "Host(`admin.dccp.test`)"
       entrypoints:
         - web
       service: app
       middlewares:
         - redirect-websecure
-
-    # MinIO
-    minio-secure:
-      rule: "Host(`minio.local.test`)"
-      entrypoints:
-        - websecure
-      service: minio
-      tls: true
-    minio-http:
-      rule: "Host(`minio.local.test`)"
-      entrypoints:
-        - web
-      service: minio
-
-    # MinIO Console
-    minio-console-secure:
-      rule: "Host(`minio-console.local.test`)"
-      entrypoints:
-        - websecure
-      service: minio-console
-      tls: true
-    minio-console-http:
-      rule: "Host(`minio-console.local.test`)"
-      entrypoints:
-        - web
-      service: minio-console
 
     # Mailpit
     mailpit-secure:
@@ -74,14 +48,6 @@ http:
       loadBalancer:
         servers:
           - url: "http://laravel:80"
-    minio:
-      loadBalancer:
-        servers:
-          - url: "http://minio:9000"
-    minio-console:
-      loadBalancer:
-        servers:
-          - url: "http://minio:8900"
     mailpit:
       loadBalancer:
         servers:
@@ -95,10 +61,10 @@ http:
 
 tls:
   certificates:
-    - certFile: /etc/traefik/certs/koakademy.test.pem
-      keyFile: /etc/traefik/certs/koakademy.test-key.pem
+    - certFile: /etc/traefik/certs/dccp.test.pem
+      keyFile: /etc/traefik/certs/dccp.test-key.pem
   stores:
     default:
       defaultCertificate:
-        certFile: /etc/traefik/certs/koakademy.test.pem
-        keyFile: /etc/traefik/certs/koakademy.test-key.pem
+        certFile: /etc/traefik/certs/dccp.test.pem
+        keyFile: /etc/traefik/certs/dccp.test-key.pem

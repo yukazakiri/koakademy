@@ -49,17 +49,6 @@ final class FacultyPortalData
             return $defaults;
         }
 
-        $activeClassesCount = $faculty->classes()->currentAcademicPeriod()->count();
-
-        $facultyClassIds = $faculty->classes()->currentAcademicPeriod()->pluck('id');
-
-        $totalStudentsCount = ClassEnrollment::whereIn(
-            'class_id',
-            $facultyClassIds
-        )
-            ->distinct('student_id')
-            ->count();
-
         $classesQuery = $faculty->classes()
             ->currentAcademicPeriod()
             ->with([
@@ -68,7 +57,19 @@ final class FacultyPortalData
                 'ShsSubject',
                 'Room',
                 'schedules.room',
-            ]);
+            ])
+            ->withCount('class_enrollments');
+
+        $activeClassesCount = $classesQuery->clone()->count();
+
+        $facultyClassIds = $classesQuery->clone()->pluck('id');
+
+        $totalStudentsCount = ClassEnrollment::whereIn(
+            'class_id',
+            $facultyClassIds
+        )
+            ->distinct('student_id')
+            ->count();
 
         $upcomingClasses = $classesQuery
             ->clone()

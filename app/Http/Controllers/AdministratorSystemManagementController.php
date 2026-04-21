@@ -870,8 +870,8 @@ final class AdministratorSystemManagementController extends Controller
                 'copyright_text' => $this->siteSettings->copyright_text,
                 'theme_color' => $this->siteSettings->theme_color,
                 'currency' => $this->siteSettings->currency,
-                'logo' => $this->siteSettings->logo,
-                'favicon' => $this->siteSettings->favicon,
+                'logo' => $this->siteSettings->getLogo(),
+                'favicon' => $this->siteSettings->getFavicon(),
             ],
         ];
     }

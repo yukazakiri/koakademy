@@ -49,3 +49,4 @@ GEMINI.md
 AGENTS.md
 boost.json
 opencode.json
+docker/traefik/certs/*

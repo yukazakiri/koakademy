@@ -1,18 +1,18 @@
 {
-  "version": "1.0.1-dev.0.10",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.0.1-dev.0.10",
-  "commit": "fc4cdefb1214c84c298d77f0edcb180995b327ea",
+  "version": "1.1.0",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0",
+  "commit": "1794fcbd47fdb126097b92ff5ae0382225fc31e0",
   "branch": "master",
-  "timestamp": "2026-04-21T03:48:27Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24702850113",
-  "release_type": "patch",
+  "timestamp": "2026-04-21T03:56:12Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24703064066",
+  "release_type": "official",
   "changelog": {
-    "current": "Version 1.0.1-dev.0.10 - Merge pull request #21 from yukazakiri/feat/defer-scout-post-start-scheduler",
-    "previous": "1.0.1-dev.0.9"
+    "current": "Version 1.1.0 - manual release",
+    "previous": "1.0.1-dev.0.10"
   },
   "metadata": {
     "author": "yukazakiri",
-    "workflow": "Auto Pre-release and Docker Tag",
+    "workflow": "Manual Official Release",
     "repository": "yukazakiri/koakademy"
   }
 }

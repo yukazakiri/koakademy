@@ -8,6 +8,7 @@ import { Progress } from "@/components/ui/progress";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { computeGwa, formatGwa, gradeScaleLabel, gwaToneClass, type GwaResult } from "@/lib/gwa";
 import { cn } from "@/lib/utils";
 import { User as UserType } from "@/types/user";
 import { Head, usePage } from "@inertiajs/react";
@@ -66,6 +67,48 @@ interface StudentClassesProps {
 }
 
 // --- Components ---
+
+const GwaChip = ({
+    label,
+    result,
+    size = "md",
+    className,
+}: {
+    label: string;
+    result: GwaResult;
+    size?: "sm" | "md";
+    className?: string;
+}) => {
+    const scaleLabel = gradeScaleLabel(result.scale);
+    const valueSize = size === "sm" ? "text-sm" : "text-base";
+    return (
+        <div
+            className={cn(
+                "bg-muted/30 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-full border px-3 py-1.5 text-xs",
+                className,
+            )}
+        >
+            <span className="font-semibold">{label}</span>
+            <span className="flex items-baseline gap-1">
+                <span className="text-muted-foreground uppercase">GWA</span>
+                <span className={cn("font-mono font-bold", valueSize, gwaToneClass(result))}>{formatGwa(result)}</span>
+                {scaleLabel && <span className="text-muted-foreground">({scaleLabel})</span>}
+            </span>
+            <span className="text-muted-foreground">
+                {result.gradedCount}/{result.itemCount} • {result.gradedUnits}/{result.totalUnits}u
+            </span>
+        </div>
+    );
+};
+
+const yearLabel = (year: number): string => {
+    if (year === 1) return "1st Year";
+    if (year === 2) return "2nd Year";
+    if (year === 3) return "3rd Year";
+    if (year === 4) return "4th Year";
+    return `Year ${year}`;
+};
+
 
 const StatusBadge = ({ status, grade }: { status: CurriculumSubject["status"]; grade: number | null }) => {
     switch (status) {
@@ -378,6 +421,36 @@ export default function StudentClasses({ user, student_name, course_name, progre
         [curriculum],
     );
 
+    // GWA computations (overall, per year, per year+semester)
+    const { overallGwa, yearGwaMap, semesterGwaMap } = useMemo(() => {
+        const yearMap = new Map<number, GwaResult>();
+        const semesterMap = new Map<string, GwaResult>();
+        const all: CurriculumSubject[] = [];
+
+        Object.entries(curriculum).forEach(([yearStr, sems]) => {
+            const year = parseInt(yearStr);
+            const yearSubjects: CurriculumSubject[] = [];
+
+            Object.entries(sems).forEach(([semStr, subs]) => {
+                const semester = parseInt(semStr);
+                const subjects = subs as CurriculumSubject[];
+                semesterMap.set(`${year}-${semester}`, computeGwa(subjects));
+                yearSubjects.push(...subjects);
+            });
+
+            yearMap.set(year, computeGwa(yearSubjects));
+            all.push(...yearSubjects);
+        });
+
+        return {
+            overallGwa: computeGwa(all),
+            yearGwaMap: yearMap,
+            semesterGwaMap: semesterMap,
+        };
+    }, [curriculum]);
+
+    const activeYearGwa = selectedYear === "all" ? null : yearGwaMap.get(selectedYear) ?? null;
+
     useEffect(() => {
         const [, queryString = ""] = url.split("?");
         const searchParams = new URLSearchParams(queryString);
@@ -490,8 +563,17 @@ export default function StudentClasses({ user, student_name, course_name, progre
                                             <Sparkles className="h-6 w-6" />
                                         </div>
                                         <div>
-                                            <div className="text-2xl font-bold">Good Standing</div>
-                                            <p className="text-muted-foreground text-sm">Current Status</p>
+                                            <div className={cn("text-3xl font-bold font-mono", gwaToneClass(overallGwa))}>
+                                                {formatGwa(overallGwa)}
+                                            </div>
+                                            <p className="text-muted-foreground text-sm">
+                                                Overall GWA
+                                                {gradeScaleLabel(overallGwa.scale) && ` • ${gradeScaleLabel(overallGwa.scale)}`}
+                                            </p>
+                                            <p className="text-muted-foreground/70 mt-1 text-xs">
+                                                {overallGwa.gradedCount}/{overallGwa.itemCount} subjects •{" "}
+                                                {overallGwa.gradedUnits}/{overallGwa.totalUnits} units
+                                            </p>
                                         </div>
                                     </CardContent>
                                 </Card>
@@ -610,8 +692,18 @@ export default function StudentClasses({ user, student_name, course_name, progre
 
                                     <CardContent className="bg-muted/5 min-h-[500px] p-6">
                                         <motion.div layout className="space-y-8">
+                                            {activeYearGwa && (
+                                                <div className="flex justify-end">
+                                                    <GwaChip
+                                                        label={`${yearLabel(selectedYear as number)} GWA`}
+                                                        result={activeYearGwa}
+                                                    />
+                                                </div>
+                                            )}
                                             {filteredContent.length > 0 ? (
-                                                filteredContent.map((section, idx) => (
+                                                filteredContent.map((section, idx) => {
+                                                    const semesterResult = semesterGwaMap.get(`${section.year}-${section.semester}`);
+                                                    return (
                                                     <motion.div
                                                         key={`${section.year}-${section.semester}`}
                                                         initial={{ opacity: 0, y: 20 }}
@@ -619,7 +711,7 @@ export default function StudentClasses({ user, student_name, course_name, progre
                                                         transition={{ delay: idx * 0.05 }}
                                                         className="space-y-3"
                                                     >
-                                                        <div className="flex items-center gap-3 px-2">
+                                                        <div className="flex flex-wrap items-center gap-3 px-2">
                                                             <Badge
                                                                 variant="outline"
                                                                 className="bg-muted/50 text-sm font-bold tracking-wider uppercase"
@@ -632,6 +724,9 @@ export default function StudentClasses({ user, student_name, course_name, progre
                                                                       : "Summer"}
                                                             </Badge>
                                                             <div className="bg-border/50 h-px flex-1" />
+                                                            {semesterResult && (
+                                                                <GwaChip label="Sem GWA" result={semesterResult} size="sm" />
+                                                            )}
                                                         </div>
 
                                                         <div className="overflow-x-auto rounded-md border">
@@ -663,7 +758,8 @@ export default function StudentClasses({ user, student_name, course_name, progre
                                                             </Table>
                                                         </div>
                                                     </motion.div>
-                                                ))
+                                                    );
+                                                })
                                             ) : (
                                                 <div className="text-muted-foreground flex flex-col items-center justify-center py-20">
                                                     <Search className="mb-4 h-12 w-12 opacity-20" />

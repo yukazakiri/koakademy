@@ -62,6 +62,7 @@ final class HandleInertiaRequests extends Middleware
                 'socialMediaSettings' => $settingsService->getSocialMediaSettings(),
                 'siteSettings' => $settingsService->getSiteSettings(),
                 'branding' => $settingsService->getBranding(),
+                'grading' => $settingsService->getGrading(),
                 'analytics' => $analyticsService->getFrontendConfig(),
                 'meta' => [
                     'appName' => $settingsService->getAppName($request),

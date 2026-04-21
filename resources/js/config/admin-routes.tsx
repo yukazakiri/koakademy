@@ -665,6 +665,8 @@ export const ADMIN_ROUTES: AdminRoute[] = [
             "Update:SystemManagementApi",
             "View:SystemManagementNotifications",
             "Update:SystemManagementNotifications",
+            "View:SystemManagementGrading",
+            "Update:SystemManagementGrading",
             "View:SystemManagementPulse",
         ],
         allowedRoles: SYSTEM_ADMIN_ROLES,
@@ -718,6 +720,11 @@ export const ADMIN_ROUTES: AdminRoute[] = [
                 title: "Notifications",
                 link: "/administrators/system-management/notifications",
                 icon: <IconBell className="size-4" />,
+            },
+            {
+                title: "Grading System",
+                link: "/administrators/system-management/grading",
+                icon: <IconClipboardCheck className="size-4" />,
             },
             {
                 title: "System Health Monitor",

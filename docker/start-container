@@ -391,10 +391,14 @@ schedule_scout_import_background() {
 
 run_optimize_foreground() {
     if [ "${force_optimize_clear}" = "true" ]; then
-        php artisan optimize:clear
+        php artisan optimize:clear || {
+            echo "WARN: optimize:clear failed; continuing startup."
+        }
     fi
 
-    php artisan optimize
+    php artisan optimize || {
+        echo "WARN: php artisan optimize failed; continuing startup without refreshed caches."
+    }
 }
 
 schedule_optimize_background() {

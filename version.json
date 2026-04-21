@@ -1,14 +1,14 @@
 {
-  "version": "1.0.1-dev.0.9",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.0.1-dev.0.9",
-  "commit": "e2a449f933ae7cbe0711053d028f2fe2c587117a",
+  "version": "1.0.1-dev.0.10",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.0.1-dev.0.10",
+  "commit": "fc4cdefb1214c84c298d77f0edcb180995b327ea",
   "branch": "master",
-  "timestamp": "2026-04-21T03:16:23Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24702027353",
+  "timestamp": "2026-04-21T03:48:27Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24702850113",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.0.1-dev.0.9 - Merge pull request #20 from yukazakiri/y-branch-2",
-    "previous": "1.0.1-dev.0.8"
+    "current": "Version 1.0.1-dev.0.10 - Merge pull request #21 from yukazakiri/feat/defer-scout-post-start-scheduler",
+    "previous": "1.0.1-dev.0.9"
   },
   "metadata": {
     "author": "yukazakiri",

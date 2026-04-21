@@ -1,14 +1,14 @@
 {
-  "version": "1.0.1-dev.0.6",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.0.1-dev.0.6",
-  "commit": "f718c29abc94c2baa0dcb57228152cf222fdae6d",
+  "version": "1.0.1-dev.0.7",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.0.1-dev.0.7",
+  "commit": "39e9ebeb13a3031cf15c26e423e8659e62a4391c",
   "branch": "master",
-  "timestamp": "2026-04-20T10:08:44Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24660509069",
+  "timestamp": "2026-04-21T02:24:52Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24700636041",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.0.1-dev.0.6 - wip",
-    "previous": "1.0.1-dev.0.5"
+    "current": "Version 1.0.1-dev.0.7 - Merge pull request #18 from yukazakiri/feat/pdf-gwa-ui-chip",
+    "previous": "1.0.1-dev.0.6"
   },
   "metadata": {
     "author": "yukazakiri",

@@ -1,0 +1,187 @@
+name: Project Roadmap Automation
+
+on:
+  issues:
+    types: [opened, reopened]
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, closed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PROJECT_URL: https://github.com/users/yukazakiri/projects/4
+  PROJECT_ID: PVT_kwHOB67-Yc4BVOBS
+  STATUS_FIELD_ID: PVTSSF_lAHOB67-Yc4BVOBSzhQrWBk
+  STATUS_TODO_OPTION_ID: f75ad846
+  STATUS_IN_PROGRESS_OPTION_ID: 47fc9ee4
+  STATUS_DONE_OPTION_ID: 98236657
+
+jobs:
+  add-issue-to-project:
+    if: github.event_name == 'issues'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add issue to roadmap project
+        uses: actions/add-to-project@v1.0.2
+        with:
+          project-url: ${{ env.PROJECT_URL }}
+          github-token: ${{ secrets.PROJECT_AUTOMATION_TOKEN }}
+
+      - name: Set issue status to Todo
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PROJECT_AUTOMATION_TOKEN }}
+          script: |
+            const projectId = process.env.PROJECT_ID;
+            const fieldId = process.env.STATUS_FIELD_ID;
+            const todoOptionId = process.env.STATUS_TODO_OPTION_ID;
+            const issueNodeId = context.payload.issue.node_id;
+
+            const getProjectItems = async () => github.graphql(
+              `query($projectId: ID!) {
+                node(id: $projectId) {
+                  ... on ProjectV2 {
+                    items(first: 100) {
+                      nodes {
+                        id
+                        content {
+                          ... on Issue { id }
+                        }
+                      }
+                    }
+                  }
+                }
+              }`,
+              { projectId },
+            );
+
+            let projectItemId = null;
+            for (let attempt = 1; attempt <= 10; attempt += 1) {
+              const result = await getProjectItems();
+              const match = result.node.items.nodes.find((item) => item.content?.id === issueNodeId);
+              if (match) {
+                projectItemId = match.id;
+                break;
+              }
+              await new Promise((resolve) => setTimeout(resolve, 3000));
+            }
+
+            if (!projectItemId) {
+              core.setFailed('Issue was not found in project after retries.');
+              return;
+            }
+
+            await github.graphql(
+              `mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+                updateProjectV2ItemFieldValue(
+                  input: {
+                    projectId: $projectId
+                    itemId: $itemId
+                    fieldId: $fieldId
+                    value: { singleSelectOptionId: $optionId }
+                  }
+                ) {
+                  projectV2Item { id }
+                }
+              }`,
+              {
+                projectId,
+                itemId: projectItemId,
+                fieldId,
+                optionId: todoOptionId,
+              },
+            );
+
+  add-pr-to-project:
+    if: github.event_name == 'pull_request' && github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add PR to roadmap project
+        uses: actions/add-to-project@v1.0.2
+        with:
+          project-url: ${{ env.PROJECT_URL }}
+          github-token: ${{ secrets.PROJECT_AUTOMATION_TOKEN }}
+
+  update-pr-status:
+    runs-on: ubuntu-latest
+    needs: [add-pr-to-project]
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    steps:
+      - name: Set PR status in roadmap project
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PROJECT_AUTOMATION_TOKEN }}
+          script: |
+            const projectId = process.env.PROJECT_ID;
+            const fieldId = process.env.STATUS_FIELD_ID;
+            const todoOptionId = process.env.STATUS_TODO_OPTION_ID;
+            const inProgressOptionId = process.env.STATUS_IN_PROGRESS_OPTION_ID;
+            const doneOptionId = process.env.STATUS_DONE_OPTION_ID;
+
+            const prNodeId = context.payload.pull_request.node_id;
+            const action = context.payload.action;
+            const isDraft = context.payload.pull_request.draft;
+
+            let targetOptionId = inProgressOptionId;
+            if (action === 'closed') {
+              targetOptionId = doneOptionId;
+            } else if (isDraft || action === 'converted_to_draft') {
+              targetOptionId = todoOptionId;
+            }
+
+            const getProjectItems = async () => github.graphql(
+              `query($projectId: ID!) {
+                node(id: $projectId) {
+                  ... on ProjectV2 {
+                    items(first: 100) {
+                      nodes {
+                        id
+                        content {
+                          ... on PullRequest { id }
+                        }
+                      }
+                    }
+                  }
+                }
+              }`,
+              { projectId },
+            );
+
+            let projectItemId = null;
+            for (let attempt = 1; attempt <= 10; attempt += 1) {
+              const result = await getProjectItems();
+              const match = result.node.items.nodes.find((item) => item.content?.id === prNodeId);
+              if (match) {
+                projectItemId = match.id;
+                break;
+              }
+              await new Promise((resolve) => setTimeout(resolve, 3000));
+            }
+
+            if (!projectItemId) {
+              core.setFailed('Pull request was not found in project after retries.');
+              return;
+            }
+
+            await github.graphql(
+              `mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+                updateProjectV2ItemFieldValue(
+                  input: {
+                    projectId: $projectId
+                    itemId: $itemId
+                    fieldId: $fieldId
+                    value: { singleSelectOptionId: $optionId }
+                  }
+                ) {
+                  projectV2Item { id }
+                }
+              }`,
+              {
+                projectId,
+                itemId: projectItemId,
+                fieldId,
+                optionId: targetOptionId,
+              },
+            );

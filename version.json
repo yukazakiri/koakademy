@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.2.0",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.2.0",
-  "commit": "1af348dea30eb4f7aca25e568e8b70ee7059d2ce",
+  "version": "1.1.0-dev.2.1",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.2.1",
+  "commit": "87759124ee8c3a412eceb3c7e7568762b5576604",
   "branch": "master",
-  "timestamp": "2026-04-22T06:26:53Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24763526465",
-  "release_type": "feature",
+  "timestamp": "2026-04-22T07:04:41Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24764770254",
+  "release_type": "patch",
   "changelog": {
-    "current": "Version 1.1.0-dev.2.0 - feat(enrollment) improved enrollment workflow (#34)",
-    "previous": "1.1.0-dev.1.2"
+    "current": "Version 1.1.0-dev.2.1 - ci: add GitHub workflow automations (#33)",
+    "previous": "1.1.0-dev.2.0"
   },
   "metadata": {
     "author": "yukazakiri",

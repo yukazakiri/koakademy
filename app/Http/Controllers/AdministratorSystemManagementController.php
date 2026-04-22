@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Services\AnalyticsSettingsService;
 use App\Services\EnrollmentPipelineService;
 use App\Services\GeneralSettingsService;
+use App\Services\GradingSystemService;
 use App\Services\LogoConversionService;
 use App\Settings\SiteSettings;
 use App\Support\SystemManagementPermissions;
@@ -96,6 +97,33 @@ final class AdministratorSystemManagementController extends Controller
     public function pulse(): Response
     {
         return $this->renderSystemManagementPage('administrators/system-management/pulse', 'pulse', 'viewPulse');
+    }
+
+    public function grading(): Response
+    {
+        return $this->renderSystemManagementPage('administrators/system-management/grading', 'grading', 'viewGrading');
+    }
+
+    public function updateGrading(Request $request): RedirectResponse
+    {
+        $this->authorize('updateGrading', GeneralSetting::class);
+
+        $validated = $request->validate([
+            'scale' => 'required|in:point,percent,auto',
+            'point_passing_grade' => 'required|numeric|min:1|max:5',
+            'percent_passing_grade' => 'required|numeric|min:0|max:100',
+            'point_decimal_places' => 'required|integer|min:0|max:6',
+            'percent_decimal_places' => 'required|integer|min:0|max:6',
+            'include_failed_in_gwa' => 'required|boolean',
+            'excluded_keywords' => 'array',
+            'excluded_keywords.*' => 'string|max:64',
+            'excluded_subject_ids' => 'array',
+            'excluded_subject_ids.*' => 'integer|min:1',
+        ]);
+
+        app(GradingSystemService::class)->update($validated);
+
+        return Redirect::back()->with('success', 'Grading system updated successfully.');
     }
 
     public function notifications(): Response
@@ -806,6 +834,8 @@ final class AdministratorSystemManagementController extends Controller
             'enrollment_pipeline' => $this->enrollmentPipelineService->getConfiguration(),
             'enrollment_stats' => $this->enrollmentPipelineService->getStatsConfiguration(),
             'api_management' => $generalSettingsService->getApiManagementConfig(),
+            'grading_config' => app(GradingSystemService::class)->getConfig(),
+            'courses_with_subjects' => app(GradingSystemService::class)->getCoursesWithSubjects(),
             'public_api_url' => url('/api/v1/public/settings'),
             'public_api_fields' => GeneralSettingsService::publicApiFieldDefinitions(),
             'available_roles' => Role::query()->orderBy('name')->pluck('name')->values(),
@@ -867,6 +897,7 @@ final class AdministratorSystemManagementController extends Controller
                 'mail' => 'updateMail',
                 'api' => 'updateApi',
                 'notifications' => 'updateNotifications',
+                'grading' => 'updateGrading',
                 default => 'viewAny',
             }, GeneralSetting::class);
 
@@ -881,6 +912,7 @@ final class AdministratorSystemManagementController extends Controller
                 'mail' => 'viewMail',
                 'api' => 'viewApi',
                 'notifications' => 'viewNotifications',
+                'grading' => 'viewGrading',
                 'pulse' => 'viewPulse',
             }, GeneralSetting::class);
 

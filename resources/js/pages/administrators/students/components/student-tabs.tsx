@@ -26,6 +26,11 @@ export function StudentTabs({ student, options }: StudentTabsProps) {
     const flags = useFeatureFlags();
     const currency = props.branding?.currency || "PHP";
     const zeroString = currency === "USD" ? "$ 0.00" : "₱ 0.00";
+    const soaPrintUrl = route("administrators.students.tuition.soa", {
+        student: student.id,
+        school_year: student.tuition?.school_year ?? student.current_school_year,
+        semester: student.tuition?.semester ?? student.current_semester,
+    });
 
     return (
                         <Tabs defaultValue="academic" className="w-full">
@@ -222,9 +227,11 @@ export function StudentTabs({ student, options }: StudentTabsProps) {
                                                     >
                                                         {student.tuition.payment_status}
                                                     </Badge>
-                                                    <Button variant="outline" size="sm" className="h-8 gap-2">
-                                                        <Printer className="h-3.5 w-3.5" />
-                                                        Print SOA
+                                                    <Button asChild variant="outline" size="sm" className="h-8 gap-2">
+                                                        <a href={soaPrintUrl as string} target="_blank" rel="noreferrer">
+                                                            <Printer className="h-3.5 w-3.5" />
+                                                            Print SOA
+                                                        </a>
                                                     </Button>
                                                 </div>
                                             </div>

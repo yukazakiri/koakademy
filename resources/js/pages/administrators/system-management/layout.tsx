@@ -3,7 +3,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import type { User } from "@/types/user";
 import { Head } from "@inertiajs/react";
 import type { LucideIcon } from "lucide-react";
-import { Activity, BarChart3, Bell, Building2, Database, Globe, List, Lock, Mail, Palette, Share2, Webhook } from "lucide-react";
+import { Activity, BarChart3, Bell, Building2, Calculator, Database, Globe, List, Lock, Mail, Palette, Share2, Webhook } from "lucide-react";
 import type { ReactNode } from "react";
 import type { SystemManagementAccess, SystemManagementSectionKey } from "./types";
 
@@ -85,6 +85,13 @@ export const systemManagementNavItems: SystemManagementNavItem[] = [
         description: "Configure notification channels and providers.",
         href: "/administrators/system-management/notifications",
         icon: Bell,
+    },
+    {
+        key: "grading",
+        label: "Grading System",
+        description: "Scale, passing marks, and GWA exclusions (OJT, NSTP, etc.).",
+        href: "/administrators/system-management/grading",
+        icon: Calculator,
     },
     {
         key: "pulse",

@@ -23,13 +23,17 @@ use App\Models\Student;
 use App\Models\StudentClearance;
 use App\Models\StudentEnrollment;
 use App\Models\StudentStatusRecord;
+use App\Models\StudentTuition;
 use App\Models\Subject;
 use App\Models\SubjectEnrollment;
 use App\Services\GeneralSettingsService;
 use App\Services\StudentIdUpdateService;
+use App\Settings\SiteSettings;
 use Exception;
+use FPDF;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
@@ -39,6 +43,8 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Throwable;
 
 final class AdministratorStudentManagementController extends Controller
 {
@@ -620,6 +626,196 @@ final class AdministratorStudentManagementController extends Controller
                 ],
             ],
         ]);
+    }
+
+    public function printSoa(Request $request, Student $student): BinaryFileResponse|HttpResponse
+    {
+        $settings = app(GeneralSettingsService::class);
+        $semester = (int) $request->input('semester', $settings->getCurrentSemester());
+        $schoolYearInput = $request->input('school_year', $settings->getCurrentSchoolYearString());
+        $schoolYear = is_string($schoolYearInput) && $schoolYearInput !== '' ? $schoolYearInput : $settings->getCurrentSchoolYearString();
+
+        $student->loadMissing('Course');
+
+        /** @var StudentTuition|null $tuition */
+        $tuition = StudentTuition::with('enrollment.student')
+            ->where('student_id', $student->id)
+            ->where('semester', $semester)
+            ->where('school_year', $schoolYear)
+            ->first();
+
+        if (! $tuition) {
+            $enrollment = StudentEnrollment::query()
+                ->where('student_id', $student->id)
+                ->where('semester', $semester)
+                ->where('school_year', $schoolYear)
+                ->first();
+
+            if ($enrollment) {
+                $tuition = StudentTuition::with('enrollment.student')
+                    ->where('enrollment_id', $enrollment->id)
+                    ->first();
+            }
+        }
+
+        if ($tuition) {
+            $tuition->append([
+                'formatted_total_balance',
+                'formatted_overall_tuition',
+                'formatted_total_tuition',
+                'formatted_semester',
+                'formatted_total_lectures',
+                'formatted_total_laboratory',
+                'formatted_total_miscelaneous_fees',
+                'formatted_downpayment',
+                'formatted_discount',
+                'formatted_total_paid',
+                'payment_progress',
+                'payment_status',
+            ]);
+        }
+
+        $transactions = collect();
+        $enrollment = $tuition?->enrollment;
+
+        if (! $enrollment) {
+            $enrollment = StudentEnrollment::query()
+                ->where('student_id', $student->id)
+                ->where('semester', $semester)
+                ->where('school_year', $schoolYear)
+                ->first();
+        }
+
+        if ($enrollment) {
+            $enrollment->setRelation('student', $student);
+            $transactions = $enrollment->enrollmentTransactions()
+                ->with('transaction')
+                ->get();
+        }
+
+        $mappedTransactions = $transactions->map(function ($transaction): array {
+            $payment = $transaction->relationLoaded('transaction') && $transaction->transaction ? $transaction->transaction : $transaction;
+            $appliedAmount = $transaction->amount
+                ?? $payment->raw_total_amount
+                ?? $payment->total_amount
+                ?? 0;
+
+            return [
+                'id' => $transaction->id,
+                'date' => ($payment->transaction_date ?? $payment->created_at ?? $transaction->created_at)?->format('M d, Y'),
+                'description' => $payment->description ?? 'Tuition Payment',
+                'amount' => (float) $appliedAmount,
+                'status' => $transaction->status ?? $payment->status,
+                'invoice' => $payment->invoicenumber,
+                'method' => $payment->payment_method,
+            ];
+        });
+
+        $generalSettings = DB::table('general_settings')->first();
+        $siteSettings = app(SiteSettings::class);
+        $generatedAt = now()->format('F d, Y h:i A');
+        $currencyCode = $siteSettings->getCurrency();
+        $currencySymbol = match ($currencyCode) {
+            'USD' => '$',
+            'EUR' => '€',
+            default => '₱',
+        };
+
+        $viewData = [
+            'student' => [
+                'id' => $student->id,
+                'student_no' => $student->student_id ?: $student->id,
+                'name' => $student->full_name ?? $student->name,
+                'email' => $student->email,
+                'course' => $student->Course?->title ?? $student->Course?->code ?? 'N/A',
+            ],
+            'tuition' => $tuition,
+            'transactions' => $mappedTransactions,
+            'filters' => [
+                'semester' => $semester,
+                'school_year' => $schoolYear,
+            ],
+            'school' => [
+                'name' => $siteSettings->getOrganizationName() ?: ($generalSettings?->school_portal_title ?? $generalSettings?->site_name ?? 'KoAkademy'),
+                'address' => $siteSettings->getOrganizationAddress() ?? '',
+                'logo' => $siteSettings->getLogo(),
+                'favicon' => $siteSettings->getFavicon(),
+                'tagline' => $siteSettings->getTagline(),
+            ],
+            'generated_at' => $generatedAt,
+            'currency_code' => $currencyCode,
+            'currency_symbol' => $currencySymbol,
+        ];
+
+        $tempBasePath = tempnam(sys_get_temp_dir(), 'student_soa_');
+
+        if ($tempBasePath === false) {
+            abort(500, 'Failed to allocate temporary file for PDF generation.');
+        }
+
+        $tempPath = $tempBasePath.'.pdf';
+        rename($tempBasePath, $tempPath);
+
+        $studentNumber = (string) ($student->student_id ?: $student->id);
+        $safeStudentNumber = preg_replace('/[^A-Za-z0-9_-]/', '-', $studentNumber) ?: 'student';
+        $downloadName = sprintf(
+            'soa-%s-%s-sem-%s.pdf',
+            $safeStudentNumber,
+            preg_replace('/\s+/', '', str_replace('-', '', $schoolYear)),
+            $semester
+        );
+
+        try {
+            $pdfService = app(\App\Services\PdfGenerationService::class);
+            $pdfService->generatePdfFromView('pdf.student-soa', $viewData, $tempPath, [
+                'headless' => true,
+                'no-sandbox' => true,
+                'disable-dev-shm-usage' => true,
+                'disable-gpu' => true,
+                'no-first-run' => true,
+                'disable-background-timer-throttling' => true,
+                'disable-backgrounding-occluded-windows' => true,
+                'disable-renderer-backgrounding' => true,
+                'print-to-pdf-no-header' => true,
+                'run-all-compositor-stages-before-draw' => true,
+                'disable-extensions' => true,
+                'virtual-time-budget' => 10000,
+            ]);
+
+            return response()->file($tempPath, [
+                'Content-Type' => 'application/pdf',
+                'Content-Disposition' => 'inline; filename="'.$downloadName.'"',
+            ])->deleteFileAfterSend(true);
+        } catch (Exception $exception) {
+            \Illuminate\Support\Facades\Log::warning('Primary SOA PDF renderer failed. Falling back to FPDF.', [
+                'student_id' => $student->id,
+                'school_year' => $schoolYear,
+                'semester' => $semester,
+                'error' => $exception->getMessage(),
+            ]);
+
+            if (file_exists($tempPath)) {
+                unlink($tempPath);
+            }
+
+            try {
+                $pdfBinary = $this->generateStudentSoaPdfFallback($viewData);
+
+                return response($pdfBinary, 200, [
+                    'Content-Type' => 'application/pdf',
+                    'Content-Disposition' => 'inline; filename="'.$downloadName.'"',
+                ]);
+            } catch (Exception $fallbackException) {
+                \Illuminate\Support\Facades\Log::error('Failed to generate student SOA PDF', [
+                    'student_id' => $student->id,
+                    'school_year' => $schoolYear,
+                    'semester' => $semester,
+                    'error' => $fallbackException->getMessage(),
+                ]);
+
+                abort(500, 'Failed to generate student SOA PDF.');
+            }
+        }
     }
 
     public function create(): Response
@@ -1690,6 +1886,242 @@ final class AdministratorStudentManagementController extends Controller
         } catch (Exception $e) {
             return back()->with('error', 'Failed to delete student: '.$e->getMessage());
         }
+    }
+
+    /**
+     * @param  array{
+     *     student: array{id:int,student_no:int|string,name:string,email:?string,course:string},
+     *     tuition: ?StudentTuition,
+     *     transactions: \Illuminate\Support\Collection<int, array{id:int,date:?string,description:string,amount:int|float|string,status:?string,invoice:?string,method:?string}>,
+     *     filters: array{semester:int,school_year:string},
+     *     school: array{name:string,address:string,logo:string,favicon:string,tagline:string},
+     *     generated_at: string,
+     *     currency_code: string,
+     *     currency_symbol: string
+     * }  $data
+     */
+    private function generateStudentSoaPdfFallback(array $data): string
+    {
+        $pdf = new FPDF('P', 'mm', 'A4');
+        $pdf->SetAutoPageBreak(true, 10);
+        $pdf->AddPage();
+
+        $student = $data['student'];
+        $tuition = $data['tuition'];
+        $transactions = $data['transactions'];
+        $filters = $data['filters'];
+        $school = $data['school'];
+        $currencySymbol = $data['currency_symbol'] ?? '₱';
+        $currencyCode = $data['currency_code'] ?? 'PHP';
+        $currencyPrefix = preg_match('/^[\x20-\x7E]+$/', (string) $currencySymbol) === 1
+            ? (string) $currencySymbol
+            : ((string) $currencyCode).' ';
+
+        $temporaryImagePaths = [];
+
+        $formatMoney = fn (int|float|string|null $amount): string => $currencyPrefix.number_format((float) $amount, 2);
+
+        $assessmentTotal = (float) ($tuition?->overall_tuition ?? 0);
+        $ledgerBalance = (float) ($tuition?->total_balance ?? 0);
+        $paymentHistoryTotal = $transactions->sum(fn (array $row): float => (float) ($row['amount'] ?? 0));
+        $ledgerPaid = $tuition ? max(0, $assessmentTotal - $ledgerBalance) : $paymentHistoryTotal;
+        $totalPayments = $tuition ? $ledgerPaid : $paymentHistoryTotal;
+        $balanceDue = $tuition ? $ledgerBalance : max(0, $assessmentTotal - $paymentHistoryTotal);
+        $semesterLabel = ((int) $filters['semester']) === 1 ? '1st Semester' : (((int) $filters['semester']) === 2 ? '2nd Semester' : 'Semester '.$filters['semester']);
+
+        $logoPath = $this->resolveSoaPdfImagePath($school['logo'] ?? null, $temporaryImagePaths);
+        if (is_string($logoPath)) {
+            $pdf->Image($logoPath, 12, 10, 16, 16);
+        }
+
+        $faviconPath = $this->resolveSoaPdfImagePath($school['favicon'] ?? null, $temporaryImagePaths);
+        if (is_string($faviconPath)) {
+            $pdf->Image($faviconPath, 186, 10, 8, 8);
+        }
+
+        $pdf->SetFont('Arial', '', 8);
+        $pdf->SetTextColor(70, 70, 70);
+        $pdf->Cell(0, 4, $this->soaPdfText('Republic of the Philippines'), 0, 1, 'C');
+        $pdf->SetTextColor(0, 0, 0);
+        $pdf->SetFont('Arial', 'B', 15);
+        $pdf->Cell(0, 7, $this->soaPdfText((string) ($school['name'] ?? 'KoAkademy')), 0, 1, 'C');
+        $pdf->SetFont('Arial', '', 9);
+        if (is_string($school['tagline'] ?? null) && mb_trim((string) $school['tagline']) !== '') {
+            $pdf->SetTextColor(80, 80, 80);
+            $pdf->Cell(0, 5, $this->soaPdfText((string) $school['tagline']), 0, 1, 'C');
+            $pdf->SetTextColor(0, 0, 0);
+        }
+        $pdf->Cell(0, 5, $this->soaPdfText((string) ($school['address'] ?? '')), 0, 1, 'C');
+        $pdf->Ln(2);
+        $pdf->Line(10, $pdf->GetY(), 200, $pdf->GetY());
+        $pdf->Ln(4);
+
+        $pdf->SetFont('Arial', 'B', 13);
+        $pdf->Cell(0, 6, $this->soaPdfText('Statement of Account'), 0, 1, 'C');
+        $pdf->SetFont('Arial', '', 9);
+        $pdf->SetTextColor(80, 80, 80);
+        $pdf->Cell(0, 5, $this->soaPdfText('Generated: '.($data['generated_at'] ?? '')), 0, 1, 'C');
+        $pdf->SetTextColor(0, 0, 0);
+        $pdf->Ln(3);
+
+        $pdf->SetFont('Arial', 'B', 8);
+        $pdf->SetFillColor(242, 242, 242);
+        $pdf->Cell(95, 6, $this->soaPdfText('Control No.: SOA-'.(string) ($student['student_no'] ?? $student['id'] ?? 'N/A').'-'.preg_replace('/\s|-/u', '', (string) ($filters['school_year'] ?? '')).'-'.(string) ($filters['semester'] ?? '')), 1, 0, 'L', true);
+        $pdf->Cell(95, 6, $this->soaPdfText('School Year / Term: '.(string) ($filters['school_year'] ?? '').' - '.$semesterLabel), 1, 1, 'L', true);
+        $pdf->Ln(2);
+
+        $pdf->SetFont('Arial', 'B', 9);
+        $pdf->SetFillColor(229, 229, 229);
+        $pdf->Cell(190, 6, $this->soaPdfText('STUDENT INFORMATION'), 1, 1, 'L', true);
+
+        $pdf->SetFont('Arial', '', 9);
+        $pdf->Cell(38, 6, $this->soaPdfText('Student No.'), 1, 0);
+        $pdf->Cell(57, 6, $this->soaPdfText(mb_strimwidth((string) ($student['student_no'] ?? $student['id'] ?? 'N/A'), 0, 26, '...')), 1, 0);
+        $pdf->Cell(38, 6, $this->soaPdfText('Student Name'), 1, 0);
+        $pdf->Cell(57, 6, $this->soaPdfText(mb_strimwidth((string) ($student['name'] ?? 'N/A'), 0, 38, '...')), 1, 1);
+
+        $pdf->Cell(38, 6, $this->soaPdfText('Course'), 1, 0);
+        $pdf->Cell(57, 6, $this->soaPdfText(mb_strimwidth((string) ($student['course'] ?? 'N/A'), 0, 34, '...')), 1, 0);
+        $pdf->Cell(38, 6, $this->soaPdfText('Term'), 1, 0);
+        $pdf->Cell(57, 6, $this->soaPdfText(mb_strimwidth($semesterLabel.', A.Y. '.((string) ($filters['school_year'] ?? '')), 0, 34, '...')), 1, 1);
+        $pdf->Ln(3);
+
+        $pdf->SetFont('Arial', 'B', 9);
+        $pdf->SetFillColor(229, 229, 229);
+        $pdf->Cell(190, 6, $this->soaPdfText('ACCOUNT SUMMARY'), 1, 1, 'L', true);
+        $pdf->SetFont('Arial', '', 9);
+
+        $pdf->Cell(100, 6, $this->soaPdfText('Total Assessment'), 1, 0);
+        $pdf->Cell(90, 6, $this->soaPdfText($formatMoney($assessmentTotal)), 1, 1, 'R');
+        $pdf->Cell(100, 6, $this->soaPdfText('Total Payments'), 1, 0);
+        $pdf->Cell(90, 6, $this->soaPdfText($formatMoney($totalPayments)), 1, 1, 'R');
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->SetFillColor(245, 245, 245);
+        $pdf->Cell(100, 7, $this->soaPdfText('BALANCE DUE'), 1, 0);
+        $pdf->Cell(90, 7, $this->soaPdfText($formatMoney($balanceDue)), 1, 1, 'R', true);
+        $pdf->Ln(3);
+
+        $pdf->SetFont('Arial', 'B', 9);
+        $pdf->SetFillColor(229, 229, 229);
+        $pdf->Cell(190, 6, $this->soaPdfText('PAYMENT HISTORY'), 1, 1, 'L', true);
+        $pdf->SetFont('Arial', 'B', 8);
+        $pdf->SetFillColor(242, 242, 242);
+        $pdf->Cell(30, 6, $this->soaPdfText('Date'), 1, 0);
+        $pdf->Cell(35, 6, $this->soaPdfText('OR No.'), 1, 0);
+        $pdf->Cell(90, 6, $this->soaPdfText('Particulars'), 1, 0);
+        $pdf->Cell(35, 6, $this->soaPdfText('Amount'), 1, 1, 'R', true);
+
+        $pdf->SetFont('Arial', '', 8);
+        $rows = $transactions->take(18);
+        if ($rows->isEmpty()) {
+            $pdf->Cell(190, 6, $this->soaPdfText('No payment records found for the selected term.'), 1, 1, 'C');
+        } else {
+            foreach ($rows as $row) {
+                if ($pdf->GetY() > 265) {
+                    $pdf->AddPage();
+                }
+
+                $pdf->Cell(30, 6, $this->soaPdfText((string) ($row['date'] ?? '—')), 1, 0);
+                $pdf->Cell(35, 6, $this->soaPdfText((string) ($row['invoice'] ?? '-')), 1, 0);
+                $pdf->Cell(90, 6, $this->soaPdfText((string) ($row['description'] ?? 'Tuition Payment')), 1, 0);
+                $pdf->Cell(35, 6, $this->soaPdfText($formatMoney($row['amount'] ?? 0)), 1, 1, 'R');
+            }
+        }
+
+        $pdf->SetFont('Arial', 'B', 8);
+        $pdf->SetFillColor(245, 245, 245);
+        $pdf->Cell(155, 6, $this->soaPdfText('PAYMENT HISTORY TOTAL'), 1, 0);
+        $pdf->Cell(35, 6, $this->soaPdfText($formatMoney($paymentHistoryTotal)), 1, 1, 'R', true);
+
+        $pdf->Ln(6);
+        $pdf->SetFont('Arial', '', 8);
+        $pdf->Cell(0, 5, $this->soaPdfText('Prepared by: ____________________'), 0, 1, 'L');
+        $pdf->Cell(0, 5, $this->soaPdfText('Verified by: ____________________'), 0, 1, 'L');
+        $pdf->Ln(2);
+        $pdf->SetTextColor(90, 90, 90);
+        $pdf->MultiCell(0, 5, $this->soaPdfText('This is a system-generated official document.'), 0, 'R');
+        $pdf->SetTextColor(0, 0, 0);
+
+        try {
+            /** @var string|bool $pdfOutput */
+            $pdfOutput = $pdf->Output('S');
+            if (! is_string($pdfOutput)) {
+                throw new Exception('FPDF failed to generate SOA output.');
+            }
+
+            return $pdfOutput;
+        } finally {
+            foreach ($temporaryImagePaths as $temporaryImagePath) {
+                if (is_string($temporaryImagePath) && file_exists($temporaryImagePath)) {
+                    @unlink($temporaryImagePath);
+                }
+            }
+        }
+    }
+
+    /**
+     * @param  array<int, string>  $temporaryImagePaths
+     */
+    private function resolveSoaPdfImagePath(mixed $imageValue, array &$temporaryImagePaths): ?string
+    {
+        if (! is_string($imageValue) || mb_trim($imageValue) === '') {
+            return null;
+        }
+
+        if (str_starts_with($imageValue, '/')) {
+            $publicPath = public_path(ltrim($imageValue, '/'));
+
+            return is_file($publicPath) ? $publicPath : null;
+        }
+
+        if (filter_var($imageValue, FILTER_VALIDATE_URL)) {
+            try {
+                $imageContent = @file_get_contents($imageValue);
+                if (! is_string($imageContent) || $imageContent === '') {
+                    return null;
+                }
+
+                /** @var array{mime?:string}|false $imageInfo */
+                $imageInfo = @getimagesizefromstring($imageContent);
+                $extension = match ($imageInfo['mime'] ?? null) {
+                    'image/png' => 'png',
+                    'image/jpeg' => 'jpg',
+                    'image/gif' => 'gif',
+                    'image/webp' => 'webp',
+                    default => null,
+                };
+
+                if (! is_string($extension)) {
+                    return null;
+                }
+
+                $tempBaseFile = tempnam(sys_get_temp_dir(), 'soa_img_');
+                if ($tempBaseFile === false) {
+                    return null;
+                }
+
+                $tempFile = $tempBaseFile.'.'.$extension;
+                if (! @rename($tempBaseFile, $tempFile)) {
+                    @unlink($tempBaseFile);
+
+                    return null;
+                }
+
+                file_put_contents($tempFile, $imageContent);
+                $temporaryImagePaths[] = $tempFile;
+
+                return $tempFile;
+            } catch (Throwable) {
+                return null;
+            }
+        }
+
+        return null;
+    }
+
+    private function soaPdfText(string $value): string
+    {
+        return mb_convert_encoding($value, 'ISO-8859-1', 'UTF-8');
     }
 
     private function getFormOptions(): array

@@ -405,6 +405,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/system-management/school', [App\Http\Controllers\AdministratorSystemManagementController::class, 'storeSchool'])->name('system-management.school.store');
         Route::put('/system-management/school', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateSchool'])->name('system-management.school.update');
         Route::put('/system-management/school-details', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateSchoolDetails'])->name('system-management.school-details.update');
+        Route::put('/system-management/academic-calendar', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateAcademicCalendar'])->name('system-management.academic-calendar.update');
         Route::put('/system-management/schools/{school}', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateManagedSchool'])->name('system-management.schools.update');
         Route::patch('/system-management/schools/{school}/status', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateSchoolStatus'])->name('system-management.schools.status.update');
         Route::delete('/system-management/schools/{school}', [App\Http\Controllers\AdministratorSystemManagementController::class, 'destroySchool'])->name('system-management.schools.destroy');

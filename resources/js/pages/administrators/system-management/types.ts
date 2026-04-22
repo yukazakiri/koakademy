@@ -317,5 +317,12 @@ export interface SystemManagementPageProps {
     notification_channels: NotificationChannelConfig;
     third_party_services: ThirdPartyServicesConfig;
     access: SystemManagementAccess;
+    system_semester?: number | null;
+    system_school_year_start?: number | null;
+    system_school_year_end?: number | null;
+    system_school_starting_date?: string | null;
+    system_school_ending_date?: string | null;
+    available_semesters?: Record<number, string>;
+    available_school_years?: Record<number, string>;
     [key: string]: unknown;
 }

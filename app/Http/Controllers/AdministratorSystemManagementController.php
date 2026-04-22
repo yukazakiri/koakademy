@@ -724,6 +724,22 @@ final class AdministratorSystemManagementController extends Controller
         return Redirect::back()->with('success', 'API management settings updated successfully.');
     }
 
+    public function updateAcademicCalendar(Request $request)
+    {
+        $this->authorize('updateSchool', GeneralSetting::class);
+
+        $validated = $request->validate([
+            'semester' => ['required', 'integer', 'in:1,2'],
+            'school_starting_date' => ['required', 'date'],
+            'school_ending_date' => ['required', 'date', 'after_or_equal:school_starting_date'],
+        ]);
+
+        $generalSettingsService = app(GeneralSettingsService::class);
+        $generalSettingsService->updateGlobalAcademicCalendar($validated);
+
+        return Redirect::back()->with('success', 'Academic calendar defaults updated successfully.');
+    }
+
     private function renderSystemManagementPage(string $component, string $section, string $ability): Response
     {
         $this->authorize($ability, GeneralSetting::class);
@@ -836,6 +852,13 @@ final class AdministratorSystemManagementController extends Controller
             'api_management' => $generalSettingsService->getApiManagementConfig(),
             'grading_config' => app(GradingSystemService::class)->getConfig(),
             'courses_with_subjects' => app(GradingSystemService::class)->getCoursesWithSubjects(),
+            'system_semester' => $generalSettingsService->getSystemDefaultSemester(),
+            'system_school_year_start' => $generalSettingsService->getSystemDefaultSchoolYearStart(),
+            'system_school_year_end' => $generalSettingsService->getSystemDefaultSchoolYearStart() + 1,
+            'system_school_starting_date' => $generalSettingsService->getGlobalSchoolStartingDate()?->format('Y-m-d'),
+            'system_school_ending_date' => $generalSettingsService->getGlobalSchoolEndingDate()?->format('Y-m-d'),
+            'available_semesters' => $generalSettingsService->getAvailableSemesters(),
+            'available_school_years' => $generalSettingsService->getAvailableSchoolYears(),
             'public_api_url' => url('/api/v1/public/settings'),
             'public_api_fields' => GeneralSettingsService::publicApiFieldDefinitions(),
             'available_roles' => Role::query()->orderBy('name')->pluck('name')->values(),

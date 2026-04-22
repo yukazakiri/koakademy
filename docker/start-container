@@ -244,7 +244,7 @@ check_storage_permissions() {
     echo "Testing Storage permissions..."
 
     php -r "
-        \$path = '/var/www/html/storage/framework/testing/connection_test';
+        \$path = 'storage/framework/testing/connection_test';
         @mkdir(dirname(\$path), 0777, true);
 
         if (@file_put_contents(\$path, 'test') !== false && @unlink(\$path)) {
@@ -255,6 +255,23 @@ check_storage_permissions() {
         echo 'Storage is NOT writable or readable.' . PHP_EOL;
         exit(1);
     "
+}
+
+fix_storage_permissions() {
+    echo "Fixing storage and cache permissions..."
+
+    web_user="${WEB_USER:-www-data}"
+    web_group="${WEB_GROUP:-www-data}"
+
+    mkdir -p storage/framework/{cache,sessions,testing,views} storage/logs bootstrap/cache
+
+    if [ "$(id -u)" = "0" ]; then
+        chown -R "${web_user}:${web_group}" storage bootstrap/cache 2>/dev/null || true
+    fi
+
+    chmod -R 775 storage bootstrap/cache 2>/dev/null || true
+
+    echo "Storage and cache permissions fixed."
 }
 
 check_opcache_directory() {
@@ -510,6 +527,7 @@ run_primary_startup_tasks() {
 bootstrap_container() {
     echo "Container mode: ${container_mode}"
 
+    fix_storage_permissions
     check_connections
     configure_scout_driver
 

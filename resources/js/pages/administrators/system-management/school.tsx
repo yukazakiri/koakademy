@@ -14,11 +14,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { router, useForm } from "@inertiajs/react";
-import { AlertTriangle, Building2, Check, GraduationCap, Loader2, Mail, MapPin, Pencil, Phone, Plus, Save, Trash2 } from "lucide-react";
+import { AlertTriangle, Building2, Calendar, Check, GraduationCap, Loader2, Mail, MapPin, Pencil, Phone, Plus, Save, Trash2 } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -47,7 +48,16 @@ interface SchoolDetailsFormData {
     email: string;
 }
 
-export default function SystemManagementSchoolPage({ user, active_school, schools, access }: SystemManagementPageProps) {
+export default function SystemManagementSchoolPage({
+    user,
+    active_school,
+    schools,
+    access,
+    system_semester,
+    system_school_starting_date,
+    system_school_ending_date,
+    available_semesters,
+}: SystemManagementPageProps) {
     const [isAddSchoolOpen, setIsAddSchoolOpen] = useState(false);
     const [isEditSchoolOpen, setIsEditSchoolOpen] = useState(false);
     const [editingSchool, setEditingSchool] = useState<School | null>(null);
@@ -83,6 +93,21 @@ export default function SystemManagementSchoolPage({ user, active_school, school
         dean_name: "",
         dean_email: "",
     });
+
+    const academicCalendarForm = useForm({
+        semester: system_semester ?? 1,
+        school_starting_date: system_school_starting_date ?? "",
+        school_ending_date: system_school_ending_date ?? "",
+    });
+
+    useEffect(() => {
+        academicCalendarForm.setData({
+            semester: system_semester ?? 1,
+            school_starting_date: system_school_starting_date ?? "",
+            school_ending_date: system_school_ending_date ?? "",
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [system_semester, system_school_starting_date, system_school_ending_date]);
 
     useEffect(() => {
         if (!active_school) {
@@ -479,6 +504,113 @@ export default function SystemManagementSchoolPage({ user, active_school, school
                             </Card>
                         </div>
                     </div>
+
+                    {/* Academic Calendar Defaults */}
+                    <Card className="border-muted-foreground/10 shadow-sm">
+                        <CardHeader className="bg-muted/30 border-b pb-4">
+                            <div className="mb-1 flex items-center gap-2">
+                                <div className="bg-primary/10 text-primary rounded-md p-1.5">
+                                    <Calendar className="h-4 w-4" />
+                                </div>
+                                <CardTitle className="text-base">Academic Calendar Defaults</CardTitle>
+                            </div>
+                            <CardDescription>Configure the system-wide default semester and school year dates.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="p-6">
+                            <div className="grid gap-6 sm:grid-cols-3">
+                                <div className="space-y-2.5">
+                                    <Label
+                                        htmlFor="system_semester"
+                                        className="text-muted-foreground text-xs font-semibold tracking-wider uppercase"
+                                    >
+                                        Default Semester
+                                    </Label>
+                                    <Select
+                                        value={academicCalendarForm.data.semester.toString()}
+                                        onValueChange={(value) => academicCalendarForm.setData("semester", parseInt(value))}
+                                    >
+                                        <SelectTrigger id="system_semester" className="bg-background">
+                                            <SelectValue placeholder="Select semester" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {Object.entries(available_semesters ?? {}).map(([key, label]) => (
+                                                <SelectItem key={key} value={key}>
+                                                    {label}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <div className="space-y-2.5">
+                                    <Label
+                                        htmlFor="school_starting_date"
+                                        className="text-muted-foreground text-xs font-semibold tracking-wider uppercase"
+                                    >
+                                        School Starting Date
+                                    </Label>
+                                    <div className="relative">
+                                        <Calendar className="text-muted-foreground absolute top-2.5 left-3 h-4 w-4" />
+                                        <Input
+                                            id="school_starting_date"
+                                            type="date"
+                                            value={academicCalendarForm.data.school_starting_date}
+                                            onChange={(event) =>
+                                                academicCalendarForm.setData("school_starting_date", event.target.value)
+                                            }
+                                            className="bg-background pl-9"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="space-y-2.5">
+                                    <Label
+                                        htmlFor="school_ending_date"
+                                        className="text-muted-foreground text-xs font-semibold tracking-wider uppercase"
+                                    >
+                                        School Ending Date
+                                    </Label>
+                                    <div className="relative">
+                                        <Calendar className="text-muted-foreground absolute top-2.5 left-3 h-4 w-4" />
+                                        <Input
+                                            id="school_ending_date"
+                                            type="date"
+                                            value={academicCalendarForm.data.school_ending_date}
+                                            onChange={(event) =>
+                                                academicCalendarForm.setData("school_ending_date", event.target.value)
+                                            }
+                                            className="bg-background pl-9"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="mt-6 flex justify-end">
+                                <Button
+                                    onClick={() =>
+                                        submitSystemForm({
+                                            form: academicCalendarForm,
+                                            routeName: "administrators.system-management.academic-calendar.update",
+                                            successMessage: "Academic calendar defaults updated successfully.",
+                                            errorMessage: "Failed to update academic calendar defaults.",
+                                        })
+                                    }
+                                    disabled={
+                                        academicCalendarForm.processing ||
+                                        (!academicCalendarForm.isDirty &&
+                                            academicCalendarForm.data.semester === (system_semester ?? 1) &&
+                                            academicCalendarForm.data.school_starting_date === (system_school_starting_date ?? "") &&
+                                            academicCalendarForm.data.school_ending_date === (system_school_ending_date ?? ""))
+                                    }
+                                    className="shadow-sm"
+                                >
+                                    {academicCalendarForm.processing ? (
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    ) : (
+                                        <Save className="mr-2 h-4 w-4" />
+                                    )}
+                                    Save Calendar Defaults
+                                </Button>
+                            </div>
+                        </CardContent>
+                    </Card>
                 </TabsContent>
 
                 <TabsContent value="directory" className="space-y-6 focus-visible:ring-0 focus-visible:outline-none">

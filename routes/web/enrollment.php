@@ -17,6 +17,15 @@ Route::get('/enrollment', [EnrollmentRegistrationController::class, 'create'])
 Route::post('/enrollment', [EnrollmentRegistrationController::class, 'store'])
     ->name('enrollment.store');
 
+Route::post('/enrollment/lookup', [EnrollmentRegistrationController::class, 'lookup'])
+    ->name('enrollment.lookup');
+
+Route::post('/enrollment/subjects', [EnrollmentRegistrationController::class, 'subjectsFor'])
+    ->name('enrollment.subjects');
+
+Route::post('/enrollment/continuing', [EnrollmentRegistrationController::class, 'storeContinuing'])
+    ->name('enrollment.continuing.store');
+
 Route::get('/api-docs', fn () => redirect('/docs/v1/introduction'))->name('api-docs');
 
 Route::get('/docs', fn () => redirect('/docs/v1'))->name('docs');

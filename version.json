@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.2.2",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.2.2",
-  "commit": "c71ce6fda7ae2b08fdcadf49ff0f213d6b2c05cf",
+  "version": "1.1.0-dev.2.3",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.2.3",
+  "commit": "feb34f55a6104d05fa28a2fbf6abedd7fee838e0",
   "branch": "master",
-  "timestamp": "2026-04-22T07:55:58Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24766983926",
+  "timestamp": "2026-04-22T09:01:24Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24769117657",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.1.0-dev.2.2 - Update official-release-on-tag.yml",
-    "previous": "1.1.0-dev.2.1"
+    "current": "Version 1.1.0-dev.2.3 - Enhance release workflows with Docker Hub support and race condition",
+    "previous": "1.1.0-dev.2.2"
   },
   "metadata": {
     "author": "yukazakiri",

@@ -260,8 +260,8 @@ check_storage_permissions() {
 fix_storage_permissions() {
     echo "Fixing storage and cache permissions..."
 
-    web_user="${WEB_USER:-www-data}"
-    web_group="${WEB_GROUP:-www-data}"
+    web_user="${WEB_USER:-${USER:-www-data}}"
+    web_group="${WEB_GROUP:-${USER:-www-data}}"
 
     mkdir -p storage/framework/{cache,sessions,testing,views} storage/logs bootstrap/cache
 

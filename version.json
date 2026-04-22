@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.1.1",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.1.1",
-  "commit": "23b9e64a00270b43dc5777c4baea6d192033bf85",
+  "version": "1.1.0-dev.1.2",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.1.2",
+  "commit": "d816a36c3e0a6a830a11ea04ae06d6025b6008ce",
   "branch": "master",
-  "timestamp": "2026-04-22T03:44:34Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24758883152",
+  "timestamp": "2026-04-22T04:01:40Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24759365259",
   "release_type": "bugfix",
   "changelog": {
-    "current": "Version 1.1.0-dev.1.1 - fix: run fix_storage_permissions before starting FrankenPHP to prevent permission denied on laravel.log (#31)",
-    "previous": "1.1.0-dev.1.0"
+    "current": "Version 1.1.0-dev.1.2 - fix: use USER env var instead of hardcoded www-data for storage permissions (#32)",
+    "previous": "1.1.0-dev.1.1"
   },
   "metadata": {
     "author": "yukazakiri",

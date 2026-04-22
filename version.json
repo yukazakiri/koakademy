@@ -1,18 +1,18 @@
 {
-  "version": "1.1.0",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0",
-  "commit": "1794fcbd47fdb126097b92ff5ae0382225fc31e0",
+  "version": "1.1.0-dev.0.4",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.0.4",
+  "commit": "85f329095d4b26f953dbab291e10aa45a4aa5c04",
   "branch": "master",
-  "timestamp": "2026-04-21T03:56:12Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24703064066",
-  "release_type": "official",
+  "timestamp": "2026-04-22T00:11:27Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24752984644",
+  "release_type": "patch",
   "changelog": {
-    "current": "Version 1.1.0 - manual release",
-    "previous": "1.0.1-dev.0.10"
+    "current": "Version 1.1.0-dev.0.4 - Merge pull request #29 from yukazakiri/y-branch-3",
+    "previous": "1.1.0"
   },
   "metadata": {
     "author": "yukazakiri",
-    "workflow": "Manual Official Release",
+    "workflow": "Auto Pre-release and Docker Tag",
     "repository": "yukazakiri/koakademy"
   }
 }

@@ -499,8 +499,6 @@ export const ADMIN_ROUTES: AdminRoute[] = [
         icon: <IconBuilding className="size-4" />,
         link: "/administrators/departments",
         section: "hr",
-        disabled: true,
-        disabledTooltip: "Department management module coming soon",
         requiredPermission: "ViewAny:Department",
         allowedRoles: [...SYSTEM_ADMIN_ROLES, ...HR_ROLES, UserRole.President, UserRole.VicePresident],
     },

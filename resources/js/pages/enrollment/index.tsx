@@ -10,9 +10,12 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { Head, router, useForm, usePage } from "@inertiajs/react";
+import axios from "axios";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+    ArrowRight,
     BookOpen,
+    Calendar,
     Check,
     CheckCircle2,
     ChevronRight,
@@ -20,11 +23,14 @@ import {
     FileText,
     GraduationCap,
     Loader2,
+    LogIn,
     School,
+    Search,
     Sparkles,
     Trash2,
     Upload,
     User,
+    UserPlus,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -43,9 +49,41 @@ type Course = {
     description: string | null;
 };
 
+type FlashSubject = {
+    code: string;
+    title: string;
+    lecture_units: number;
+    laboratory_units: number;
+    is_modular: boolean;
+    lecture_fee: number;
+    laboratory_fee: number;
+};
+
+type FlashTuition = {
+    total_lectures: number;
+    total_laboratory: number;
+    total_tuition: number;
+    miscellaneous: number;
+    overall: number;
+    balance: number;
+};
+
 type Flash = {
     success?: string;
     error?: string;
+    studentId?: string;
+    studentName?: string;
+    course?: string;
+    courseCode?: string;
+    continuing?: boolean;
+    schoolYear?: string;
+    semester?: number;
+    semesterLabel?: string;
+    academicYear?: number | null;
+    yearLevelLabel?: string | null;
+    subjects?: FlashSubject[];
+    totalUnits?: number;
+    tuition?: FlashTuition | null;
 };
 
 type EnrollmentFormData = {
@@ -200,6 +238,14 @@ type SuccessData = {
     name: string;
     studentId: string;
     course: string;
+    courseCode?: string;
+    continuing: boolean;
+    schoolYear?: string;
+    semesterLabel?: string;
+    yearLevelLabel?: string;
+    subjects?: FlashSubject[];
+    totalUnits?: number;
+    tuition?: FlashTuition | null;
 };
 
 interface Branding {
@@ -223,6 +269,75 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
     const [uploadedDocuments, setUploadedDocuments] = useState<DocumentFile[]>([]);
     const [isDragging, setIsDragging] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Identify / returning-student flow
+    type MatchedStudent = {
+        id: number;
+        student_id: string;
+        first_name: string;
+        middle_name: string | null;
+        last_name: string;
+        full_name: string;
+        email: string | null;
+        student_type: string;
+        status: string;
+        academic_year: number | null;
+        course: { id: number; code: string; title: string; department: string | null } | null;
+    };
+
+    const [mode, setMode] = useState<"identify" | "new">("identify");
+    const [lookupEmail, setLookupEmail] = useState("");
+    const [lookupStudentId, setLookupStudentId] = useState("");
+    const [lookupLoading, setLookupLoading] = useState(false);
+    const [lookupAttempted, setLookupAttempted] = useState(false);
+    const [matchedStudent, setMatchedStudent] = useState<MatchedStudent | null>(null);
+
+    // Continuing-student form state
+    type SubjectOption = {
+        id: number;
+        code: string;
+        title: string;
+        lecture: number;
+        laboratory: number;
+        academic_year: number;
+        semester: number;
+        lec_per_unit: number;
+        lab_per_unit: number;
+        has_classes: boolean;
+    };
+    type SelectedSubject = {
+        subject_id: number;
+        code: string;
+        title: string;
+        lecture_units: number;
+        laboratory_units: number;
+        lec_per_unit: number;
+        lab_per_unit: number;
+        is_modular: boolean;
+        lecture_fee: number;
+        laboratory_fee: number;
+    };
+    type CourseInfo = {
+        id: number;
+        code: string;
+        title: string;
+        lec_per_unit: number;
+        lab_per_unit: number;
+        miscellaneous: number;
+    };
+
+    const [continuingStep, setContinuingStep] = useState<0 | 1 | 2>(0); // 0=confirm, 1=subjects, 2=review
+    const [continuingYear, setContinuingYear] = useState("");
+    const [continuingSemester, setContinuingSemester] = useState("");
+    const [continuingConsent, setContinuingConsent] = useState(false);
+    const [continuingSubmitting, setContinuingSubmitting] = useState(false);
+    const [courseInfo, setCourseInfo] = useState<CourseInfo | null>(null);
+    const [availableSubjects, setAvailableSubjects] = useState<SubjectOption[]>([]);
+    const [selectedSubjects, setSelectedSubjects] = useState<SelectedSubject[]>([]);
+    const [subjectSearch, setSubjectSearch] = useState("");
+    const [subjectsLoading, setSubjectsLoading] = useState(false);
+
+    const MODULAR_FEE_PER_SUBJECT = 2400;
 
     // Track which documents the user has available as soft copies
     const [availableDocuments, setAvailableDocuments] = useState<Record<string, boolean>>(
@@ -292,25 +407,51 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
 
     useEffect(() => {
         if (flash?.success) {
-            // Parse success message to extract applicant ID
-            const match = flash.success.match(/Applicant ID:\s*(\d+)/);
-            const applicantId = match ? match[1] : "Pending";
+            // Prefer structured flash data (provided by both new + continuing endpoints),
+            // fall back to regex parsing on the message for older payloads.
+            const match = flash.success.match(/(?:Applicant|Student)\s+ID:\s*(\d+)/i);
+            const fallbackId = match ? match[1] : "Pending";
 
-            // Set success data
-            const course = courses.find((c) => String(c.id) === data.course_id);
+            const formCourse = courses.find((c) => String(c.id) === data.course_id);
+            const derivedName =
+                flash.studentName ||
+                (data.first_name || data.last_name ? `${data.first_name} ${data.last_name}`.trim() : "") ||
+                "Student";
+
             setSuccessData({
-                name: `${data.first_name} ${data.last_name}`,
-                studentId: applicantId,
-                course: course?.title ?? "Unknown Program",
+                name: derivedName,
+                studentId: flash.studentId ?? fallbackId,
+                course: flash.course ?? formCourse?.title ?? "Program pending",
+                courseCode: flash.courseCode,
+                continuing: Boolean(flash.continuing),
+                schoolYear: flash.schoolYear,
+                semesterLabel: flash.semesterLabel,
+                yearLevelLabel: flash.yearLevelLabel ?? undefined,
+                subjects: flash.subjects,
+                totalUnits: flash.totalUnits,
+                tuition: flash.tuition,
             });
             setShowSuccess(true);
-            toast.success("Registration submitted successfully!");
+            toast.success(
+                flash.continuing ? "Re-enrollment submitted successfully!" : "Registration submitted successfully!",
+            );
         }
 
         if (flash?.error) {
             toast.error(flash.error);
         }
-    }, [flash?.error, flash?.success, courses, data.course_id, data.first_name, data.last_name]);
+    }, [
+        flash?.error,
+        flash?.success,
+        flash?.studentId,
+        flash?.studentName,
+        flash?.course,
+        flash?.continuing,
+        courses,
+        data.course_id,
+        data.first_name,
+        data.last_name,
+    ]);
 
     // Reset dependent fields when student type changes
     useEffect(() => {
@@ -471,6 +612,19 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
         setCurrentStep(0);
         setUploadedDocuments([]);
         setAvailableDocuments(Object.fromEntries(DOCUMENT_TYPES.map((doc) => [doc.id, false])));
+        setMode("identify");
+        setMatchedStudent(null);
+        setLookupAttempted(false);
+        setLookupEmail("");
+        setLookupStudentId("");
+        setContinuingYear("");
+        setContinuingSemester("");
+        setContinuingConsent(false);
+        setContinuingStep(0);
+        setCourseInfo(null);
+        setAvailableSubjects([]);
+        setSelectedSubjects([]);
+        setSubjectSearch("");
     };
 
     const copyToClipboard = (text: string) => {
@@ -563,94 +717,1180 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
         }),
     };
 
+    // --- Identify / returning-student handlers ---
+    const handleLookup = async () => {
+        if (!lookupEmail.trim() || !lookupStudentId.trim()) {
+            toast.error("Please enter both your email and Student ID.");
+            return;
+        }
+        setLookupLoading(true);
+        try {
+            const { data: payload } = await axios.post<{ matched: boolean; student?: MatchedStudent }>(
+                "/enrollment/lookup",
+                { email: lookupEmail.trim(), student_id: lookupStudentId.trim() },
+            );
+
+            setLookupAttempted(true);
+
+            if (payload.matched && payload.student) {
+                setMatchedStudent(payload.student);
+
+                // Auto-advance to the next year level (capped at 4).
+                // e.g. previous term = 1st year → default the re-enrollment to 2nd year.
+                const prevYear = payload.student.academic_year ?? 0;
+                const nextYear = prevYear > 0 ? Math.min(prevYear + 1, 4) : 0;
+                setContinuingYear(nextYear > 0 ? String(nextYear) : "");
+                setContinuingSemester("");
+                setContinuingStep(0);
+                setSelectedSubjects([]);
+                setSubjectSearch("");
+                setAvailableSubjects([]);
+                setCourseInfo(null);
+                // Fire-and-forget: pre-load the course + subject list for step 2.
+                void fetchContinuingSubjects(lookupEmail.trim(), lookupStudentId.trim());
+                toast.success(`Welcome back, ${payload.student.first_name}!`);
+            } else {
+                setMatchedStudent(null);
+                toast.info("We couldn't find a matching record. You can register as a new applicant below.");
+            }
+        } catch (error) {
+            toast.error("We couldn't verify your record right now. Please try again.");
+        } finally {
+            setLookupLoading(false);
+        }
+    };
+
+    const handleResetLookup = () => {
+        setMatchedStudent(null);
+        setLookupAttempted(false);
+        setContinuingYear("");
+        setContinuingSemester("");
+        setContinuingConsent(false);
+        setContinuingStep(0);
+        setCourseInfo(null);
+        setAvailableSubjects([]);
+        setSelectedSubjects([]);
+        setSubjectSearch("");
+    };
+
+    const fetchContinuingSubjects = async (email: string, studentId: string) => {
+        setSubjectsLoading(true);
+        try {
+            const { data: payload } = await axios.post<{ course: CourseInfo; subjects: SubjectOption[] }>(
+                "/enrollment/subjects",
+                { email, student_id: studentId },
+            );
+            setCourseInfo(payload.course);
+            setAvailableSubjects(payload.subjects ?? []);
+        } catch (error) {
+            toast.error("Could not load subjects for your course. Please try again.");
+        } finally {
+            setSubjectsLoading(false);
+        }
+    };
+
+    // Mirrors admin calculateFees: NSTP lecture is halved, modular halves lab fees.
+    const calcSubjectFees = (subject: SubjectOption, isModular: boolean): { lecture_fee: number; laboratory_fee: number } => {
+        const isNSTP = subject.code.toUpperCase().includes("NSTP");
+        const totalUnits = subject.lecture + subject.laboratory;
+        let lectureFee = subject.lecture ? totalUnits * subject.lec_per_unit : 0;
+        if (isNSTP) lectureFee *= 0.5;
+        let laboratoryFee = subject.laboratory ? 1 * subject.lab_per_unit : 0;
+        if (isModular && subject.laboratory) laboratoryFee = laboratoryFee / 2;
+        return {
+            lecture_fee: Math.round(lectureFee * 100) / 100,
+            laboratory_fee: Math.round(laboratoryFee * 100) / 100,
+        };
+    };
+
+    const toggleContinuingSubject = (subject: SubjectOption) => {
+        setSelectedSubjects((prev) => {
+            const existingIndex = prev.findIndex((s) => s.subject_id === subject.id);
+            if (existingIndex >= 0) {
+                return prev.filter((s) => s.subject_id !== subject.id);
+            }
+            const fees = calcSubjectFees(subject, false);
+            return [
+                ...prev,
+                {
+                    subject_id: subject.id,
+                    code: subject.code,
+                    title: subject.title,
+                    lecture_units: subject.lecture,
+                    laboratory_units: subject.laboratory,
+                    lec_per_unit: subject.lec_per_unit,
+                    lab_per_unit: subject.lab_per_unit,
+                    is_modular: false,
+                    lecture_fee: fees.lecture_fee,
+                    laboratory_fee: fees.laboratory_fee,
+                },
+            ];
+        });
+    };
+
+    const toggleContinuingModular = (subjectId: number, isModular: boolean) => {
+        setSelectedSubjects((prev) =>
+            prev.map((s) => {
+                if (s.subject_id !== subjectId) return s;
+                const subjectOption = availableSubjects.find((o) => o.id === subjectId);
+                if (!subjectOption) return { ...s, is_modular: isModular };
+                const fees = calcSubjectFees(subjectOption, isModular);
+                return { ...s, is_modular: isModular, lecture_fee: fees.lecture_fee, laboratory_fee: fees.laboratory_fee };
+            }),
+        );
+    };
+
+    const filteredContinuingSubjects = useMemo(() => {
+        if (!subjectSearch.trim()) return availableSubjects;
+        const q = subjectSearch.toLowerCase();
+        return availableSubjects.filter((s) => s.code.toLowerCase().includes(q) || s.title.toLowerCase().includes(q));
+    }, [availableSubjects, subjectSearch]);
+
+    const continuingTotals = useMemo(() => {
+        const totalLectures = selectedSubjects.reduce((sum, s) => sum + Number(s.lecture_fee || 0), 0);
+        const totalLaboratory = selectedSubjects.reduce((sum, s) => sum + Number(s.laboratory_fee || 0), 0);
+        const modularCount = selectedSubjects.filter((s) => s.is_modular).length;
+        const totalModularFee = modularCount * MODULAR_FEE_PER_SUBJECT;
+        const totalTuition = totalLectures + totalLaboratory;
+        const miscellaneous = Number(courseInfo?.miscellaneous ?? 3500) || 0;
+        const overallTotal = totalTuition + miscellaneous + totalModularFee;
+        const totalLectureUnits = selectedSubjects.reduce((sum, s) => sum + Number(s.lecture_units || 0), 0);
+        const totalLabUnits = selectedSubjects.reduce((sum, s) => sum + Number(s.laboratory_units || 0), 0);
+        return {
+            subjectsCount: selectedSubjects.length,
+            totalLectureUnits,
+            totalLabUnits,
+            totalUnits: totalLectureUnits + totalLabUnits,
+            totalLectures,
+            totalLaboratory,
+            modularCount,
+            totalModularFee,
+            totalTuition,
+            miscellaneous,
+            overallTotal,
+        };
+    }, [selectedSubjects, courseInfo]);
+
+    const handleContinueAsNewApplicant = () => {
+        if (lookupEmail && !data.email) {
+            setData("email", lookupEmail);
+        }
+        setMode("new");
+    };
+
+    const handleSubmitContinuing = () => {
+        if (!matchedStudent) return;
+        if (matchedStudent.student_type !== "tesda" && !continuingYear) {
+            toast.error("Please select your year level.");
+            return;
+        }
+        if (selectedSubjects.length === 0) {
+            toast.error("Please select at least one subject to enroll in.");
+            return;
+        }
+        if (!continuingConsent) {
+            toast.error("Please agree to the data privacy notice.");
+            return;
+        }
+
+        setContinuingSubmitting(true);
+        router.post(
+            "/enrollment/continuing",
+            {
+                email: lookupEmail.trim(),
+                student_id: lookupStudentId.trim(),
+                academic_year: continuingYear || "1",
+                semester: continuingSemester || undefined,
+                subjects: selectedSubjects.map((s) => ({
+                    subject_id: s.subject_id,
+                    is_modular: s.is_modular,
+                    lecture_fee: s.lecture_fee,
+                    laboratory_fee: s.laboratory_fee,
+                    enrolled_lecture_units: s.lecture_units,
+                    enrolled_laboratory_units: s.laboratory_units,
+                })),
+                consent: true,
+            },
+            {
+                preserveScroll: true,
+                onError: (errs) => {
+                    const first = Object.values(errs)[0];
+                    if (typeof first === "string") {
+                        toast.error(first);
+                    } else {
+                        toast.error("Please review the errors and try again.");
+                    }
+                },
+                onFinish: () => setContinuingSubmitting(false),
+            },
+        );
+    };
+
+    const formatPhp = (amount: number) =>
+        new Intl.NumberFormat("en-PH", {
+            style: "currency",
+            currency: "PHP",
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0,
+        }).format(amount);
+
+    const identifyView = (
+        <>
+            {/* Compact header */}
+            <header className="bg-background/80 supports-[backdrop-filter]:bg-background/60 sticky top-0 z-40 w-full border-b backdrop-blur-md">
+                <div className="container mx-auto flex h-16 max-w-3xl items-center justify-between px-4">
+                    <div className="flex items-center gap-3">
+                        <div className="bg-primary text-primary-foreground flex h-9 w-9 items-center justify-center rounded-lg shadow-sm">
+                            <GraduationCap className="h-5 w-5" />
+                        </div>
+                        <div>
+                            <h1 className="text-sm leading-none font-bold sm:text-base">{orgShortName} Enrollment</h1>
+                            <p className="text-muted-foreground mt-0.5 text-[10px] sm:text-xs">Online Registration Portal</p>
+                        </div>
+                    </div>
+                    <Button variant="ghost" size="sm" asChild>
+                        <a href="/login" className="gap-1.5">
+                            <LogIn className="h-4 w-4" />
+                            <span className="hidden sm:inline">Sign in</span>
+                        </a>
+                    </Button>
+                </div>
+            </header>
+
+            <main className="container mx-auto max-w-3xl flex-1 p-4 pb-20 sm:p-6 lg:p-8">
+                {!matchedStudent ? (
+                    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+                        {/* Hero */}
+                        <div className="text-center">
+                            <div className="bg-primary/10 text-primary mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl">
+                                <GraduationCap className="h-7 w-7" />
+                            </div>
+                            <h2 className="text-foreground text-2xl font-bold sm:text-3xl">Welcome to {appName}</h2>
+                            <p className="text-muted-foreground mx-auto mt-2 max-w-xl text-sm sm:text-base">
+                                Let&apos;s get you started. If you&apos;re a returning student, we&apos;ll pull up your
+                                record. If you&apos;re new, we&apos;ll guide you through a quick registration.
+                            </p>
+                        </div>
+
+                        {/* Lookup card */}
+                        <Card className="border-2 shadow-sm">
+                            <CardContent className="space-y-5 p-6 sm:p-8">
+                                <div className="flex items-start gap-3">
+                                    <div className="bg-primary/10 text-primary flex h-10 w-10 shrink-0 items-center justify-center rounded-lg">
+                                        <Search className="h-5 w-5" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-foreground text-lg font-semibold">Continuing / Returning student?</h3>
+                                        <p className="text-muted-foreground mt-1 text-sm">
+                                            Enter the email and Student ID on file to enroll for the current term without
+                                            re-entering your personal details.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="lookup-email">School Email</Label>
+                                        <Input
+                                            id="lookup-email"
+                                            type="email"
+                                            placeholder="you@example.com"
+                                            value={lookupEmail}
+                                            autoComplete="email"
+                                            onChange={(e) => setLookupEmail(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter") handleLookup();
+                                            }}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="lookup-student-id">Student ID</Label>
+                                        <Input
+                                            id="lookup-student-id"
+                                            inputMode="numeric"
+                                            placeholder="e.g. 200123"
+                                            value={lookupStudentId}
+                                            onChange={(e) => setLookupStudentId(sanitizeNumberInput(e.target.value))}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter") handleLookup();
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+
+                                <Button onClick={handleLookup} disabled={lookupLoading} size="lg" className="w-full gap-2">
+                                    {lookupLoading ? (
+                                        <>
+                                            <Loader2 className="h-4 w-4 animate-spin" /> Verifying&hellip;
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Search className="h-4 w-4" /> Find my record
+                                        </>
+                                    )}
+                                </Button>
+
+                                {lookupAttempted && !matchedStudent && (
+                                    <div className="border-border/60 bg-muted/40 text-muted-foreground flex gap-2.5 rounded-lg border p-3 text-sm">
+                                        <Sparkles className="text-primary/70 mt-0.5 h-4 w-4 shrink-0" />
+                                        <span>
+                                            We couldn&apos;t find a student record matching that email + Student ID. If
+                                            you&apos;re new, continue as a new applicant below.
+                                        </span>
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+
+                        {/* Divider */}
+                        <div className="relative my-2">
+                            <div className="absolute inset-0 flex items-center">
+                                <Separator />
+                            </div>
+                            <div className="relative flex justify-center">
+                                <span className="bg-background text-muted-foreground px-3 text-xs font-medium tracking-wider uppercase">
+                                    or
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* New applicant card */}
+                        <Card
+                            role="button"
+                            tabIndex={0}
+                            onClick={handleContinueAsNewApplicant}
+                            onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                    e.preventDefault();
+                                    handleContinueAsNewApplicant();
+                                }
+                            }}
+                            className="hover:border-primary/60 hover:bg-primary/5 cursor-pointer border-2 transition-colors"
+                        >
+                            <CardContent className="flex items-center gap-4 p-6">
+                                <div className="bg-primary/10 text-primary flex h-12 w-12 shrink-0 items-center justify-center rounded-lg">
+                                    <UserPlus className="h-6 w-6" />
+                                </div>
+                                <div className="flex-1">
+                                    <h3 className="text-foreground text-lg font-semibold">I&apos;m a new applicant</h3>
+                                    <p className="text-muted-foreground mt-1 text-sm">
+                                        First time applying? Register here &mdash; we&apos;ll walk you through a short
+                                        5-step form.
+                                    </p>
+                                </div>
+                                <ArrowRight className="text-muted-foreground h-5 w-5" />
+                            </CardContent>
+                        </Card>
+
+                        <p className="text-muted-foreground text-center text-xs">
+                            Already have a portal account?{" "}
+                            <a href="/login" className="text-primary hover:underline">
+                                Sign in
+                            </a>{" "}
+                            to re-enroll from your dashboard.
+                        </p>
+                    </motion.div>
+                ) : (
+                    /* =========== Matched / Continuing-student form =========== */
+                    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+                        <Card className="border-2 shadow-sm">
+                            <CardContent className="p-6 sm:p-8">
+                                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                                    <div className="flex items-start gap-3">
+                                        <div className="bg-primary/10 text-primary flex h-12 w-12 shrink-0 items-center justify-center rounded-full">
+                                            <CheckCircle2 className="h-6 w-6" />
+                                        </div>
+                                        <div>
+                                            <p className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+                                                Welcome back
+                                            </p>
+                                            <h3 className="text-foreground text-xl font-bold sm:text-2xl">
+                                                {matchedStudent.full_name}
+                                            </h3>
+                                            <div className="mt-2 flex flex-wrap gap-2">
+                                                <Badge variant="secondary" className="font-mono">
+                                                    ID&nbsp;{matchedStudent.student_id}
+                                                </Badge>
+                                                <Badge variant="outline">
+                                                    {matchedStudent.student_type === "tesda" ? "TESDA" : "College"}
+                                                </Badge>
+                                                {matchedStudent.status && (
+                                                    <Badge variant="outline" className="capitalize">
+                                                        {matchedStudent.status.replace(/_/g, " ")}
+                                                    </Badge>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <Button variant="ghost" size="sm" onClick={handleResetLookup}>
+                                        Not you?
+                                    </Button>
+                                </div>
+
+                                {matchedStudent.course && (
+                                    <div className="bg-muted/40 mt-5 rounded-lg border p-4 text-sm">
+                                        <p className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+                                            Current program on file
+                                        </p>
+                                        <p className="text-foreground mt-1 font-semibold">
+                                            {matchedStudent.course.title}{" "}
+                                            <span className="text-muted-foreground font-normal">
+                                                ({matchedStudent.course.code})
+                                            </span>
+                                        </p>
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+
+                        {/* Step indicator */}
+                        <div className="flex items-center justify-center gap-2 text-xs sm:text-sm">
+                            {[
+                                { label: "Program", icon: GraduationCap },
+                                { label: "Subjects", icon: BookOpen },
+                                { label: "Review", icon: FileText },
+                            ].map((s, idx) => {
+                                const Icon = s.icon;
+                                const active = continuingStep === idx;
+                                const done = continuingStep > idx;
+                                return (
+                                    <div key={s.label} className="flex items-center gap-2">
+                                        <div
+                                            className={cn(
+                                                "flex items-center gap-1.5 rounded-full border px-2.5 py-1 transition-colors sm:px-3",
+                                                active && "bg-primary text-primary-foreground border-primary",
+                                                done && "bg-primary/10 text-primary border-primary/30",
+                                                !active && !done && "text-muted-foreground",
+                                            )}
+                                        >
+                                            {done ? <Check className="h-3.5 w-3.5" /> : <Icon className="h-3.5 w-3.5" />}
+                                            <span className="hidden font-medium sm:inline">{s.label}</span>
+                                            <span className="font-medium sm:hidden">{idx + 1}</span>
+                                        </div>
+                                        {idx < 2 && <ChevronRight className="text-muted-foreground/50 h-3.5 w-3.5" />}
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* === Step 0: Confirm program + year + semester === */}
+                        {continuingStep === 0 && (
+                            <Card className="border-2 shadow-sm">
+                                <CardContent className="space-y-5 p-6 sm:p-8">
+                                    <div>
+                                        <h3 className="text-foreground text-lg font-semibold">Confirm your program</h3>
+                                        <p className="text-muted-foreground mt-1 text-sm">
+                                            Your course is locked to your student record. Review your year level and
+                                            semester, then continue to pick subjects.
+                                        </p>
+                                    </div>
+
+                                    {/* Locked course display */}
+                                    <div className="bg-muted/40 flex items-start gap-3 rounded-lg border p-4">
+                                        <div className="bg-primary/10 text-primary flex h-10 w-10 shrink-0 items-center justify-center rounded-lg">
+                                            <GraduationCap className="h-5 w-5" />
+                                        </div>
+                                        <div className="flex-1">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <p className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+                                                    Course / Program
+                                                </p>
+                                                <span className="bg-primary/10 text-primary inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium">
+                                                    <CheckCircle2 className="h-3 w-3" /> Locked
+                                                </span>
+                                            </div>
+                                            <p className="text-foreground mt-0.5 font-semibold">
+                                                {matchedStudent.course?.title ?? courseInfo?.title ?? "Your program"}
+                                                {(matchedStudent.course?.code ?? courseInfo?.code) && (
+                                                    <span className="text-muted-foreground font-normal">
+                                                        {" "}
+                                                        ({matchedStudent.course?.code ?? courseInfo?.code})
+                                                    </span>
+                                                )}
+                                            </p>
+                                            <p className="text-muted-foreground mt-1 text-xs">
+                                                Need to transfer programs? Contact the registrar after submission.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {matchedStudent.student_type !== "tesda" && (
+                                        <div className="space-y-2">
+                                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                                <Label>Year Level</Label>
+                                                {matchedStudent.academic_year &&
+                                                    continuingYear ===
+                                                        String(Math.min(matchedStudent.academic_year + 1, 4)) && (
+                                                        <span className="bg-primary/10 text-primary inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium">
+                                                            <ArrowRight className="h-3 w-3" /> Advanced from{" "}
+                                                            {matchedStudent.academic_year === 1
+                                                                ? "1st"
+                                                                : matchedStudent.academic_year === 2
+                                                                  ? "2nd"
+                                                                  : matchedStudent.academic_year === 3
+                                                                    ? "3rd"
+                                                                    : `${matchedStudent.academic_year}th`}{" "}
+                                                            year
+                                                        </span>
+                                                    )}
+                                            </div>
+                                            <RadioGroup
+                                                value={continuingYear}
+                                                onValueChange={setContinuingYear}
+                                                className="grid grid-cols-2 gap-2 sm:grid-cols-4"
+                                            >
+                                                {["1", "2", "3", "4"].map((yr) => (
+                                                    <Label
+                                                        key={yr}
+                                                        htmlFor={`cont-yr-${yr}`}
+                                                        className={cn(
+                                                            "hover:border-primary/60 flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 p-3 text-sm font-medium transition-colors",
+                                                            continuingYear === yr && "border-primary bg-primary/5",
+                                                        )}
+                                                    >
+                                                        <RadioGroupItem id={`cont-yr-${yr}`} value={yr} className="sr-only" />
+                                                        {yr === "1" ? "1st" : yr === "2" ? "2nd" : yr === "3" ? "3rd" : "4th"}&nbsp;Year
+                                                    </Label>
+                                                ))}
+                                            </RadioGroup>
+                                        </div>
+                                    )}
+
+                                    <div className="space-y-2">
+                                        <Label>Semester (optional)</Label>
+                                        <RadioGroup
+                                            value={continuingSemester}
+                                            onValueChange={setContinuingSemester}
+                                            className="grid grid-cols-1 gap-2 sm:grid-cols-3"
+                                        >
+                                            {[
+                                                { value: "", label: "Use current" },
+                                                { value: "1", label: "1st Semester" },
+                                                { value: "2", label: "2nd Semester" },
+                                            ].map((opt) => (
+                                                <Label
+                                                    key={opt.label}
+                                                    htmlFor={`cont-sem-${opt.value || "current"}`}
+                                                    className={cn(
+                                                        "hover:border-primary/60 flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 p-3 text-sm font-medium transition-colors",
+                                                        continuingSemester === opt.value && "border-primary bg-primary/5",
+                                                    )}
+                                                >
+                                                    <RadioGroupItem
+                                                        id={`cont-sem-${opt.value || "current"}`}
+                                                        value={opt.value}
+                                                        className="sr-only"
+                                                    />
+                                                    {opt.label}
+                                                </Label>
+                                            ))}
+                                        </RadioGroup>
+                                    </div>
+
+                                    <div className="flex flex-col gap-3 sm:flex-row">
+                                        <Button variant="outline" onClick={handleResetLookup} className="sm:flex-1">
+                                            Back
+                                        </Button>
+                                        <Button
+                                            onClick={() => {
+                                                if (matchedStudent.student_type !== "tesda" && !continuingYear) {
+                                                    toast.error("Please select your year level.");
+                                                    return;
+                                                }
+                                                setContinuingStep(1);
+                                            }}
+                                            size="lg"
+                                            className="gap-2 sm:flex-[2]"
+                                        >
+                                            Pick subjects <ChevronRight className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
+
+                        {/* === Step 1: Subject selection === */}
+                        {continuingStep === 1 && (
+                            <Card className="border-2 shadow-sm">
+                                <CardContent className="space-y-5 p-6 sm:p-8">
+                                    <div>
+                                        <h3 className="text-foreground text-lg font-semibold">Select your subjects</h3>
+                                        <p className="text-muted-foreground mt-1 text-sm">
+                                            Tap a subject to add it. Toggle <strong>Modular</strong> for self-paced
+                                            subjects (flat&nbsp;{formatPhp(MODULAR_FEE_PER_SUBJECT)} each).
+                                        </p>
+                                    </div>
+
+                                    {/* Search */}
+                                    <div className="relative">
+                                        <Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
+                                        <Input
+                                            value={subjectSearch}
+                                            onChange={(e) => setSubjectSearch(e.target.value)}
+                                            placeholder="Search by code or title..."
+                                            className="pl-9"
+                                        />
+                                    </div>
+
+                                    {/* Subject list */}
+                                    <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1 sm:max-h-[520px]">
+                                        {subjectsLoading ? (
+                                            <div className="text-muted-foreground flex items-center justify-center gap-2 py-10 text-sm">
+                                                <Loader2 className="h-4 w-4 animate-spin" /> Loading subjects&hellip;
+                                            </div>
+                                        ) : filteredContinuingSubjects.length === 0 ? (
+                                            <div className="text-muted-foreground flex flex-col items-center justify-center gap-2 py-10 text-sm">
+                                                <BookOpen className="h-8 w-8 opacity-40" />
+                                                <p>No subjects available for this course right now.</p>
+                                            </div>
+                                        ) : (
+                                            filteredContinuingSubjects.map((subject) => {
+                                                const selected = selectedSubjects.find((s) => s.subject_id === subject.id);
+                                                const isSelected = Boolean(selected);
+                                                return (
+                                                    <div
+                                                        key={subject.id}
+                                                        className={cn(
+                                                            "group flex flex-col gap-3 rounded-lg border p-3 transition-colors sm:flex-row sm:items-start",
+                                                            isSelected
+                                                                ? "border-primary bg-primary/5"
+                                                                : "hover:border-primary/40 hover:bg-muted/30",
+                                                        )}
+                                                    >
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => toggleContinuingSubject(subject)}
+                                                            className="flex flex-1 items-start gap-3 text-left"
+                                                        >
+                                                            <Checkbox
+                                                                checked={isSelected}
+                                                                className="mt-0.5 pointer-events-none"
+                                                                aria-hidden
+                                                            />
+                                                            <div className="flex-1">
+                                                                <div className="flex flex-wrap items-center gap-2">
+                                                                    <span className="text-foreground font-mono text-xs font-semibold">
+                                                                        {subject.code}
+                                                                    </span>
+                                                                    {subject.has_classes && (
+                                                                        <Badge
+                                                                            variant="secondary"
+                                                                            className="h-5 gap-1 px-1.5 text-[10px]"
+                                                                        >
+                                                                            <CheckCircle2 className="h-3 w-3" /> Classes open
+                                                                        </Badge>
+                                                                    )}
+                                                                    {subject.academic_year > 0 && (
+                                                                        <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                                                                            Yr {subject.academic_year} • Sem {subject.semester}
+                                                                        </Badge>
+                                                                    )}
+                                                                </div>
+                                                                <p className="text-foreground mt-1 text-sm font-medium">
+                                                                    {subject.title}
+                                                                </p>
+                                                                <div className="text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
+                                                                    <span>Lec: {subject.lecture} unit(s)</span>
+                                                                    <span>Lab: {subject.laboratory} unit(s)</span>
+                                                                </div>
+                                                            </div>
+                                                        </button>
+                                                        {isSelected && selected && (
+                                                            <div className="border-primary/20 flex flex-col gap-2 border-t pt-2 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-3">
+                                                                <label className="flex cursor-pointer items-center gap-2 text-xs">
+                                                                    <Checkbox
+                                                                        checked={selected.is_modular}
+                                                                        onCheckedChange={(checked) =>
+                                                                            toggleContinuingModular(
+                                                                                subject.id,
+                                                                                checked === true,
+                                                                            )
+                                                                        }
+                                                                    />
+                                                                    <span className="text-muted-foreground">Modular</span>
+                                                                </label>
+                                                                <div className="text-right font-mono text-xs whitespace-nowrap">
+                                                                    <div>Lec: {formatPhp(selected.lecture_fee)}</div>
+                                                                    {selected.laboratory_fee > 0 && (
+                                                                        <div>Lab: {formatPhp(selected.laboratory_fee)}</div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })
+                                        )}
+                                    </div>
+
+                                    {/* Selection summary */}
+                                    <div className="bg-muted/40 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 text-sm">
+                                        <div className="text-muted-foreground">
+                                            <strong className="text-foreground">{continuingTotals.subjectsCount}</strong>{" "}
+                                            subject{continuingTotals.subjectsCount === 1 ? "" : "s"} •{" "}
+                                            <strong className="text-foreground">{continuingTotals.totalUnits}</strong>{" "}
+                                            unit{continuingTotals.totalUnits === 1 ? "" : "s"}
+                                        </div>
+                                        <div className="text-foreground font-mono font-semibold">
+                                            {formatPhp(continuingTotals.totalTuition)}
+                                        </div>
+                                    </div>
+
+                                    <div className="flex flex-col gap-3 sm:flex-row">
+                                        <Button
+                                            variant="outline"
+                                            onClick={() => setContinuingStep(0)}
+                                            className="sm:flex-1"
+                                        >
+                                            Back
+                                        </Button>
+                                        <Button
+                                            onClick={() => {
+                                                if (selectedSubjects.length === 0) {
+                                                    toast.error("Please pick at least one subject.");
+                                                    return;
+                                                }
+                                                setContinuingStep(2);
+                                            }}
+                                            size="lg"
+                                            className="gap-2 sm:flex-[2]"
+                                        >
+                                            Review tuition <ChevronRight className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
+
+                        {/* === Step 2: Review + tuition breakdown === */}
+                        {continuingStep === 2 && (
+                            <Card className="border-2 shadow-sm">
+                                <CardContent className="space-y-5 p-6 sm:p-8">
+                                    <div>
+                                        <h3 className="text-foreground text-lg font-semibold">Review &amp; submit</h3>
+                                        <p className="text-muted-foreground mt-1 text-sm">
+                                            Here&apos;s your estimated tuition for this term. The registrar will finalize
+                                            sections and payment details.
+                                        </p>
+                                    </div>
+
+                                    {/* Selected subjects list */}
+                                    <div className="overflow-hidden rounded-lg border">
+                                        <div className="bg-muted/50 border-b px-3 py-2 text-xs font-semibold tracking-wider uppercase text-muted-foreground">
+                                            Selected subjects ({continuingTotals.subjectsCount})
+                                        </div>
+                                        <div className="divide-y">
+                                            {selectedSubjects.map((s) => (
+                                                <div
+                                                    key={s.subject_id}
+                                                    className="flex flex-col gap-1 p-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+                                                >
+                                                    <div className="min-w-0">
+                                                        <p className="text-foreground truncate font-medium">
+                                                            <span className="font-mono text-xs">{s.code}</span> &middot;{" "}
+                                                            {s.title}
+                                                            {s.is_modular && (
+                                                                <Badge
+                                                                    variant="outline"
+                                                                    className="ml-2 h-5 px-1.5 text-[10px]"
+                                                                >
+                                                                    Modular
+                                                                </Badge>
+                                                            )}
+                                                        </p>
+                                                        <p className="text-muted-foreground text-xs">
+                                                            {s.lecture_units} lec + {s.laboratory_units} lab unit(s)
+                                                        </p>
+                                                    </div>
+                                                    <div className="text-right font-mono text-xs whitespace-nowrap">
+                                                        {formatPhp(s.lecture_fee + s.laboratory_fee)}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Tuition breakdown */}
+                                    <div className="bg-muted/30 space-y-2 rounded-lg border p-4 text-sm">
+                                        <div className="text-muted-foreground mb-2 flex items-center gap-1.5 text-xs font-semibold tracking-wider uppercase">
+                                            <Sparkles className="h-3.5 w-3.5" /> Tuition breakdown
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Lecture fees</span>
+                                            <span className="font-mono">{formatPhp(continuingTotals.totalLectures)}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Laboratory fees</span>
+                                            <span className="font-mono">{formatPhp(continuingTotals.totalLaboratory)}</span>
+                                        </div>
+                                        {continuingTotals.modularCount > 0 && (
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">
+                                                    Modular ({continuingTotals.modularCount} ×{" "}
+                                                    {formatPhp(MODULAR_FEE_PER_SUBJECT)})
+                                                </span>
+                                                <span className="font-mono">
+                                                    {formatPhp(continuingTotals.totalModularFee)}
+                                                </span>
+                                            </div>
+                                        )}
+                                        <Separator className="my-1" />
+                                        <div className="flex justify-between font-medium">
+                                            <span>Subtotal (tuition)</span>
+                                            <span className="font-mono">{formatPhp(continuingTotals.totalTuition)}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Miscellaneous fees</span>
+                                            <span className="font-mono">{formatPhp(continuingTotals.miscellaneous)}</span>
+                                        </div>
+                                        <Separator className="my-1" />
+                                        <div className="text-foreground flex items-center justify-between pt-1 text-base font-bold">
+                                            <span>Estimated total</span>
+                                            <span className="font-mono">{formatPhp(continuingTotals.overallTotal)}</span>
+                                        </div>
+                                        <p className="text-muted-foreground mt-2 text-xs">
+                                            Final assessment (discounts, downpayment, additional fees) is handled by the
+                                            registrar.
+                                        </p>
+                                    </div>
+
+                                    {/* Consent */}
+                                    <label className="bg-muted/20 flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm">
+                                        <Checkbox
+                                            checked={continuingConsent}
+                                            onCheckedChange={(checked) => setContinuingConsent(checked === true)}
+                                            className="mt-0.5"
+                                        />
+                                        <span className="text-muted-foreground">
+                                            I confirm that the information above is accurate and I agree to the
+                                            school&apos;s data privacy notice.
+                                        </span>
+                                    </label>
+
+                                    <div className="flex flex-col gap-3 sm:flex-row">
+                                        <Button
+                                            variant="outline"
+                                            onClick={() => setContinuingStep(1)}
+                                            className="sm:flex-1"
+                                        >
+                                            Back
+                                        </Button>
+                                        <Button
+                                            onClick={handleSubmitContinuing}
+                                            disabled={continuingSubmitting}
+                                            size="lg"
+                                            className="gap-2 sm:flex-[2]"
+                                        >
+                                            {continuingSubmitting ? (
+                                                <>
+                                                    <Loader2 className="h-4 w-4 animate-spin" /> Submitting&hellip;
+                                                </>
+                                            ) : (
+                                                <>
+                                                    Submit re-enrollment <ArrowRight className="h-4 w-4" />
+                                                </>
+                                            )}
+                                        </Button>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
+                    </motion.div>
+                )}
+            </main>
+        </>
+    );
+
     return (
-        <div className="flex min-h-screen flex-col bg-slate-50 dark:bg-slate-950">
+        <div className="bg-background relative flex min-h-screen flex-col">
             <Head title="Enrollment Registration" />
 
-            {/* Success Screen - Full Screen Overlay */}
+            {/* Decorative background — themed via shadcn tokens */}
+            <div
+                aria-hidden
+                className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"
+            >
+                <div className="bg-primary/10 absolute -top-24 -left-24 h-72 w-72 rounded-full blur-3xl sm:h-96 sm:w-96" />
+                <div className="bg-primary/5 absolute top-1/3 -right-32 h-80 w-80 rounded-full blur-3xl sm:h-[28rem] sm:w-[28rem]" />
+                <div
+                    className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05]"
+                    style={{
+                        backgroundImage:
+                            "radial-gradient(circle at 1px 1px, currentColor 1px, transparent 0)",
+                        backgroundSize: "24px 24px",
+                    }}
+                />
+            </div>
+
+            {/* Success Screen - Full-screen overlay, scrollable on mobile, centered on desktop */}
             <AnimatePresence>
                 {showSuccess && successData && (
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="bg-background/80 fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+                        className="bg-background/90 fixed inset-0 z-50 overflow-y-auto backdrop-blur-sm"
                     >
-                        <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className="w-full max-w-lg">
-                            <Card className="border-primary/20 overflow-hidden border-2 shadow-2xl">
-                                <div className="from-primary/10 via-primary/5 to-background bg-gradient-to-br p-8 text-center">
-                                    <motion.div
-                                        initial={{ scale: 0 }}
-                                        animate={{ scale: 1 }}
-                                        transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
-                                        className="bg-primary/10 mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full shadow-inner"
-                                    >
-                                        <CheckCircle2 className="text-primary h-10 w-10" />
-                                    </motion.div>
-                                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
-                                        <h2 className="text-foreground text-2xl font-bold">Registration Successful!</h2>
-                                        <p className="text-muted-foreground mt-2 text-sm">Your application has been submitted to the registrar.</p>
-                                    </motion.div>
-                                </div>
-                                {/* ... existing success content ... */}
-                                <CardContent className="space-y-6 p-6">
-                                    <div className="bg-muted/30 space-y-4 rounded-lg border p-4">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-muted-foreground text-sm">Applicant Name</span>
-                                            <span className="text-foreground text-right font-semibold">{successData.name}</span>
-                                        </div>
-                                        <Separator />
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-muted-foreground text-sm">Applicant ID</span>
-                                            <div className="flex items-center gap-2">
-                                                <Badge variant="secondary" className="font-mono text-base">
-                                                    {successData.studentId}
-                                                </Badge>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="h-8 w-8"
-                                                    onClick={() => copyToClipboard(successData.studentId)}
-                                                >
-                                                    <Copy className="h-4 w-4" />
-                                                </Button>
+                        <div className="flex min-h-full items-start justify-center p-3 sm:items-center sm:p-6">
+                            <motion.div
+                                initial={{ scale: 0.95, y: 20 }}
+                                animate={{ scale: 1, y: 0 }}
+                                className="w-full max-w-2xl"
+                            >
+                                <Card className="border-primary/20 overflow-hidden border-2 shadow-2xl">
+                                    {/* Header */}
+                                    <div className="from-primary/10 via-primary/5 to-background bg-gradient-to-br p-6 text-center sm:p-8">
+                                        <motion.div
+                                            initial={{ scale: 0 }}
+                                            animate={{ scale: 1 }}
+                                            transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+                                            className="bg-primary/10 mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full shadow-inner sm:h-20 sm:w-20"
+                                        >
+                                            <CheckCircle2 className="text-primary h-8 w-8 sm:h-10 sm:w-10" />
+                                        </motion.div>
+                                        <motion.div
+                                            initial={{ opacity: 0, y: 10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            transition={{ delay: 0.3 }}
+                                        >
+                                            <h2 className="text-foreground text-xl font-bold sm:text-2xl">
+                                                {successData.continuing ? "Re-enrollment Submitted!" : "Registration Submitted!"}
+                                            </h2>
+                                            <p className="text-muted-foreground mt-1.5 text-sm">
+                                                {successData.continuing
+                                                    ? "Your re-enrollment request is on file. The registrar will review your subjects and finalize your assessment."
+                                                    : "Your application is on file. The registrar will reach out for confirmation and document verification."}
+                                            </p>
+                                            {(successData.schoolYear || successData.semesterLabel) && (
+                                                <div className="mt-3 flex flex-wrap justify-center gap-1.5">
+                                                    {successData.schoolYear && (
+                                                        <Badge variant="secondary" className="gap-1">
+                                                            <Calendar className="h-3 w-3" />
+                                                            SY {successData.schoolYear}
+                                                        </Badge>
+                                                    )}
+                                                    {successData.semesterLabel && (
+                                                        <Badge variant="secondary">{successData.semesterLabel}</Badge>
+                                                    )}
+                                                    {successData.yearLevelLabel && (
+                                                        <Badge variant="outline">{successData.yearLevelLabel}</Badge>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </motion.div>
+                                    </div>
+
+                                    <CardContent className="space-y-5 p-4 sm:p-6">
+                                        {/* Student + Program card */}
+                                        <div className="bg-muted/30 divide-y rounded-lg border">
+                                            <div className="flex flex-col gap-1 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+                                                <span className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+                                                    {successData.continuing ? "Student" : "Applicant"}
+                                                </span>
+                                                <span className="text-foreground font-semibold sm:text-right">
+                                                    {successData.name}
+                                                </span>
+                                            </div>
+                                            <div className="flex flex-col gap-1.5 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+                                                <span className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+                                                    {successData.continuing ? "Student ID" : "Applicant ID"}
+                                                </span>
+                                                <div className="flex items-center gap-2 sm:justify-end">
+                                                    <Badge variant="secondary" className="font-mono text-sm sm:text-base">
+                                                        {successData.studentId}
+                                                    </Badge>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-7 w-7 sm:h-8 sm:w-8"
+                                                        onClick={() => copyToClipboard(successData.studentId)}
+                                                    >
+                                                        <Copy className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-col gap-1 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+                                                <span className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+                                                    Program
+                                                </span>
+                                                <span className="text-foreground font-medium sm:text-right">
+                                                    {successData.course}
+                                                    {successData.courseCode && (
+                                                        <span className="text-muted-foreground ml-1 font-normal">
+                                                            ({successData.courseCode})
+                                                        </span>
+                                                    )}
+                                                </span>
                                             </div>
                                         </div>
-                                        <Separator />
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-muted-foreground text-sm">Program</span>
-                                            <span className="text-foreground text-right font-medium">{successData.course}</span>
+
+                                        {/* Subjects list (continuing students only) */}
+                                        {successData.continuing && successData.subjects && successData.subjects.length > 0 && (
+                                            <div className="overflow-hidden rounded-lg border">
+                                                <div className="bg-muted/50 flex items-center justify-between border-b px-3 py-2 text-xs font-semibold tracking-wider uppercase text-muted-foreground sm:px-4">
+                                                    <span className="flex items-center gap-1.5">
+                                                        <BookOpen className="h-3.5 w-3.5" /> Enrolled subjects
+                                                    </span>
+                                                    <span>
+                                                        {successData.subjects.length} subj • {successData.totalUnits ?? 0} unit
+                                                        {(successData.totalUnits ?? 0) === 1 ? "" : "s"}
+                                                    </span>
+                                                </div>
+                                                <div className="max-h-56 divide-y overflow-y-auto sm:max-h-72">
+                                                    {successData.subjects.map((s, idx) => (
+                                                        <div
+                                                            key={`${s.code}-${idx}`}
+                                                            className="flex flex-col gap-1 px-3 py-2.5 text-sm sm:flex-row sm:items-center sm:justify-between sm:px-4"
+                                                        >
+                                                            <div className="min-w-0">
+                                                                <p className="text-foreground truncate font-medium">
+                                                                    <span className="font-mono text-xs">{s.code}</span>
+                                                                    <span className="text-muted-foreground"> · </span>
+                                                                    {s.title}
+                                                                    {s.is_modular && (
+                                                                        <Badge
+                                                                            variant="outline"
+                                                                            className="ml-2 h-5 px-1.5 text-[10px]"
+                                                                        >
+                                                                            Modular
+                                                                        </Badge>
+                                                                    )}
+                                                                </p>
+                                                                <p className="text-muted-foreground text-xs">
+                                                                    {s.lecture_units} lec + {s.laboratory_units} lab unit(s)
+                                                                </p>
+                                                            </div>
+                                                            <div className="text-right font-mono text-xs whitespace-nowrap sm:text-sm">
+                                                                {new Intl.NumberFormat("en-PH", {
+                                                                    style: "currency",
+                                                                    currency: "PHP",
+                                                                    minimumFractionDigits: 0,
+                                                                    maximumFractionDigits: 0,
+                                                                }).format(s.lecture_fee + s.laboratory_fee)}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Tuition breakdown (continuing students) */}
+                                        {successData.continuing && successData.tuition && (
+                                            <div className="bg-primary/5 space-y-2 rounded-lg border p-3 text-sm sm:p-4">
+                                                <div className="text-muted-foreground mb-1 flex items-center gap-1.5 text-xs font-semibold tracking-wider uppercase">
+                                                    <Sparkles className="h-3.5 w-3.5" /> Estimated tuition
+                                                </div>
+                                                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 sm:gap-x-6">
+                                                    <div className="flex justify-between">
+                                                        <span className="text-muted-foreground">Lecture fees</span>
+                                                        <span className="font-mono">
+                                                            {new Intl.NumberFormat("en-PH", {
+                                                                style: "currency",
+                                                                currency: "PHP",
+                                                                minimumFractionDigits: 0,
+                                                                maximumFractionDigits: 0,
+                                                            }).format(successData.tuition.total_lectures)}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex justify-between">
+                                                        <span className="text-muted-foreground">Laboratory fees</span>
+                                                        <span className="font-mono">
+                                                            {new Intl.NumberFormat("en-PH", {
+                                                                style: "currency",
+                                                                currency: "PHP",
+                                                                minimumFractionDigits: 0,
+                                                                maximumFractionDigits: 0,
+                                                            }).format(successData.tuition.total_laboratory)}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex justify-between">
+                                                        <span className="text-muted-foreground">Tuition subtotal</span>
+                                                        <span className="font-mono">
+                                                            {new Intl.NumberFormat("en-PH", {
+                                                                style: "currency",
+                                                                currency: "PHP",
+                                                                minimumFractionDigits: 0,
+                                                                maximumFractionDigits: 0,
+                                                            }).format(successData.tuition.total_tuition)}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex justify-between">
+                                                        <span className="text-muted-foreground">Miscellaneous</span>
+                                                        <span className="font-mono">
+                                                            {new Intl.NumberFormat("en-PH", {
+                                                                style: "currency",
+                                                                currency: "PHP",
+                                                                minimumFractionDigits: 0,
+                                                                maximumFractionDigits: 0,
+                                                            }).format(successData.tuition.miscellaneous)}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <Separator className="my-1" />
+                                                <div className="text-foreground flex items-center justify-between pt-1 text-base font-bold">
+                                                    <span>Estimated total</span>
+                                                    <span className="font-mono">
+                                                        {new Intl.NumberFormat("en-PH", {
+                                                            style: "currency",
+                                                            currency: "PHP",
+                                                            minimumFractionDigits: 0,
+                                                            maximumFractionDigits: 0,
+                                                        }).format(successData.tuition.overall)}
+                                                    </span>
+                                                </div>
+                                                <p className="text-muted-foreground text-xs">
+                                                    Any discounts, downpayment, or additional fees will be applied by the
+                                                    registrar during final assessment.
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        {/* Next steps */}
+                                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/20 sm:p-4">
+                                            <h4 className="flex items-center gap-2 font-semibold text-amber-800 dark:text-amber-200">
+                                                <Sparkles className="h-4 w-4" /> What&apos;s next?
+                                            </h4>
+                                            <ul className="mt-2 ml-5 list-disc space-y-1 text-sm text-amber-700 dark:text-amber-300">
+                                                <li>
+                                                    Save your{" "}
+                                                    <strong>{successData.continuing ? "Student ID" : "Applicant ID"}</strong>{" "}
+                                                    for reference.
+                                                </li>
+                                                {successData.continuing ? (
+                                                    <>
+                                                        <li>Watch your email for the finalized assessment slip.</li>
+                                                        <li>Settle any downpayment with the cashier to complete enrollment.</li>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <li>Wait for confirmation from the registrar.</li>
+                                                        <li>Prepare required documents for verification.</li>
+                                                    </>
+                                                )}
+                                            </ul>
                                         </div>
-                                    </div>
 
-                                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/20">
-                                        <h4 className="flex items-center gap-2 font-semibold text-amber-800 dark:text-amber-200">
-                                            <Sparkles className="h-4 w-4" /> What's Next?
-                                        </h4>
-                                        <ul className="mt-2 ml-5 list-disc space-y-1 text-sm text-amber-700 dark:text-amber-300">
-                                            <li>
-                                                Save your <strong>Applicant ID</strong> for reference
-                                            </li>
-                                            <li>Wait for confirmation from the registrar</li>
-                                            <li>Prepare required documents for verification</li>
-                                        </ul>
-                                    </div>
-
-                                    <div className="flex flex-col gap-3 pt-2">
-                                        <Button size="lg" onClick={handleStartNewRegistration} className="w-full">
-                                            Submit Another Registration
-                                        </Button>
-                                        <Button variant="outline" size="lg" asChild className="w-full">
-                                            <a href="/">Back to Homepage</a>
-                                        </Button>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        </motion.div>
+                                        {/* Actions */}
+                                        <div className="flex flex-col gap-2 pt-2 sm:flex-row-reverse">
+                                            <Button size="lg" onClick={handleStartNewRegistration} className="sm:flex-1">
+                                                {successData.continuing ? "Enroll another student" : "Submit another registration"}
+                                            </Button>
+                                            <Button variant="outline" size="lg" asChild className="sm:flex-1">
+                                                <a href="/">Back to homepage</a>
+                                            </Button>
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            </motion.div>
+                        </div>
                     </motion.div>
                 )}
             </AnimatePresence>
 
+            {mode !== "new" ? (
+                identifyView
+            ) : (
+                <>
             {/* Main Header - Sticky */}
             <header className="bg-background/80 supports-[backdrop-filter]:bg-background/60 sticky top-0 z-40 w-full border-b backdrop-blur-md">
                 <div className="container mx-auto flex h-16 max-w-5xl items-center justify-between px-4">
@@ -1416,6 +2656,8 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                     e.target.value = "";
                 }}
             />
+                </>
+            )}
         </div>
     );
 }

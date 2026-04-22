@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.1.2",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.1.2",
-  "commit": "d816a36c3e0a6a830a11ea04ae06d6025b6008ce",
+  "version": "1.1.0-dev.2.0",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.2.0",
+  "commit": "1af348dea30eb4f7aca25e568e8b70ee7059d2ce",
   "branch": "master",
-  "timestamp": "2026-04-22T04:01:40Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24759365259",
-  "release_type": "bugfix",
+  "timestamp": "2026-04-22T06:26:53Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24763526465",
+  "release_type": "feature",
   "changelog": {
-    "current": "Version 1.1.0-dev.1.2 - fix: use USER env var instead of hardcoded www-data for storage permissions (#32)",
-    "previous": "1.1.0-dev.1.1"
+    "current": "Version 1.1.0-dev.2.0 - feat(enrollment) improved enrollment workflow (#34)",
+    "previous": "1.1.0-dev.1.2"
   },
   "metadata": {
     "author": "yukazakiri",

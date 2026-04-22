@@ -42,6 +42,16 @@ final readonly class SettingsShareService
     }
 
     /**
+     * Get the grading system configuration for frontend consumers.
+     *
+     * @return array<string, mixed>
+     */
+    public function getGrading(): array
+    {
+        return app(GradingSystemService::class)->getConfig();
+    }
+
+    /**
      * Get app name based on current domain.
      */
     public function getAppName(Request $request): string

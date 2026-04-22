@@ -52,6 +52,10 @@ final class SystemManagementPermissions
                 'view' => 'View:SystemManagementNotifications',
                 'update' => 'Update:SystemManagementNotifications',
             ],
+            'grading' => [
+                'view' => 'View:SystemManagementGrading',
+                'update' => 'Update:SystemManagementGrading',
+            ],
             'pulse' => [
                 'view' => 'View:SystemManagementPulse',
                 'update' => null,

@@ -1,0 +1,163 @@
+name: Auto Label
+
+on:
+  issues:
+    types: [opened, edited]
+  pull_request_target:
+    types: [opened, edited]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  auto-label:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Label by keywords
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue || context.payload.pull_request;
+            const isPr = !!context.payload.pull_request;
+            const title = (issue.title || '').toLowerCase();
+            const body = (issue.body || '').toLowerCase();
+
+            const labelsToAdd = new Set();
+            const labelsToRemove = new Set();
+
+            const hasLabel = (name) => (issue.labels || []).some(l => l.name === name);
+
+            // ── Bug / Fix ──
+            if (title.includes('bug') || title.includes('fix') || title.includes('hotfix') || body.includes('bug report')) {
+              labelsToAdd.add('bug');
+            }
+
+            // ── Feature / Enhancement ──
+            if (title.includes('feat') || title.includes('feature') || title.includes('enhancement') || title.startsWith('add ')) {
+              labelsToAdd.add('feature');
+            }
+
+            // ── Documentation ──
+            if (title.includes('doc') || title.includes('readme') || title.includes('wiki') || title.includes('comment')) {
+              labelsToAdd.add('documentation');
+            }
+
+            // ── Refactor ──
+            if (title.includes('refactor') || title.includes('cleanup') || title.includes('clean up') || title.includes('restructure')) {
+              labelsToAdd.add('refactor');
+            }
+
+            // ── Breaking Change ──
+            if (title.includes('break') || title.includes('breaking') || title.includes('bc break') || title.includes('!')) {
+              labelsToAdd.add('breaking');
+            }
+
+            // ── Chore / CI / Build ──
+            if (title.includes('chore') || title.includes('ci') || title.includes('workflow') || title.includes('build') || title.includes('deps') || title.includes('bump')) {
+              labelsToAdd.add('chore');
+            }
+
+            // ── Performance ──
+            if (title.includes('perf') || title.includes('performance') || title.includes('slow') || title.includes('speed') || title.includes('memory') || title.includes('cache')) {
+              labelsToAdd.add('performance');
+            }
+
+            // ── Security ──
+            if (title.includes('security') || title.includes('vulnerability') || title.includes('cve') || title.includes('xss') || title.includes('injection') || title.includes('auth')) {
+              labelsToAdd.add('security');
+            }
+
+            // ── Good first issue ──
+            if (title.includes('good first issue') || title.includes('beginner') || title.includes('easy') || title.includes('first-time')) {
+              labelsToAdd.add('good first issue');
+            }
+
+            // ── UI / UX ──
+            if (title.includes('ui') || title.includes('ux') || title.includes('design') || title.includes('tailwind') || title.includes('css') || title.includes('style')) {
+              labelsToAdd.add('ui/ux');
+            }
+
+            // ── Database ──
+            if (title.includes('migration') || title.includes('database') || title.includes('eloquent') || title.includes('seed') || title.includes('schema')) {
+              labelsToAdd.add('database');
+            }
+
+            // ── API ──
+            if (title.includes('api') || title.includes('endpoint') || title.includes('route') || title.includes('controller')) {
+              labelsToAdd.add('api');
+            }
+
+            // ── Testing ──
+            if (title.includes('test') || title.includes('spec') || title.includes('pest') || title.includes('phpunit') || title.includes('coverage')) {
+              labelsToAdd.add('tests');
+            }
+
+            // ── Docker ──
+            if (title.includes('docker') || title.includes('container') || title.includes('image') || title.includes('dockerfile')) {
+              labelsToAdd.add('docker');
+            }
+
+            // ── Priority ──
+            if (title.includes('urgent') || title.includes('critical') || title.includes('emergency') || title.includes('blocker')) {
+              labelsToAdd.add('priority: high');
+            }
+
+            if (title.includes('low priority') || title.includes('nice to have')) {
+              labelsToAdd.add('priority: low');
+            }
+
+            // ── PR-specific: file path labels ──
+            if (isPr) {
+              const { data: files } = await github.rest.pulls.listFiles({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: issue.number,
+              });
+
+              const paths = files.map(f => f.filename);
+
+              const touched = (patterns) => paths.some(p => patterns.some(pat => p.includes(pat)));
+
+              if (touched(['resources/js', 'resources/css', 'vite.config', 'package.json', 'tailwind.config'])) {
+                labelsToAdd.add('frontend');
+              }
+
+              if (touched(['app/', 'routes/', 'config/', 'bootstrap/', 'composer.json'])) {
+                labelsToAdd.add('backend');
+              }
+
+              if (touched(['.github/workflows', '.github/actions'])) {
+                labelsToAdd.add('ci/cd');
+              }
+
+              if (touched(['docker/', 'Dockerfile', 'docker-compose'])) {
+                labelsToAdd.add('docker');
+              }
+
+              if (touched(['tests/', 'phpunit', 'pest'])) {
+                labelsToAdd.add('tests');
+              }
+
+              if (touched(['database/migrations', 'database/seeders', 'database/factories'])) {
+                labelsToAdd.add('database');
+              }
+
+              if (touched(['resources/views', 'blade', 'filament'])) {
+                labelsToAdd.add('ui/ux');
+              }
+            }
+
+            const add = Array.from(labelsToAdd).filter(l => !hasLabel(l));
+
+            if (add.length > 0) {
+              core.info(`Adding labels: ${add.join(', ')}`);
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: add,
+              });
+            } else {
+              core.info('No new labels to add.');
+            }

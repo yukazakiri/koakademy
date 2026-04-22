@@ -153,14 +153,26 @@ jobs:
             const baseTag = officialReleases[0]?.tag_name || null;
 
             let commits = [];
+            let compareUrl = null;
             if (baseTag) {
-              const compare = await github.rest.repos.compareCommits({
-                owner,
-                repo,
-                base: baseTag,
-                head: context.sha,
-              });
-              commits = compare.data.commits || [];
+              try {
+                const compare = await github.rest.repos.compareCommits({
+                  owner,
+                  repo,
+                  base: baseTag,
+                  head: context.sha,
+                });
+                commits = compare.data.commits || [];
+                compareUrl = `${context.serverUrl}/${owner}/${repo}/compare/${baseTag}...${tag}`;
+              } catch (compareError) {
+                console.log(`No common ancestor between ${baseTag} and ${context.sha}. Falling back to listing recent commits.`);
+                const list = await github.rest.repos.listCommits({
+                  owner,
+                  repo,
+                  per_page: 100,
+                });
+                commits = list.data || [];
+              }
             } else {
               const list = await github.rest.repos.listCommits({
                 owner,
@@ -267,9 +279,7 @@ jobs:
                 subject: firstLine(commit.commit?.message),
               }));
 
-            const compareUrl = baseTag
-              ? `${context.serverUrl}/${owner}/${repo}/compare/${baseTag}...${tag}`
-              : null;
+
 
             const lines = [];
             lines.push(`# KoAcademy ${tag} (Official Release)`);

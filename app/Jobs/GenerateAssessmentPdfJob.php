@@ -194,6 +194,7 @@ final class GenerateAssessmentPdfJob implements ShouldQueue
             ),
             'tuition' => $studentEnrollment->studentTuition,
             'general_settings' => $generalSettingsService->getGlobalSettingsModel(),
+            'siteSettings' => app(\App\Settings\SiteSettings::class)->getBrandingArray(),
         ];
 
         // Generate unique filename

@@ -38,23 +38,30 @@
 <body class="bg-white mt-0">
     <div class="max-w-full mx-auto">
         <!-- Header Section -->
+        @php
+            $pdfLogo = $siteSettings['logo'] ?? (isset($general_settings) && $general_settings?->school_portal_logo ? $general_settings->school_portal_logo : null);
+            $pdfOrgName = $siteSettings['organizationName'] ?? $general_settings?->school_portal_title ?? $general_settings?->site_name ?? config('app.name');
+            $pdfAddress = $siteSettings['organizationAddress'] ?? $general_settings?->school_portal_address ?? null;
+            $pdfPhone = $siteSettings['supportPhone'] ?? $general_settings?->support_phone ?? null;
+            $pdfEmail = $siteSettings['supportEmail'] ?? $general_settings?->support_email ?? null;
+        @endphp
         <div class="mb-1 flex items-center justify-center gap-2">
-            @if(isset($general_settings) && $general_settings?->school_portal_logo)
-                <img src="{{ $general_settings->school_portal_logo }}" alt="College Logo" class="w-12">
+            @if($pdfLogo)
+                <img src="{{ $pdfLogo }}" alt="College Logo" class="w-12">
             @else
                 <img src="{{ asset('logo.png') }}" alt="College Logo" class="w-12">
             @endif
             <div class="text-center flex-1">
                 <h1 class="font-bold text-sm">
-                    {{ $general_settings?->school_portal_title ?? $general_settings?->site_name ?? app(\App\Settings\SiteSettings::class)->getOrganizationName() }}
+                    {{ $pdfOrgName }}
                 </h1>
                 <p class="text-[7pt]">
-                    @if(isset($general_settings) && ($general_settings?->support_phone || $general_settings?->support_email))
-                        @if($general_settings?->support_phone)Tel No. {{ $general_settings->support_phone }}@endif
-                        @if($general_settings?->support_phone && $general_settings?->support_email) | @endif
-                        @if($general_settings?->support_email)Email: {{ $general_settings->support_email }}@endif
+                    @if($pdfPhone || $pdfEmail)
+                        @if($pdfPhone)Tel No. {{ $pdfPhone }}@endif
+                        @if($pdfPhone && $pdfEmail) | @endif
+                        @if($pdfEmail)Email: {{ $pdfEmail }}@endif
                     @else
-                        {{ app(\App\Settings\SiteSettings::class)->getOrganizationAddress() ?? '118 Bonifacio Street, Holyghost Proper, Baguio City' }} | Tel No. {{ app(\App\Settings\SiteSettings::class)->getSupportPhone() ?? '444-5389/442-4160' }}
+                        {{ $pdfAddress ?? '118 Bonifacio Street, Holyghost Proper, Baguio City' }} | Tel No. 444-5389/442-4160
                     @endif
                 </p>
                 <p class="text-xs font-bold">Assessment Form</p>

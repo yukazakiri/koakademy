@@ -416,11 +416,7 @@ final class GenerateBulkAssessmentsJob implements ShouldQueue
         string $tempDir,
         int $index
     ): string {
-        // Override the school title to ensure correct display
         $generalSettings = $settingsService->getGlobalSettingsModel();
-        if ($generalSettings instanceof \App\Models\GeneralSetting) {
-            $generalSettings->school_portal_title = app(\App\Settings\SiteSettings::class)->getOrganizationName();
-        }
 
         $data = [
             'student' => $enrollment,
@@ -437,6 +433,7 @@ final class GenerateBulkAssessmentsJob implements ShouldQueue
             ),
             'tuition' => $enrollment->studentTuition,
             'general_settings' => $generalSettings,
+            'siteSettings' => app(\App\Settings\SiteSettings::class)->getBrandingArray(),
         ];
 
         // Generate unique filename using enrollment ID and index

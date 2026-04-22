@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Notifications;
 
+use App\Settings\SiteSettings;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -38,12 +39,24 @@ final class StudentEnrolledVerified extends Notification implements ShouldQueue
      */
     public function toMail(object $notifiable): MailMessage
     {
+        $siteSettings = app(SiteSettings::class)->getBrandingArray();
+
+        $logoUrl = $siteSettings['logo'] ?? null;
+        if ($logoUrl && ! str_starts_with($logoUrl, 'http')) {
+            $logoUrl = url($logoUrl);
+        }
+
         return (new MailMessage)
-            ->subject('Enrollment Verified - Next Steps')
+            ->subject(sprintf(
+                'Enrollment Verified - Next Steps | %s',
+                $siteSettings['organizationName'] ?? config('app.name')
+            ))
             ->markdown('emails.enrollment.verified_by_dept_head', [
                 'student_name' => $this->record->student_name,
                 'subjects' => $this->record->SubjectsEnrolled,
                 'tuition' => $this->record->studentTuition,
+                'siteSettings' => $siteSettings,
+                'logoUrl' => $logoUrl,
             ]);
     }
 

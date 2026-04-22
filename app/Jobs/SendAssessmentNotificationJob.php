@@ -287,6 +287,7 @@ final class SendAssessmentNotificationJob implements ShouldQueue
             ),
             'tuition' => $this->studentEnrollment->studentTuition,
             'general_settings' => $generalSettingsService->getGlobalSettingsModel(),
+            'siteSettings' => app(\App\Settings\SiteSettings::class)->getBrandingArray(),
         ];
 
         // Generate unique filename

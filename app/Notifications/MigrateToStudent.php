@@ -6,6 +6,7 @@ namespace App\Notifications;
 
 use App\Models\GeneralSetting;
 use App\Services\PdfGenerationService;
+use App\Settings\SiteSettings;
 use Exception;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -87,9 +88,18 @@ final class MigrateToStudent extends Notification implements ShouldQueue
         }
 
         $generalSettings = GeneralSetting::query()->first();
+        $siteSettings = app(SiteSettings::class)->getBrandingArray();
+
+        $logoUrl = $siteSettings['logo'] ?? null;
+        if ($logoUrl && ! str_starts_with($logoUrl, 'http')) {
+            $logoUrl = url($logoUrl);
+        }
 
         $mailMessage = (new MailMessage)
-            ->subject('Enrollment Confirmation - Important Information Enclosed')
+            ->subject(sprintf(
+                'Enrollment Confirmation - %s',
+                $siteSettings['organizationName'] ?? config('app.name')
+            ))
             ->markdown('emails.enrollment.official_enrollment', [
                 'student_name' => $this->record->first_name ?? 'Student',
                 'school_year' => mb_convert_encoding(
@@ -102,6 +112,8 @@ final class MigrateToStudent extends Notification implements ShouldQueue
                     'UTF-8',
                     'auto'
                 ),
+                'siteSettings' => $siteSettings,
+                'logoUrl' => $logoUrl,
             ]);
 
         // Check if file exists in the correct storage location
@@ -164,11 +176,14 @@ final class MigrateToStudent extends Notification implements ShouldQueue
             }
         }
 
+        $pdfAttached = false;
+
         if ($fileExistsForAttachment && $attachmentPath) {
             $mailMessage->attach($attachmentPath, [
-                'as' => 'Assessment_Form.pdf',
+                'as' => sprintf('Assessment_Form_%s.pdf', $this->record->id),
                 'mime' => 'application/pdf',
             ]);
+            $pdfAttached = true;
             Log::info('Successfully attached PDF to email.', [
                 'path' => $attachmentPath,
             ]);
@@ -185,6 +200,11 @@ final class MigrateToStudent extends Notification implements ShouldQueue
                 Log::error('PDF Generation Error Details: '.$pdfGenerationError);
             }
         }
+
+        // Inject the attachment flag so the blade can show a fallback notice
+        $mailMessage->with([
+            'pdfAttached' => $pdfAttached,
+        ]);
 
         return $mailMessage;
     }
@@ -339,6 +359,7 @@ final class MigrateToStudent extends Notification implements ShouldQueue
                 'auto'
             ),
             'tuition' => $this->record->studentTuition,
+            'siteSettings' => app(SiteSettings::class)->getBrandingArray(),
         ];
 
         $randomChars = mb_substr(

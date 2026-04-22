@@ -389,6 +389,46 @@ final class GeneralSettingsService
     }
 
     /**
+     * Update the global academic calendar settings.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function updateGlobalAcademicCalendar(array $data): ?GeneralSetting
+    {
+        $settings = $this->getGlobalSettingsModel();
+
+        if (! $settings instanceof GeneralSetting) {
+            $settings = GeneralSetting::query()->create([
+                'site_name' => config('app.name'),
+            ]);
+
+            $this->generalSetting = $settings;
+        }
+
+        $updates = [];
+
+        if (array_key_exists('semester', $data)) {
+            $updates['semester'] = (int) $data['semester'];
+        }
+
+        if (array_key_exists('school_starting_date', $data) && $data['school_starting_date'] !== null) {
+            $updates['school_starting_date'] = $data['school_starting_date'];
+        }
+
+        if (array_key_exists('school_ending_date', $data) && $data['school_ending_date'] !== null) {
+            $updates['school_ending_date'] = $data['school_ending_date'];
+        }
+
+        if ($updates !== []) {
+            $settings->update($updates);
+            $this->generalSetting = $settings->fresh();
+            GeneralSetting::clearCache();
+        }
+
+        return $this->generalSetting;
+    }
+
+    /**
      * Get the system default semester (from global settings).
      */
     public function getSystemDefaultSemester(): int

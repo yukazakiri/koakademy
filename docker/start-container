@@ -539,6 +539,10 @@ bootstrap_container() {
 start_http_container() {
     echo "Octane Server: ${octane_server}"
 
+    # Ensure any files created during startup (logs, caches, etc.) are
+    # writable by the web server process before it starts.
+    fix_storage_permissions
+
     if [ "${octane_server}" = "frankenphp" ]; then
         exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.frankenphp.conf
     elif [ "${octane_server}" = "swoole" ]; then

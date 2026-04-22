@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.0.1",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.0.1",
-  "commit": "1886d1cce1161ead5ddd9cdb6075ec593e4539b5",
+  "version": "1.1.0-dev.0.5",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.0.5",
+  "commit": "799198f671db86f6512c700bec50c4ba7b94f581",
   "branch": "master",
-  "timestamp": "2026-04-21T04:46:19Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24704401801",
+  "timestamp": "2026-04-22T02:20:26Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24756707140",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.1.0-dev.0.1 - Merge pull request #26 from yukazakiri/y-branch-3",
-    "previous": "1.1.0"
+    "current": "Version 1.1.0-dev.0.5 - Merge y-branch-5 into master (prioritize y-branch-5 changes)",
+    "previous": "1.1.0-dev.0.1"
   },
   "metadata": {
     "author": "yukazakiri",

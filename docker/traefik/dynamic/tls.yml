@@ -30,32 +30,6 @@ http:
       middlewares:
         - redirect-websecure
 
-    # MinIO
-    minio-secure:
-      rule: "Host(`minio.local.test`)"
-      entrypoints:
-        - websecure
-      service: minio
-      tls: true
-    minio-http:
-      rule: "Host(`minio.local.test`)"
-      entrypoints:
-        - web
-      service: minio
-
-    # MinIO Console
-    minio-console-secure:
-      rule: "Host(`minio-console.local.test`)"
-      entrypoints:
-        - websecure
-      service: minio-console
-      tls: true
-    minio-console-http:
-      rule: "Host(`minio-console.local.test`)"
-      entrypoints:
-        - web
-      service: minio-console
-
     # Mailpit
     mailpit-secure:
       rule: "Host(`mailpit.local.test`)"
@@ -73,15 +47,7 @@ http:
     app:
       loadBalancer:
         servers:
-          - url: "http://laravel:80"
-    minio:
-      loadBalancer:
-        servers:
-          - url: "http://minio:9000"
-    minio-console:
-      loadBalancer:
-        servers:
-          - url: "http://minio:8900"
+          - url: "http://laravel.test:80"
     mailpit:
       loadBalancer:
         servers:

@@ -248,6 +248,57 @@ chmod 644 "$CERT_FILE"
 chmod 600 "$KEY_FILE"
 print_status "Permissions set"
 
+# Update Traefik dynamic config
+print_section "Updating Traefik TLS configuration"
+TRAEFIK_TLS_FILE="${PROJECT_DIR}/docker/traefik/dynamic/tls.yml"
+
+if [ -f "$TRAEFIK_TLS_FILE" ]; then
+    print_info "Updating ${TRAEFIK_TLS_FILE}..."
+
+    # Extract current hosts from tls.yml to detect mismatches
+    CURRENT_PORTAL_HOST=$(grep -o 'Host(`portal\.[^`]*`)' "$TRAEFIK_TLS_FILE" | head -1 | sed 's/Host(`\([^`]*\)`)/\1/')
+    CURRENT_ADMIN_HOST=$(grep -o 'Host(`admin\.[^`]*`)' "$TRAEFIK_TLS_FILE" | head -1 | sed 's/Host(`\([^`]*\)`)/\1/')
+    CURRENT_CERT_FILE=$(ls "${CERTS_DIR}"/*.pem 2>/dev/null | grep -v 'rootCA' | head -1 | xargs basename 2>/dev/null || echo "")
+
+    print_info "Current TLS config:"
+    print_info "  - Portal host: ${CURRENT_PORTAL_HOST:-unknown}"
+    print_info "  - Admin host: ${CURRENT_ADMIN_HOST:-unknown}"
+    print_info "  - Certificate: ${CURRENT_CERT_FILE:-unknown}"
+
+    # Fix portal host if it doesn't match PORTAL_HOST
+    if [ -n "$CURRENT_PORTAL_HOST" ] && [ "$CURRENT_PORTAL_HOST" != "$PORTAL_HOST" ]; then
+        print_warning "Portal host mismatch: found '$CURRENT_PORTAL_HOST', expected '$PORTAL_HOST'"
+        sed -i "s/\`portal\.[^`]*\`/\`${PORTAL_HOST}\`/g" "$TRAEFIK_TLS_FILE"
+        print_status "Fixed portal host to: $PORTAL_HOST"
+    fi
+
+    # Fix admin host if it doesn't match ADMIN_HOST
+    if [ -n "$CURRENT_ADMIN_HOST" ] && [ "$CURRENT_ADMIN_HOST" != "$ADMIN_HOST" ]; then
+        print_warning "Admin host mismatch: found '$CURRENT_ADMIN_HOST', expected '$ADMIN_HOST'"
+        sed -i "s/\`admin\.[^`]*\`/\`${ADMIN_HOST}\`/g" "$TRAEFIK_TLS_FILE"
+        print_status "Fixed admin host to: $ADMIN_HOST"
+    fi
+
+    # Fix certificate file references if they don't match the actual cert file
+    if [ -n "$CURRENT_CERT_FILE" ] && grep -q "dccp.test.pem" "$TRAEFIK_TLS_FILE"; then
+        print_warning "Found old 'dccp.test.pem' references, replacing with ${CURRENT_CERT_FILE}..."
+        sed -i "s/dccp\.test\.pem/${CURRENT_CERT_FILE}/g" "$TRAEFIK_TLS_FILE"
+        sed -i "s/dccp\.test-key\.pem/${CURRENT_CERT_FILE/-cert/-key}/g" "$TRAEFIK_TLS_FILE"
+        print_status "Fixed certificate paths"
+    fi
+
+    # Safety pass for any remaining dccp.test references
+    if grep -q "dccp.test" "$TRAEFIK_TLS_FILE"; then
+        print_warning "Found remaining 'dccp.test' references, replacing..."
+        sed -i "s/dccp\.test/${BASE_DOMAIN}/g" "$TRAEFIK_TLS_FILE"
+        print_status "Replaced all 'dccp.test' references"
+    fi
+
+    print_status "Traefik TLS config updated successfully"
+else
+    print_warning "Traefik TLS config not found at ${TRAEFIK_TLS_FILE}"
+fi
+
 # Check if Traefik is running
 print_section "Traefik restart"
 print_info "Checking if Traefik container is running..."

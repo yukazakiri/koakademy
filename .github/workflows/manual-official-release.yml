@@ -48,7 +48,10 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
+  DOCKER_REGISTRY: docker.io
   IMAGE_NAME: ${{ github.repository }}
+  DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE || github.repository }}
+  PUBLISH_DOCKERHUB: ${{ vars.PUBLISH_DOCKERHUB || 'false' }}
 
 jobs:
   prepare:
@@ -137,11 +140,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Log in to Docker Hub
+        if: env.PUBLISH_DOCKERHUB == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: |
+            name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+            name=${{ env.DOCKER_REGISTRY }}/${{ env.DOCKERHUB_IMAGE }},enable=${{ env.PUBLISH_DOCKERHUB == 'true' }}
           tags: |
             type=raw,value=${{ needs.prepare.outputs.tag }}
             type=raw,value=latest,enable=${{ needs.prepare.outputs.publish_latest == 'true' }}
@@ -150,7 +163,7 @@ jobs:
           labels: |
             org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.created=${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}
+            org.opencontainers.image.created=${{ github.event.repository.updated_at }}
             org.opencontainers.image.title=KoAcademy
             org.opencontainers.image.description=Divine Cross College Portal - Admin Dashboard V3
             org.opencontainers.image.vendor=KOA
@@ -441,6 +454,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Update version.json
         shell: bash
@@ -449,10 +464,25 @@ jobs:
 
           VERSION="${{ needs.prepare.outputs.version }}"
           TAG="${{ needs.prepare.outputs.tag }}"
+          BRANCH="${{ github.ref_name }}"
+
+          git fetch origin "$BRANCH"
 
           PREVIOUS_VERSION="1.0.0"
           if [ -f "version.json" ]; then
             PREVIOUS_VERSION=$(jq -r '.version // "1.0.0"' version.json 2>/dev/null || echo "1.0.0")
+          fi
+
+          REMOTE_VERSION=$(git show "origin/${BRANCH}:version.json" 2>/dev/null | jq -r '.version // ""' 2>/dev/null || true)
+
+          if [ "$REMOTE_VERSION" = "$VERSION" ]; then
+            echo "version.json is already at ${VERSION} on origin/${BRANCH}; skipping update."
+            exit 0
+          fi
+
+          if [ -n "$REMOTE_VERSION" ] && [ "$REMOTE_VERSION" != "$PREVIOUS_VERSION" ]; then
+            echo "version.json changed upstream (${PREVIOUS_VERSION} -> ${REMOTE_VERSION}); skipping stale write to avoid race conflict."
+            exit 0
           fi
 
           cat > version.json << EOF
@@ -479,8 +509,29 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add version.json
-          git diff --staged --quiet || git commit -m "chore: update version to ${VERSION} [skip ci]"
-          git push
+
+          if git diff --staged --quiet; then
+            echo "No version.json changes to commit."
+            exit 0
+          fi
+
+          git commit -m "chore: update version to ${VERSION} [skip ci]"
+
+          if git push origin "HEAD:${BRANCH}"; then
+            exit 0
+          fi
+
+          echo "Initial push failed; re-checking remote version.json before retry."
+          git fetch origin "$BRANCH"
+          REMOTE_VERSION=$(git show "origin/${BRANCH}:version.json" 2>/dev/null | jq -r '.version // ""' 2>/dev/null || true)
+
+          if [ "$REMOTE_VERSION" = "$VERSION" ]; then
+            echo "Another workflow already applied ${VERSION}; finishing successfully."
+            exit 0
+          fi
+
+          git pull --rebase origin "$BRANCH"
+          git push origin "HEAD:${BRANCH}"
 
   notify:
     runs-on: ubuntu-24.04

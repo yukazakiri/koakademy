@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.0.5",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.0.5",
-  "commit": "799198f671db86f6512c700bec50c4ba7b94f581",
+  "version": "1.1.0-dev.1.0",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.1.0",
+  "commit": "9d87cf921d1d25c5d10493c1f7eff4cce75f1bee",
   "branch": "master",
-  "timestamp": "2026-04-22T02:20:26Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24756707140",
-  "release_type": "patch",
+  "timestamp": "2026-04-22T03:24:16Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24758394611",
+  "release_type": "feature",
   "changelog": {
-    "current": "Version 1.1.0-dev.0.5 - Merge y-branch-5 into master (prioritize y-branch-5 changes)",
-    "previous": "1.1.0-dev.0.1"
+    "current": "Version 1.1.0-dev.1.0 - feat: add system-wide academic calendar configuration to school management (#30)",
+    "previous": "1.1.0-dev.0.5"
   },
   "metadata": {
     "author": "yukazakiri",

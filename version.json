@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.2.1",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.2.1",
-  "commit": "87759124ee8c3a412eceb3c7e7568762b5576604",
+  "version": "1.1.0-dev.2.2",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.2.2",
+  "commit": "c71ce6fda7ae2b08fdcadf49ff0f213d6b2c05cf",
   "branch": "master",
-  "timestamp": "2026-04-22T07:04:41Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24764770254",
+  "timestamp": "2026-04-22T07:55:58Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24766983926",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.1.0-dev.2.1 - ci: add GitHub workflow automations (#33)",
-    "previous": "1.1.0-dev.2.0"
+    "current": "Version 1.1.0-dev.2.2 - Update official-release-on-tag.yml",
+    "previous": "1.1.0-dev.2.1"
   },
   "metadata": {
     "author": "yukazakiri",

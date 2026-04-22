@@ -337,6 +337,14 @@ Route::middleware(['auth', 'administrators.only'])
         Route::delete('/faculties/{faculty}/classes/{class}', [AdministratorFacultyManagementController::class, 'unassignClass'])->name('faculties.classes.unassign');
         Route::put('/faculties/{faculty}/faculty-id-number', [AdministratorFacultyManagementController::class, 'updateFacultyIdNumber'])->name('faculties.update-id-number');
 
+        // Departments Management
+        Route::get('/departments', [App\Http\Controllers\AdministratorDepartmentManagementController::class, 'index'])->name('departments.index');
+        Route::get('/departments/create', [App\Http\Controllers\AdministratorDepartmentManagementController::class, 'create'])->name('departments.create');
+        Route::post('/departments', [App\Http\Controllers\AdministratorDepartmentManagementController::class, 'store'])->name('departments.store');
+        Route::get('/departments/{department}/edit', [App\Http\Controllers\AdministratorDepartmentManagementController::class, 'edit'])->name('departments.edit');
+        Route::put('/departments/{department}', [App\Http\Controllers\AdministratorDepartmentManagementController::class, 'update'])->name('departments.update');
+        Route::delete('/departments/{department}', [App\Http\Controllers\AdministratorDepartmentManagementController::class, 'destroy'])->name('departments.destroy');
+
         // Audit Logs
         Route::get('/audit-logs', [AdministratorAuditLogController::class, 'index'])->name('audit-logs.index');
 

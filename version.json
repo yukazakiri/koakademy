@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.3.2",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.3.2",
-  "commit": "8dfd0827463c47311313bb321c0db604e430d229",
+  "version": "1.1.0-dev.4.0",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.4.0",
+  "commit": "906eb5696a5f00e73eadf572ff981a8585073e89",
   "branch": "master",
-  "timestamp": "2026-04-23T05:44:58Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24818896142",
-  "release_type": "chore",
+  "timestamp": "2026-04-23T06:21:22Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24820016391",
+  "release_type": "feature",
   "changelog": {
-    "current": "Version 1.1.0-dev.3.2 - chore(pdf): define non-Chrome production driver strategy (#43) (#53)",
-    "previous": "1.1.0-dev.3.1"
+    "current": "Version 1.1.0-dev.4.0 - feat(pdf): queue synchronous PDF endpoints (#54)",
+    "previous": "1.1.0-dev.3.2"
   },
   "metadata": {
     "author": "yukazakiri",

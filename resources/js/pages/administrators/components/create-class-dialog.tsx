@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -11,6 +12,7 @@ import { useDraggable, useDroppable, DndContext, MouseSensor, TouchSensor, useSe
 import { useForm } from "@inertiajs/react";
 import axios from "axios";
 import {
+    AlertTriangle,
     BookOpen,
     Building2,
     Calendar,
@@ -18,12 +20,11 @@ import {
     ChevronLeft,
     ChevronRight,
     Clock,
-    GraduationCap,
     GripVertical,
     MapPin,
     Plus,
     RefreshCw,
-    Settings2,
+    Trash2,
     User as UserIcon,
     Users,
     Wand2,
@@ -35,6 +36,9 @@ import { route } from "ziggy-js";
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
 const DAYS_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+const HOUR_START = 7;
+const HOUR_END = 19;
+const CELL_H = 52;
 
 const PALETTES = [
     { accent: "border-l-rose-500", bg: "bg-rose-500/10 dark:bg-rose-400/15", text: "text-rose-700 dark:text-rose-300", badge: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300", border: "border-rose-200 dark:border-rose-800" },
@@ -61,42 +65,31 @@ function fmtTime(t: string): string {
     return `${h12}:${String(m).padStart(2, "0")} ${ap}`;
 }
 
-function DraggableScheduleCard({ id, schedule, index, pal }: { id: string; schedule: { day_of_week: string; start_time: string; end_time: string; room_id: number | null }; index: number; pal: ReturnType<typeof getPalette> }) {
-    const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id, data: { schedule, index } });
-    const dayIdx = DAYS.indexOf(schedule.day_of_week as typeof DAYS[number]);
-    return (
-        <div
-            ref={setNodeRef}
-            {...listeners}
-            {...attributes}
-            className={`flex items-center gap-2 rounded-md border-l-[3px] ${pal.accent} ${pal.bg} ${pal.border} p-2.5 transition-all ${isDragging ? "opacity-30" : "cursor-grab hover:shadow-md"}`}
-        >
-            <GripVertical className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
-            <div className="flex-1 min-w-0">
-                <div className={`text-xs font-bold ${pal.text}`}>{DAYS_SHORT[dayIdx]}</div>
-                <div className="text-muted-foreground text-[10px]">{fmtTime(schedule.start_time)} - {fmtTime(schedule.end_time)}</div>
-            </div>
-            {schedule.room_id && (
-                <div className="text-[10px] font-medium text-foreground bg-background/60 px-1.5 py-0.5 rounded">R{schedule.room_id}</div>
-            )}
-        </div>
-    );
+function parseTimeToMinutes(value: string): number | null {
+    const match = value.match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) return null;
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+    return hours * 60 + minutes;
 }
 
-function DroppableRoomTile({ room, children, isOver }: { room: { id: number; name: string }; children: React.ReactNode; isOver?: boolean }) {
-    const { setNodeRef, isOver: dropIsOver } = useDroppable({ id: `room-${room.id}`, data: { roomId: room.id } });
-    const active = isOver ?? dropIsOver;
-    return (
-        <div
-            ref={setNodeRef}
-            className={`relative rounded-xl border p-3 transition-all duration-150 ${active ? "border-primary bg-primary/5 ring-1 ring-primary/20" : "bg-muted/30 border-border hover:border-border/80"}`}
-        >
-            {children}
-        </div>
-    );
+function minutesToTime(totalMinutes: number): string {
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-export default function CreateClassDialog({ open, onOpenChange, options, defaults, onClassCreated }: {
+function schedulesOverlap(a: { start_time: string; end_time: string }, b: { start_time: string; end_time: string }): boolean {
+    const aStart = parseTimeToMinutes(a.start_time);
+    const aEnd = parseTimeToMinutes(a.end_time);
+    const bStart = parseTimeToMinutes(b.start_time);
+    const bEnd = parseTimeToMinutes(b.end_time);
+    if (aStart === null || aEnd === null || bStart === null || bEnd === null) return false;
+    return aStart < bEnd && aEnd > bStart;
+}
+
+export default function CreateClassDialog({ open, onOpenChange, options, defaults, existingSchedules, onClassCreated }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     options: {
@@ -109,12 +102,23 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
         semesters: Array<{ value: string; label: string }>;
     };
     defaults: { semester: string; school_year: string };
+    existingSchedules: Array<{
+        id: number;
+        subject_code: string;
+        subject_title: string;
+        section: string;
+        faculty_name: string | null;
+        room_id: number | null;
+        room: string | null;
+        day_of_week: string;
+        start_time: string;
+        end_time: string;
+        time_range: string;
+    }>;
     onClassCreated: (classItem: any) => void;
 }) {
     const [activeTab, setActiveTab] = React.useState("details");
     const [isSubmitting, setIsSubmitting] = React.useState(false);
-    const [scheduleRooms, setScheduleRooms] = React.useState<Record<string, number | null>>({});
-    const [dndOverRoom, setDndOverRoom] = React.useState<number | null>(null);
 
     const [collegeSubjectOptions, setCollegeSubjectOptions] = React.useState<Array<{ id: number; label: string; code: string; title: string }>>([]);
     const [collegeSubjectsLoading, setCollegeSubjectsLoading] = React.useState(false);
@@ -124,10 +128,12 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
     const [shsSubjectsLoading, setShsSubjectsLoading] = React.useState(false);
     const [subjectCodeTouched, setSubjectCodeTouched] = React.useState(false);
 
+    const [selectedBlockIndex, setSelectedBlockIndex] = React.useState<number | null>(null);
+
     const form = useForm({
         classification: "college" as "college" | "shs",
-        course_codes: [] as number[],
-        subject_ids: [] as number[],
+        course_id: null as number | null,
+        subject_id: null as number | null,
         subject_code: "",
         academic_year: 1,
         shs_track_id: null as number | null,
@@ -138,17 +144,17 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
         semester: defaults.semester,
         school_year: defaults.school_year,
         section: "A",
-        room_id: options.rooms[0]?.id ?? 0,
+        room_id: null as number | null,
         maximum_slots: 40,
-        schedules: [] as Array<{ day_of_week: string; start_time: string; end_time: string; room_id: number | null }>,
+        schedules: [] as Array<{ id: string; day_of_week: string; start_time: string; end_time: string; room_id: number | null }>,
     });
 
     React.useEffect(() => {
         if (!open) return;
         form.setData({
             classification: "college",
-            course_codes: [],
-            subject_ids: [],
+            course_id: null,
+            subject_id: null,
             subject_code: "",
             academic_year: 1,
             shs_track_id: null,
@@ -159,36 +165,28 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
             semester: defaults.semester,
             school_year: defaults.school_year,
             section: "A",
-            room_id: options.rooms[0]?.id ?? 0,
+            room_id: null,
             maximum_slots: 40,
             schedules: [],
         });
-        setScheduleRooms({});
         setCollegeSubjectOptions([]);
         setShsStrandOptions([]);
         setShsSubjectOptions([]);
         setSubjectCodeTouched(false);
+        setSelectedBlockIndex(null);
         setActiveTab("details");
     }, [open]);
 
-    const loadCollegeSubjects = async (courseIds: number[]) => {
-        if (courseIds.length === 0) {
+    const loadCollegeSubjects = async (courseId: number | null) => {
+        if (!courseId) {
             setCollegeSubjectOptions([]);
             return;
         }
         setCollegeSubjectsLoading(true);
         try {
-            const response = await fetch(route("administrators.classes.options.subjects", { course_ids: courseIds }));
+            const response = await fetch(route("administrators.classes.options.subjects", { course_ids: [courseId] }));
             const data = await response.json() as { data: Array<{ id: number; label: string; code: string; title: string }> };
             setCollegeSubjectOptions(data.data);
-            if (!subjectCodeTouched) {
-                const codes = data.data
-                    .filter((s) => form.data.subject_ids.includes(s.id))
-                    .map((s) => s.code)
-                    .filter(Boolean);
-                const computed = Array.from(new Set(codes)).join(", ");
-                if (computed) form.setData("subject_code", computed);
-            }
         } finally {
             setCollegeSubjectsLoading(false);
         }
@@ -225,7 +223,52 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
         }
     };
 
-    const generateSchedules = (recurrence: "mwf" | "tth" | "daily" | "custom", customDays: string[], startTime: string, endTime: string) => {
+    const selectedFacultyName = React.useMemo(() => {
+        if (!form.data.faculty_id) return null;
+        return options.faculty.find((f) => String(f.id) === String(form.data.faculty_id))?.name ?? null;
+    }, [form.data.faculty_id, options.faculty]);
+
+    const conflicts = React.useMemo(() => {
+        const result: Array<{ type: "room" | "faculty"; newBlock: typeof form.data.schedules[0]; existing: typeof existingSchedules[0] }> = [];
+        for (const ns of form.data.schedules) {
+            for (const es of existingSchedules) {
+                if (es.day_of_week !== ns.day_of_week) continue;
+                if (!schedulesOverlap(ns, es)) continue;
+                if (ns.room_id !== null && es.room_id === ns.room_id) {
+                    result.push({ type: "room", newBlock: ns, existing: es });
+                }
+                if (selectedFacultyName && es.faculty_name === selectedFacultyName) {
+                    result.push({ type: "faculty", newBlock: ns, existing: es });
+                }
+            }
+        }
+        return result;
+    }, [form.data.schedules, existingSchedules, selectedFacultyName]);
+
+    const addScheduleBlock = (day?: string, start?: string, end?: string) => {
+        const newBlock = {
+            id: crypto.randomUUID(),
+            day_of_week: day ?? "Monday",
+            start_time: start ?? "08:00",
+            end_time: end ?? "10:00",
+            room_id: form.data.room_id ?? options.rooms[0]?.id ?? null,
+        };
+        form.setData("schedules", [...form.data.schedules, newBlock]);
+        setSelectedBlockIndex(form.data.schedules.length);
+    };
+
+    const removeScheduleBlock = (index: number) => {
+        const next = form.data.schedules.filter((_, i) => i !== index);
+        form.setData("schedules", next);
+        if (selectedBlockIndex === index) setSelectedBlockIndex(null);
+        else if (selectedBlockIndex !== null && selectedBlockIndex > index) setSelectedBlockIndex(selectedBlockIndex - 1);
+    };
+
+    const updateBlock = (index: number, patch: Partial<typeof form.data.schedules[0]>) => {
+        form.setData("schedules", form.data.schedules.map((s, i) => (i === index ? { ...s, ...patch } : s)));
+    };
+
+    const generateFromRecurrence = (recurrence: "mwf" | "tth" | "daily" | "custom", customDays: string[], startTime: string, endTime: string) => {
         let days: string[] = [];
         switch (recurrence) {
             case "mwf": days = ["Monday", "Wednesday", "Friday"]; break;
@@ -233,24 +276,22 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
             case "daily": days = [...DAYS]; break;
             case "custom": days = customDays; break;
         }
-        if (!startTime || !endTime || days.length === 0) return [];
-        return days.map((day) => ({
+        if (!startTime || !endTime || days.length === 0) return;
+        const newBlocks = days.map((day) => ({
+            id: crypto.randomUUID(),
             day_of_week: day,
             start_time: startTime,
             end_time: endTime,
-            room_id: scheduleRooms[day] ?? null,
+            room_id: form.data.room_id ?? options.rooms[0]?.id ?? null,
         }));
+        form.setData("schedules", [...form.data.schedules, ...newBlocks]);
     };
 
-    const [recurrence, setRecurrence] = React.useState<"mwf" | "tth" | "daily" | "custom">("mwf");
-    const [customDays, setCustomDays] = React.useState<string[]>(["Monday", "Wednesday", "Friday"]);
-    const [startTime, setStartTime] = React.useState("08:00");
-    const [endTime, setEndTime] = React.useState("10:00");
-
-    React.useEffect(() => {
-        const schedules = generateSchedules(recurrence, customDays, startTime, endTime);
-        form.setData("schedules", schedules);
-    }, [recurrence, customDays, startTime, endTime]);
+    const autoAssignRooms = () => {
+        if (options.rooms.length === 0 || form.data.schedules.length === 0) return;
+        form.setData("schedules", form.data.schedules.map((s, i) => ({ ...s, room_id: options.rooms[i % options.rooms.length].id })));
+        toast.success("Rooms auto-assigned");
+    };
 
     const sensors = useSensors(
         useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
@@ -258,52 +299,30 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
     );
 
     const handleDragEnd = (event: DragEndEvent) => {
-        setDndOverRoom(null);
         const { active, over } = event;
         if (!over || !active.data.current) return;
-        const roomId = (over.data.current as { roomId?: number })?.roomId;
-        const index = (active.data.current as { index?: number })?.index;
-        if (roomId === undefined || index === undefined) return;
-        const day = form.data.schedules[index]?.day_of_week;
+        const dayIdx = (over.data.current as { dayIdx?: number })?.dayIdx;
+        const blockId = (active.data.current as { blockId?: string })?.blockId;
+        if (dayIdx === undefined || !blockId) return;
+        const day = DAYS[dayIdx];
         if (!day) return;
-        setScheduleRooms((prev) => ({ ...prev, [day]: roomId }));
-        form.setData("schedules", form.data.schedules.map((s, i) => (i === index ? { ...s, room_id: roomId } : s)));
-    };
-
-    const handleDragOver = (event: DragEndEvent) => {
-        const roomId = (event.over?.data.current as { roomId?: number })?.roomId;
-        setDndOverRoom(roomId ?? null);
-    };
-
-    const autoAssignRooms = () => {
-        const rooms = options.rooms;
-        if (rooms.length === 0 || form.data.schedules.length === 0) return;
-        const newMap: Record<string, number | null> = {};
-        const newSchedules = form.data.schedules.map((s, i) => {
-            const room = rooms[i % rooms.length];
-            newMap[s.day_of_week] = room.id;
-            return { ...s, room_id: room.id };
-        });
-        setScheduleRooms(newMap);
-        form.setData("schedules", newSchedules);
-        toast.success("Rooms auto-assigned");
-    };
-
-    const canSubmit = () => {
-        return form.data.schedules.length > 0 && form.data.schedules.every((s) => s.room_id !== null);
+        const idx = form.data.schedules.findIndex((s) => s.id === blockId);
+        if (idx === -1) return;
+        updateBlock(idx, { day_of_week: day });
     };
 
     const handleSubmit = async () => {
-        if (!canSubmit()) {
-            toast.error("Please assign a room to every schedule entry.");
+        if (form.data.schedules.length === 0) {
+            toast.error("Please add at least one schedule block.");
+            return;
+        }
+        if (form.data.schedules.some((s) => s.room_id === null)) {
+            toast.error("Please assign a room to every schedule block.");
             return;
         }
         setIsSubmitting(true);
 
-        const payload = { ...form.data };
-        if (payload.classification === "college") {
-            payload.subject_id = payload.subject_ids[0] ?? null;
-        }
+        const payload = { ...form.data, course_codes: form.data.course_id ? [form.data.course_id] : [], subject_ids: form.data.subject_id ? [form.data.subject_id] : [] };
 
         try {
             const res = await axios.post(route("administrators.scheduling-analytics.classes.store"), payload);
@@ -330,9 +349,19 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
 
     const firstError = Object.values(form.errors).find((e) => typeof e === "string" && e.length > 0) ?? null;
 
+    const hours = React.useMemo(() => Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_START + i), []);
+
+    const blockHasConflict = (block: typeof form.data.schedules[0]) => {
+        return conflicts.some((c) => c.newBlock.id === block.id);
+    };
+
+    const getBlockConflicts = (block: typeof form.data.schedules[0]) => {
+        return conflicts.filter((c) => c.newBlock.id === block.id);
+    };
+
     return (
         <Sheet open={open} onOpenChange={onOpenChange}>
-            <SheetContent side="right" className="w-full sm:max-w-xl md:max-w-2xl lg:max-w-3xl flex flex-col gap-0 p-0">
+            <SheetContent side="right" className="w-full sm:max-w-xl md:max-w-2xl lg:max-w-[1100px] flex flex-col gap-0 p-0">
                 <SheetHeader className="bg-muted/20 border-b p-6 pb-4">
                     <div className="flex items-center gap-3">
                         <div className="bg-primary/10 rounded-lg p-2.5">
@@ -354,8 +383,8 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                             <TabsTrigger value="schedule" className="data-[state=active]:border-primary text-muted-foreground data-[state=active]:text-foreground h-12 rounded-none px-2 data-[state=active]:border-b-2 data-[state=active]:bg-transparent data-[state=active]:shadow-none">
                                 <Clock className="mr-2 h-4 w-4" /> Schedule
                             </TabsTrigger>
-                            <TabsTrigger value="rooms" className="data-[state=active]:border-primary text-muted-foreground data-[state=active]:text-foreground h-12 rounded-none px-2 data-[state=active]:border-b-2 data-[state=active]:bg-transparent data-[state=active]:shadow-none">
-                                <MapPin className="mr-2 h-4 w-4" /> Rooms
+                            <TabsTrigger value="review" className="data-[state=active]:border-primary text-muted-foreground data-[state=active]:text-foreground h-12 rounded-none px-2 data-[state=active]:border-b-2 data-[state=active]:bg-transparent data-[state=active]:shadow-none">
+                                <Check className="mr-2 h-4 w-4" /> Review
                             </TabsTrigger>
                         </TabsList>
                     </div>
@@ -382,8 +411,8 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                                                         checked={form.data.classification === "college"}
                                                         onSelect={() => {
                                                             form.setData("classification", "college");
-                                                            form.setData("course_codes", []);
-                                                            form.setData("subject_ids", []);
+                                                            form.setData("course_id", null);
+                                                            form.setData("subject_id", null);
                                                             form.setData("subject_code", "");
                                                             form.setData("shs_track_id", null);
                                                             form.setData("shs_strand_id", null);
@@ -400,8 +429,8 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                                                         checked={form.data.classification === "shs"}
                                                         onSelect={() => {
                                                             form.setData("classification", "shs");
-                                                            form.setData("course_codes", []);
-                                                            form.setData("subject_ids", []);
+                                                            form.setData("course_id", null);
+                                                            form.setData("subject_id", null);
                                                             form.setData("subject_code", "");
                                                             form.setData("shs_track_id", null);
                                                             form.setData("shs_strand_id", null);
@@ -418,77 +447,49 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                                             {form.data.classification === "college" ? (
                                                 <>
                                                     <div className="space-y-2 sm:col-span-2">
-                                                        <Label>Associated courses</Label>
-                                                        <div className="flex flex-wrap gap-1.5">
-                                                            {options.courses.map((c) => {
-                                                                const selected = form.data.course_codes.includes(c.id);
-                                                                return (
-                                                                    <button
-                                                                        key={c.id}
-                                                                        type="button"
-                                                                        onClick={() => {
-                                                                            const next = selected
-                                                                                ? form.data.course_codes.filter((id) => id !== c.id)
-                                                                                : [...form.data.course_codes, c.id];
-                                                                            form.setData("course_codes", next);
-                                                                            form.setData("subject_ids", []);
-                                                                            if (!subjectCodeTouched) form.setData("subject_code", "");
-                                                                            void loadCollegeSubjects(next);
-                                                                        }}
-                                                                        className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
-                                                                            selected
-                                                                                ? "border-primary bg-primary text-primary-foreground"
-                                                                                : "border-border bg-background text-muted-foreground hover:bg-muted"
-                                                                        }`}
-                                                                    >
-                                                                        {selected && <Check className="h-3 w-3" />}
-                                                                        {c.code}
-                                                                    </button>
-                                                                );
-                                                            })}
-                                                        </div>
+                                                        <Label>Associated course</Label>
+                                                        <Combobox
+                                                            label=""
+                                                            options={options.courses.map((c) => ({ label: `${c.code} — ${c.title}`, value: String(c.id), description: c.curriculum_year ? `Curriculum ${c.curriculum_year}` : undefined }))}
+                                                            value={form.data.course_id ? String(form.data.course_id) : ""}
+                                                            onValueChange={(val) => {
+                                                                const courseId = Number(val);
+                                                                form.setData("course_id", courseId);
+                                                                form.setData("subject_id", null);
+                                                                form.setData("subject_code", "");
+                                                                setSubjectCodeTouched(false);
+                                                                void loadCollegeSubjects(courseId);
+                                                            }}
+                                                            placeholder="Search and select a course..."
+                                                            emptyText="No courses found."
+                                                            searchPlaceholder="Search courses..."
+                                                        />
                                                         {form.errors.course_codes ? <p className="text-destructive text-xs">{form.errors.course_codes}</p> : null}
                                                     </div>
 
                                                     <div className="space-y-2 sm:col-span-2">
-                                                        <Label>Subjects</Label>
+                                                        <Label>Subject</Label>
                                                         {collegeSubjectsLoading ? (
                                                             <div className="text-muted-foreground text-xs py-2">Loading subjects...</div>
                                                         ) : collegeSubjectOptions.length === 0 ? (
                                                             <div className="text-muted-foreground text-xs py-2">Select a course to see subjects.</div>
                                                         ) : (
-                                                            <div className="flex flex-wrap gap-1.5">
-                                                                {collegeSubjectOptions.map((s) => {
-                                                                    const selected = form.data.subject_ids.includes(s.id);
-                                                                    return (
-                                                                        <button
-                                                                            key={s.id}
-                                                                            type="button"
-                                                                            onClick={() => {
-                                                                                const next = selected
-                                                                                    ? form.data.subject_ids.filter((id) => id !== s.id)
-                                                                                    : [...form.data.subject_ids, s.id];
-                                                                                form.setData("subject_ids", next);
-                                                                                if (!subjectCodeTouched) {
-                                                                                    const codes = collegeSubjectOptions
-                                                                                        .filter((sub) => next.includes(sub.id))
-                                                                                        .map((sub) => sub.code)
-                                                                                        .filter(Boolean);
-                                                                                    form.setData("subject_code", Array.from(new Set(codes)).join(", "));
-                                                                                }
-                                                                            }}
-                                                                            className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
-                                                                                selected
-                                                                                    ? "border-primary bg-primary text-primary-foreground"
-                                                                                    : "border-border bg-background text-muted-foreground hover:bg-muted"
-                                                                            }`}
-                                                                        >
-                                                                            {selected && <Check className="h-3 w-3" />}
-                                                                            {s.code}
-                                                                        </button>
-                                                                    );
-                                                                })}
-                                                            </div>
+                                                            <Combobox
+                                                                label=""
+                                                                options={collegeSubjectOptions.map((s) => ({ label: `${s.code} — ${s.title}`, value: String(s.id), description: s.label }))}
+                                                                value={form.data.subject_id ? String(form.data.subject_id) : ""}
+                                                                onValueChange={(val) => {
+                                                                    const subjectId = Number(val);
+                                                                    form.setData("subject_id", subjectId);
+                                                                    const selected = collegeSubjectOptions.find((s) => s.id === subjectId);
+                                                                    if (selected && !subjectCodeTouched) {
+                                                                        form.setData("subject_code", selected.code);
+                                                                    }
+                                                                }}
+                                                                placeholder="Search and select a subject..."
+                                                                emptyText="No subjects found for this course."
+                                                                searchPlaceholder="Search subjects..."
+                                                            />
                                                         )}
                                                         {form.errors.subject_ids ? <p className="text-destructive text-xs">{form.errors.subject_ids}</p> : null}
                                                     </div>
@@ -497,13 +498,13 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                                                         <Label>Class name / subject code</Label>
                                                         <Input
                                                             value={form.data.subject_code}
-                                                            placeholder="Auto-generated from subjects..."
+                                                            placeholder="Auto-generated from subject..."
                                                             onChange={(e) => {
                                                                 setSubjectCodeTouched(true);
                                                                 form.setData("subject_code", e.target.value);
                                                             }}
                                                         />
-                                                        <p className="text-muted-foreground text-xs">Auto-generated from selected subjects. You can customize it.</p>
+                                                        <p className="text-muted-foreground text-xs">Auto-generated from selected subject. You can customize it.</p>
                                                     </div>
 
                                                     <div className="space-y-2">
@@ -531,19 +532,18 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                                                     <div className="space-y-2">
                                                         <Label>SHS track</Label>
                                                         <Select
-                                                            value={form.data.shs_track_id ? String(form.data.shs_track_id) : ""}
+                                                            value={form.data.shs_track_id ? String(form.data.shs_track_id) : "__none__"}
                                                             onValueChange={(val) => {
-                                                                const trackId = Number(val);
+                                                                const trackId = val === "__none__" ? null : Number(val);
                                                                 form.setData("shs_track_id", trackId);
                                                                 form.setData("shs_strand_id", null);
                                                                 form.setData("subject_code_shs", "");
                                                                 void loadShsStrands(trackId);
                                                             }}
                                                         >
-                                                            <SelectTrigger className="w-full">
-                                                                <SelectValue placeholder={shsStrandsLoading ? "Loading..." : "Select track"} />
-                                                            </SelectTrigger>
+                                                            <SelectTrigger className="w-full"><SelectValue placeholder="Select track" /></SelectTrigger>
                                                             <SelectContent>
+                                                                <SelectItem value="__none__">Select track</SelectItem>
                                                                 {options.shs_tracks.map((track) => (
                                                                     <SelectItem key={track.id} value={String(track.id)}>{track.track_name}</SelectItem>
                                                                 ))}
@@ -554,19 +554,18 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                                                     <div className="space-y-2">
                                                         <Label>SHS strand</Label>
                                                         <Select
-                                                            value={form.data.shs_strand_id ? String(form.data.shs_strand_id) : ""}
+                                                            value={form.data.shs_strand_id ? String(form.data.shs_strand_id) : "__none__"}
                                                             onValueChange={(val) => {
-                                                                const strandId = Number(val);
+                                                                const strandId = val === "__none__" ? null : Number(val);
                                                                 form.setData("shs_strand_id", strandId);
                                                                 form.setData("subject_code_shs", "");
                                                                 void loadShsSubjects(strandId);
                                                             }}
                                                             disabled={!form.data.shs_track_id || shsStrandsLoading}
                                                         >
-                                                            <SelectTrigger className="w-full">
-                                                                <SelectValue placeholder={shsStrandsLoading ? "Loading..." : "Select strand"} />
-                                                            </SelectTrigger>
+                                                            <SelectTrigger className="w-full"><SelectValue placeholder={shsStrandsLoading ? "Loading..." : "Select strand"} /></SelectTrigger>
                                                             <SelectContent>
+                                                                <SelectItem value="__none__">Select strand</SelectItem>
                                                                 {shsStrandOptions.map((strand) => (
                                                                     <SelectItem key={strand.id} value={String(strand.id)}>{strand.label}</SelectItem>
                                                                 ))}
@@ -576,20 +575,21 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
 
                                                     <div className="space-y-2 sm:col-span-2">
                                                         <Label>SHS subject</Label>
-                                                        <Select
-                                                            value={form.data.subject_code_shs}
-                                                            onValueChange={(val) => form.setData("subject_code_shs", val)}
-                                                            disabled={!form.data.shs_strand_id || shsSubjectsLoading}
-                                                        >
-                                                            <SelectTrigger className="w-full">
-                                                                <SelectValue placeholder={shsSubjectsLoading ? "Loading..." : "Select subject"} />
-                                                            </SelectTrigger>
-                                                            <SelectContent>
-                                                                {shsSubjectOptions.map((subject) => (
-                                                                    <SelectItem key={subject.code} value={subject.code}>{subject.label}</SelectItem>
-                                                                ))}
-                                                            </SelectContent>
-                                                        </Select>
+                                                        {shsSubjectsLoading ? (
+                                                            <div className="text-muted-foreground text-xs py-2">Loading subjects...</div>
+                                                        ) : shsSubjectOptions.length === 0 ? (
+                                                            <div className="text-muted-foreground text-xs py-2">Select a strand to see subjects.</div>
+                                                        ) : (
+                                                            <Combobox
+                                                                label=""
+                                                                options={shsSubjectOptions.map((s) => ({ label: `${s.code} — ${s.title}`, value: s.code, description: s.label }))}
+                                                                value={form.data.subject_code_shs}
+                                                                onValueChange={(val) => form.setData("subject_code_shs", val)}
+                                                                placeholder="Search and select a subject..."
+                                                                emptyText="No subjects found for this strand."
+                                                                searchPlaceholder="Search subjects..."
+                                                            />
+                                                        )}
                                                     </div>
 
                                                     <div className="space-y-2">
@@ -616,18 +616,15 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                                         <div className="grid gap-4 sm:grid-cols-2">
                                             <div className="space-y-2 sm:col-span-2">
                                                 <Label>Faculty</Label>
-                                                <Select
+                                                <Combobox
+                                                    label=""
+                                                    options={[{ label: "TBA — To be assigned", value: "__none__" }, ...options.faculty.map((f) => ({ label: f.name, value: String(f.id), description: f.department || undefined }))]}
                                                     value={form.data.faculty_id ? String(form.data.faculty_id) : "__none__"}
                                                     onValueChange={(val) => form.setData("faculty_id", val === "__none__" ? null : val)}
-                                                >
-                                                    <SelectTrigger className="w-full"><SelectValue placeholder="Select faculty" /></SelectTrigger>
-                                                    <SelectContent>
-                                                        <SelectItem value="__none__">TBA</SelectItem>
-                                                        {options.faculty.map((f) => (
-                                                            <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
-                                                        ))}
-                                                    </SelectContent>
-                                                </Select>
+                                                    placeholder="Search and select faculty..."
+                                                    emptyText="No faculty found."
+                                                    searchPlaceholder="Search faculty..."
+                                                />
                                             </div>
 
                                             <div className="space-y-2">
@@ -684,195 +681,300 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                         </TabsContent>
 
                         <TabsContent value="schedule" className="m-0 space-y-6 outline-none">
+                            {conflicts.length > 0 && (
+                                <div className="border-destructive/40 bg-destructive/5 text-destructive rounded-lg border px-4 py-3 text-sm">
+                                    <div className="flex items-center gap-2 font-semibold mb-1">
+                                        <AlertTriangle className="h-4 w-4" />
+                                        {conflicts.length} potential conflict{conflicts.length !== 1 ? "s" : ""} detected
+                                    </div>
+                                    <ul className="space-y-1 text-xs">
+                                        {conflicts.slice(0, 5).map((c, i) => (
+                                            <li key={i}>
+                                                {c.type === "room" ? "Room" : "Faculty"} conflict on {c.newBlock.day_of_week} {fmtTime(c.newBlock.start_time)}–{fmtTime(c.newBlock.end_time)} with {c.existing.subject_code} ({c.existing.section})
+                                            </li>
+                                        ))}
+                                        {conflicts.length > 5 && <li>...and {conflicts.length - 5} more</li>}
+                                    </ul>
+                                </div>
+                            )}
+
                             <Card className="border-border/60 shadow-sm">
                                 <CardHeader className="bg-muted/20 border-b pb-4">
-                                    <CardTitle className="text-base font-semibold">Schedule Builder</CardTitle>
+                                    <div className="flex items-center justify-between">
+                                        <CardTitle className="text-base font-semibold">Quick Generate</CardTitle>
+                                    </div>
                                 </CardHeader>
                                 <CardContent className="space-y-4 pt-6">
                                     <div className="grid grid-cols-2 gap-3">
                                         <div className="space-y-2">
                                             <Label>Start Time</Label>
-                                            <Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+                                            <Input type="time" defaultValue="08:00" id="quick-start" />
                                         </div>
                                         <div className="space-y-2">
                                             <Label>End Time</Label>
-                                            <Input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
+                                            <Input type="time" defaultValue="10:00" id="quick-end" />
                                         </div>
                                     </div>
-
                                     <div className="space-y-2">
                                         <Label>Recurrence Pattern</Label>
                                         <div className="flex flex-wrap gap-1.5">
                                             {[
                                                 { key: "mwf" as const, label: "MWF", desc: "Mon, Wed, Fri" },
                                                 { key: "tth" as const, label: "TTh", desc: "Tue, Thu" },
-                                                { key: "daily" as const, label: "Daily", desc: "Mon-Sat" },
-                                                { key: "custom" as const, label: "Custom", desc: "Pick days" },
+                                                { key: "daily" as const, label: "Daily", desc: "Mon–Sat" },
                                             ].map((r) => (
                                                 <button
                                                     key={r.key}
                                                     type="button"
-                                                    onClick={() => setRecurrence(r.key)}
-                                                    className={`flex flex-col items-start rounded-md border px-3 py-2 text-left transition-colors min-w-[80px] ${
-                                                        recurrence === r.key
-                                                            ? "border-primary bg-primary/5 text-primary"
-                                                            : "border-border bg-background text-muted-foreground hover:bg-muted"
-                                                    }`}
+                                                    onClick={() => {
+                                                        const startEl = document.getElementById("quick-start") as HTMLInputElement | null;
+                                                        const endEl = document.getElementById("quick-end") as HTMLInputElement | null;
+                                                        generateFromRecurrence(r.key, [], startEl?.value ?? "08:00", endEl?.value ?? "10:00");
+                                                    }}
+                                                    className="flex flex-col items-start rounded-md border border-border bg-background px-3 py-2 text-left transition-colors hover:bg-muted min-w-[80px]"
                                                 >
-                                                    <span className="text-xs font-bold">{r.label}</span>
-                                                    <span className="text-[10px] opacity-70">{r.desc}</span>
+                                                    <span className="text-xs font-bold text-foreground">{r.label}</span>
+                                                    <span className="text-[10px] text-muted-foreground">{r.desc}</span>
                                                 </button>
                                             ))}
                                         </div>
                                     </div>
+                                    <div className="flex gap-2">
+                                        <Button type="button" variant="outline" size="sm" onClick={() => {
+                                            const startEl = document.getElementById("quick-start") as HTMLInputElement | null;
+                                            const endEl = document.getElementById("quick-end") as HTMLInputElement | null;
+                                            addScheduleBlock("Monday", startEl?.value ?? "08:00", endEl?.value ?? "10:00");
+                                        }}>
+                                            <Plus className="mr-1 h-3.5 w-3.5" /> Add Single Block
+                                        </Button>
+                                        <Button type="button" variant="outline" size="sm" onClick={autoAssignRooms}>
+                                            <Wand2 className="mr-1 h-3.5 w-3.5" /> Auto-assign Rooms
+                                        </Button>
+                                    </div>
+                                </CardContent>
+                            </Card>
 
-                                    {recurrence === "custom" && (
-                                        <div className="space-y-2">
-                                            <Label>Select Days</Label>
-                                            <div className="flex flex-wrap gap-1.5">
-                                                {DAYS.map((day) => {
-                                                    const selected = customDays.includes(day);
-                                                    return (
-                                                        <button
-                                                            key={day}
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setCustomDays((prev) =>
-                                                                    selected ? prev.filter((d) => d !== day) : [...prev, day],
-                                                                );
-                                                            }}
-                                                            className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
-                                                                selected
-                                                                    ? "border-primary bg-primary text-primary-foreground"
-                                                                    : "border-border bg-background text-muted-foreground hover:bg-muted"
-                                                            }`}
-                                                        >
-                                                            {DAYS_SHORT[DAYS.indexOf(day)]}
-                                                        </button>
-                                                    );
-                                                })}
+                            {form.data.schedules.length > 0 && (
+                                <Card className="border-border/60 shadow-sm">
+                                    <CardHeader className="bg-muted/20 border-b pb-4">
+                                        <CardTitle className="text-base font-semibold">Visual Timetable</CardTitle>
+                                    </CardHeader>
+                                    <CardContent className="pt-6">
+                                        <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+                                            <div className="relative border rounded-lg overflow-hidden">
+                                                <div className="grid grid-cols-[60px_repeat(6,1fr)] border-b bg-muted/30">
+                                                    <div className="p-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider text-center border-r">Time</div>
+                                                    {DAYS.map((day, i) => (
+                                                        <div key={day} className="p-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider text-center border-r last:border-r-0">
+                                                            {DAYS_SHORT[i]}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                <div className="grid grid-cols-[60px_repeat(6,1fr)]" style={{ height: (HOUR_END - HOUR_START + 1) * CELL_H }}>
+                                                    <div className="relative border-r bg-muted/10">
+                                                        {hours.map((h) => (
+                                                            <div key={h} className="absolute w-full text-[10px] text-muted-foreground text-center -translate-y-1/2" style={{ top: (h - HOUR_START) * CELL_H }}>
+                                                                {h <= 12 ? `${h === 0 ? 12 : h} ${h < 12 ? "AM" : "PM"}` : `${h - 12} PM`}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    {DAYS.map((day, dayIdx) => {
+                                                        const dayBlocks = form.data.schedules.filter((s) => s.day_of_week === day);
+                                                        return (
+                                                            <DayColumn
+                                                                key={day}
+                                                                dayIdx={dayIdx}
+                                                                dayBlocks={dayBlocks}
+                                                                allBlocks={form.data.schedules}
+                                                                onBlockClick={setSelectedBlockIndex}
+                                                                blockHasConflict={blockHasConflict}
+                                                                getBlockConflicts={getBlockConflicts}
+                                                                onAddBlock={(time) => addScheduleBlock(day, time, minutesToTime(parseTimeToMinutes(time)! + 120))}
+                                                            />
+                                                        );
+                                                    })}
+                                                </div>
                                             </div>
-                                        </div>
-                                    )}
+                                        </DndContext>
+                                    </CardContent>
+                                </Card>
+                            )}
 
-                                    {form.data.schedules.length > 0 && (
-                                        <div className="space-y-2">
-                                            <Label>Generated Schedules ({form.data.schedules.length})</Label>
-                                            <div className="grid gap-1.5">
-                                                {form.data.schedules.map((s, i) => {
-                                                    const p = getPalette(s.day_of_week);
-                                                    return (
-                                                        <div key={i} className={`flex items-center justify-between rounded-md border-l-[3px] ${p.accent} ${p.bg} ${p.border} p-2`}>
+                            {form.data.schedules.length > 0 && (
+                                <Card className="border-border/60 shadow-sm">
+                                    <CardHeader className="bg-muted/20 border-b pb-4">
+                                        <CardTitle className="text-base font-semibold">Schedule Blocks ({form.data.schedules.length})</CardTitle>
+                                    </CardHeader>
+                                    <CardContent className="space-y-3 pt-6">
+                                        {form.data.schedules.map((block, i) => {
+                                            const hasConflict = blockHasConflict(block);
+                                            const blockConflicts = getBlockConflicts(block);
+                                            const pal = getPalette(block.day_of_week);
+                                            return (
+                                                <div
+                                                    key={block.id}
+                                                    className={`rounded-xl border transition-colors ${
+                                                        selectedBlockIndex === i
+                                                            ? "border-primary bg-primary/5 shadow-sm"
+                                                            : hasConflict
+                                                                ? "border-destructive bg-destructive/5"
+                                                                : "border-border bg-background"
+                                                    }`}
+                                                >
+                                                    <button
+                                                        type="button"
+                                                        className="flex w-full flex-col gap-2 p-4 text-left"
+                                                        onClick={() => setSelectedBlockIndex(i)}
+                                                    >
+                                                        <div className="flex items-center justify-between gap-2">
                                                             <div className="flex items-center gap-2">
-                                                                <Calendar className={`h-3.5 w-3.5 ${p.text}`} />
-                                                                <span className={`text-xs font-medium ${p.text}`}>{s.day_of_week}</span>
-                                                                <span className="text-muted-foreground text-xs">{fmtTime(s.start_time)} - {fmtTime(s.end_time)}</span>
+                                                                <span className={`text-xs font-bold ${hasConflict ? "text-destructive" : pal.text}`}>{block.day_of_week}</span>
+                                                                <span className="text-muted-foreground text-xs">{fmtTime(block.start_time)} – {fmtTime(block.end_time)}</span>
+                                                                {hasConflict && <AlertTriangle className="h-3.5 w-3.5 text-destructive" />}
                                                             </div>
                                                             <button
                                                                 type="button"
-                                                                onClick={() => {
-                                                                    const day = s.day_of_week;
-                                                                    setScheduleRooms((prev) => {
-                                                                        const next = { ...prev };
-                                                                        delete next[day];
-                                                                        return next;
-                                                                    });
-                                                                    form.setData("schedules", form.data.schedules.filter((_, idx) => idx !== i));
-                                                                }}
+                                                                onClick={(e) => { e.stopPropagation(); removeScheduleBlock(i); }}
                                                                 className="text-muted-foreground hover:text-destructive transition-colors"
                                                             >
-                                                                <X className="h-3.5 w-3.5" />
+                                                                <Trash2 className="h-3.5 w-3.5" />
                                                             </button>
                                                         </div>
-                                                    );
-                                                })}
+                                                        {hasConflict && (
+                                                            <div className="text-destructive text-[10px]">
+                                                                Conflicts with: {blockConflicts.map((c) => `${c.existing.subject_code} (${c.existing.section})`).join(", ")}
+                                                            </div>
+                                                        )}
+                                                    </button>
+
+                                                    {selectedBlockIndex === i && (
+                                                        <div className="grid gap-3 border-t px-4 py-3 sm:grid-cols-3">
+                                                            <div className="space-y-1.5">
+                                                                <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Day</Label>
+                                                                <Select value={block.day_of_week} onValueChange={(val) => updateBlock(i, { day_of_week: val })}>
+                                                                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                                                                    <SelectContent>
+                                                                        {DAYS.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                                                                    </SelectContent>
+                                                                </Select>
+                                                            </div>
+                                                            <div className="space-y-1.5">
+                                                                <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Start</Label>
+                                                                <Input type="time" value={block.start_time} onChange={(e) => updateBlock(i, { start_time: e.target.value })} className="h-8 text-xs" />
+                                                            </div>
+                                                            <div className="space-y-1.5">
+                                                                <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">End</Label>
+                                                                <Input type="time" value={block.end_time} onChange={(e) => updateBlock(i, { end_time: e.target.value })} className="h-8 text-xs" />
+                                                            </div>
+                                                            <div className="space-y-1.5 sm:col-span-3">
+                                                                <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Room</Label>
+                                                                <Select value={block.room_id ? String(block.room_id) : "__none__"} onValueChange={(val) => updateBlock(i, { room_id: val === "__none__" ? null : Number(val) })}>
+                                                                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select room" /></SelectTrigger>
+                                                                    <SelectContent>
+                                                                        <SelectItem value="__none__">No room</SelectItem>
+                                                                        {options.rooms.map((r) => <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>)}
+                                                                    </SelectContent>
+                                                                </Select>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </CardContent>
+                                </Card>
+                            )}
+
+                            {form.data.schedules.length === 0 && (
+                                <div className="flex flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center">
+                                    <Clock className="text-muted-foreground h-8 w-8 mb-3" />
+                                    <h3 className="text-sm font-semibold">No schedule blocks yet</h3>
+                                    <p className="text-muted-foreground text-xs mt-1">Use Quick Generate or add blocks manually.</p>
+                                </div>
+                            )}
+
+                            <div className="flex justify-between pt-2">
+                                <Button type="button" variant="ghost" size="sm" onClick={() => setActiveTab("details")}>
+                                    <ChevronLeft className="mr-1 h-3.5 w-3.5" /> Back
+                                </Button>
+                                <Button type="button" size="sm" onClick={() => setActiveTab("review")} disabled={form.data.schedules.length === 0}>
+                                    Next <ChevronRight className="ml-1 h-3.5 w-3.5" />
+                                </Button>
+                            </div>
+                        </TabsContent>
+
+                        <TabsContent value="review" className="m-0 space-y-6 outline-none">
+                            <Card className="border-border/60 shadow-sm">
+                                <CardHeader className="bg-muted/20 border-b pb-4">
+                                    <CardTitle className="text-base font-semibold">Review & Submit</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-4 pt-6">
+                                    <div className="grid gap-3 text-sm">
+                                        <div className="flex justify-between border-b pb-2">
+                                            <span className="text-muted-foreground">Classification</span>
+                                            <span className="font-medium capitalize">{form.data.classification}</span>
+                                        </div>
+                                        <div className="flex justify-between border-b pb-2">
+                                            <span className="text-muted-foreground">Subject</span>
+                                            <span className="font-medium">{form.data.classification === "college" ? (form.data.subject_code || "—") : (form.data.subject_code_shs || "—")}</span>
+                                        </div>
+                                        <div className="flex justify-between border-b pb-2">
+                                            <span className="text-muted-foreground">Faculty</span>
+                                            <span className="font-medium">{options.faculty.find((f) => String(f.id) === String(form.data.faculty_id))?.name ?? "TBA"}</span>
+                                        </div>
+                                        <div className="flex justify-between border-b pb-2">
+                                            <span className="text-muted-foreground">Section</span>
+                                            <span className="font-medium">{form.data.section}</span>
+                                        </div>
+                                        <div className="flex justify-between border-b pb-2">
+                                            <span className="text-muted-foreground">Semester</span>
+                                            <span className="font-medium">{options.semesters.find((s) => s.value === form.data.semester)?.label ?? form.data.semester}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">School Year</span>
+                                            <span className="font-medium">{form.data.school_year}</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label className="text-sm font-medium">Schedule Blocks ({form.data.schedules.length})</Label>
+                                        <div className="space-y-1.5">
+                                            {form.data.schedules.map((block, i) => {
+                                                const hasConflict = blockHasConflict(block);
+                                                const room = options.rooms.find((r) => r.id === block.room_id);
+                                                return (
+                                                    <div key={block.id} className={`flex items-center justify-between rounded-md border px-3 py-2 text-xs ${hasConflict ? "border-destructive bg-destructive/5" : "border-border bg-muted/20"}`}>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="font-medium">{block.day_of_week}</span>
+                                                            <span className="text-muted-foreground">{fmtTime(block.start_time)} – {fmtTime(block.end_time)}</span>
+                                                            {room && <span className="text-muted-foreground">• {room.name}</span>}
+                                                        </div>
+                                                        {hasConflict && <AlertTriangle className="h-3.5 w-3.5 text-destructive" />}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {conflicts.length > 0 && (
+                                        <div className="border-destructive/40 bg-destructive/5 text-destructive rounded-lg border px-4 py-3 text-sm">
+                                            <div className="flex items-center gap-2 font-semibold">
+                                                <AlertTriangle className="h-4 w-4" />
+                                                {conflicts.length} potential conflict{conflicts.length !== 1 ? "s" : ""} detected
                                             </div>
+                                            <p className="text-xs mt-1">Review the schedule tab to resolve conflicts before submitting.</p>
                                         </div>
                                     )}
                                 </CardContent>
                             </Card>
 
                             <div className="flex justify-between pt-2">
-                                <Button type="button" variant="ghost" size="sm" onClick={() => setActiveTab("details")}>
-                                    <ChevronLeft className="mr-1 h-3.5 w-3.5" /> Back
-                                </Button>
-                                <Button type="button" size="sm" onClick={() => setActiveTab("rooms")} disabled={form.data.schedules.length === 0}>
-                                    Next <ChevronRight className="ml-1 h-3.5 w-3.5" />
-                                </Button>
-                            </div>
-                        </TabsContent>
-
-                        <TabsContent value="rooms" className="m-0 space-y-6 outline-none">
-                            <div className="flex items-center justify-between">
-                                <Label className="text-sm font-medium">Drag schedules onto rooms</Label>
-                                <Button type="button" variant="outline" size="sm" onClick={autoAssignRooms} className="h-7 text-xs gap-1">
-                                    <Wand2 className="h-3 w-3" /> Auto-assign
-                                </Button>
-                            </div>
-
-                            <DndContext sensors={sensors} onDragEnd={handleDragEnd} onDragOver={handleDragOver}>
-                                <div className="flex gap-3">
-                                    <div className="w-[200px] shrink-0">
-                                        <ScrollArea className="h-[520px]">
-                                            <div className="space-y-2 pr-2">
-                                                <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Schedules</div>
-                                                {form.data.schedules.map((s, i) => (
-                                                    <DraggableScheduleCard
-                                                        key={`${s.day_of_week}-${i}`}
-                                                        id={`sched-card-${i}`}
-                                                        schedule={s}
-                                                        index={i}
-                                                        pal={getPalette(s.day_of_week)}
-                                                    />
-                                                ))}
-                                            </div>
-                                        </ScrollArea>
-                                    </div>
-
-                                    <div className="flex-1">
-                                        <ScrollArea className="h-[520px]">
-                                            <div className="grid grid-cols-2 gap-2 pr-2">
-                                                {options.rooms.map((room) => {
-                                                    const assigned = form.data.schedules.filter((s) => scheduleRooms[s.day_of_week] === room.id);
-                                                    const isOver = dndOverRoom === room.id;
-                                                    return (
-                                                        <DroppableRoomTile key={room.id} room={room} isOver={isOver}>
-                                                            <div className="flex items-start justify-between mb-1.5">
-                                                                <div className="flex items-center gap-1.5">
-                                                                    <Building2 className="text-muted-foreground h-3.5 w-3.5" />
-                                                                    <span className="text-xs font-semibold">{room.name}</span>
-                                                                </div>
-                                                                <span className="text-[10px] text-muted-foreground bg-muted px-1 rounded">{assigned.length}</span>
-                                                            </div>
-                                                            <div className="space-y-1">
-                                                                {assigned.map((s) => {
-                                                                    const dayIdx = DAYS.indexOf(s.day_of_week as typeof DAYS[number]);
-                                                                    return (
-                                                                        <div key={s.day_of_week} className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                                                                            <Calendar className="h-2.5 w-2.5" />
-                                                                            <span>{DAYS_SHORT[dayIdx]}</span>
-                                                                            <span>{fmtTime(s.start_time)}</span>
-                                                                        </div>
-                                                                    );
-                                                                })}
-                                                                {assigned.length === 0 && <div className="text-[10px] text-muted-foreground/60 italic">Drop here</div>}
-                                                            </div>
-                                                        </DroppableRoomTile>
-                                                    );
-                                                })}
-                                            </div>
-                                        </ScrollArea>
-                                    </div>
-                                </div>
-                            </DndContext>
-
-                            <div className="flex justify-between pt-3 border-t">
                                 <Button type="button" variant="ghost" size="sm" onClick={() => setActiveTab("schedule")}>
                                     <ChevronLeft className="mr-1 h-3.5 w-3.5" /> Back
                                 </Button>
-                                <Button type="button" size="sm" onClick={handleSubmit} disabled={!canSubmit() || isSubmitting}>
+                                <Button type="button" size="sm" onClick={handleSubmit} disabled={isSubmitting || conflicts.length > 0}>
                                     {isSubmitting ? <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Plus className="mr-1.5 h-3.5 w-3.5" />}
-                                    {isSubmitting ? "Creating..." : "Create Class"}
+                                    {isSubmitting ? "Creating..." : conflicts.length > 0 ? "Resolve Conflicts First" : "Create Class"}
                                 </Button>
                             </div>
                         </TabsContent>
@@ -880,5 +982,104 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                 </Tabs>
             </SheetContent>
         </Sheet>
+    );
+}
+
+function DayColumn({ dayIdx, dayBlocks, allBlocks, onBlockClick, blockHasConflict, getBlockConflicts, onAddBlock }: {
+    dayIdx: number;
+    dayBlocks: Array<{ id: string; day_of_week: string; start_time: string; end_time: string; room_id: number | null }>;
+    allBlocks: Array<{ id: string; day_of_week: string; start_time: string; end_time: string; room_id: number | null }>;
+    onBlockClick: (index: number) => void;
+    blockHasConflict: (block: typeof dayBlocks[0]) => boolean;
+    getBlockConflicts: (block: typeof dayBlocks[0]) => Array<{ type: "room" | "faculty"; existing: any }>;
+    onAddBlock: (time: string) => void;
+}) {
+    const { setNodeRef, isOver } = useDroppable({ id: `day-${dayIdx}`, data: { dayIdx } });
+    const totalH = (HOUR_END - HOUR_START + 1) * CELL_H;
+
+    return (
+        <div
+            ref={setNodeRef}
+            className={`relative border-r last:border-r-0 transition-colors ${isOver ? "bg-primary/5" : ""}`}
+            style={{ height: totalH }}
+        >
+            {Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => (
+                <div key={i} className="absolute w-full border-b border-dashed border-border/40" style={{ top: i * CELL_H }} />
+            ))}
+
+            {Array.from({ length: HOUR_END - HOUR_START }, (_, i) => {
+                const hour = HOUR_START + i;
+                return (
+                    <button
+                        key={hour}
+                        type="button"
+                        className="absolute w-full hover:bg-primary/5 transition-colors cursor-cell"
+                        style={{ top: i * CELL_H, height: CELL_H }}
+                        onClick={() => onAddBlock(`${String(hour).padStart(2, "0")}:00`)}
+                        title={`Add block at ${hour}:00`}
+                    />
+                );
+            })}
+
+            {dayBlocks.map((block) => {
+                const globalIndex = allBlocks.findIndex((b) => b.id === block.id);
+                const startMin = parseTimeToMinutes(block.start_time);
+                const endMin = parseTimeToMinutes(block.end_time);
+                if (startMin === null || endMin === null) return null;
+                const top = ((startMin / 60) - HOUR_START) * CELL_H;
+                const height = ((endMin - startMin) / 60) * CELL_H;
+                const hasConflict = blockHasConflict(block);
+                const pal = getPalette(block.day_of_week);
+
+                return (
+                    <DraggableScheduleBlock
+                        key={block.id}
+                        block={block}
+                        globalIndex={globalIndex}
+                        style={{ top, height: Math.max(height - 2, 20), left: 2, right: 2 }}
+                        hasConflict={hasConflict}
+                        palette={pal}
+                        onClick={() => onBlockClick(globalIndex)}
+                    />
+                );
+            })}
+        </div>
+    );
+}
+
+function DraggableScheduleBlock({ block, globalIndex, style, hasConflict, palette, onClick }: {
+    block: { id: string; day_of_week: string; start_time: string; end_time: string; room_id: number | null };
+    globalIndex: number;
+    style: React.CSSProperties;
+    hasConflict: boolean;
+    palette: ReturnType<typeof getPalette>;
+    onClick: () => void;
+}) {
+    const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+        id: `block-${block.id}`,
+        data: { blockId: block.id },
+    });
+
+    return (
+        <div
+            ref={setNodeRef}
+            {...listeners}
+            {...attributes}
+            onClick={(e) => { e.stopPropagation(); onClick(); }}
+            className={`absolute overflow-hidden rounded-md border-l-[3px] px-1.5 py-1 text-left cursor-grab active:cursor-grabbing transition-all z-10 ${
+                hasConflict
+                    ? "border-l-red-500 bg-red-500/12 dark:bg-red-400/15 ring-2 ring-red-400/40"
+                    : `${palette.accent} ${palette.bg}`
+            } ${isDragging ? "opacity-40" : "hover:shadow-md hover:z-20"}`}
+            style={style}
+        >
+            <div className="flex items-center gap-1">
+                <GripVertical className="text-muted-foreground h-3 w-3 shrink-0 opacity-60" />
+                <div className={`truncate text-[10px] font-bold leading-tight ${hasConflict ? "text-red-700 dark:text-red-300" : palette.text}`}>
+                    {fmtTime(block.start_time)}
+                </div>
+            </div>
+            <div className="text-muted-foreground truncate text-[9px] leading-tight">{fmtTime(block.end_time)}</div>
+        </div>
     );
 }

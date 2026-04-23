@@ -1524,6 +1524,7 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
                 onOpenChange={setCreateDialogOpen}
                 options={creation_options}
                 defaults={defaults}
+                existingSchedules={schedule_data}
                 onClassCreated={handleClassCreated}
             />
         </AdminLayout>

@@ -3,6 +3,16 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
     DropdownMenu,
@@ -36,6 +46,7 @@ import {
     RotateCcw,
     Settings,
     ShieldCheck,
+    Trash2,
     UserCog,
     User as UserIcon,
     XCircle,
@@ -89,6 +100,7 @@ export default function AdministratorStudentShow({ user, student, options }: Stu
     const [selectedSubject, setSelectedSubject] = useState<ChecklistSubject | null>(null);
     const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<number | "new" | null>(null);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
+    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
     const [actionDialog, setActionDialog] = useState<string | null>(null);
     const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
     const [printDialogOption, setPrintDialogOption] = useState<PrintOption>("both");
@@ -212,6 +224,24 @@ export default function AdministratorStudentShow({ user, student, options }: Stu
         });
     };
 
+    const handleDelete = () => {
+        if (!selectedSubject || selectedEnrollmentId === "new" || selectedEnrollmentId === null) return;
+
+        router.delete(route("administrators.students.subjects.remove", [student.id, selectedEnrollmentId]), {
+            preserveScroll: true,
+            onSuccess: () => {
+                setIsDeleteDialogOpen(false);
+                setIsDialogOpen(false);
+                setSelectedSubject(null);
+                setSelectedEnrollmentId(null);
+                toast.success("Subject enrollment deleted successfully");
+            },
+            onError: () => {
+                toast.error("Failed to delete subject enrollment");
+            },
+        });
+    };
+
     const handleOpenPrintDialog = (option: PrintOption) => {
         setPrintDialogOption(option);
         setIsPrintDialogOpen(true);
@@ -236,7 +266,30 @@ export default function AdministratorStudentShow({ user, student, options }: Stu
                 errors={errors}
                 processing={processing}
                 onSubmit={handleSave}
+                onDelete={selectedEnrollmentId !== "new" && selectedEnrollmentId !== null ? () => setIsDeleteDialogOpen(true) : undefined}
             />
+
+            <AlertDialog open={isDeleteDialogOpen} onOpenChange={(open) => !open && setIsDeleteDialogOpen(false)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+                            <Trash2 className="h-5 w-5" />
+                            Delete Subject Enrollment?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This will permanently remove the selected enrollment record for{" "}
+                            <strong className="text-foreground">{selectedSubject?.code}</strong> - {selectedSubject?.title}. This action
+                            cannot be undone.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                            Delete
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
 
             {actionDialog === "updateId" && <UpdateIdDialog open={true} onOpenChange={() => setActionDialog(null)} student={student} />}
             {actionDialog === "updateStatus" && (

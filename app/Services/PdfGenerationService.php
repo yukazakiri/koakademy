@@ -158,6 +158,47 @@ final class PdfGenerationService
     }
 
     /**
+     * Merge PDFs in bounded chunks to reduce memory and timeout risk.
+     *
+     * @param  array<string>  $pdfPaths
+     */
+    public function mergePdfsChunked(array $pdfPaths, string $outputPath, int $chunkSize = 25, bool $landscape = true): void
+    {
+        if ($pdfPaths === []) {
+            throw new Exception('No PDF files provided for chunked merge');
+        }
+
+        if ($chunkSize < 2 || count($pdfPaths) <= $chunkSize) {
+            $this->mergePdfs($pdfPaths, $outputPath, $landscape);
+
+            return;
+        }
+
+        $tempDirectory = $this->createTempDirectory('pdf_merge_chunks_');
+
+        try {
+            $partialPaths = [];
+
+            foreach (array_chunk($pdfPaths, $chunkSize) as $chunkIndex => $chunkPaths) {
+                $partialPath = sprintf('%s%schunk_%03d.pdf', $tempDirectory, DIRECTORY_SEPARATOR, $chunkIndex);
+                $this->mergePdfs($chunkPaths, $partialPath, $landscape);
+                $partialPaths[] = $partialPath;
+            }
+
+            $this->mergePdfs($partialPaths, $outputPath, $landscape);
+        } finally {
+            try {
+                $this->cleanupTempDirectory($tempDirectory);
+            } catch (Exception $exception) {
+                Log::warning('Failed to clean up temporary chunk merge directory', [
+                    'directory' => $tempDirectory,
+                    'error' => $exception->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    /**
      * Create a temporary directory for PDF generation
      */
     public function createTempDirectory(string $prefix = 'pdf_'): string

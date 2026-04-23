@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.3.1",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.3.1",
-  "commit": "6d921326973565f09ab4d99c03562851617edeef",
+  "version": "1.1.0-dev.3.2",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.3.2",
+  "commit": "8dfd0827463c47311313bb321c0db604e430d229",
   "branch": "master",
-  "timestamp": "2026-04-23T05:14:20Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24817954022",
+  "timestamp": "2026-04-23T05:44:58Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24818896142",
   "release_type": "chore",
   "changelog": {
-    "current": "Version 1.1.0-dev.3.1 - refactor(pdf): migrate PdfGenerationService to spatie/laravel-pdf v2 (#42) (#52)",
-    "previous": "1.1.0-dev.3.0"
+    "current": "Version 1.1.0-dev.3.2 - chore(pdf): define non-Chrome production driver strategy (#43) (#53)",
+    "previous": "1.1.0-dev.3.1"
   },
   "metadata": {
     "author": "yukazakiri",

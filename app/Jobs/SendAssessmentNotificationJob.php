@@ -327,15 +327,8 @@ final class SendAssessmentNotificationJob implements ShouldQueue
                 'pdf.assesment-form',
                 $data,
                 $temporaryFilePath,
-                [
-                    'format' => 'A4',
-                    'landscape' => true,
-                    'print_background' => true,
-                    'margin_top' => '10mm',
-                    'margin_bottom' => '10mm',
-                    'margin_left' => '10mm',
-                    'margin_right' => '10mm',
-                ]
+                [],
+                'assessment_form'
             );
 
             // Verify file was created

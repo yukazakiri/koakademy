@@ -52,20 +52,7 @@ final class GenerateEnrollmentReportPreviewPdfJob implements ShouldQueue
         $temporaryFilePath = tempnam(sys_get_temp_dir(), 'enrollment_report_').'.pdf';
 
         try {
-            $pdfService->generatePdfFromView('pdf.enrollment-report', ['data' => $this->payload], $temporaryFilePath, [
-                'headless' => true,
-                'no-sandbox' => true,
-                'disable-dev-shm-usage' => true,
-                'disable-gpu' => true,
-                'no-first-run' => true,
-                'disable-background-timer-throttling' => true,
-                'disable-backgrounding-occluded-windows' => true,
-                'disable-renderer-backgrounding' => true,
-                'print-to-pdf-no-header' => true,
-                'run-all-compositor-stages-before-draw' => true,
-                'disable-extensions' => true,
-                'virtual-time-budget' => 10000,
-            ]);
+            $pdfService->generatePdfFromView('pdf.enrollment-report', ['data' => $this->payload], $temporaryFilePath, [], 'enrollment_report');
 
             $storagePath = $directory.'/'.$filename;
             StreamedStorage::putFileFromPath($disk, $storagePath, $temporaryFilePath);

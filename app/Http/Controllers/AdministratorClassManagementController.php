@@ -905,20 +905,7 @@ final class AdministratorClassManagementController extends Controller
         try {
             $pdfService = app(\App\Services\PdfGenerationService::class);
 
-            $pdfService->generatePdfFromView('exports.student-list-pdf', $data, $tempPath, [
-                'headless' => true,
-                'no-sandbox' => true,
-                'disable-dev-shm-usage' => true,
-                'disable-gpu' => true,
-                'no-first-run' => true,
-                'disable-background-timer-throttling' => true,
-                'disable-backgrounding-occluded-windows' => true,
-                'disable-renderer-backgrounding' => true,
-                'print-to-pdf-no-header' => true,
-                'run-all-compositor-stages-before-draw' => true,
-                'disable-extensions' => true,
-                'virtual-time-budget' => 10000,
-            ]);
+            $pdfService->generatePdfFromView('exports.student-list-pdf', $data, $tempPath, [], 'student_list');
 
             return response()->download($tempPath, $downloadName)->deleteFileAfterSend(true);
         } catch (Exception $e) {

@@ -1,0 +1,27 @@
+{
+    "job_id": "bulk-orchestration-test",
+    "batch_id": "a19c2375-3bc3-4c57-8e00-d94d78d17da3",
+    "user_id": 1,
+    "filters": {
+        "course_filter": "all",
+        "year_level_filter": "all",
+        "student_limit": "all",
+        "include_deleted": false,
+        "semester": 1,
+        "school_year": "2024 - 2025"
+    },
+    "chunk_size": 25,
+    "total_chunks": 1,
+    "chunks": [
+        {
+            "chunk_index": 0,
+            "enrollment_ids": [
+                1
+            ],
+            "status": "pending"
+        }
+    ],
+    "skipped_enrollments": [],
+    "created_at": "2026-04-23T12:50:18+08:00",
+    "updated_at": "2026-04-23T12:50:18+08:00"
+}

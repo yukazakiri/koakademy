@@ -12,3 +12,6 @@ Artisan::command('inspire', function (): void {
 
 // Schedule automatic Sanity sync every 15 minutes
 Schedule::command('sanity:sync')->everyFifteenMinutes();
+
+// Schedule Horizon metrics snapshots every 5 minutes
+Schedule::command('horizon:snapshot')->everyFiveMinutes();

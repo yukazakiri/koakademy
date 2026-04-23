@@ -4,17 +4,23 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\Administrators\StoreClassRequest;
 use App\Http\Requests\UpdateScheduleRequest;
 use App\Models\Classes;
 use App\Models\Course;
 use App\Models\Faculty;
 use App\Models\Room;
 use App\Models\Schedule;
+use App\Models\ShsStrand;
+use App\Models\ShsTrack;
 use App\Models\Student;
+use App\Models\Subject;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -155,6 +161,30 @@ final class AdministratorSchedulingAnalyticsController extends Controller
             'schedule_conflicts' => $this->detectScheduleConflicts($classes),
         ];
 
+        // Get all options needed for class creation
+        $allRooms = Room::query()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'class_code']);
+
+        $allFaculty = Faculty::query()
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->get(['id', 'first_name', 'last_name', 'department']);
+
+        $allCourses = Course::query()
+            ->orderBy('code')
+            ->get(['id', 'code', 'title', 'curriculum_year']);
+
+        $shsTracks = ShsTrack::query()
+            ->orderBy('track_name')
+            ->get(['id', 'track_name']);
+
+        $shsStrands = ShsStrand::query()
+            ->with('track:id,track_name')
+            ->orderBy('strand_name')
+            ->get(['id', 'strand_name', 'track_id']);
+
         return Inertia::render('administrators/scheduling-analytics', [
             'user' => [
                 'name' => $user->name,
@@ -182,6 +212,40 @@ final class AdministratorSchedulingAnalyticsController extends Controller
                     'course' => $request->input('course'),
                     'year_level' => $request->input('year_level'),
                     'section' => $request->input('section'),
+                ],
+            ],
+            'creation_options' => [
+                'rooms' => $allRooms->map(fn ($room): array => [
+                    'id' => $room->id,
+                    'name' => $room->name,
+                    'class_code' => $room->class_code,
+                ]),
+                'faculty' => $allFaculty->map(fn ($faculty): array => [
+                    'id' => $faculty->id,
+                    'name' => $faculty->first_name.' '.$faculty->last_name,
+                    'department' => $faculty->department,
+                ]),
+                'courses' => $allCourses->map(fn ($course): array => [
+                    'id' => $course->id,
+                    'code' => $course->code,
+                    'title' => $course->title,
+                    'curriculum_year' => $course->curriculum_year,
+                ]),
+                'shs_tracks' => $shsTracks->map(fn ($track): array => [
+                    'id' => $track->id,
+                    'track_name' => $track->track_name,
+                ]),
+                'shs_strands' => $shsStrands->map(fn ($strand): array => [
+                    'id' => $strand->id,
+                    'strand_name' => $strand->strand_name,
+                    'track_id' => $strand->track_id,
+                    'track_name' => $strand->track?->track_name,
+                ]),
+                'sections' => ['A', 'B', 'C', 'D'],
+                'semesters' => [
+                    ['value' => '1', 'label' => '1st Semester'],
+                    ['value' => '2', 'label' => '2nd Semester'],
+                    ['value' => 'summer', 'label' => 'Summer'],
                 ],
             ],
         ]);
@@ -280,11 +344,17 @@ final class AdministratorSchedulingAnalyticsController extends Controller
     {
         $validated = $request->validated();
 
-        $schedule->update([
+        $updateData = [
             'day_of_week' => $validated['day_of_week'],
             'start_time' => $validated['start_time'],
             'end_time' => $validated['end_time'],
-        ]);
+        ];
+
+        if (array_key_exists('room_id', $validated)) {
+            $updateData['room_id'] = $validated['room_id'];
+        }
+
+        $schedule->update($updateData);
 
         $schedule->refresh();
         $schedule->load('room');
@@ -312,6 +382,123 @@ final class AdministratorSchedulingAnalyticsController extends Controller
                 'room' => $schedule->room?->name,
                 'room_id' => $schedule->room_id,
             ],
+            'conflicts' => $conflicts,
+        ]);
+    }
+
+    /**
+     * Create a new class with schedules from the scheduling analytics page.
+     */
+    public function storeClass(StoreClassRequest $request): JsonResponse
+    {
+        $validated = $request->validated();
+
+        $classification = $validated['classification'];
+
+        /** @var array<string, mixed> $settings */
+        $settings = (array) ($validated['settings'] ?? []);
+        unset($validated['settings']);
+
+        $settings = array_merge(Classes::getDefaultSettings(), $settings);
+        $validated['settings'] = $settings;
+
+        if ($classification === 'shs') {
+            $validated['subject_code'] = $validated['subject_code_shs'];
+            unset($validated['subject_code_shs']);
+
+            $validated['course_codes'] = null;
+            $validated['subject_ids'] = null;
+            $validated['subject_id'] = null;
+            $validated['academic_year'] = null;
+        }
+
+        if ($classification === 'college') {
+            unset($validated['subject_code_shs'], $validated['shs_track_id'], $validated['shs_strand_id'], $validated['grade_level']);
+
+            $subjectIds = Arr::wrap($validated['subject_ids'] ?? []);
+
+            if ($subjectIds !== []) {
+                $validated['subject_id'] = (int) $subjectIds[0];
+
+                $codes = Subject::query()->whereIn('id', $subjectIds)->pluck('code')->filter()->unique()->values();
+                $generatedCode = $codes->implode(', ');
+
+                if (! isset($validated['subject_code']) || ! is_string($validated['subject_code']) || mb_trim($validated['subject_code']) === '') {
+                    $validated['subject_code'] = $generatedCode;
+                }
+            }
+        }
+
+        $schedules = Arr::wrap($validated['schedules'] ?? []);
+        unset($validated['schedules']);
+
+        /** @var Classes $class */
+        $class = DB::transaction(function () use ($validated, $schedules): Classes {
+            $class = Classes::query()->create($validated);
+
+            foreach ($schedules as $scheduleData) {
+                $class->schedules()->create([
+                    'day_of_week' => $scheduleData['day_of_week'],
+                    'start_time' => $scheduleData['start_time'],
+                    'end_time' => $scheduleData['end_time'],
+                    'room_id' => $scheduleData['room_id'],
+                ]);
+            }
+
+            return $class;
+        });
+
+        $class->load(['Subject', 'Faculty', 'Room', 'Schedule.room']);
+        $class->loadCount('ClassStudents');
+
+        // Build response in the same shape as schedule_data items
+        $yearLevel = null;
+        if ($class->classification === 'shs') {
+            $yearLevel = $class->grade_level;
+        } else {
+            $year = (int) $class->academic_year;
+            $yearLevel = match ($year) {
+                1 => '1st Year',
+                2 => '2nd Year',
+                3 => '3rd Year',
+                4 => '4th Year',
+                default => $year !== 0 ? "{$year}th Year" : 'N/A',
+            };
+        }
+
+        $response = [
+            'id' => $class->id,
+            'subject_code' => $class->subject_code,
+            'subject_title' => $class->subject_title,
+            'section' => $class->section,
+            'grade_level' => $yearLevel,
+            'classification' => $class->classification,
+            'faculty_id' => $class->faculty_id,
+            'faculty_name' => $class->Faculty ? $class->Faculty->first_name.' '.$class->Faculty->last_name : null,
+            'room_name' => $class->Room?->name,
+            'courses' => $class->formatted_course_codes,
+            'course_ids' => $class->course_codes,
+            'student_count' => $class->class_students_count,
+            'schedules' => $class->Schedule->map(fn ($schedule): array => [
+                'id' => $schedule->id,
+                'day_of_week' => $schedule->day_of_week,
+                'start_time' => $schedule->formatted_start_time,
+                'end_time' => $schedule->formatted_end_time,
+                'time_range' => $schedule->time_range,
+                'room' => $schedule->room?->name,
+                'room_id' => $schedule->room_id,
+            ]),
+        ];
+
+        // Re-detect conflicts
+        $allClasses = Classes::currentAcademicPeriod()
+            ->with(['Subject', 'Faculty', 'Room', 'Schedule.room'])
+            ->get();
+
+        $conflicts = $this->detectScheduleConflicts($allClasses);
+
+        return response()->json([
+            'class' => $response,
             'conflicts' => $conflicts,
         ]);
     }

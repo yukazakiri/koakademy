@@ -1,4 +1,5 @@
 import AdminLayout from "@/components/administrators/admin-layout";
+import CreateClassDialog from "./components/create-class-dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,7 @@ import {
     List,
     Loader2,
     MapPin,
+    Plus,
     RefreshCw,
     Search,
     User as UserIcon,
@@ -126,6 +128,16 @@ interface SchedulingAnalyticsProps {
         available_faculty: FacultyOption[];
         current_filters: { course: string | null; year_level: string | null; section: string | null };
     };
+    creation_options: {
+        rooms: RoomOption[];
+        faculty: FacultyOption[];
+        courses: Array<{ id: number; code: string; title: string; curriculum_year: string | null }>;
+        shs_tracks: Array<{ id: number; track_name: string }>;
+        shs_strands: Array<{ id: number; strand_name: string; track_id: number; track_name: string | null }>;
+        sections: string[];
+        semesters: Array<{ value: string; label: string }>;
+    };
+    defaults: { semester: string; school_year: string };
 }
 
 // ── Constants ──────────────────────────────────────────────────────
@@ -332,7 +344,7 @@ function InfoField({ icon, label, value }: { icon?: React.ReactNode; label: stri
 }
 // ── WeeklyTimetable ─────────────────────────────────────────────────
 
-function WeeklyTimetable({ data, onBlockClick, conflicts = [], editMode = false, onResizeStart, dropPreview }: { data: ClassScheduleData[]; onBlockClick: (c: ClassScheduleData) => void; conflicts?: ScheduleConflict[]; editMode?: boolean; onResizeStart?: (scheduleId: number, edge: "top" | "bottom", initialY: number, startMin: number, endMin: number) => void; dropPreview?: { day: string; startMin: number; duration: number; subject: string; pal: { bg: string; border: string; text: string; accent: string; badge: string; } } | null }) {
+function WeeklyTimetable({ data, onBlockClick, conflicts = [], editMode = false, onResizeStart, dropPreview, selectedScheduleId, onScheduleSelect }: { data: ClassScheduleData[]; onBlockClick: (c: ClassScheduleData) => void; conflicts?: ScheduleConflict[]; editMode?: boolean; onResizeStart?: (scheduleId: number, edge: "top" | "bottom", initialY: number, startMin: number, endMin: number) => void; dropPreview?: { day: string; startMin: number; duration: number; subject: string; pal: { bg: string; border: string; text: string; accent: string; badge: string; } } | null; selectedScheduleId?: number | null; onScheduleSelect?: (scheduleId: number | null) => void }) {
     const hours = React.useMemo(() => Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_START + i), []);
     const blocks = React.useMemo(() => buildBlocks(data), [data]);
     const totalH = (HOUR_END - HOUR_START + 1) * CELL_H;
@@ -411,7 +423,8 @@ function WeeklyTimetable({ data, onBlockClick, conflicts = [], editMode = false,
             </>
         );
 
-        const baseClassName = `absolute overflow-hidden rounded-md border-l-[3px] ${hasConflict ? "border-l-red-500 ring-2 ring-red-400/50 dark:ring-red-500/40" : pal.accent} ${hasConflict ? "bg-red-500/12 dark:bg-red-400/15" : pal.bg} p-1 text-left transition-all hover:z-20 hover:shadow-lg hover:brightness-95`;
+        const isSelected = selectedScheduleId === schedId;
+        const baseClassName = `absolute overflow-hidden rounded-md border-l-[3px] ${hasConflict ? "border-l-red-500 ring-2 ring-red-400/50 dark:ring-red-500/40" : pal.accent} ${hasConflict ? "bg-red-500/12 dark:bg-red-400/15" : pal.bg} ${isSelected ? "ring-2 ring-primary z-30" : ""} p-1 text-left transition-all hover:z-20 hover:shadow-lg hover:brightness-95`;
 
         if (editMode && schedId) {
             const dragData: DragData = {
@@ -422,14 +435,20 @@ function WeeklyTimetable({ data, onBlockClick, conflicts = [], editMode = false,
                 originalEndTime: b.sched.end_time,
             };
             return (
-                <DraggableBlock 
-                    key={`${b.cls.id}-${schedId}-${i}`} 
-                    id={`sched-${schedId}`} 
+                <DraggableBlock
+                    key={`${b.cls.id}-${schedId}-${i}`}
+                    id={`sched-${schedId}`}
                     data={dragData}
                     className={`${baseClassName} cursor-grab active:cursor-grabbing`}
                     style={blockStyle}
                 >
-                    {blockInner}
+                    <button
+                        type="button"
+                        className="absolute inset-0 z-40"
+                        onClick={(e) => { e.stopPropagation(); onScheduleSelect?.(isSelected ? null : schedId); }}
+                        aria-label={`Select ${b.cls.subject_code} schedule`}
+                    />
+                    <div className="relative z-10 pointer-events-none">{blockInner}</div>
                 </DraggableBlock>
             );
         }
@@ -616,7 +635,7 @@ function ScheduleListView({ data, onClassClick }: { data: ClassScheduleData[]; o
 }
 // ── Main Component ──────────────────────────────────────────────────
 
-export default function SchedulingAnalytics({ user, schedule_data, stats, filters }: SchedulingAnalyticsProps) {
+export default function SchedulingAnalytics({ user, schedule_data, stats, filters, creation_options, defaults }: SchedulingAnalyticsProps) {
     // Filter state
     const [search, setSearch] = React.useState("");
     const [courseFilter, setCourseFilter] = React.useState("all");
@@ -624,6 +643,8 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
     const [sectionFilter, setSectionFilter] = React.useState("all");
     const [roomFilter, setRoomFilter] = React.useState("all");
     const [facultyFilter, setFacultyFilter] = React.useState("all");
+
+    const [createDialogOpen, setCreateDialogOpen] = React.useState(false);
 
     // Student search state
     const [studentQuery, setStudentQuery] = React.useState("");
@@ -639,6 +660,7 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
     const [conflictsExpanded, setConflictsExpanded] = React.useState(false);
 
     const [editMode, setEditMode] = React.useState(false);
+    const [selectedScheduleForRoom, setSelectedScheduleForRoom] = React.useState<number | null>(null);
     const [activeDrag, setActiveDrag] = React.useState<(DragData & { width: number; height: number }) | null>(null);
     const [activeDragDelta, setActiveDragDelta] = React.useState(0);
     const [hoveredDay, setHoveredDay] = React.useState<string | null>(null);
@@ -981,6 +1003,62 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
 
     const cancelMove = () => setPendingMove(null);
 
+    const handleClassCreated = (classItem: ClassScheduleData) => {
+        setLocalData((prev) => [...prev, classItem]);
+    };
+
+    const assignRoomToSchedule = async (scheduleId: number, roomId: number | null) => {
+        const targetCls = localData.find((c) => c.schedules.some((s) => s.id === scheduleId));
+        const targetSched = targetCls?.schedules.find((s) => s.id === scheduleId);
+        if (!targetCls || !targetSched) return;
+
+        const prevRoomId = targetSched.room_id;
+
+        setLocalData((prev) =>
+            prev.map((cls) => ({
+                ...cls,
+                schedules: cls.schedules.map((s) =>
+                    s.id === scheduleId ? { ...s, room_id: roomId, room: roomId ? creation_options.rooms.find((r) => r.id === roomId)?.name ?? null : null } : s,
+                ),
+            })),
+        );
+
+        try {
+            const res = await axios.patch(
+                route("administrators.scheduling-analytics.schedules.update", { schedule: scheduleId }),
+                {
+                    day_of_week: targetSched.day_of_week,
+                    start_time: targetSched.start_time,
+                    end_time: targetSched.end_time,
+                    room_id: roomId,
+                },
+            );
+
+            toast.success(`Room updated for ${targetCls.subject_code}`);
+
+            if (res.data.conflicts?.length > 0) {
+                toast.warning(`${res.data.conflicts.length} schedule conflict${res.data.conflicts.length > 1 ? "s" : ""} detected.`);
+            }
+
+            router.reload({ only: ["schedule_data", "stats", "filters"] });
+        } catch (error: unknown) {
+            setLocalData((prev) =>
+                prev.map((cls) => ({
+                    ...cls,
+                    schedules: cls.schedules.map((s) =>
+                        s.id === scheduleId ? { ...s, room_id: prevRoomId, room: prevRoomId ? creation_options.rooms.find((r) => r.id === prevRoomId)?.name ?? null : null } : s,
+                    ),
+                })),
+            );
+
+            let msg = "Failed to update room.";
+            if (axios.isAxiosError(error) && error.response?.data?.message) {
+                msg = error.response.data.message;
+            }
+            toast.error(msg);
+        }
+    };
+
     // Combined filtering
     const filteredData = React.useMemo(() => {
         let d = localData;
@@ -1047,9 +1125,14 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
                         <h1 className="text-2xl font-bold tracking-tight">Schedule Overview</h1>
                         <p className="text-muted-foreground mt-0.5 text-sm">Bird's-eye view of all academic schedules. Filter by any dimension.</p>
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => router.reload({ only: ["schedule_data", "stats", "filters"] })}>
-                        <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Sync
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        <Button variant="default" size="sm" onClick={() => setCreateDialogOpen(true)}>
+                            <Plus className="mr-1.5 h-3.5 w-3.5" /> Create Class
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => router.reload({ only: ["schedule_data", "stats", "filters"] })}>
+                            <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Sync
+                        </Button>
+                    </div>
                 </div>
 
                 {/* ── Stats row ── */}
@@ -1213,62 +1296,140 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
                         className="fixed top-0 left-0 z-[9999] pointer-events-none opacity-0 whitespace-nowrap text-foreground font-semibold text-xs bg-background/95 px-2.5 py-1.5 rounded-md shadow-2xl border dark:border-border/50 backdrop-blur-md transition-opacity duration-150 ease-out"
                     />
 
-                    <Card>
-                        <CardHeader className="flex flex-row items-center justify-between pb-3">
-                            <div>
-                                <CardTitle className="text-base flex items-center gap-2">
-                                    Weekly Schedule
-                                    {editMode && <Badge variant="outline" className="bg-primary/10 text-primary hover:bg-primary/10 border-primary/20 text-[10px]">Edit Mode</Badge>}
-                                </CardTitle>
-                                <CardDescription className="text-xs">
-                                    {editMode ? "Drag and drop classes to reschedule them." : "Click any block for details."}
-                                </CardDescription>
-                            </div>
-                            <div className="flex items-center gap-4">
-                                {viewMode === "timetable" && (
-                                    <div className="flex items-center gap-2">
-                                        <Label htmlFor="edit-mode" className="text-xs font-medium cursor-pointer">Edit Mode</Label>
-                                        <Switch id="edit-mode" checked={editMode} onCheckedChange={setEditMode} />
-                                    </div>
-                                )}
-                                <div className="bg-muted flex rounded-lg p-0.5">
-                                    <Button variant={viewMode === "timetable" ? "secondary" : "ghost"} size="sm" onClick={() => { setViewMode("timetable"); }} className="h-7 rounded-md px-2.5 text-xs">
-                                        <LayoutGrid className="mr-1 h-3.5 w-3.5" /> Timetable
-                                    </Button>
-                                    <Button variant={viewMode === "list" ? "secondary" : "ghost"} size="sm" onClick={() => { setViewMode("list"); setEditMode(false); }} className="h-7 rounded-md px-2.5 text-xs">
-                                        <List className="mr-1 h-3.5 w-3.5" /> List
-                                    </Button>
+                    <div className={`flex gap-4 ${editMode && viewMode === "timetable" ? "flex-row" : ""}`}>
+                        <Card className={`${editMode && viewMode === "timetable" ? "flex-1" : "w-full"}`}>
+                            <CardHeader className="flex flex-row items-center justify-between pb-3">
+                                <div>
+                                    <CardTitle className="text-base flex items-center gap-2">
+                                        Weekly Schedule
+                                        {editMode && <Badge variant="outline" className="bg-primary/10 text-primary hover:bg-primary/10 border-primary/20 text-[10px]">Edit Mode</Badge>}
+                                    </CardTitle>
+                                    <CardDescription className="text-xs">
+                                        {editMode ? "Drag and drop classes to reschedule them." : "Click any block for details."}
+                                    </CardDescription>
                                 </div>
+                                <div className="flex items-center gap-4">
+                                    {viewMode === "timetable" && (
+                                        <div className="flex items-center gap-2">
+                                            <Label htmlFor="edit-mode" className="text-xs font-medium cursor-pointer">Edit Mode</Label>
+                                            <Switch id="edit-mode" checked={editMode} onCheckedChange={(v) => { setEditMode(v); if (!v) setSelectedScheduleForRoom(null); }} />
+                                        </div>
+                                    )}
+                                    <div className="bg-muted flex rounded-lg p-0.5">
+                                        <Button variant={viewMode === "timetable" ? "secondary" : "ghost"} size="sm" onClick={() => { setViewMode("timetable"); }} className="h-7 rounded-md px-2.5 text-xs">
+                                            <LayoutGrid className="mr-1 h-3.5 w-3.5" /> Timetable
+                                        </Button>
+                                        <Button variant={viewMode === "list" ? "secondary" : "ghost"} size="sm" onClick={() => { setViewMode("list"); setEditMode(false); setSelectedScheduleForRoom(null); }} className="h-7 rounded-md px-2.5 text-xs">
+                                            <List className="mr-1 h-3.5 w-3.5" /> List
+                                        </Button>
+                                    </div>
+                                </div>
+                            </CardHeader>
+                            <CardContent className="pt-0">
+                                {viewMode === "timetable" ? (() => {
+                                    let dropPreview = null;
+                                    if (activeDrag) {
+                                        const pxPerMin = CELL_H / 60;
+                                        const deltaMin = Math.round(activeDragDelta / pxPerMin);
+                                        const snappedDeltaMin = Math.round(deltaMin / SNAP_MINUTES) * SNAP_MINUTES;
+
+                                        const oldStartMin = parseMinutes(activeDrag.originalStartTime);
+                                        const duration = parseMinutes(activeDrag.originalEndTime) - oldStartMin;
+
+                                        let newStartMin = oldStartMin + snappedDeltaMin;
+                                        newStartMin = Math.max(HOUR_START * 60, Math.min(newStartMin, HOUR_END * 60 - duration));
+
+                                        dropPreview = {
+                                            day: hoveredDay || activeDrag.originalDay,
+                                            startMin: newStartMin,
+                                            duration: duration,
+                                            subject: activeDrag.block.cls.subject_code,
+                                            pal: getPalette(activeDrag.block.cls.subject_code)
+                                        };
+                                    }
+                                    return <WeeklyTimetable data={filteredData} onBlockClick={(c) => { if (editMode) { setSelectedClass(null); } else { setSelectedClass(c); } }} conflicts={conflicts} editMode={editMode} onResizeStart={handleResizeStart} dropPreview={dropPreview} selectedScheduleId={selectedScheduleForRoom} onScheduleSelect={setSelectedScheduleForRoom} />;
+                                })() : (
+                                    <ScheduleListView data={filteredData} onClassClick={setSelectedClass} />
+                                )}
+                            </CardContent>
+                        </Card>
+
+                        {editMode && viewMode === "timetable" && (
+                            <div className="w-[200px] shrink-0">
+                                <Card className="h-full">
+                                    <CardHeader className="pb-2">
+                                        <CardTitle className="text-xs flex items-center gap-1.5">
+                                            <Building2 className="h-3.5 w-3.5" /> Rooms
+                                        </CardTitle>
+                                        <CardDescription className="text-[10px]">
+                                            Click to assign selected schedule
+                                        </CardDescription>
+                                    </CardHeader>
+                                    <CardContent className="pt-0">
+                                        <ScrollArea className="h-[580px]">
+                                            <div className="space-y-1.5 pr-2">
+                                                {creation_options.rooms.map((room) => {
+                                                    const roomSchedules = localData.flatMap((c) =>
+                                                        c.schedules.filter((s) => s.room_id === room.id).map((s) => ({ ...s, subject_code: c.subject_code, section: c.section })),
+                                                    );
+                                                    return (
+                                                        <button
+                                                            key={room.id}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                if (selectedScheduleForRoom) {
+                                                                    assignRoomToSchedule(selectedScheduleForRoom, room.id);
+                                                                    setSelectedScheduleForRoom(null);
+                                                                }
+                                                            }}
+                                                            className={`w-full text-left rounded-lg border p-2 transition-colors ${
+                                                                selectedScheduleForRoom
+                                                                    ? "border-primary/50 bg-primary/5 hover:bg-primary/10 cursor-pointer"
+                                                                    : "border-border bg-muted/30 cursor-default"
+                                                            }`}
+                                                        >
+                                                            <div className="flex items-center justify-between">
+                                                                <span className="text-xs font-medium truncate">{room.name}</span>
+                                                                <span className="text-[10px] text-muted-foreground bg-background px-1 rounded">{roomSchedules.length}</span>
+                                                            </div>
+                                                            {roomSchedules.length > 0 && (
+                                                                <div className="mt-1 space-y-0.5">
+                                                                    {roomSchedules.slice(0, 3).map((s, i) => (
+                                                                        <div key={i} className="text-[9px] text-muted-foreground truncate">
+                                                                            {s.subject_code} — {s.day_of_week.slice(0, 3)} {s.time_range}
+                                                                        </div>
+                                                                    ))}
+                                                                    {roomSchedules.length > 3 && (
+                                                                        <div className="text-[9px] text-muted-foreground">+{roomSchedules.length - 3} more</div>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </button>
+                                                    );
+                                                })}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        if (selectedScheduleForRoom) {
+                                                            assignRoomToSchedule(selectedScheduleForRoom, null);
+                                                            setSelectedScheduleForRoom(null);
+                                                        }
+                                                    }}
+                                                    className={`w-full text-left rounded-lg border border-dashed p-2 transition-colors ${
+                                                        selectedScheduleForRoom
+                                                            ? "border-destructive/50 bg-destructive/5 hover:bg-destructive/10 cursor-pointer"
+                                                            : "border-border bg-muted/30 cursor-default"
+                                                    }`}
+                                                >
+                                                    <span className="text-xs text-muted-foreground">No Room</span>
+                                                </button>
+                                            </div>
+                                        </ScrollArea>
+                                    </CardContent>
+                                </Card>
                             </div>
-                        </CardHeader>
-                        <CardContent className="pt-0">
-                            {viewMode === "timetable" ? (() => {
-                                let dropPreview = null;
-                                if (activeDrag) {
-                                    const pxPerMin = CELL_H / 60;
-                                    const deltaMin = Math.round(activeDragDelta / pxPerMin);
-                                    const snappedDeltaMin = Math.round(deltaMin / SNAP_MINUTES) * SNAP_MINUTES;
-                                    
-                                    const oldStartMin = parseMinutes(activeDrag.originalStartTime);
-                                    const duration = parseMinutes(activeDrag.originalEndTime) - oldStartMin;
-                                    
-                                    let newStartMin = oldStartMin + snappedDeltaMin;
-                                    newStartMin = Math.max(HOUR_START * 60, Math.min(newStartMin, HOUR_END * 60 - duration));
-                                    
-                                    dropPreview = {
-                                        day: hoveredDay || activeDrag.originalDay,
-                                        startMin: newStartMin,
-                                        duration: duration,
-                                        subject: activeDrag.block.cls.subject_code,
-                                        pal: getPalette(activeDrag.block.cls.subject_code)
-                                    };
-                                }
-                                return <WeeklyTimetable data={filteredData} onBlockClick={setSelectedClass} conflicts={conflicts} editMode={editMode} onResizeStart={handleResizeStart} dropPreview={dropPreview} />;
-                            })() : (
-                                <ScheduleListView data={filteredData} onClassClick={setSelectedClass} />
-                            )}
-                        </CardContent>
-                    </Card>
+                        )}
+                    </div>
 
                     <DragOverlay dropAnimation={null}>
                         {activeDrag ? (() => {
@@ -1357,6 +1518,14 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+
+            <CreateClassDialog
+                open={createDialogOpen}
+                onOpenChange={setCreateDialogOpen}
+                options={creation_options}
+                defaults={defaults}
+                onClassCreated={handleClassCreated}
+            />
         </AdminLayout>
     );
 }

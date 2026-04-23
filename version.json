@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.5.2",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.5.2",
-  "commit": "5f5d50333d7793e01627c1c800b7ef3abd27ac1c",
+  "version": "1.1.0-dev.6.0",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.6.0",
+  "commit": "ba6942de80fceb5d89c46f3f50887bbf938cf2dd",
   "branch": "master",
-  "timestamp": "2026-04-23T14:51:23Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24841276176",
-  "release_type": "bugfix",
+  "timestamp": "2026-04-23T14:57:51Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24841961482",
+  "release_type": "feature",
   "changelog": {
-    "current": "Version 1.1.0-dev.5.2 - fix(scheduling): use non-empty placeholder value for faculty select",
-    "previous": "1.1.0-dev.5.1"
+    "current": "Version 1.1.0-dev.6.0 - feat(scheduling): revamp create class dialog with comboboxes and dnd timetable",
+    "previous": "1.1.0-dev.5.2"
   },
   "metadata": {
     "author": "yukazakiri",

@@ -87,6 +87,8 @@ return [
 
     'waits' => [
         'redis:default' => 60,
+        'redis:assessments' => 120,
+        'redis-pdf:pdf-generation' => 300,
     ],
 
     /*
@@ -186,33 +188,54 @@ return [
     */
 
     'defaults' => [
-        'supervisor-1' => [
+        'supervisor-default' => [
             'connection' => 'redis',
-            'queue' => ['pdf-generation', 'default', 'assessments'],
+            'queue' => ['default', 'assessments'],
             'balance' => 'auto',
             'autoScalingStrategy' => 'time',
             'maxProcesses' => 3,
             'maxTime' => 0,
             'maxJobs' => 0,
-            'memory' => 1000,
+            'memory' => 512,
             'tries' => 1,
             'timeout' => 60,
+            'nice' => 0,
+        ],
+        'supervisor-pdf' => [
+            'connection' => 'redis-pdf',
+            'queue' => ['pdf-generation'],
+            'balance' => 'auto',
+            'autoScalingStrategy' => 'time',
+            'maxProcesses' => 2,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 2048,
+            'tries' => 1,
+            'timeout' => 3600,
             'nice' => 0,
         ],
     ],
 
     'environments' => [
         'production' => [
-            'supervisor-1' => [
+            'supervisor-default' => [
                 'maxProcesses' => 10,
                 'balanceMaxShift' => 1,
                 'balanceCooldown' => 3,
             ],
+            'supervisor-pdf' => [
+                'maxProcesses' => 5,
+                'balanceMaxShift' => 1,
+                'balanceCooldown' => 5,
+            ],
         ],
 
         'local' => [
-            'supervisor-1' => [
+            'supervisor-default' => [
                 'maxProcesses' => 3,
+            ],
+            'supervisor-pdf' => [
+                'maxProcesses' => 2,
             ],
         ],
     ],

@@ -10,7 +10,6 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\View;
-use Spatie\Browsershot\Browsershot;
 
 final class StudentTimetablePdfService
 {
@@ -42,45 +41,39 @@ final class StudentTimetablePdfService
                 'timetable' => $timetableData,
             ])->render();
 
-            // Generate PDF using the working direct approach
-            try {
-                Log::info('Attempting PDF generation with full options', [
-                    'student_id' => $student->id,
-                ]);
+            // Generate PDF using PdfGenerationService
+            $pdfService = app(PdfGenerationService::class);
+            $tempPath = tempnam(sys_get_temp_dir(), 'pdf_').'.pdf';
 
-                $pdf = Browsershot::html($html)
-                    ->setChromePath('/usr/bin/google-chrome-stable')
-                    ->noSandbox()
-                    ->disableSetuidSandbox()
-                    ->disableDevShmUsage()
-                    ->disableGpu()
-                    ->format('A4')
-                    ->landscape(true)
-                    ->margins(8, 8, 8, 8)
-                    ->showBackground()
-                    ->timeout(120)
-                    ->waitUntilNetworkIdle()
-                    ->pdf();
+            try {
+                $pdfService->generatePdfFromHtml($html, $tempPath, [
+                    'format' => 'A4',
+                    'landscape' => true,
+                    'margin_top' => 8,
+                    'margin_right' => 8,
+                    'margin_bottom' => 8,
+                    'margin_left' => 8,
+                    'print_background' => true,
+                ]);
             } catch (Exception $e) {
-                Log::warning('PDF generation with full options failed, using fallback', [
+                Log::warning('PDF generation with options failed, using fallback', [
                     'student_id' => $student->id,
                     'error' => $e->getMessage(),
                 ]);
 
-                // Fallback: try without additional options
-                $pdf = Browsershot::html($html)
-                    ->setChromePath('/usr/bin/google-chrome-stable')
-                    ->noSandbox()
-                    ->disableSetuidSandbox()
-                    ->disableDevShmUsage()
-                    ->disableGpu()
-                    ->format('A4')
-                    ->landscape(true)
-                    ->margins(8, 8, 8, 8)
-                    ->showBackground()
-                    ->timeout(120)
-                    ->pdf();
+                $pdfService->generatePdfFromHtml($html, $tempPath, [
+                    'format' => 'A4',
+                    'landscape' => true,
+                    'margin_top' => 8,
+                    'margin_right' => 8,
+                    'margin_bottom' => 8,
+                    'margin_left' => 8,
+                    'print_background' => true,
+                ]);
             }
+
+            $pdf = file_get_contents($tempPath);
+            unlink($tempPath);
 
             // Store PDF in MinIO (default filesystem)
             $path = 'pdfs/'.$filename;

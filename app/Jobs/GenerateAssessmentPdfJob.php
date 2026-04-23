@@ -295,7 +295,7 @@ final class GenerateAssessmentPdfJob implements ShouldQueue
                         'UTF-8',
                         'auto'
                     ),
-                    'generation_method' => 'browsershot_job',
+                        'generation_method' => 'pdf_generation_job',
                     'generated_at' => format_timestamp_now(),
                     'is_new_version' => true,
                 ],
@@ -325,7 +325,7 @@ final class GenerateAssessmentPdfJob implements ShouldQueue
                             'UTF-8',
                             'auto'
                         ),
-                        'generation_method' => 'browsershot_job',
+                    'generation_method' => 'pdf_generation_job',
                         'generated_at' => format_timestamp_now(),
                     ],
                 ]

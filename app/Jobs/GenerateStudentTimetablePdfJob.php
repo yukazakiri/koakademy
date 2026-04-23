@@ -47,7 +47,7 @@ final class GenerateStudentTimetablePdfJob implements ShouldQueue
                 'student_name' => $this->student->full_name ?? 'Unknown',
             ]);
 
-            // Generate PDF using direct Browsershot approach (same as working GenerateStudentListPdfJob)
+            // Generate PDF using PdfGenerationService (Cloudflare / DOMPDF)
             $filename = $this->generateTimetablePdf($this->student);
 
             Log::info('Student timetable PDF generated successfully', [
@@ -85,7 +85,7 @@ final class GenerateStudentTimetablePdfJob implements ShouldQueue
     }
 
     /**
-     * Generate timetable PDF using direct Browsershot approach
+     * Generate timetable PDF using PdfGenerationService
      */
     private function generateTimetablePdf(Student $student): string
     {

@@ -1,10 +1,10 @@
 ARG PHP_VERSION=8.5
 ARG FRANKENPHP_VERSION=1.9
 ARG COMPOSER_VERSION=2.8
-ARG APP_NAME=DccpAdminV3
+ARG APP_NAME=KoAkademy
 ARG APP_ENV=production
 ARG APP_DEBUG=false
-ARG APP_URL=https://dccpadmin.yukazaki.com
+ARG APP_URL=https://koakademy.yukazaki.com
 
 # -----------------------------------------------------------------------------
 # Stage 1: Install PHP Dependencies
@@ -50,9 +50,9 @@ RUN bun run build
 # -----------------------------------------------------------------------------
 FROM dunglas/frankenphp:${FRANKENPHP_VERSION}-php${PHP_VERSION}
 
-LABEL maintainer="Mortexa <seyed.me720@gmail.com>"
-LABEL org.opencontainers.image.title="Laravel Docker Setup"
-LABEL org.opencontainers.image.description="Production-ready Docker Setup for Laravel"
+LABEL maintainer="Yuka <128908897+yukazakiri@users.noreply.github.com>"
+LABEL org.opencontainers.image.title="KoAkademy"
+LABEL org.opencontainers.image.description="Production-ready Docker image for KoAkademy"
 LABEL org.opencontainers.image.source=https://github.com/exaco/laravel-docktane
 LABEL org.opencontainers.image.licenses=MIT
 
@@ -72,14 +72,12 @@ ENV XDG_DATA_HOME=${ROOT}/.data
 
 WORKDIR ${ROOT}
 
-# Install system dependencies, Google Chrome Stable, and PostgreSQL clients
+# Install system dependencies and PostgreSQL clients
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gnupg \
     curl \
     ca-certificates \
     zip \
     unzip \
-    git \
     supervisor \
     libcap2-bin \
     libpng-dev \
@@ -88,9 +86,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     postgresql-client \
     postgresql-17 && \
-    curl -fsSL https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg && \
-    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list && \
-    apt-get update && apt-get install -y --no-install-recommends google-chrome-stable && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install PHP extensions

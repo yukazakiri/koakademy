@@ -323,14 +323,12 @@ final class MigrateToStudent extends Notification implements ShouldQueue
         set_time_limit(180);
 
         try {
-            // Use Browsershot for PDF generation
-            Log::info('Attempting PDF generation with Spatie/Browsershot.');
+            Log::info('Attempting PDF generation with PdfGenerationService.');
 
-            return $this->generatePdfWithBrowsershot();
+            return $this->generatePdfWithService();
         } catch (Exception $exception) {
-            // Log the error from Browsershot
             Log::error(
-                'Browsershot PDF generation failed: '.$exception->getMessage()
+                'PDF generation failed: '.$exception->getMessage()
             );
             Log::error('Stack trace: '.$exception->getTraceAsString());
             // Re-throw the exception so it can be caught by the toMail method
@@ -340,7 +338,7 @@ final class MigrateToStudent extends Notification implements ShouldQueue
         }
     }
 
-    private function generatePdfWithBrowsershot(): array
+    private function generatePdfWithService(): array
     {
         $general_settings = GeneralSetting::query()->first();
 
@@ -505,7 +503,7 @@ final class MigrateToStudent extends Notification implements ShouldQueue
                             'UTF-8',
                             'auto'
                         ),
-                        'generation_method' => 'pdf_generation_service',
+                        'generation_method' => 'laravel_pdf_service',
                     ],
                 ]
             );

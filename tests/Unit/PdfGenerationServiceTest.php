@@ -23,8 +23,7 @@ it('generates PDFs from HTML through laravel-pdf and maps core options', functio
         'margin_right' => '8mm',
         'margin_bottom' => '6mm',
         'margin_left' => '4mm',
-        'disable_gpu' => true,
-        'virtual_time_budget' => 10000,
+        'print_background' => true,
     ]);
 
     Pdf::assertSaved(function (PdfBuilder $pdf, string $path) use (&$savedPdf, &$savedPath): bool {
@@ -50,11 +49,8 @@ it('generates PDFs from HTML through laravel-pdf and maps core options', functio
     $reflection = new ReflectionClass($savedPdf);
     $driverProperty = $reflection->getProperty('driverName');
     $driverProperty->setAccessible(true);
-    $customizeProperty = $reflection->getProperty('customizeBrowsershot');
-    $customizeProperty->setAccessible(true);
 
-    expect($driverProperty->getValue($savedPdf))->toBe('dompdf')
-        ->and(is_callable($customizeProperty->getValue($savedPdf)))->toBeTrue();
+    expect($driverProperty->getValue($savedPdf))->toBe('dompdf');
 });
 
 it('generates PDFs from a Blade view through laravel-pdf', function (): void {

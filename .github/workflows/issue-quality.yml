@@ -16,7 +16,7 @@ jobs:
           script: |
             const REPRO_URL_REGEXP = /### Reproduction repository[\r\n]+([^#]+)###/m;
             const REPRO_STEPS_REGEXP = /### Steps to reproduce[\r\n]+([^#]+)###/m;
-            const ENV_REGEXP = /### Environment[\r\n]+([^#]+)###/m;
+            const PHP_VERSION_REGEXP = /### PHP Version[\r\n]+([^#]+)###/m;
             const LABEL_NEEDS_MORE_INFORMATION = 'needs more info';
             const LABEL_UNCONFIRMED = 'unconfirmed';
 
@@ -35,20 +35,26 @@ jobs:
               debug('Skipping check for repository owner.');
               return;
             }
+
             const issue = context.payload.issue;
+
+            if (issue.labels.some(label => label.name === 'enhancement')) {
+              debug('Skipping check for feature request.');
+              return;
+            }
             const body = issue.body || '';
 
             const urlMatch = body.match(REPRO_URL_REGEXP);
             const reproStepsMatch = body.match(REPRO_STEPS_REGEXP);
-            const envMatch = body.match(ENV_REGEXP);
+            const phpVersionMatch = body.match(PHP_VERSION_REGEXP);
 
             const url = urlMatch !== null ? urlMatch[1].trim() : null;
             const reproSteps = reproStepsMatch !== null ? reproStepsMatch[1].trim() : null;
-            const env = envMatch !== null ? envMatch[1].trim() : null;
+            const phpVersion = phpVersionMatch !== null ? phpVersionMatch[1].trim() : null;
 
             debug(`Found URL '${url}'`);
             debug(`Found repro steps '${reproSteps}'`);
-            debug(`Found env '${env}'`);
+            debug(`Found PHP version '${phpVersion}'`);
 
             async function createComment(comment) {
               comment = comment
@@ -148,18 +154,18 @@ jobs:
 
             const NO_REPRO_URL = (!url) || (!url.includes('https://github.com/'));
             const NO_REPRO_STEPS = (!reproSteps) || reproSteps.length < 25;
-            const NO_ENV = (!env) || env.length < 10;
+            const NO_PHP_VERSION = (!phpVersion) || phpVersion.length < 10;
 
-            if (NO_REPRO_URL || NO_REPRO_STEPS || NO_ENV) {
+            if (NO_REPRO_URL || NO_REPRO_STEPS || NO_PHP_VERSION) {
               let comment = `${COMMENT_HEADER}`;
 
               if (NO_REPRO_URL) {
                 comment += `\n\nHowever, it looks like you forgot to fill in the reproduction repository URL. Can you edit your original post and then we'll look at your issue?\nWe need a public GitHub repository which contains a minimal Laravel app with the minimal amount of code to reproduce the problem. **Please do not link to your actual project**, what we need instead is a _minimal_ reproduction in a fresh project without any unnecessary code. This means it doesn't matter if your real project is private / confidential, since we want a link to a separate, isolated reproduction. That would allow us to download it and review your bug much easier, so it can be fixed quicker. Please make sure to include a database seeder with everything we need to set the app up quickly.`;
               }
 
-              if ((NO_REPRO_URL && NO_REPRO_STEPS) || (NO_REPRO_URL && NO_ENV)) {
+              if ((NO_REPRO_URL && NO_REPRO_STEPS) || (NO_REPRO_URL && NO_PHP_VERSION)) {
                 comment += `\n\nAlso, `;
-              } else if (NO_REPRO_STEPS || NO_ENV) {
+              } else if (NO_REPRO_STEPS || NO_PHP_VERSION) {
                 comment += `\n\nHowever, `;
               }
 
@@ -167,11 +173,11 @@ jobs:
                 comment += `it doesn't look like you've provided enough information on how to replicate the issue. Please edit your original post with clear steps we need to take.`;
               }
 
-              if (NO_ENV) {
+              if (NO_PHP_VERSION) {
                 if (NO_REPRO_STEPS) {
                   comment += `\n\nAdditionally, `;
                 }
-                comment += `please provide your environment details (PHP version, Laravel version, OS, etc.) so we can better diagnose the issue.`;
+                comment += `please provide your PHP version and other environment details so we can better diagnose the issue.`;
               }
 
               await closeWithComment(comment);

@@ -38,6 +38,13 @@ MAIL_MAILER=smtp
 MAIL_FROM_ADDRESS=noreply@koakademy.edu
 MAIL_FROM_NAME="${APP_NAME}"
 
+LARAVEL_PDF_DRIVER=dompdf
+LARAVEL_PDF_PRODUCTION_DRIVER=dompdf
+LARAVEL_PDF_PRODUCTION_FALLBACK=cloudflare,browsershot
+LARAVEL_PDF_ROLLBACK_DRIVER=browsershot
+CLOUDFLARE_API_TOKEN=
+CLOUDFLARE_ACCOUNT_ID=
+
 FILESYSTEM_DISK=public
 OCTANE_SERVER=frankenphp
 OCTANE_HOST=0.0.0.0
@@ -120,6 +127,28 @@ Keep the previous container image tag available. To roll back:
 1. Point the compose file to the previous image tag.
 2. Redeploy the containers.
 3. Restore the database only if the failed release included destructive schema changes.
+
+PDF driver rollback path:
+
+1. Set `LARAVEL_PDF_DRIVER=${LARAVEL_PDF_ROLLBACK_DRIVER}`.
+2. Redeploy and clear config cache (`php artisan config:clear`).
+3. If rollback driver is `browsershot`, ensure Chromium/Node runtime exists on the app image.
+
+## PDF Driver ADR (2026-04-23)
+
+Decision record for PDF rendering in production:
+
+- Primary production driver: `dompdf` (no local Chrome/Node runtime required).
+- Production fallback order: `cloudflare` then `browsershot`.
+- Staging fallback order: `cloudflare` then `browsershot`.
+- Local development default: `browsershot` with `dompdf` fallback.
+- Rollback knob: `LARAVEL_PDF_ROLLBACK_DRIVER`.
+
+Rationale:
+
+- Reduces runtime image size and operational dependency on Chromium binaries.
+- Keeps a managed rendering option (`cloudflare`) for complex layouts.
+- Preserves a known compatibility fallback (`browsershot`) when required.
 
 ## Post-Deploy Verification
 

@@ -50,3 +50,6 @@ AGENTS.md
 boost.json
 opencode.json
 docker/traefik/certs/*
+docker/traefik/dynamic/tls.yml
+public/css/filament/**
+public/js/filament/**

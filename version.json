@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.2.3",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.2.3",
-  "commit": "feb34f55a6104d05fa28a2fbf6abedd7fee838e0",
+  "version": "1.1.0-dev.3.0",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.3.0",
+  "commit": "c4935d5a45201f94372a14cc54fbbf589c7e7df6",
   "branch": "master",
-  "timestamp": "2026-04-22T09:01:24Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24769117657",
-  "release_type": "patch",
+  "timestamp": "2026-04-23T02:03:18Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24812539447",
+  "release_type": "feature",
   "changelog": {
-    "current": "Version 1.1.0-dev.2.3 - Enhance release workflows with Docker Hub support and race condition",
-    "previous": "1.1.0-dev.2.2"
+    "current": "Version 1.1.0-dev.3.0 - feat: add delete button for subject enrollment records (#37)",
+    "previous": "1.1.0-dev.2.3"
   },
   "metadata": {
     "author": "yukazakiri",

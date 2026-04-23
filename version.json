@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.6.1",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.6.1",
-  "commit": "506c9ea82e0156f7b5f2c0d9f51d73605880cdb0",
+  "version": "1.1.0-dev.7.0",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.0",
+  "commit": "3f8f247e4c48d266246e81c0cd26e1c9ac5b263e",
   "branch": "master",
-  "timestamp": "2026-04-23T15:21:26Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24843166967",
-  "release_type": "bugfix",
+  "timestamp": "2026-04-23T21:46:39Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24860327546",
+  "release_type": "feature",
   "changelog": {
-    "current": "Version 1.1.0-dev.6.1 - fix(scheduling): flatten schedule_data for existingSchedules prop",
-    "previous": "1.1.0-dev.6.0"
+    "current": "Version 1.1.0-dev.7.0 - feat(scheduling): add multi-select and move room selection to schedule tab",
+    "previous": "1.1.0-dev.6.1"
   },
   "metadata": {
     "author": "yukazakiri",

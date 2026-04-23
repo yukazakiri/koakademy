@@ -8,7 +8,6 @@ use Deprecated;
 use Exception;
 use Illuminate\Support\Facades\Log;
 use setasign\Fpdi\Fpdi;
-use Spatie\Browsershot\Browsershot;
 use Spatie\LaravelPdf\Facades\Pdf;
 use Spatie\LaravelPdf\PdfBuilder;
 
@@ -288,35 +287,13 @@ final class PdfGenerationService
             $pdfBuilder->pageRanges($normalizedOptions['page-ranges']);
         }
 
-        $this->applyBrowsershotOptions($pdfBuilder, $normalizedOptions);
-    }
-
-    /**
-     * @param  array<string, mixed>  $options
-     */
-    private function applyBrowsershotOptions(PdfBuilder $pdfBuilder, array $options): void
-    {
-        $arguments = $this->buildBrowsershotArguments($options);
-
-        if ($arguments === [] && ! array_key_exists('print-background', $options)) {
-            return;
+        if (($normalizedOptions['print-background'] ?? null) === true) {
+            $pdfBuilder->showBackground();
         }
 
-        $printBackground = $options['print-background'] ?? null;
-
-        $pdfBuilder->withBrowsershot(function (Browsershot $browsershot) use ($arguments, $printBackground): void {
-            if ($arguments !== []) {
-                $browsershot->setOption('args', $arguments);
-            }
-
-            if ($printBackground === true) {
-                $browsershot->showBackground();
-            }
-
-            if ($printBackground === false) {
-                $browsershot->hideBackground();
-            }
-        });
+        if (($normalizedOptions['print-background'] ?? null) === false) {
+            $pdfBuilder->hideBackground();
+        }
     }
 
     /**
@@ -406,63 +383,6 @@ final class PdfGenerationService
         }
 
         return [0.0, $fallbackUnit];
-    }
-
-    /**
-     * @param  array<string, mixed>  $options
-     * @return array<int, string>
-     */
-    private function buildBrowsershotArguments(array $options): array
-    {
-        $reservedOptionKeys = [
-            'driver',
-            'format',
-            'landscape',
-            'orientation',
-            'margins',
-            'margin-top',
-            'margin-right',
-            'margin-bottom',
-            'margin-left',
-            'paper-width',
-            'paper-height',
-            'paper-unit',
-            'scale',
-            'page-ranges',
-            'print-background',
-        ];
-
-        $arguments = [];
-
-        foreach ($options as $key => $value) {
-            if (in_array($key, $reservedOptionKeys, true)) {
-                continue;
-            }
-
-            if ($key === 'args' && is_array($value)) {
-                foreach ($value as $argument) {
-                    if (is_string($argument)) {
-                        $arguments[] = $argument;
-                    }
-                }
-
-                continue;
-            }
-
-            if ($value === true) {
-                $arguments[] = "--{$key}";
-
-                continue;
-            }
-
-            if ($value === false || $value === null || is_array($value) || is_object($value)) {
-                continue;
-            }
-
-            $arguments[] = "--{$key}={$value}";
-        }
-
-        return $arguments;
     }
 
     private function ensureOutputDirectory(string $outputPath): void

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Notifications;
 
 use App\Models\GeneralSetting;
-use App\Services\BrowsershotService;
 use Barryvdh\Snappy\Facades\SnappyImage;
 use Endroid\QrCode\Builder\Builder;
 use Endroid\QrCode\Encoding\Encoding;
@@ -81,7 +80,6 @@ final class InvoiceTransact extends Notification
             $mailMessage->action('View Transaction', $transactionUrl);
         }
 
-        // Replace the existing Browsershot code with this:
         $screenshotPath =
             'screenshots/'.$transaction->transaction_number.'.png';
         $fullScreenshotPath = storage_path('app/public/'.$screenshotPath);
@@ -90,22 +88,14 @@ final class InvoiceTransact extends Notification
             mkdir($screenshotDir, 0755, true);
         }
 
-        // Use BrowsershotService for consistent screenshot generation
-        $success = BrowsershotService::generateScreenshot(
-            $transactionUrl,
-            $fullScreenshotPath,
-            [
-                'width' => 1920,
-                'height' => 1080,
-                'timeout' => 120,
-                'full_page' => true,
-            ]
-        );
+        // Generate screenshot using SnappyImage (wkhtmltoimage)
+        SnappyImage::loadFile($transactionUrl)
+            ->setOption('width', 1920)
+            ->setOption('height', 1080)
+            ->save($fullScreenshotPath, true);
 
-        if ($success === false || ($success === '' || $success === '0')) {
-            throw new Exception(
-                'Failed to generate screenshot using BrowsershotService'
-            );
+        if (! file_exists($fullScreenshotPath) || filesize($fullScreenshotPath) === 0) {
+            throw new Exception('Failed to generate screenshot using SnappyImage');
         }
 
         // Upload screenshot to local

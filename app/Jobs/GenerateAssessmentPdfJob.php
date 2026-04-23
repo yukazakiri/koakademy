@@ -311,7 +311,7 @@ final class GenerateAssessmentPdfJob implements ShouldQueue
                         'UTF-8',
                         'auto'
                     ),
-                    'generation_method' => 'browsershot_job',
+                        'generation_method' => 'pdf_generation_job',
                     'generated_at' => format_timestamp_now(),
                     'storage_disk' => config('filesystems.default'),
                     'storage_key' => $pdfPath,
@@ -343,7 +343,7 @@ final class GenerateAssessmentPdfJob implements ShouldQueue
                             'UTF-8',
                             'auto'
                         ),
-                        'generation_method' => 'browsershot_job',
+                    'generation_method' => 'pdf_generation_job',
                         'generated_at' => format_timestamp_now(),
                         'storage_disk' => config('filesystems.default'),
                         'storage_key' => $pdfPath,

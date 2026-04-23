@@ -7,44 +7,42 @@ use Spatie\LaravelPdf\Jobs\GeneratePdfJob;
 return [
     /*
      * The default driver to use for PDF generation.
-     * Supported: "browsershot", "cloudflare", "dompdf", "gotenberg"
+     * Supported: "cloudflare", "dompdf", "gotenberg"
      */
     'driver' => env('LARAVEL_PDF_DRIVER', match (env('APP_ENV', 'production')) {
-        'local', 'development', 'testing' => env('LARAVEL_PDF_LOCAL_DRIVER', 'browsershot'),
+        'local', 'development', 'testing' => env('LARAVEL_PDF_LOCAL_DRIVER', 'dompdf'),
         'staging' => env('LARAVEL_PDF_STAGING_DRIVER', 'dompdf'),
-        default => env('LARAVEL_PDF_PRODUCTION_DRIVER', 'dompdf'),
+        default => env('LARAVEL_PDF_PRODUCTION_DRIVER', 'cloudflare'),
     }),
 
     /*
      * Driver strategy profiles by environment.
-     *
-     * Goal: keep production on a non-Chrome primary path.
      */
     'strategy' => [
         'profiles' => [
             'production' => [
-                'primary' => env('LARAVEL_PDF_PRODUCTION_DRIVER', 'dompdf'),
+                'primary' => env('LARAVEL_PDF_PRODUCTION_DRIVER', 'cloudflare'),
                 'fallback' => array_values(array_filter(array_map(
                     static fn (string $driver): string => mb_trim($driver),
-                    explode(',', env('LARAVEL_PDF_PRODUCTION_FALLBACK', 'cloudflare,browsershot')),
+                    explode(',', env('LARAVEL_PDF_PRODUCTION_FALLBACK', 'dompdf')),
                 ))),
             ],
             'staging' => [
                 'primary' => env('LARAVEL_PDF_STAGING_DRIVER', 'dompdf'),
                 'fallback' => array_values(array_filter(array_map(
                     static fn (string $driver): string => mb_trim($driver),
-                    explode(',', env('LARAVEL_PDF_STAGING_FALLBACK', 'cloudflare,browsershot')),
+                    explode(',', env('LARAVEL_PDF_STAGING_FALLBACK', 'dompdf')),
                 ))),
             ],
             'local' => [
-                'primary' => env('LARAVEL_PDF_LOCAL_DRIVER', 'browsershot'),
+                'primary' => env('LARAVEL_PDF_LOCAL_DRIVER', 'dompdf'),
                 'fallback' => array_values(array_filter(array_map(
                     static fn (string $driver): string => mb_trim($driver),
                     explode(',', env('LARAVEL_PDF_LOCAL_FALLBACK', 'dompdf')),
                 ))),
             ],
         ],
-        'rollback_driver' => env('LARAVEL_PDF_ROLLBACK_DRIVER', 'browsershot'),
+        'rollback_driver' => env('LARAVEL_PDF_ROLLBACK_DRIVER', 'dompdf'),
     ],
 
     /*
@@ -53,32 +51,6 @@ return [
      * to customize things like $tries, $timeout, $backoff, or default queue.
      */
     'job' => GeneratePdfJob::class,
-
-    /*
-     * Browsershot driver configuration.
-     *
-     * Requires the spatie/browsershot package:
-     * composer require spatie/browsershot
-     */
-    'browsershot' => [
-        /*
-         * Configure the paths to Node.js, npm, Chrome, and other binaries.
-         * Leave null to use system defaults or Browsershot's auto-detection.
-         */
-        'node_binary' => env('LARAVEL_PDF_NODE_BINARY'),
-        'npm_binary' => env('LARAVEL_PDF_NPM_BINARY'),
-        'include_path' => env('LARAVEL_PDF_INCLUDE_PATH'),
-        'chrome_path' => env('LARAVEL_PDF_CHROME_PATH'),
-        'node_modules_path' => env('LARAVEL_PDF_NODE_MODULES_PATH'),
-        'bin_path' => env('LARAVEL_PDF_BIN_PATH'),
-        'temp_path' => env('LARAVEL_PDF_TEMP_PATH'),
-
-        /*
-         * Other Browsershot configuration options.
-         */
-        'write_options_to_file' => env('LARAVEL_PDF_WRITE_OPTIONS_TO_FILE', true),
-        'no_sandbox' => env('LARAVEL_PDF_NO_SANDBOX', false),
-    ],
 
     /*
      * Cloudflare Browser Rendering driver configuration.

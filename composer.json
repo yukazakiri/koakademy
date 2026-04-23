@@ -77,7 +77,6 @@
         "setasign/fpdf": "^1.8",
         "setasign/fpdi": "^2.6",
         "shuvroroy/filament-spatie-laravel-backup": "^3.0",
-        "spatie/browsershot": "^5.0",
         "spatie/laravel-activitylog": "^4.10",
         "spatie/laravel-pdf": "^2.2",
         "spatie/laravel-permission": "^6.21",

@@ -10,6 +10,7 @@ use App\Services\EnrollmentPipelineService;
 use App\Services\GeneralSettingsService;
 use App\Services\JobTrackerService;
 use App\Services\PdfGenerationService;
+use App\Support\StreamedStorage;
 use Exception;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
@@ -138,11 +139,17 @@ final class GenerateBulkAssessmentsJob implements ShouldQueue
             if ($pdfPath && file_exists($pdfPath)) {
                 // Upload the locally generated PDF to the configured storage disk
                 $pdfFileName = 'bulk_assessments/'.basename($pdfPath);
-                Storage::disk($storageDisk)->put($pdfFileName, file_get_contents($pdfPath), ['visibility' => 'public']);
-                $downloadUrl = Storage::disk($storageDisk)->url($pdfFileName);
 
-                // Clean up local file after upload
-                unlink($pdfPath);
+                try {
+                    StreamedStorage::putFileFromPath($storageDisk, $pdfFileName, $pdfPath, ['visibility' => 'public']);
+                } finally {
+                    // Clean up local file after upload attempt
+                    if (file_exists($pdfPath)) {
+                        unlink($pdfPath);
+                    }
+                }
+
+                $downloadUrl = Storage::disk($storageDisk)->url($pdfFileName);
 
                 $successCount = $enrollments->count() - count($this->skippedStudents);
                 $message = sprintf('Generated %d assessments successfully', $successCount);

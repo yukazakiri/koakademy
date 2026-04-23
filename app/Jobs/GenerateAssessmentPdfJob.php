@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Notifications\PdfGenerationCompleted;
 use App\Services\GeneralSettingsService;
 use App\Services\PdfGenerationService;
+use App\Support\StreamedStorage;
 use Exception;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -221,31 +222,34 @@ final class GenerateAssessmentPdfJob implements ShouldQueue
         $temporaryFilePath = tempnam(sys_get_temp_dir(), 'pdf_').'.pdf';
 
         $this->updateProgress(50, 'Rendering HTML...');
-
-        // Use PdfGenerationService to generate PDF from view
-        $pdfService->generatePdfFromView('pdf.assesment-form', $data, $temporaryFilePath, [
-            'format' => 'A4',
-            'landscape' => true,
-            'print_background' => true,
-            'margin_top' => '10mm',
-            'margin_bottom' => '10mm',
-            'margin_left' => '10mm',
-            'margin_right' => '10mm',
-        ]);
-
-        $this->updateProgress(70, 'Converting to PDF...');
-
-        // Verify file was created
-        if (! file_exists($temporaryFilePath) || filesize($temporaryFilePath) === 0) {
-            throw new Exception('PDF was not generated or is empty');
-        }
-
-        // Upload to configured storage with public visibility
         $storagePath = $storageDirectory.'/'.$assessmentFileName;
-        Storage::disk($storageDisk)->put($storagePath, file_get_contents($temporaryFilePath), ['visibility' => 'public']);
 
-        // Clean up temporary file
-        unlink($temporaryFilePath);
+        try {
+            // Use PdfGenerationService to generate PDF from view
+            $pdfService->generatePdfFromView('pdf.assesment-form', $data, $temporaryFilePath, [
+                'format' => 'A4',
+                'landscape' => true,
+                'print_background' => true,
+                'margin_top' => '10mm',
+                'margin_bottom' => '10mm',
+                'margin_left' => '10mm',
+                'margin_right' => '10mm',
+            ]);
+
+            $this->updateProgress(70, 'Converting to PDF...');
+
+            // Verify file was created
+            if (! file_exists($temporaryFilePath) || filesize($temporaryFilePath) === 0) {
+                throw new Exception('PDF was not generated or is empty');
+            }
+
+            // Upload to configured storage with public visibility
+            StreamedStorage::putFileFromPath($storageDisk, $storagePath, $temporaryFilePath, ['visibility' => 'public']);
+        } finally {
+            if (file_exists($temporaryFilePath)) {
+                unlink($temporaryFilePath);
+            }
+        }
 
         Log::info('PDF generated and uploaded successfully', [
             'job_id' => $this->jobId,

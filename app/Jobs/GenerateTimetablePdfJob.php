@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Jobs;
 
 use App\Services\PdfGenerationService;
+use App\Support\StreamedStorage;
 use Exception;
 use Filament\Notifications\Notification;
 use Illuminate\Bus\Queueable;
@@ -79,14 +80,19 @@ final class GenerateTimetablePdfJob implements ShouldQueue
 
             // Generate PDF to temporary file first
             $tempPath = tempnam(sys_get_temp_dir(), 'pdf_').'.pdf';
-            $this->pdfService->generatePdfFromView($viewName, $this->scheduleData, $tempPath);
-
-            // Upload to configured storage
             $storagePath = $directory.'/'.$this->filename;
-            Storage::disk($disk)->put($storagePath, file_get_contents($tempPath));
 
-            // Clean up temporary file
-            unlink($tempPath);
+            try {
+                $this->pdfService->generatePdfFromView($viewName, $this->scheduleData, $tempPath);
+
+                // Upload to configured storage
+                StreamedStorage::putFileFromPath($disk, $storagePath, $tempPath);
+            } finally {
+                // Clean up temporary file
+                if (file_exists($tempPath)) {
+                    unlink($tempPath);
+                }
+            }
 
             Log::info("Timetable PDF generated and uploaded successfully: {$this->filename}", [
                 'disk' => $disk,

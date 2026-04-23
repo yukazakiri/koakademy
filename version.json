@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.4.0",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.4.0",
-  "commit": "906eb5696a5f00e73eadf572ff981a8585073e89",
+  "version": "1.1.0-dev.4.1",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.4.1",
+  "commit": "5d7c03d19f6a38f83f7c17891ed474b7d18f5846",
   "branch": "master",
-  "timestamp": "2026-04-23T06:21:22Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24820016391",
-  "release_type": "feature",
+  "timestamp": "2026-04-23T08:15:20Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24824211550",
+  "release_type": "patch",
   "changelog": {
-    "current": "Version 1.1.0-dev.4.0 - feat(pdf): queue synchronous PDF endpoints (#54)",
-    "previous": "1.1.0-dev.3.2"
+    "current": "Version 1.1.0-dev.4.1 - Merge pull request #63 from yukazakiri/04-23-refactor_remove-local-chrome-switch-to-cloudflare-pdf",
+    "previous": "1.1.0-dev.4.0"
   },
   "metadata": {
     "author": "yukazakiri",

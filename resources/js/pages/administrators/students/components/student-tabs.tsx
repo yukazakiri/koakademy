@@ -10,6 +10,7 @@ import { Link, usePage } from "@inertiajs/react";
 import { Printer, AlertCircle, Banknote, BookOpen, Calendar as CalendarIcon, CheckCircle, Clock, FileText, GraduationCap, ShieldCheck, User as UserIcon, XCircle } from "lucide-react";
 import React from "react";
 import { Cell, Legend, Pie, PieChart, Tooltip as RechartsTooltip, ResponsiveContainer } from "recharts";
+import { toast } from "sonner";
 import type { Branding, StudentDetail } from "../types";
 import { StudentSignaturePad } from "./student-signature-pad";
 import { TextEntry } from "./text-entry";
@@ -227,11 +228,43 @@ export function StudentTabs({ student, options }: StudentTabsProps) {
                                                     >
                                                         {student.tuition.payment_status}
                                                     </Badge>
-                                                    <Button asChild variant="outline" size="sm" className="h-8 gap-2">
-                                                        <a href={soaPrintUrl as string} target="_blank" rel="noreferrer">
-                                                            <Printer className="h-3.5 w-3.5" />
-                                                            Print SOA
-                                                        </a>
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="h-8 gap-2"
+                                                        onClick={async () => {
+                                                            const toastId = "soa-pdf-queue";
+                                                            toast.loading("Queueing SOA PDF...", { id: toastId });
+
+                                                            try {
+                                                                const response = await fetch(soaPrintUrl as string, {
+                                                                    method: "GET",
+                                                                    headers: {
+                                                                        Accept: "application/json",
+                                                                    },
+                                                                });
+
+                                                                const payload = (await response.json().catch(() => ({}))) as { message?: string; error?: string };
+
+                                                                if (!response.ok) {
+                                                                    throw new Error(payload.error || payload.message || "Failed to queue SOA PDF generation.");
+                                                                }
+
+                                                                toast.success("SOA PDF queued", {
+                                                                    id: toastId,
+                                                                    description: payload.message || "You'll receive a notification once your SOA is ready.",
+                                                                });
+                                                            } catch (error: unknown) {
+                                                                const message = error instanceof Error ? error.message : "An unexpected error occurred.";
+                                                                toast.error("SOA request failed", {
+                                                                    id: toastId,
+                                                                    description: message,
+                                                                });
+                                                            }
+                                                        }}
+                                                    >
+                                                        <Printer className="h-3.5 w-3.5" />
+                                                        Print SOA
                                                     </Button>
                                                 </div>
                                             </div>

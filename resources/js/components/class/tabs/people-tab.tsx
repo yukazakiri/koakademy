@@ -111,10 +111,35 @@ export function PeopleTab({ classData, teacher, students, onViewProfile, onTrack
                                             Export to Excel (CSV)
                                         </DropdownMenuItem>
                                         <DropdownMenuItem
-                                            onClick={() => {
-                                                toast.loading("Generating PDF...", { id: "export-student-list-pdf" });
-                                                window.location.href = `/faculty/classes/${classData.id}/students/export/pdf`;
-                                                setTimeout(() => toast.dismiss("export-student-list-pdf"), 3000);
+                                            onClick={async () => {
+                                                const toastId = "export-student-list-pdf";
+                                                toast.loading("Queueing PDF export...", { id: toastId });
+
+                                                try {
+                                                    const response = await fetch(`/faculty/classes/${classData.id}/students/export/pdf`, {
+                                                        method: "GET",
+                                                        headers: {
+                                                            Accept: "application/json",
+                                                        },
+                                                    });
+
+                                                    const payload = (await response.json().catch(() => ({}))) as { message?: string; error?: string };
+
+                                                    if (!response.ok) {
+                                                        throw new Error(payload.error || payload.message || "Failed to queue student list PDF export.");
+                                                    }
+
+                                                    toast.success("PDF export queued", {
+                                                        id: toastId,
+                                                        description: payload.message || "You'll get a notification once your PDF is ready.",
+                                                    });
+                                                } catch (error: unknown) {
+                                                    const message = error instanceof Error ? error.message : "An unexpected error occurred.";
+                                                    toast.error("Export failed", {
+                                                        id: toastId,
+                                                        description: message,
+                                                    });
+                                                }
                                             }}
                                         >
                                             <IconFileTypePdf className="mr-2 h-4 w-4" />

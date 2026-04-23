@@ -916,10 +916,35 @@ export function AttendanceTab({
                                 Export as Excel
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                                onClick={() => {
-                                    toast.loading("Generating PDF...", { id: "export-pdf" });
-                                    window.location.href = `/faculty/classes/${classData.id}/attendance/export?format=pdf`;
-                                    setTimeout(() => toast.dismiss("export-pdf"), 3000);
+                                onClick={async () => {
+                                    const toastId = "export-pdf";
+                                    toast.loading("Queueing PDF export...", { id: toastId });
+
+                                    try {
+                                        const response = await fetch(`/faculty/classes/${classData.id}/attendance/export?format=pdf`, {
+                                            method: "GET",
+                                            headers: {
+                                                Accept: "application/json",
+                                            },
+                                        });
+
+                                        const payload = (await response.json().catch(() => ({}))) as { message?: string; error?: string };
+
+                                        if (!response.ok) {
+                                            throw new Error(payload.error || payload.message || "Failed to queue attendance PDF export.");
+                                        }
+
+                                        toast.success("PDF export queued", {
+                                            id: toastId,
+                                            description: payload.message || "You'll get a notification once your PDF is ready.",
+                                        });
+                                    } catch (error: unknown) {
+                                        const message = error instanceof Error ? error.message : "An unexpected error occurred.";
+                                        toast.error("Export failed", {
+                                            id: toastId,
+                                            description: message,
+                                        });
+                                    }
                                 }}
                             >
                                 <IconFileTypePdf className="mr-2 size-4" />

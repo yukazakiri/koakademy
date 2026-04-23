@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Jobs\GenerateTimetablePdfJob;
 use App\Models\Faculty;
 use App\Models\Schedule;
-use App\Services\PdfGenerationService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
@@ -146,9 +146,6 @@ Route::get('/download/schedule', function () {
         })
         ->filter(); // Remove any null entries from schedules without valid classes
 
-    $viewName = $type === 'matrix' ? 'pdf.subject-matrix-export' : 'pdf.timetable-export';
-    $orientation = $type === 'matrix' ? 'landscape' : 'landscape'; // Both usually better in landscape
-
     $data = [
         'schedules' => $schedules,
         'entityName' => $user->name,
@@ -171,28 +168,62 @@ Route::get('/download/schedule', function () {
         $data['timeSlots'] = $slots;
     }
 
-    // Generate PDF using the service
-    $pdfService = app(PdfGenerationService::class);
     $fileName = 'schedule-'.$type.'-'.now()->timestamp.'.pdf';
-    $tempPath = storage_path('app/temp/'.$fileName);
+    GenerateTimetablePdfJob::dispatch($data, $fileName, $type, (int) $user->id);
 
-    // Ensure temp directory exists
-    if (! file_exists(dirname($tempPath))) {
-        mkdir(dirname($tempPath), 0755, true);
-    }
-
-    try {
-        $pdfService->generatePdfFromView($viewName, $data, $tempPath, [
-            'landscape' => true,
-            'format' => 'A4',
-            'margins' => ['top' => '10mm', 'right' => '10mm', 'bottom' => '10mm', 'left' => '10mm'],
-        ]);
-
-        return response()->download($tempPath, $fileName)->deleteFileAfterSend(true);
-    } catch (Exception $e) {
-        return response()->json([
-            'error' => 'Failed to generate PDF: '.$e->getMessage(),
-        ], 500);
-    }
+    return response()->json([
+        'message' => 'Schedule PDF export queued. You will be notified when your file is ready.',
+    ], 202);
 
 })->name('download.schedule');
+
+Route::get('/download/attendance-report/{filename}', function (string $filename) {
+    $user = Auth::user();
+
+    if (! $user) {
+        abort(403, 'Unauthorized');
+    }
+
+    $disk = config('filesystems.default');
+    $path = 'exports/attendance/'.$user->id.'/'.$filename;
+
+    if (! Storage::disk($disk)->exists($path)) {
+        abort(404, 'Attendance report not found.');
+    }
+
+    return Storage::disk($disk)->download($path, $filename);
+})->name('download.attendance-report');
+
+Route::get('/download/student-soa/{filename}', function (string $filename) {
+    $user = Auth::user();
+
+    if (! $user) {
+        abort(403, 'Unauthorized');
+    }
+
+    $disk = config('filesystems.default');
+    $path = 'exports/soa/'.$user->id.'/'.$filename;
+
+    if (! Storage::disk($disk)->exists($path)) {
+        abort(404, 'SOA PDF not found.');
+    }
+
+    return Storage::disk($disk)->download($path, $filename);
+})->name('download.student-soa');
+
+Route::get('/download/enrollment-report/{filename}', function (string $filename) {
+    $user = Auth::user();
+
+    if (! $user) {
+        abort(403, 'Unauthorized');
+    }
+
+    $disk = config('filesystems.default');
+    $path = 'exports/enrollment-reports/'.$user->id.'/'.$filename;
+
+    if (! Storage::disk($disk)->exists($path)) {
+        abort(404, 'Enrollment report PDF not found.');
+    }
+
+    return Storage::disk($disk)->download($path, $filename);
+})->name('download.enrollment-report');

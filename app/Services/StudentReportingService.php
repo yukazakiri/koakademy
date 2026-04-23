@@ -10,6 +10,7 @@ use App\Models\ExportJob;
 use App\Models\ShsStudent;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
+use App\Support\StreamedStorage;
 use Exception;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
@@ -445,148 +446,7 @@ final readonly class StudentReportingService
         return $filePath;
     }
 
-    private function generatePdfExport(Collection $students, array $filters): string
-    {
-        $htmlContent = '<!DOCTYPE html><html><head><title>Student Export Report</title>';
-        $htmlContent .= '<style>
-            body { font-family: Arial, sans-serif; margin: 20px; }
-            .header { text-align: center; margin-bottom: 30px; }
-            .filters { background: #f5f5f5; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
-            table { border-collapse: collapse; width: 100%; margin: 20px 0; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #f2f2f2; font-weight: bold; }
-            .summary { margin-top: 30px; }
-            .summary-table { width: 50%; }
-        </style>';
-        $htmlContent .= '</head><body>';
-
-        $htmlContent .= "<div class='header'>";
-        $htmlContent .= '<h1>Student Export Report</h1>';
-        $htmlContent .= '<p>Generated: '.now()->format('Y-m-d H:i:s').'</p>';
-        $htmlContent .= '<p>Academic Period: '.$this->generalSettingsService->getCurrentSchoolYearString().' - '.$this->generalSettingsService->getAvailableSemesters()[$this->generalSettingsService->getCurrentSemester()].'</p>';
-        $htmlContent .= '</div>';
-
-        // Filters applied
-        if ($filters['course_filter'] !== 'all' || $filters['year_level_filter'] !== 'all') {
-            $htmlContent .= "<div class='filters'>";
-            $htmlContent .= '<h3>Filters Applied:</h3>';
-            if ($filters['course_filter'] !== 'all') {
-                $htmlContent .= '<p><strong>Course:</strong> '.$filters['course_filter'].'</p>';
-            }
-
-            if ($filters['year_level_filter'] !== 'all') {
-                $htmlContent .= '<p><strong>Year Level:</strong> '.$filters['year_level_filter'].'</p>';
-            }
-
-            $htmlContent .= '</div>';
-        }
-
-        // Student list
-        $htmlContent .= '<h2>Student List</h2>';
-        $htmlContent .= '<table>';
-        $htmlContent .= '<tr><th>Student ID</th><th>Full Name</th><th>Course Code</th><th>Year Level</th></tr>';
-
-        foreach ($students as $student) {
-            $fullName = mb_trim($student->first_name.' '.($student->middle_name ? $student->middle_name.' ' : '').$student->last_name);
-            $htmlContent .= '<tr>';
-            $htmlContent .= '<td>'.$student->id.'</td>';
-            $htmlContent .= '<td>'.htmlspecialchars($fullName).'</td>';
-            $htmlContent .= '<td>'.($student->course->code ?? 'N/A').'</td>';
-            $htmlContent .= '<td>'.$student->academic_year.'</td>';
-            $htmlContent .= '</tr>';
-        }
-
-        $htmlContent .= '</table>';
-
-        // Summary
-        $htmlContent .= "<div class='summary'>";
-        $htmlContent .= '<h2>Summary</h2>';
-        $htmlContent .= '<p><strong>Total Students:</strong> '.$students->count().'</p>';
-
-        // Course breakdown
-        $courseBreakdown = $students->groupBy('course.code')->map->count();
-        if ($courseBreakdown->count() > 1) {
-            $htmlContent .= '<h3>Course Breakdown</h3>';
-            $htmlContent .= "<table class='summary-table'>";
-            $htmlContent .= '<tr><th>Course</th><th>Count</th></tr>';
-            foreach ($courseBreakdown as $course => $count) {
-                $htmlContent .= '<tr><td>'.($course ?? 'N/A').'</td><td>'.$count.'</td></tr>';
-            }
-
-            $htmlContent .= '</table>';
-        }
-
-        // Year level breakdown
-        $yearBreakdown = $students->groupBy('academic_year')->map->count();
-        if ($yearBreakdown->count() > 1) {
-            $htmlContent .= '<h3>Year Level Breakdown</h3>';
-            $htmlContent .= "<table class='summary-table'>";
-            $htmlContent .= '<tr><th>Year Level</th><th>Count</th></tr>';
-            foreach ($yearBreakdown as $year => $count) {
-                $htmlContent .= '<tr><td>'.$year.'</td><td>'.$count.'</td></tr>';
-            }
-
-            $htmlContent .= '</table>';
-        }
-
-        $htmlContent .= '</div>';
-        $htmlContent .= '</body></html>';
-
-        $fileName = 'student_export_'.date('Y-m-d_H-i-s').'.html';
-        $filePath = 'exports/'.$fileName;
-
-        Storage::put($filePath, $htmlContent);
-
-        return $filePath;
-    }
-
-    private function generateCsvExportContent(Collection $students, array $filters): string
-    {
-        $csvContent = "Student Export Report\n";
-        $csvContent .= 'Generated: '.now()->format('Y-m-d H:i:s')."\n";
-        $csvContent .= 'Academic Period: '.$this->generalSettingsService->getCurrentSchoolYearString().' - '.$this->generalSettingsService->getAvailableSemesters()[$this->generalSettingsService->getCurrentSemester()]."\n";
-
-        // Add filter information
-        if ($filters['course_filter'] !== 'all') {
-            $csvContent .= 'Course Filter: '.$filters['course_filter']."\n";
-        }
-
-        if ($filters['year_level_filter'] !== 'all') {
-            $csvContent .= 'Year Level Filter: '.$filters['year_level_filter']."\n";
-        }
-
-        $csvContent .= "\nSTUDENT LIST\n";
-        $csvContent .= "Student ID,Full Name,Course Code,Year Level\n";
-
-        foreach ($students as $student) {
-            $fullName = mb_trim($student->first_name.' '.($student->middle_name ? $student->middle_name.' ' : '').$student->last_name);
-            $csvContent .= $student->id.',"'.$fullName.'",'.($student->course->code ?? 'N/A').','.$student->academic_year."\n";
-        }
-
-        // Add summary
-        $csvContent .= "\nSUMMARY\n";
-        $csvContent .= 'Total Students,'.$students->count()."\n";
-
-        // Course breakdown
-        $courseBreakdown = $students->groupBy('course.code')->map->count();
-        $csvContent .= "\nCOURSE BREAKDOWN\n";
-        $csvContent .= "Course,Count\n";
-        foreach ($courseBreakdown as $course => $count) {
-            $csvContent .= ($course ?? 'N/A').','.$count."\n";
-        }
-
-        // Year level breakdown
-        $yearBreakdown = $students->groupBy('academic_year')->map->count();
-        $csvContent .= "\nYEAR LEVEL BREAKDOWN\n";
-        $csvContent .= "Year Level,Count\n";
-        foreach ($yearBreakdown as $year => $count) {
-            $csvContent .= $year.','.$count."\n";
-        }
-
-        return $csvContent;
-    }
-
-    private function generatePdfExportContent(Collection $students, array $filters): string
+    private function buildExportHtml(Collection $students, array $filters): string
     {
         $htmlContent = '<!DOCTYPE html><html><head><title>Student Export Report</title>';
         $htmlContent .= '<style>
@@ -673,5 +533,98 @@ final readonly class StudentReportingService
         $htmlContent .= '</div>';
 
         return $htmlContent.'</body></html>';
+    }
+
+    private function generatePdfExport(Collection $students, array $filters): string
+    {
+        $htmlContent = $this->buildExportHtml($students, $filters);
+
+        $fileName = 'student_export_'.date('Y-m-d_H-i-s').'.pdf';
+        $filePath = 'exports/'.$fileName;
+
+        $tempPath = tempnam(sys_get_temp_dir(), 'student_export_').'.pdf';
+
+        try {
+            $pdfService = app(PdfGenerationService::class);
+            $pdfService->generatePdfFromHtml($htmlContent, $tempPath, [], 'student_list');
+
+            StreamedStorage::putFileFromPath(config('filesystems.default'), $filePath, $tempPath);
+        } finally {
+            if (file_exists($tempPath)) {
+                unlink($tempPath);
+            }
+        }
+
+        return $filePath;
+    }
+
+    private function generateCsvExportContent(Collection $students, array $filters): string
+    {
+        $csvContent = "Student Export Report\n";
+        $csvContent .= 'Generated: '.now()->format('Y-m-d H:i:s')."\n";
+        $csvContent .= 'Academic Period: '.$this->generalSettingsService->getCurrentSchoolYearString().' - '.$this->generalSettingsService->getAvailableSemesters()[$this->generalSettingsService->getCurrentSemester()]."\n";
+
+        // Add filter information
+        if ($filters['course_filter'] !== 'all') {
+            $csvContent .= 'Course Filter: '.$filters['course_filter']."\n";
+        }
+
+        if ($filters['year_level_filter'] !== 'all') {
+            $csvContent .= 'Year Level Filter: '.$filters['year_level_filter']."\n";
+        }
+
+        $csvContent .= "\nSTUDENT LIST\n";
+        $csvContent .= "Student ID,Full Name,Course Code,Year Level\n";
+
+        foreach ($students as $student) {
+            $fullName = mb_trim($student->first_name.' '.($student->middle_name ? $student->middle_name.' ' : '').$student->last_name);
+            $csvContent .= $student->id.',"'.$fullName.'",'.($student->course->code ?? 'N/A').','.$student->academic_year."\n";
+        }
+
+        // Add summary
+        $csvContent .= "\nSUMMARY\n";
+        $csvContent .= 'Total Students,'.$students->count()."\n";
+
+        // Course breakdown
+        $courseBreakdown = $students->groupBy('course.code')->map->count();
+        $csvContent .= "\nCOURSE BREAKDOWN\n";
+        $csvContent .= "Course,Count\n";
+        foreach ($courseBreakdown as $course => $count) {
+            $csvContent .= ($course ?? 'N/A').','.$count."\n";
+        }
+
+        // Year level breakdown
+        $yearBreakdown = $students->groupBy('academic_year')->map->count();
+        $csvContent .= "\nYEAR LEVEL BREAKDOWN\n";
+        $csvContent .= "Year Level,Count\n";
+        foreach ($yearBreakdown as $year => $count) {
+            $csvContent .= $year.','.$count."\n";
+        }
+
+        return $csvContent;
+    }
+
+    private function generatePdfExportContent(Collection $students, array $filters): string
+    {
+        $htmlContent = $this->buildExportHtml($students, $filters);
+
+        $tempPath = tempnam(sys_get_temp_dir(), 'student_export_').'.pdf';
+
+        try {
+            $pdfService = app(PdfGenerationService::class);
+            $pdfService->generatePdfFromHtml($htmlContent, $tempPath, [], 'student_list');
+
+            $pdfBinary = file_get_contents($tempPath);
+
+            if ($pdfBinary === false) {
+                throw new Exception('Failed to read generated PDF content');
+            }
+
+            return $pdfBinary;
+        } finally {
+            if (file_exists($tempPath)) {
+                unlink($tempPath);
+            }
+        }
     }
 }

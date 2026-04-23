@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.5.0",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.5.0",
-  "commit": "92e82f3987e723e67869319c2f739dd6645bc25a",
+  "version": "1.1.0-dev.5.1",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.5.1",
+  "commit": "51d531716a6540b7c680d393b0f77d02eb1c2b8d",
   "branch": "master",
-  "timestamp": "2026-04-23T14:18:59Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24840168668",
-  "release_type": "feature",
+  "timestamp": "2026-04-23T14:24:23Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24840547612",
+  "release_type": "bugfix",
   "changelog": {
-    "current": "Version 1.1.0-dev.5.0 - feat(scheduling): add interactive class creation with drag-and-drop room assignment",
-    "previous": "1.1.0-dev.4.2"
+    "current": "Version 1.1.0-dev.5.1 - fix(scheduling): add missing defaults prop to inertia response",
+    "previous": "1.1.0-dev.5.0"
   },
   "metadata": {
     "author": "yukazakiri",

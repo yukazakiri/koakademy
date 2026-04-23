@@ -1524,7 +1524,21 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
                 onOpenChange={setCreateDialogOpen}
                 options={creation_options}
                 defaults={defaults}
-                existingSchedules={schedule_data}
+                existingSchedules={localData.flatMap((cls) =>
+                    cls.schedules.map((sched) => ({
+                        id: sched.id ?? cls.id,
+                        subject_code: cls.subject_code,
+                        subject_title: cls.subject_title,
+                        section: cls.section,
+                        faculty_name: cls.faculty_name,
+                        room_id: sched.room_id ?? null,
+                        room: sched.room ?? null,
+                        day_of_week: sched.day_of_week,
+                        start_time: sched.start_time,
+                        end_time: sched.end_time,
+                        time_range: sched.time_range,
+                    })),
+                )}
                 onClassCreated={handleClassCreated}
             />
         </AdminLayout>

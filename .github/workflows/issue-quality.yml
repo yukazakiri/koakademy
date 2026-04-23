@@ -30,6 +30,11 @@ jobs:
             }
 
             const user = context.payload.sender.login;
+
+            if (user === context.repo.owner) {
+              debug('Skipping check for repository owner.');
+              return;
+            }
             const issue = context.payload.issue;
             const body = issue.body || '';
 

@@ -36,6 +36,11 @@ jobs:
             };
 
             try {
+              if (context.payload.pull_request.user.login === context.repo.owner) {
+                console.log('Skipping check for repository owner.');
+                return;
+              }
+
               console.log(`Checking #${pullNumber} for maintainer edit access...`);
               const result = await github.graphql(query, variables);
 

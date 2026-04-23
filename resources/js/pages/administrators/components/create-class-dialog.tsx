@@ -3,19 +3,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { VisualRadioButton } from "@/Components/ui/visual-radio-button";
-import { useDraggable, useDroppable, DndContext, MouseSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { useDraggable, useDroppable, DndContext, MouseSensor, TouchSensor, useSensor, useSensors, type DragEndEvent, type DragMoveEvent } from "@dnd-kit/core";
 import { useForm } from "@inertiajs/react";
 import axios from "axios";
 import {
     AlertTriangle,
     BookOpen,
-    Building2,
-    Calendar,
     Check,
     ChevronLeft,
     ChevronRight,
@@ -25,10 +22,6 @@ import {
     Plus,
     RefreshCw,
     Trash2,
-    User as UserIcon,
-    Users,
-    Wand2,
-    X,
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
@@ -39,14 +32,15 @@ const DAYS_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 const HOUR_START = 7;
 const HOUR_END = 19;
 const CELL_H = 52;
+const SNAP_MINUTES = 15;
 
 const PALETTES = [
-    { accent: "border-l-rose-500", bg: "bg-rose-500/10 dark:bg-rose-400/15", text: "text-rose-700 dark:text-rose-300", badge: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300", border: "border-rose-200 dark:border-rose-800" },
-    { accent: "border-l-sky-500", bg: "bg-sky-500/10 dark:bg-sky-400/15", text: "text-sky-700 dark:text-sky-300", badge: "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300", border: "border-sky-200 dark:border-sky-800" },
-    { accent: "border-l-amber-500", bg: "bg-amber-500/10 dark:bg-amber-400/15", text: "text-amber-700 dark:text-amber-300", badge: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300", border: "border-amber-200 dark:border-amber-800" },
-    { accent: "border-l-emerald-500", bg: "bg-emerald-500/10 dark:bg-emerald-400/15", text: "text-emerald-700 dark:text-emerald-300", badge: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300", border: "border-emerald-200 dark:border-emerald-800" },
-    { accent: "border-l-violet-500", bg: "bg-violet-500/10 dark:bg-violet-400/15", text: "text-violet-700 dark:text-violet-300", badge: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300", border: "border-violet-200 dark:border-violet-800" },
-    { accent: "border-l-orange-500", bg: "bg-orange-500/10 dark:bg-orange-400/15", text: "text-orange-700 dark:text-orange-300", badge: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300", border: "border-orange-200 dark:border-orange-800" },
+    { accent: "border-l-rose-500", bg: "bg-rose-500/10 dark:bg-rose-400/15", text: "text-rose-700 dark:text-rose-300", border: "border-rose-200 dark:border-rose-800", ghost: "bg-rose-500/5 dark:bg-rose-400/8" },
+    { accent: "border-l-sky-500", bg: "bg-sky-500/10 dark:bg-sky-400/15", text: "text-sky-700 dark:text-sky-300", border: "border-sky-200 dark:border-sky-800", ghost: "bg-sky-500/5 dark:bg-sky-400/8" },
+    { accent: "border-l-amber-500", bg: "bg-amber-500/10 dark:bg-amber-400/15", text: "text-amber-700 dark:text-amber-300", border: "border-amber-200 dark:border-amber-800", ghost: "bg-amber-500/5 dark:bg-amber-400/8" },
+    { accent: "border-l-emerald-500", bg: "bg-emerald-500/10 dark:bg-emerald-400/15", text: "text-emerald-700 dark:text-emerald-300", border: "border-emerald-200 dark:border-emerald-800", ghost: "bg-emerald-500/5 dark:bg-emerald-400/8" },
+    { accent: "border-l-violet-500", bg: "bg-violet-500/10 dark:bg-violet-400/15", text: "text-violet-700 dark:text-violet-300", border: "border-violet-200 dark:border-violet-800", ghost: "bg-violet-500/5 dark:bg-violet-400/8" },
+    { accent: "border-l-orange-500", bg: "bg-orange-500/10 dark:bg-orange-400/15", text: "text-orange-700 dark:text-orange-300", border: "border-orange-200 dark:border-orange-800", ghost: "bg-orange-500/5 dark:bg-orange-400/8" },
 ];
 
 function hashStr(s: string): number {
@@ -129,6 +123,25 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
     const [subjectCodeTouched, setSubjectCodeTouched] = React.useState(false);
 
     const [selectedBlockIndex, setSelectedBlockIndex] = React.useState<number | null>(null);
+    const [hoveredBlockIndex, setHoveredBlockIndex] = React.useState<number | null>(null);
+
+    const [resizing, setResizing] = React.useState<{
+        blockId: string;
+        edge: "top" | "bottom";
+        initialY: number;
+        originalStartMin: number;
+        originalEndMin: number;
+        currentStartMin?: number;
+        currentEndMin?: number;
+    } | null>(null);
+    const resizeTooltipRef = React.useRef<HTMLDivElement>(null);
+
+    const [dragPreview, setDragPreview] = React.useState<{
+        dayIdx: number;
+        startMin: number;
+        duration: number;
+        blockId: string;
+    } | null>(null);
 
     const form = useForm({
         classification: "college" as "college" | "shs",
@@ -174,8 +187,43 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
         setShsSubjectOptions([]);
         setSubjectCodeTouched(false);
         setSelectedBlockIndex(null);
+        setHoveredBlockIndex(null);
+        setResizing(null);
+        setDragPreview(null);
         setActiveTab("details");
     }, [open]);
+
+    const selectedRoom = React.useMemo(() => {
+        if (!form.data.room_id) return null;
+        return options.rooms.find((r) => r.id === form.data.room_id) ?? null;
+    }, [form.data.room_id, options.rooms]);
+
+    const roomExistingSchedules = React.useMemo(() => {
+        if (!form.data.room_id) return [];
+        return existingSchedules.filter((s) => s.room_id === form.data.room_id);
+    }, [existingSchedules, form.data.room_id]);
+
+    const selectedFacultyName = React.useMemo(() => {
+        if (!form.data.faculty_id) return null;
+        return options.faculty.find((f) => String(f.id) === String(form.data.faculty_id))?.name ?? null;
+    }, [form.data.faculty_id, options.faculty]);
+
+    const conflicts = React.useMemo(() => {
+        const result: Array<{ type: "room" | "faculty"; newBlock: typeof form.data.schedules[0]; existing: typeof existingSchedules[0] }> = [];
+        for (const ns of form.data.schedules) {
+            for (const es of existingSchedules) {
+                if (es.day_of_week !== ns.day_of_week) continue;
+                if (!schedulesOverlap(ns, es)) continue;
+                if (ns.room_id !== null && es.room_id === ns.room_id) {
+                    result.push({ type: "room", newBlock: ns, existing: es });
+                }
+                if (selectedFacultyName && es.faculty_name === selectedFacultyName) {
+                    result.push({ type: "faculty", newBlock: ns, existing: es });
+                }
+            }
+        }
+        return result;
+    }, [form.data.schedules, existingSchedules, selectedFacultyName]);
 
     const loadCollegeSubjects = async (courseId: number | null) => {
         if (!courseId) {
@@ -222,28 +270,6 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
             setShsSubjectsLoading(false);
         }
     };
-
-    const selectedFacultyName = React.useMemo(() => {
-        if (!form.data.faculty_id) return null;
-        return options.faculty.find((f) => String(f.id) === String(form.data.faculty_id))?.name ?? null;
-    }, [form.data.faculty_id, options.faculty]);
-
-    const conflicts = React.useMemo(() => {
-        const result: Array<{ type: "room" | "faculty"; newBlock: typeof form.data.schedules[0]; existing: typeof existingSchedules[0] }> = [];
-        for (const ns of form.data.schedules) {
-            for (const es of existingSchedules) {
-                if (es.day_of_week !== ns.day_of_week) continue;
-                if (!schedulesOverlap(ns, es)) continue;
-                if (ns.room_id !== null && es.room_id === ns.room_id) {
-                    result.push({ type: "room", newBlock: ns, existing: es });
-                }
-                if (selectedFacultyName && es.faculty_name === selectedFacultyName) {
-                    result.push({ type: "faculty", newBlock: ns, existing: es });
-                }
-            }
-        }
-        return result;
-    }, [form.data.schedules, existingSchedules, selectedFacultyName]);
 
     const addScheduleBlock = (day?: string, start?: string, end?: string) => {
         const newBlock = {
@@ -293,12 +319,30 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
         toast.success("Rooms auto-assigned");
     };
 
-    const sensors = useSensors(
-        useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
-        useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
-    );
+    const handleDragMove = (event: DragMoveEvent) => {
+        const blockId = (event.active.data.current as { blockId?: string })?.blockId;
+        if (!blockId) return;
+        const overId = event.over?.id;
+        if (!overId || typeof overId !== "string" || !overId.startsWith("day-")) {
+            setDragPreview(null);
+            return;
+        }
+        const dayIdx = Number(overId.replace("day-", ""));
+        const block = form.data.schedules.find((s) => s.id === blockId);
+        if (!block) return;
+        const startMin = parseTimeToMinutes(block.start_time);
+        const endMin = parseTimeToMinutes(block.end_time);
+        if (startMin === null || endMin === null) return;
+        setDragPreview({
+            dayIdx,
+            startMin,
+            duration: endMin - startMin,
+            blockId,
+        });
+    };
 
     const handleDragEnd = (event: DragEndEvent) => {
+        setDragPreview(null);
         const { active, over } = event;
         if (!over || !active.data.current) return;
         const dayIdx = (over.data.current as { dayIdx?: number })?.dayIdx;
@@ -310,6 +354,69 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
         if (idx === -1) return;
         updateBlock(idx, { day_of_week: day });
     };
+
+    React.useEffect(() => {
+        if (!resizing) return;
+
+        const handlePointerMove = (e: PointerEvent) => {
+            const deltaY = e.clientY - resizing.initialY;
+            const pxPerMin = CELL_H / 60;
+            const deltaMin = Math.round(deltaY / pxPerMin);
+
+            let nStart = resizing.originalStartMin;
+            let nEnd = resizing.originalEndMin;
+
+            if (resizing.edge === "top") {
+                nStart += deltaMin;
+                nStart = Math.round(nStart / SNAP_MINUTES) * SNAP_MINUTES;
+                nStart = Math.max(HOUR_START * 60, Math.min(nStart, nEnd - SNAP_MINUTES));
+            } else {
+                nEnd += deltaMin;
+                nEnd = Math.round(nEnd / SNAP_MINUTES) * SNAP_MINUTES;
+                nEnd = Math.max(nStart + SNAP_MINUTES, Math.min(nEnd, HOUR_END * 60));
+            }
+
+            if (nStart !== resizing.currentStartMin || nEnd !== resizing.currentEndMin) {
+                resizing.currentStartMin = nStart;
+                resizing.currentEndMin = nEnd;
+
+                const idx = form.data.schedules.findIndex((s) => s.id === resizing.blockId);
+                if (idx !== -1) {
+                    form.setData("schedules", form.data.schedules.map((s, i) =>
+                        i === idx ? { ...s, start_time: minutesToTime(nStart), end_time: minutesToTime(nEnd) } : s
+                    ));
+                }
+            }
+
+            if (resizeTooltipRef.current) {
+                resizeTooltipRef.current.style.opacity = "1";
+                resizeTooltipRef.current.style.transform = `translate(${e.clientX + 16}px, ${e.clientY - 16}px)`;
+                resizeTooltipRef.current.innerText = `${minutesToTime(nStart)} – ${minutesToTime(nEnd)}`;
+            }
+        };
+
+        const handlePointerUp = () => {
+            if (resizeTooltipRef.current) resizeTooltipRef.current.style.opacity = "0";
+            setResizing(null);
+        };
+
+        window.addEventListener("pointermove", handlePointerMove);
+        window.addEventListener("pointerup", handlePointerUp);
+
+        return () => {
+            window.removeEventListener("pointermove", handlePointerMove);
+            window.removeEventListener("pointerup", handlePointerUp);
+        };
+    }, [resizing]);
+
+    const handleResizeStart = (blockId: string, edge: "top" | "bottom", initialY: number, originalStartMin: number, originalEndMin: number) => {
+        setResizing({ blockId, edge, initialY, originalStartMin, originalEndMin });
+    };
+
+    const sensors = useSensors(
+        useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+        useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+    );
 
     const handleSubmit = async () => {
         if (form.data.schedules.length === 0) {
@@ -362,6 +469,8 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
     return (
         <Sheet open={open} onOpenChange={onOpenChange}>
             <SheetContent side="right" className="w-full sm:max-w-xl md:max-w-2xl lg:max-w-[1100px] flex flex-col gap-0 p-0">
+                <div ref={resizeTooltipRef} className="fixed z-[100] pointer-events-none opacity-0 bg-foreground text-background text-xs font-medium px-2 py-1 rounded shadow-lg transition-opacity" />
+
                 <SheetHeader className="bg-muted/20 border-b p-6 pb-4">
                     <div className="flex items-center gap-3">
                         <div className="bg-primary/10 rounded-lg p-2.5">
@@ -396,6 +505,37 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
 
                         <TabsContent value="details" className="m-0 space-y-6 outline-none">
                             <div className="grid gap-6">
+                                <Card className="border-border/60 shadow-sm">
+                                    <CardHeader className="bg-muted/20 border-b pb-4">
+                                        <CardTitle className="text-base font-semibold">Primary Room</CardTitle>
+                                    </CardHeader>
+                                    <CardContent className="space-y-4 pt-6">
+                                        <div className="space-y-2">
+                                            <Label>Room</Label>
+                                            <Combobox
+                                                label=""
+                                                options={options.rooms.map((r) => ({ label: r.name, value: String(r.id), description: r.class_code || undefined }))}
+                                                value={form.data.room_id ? String(form.data.room_id) : ""}
+                                                onValueChange={(val) => {
+                                                    const roomId = val ? Number(val) : null;
+                                                    form.setData("room_id", roomId);
+                                                    if (roomId) {
+                                                        form.setData("schedules", form.data.schedules.map((s) => ({ ...s, room_id: roomId })));
+                                                    }
+                                                }}
+                                                placeholder="Search and select a room..."
+                                                emptyText="No rooms found."
+                                                searchPlaceholder="Search rooms..."
+                                            />
+                                            {selectedRoom && roomExistingSchedules.length > 0 && (
+                                                <p className="text-muted-foreground text-xs">
+                                                    {roomExistingSchedules.length} existing schedule{roomExistingSchedules.length !== 1 ? "s" : ""} in {selectedRoom.name} will be shown in the timetable.
+                                                </p>
+                                            )}
+                                        </div>
+                                    </CardContent>
+                                </Card>
+
                                 <Card className="border-border/60 shadow-sm">
                                     <CardHeader className="bg-muted/20 border-b pb-4">
                                         <CardTitle className="text-base font-semibold">Academic Profile</CardTitle>
@@ -747,9 +887,6 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                                         }}>
                                             <Plus className="mr-1 h-3.5 w-3.5" /> Add Single Block
                                         </Button>
-                                        <Button type="button" variant="outline" size="sm" onClick={autoAssignRooms}>
-                                            <Wand2 className="mr-1 h-3.5 w-3.5" /> Auto-assign Rooms
-                                        </Button>
                                     </div>
                                 </CardContent>
                             </Card>
@@ -757,10 +894,13 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                             {form.data.schedules.length > 0 && (
                                 <Card className="border-border/60 shadow-sm">
                                     <CardHeader className="bg-muted/20 border-b pb-4">
-                                        <CardTitle className="text-base font-semibold">Visual Timetable</CardTitle>
+                                        <CardTitle className="text-base font-semibold">
+                                            Visual Timetable
+                                            {selectedRoom && <span className="text-muted-foreground text-xs font-normal ml-2">— showing existing classes in {selectedRoom.name}</span>}
+                                        </CardTitle>
                                     </CardHeader>
                                     <CardContent className="pt-6">
-                                        <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+                                        <DndContext sensors={sensors} onDragEnd={handleDragEnd} onDragMove={handleDragMove}>
                                             <div className="relative border rounded-lg overflow-hidden">
                                                 <div className="grid grid-cols-[60px_repeat(6,1fr)] border-b bg-muted/30">
                                                     <div className="p-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider text-center border-r">Time</div>
@@ -780,16 +920,21 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                                                     </div>
                                                     {DAYS.map((day, dayIdx) => {
                                                         const dayBlocks = form.data.schedules.filter((s) => s.day_of_week === day);
+                                                        const dayExisting = roomExistingSchedules.filter((s) => s.day_of_week === day);
                                                         return (
                                                             <DayColumn
                                                                 key={day}
                                                                 dayIdx={dayIdx}
                                                                 dayBlocks={dayBlocks}
                                                                 allBlocks={form.data.schedules}
+                                                                existingBlocks={dayExisting}
                                                                 onBlockClick={setSelectedBlockIndex}
+                                                                onBlockHover={setHoveredBlockIndex}
                                                                 blockHasConflict={blockHasConflict}
                                                                 getBlockConflicts={getBlockConflicts}
                                                                 onAddBlock={(time) => addScheduleBlock(day, time, minutesToTime(parseTimeToMinutes(time)! + 120))}
+                                                                dragPreview={dragPreview?.dayIdx === dayIdx ? dragPreview : null}
+                                                                onResizeStart={handleResizeStart}
                                                             />
                                                         );
                                                     })}
@@ -985,14 +1130,18 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
     );
 }
 
-function DayColumn({ dayIdx, dayBlocks, allBlocks, onBlockClick, blockHasConflict, getBlockConflicts, onAddBlock }: {
+function DayColumn({ dayIdx, dayBlocks, allBlocks, existingBlocks, onBlockClick, onBlockHover, blockHasConflict, getBlockConflicts, onAddBlock, dragPreview, onResizeStart }: {
     dayIdx: number;
     dayBlocks: Array<{ id: string; day_of_week: string; start_time: string; end_time: string; room_id: number | null }>;
     allBlocks: Array<{ id: string; day_of_week: string; start_time: string; end_time: string; room_id: number | null }>;
+    existingBlocks: Array<{ id: number; subject_code: string; section: string; start_time: string; end_time: string; room: string | null }>;
     onBlockClick: (index: number) => void;
-    blockHasConflict: (block: typeof dayBlocks[0]) => boolean;
-    getBlockConflicts: (block: typeof dayBlocks[0]) => Array<{ type: "room" | "faculty"; existing: any }>;
+    onBlockHover: (index: number | null) => void;
+    blockHasConflict: (block: { id: string; day_of_week: string; start_time: string; end_time: string; room_id: number | null }) => boolean;
+    getBlockConflicts: (block: { id: string; day_of_week: string; start_time: string; end_time: string; room_id: number | null }) => Array<{ type: "room" | "faculty"; existing: any }>;
     onAddBlock: (time: string) => void;
+    dragPreview: { dayIdx: number; startMin: number; duration: number; blockId: string } | null;
+    onResizeStart: (blockId: string, edge: "top" | "bottom", initialY: number, originalStartMin: number, originalEndMin: number) => void;
 }) {
     const { setNodeRef, isOver } = useDroppable({ id: `day-${dayIdx}`, data: { dayIdx } });
     const totalH = (HOUR_END - HOUR_START + 1) * CELL_H;
@@ -1016,10 +1165,41 @@ function DayColumn({ dayIdx, dayBlocks, allBlocks, onBlockClick, blockHasConflic
                         className="absolute w-full hover:bg-primary/5 transition-colors cursor-cell"
                         style={{ top: i * CELL_H, height: CELL_H }}
                         onClick={() => onAddBlock(`${String(hour).padStart(2, "0")}:00`)}
-                        title={`Add block at ${hour}:00`}
                     />
                 );
             })}
+
+            {existingBlocks.map((block) => {
+                const startMin = parseTimeToMinutes(block.start_time);
+                const endMin = parseTimeToMinutes(block.end_time);
+                if (startMin === null || endMin === null) return null;
+                const top = ((startMin / 60) - HOUR_START) * CELL_H;
+                const height = ((endMin - startMin) / 60) * CELL_H;
+                const pal = getPalette(block.subject_code);
+                return (
+                    <div
+                        key={`existing-${block.id}`}
+                        className={`absolute overflow-hidden rounded-md border-l-[3px] px-1.5 py-1 pointer-events-none ${pal.accent} ${pal.ghost} opacity-40`}
+                        style={{ top, height: Math.max(height - 2, 20), left: 2, right: 2 }}
+                        title={`${block.subject_code} (${block.section}) — ${block.room || "No room"}`}
+                    >
+                        <div className={`truncate text-[9px] font-bold leading-tight ${pal.text} opacity-60`}>{block.subject_code}</div>
+                        <div className="text-muted-foreground truncate text-[8px] leading-tight opacity-50">{block.section}</div>
+                    </div>
+                );
+            })}
+
+            {dragPreview && (
+                <div
+                    className="absolute left-[2px] right-[2px] rounded-md border-[2.5px] border-dashed border-primary/40 bg-primary/5 z-10 pointer-events-none flex items-start p-1.5 opacity-80"
+                    style={{
+                        top: ((dragPreview.startMin / 60) - HOUR_START) * CELL_H,
+                        height: (dragPreview.duration / 60) * CELL_H,
+                    }}
+                >
+                    <span className="text-[10px] font-bold tracking-tight uppercase opacity-70 text-primary">Move Here</span>
+                </div>
+            )}
 
             {dayBlocks.map((block) => {
                 const globalIndex = allBlocks.findIndex((b) => b.id === block.id);
@@ -1036,10 +1216,12 @@ function DayColumn({ dayIdx, dayBlocks, allBlocks, onBlockClick, blockHasConflic
                         key={block.id}
                         block={block}
                         globalIndex={globalIndex}
-                        style={{ top, height: Math.max(height - 2, 20), left: 2, right: 2 }}
+                        style={{ top, height: Math.max(height - 2, 24), left: 2, right: 2 }}
                         hasConflict={hasConflict}
                         palette={pal}
                         onClick={() => onBlockClick(globalIndex)}
+                        onHover={(hovering) => onBlockHover(hovering ? globalIndex : null)}
+                        onResizeStart={onResizeStart}
                     />
                 );
             })}
@@ -1047,18 +1229,30 @@ function DayColumn({ dayIdx, dayBlocks, allBlocks, onBlockClick, blockHasConflic
     );
 }
 
-function DraggableScheduleBlock({ block, globalIndex, style, hasConflict, palette, onClick }: {
+function DraggableScheduleBlock({ block, globalIndex, style, hasConflict, palette, onClick, onHover, onResizeStart }: {
     block: { id: string; day_of_week: string; start_time: string; end_time: string; room_id: number | null };
     globalIndex: number;
     style: React.CSSProperties;
     hasConflict: boolean;
     palette: ReturnType<typeof getPalette>;
     onClick: () => void;
+    onHover: (hovering: boolean) => void;
+    onResizeStart: (blockId: string, edge: "top" | "bottom", initialY: number, originalStartMin: number, originalEndMin: number) => void;
 }) {
     const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
         id: `block-${block.id}`,
         data: { blockId: block.id },
     });
+
+    const startMin = parseTimeToMinutes(block.start_time);
+    const endMin = parseTimeToMinutes(block.end_time);
+
+    const handleResizePointerDown = (e: React.PointerEvent, edge: "top" | "bottom") => {
+        e.stopPropagation();
+        e.preventDefault();
+        if (startMin === null || endMin === null) return;
+        onResizeStart(block.id, edge, e.clientY, startMin, endMin);
+    };
 
     return (
         <div
@@ -1066,6 +1260,8 @@ function DraggableScheduleBlock({ block, globalIndex, style, hasConflict, palett
             {...listeners}
             {...attributes}
             onClick={(e) => { e.stopPropagation(); onClick(); }}
+            onMouseEnter={() => onHover(true)}
+            onMouseLeave={() => onHover(false)}
             className={`absolute overflow-hidden rounded-md border-l-[3px] px-1.5 py-1 text-left cursor-grab active:cursor-grabbing transition-all z-10 ${
                 hasConflict
                     ? "border-l-red-500 bg-red-500/12 dark:bg-red-400/15 ring-2 ring-red-400/40"
@@ -1073,6 +1269,13 @@ function DraggableScheduleBlock({ block, globalIndex, style, hasConflict, palett
             } ${isDragging ? "opacity-40" : "hover:shadow-md hover:z-20"}`}
             style={style}
         >
+            <div
+                className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize z-30 opacity-0 hover:opacity-100 transition-opacity"
+                onPointerDown={(e) => handleResizePointerDown(e, "top")}
+            >
+                <div className="mx-auto w-8 h-1 rounded-full bg-foreground/30 mt-0.5" />
+            </div>
+
             <div className="flex items-center gap-1">
                 <GripVertical className="text-muted-foreground h-3 w-3 shrink-0 opacity-60" />
                 <div className={`truncate text-[10px] font-bold leading-tight ${hasConflict ? "text-red-700 dark:text-red-300" : palette.text}`}>
@@ -1080,6 +1283,13 @@ function DraggableScheduleBlock({ block, globalIndex, style, hasConflict, palett
                 </div>
             </div>
             <div className="text-muted-foreground truncate text-[9px] leading-tight">{fmtTime(block.end_time)}</div>
+
+            <div
+                className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize z-30 opacity-0 hover:opacity-100 transition-opacity"
+                onPointerDown={(e) => handleResizePointerDown(e, "bottom")}
+            >
+                <div className="mx-auto w-8 h-1 rounded-full bg-foreground/30 mb-0.5" />
+            </div>
         </div>
     );
 }

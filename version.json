@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.6.0",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.6.0",
-  "commit": "ba6942de80fceb5d89c46f3f50887bbf938cf2dd",
+  "version": "1.1.0-dev.6.1",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.6.1",
+  "commit": "506c9ea82e0156f7b5f2c0d9f51d73605880cdb0",
   "branch": "master",
-  "timestamp": "2026-04-23T14:57:51Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24841961482",
-  "release_type": "feature",
+  "timestamp": "2026-04-23T15:21:26Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24843166967",
+  "release_type": "bugfix",
   "changelog": {
-    "current": "Version 1.1.0-dev.6.0 - feat(scheduling): revamp create class dialog with comboboxes and dnd timetable",
-    "previous": "1.1.0-dev.5.2"
+    "current": "Version 1.1.0-dev.6.1 - fix(scheduling): flatten schedule_data for existingSchedules prop",
+    "previous": "1.1.0-dev.6.0"
   },
   "metadata": {
     "author": "yukazakiri",

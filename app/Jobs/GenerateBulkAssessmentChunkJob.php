@@ -194,10 +194,7 @@ final class GenerateBulkAssessmentChunkJob implements ShouldQueue
             $safeStudentLastName
         );
 
-        $pdfService->generatePdfFromView('pdf.assesment-form', $data, $individualPdfPath, [
-            'landscape' => true,
-            'print-background' => true,
-        ]);
+        $pdfService->generatePdfFromView('pdf.assesment-form', $data, $individualPdfPath, [], 'assessment_form');
 
         if (! file_exists($individualPdfPath) || filesize($individualPdfPath) === 0) {
             throw new Exception(sprintf('Failed to generate PDF for enrollment %d.', $enrollment->id));

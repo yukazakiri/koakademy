@@ -113,11 +113,7 @@ final class GenerateAttendancePdfJob implements ShouldQueue
         $temporaryFilePath = tempnam(sys_get_temp_dir(), 'attendance_pdf_').'.pdf';
 
         try {
-            $pdfService->generatePdfFromView('pdf.attendance-report', $viewData, $temporaryFilePath, [
-                'landscape' => true,
-                'format' => 'A4',
-                'margins' => ['top' => '10mm', 'right' => '10mm', 'bottom' => '10mm', 'left' => '10mm'],
-            ]);
+            $pdfService->generatePdfFromView('pdf.attendance-report', $viewData, $temporaryFilePath, [], 'attendance_report');
 
             $storagePath = $directory.'/'.$filename;
             StreamedStorage::putFileFromPath($disk, $storagePath, $temporaryFilePath);

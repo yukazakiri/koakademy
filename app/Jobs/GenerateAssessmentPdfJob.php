@@ -238,15 +238,7 @@ final class GenerateAssessmentPdfJob implements ShouldQueue
 
         try {
             // Use PdfGenerationService to generate PDF from view
-            $pdfService->generatePdfFromView('pdf.assesment-form', $data, $temporaryFilePath, [
-                'format' => 'A4',
-                'landscape' => true,
-                'print_background' => true,
-                'margin_top' => '10mm',
-                'margin_bottom' => '10mm',
-                'margin_left' => '10mm',
-                'margin_right' => '10mm',
-            ]);
+            $pdfService->generatePdfFromView('pdf.assesment-form', $data, $temporaryFilePath, [], 'assessment_form');
 
             $this->updateProgress(70, 'Converting to PDF...');
 

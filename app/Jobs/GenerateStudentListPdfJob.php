@@ -106,24 +106,8 @@ final class GenerateStudentListPdfJob implements ShouldQueue
             // Convert scale to percentage (0.8 = 80%)
             $scalePercentage = (int) ($scale * 100);
 
-            // Generate PDF using PdfGenerationService
-            $pdfOptions = [
-                'headless' => true,
-                'no-sandbox' => true,
-                'disable-dev-shm-usage' => true,
-                'disable-gpu' => true,
-                'no-first-run' => true,
-                'disable-background-timer-throttling' => true,
-                'disable-backgrounding-occluded-windows' => true,
-                'disable-renderer-backgrounding' => true,
-                'print-to-pdf-no-header' => true,
-                'run-all-compositor-stages-before-draw' => true,
-                'disable-extensions' => true,
-                'virtual-time-budget' => 10000,
-            ];
-
             try {
-                $pdfService->generatePdfFromHtml($html, $tempPath, $pdfOptions);
+                $pdfService->generatePdfFromHtml($html, $tempPath, [], 'student_list');
 
                 // Upload to configured storage
                 StreamedStorage::putFileFromPath($disk, $path, $tempPath);

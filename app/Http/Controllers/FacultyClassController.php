@@ -1736,11 +1736,7 @@ final class FacultyClassController extends Controller
         }
 
         try {
-            $pdfService->generatePdfFromView('pdf.attendance-report', $data, $tempPath, [
-                'landscape' => true,
-                'format' => 'A4',
-                'margins' => ['top' => '10mm', 'right' => '10mm', 'bottom' => '10mm', 'left' => '10mm'],
-            ]);
+            $pdfService->generatePdfFromView('pdf.attendance-report', $data, $tempPath, [], 'attendance_report');
 
             return response()->download($tempPath, $fileName.'.pdf')->deleteFileAfterSend(true);
         } catch (Exception $e) {

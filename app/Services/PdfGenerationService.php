@@ -19,17 +19,20 @@ final class PdfGenerationService
      *
      * @param  array<string, mixed>  $options
      */
-    public function generatePdfFromHtml(string $html, string $outputPath, array $options = []): void
+    public function generatePdfFromHtml(string $html, string $outputPath, array $options = [], ?string $profile = null): void
     {
         $this->ensureOutputDirectory($outputPath);
 
+        $resolvedOptions = $this->resolveProfileOptions($profile, $options);
+
         $pdfBuilder = Pdf::html($html);
-        $this->applyPdfOptions($pdfBuilder, $options);
+        $this->applyPdfOptions($pdfBuilder, $resolvedOptions);
         $pdfBuilder->save($outputPath);
 
         Log::info('PDF generated from HTML using Laravel PDF', [
             'output_path' => $outputPath,
-            'driver' => $options['driver'] ?? config('laravel-pdf.driver'),
+            'driver' => $resolvedOptions['driver'] ?? config('laravel-pdf.driver'),
+            'profile' => $profile,
         ]);
     }
 
@@ -39,18 +42,21 @@ final class PdfGenerationService
      * @param  array<string, mixed>  $data
      * @param  array<string, mixed>  $options
      */
-    public function generatePdfFromView(string $viewName, array $data, string $outputPath, array $options = []): void
+    public function generatePdfFromView(string $viewName, array $data, string $outputPath, array $options = [], ?string $profile = null): void
     {
         $this->ensureOutputDirectory($outputPath);
 
+        $resolvedOptions = $this->resolveProfileOptions($profile, $options);
+
         $pdfBuilder = Pdf::view($viewName, $data);
-        $this->applyPdfOptions($pdfBuilder, $options);
+        $this->applyPdfOptions($pdfBuilder, $resolvedOptions);
         $pdfBuilder->save($outputPath);
 
         Log::info('PDF generated from view using Laravel PDF', [
             'view' => $viewName,
             'output_path' => $outputPath,
-            'driver' => $options['driver'] ?? config('laravel-pdf.driver'),
+            'driver' => $resolvedOptions['driver'] ?? config('laravel-pdf.driver'),
+            'profile' => $profile,
         ]);
     }
 
@@ -463,6 +469,21 @@ final class PdfGenerationService
         }
 
         return $arguments;
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     * @return array<string, mixed>
+     */
+    private function resolveProfileOptions(?string $profile, array $options): array
+    {
+        if ($profile === null) {
+            return $options;
+        }
+
+        $profileOptions = \App\Support\PdfRenderProfile::resolve($profile);
+
+        return array_merge($profileOptions, $options);
     }
 
     private function ensureOutputDirectory(string $outputPath): void

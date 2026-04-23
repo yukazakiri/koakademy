@@ -1,8 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { MultiSelect as SearchableMultiSelect } from "@/components/ui/multi-select";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -50,6 +50,25 @@ function hashStr(s: string): number {
 }
 
 const getPalette = (s: string) => PALETTES[hashStr(s) % PALETTES.length];
+
+function buildSubjectCodeFromSubjectOptions(
+    selectedValues: string[],
+    options: Array<{ id: number; code: string; title: string }>,
+): string {
+    const selectedSet = new Set(selectedValues.map((value) => Number(value)));
+    return options
+        .filter((option) => selectedSet.has(option.id))
+        .map((option) => option.code)
+        .filter((code) => code.trim().length > 0)
+        .join(", ");
+}
+
+function parseDelimitedCodes(input: string): string[] {
+    return input
+        .split(",")
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0);
+}
 
 function fmtTime(t: string): string {
     if (!t) return "";
@@ -146,18 +165,23 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
     const form = useForm({
         classification: "college" as "college" | "shs",
         course_id: null as number | null,
+        course_codes: [] as number[],
         subject_id: null as number | null,
+        subject_ids: [] as number[],
         subject_code: "",
         academic_year: 1,
         shs_track_id: null as number | null,
         shs_strand_id: null as number | null,
         subject_code_shs: "",
+        subject_codes_shs: [] as string[],
         grade_level: "Grade 11",
         faculty_id: null as string | null,
+        faculty_ids: [] as string[],
         semester: defaults.semester,
         school_year: defaults.school_year,
         section: "A",
         room_id: null as number | null,
+        room_ids: [] as number[],
         maximum_slots: 40,
         schedules: [] as Array<{ id: string; day_of_week: string; start_time: string; end_time: string; room_id: number | null }>,
     });
@@ -167,18 +191,23 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
         form.setData({
             classification: "college",
             course_id: null,
+            course_codes: [],
             subject_id: null,
+            subject_ids: [],
             subject_code: "",
             academic_year: 1,
             shs_track_id: null,
             shs_strand_id: null,
             subject_code_shs: "",
+            subject_codes_shs: [],
             grade_level: "Grade 11",
             faculty_id: null,
+            faculty_ids: [],
             semester: defaults.semester,
             school_year: defaults.school_year,
             section: "A",
             room_id: null,
+            room_ids: [],
             maximum_slots: 40,
             schedules: [],
         });
@@ -194,19 +223,24 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
     }, [open]);
 
     const selectedRoom = React.useMemo(() => {
-        if (!form.data.room_id) return null;
-        return options.rooms.find((r) => r.id === form.data.room_id) ?? null;
-    }, [form.data.room_id, options.rooms]);
+        const primaryRoomId = form.data.room_ids[0] ?? null;
+        if (!primaryRoomId) return null;
+        return options.rooms.find((r) => r.id === primaryRoomId) ?? null;
+    }, [form.data.room_ids, options.rooms]);
 
     const roomExistingSchedules = React.useMemo(() => {
-        if (!form.data.room_id) return [];
-        return existingSchedules.filter((s) => s.room_id === form.data.room_id);
-    }, [existingSchedules, form.data.room_id]);
+        if (form.data.room_ids.length === 0) return [];
+        const roomSet = new Set(form.data.room_ids);
+        return existingSchedules.filter((s) => s.room_id !== null && roomSet.has(s.room_id));
+    }, [existingSchedules, form.data.room_ids]);
 
-    const selectedFacultyName = React.useMemo(() => {
-        if (!form.data.faculty_id) return null;
-        return options.faculty.find((f) => String(f.id) === String(form.data.faculty_id))?.name ?? null;
-    }, [form.data.faculty_id, options.faculty]);
+    const selectedFacultyNames = React.useMemo(() => {
+        if (form.data.faculty_ids.length === 0) return [];
+        const selectedSet = new Set(form.data.faculty_ids.map(String));
+        return options.faculty
+            .filter((f) => selectedSet.has(String(f.id)))
+            .map((f) => f.name);
+    }, [form.data.faculty_ids, options.faculty]);
 
     const conflicts = React.useMemo(() => {
         const result: Array<{ type: "room" | "faculty"; newBlock: typeof form.data.schedules[0]; existing: typeof existingSchedules[0] }> = [];
@@ -217,22 +251,22 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                 if (ns.room_id !== null && es.room_id === ns.room_id) {
                     result.push({ type: "room", newBlock: ns, existing: es });
                 }
-                if (selectedFacultyName && es.faculty_name === selectedFacultyName) {
+                if (es.faculty_name && selectedFacultyNames.includes(es.faculty_name)) {
                     result.push({ type: "faculty", newBlock: ns, existing: es });
                 }
             }
         }
         return result;
-    }, [form.data.schedules, existingSchedules, selectedFacultyName]);
+    }, [form.data.schedules, existingSchedules, selectedFacultyNames]);
 
-    const loadCollegeSubjects = async (courseId: number | null) => {
-        if (!courseId) {
+    const loadCollegeSubjects = async (courseIds: number[]) => {
+        if (courseIds.length === 0) {
             setCollegeSubjectOptions([]);
             return;
         }
         setCollegeSubjectsLoading(true);
         try {
-            const response = await fetch(route("administrators.classes.options.subjects", { course_ids: [courseId] }));
+            const response = await fetch(route("administrators.classes.options.subjects", { course_ids: courseIds }));
             const data = await response.json() as { data: Array<{ id: number; label: string; code: string; title: string }> };
             setCollegeSubjectOptions(data.data);
         } finally {
@@ -272,12 +306,13 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
     };
 
     const addScheduleBlock = (day?: string, start?: string, end?: string) => {
+        const primaryRoomId = form.data.room_ids[0] ?? options.rooms[0]?.id ?? null;
         const newBlock = {
             id: crypto.randomUUID(),
             day_of_week: day ?? "Monday",
             start_time: start ?? "08:00",
             end_time: end ?? "10:00",
-            room_id: form.data.room_id ?? options.rooms[0]?.id ?? null,
+            room_id: primaryRoomId,
         };
         form.setData("schedules", [...form.data.schedules, newBlock]);
         setSelectedBlockIndex(form.data.schedules.length);
@@ -295,6 +330,7 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
     };
 
     const generateFromRecurrence = (recurrence: "mwf" | "tth" | "daily" | "custom", customDays: string[], startTime: string, endTime: string) => {
+        const primaryRoomId = form.data.room_ids[0] ?? options.rooms[0]?.id ?? null;
         let days: string[] = [];
         switch (recurrence) {
             case "mwf": days = ["Monday", "Wednesday", "Friday"]; break;
@@ -308,7 +344,7 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
             day_of_week: day,
             start_time: startTime,
             end_time: endTime,
-            room_id: form.data.room_id ?? options.rooms[0]?.id ?? null,
+            room_id: primaryRoomId,
         }));
         form.setData("schedules", [...form.data.schedules, ...newBlocks]);
     };
@@ -429,7 +465,14 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
         }
         setIsSubmitting(true);
 
-        const payload = { ...form.data, course_codes: form.data.course_id ? [form.data.course_id] : [], subject_ids: form.data.subject_id ? [form.data.subject_id] : [] };
+        const payload = {
+            ...form.data,
+            room_id: form.data.room_ids[0] ?? null,
+            faculty_id: form.data.faculty_ids[0] ?? null,
+            course_codes: form.data.course_codes,
+            subject_ids: form.data.subject_ids,
+            subject_id: form.data.subject_ids[0] ?? null,
+        };
 
         try {
             const res = await axios.post(route("administrators.scheduling-analytics.classes.store"), payload);
@@ -507,37 +550,6 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                             <div className="grid gap-6">
                                 <Card className="border-border/60 shadow-sm">
                                     <CardHeader className="bg-muted/20 border-b pb-4">
-                                        <CardTitle className="text-base font-semibold">Primary Room</CardTitle>
-                                    </CardHeader>
-                                    <CardContent className="space-y-4 pt-6">
-                                        <div className="space-y-2">
-                                            <Label>Room</Label>
-                                            <Combobox
-                                                label=""
-                                                options={options.rooms.map((r) => ({ label: r.name, value: String(r.id), description: r.class_code || undefined }))}
-                                                value={form.data.room_id ? String(form.data.room_id) : ""}
-                                                onValueChange={(val) => {
-                                                    const roomId = val ? Number(val) : null;
-                                                    form.setData("room_id", roomId);
-                                                    if (roomId) {
-                                                        form.setData("schedules", form.data.schedules.map((s) => ({ ...s, room_id: roomId })));
-                                                    }
-                                                }}
-                                                placeholder="Search and select a room..."
-                                                emptyText="No rooms found."
-                                                searchPlaceholder="Search rooms..."
-                                            />
-                                            {selectedRoom && roomExistingSchedules.length > 0 && (
-                                                <p className="text-muted-foreground text-xs">
-                                                    {roomExistingSchedules.length} existing schedule{roomExistingSchedules.length !== 1 ? "s" : ""} in {selectedRoom.name} will be shown in the timetable.
-                                                </p>
-                                            )}
-                                        </div>
-                                    </CardContent>
-                                </Card>
-
-                                <Card className="border-border/60 shadow-sm">
-                                    <CardHeader className="bg-muted/20 border-b pb-4">
                                         <CardTitle className="text-base font-semibold">Academic Profile</CardTitle>
                                     </CardHeader>
                                     <CardContent className="space-y-4 pt-6">
@@ -552,11 +564,14 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                                                         onSelect={() => {
                                                             form.setData("classification", "college");
                                                             form.setData("course_id", null);
+                                                            form.setData("course_codes", []);
                                                             form.setData("subject_id", null);
+                                                            form.setData("subject_ids", []);
                                                             form.setData("subject_code", "");
                                                             form.setData("shs_track_id", null);
                                                             form.setData("shs_strand_id", null);
                                                             form.setData("subject_code_shs", "");
+                                                                                                                        form.setData("subject_codes_shs", []);
                                                             setCollegeSubjectOptions([]);
                                                             setShsStrandOptions([]);
                                                             setShsSubjectOptions([]);
@@ -570,11 +585,14 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                                                         onSelect={() => {
                                                             form.setData("classification", "shs");
                                                             form.setData("course_id", null);
+                                                            form.setData("course_codes", []);
                                                             form.setData("subject_id", null);
+                                                            form.setData("subject_ids", []);
                                                             form.setData("subject_code", "");
                                                             form.setData("shs_track_id", null);
                                                             form.setData("shs_strand_id", null);
                                                             form.setData("subject_code_shs", "");
+                                                                                                                        form.setData("subject_codes_shs", []);
                                                             setCollegeSubjectOptions([]);
                                                             setShsStrandOptions([]);
                                                             setShsSubjectOptions([]);
@@ -588,21 +606,28 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                                                 <>
                                                     <div className="space-y-2 sm:col-span-2">
                                                         <Label>Associated course</Label>
-                                                        <Combobox
-                                                            label=""
-                                                            options={options.courses.map((c) => ({ label: `${c.code} — ${c.title}`, value: String(c.id), description: c.curriculum_year ? `Curriculum ${c.curriculum_year}` : undefined }))}
-                                                            value={form.data.course_id ? String(form.data.course_id) : ""}
-                                                            onValueChange={(val) => {
-                                                                const courseId = Number(val);
-                                                                form.setData("course_id", courseId);
-                                                                form.setData("subject_id", null);
-                                                                form.setData("subject_code", "");
-                                                                setSubjectCodeTouched(false);
-                                                                void loadCollegeSubjects(courseId);
-                                                            }}
-                                                            placeholder="Search and select a course..."
-                                                            emptyText="No courses found."
+                                                        <SearchableMultiSelect
+                                                            placeholder="Search and select courses..."
                                                             searchPlaceholder="Search courses..."
+                                                            emptyText="No courses found."
+                                                            options={options.courses.map((course) => ({
+                                                                value: String(course.id),
+                                                                label: `${course.code} — ${course.title}`,
+                                                                description: course.curriculum_year ? `Curriculum ${course.curriculum_year}` : undefined,
+                                                                searchText: `${course.code} ${course.title}`,
+                                                            }))}
+                                                            selected={form.data.course_codes.map(String)}
+                                                            onChange={(values) => {
+                                                                const next = values.map(Number);
+                                                                form.setData("course_codes", next);
+                                                                form.setData("course_id", next[0] ?? null);
+                                                                form.setData("subject_ids", []);
+                                                                form.setData("subject_id", null);
+                                                                if (!subjectCodeTouched) {
+                                                                    form.setData("subject_code", "");
+                                                                }
+                                                                void loadCollegeSubjects(next);
+                                                            }}
                                                         />
                                                         {form.errors.course_codes ? <p className="text-destructive text-xs">{form.errors.course_codes}</p> : null}
                                                     </div>
@@ -614,21 +639,27 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                                                         ) : collegeSubjectOptions.length === 0 ? (
                                                             <div className="text-muted-foreground text-xs py-2">Select a course to see subjects.</div>
                                                         ) : (
-                                                            <Combobox
-                                                                label=""
-                                                                options={collegeSubjectOptions.map((s) => ({ label: `${s.code} — ${s.title}`, value: String(s.id), description: s.label }))}
-                                                                value={form.data.subject_id ? String(form.data.subject_id) : ""}
-                                                                onValueChange={(val) => {
-                                                                    const subjectId = Number(val);
-                                                                    form.setData("subject_id", subjectId);
-                                                                    const selected = collegeSubjectOptions.find((s) => s.id === subjectId);
-                                                                    if (selected && !subjectCodeTouched) {
-                                                                        form.setData("subject_code", selected.code);
+                                                            <SearchableMultiSelect
+                                                                placeholder="Search and select subjects..."
+                                                                searchPlaceholder="Search subjects..."
+                                                                emptyText="No subjects found for this course."
+                                                                options={collegeSubjectOptions.map((subject) => ({
+                                                                    value: String(subject.id),
+                                                                    label: `${subject.code} — ${subject.title}`,
+                                                                    description: subject.label,
+                                                                    searchText: `${subject.code} ${subject.title} ${subject.label}`,
+                                                                }))}
+                                                                selected={form.data.subject_ids.map(String)}
+                                                                disabled={form.data.course_codes.length === 0 || collegeSubjectsLoading}
+                                                                onChange={(values) => {
+                                                                    const subjectIds = values.map(Number);
+                                                                    form.setData("subject_ids", subjectIds);
+                                                                    form.setData("subject_id", subjectIds[0] ?? null);
+                                                                    if (!subjectCodeTouched) {
+                                                                        const computed = buildSubjectCodeFromSubjectOptions(values, collegeSubjectOptions);
+                                                                        form.setData("subject_code", computed);
                                                                     }
                                                                 }}
-                                                                placeholder="Search and select a subject..."
-                                                                emptyText="No subjects found for this course."
-                                                                searchPlaceholder="Search subjects..."
                                                             />
                                                         )}
                                                         {form.errors.subject_ids ? <p className="text-destructive text-xs">{form.errors.subject_ids}</p> : null}
@@ -678,6 +709,7 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                                                                 form.setData("shs_track_id", trackId);
                                                                 form.setData("shs_strand_id", null);
                                                                 form.setData("subject_code_shs", "");
+                                                                                                                            form.setData("subject_codes_shs", []);
                                                                 void loadShsStrands(trackId);
                                                             }}
                                                         >
@@ -699,6 +731,7 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                                                                 const strandId = val === "__none__" ? null : Number(val);
                                                                 form.setData("shs_strand_id", strandId);
                                                                 form.setData("subject_code_shs", "");
+                                                                                                                            form.setData("subject_codes_shs", []);
                                                                 void loadShsSubjects(strandId);
                                                             }}
                                                             disabled={!form.data.shs_track_id || shsStrandsLoading}
@@ -714,20 +747,27 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                                                     </div>
 
                                                     <div className="space-y-2 sm:col-span-2">
-                                                        <Label>SHS subject</Label>
+                                                        <Label>SHS subjects</Label>
                                                         {shsSubjectsLoading ? (
                                                             <div className="text-muted-foreground text-xs py-2">Loading subjects...</div>
                                                         ) : shsSubjectOptions.length === 0 ? (
                                                             <div className="text-muted-foreground text-xs py-2">Select a strand to see subjects.</div>
                                                         ) : (
-                                                            <Combobox
-                                                                label=""
-                                                                options={shsSubjectOptions.map((s) => ({ label: `${s.code} — ${s.title}`, value: s.code, description: s.label }))}
-                                                                value={form.data.subject_code_shs}
-                                                                onValueChange={(val) => form.setData("subject_code_shs", val)}
-                                                                placeholder="Search and select a subject..."
-                                                                emptyText="No subjects found for this strand."
+                                                            <SearchableMultiSelect
+                                                                placeholder="Search and select subjects..."
                                                                 searchPlaceholder="Search subjects..."
+                                                                emptyText="No subjects found for this strand."
+                                                                options={shsSubjectOptions.map((s) => ({
+                                                                    value: s.code,
+                                                                    label: `${s.code} — ${s.title}`,
+                                                                    description: s.label,
+                                                                    searchText: `${s.code} ${s.title} ${s.label}`,
+                                                                }))}
+                                                                selected={form.data.subject_codes_shs}
+                                                                onChange={(values) => {
+                                                                    form.setData("subject_codes_shs", values);
+                                                                    form.setData("subject_code_shs", values[0] ?? "");
+                                                                }}
                                                             />
                                                         )}
                                                     </div>
@@ -756,14 +796,21 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                                         <div className="grid gap-4 sm:grid-cols-2">
                                             <div className="space-y-2 sm:col-span-2">
                                                 <Label>Faculty</Label>
-                                                <Combobox
-                                                    label=""
-                                                    options={[{ label: "TBA — To be assigned", value: "__none__" }, ...options.faculty.map((f) => ({ label: f.name, value: String(f.id), description: f.department || undefined }))]}
-                                                    value={form.data.faculty_id ? String(form.data.faculty_id) : "__none__"}
-                                                    onValueChange={(val) => form.setData("faculty_id", val === "__none__" ? null : val)}
+                                                <SearchableMultiSelect
                                                     placeholder="Search and select faculty..."
-                                                    emptyText="No faculty found."
                                                     searchPlaceholder="Search faculty..."
+                                                    emptyText="No faculty found."
+                                                    options={options.faculty.map((f) => ({
+                                                        value: String(f.id),
+                                                        label: f.name,
+                                                        description: f.department || undefined,
+                                                        searchText: `${f.name} ${f.department ?? ""}`,
+                                                    }))}
+                                                    selected={form.data.faculty_ids.map(String)}
+                                                    onChange={(values) => {
+                                                        form.setData("faculty_ids", values);
+                                                        form.setData("faculty_id", values[0] ?? null);
+                                                    }}
                                                 />
                                             </div>
 
@@ -821,6 +868,42 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                         </TabsContent>
 
                         <TabsContent value="schedule" className="m-0 space-y-6 outline-none">
+                            <Card className="border-border/60 shadow-sm">
+                                <CardHeader className="bg-muted/20 border-b pb-4">
+                                    <CardTitle className="text-base font-semibold">Primary Rooms</CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-4 pt-6">
+                                    <div className="space-y-2">
+                                        <Label>Rooms</Label>
+                                        <SearchableMultiSelect
+                                            placeholder="Search and select rooms..."
+                                            searchPlaceholder="Search rooms..."
+                                            emptyText="No rooms found."
+                                            options={options.rooms.map((r) => ({
+                                                value: String(r.id),
+                                                label: r.name,
+                                                description: r.class_code || undefined,
+                                                searchText: `${r.name} ${r.class_code ?? ""}`,
+                                            }))}
+                                            selected={form.data.room_ids.map(String)}
+                                            onChange={(values) => {
+                                                const next = values.map(Number);
+                                                form.setData("room_ids", next);
+                                                form.setData("room_id", next[0] ?? null);
+                                                if (next.length > 0) {
+                                                    form.setData("schedules", form.data.schedules.map((s) => ({ ...s, room_id: next[0] ?? s.room_id })));
+                                                }
+                                            }}
+                                        />
+                                        {selectedRoom && roomExistingSchedules.length > 0 && (
+                                            <p className="text-muted-foreground text-xs">
+                                                {roomExistingSchedules.length} existing schedule{roomExistingSchedules.length !== 1 ? "s" : ""} in selected rooms will be shown in the timetable.
+                                            </p>
+                                        )}
+                                    </div>
+                                </CardContent>
+                            </Card>
+
                             {conflicts.length > 0 && (
                                 <div className="border-destructive/40 bg-destructive/5 text-destructive rounded-lg border px-4 py-3 text-sm">
                                     <div className="flex items-center gap-2 font-semibold mb-1">
@@ -1060,12 +1143,47 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                                             <span className="font-medium capitalize">{form.data.classification}</span>
                                         </div>
                                         <div className="flex justify-between border-b pb-2">
+                                            <span className="text-muted-foreground">Rooms</span>
+                                            <span className="font-medium">
+                                                {form.data.room_ids.length > 0
+                                                    ? form.data.room_ids
+                                                          .map((id) => options.rooms.find((r) => r.id === id)?.name)
+                                                          .filter(Boolean)
+                                                          .join(", ")
+                                                    : "—"}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between border-b pb-2">
+                                            <span className="text-muted-foreground">Courses</span>
+                                            <span className="font-medium">
+                                                {form.data.course_codes.length > 0
+                                                    ? form.data.course_codes
+                                                          .map((id) => options.courses.find((c) => c.id === id)?.code)
+                                                          .filter(Boolean)
+                                                          .join(", ")
+                                                    : "—"}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between border-b pb-2">
                                             <span className="text-muted-foreground">Subject</span>
-                                            <span className="font-medium">{form.data.classification === "college" ? (form.data.subject_code || "—") : (form.data.subject_code_shs || "—")}</span>
+                                            <span className="font-medium">
+                                                {form.data.classification === "college"
+                                                    ? (form.data.subject_code || "—")
+                                                    : (form.data.subject_codes_shs.length > 0
+                                                        ? form.data.subject_codes_shs.join(", ")
+                                                        : "—")}
+                                            </span>
                                         </div>
                                         <div className="flex justify-between border-b pb-2">
                                             <span className="text-muted-foreground">Faculty</span>
-                                            <span className="font-medium">{options.faculty.find((f) => String(f.id) === String(form.data.faculty_id))?.name ?? "TBA"}</span>
+                                            <span className="font-medium">
+                                                {form.data.faculty_ids.length > 0
+                                                    ? form.data.faculty_ids
+                                                          .map((id) => options.faculty.find((f) => String(f.id) === String(id))?.name)
+                                                          .filter(Boolean)
+                                                          .join(", ")
+                                                    : "TBA"}
+                                            </span>
                                         </div>
                                         <div className="flex justify-between border-b pb-2">
                                             <span className="text-muted-foreground">Section</span>

@@ -617,12 +617,12 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                                             <div className="space-y-2 sm:col-span-2">
                                                 <Label>Faculty</Label>
                                                 <Select
-                                                    value={form.data.faculty_id ? String(form.data.faculty_id) : ""}
-                                                    onValueChange={(val) => form.setData("faculty_id", val)}
+                                                    value={form.data.faculty_id ? String(form.data.faculty_id) : "__none__"}
+                                                    onValueChange={(val) => form.setData("faculty_id", val === "__none__" ? null : val)}
                                                 >
                                                     <SelectTrigger className="w-full"><SelectValue placeholder="Select faculty" /></SelectTrigger>
                                                     <SelectContent>
-                                                        <SelectItem value="">TBA</SelectItem>
+                                                        <SelectItem value="__none__">TBA</SelectItem>
                                                         {options.faculty.map((f) => (
                                                             <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
                                                         ))}

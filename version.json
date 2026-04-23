@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.4.1",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.4.1",
-  "commit": "5d7c03d19f6a38f83f7c17891ed474b7d18f5846",
+  "version": "1.1.0-dev.4.2",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.4.2",
+  "commit": "c8ebbfd09b586bcb50a4d9c14f64cdd07018bd12",
   "branch": "master",
-  "timestamp": "2026-04-23T08:15:20Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24824211550",
-  "release_type": "patch",
+  "timestamp": "2026-04-23T13:27:57Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24837689860",
+  "release_type": "chore",
   "changelog": {
-    "current": "Version 1.1.0-dev.4.1 - Merge pull request #63 from yukazakiri/04-23-refactor_remove-local-chrome-switch-to-cloudflare-pdf",
-    "previous": "1.1.0-dev.4.0"
+    "current": "Version 1.1.0-dev.4.2 - chore: ignore and remove generated Filament assets and TLS config",
+    "previous": "1.1.0-dev.4.1"
   },
   "metadata": {
     "author": "yukazakiri",

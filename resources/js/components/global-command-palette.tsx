@@ -155,25 +155,22 @@ function setLocalStorageSafe(key: string, value: string): void {
 }
 
 async function downloadSchedulePdf(type: "timetable" | "matrix"): Promise<void> {
-    const toastId = toast.loading("Generating PDF…", {
-        description: `Exporting your schedule (${type}).`,
+    const toastId = toast.loading("Queueing PDF export…", {
+        description: `Preparing your schedule export (${type}).`,
     });
 
     try {
         const response = await fetch(`/download/schedule?type=${type}`, {
             method: "GET",
+            headers: {
+                Accept: "application/json",
+            },
         });
 
+        const payload = (await response.json().catch(() => ({}))) as { message?: string; error?: string };
+
         if (!response.ok) {
-            let message = "Failed to generate PDF";
-            try {
-                const data = (await response.json()) as { error?: string };
-                if (data?.error) {
-                    message = data.error;
-                }
-            } catch {
-                // ignore JSON parse errors and use default message
-            }
+            const message = payload.error || payload.message || "Failed to queue PDF export";
 
             toast.error("Export Failed", {
                 id: toastId,
@@ -183,21 +180,9 @@ async function downloadSchedulePdf(type: "timetable" | "matrix"): Promise<void> 
             return;
         }
 
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const anchor = document.createElement("a");
-
-        anchor.href = url;
-        anchor.download = `schedule-${type}.pdf`;
-        document.body.appendChild(anchor);
-        anchor.click();
-
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(anchor);
-
-        toast.success("PDF Exported", {
+        toast.success("PDF export queued", {
             id: toastId,
-            description: "Your schedule has been downloaded.",
+            description: payload.message || "You will be notified once your PDF is ready.",
         });
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : "An unexpected error occurred.";

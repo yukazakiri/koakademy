@@ -129,33 +129,27 @@ export default function SchedulePage({ user, faculty_data }: SchedulePageProps) 
     const handleExport = async () => {
         const exportType = view === "matrix" ? "matrix" : "timetable";
 
-        const toastId = toast.loading("Generating PDF...", {
-            description: `Exporting your schedule in ${exportType} format. Please wait.`,
+        const toastId = toast.loading("Queueing PDF export...", {
+            description: `Preparing your ${exportType} export request.`,
         });
 
         try {
             const response = await fetch(`/download/schedule?type=${exportType}`, {
                 method: "GET",
+                headers: {
+                    Accept: "application/json",
+                },
             });
 
+            const payload = (await response.json().catch(() => ({}))) as { message?: string; error?: string };
+
             if (!response.ok) {
-                const data = await response.json();
-                throw new Error(data.error || "Failed to generate PDF");
+                throw new Error(payload.error || payload.message || "Failed to queue PDF export");
             }
 
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `schedule-${exportType}.pdf`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
-
-            toast.success("PDF Exported", {
+            toast.success("PDF export queued", {
                 id: toastId,
-                description: "Your schedule has been successfully downloaded.",
+                description: payload.message || "You will receive a notification when your PDF is ready.",
             });
         } catch (error: unknown) {
             console.error("Export error:", error);

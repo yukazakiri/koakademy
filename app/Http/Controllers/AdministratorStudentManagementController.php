@@ -14,6 +14,7 @@ use App\Http\Requests\Administrators\BulkDeleteStudentRequest;
 use App\Http\Requests\Administrators\BulkEmailStudentsRequest;
 use App\Http\Requests\Administrators\BulkUpdateStudentClearanceRequest;
 use App\Http\Requests\Administrators\BulkUpdateStudentStatusRequest;
+use App\Jobs\GenerateStudentSoaPdfJob;
 use App\Mail\StudentBulkMessage;
 use App\Models\Account;
 use App\Models\Course;
@@ -31,9 +32,9 @@ use App\Services\StudentIdUpdateService;
 use App\Settings\SiteSettings;
 use Exception;
 use FPDF;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
@@ -43,7 +44,6 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Throwable;
 
 final class AdministratorStudentManagementController extends Controller
@@ -628,7 +628,7 @@ final class AdministratorStudentManagementController extends Controller
         ]);
     }
 
-    public function printSoa(Request $request, Student $student): BinaryFileResponse|HttpResponse
+    public function printSoa(Request $request, Student $student): JsonResponse
     {
         $settings = app(GeneralSettingsService::class);
         $semester = (int) $request->input('semester', $settings->getCurrentSemester());
@@ -747,15 +747,6 @@ final class AdministratorStudentManagementController extends Controller
             'currency_symbol' => $currencySymbol,
         ];
 
-        $tempBasePath = tempnam(sys_get_temp_dir(), 'student_soa_');
-
-        if ($tempBasePath === false) {
-            abort(500, 'Failed to allocate temporary file for PDF generation.');
-        }
-
-        $tempPath = $tempBasePath.'.pdf';
-        rename($tempBasePath, $tempPath);
-
         $studentNumber = (string) ($student->student_id ?: $student->id);
         $safeStudentNumber = preg_replace('/[^A-Za-z0-9_-]/', '-', $studentNumber) ?: 'student';
         $downloadName = sprintf(
@@ -765,57 +756,11 @@ final class AdministratorStudentManagementController extends Controller
             $semester
         );
 
-        try {
-            $pdfService = app(\App\Services\PdfGenerationService::class);
-            $pdfService->generatePdfFromView('pdf.student-soa', $viewData, $tempPath, [
-                'headless' => true,
-                'no-sandbox' => true,
-                'disable-dev-shm-usage' => true,
-                'disable-gpu' => true,
-                'no-first-run' => true,
-                'disable-background-timer-throttling' => true,
-                'disable-backgrounding-occluded-windows' => true,
-                'disable-renderer-backgrounding' => true,
-                'print-to-pdf-no-header' => true,
-                'run-all-compositor-stages-before-draw' => true,
-                'disable-extensions' => true,
-                'virtual-time-budget' => 10000,
-            ]);
+        GenerateStudentSoaPdfJob::dispatch($viewData, $downloadName, (int) Auth::id());
 
-            return response()->file($tempPath, [
-                'Content-Type' => 'application/pdf',
-                'Content-Disposition' => 'inline; filename="'.$downloadName.'"',
-            ])->deleteFileAfterSend(true);
-        } catch (Exception $exception) {
-            \Illuminate\Support\Facades\Log::warning('Primary SOA PDF renderer failed. Falling back to FPDF.', [
-                'student_id' => $student->id,
-                'school_year' => $schoolYear,
-                'semester' => $semester,
-                'error' => $exception->getMessage(),
-            ]);
-
-            if (file_exists($tempPath)) {
-                unlink($tempPath);
-            }
-
-            try {
-                $pdfBinary = $this->generateStudentSoaPdfFallback($viewData);
-
-                return response($pdfBinary, 200, [
-                    'Content-Type' => 'application/pdf',
-                    'Content-Disposition' => 'inline; filename="'.$downloadName.'"',
-                ]);
-            } catch (Exception $fallbackException) {
-                \Illuminate\Support\Facades\Log::error('Failed to generate student SOA PDF', [
-                    'student_id' => $student->id,
-                    'school_year' => $schoolYear,
-                    'semester' => $semester,
-                    'error' => $fallbackException->getMessage(),
-                ]);
-
-                abort(500, 'Failed to generate student SOA PDF.');
-            }
-        }
+        return response()->json([
+            'message' => 'SOA PDF generation queued. You will be notified when the file is ready.',
+        ], 202);
     }
 
     public function create(): Response
@@ -987,7 +932,7 @@ final class AdministratorStudentManagementController extends Controller
         ]);
     }
 
-    public function generateId(Request $request): \Illuminate\Http\JsonResponse
+    public function generateId(Request $request): JsonResponse
     {
         $type = StudentType::tryFrom($request->query('type'));
 
@@ -1439,7 +1384,7 @@ final class AdministratorStudentManagementController extends Controller
         return back()->with('error', 'Failed to undo ID change: '.$result['message']);
     }
 
-    public function getCourseSubjects(Course $course): \Illuminate\Http\JsonResponse
+    public function getCourseSubjects(Course $course): JsonResponse
     {
         $subjects = $course->subjects()
             ->orderBy('academic_year')
@@ -2069,7 +2014,7 @@ final class AdministratorStudentManagementController extends Controller
         }
 
         if (str_starts_with($imageValue, '/')) {
-            $publicPath = public_path(ltrim($imageValue, '/'));
+            $publicPath = public_path(mb_ltrim($imageValue, '/'));
 
             return is_file($publicPath) ? $publicPath : null;
         }

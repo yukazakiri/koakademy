@@ -328,7 +328,7 @@ export default function AdministratorEnrollmentsIndex({
         ];
     }, [availableCourses]);
 
-    const handleGenerateReport = () => {
+    const handleGenerateReport = async () => {
         setIsLoadingReport(true);
         try {
             const params = new URLSearchParams({
@@ -337,17 +337,25 @@ export default function AdministratorEnrollmentsIndex({
             });
 
             const url = route("administrators.enrollments.reports.preview-pdf") + `?${params.toString()}`;
-            const pdfWindow = window.open(url, "_blank", "noopener");
+            const response = await fetch(url, {
+                method: "GET",
+                headers: {
+                    Accept: "application/json",
+                },
+            });
+            const payload = (await response.json().catch(() => ({}))) as { message?: string; error?: string };
 
-            if (!pdfWindow) {
-                toast.error("Please allow popups to preview the PDF report.");
+            if (!response.ok) {
+                toast.error(payload.error || payload.message || "Failed to queue PDF preview report.");
                 return;
             }
+
+            toast.success(payload.message || "PDF preview queued. You will be notified when the file is ready.");
 
             setActiveReportCard(null);
         } catch (error) {
             console.error("Failed to generate report:", error);
-            toast.error("Failed to open PDF preview. Please try again.");
+            toast.error("Failed to queue PDF preview. Please try again.");
         } finally {
             setIsLoadingReport(false);
         }

@@ -8,6 +8,7 @@ use App\Enums\StudentStatus;
 use App\Exports\EnrollmentReportExport;
 use App\Jobs\GenerateAssessmentPdfJob;
 use App\Jobs\GenerateBulkAssessmentsJob;
+use App\Jobs\GenerateEnrollmentReportPreviewPdfJob;
 use App\Models\ClassEnrollment;
 use App\Models\Classes;
 use App\Models\Resource;
@@ -1969,7 +1970,7 @@ final class AdministratorEnrollmentManagementController extends Controller
         return response()->json($payload);
     }
 
-    public function enrollmentReportPreviewPdf(Request $request, GeneralSettingsService $settingsService): BinaryFileResponse|\Illuminate\Http\Response
+    public function enrollmentReportPreviewPdf(Request $request, GeneralSettingsService $settingsService): JsonResponse
     {
         $validated = $this->validateEnrollmentReportFilters($request);
         $payload = $this->buildEnrollmentReportPayload($validated, $settingsService);
@@ -1977,63 +1978,11 @@ final class AdministratorEnrollmentManagementController extends Controller
 
         $downloadName = sprintf('enrollment-report-%s-%s.pdf', $reportType, now()->format('Y-m-d_His'));
 
-        $tempBasePath = tempnam(sys_get_temp_dir(), 'enrollment_report_');
+        GenerateEnrollmentReportPreviewPdfJob::dispatch($payload, $downloadName, (int) Auth::id());
 
-        if ($tempBasePath === false) {
-            abort(500, 'Failed to allocate temporary file for PDF generation.');
-        }
-
-        $tempPath = $tempBasePath.'.pdf';
-        rename($tempBasePath, $tempPath);
-
-        try {
-            $pdfService = app(\App\Services\PdfGenerationService::class);
-
-            $pdfService->generatePdfFromView('pdf.enrollment-report', ['data' => $payload], $tempPath, [
-                'headless' => true,
-                'no-sandbox' => true,
-                'disable-dev-shm-usage' => true,
-                'disable-gpu' => true,
-                'no-first-run' => true,
-                'disable-background-timer-throttling' => true,
-                'disable-backgrounding-occluded-windows' => true,
-                'disable-renderer-backgrounding' => true,
-                'print-to-pdf-no-header' => true,
-                'run-all-compositor-stages-before-draw' => true,
-                'disable-extensions' => true,
-                'virtual-time-budget' => 10000,
-            ]);
-
-            return response()->file($tempPath, [
-                'Content-Type' => 'application/pdf',
-                'Content-Disposition' => 'inline; filename="'.$downloadName.'"',
-            ])->deleteFileAfterSend(true);
-        } catch (Exception $e) {
-            \Illuminate\Support\Facades\Log::warning('Primary renderer failed for enrollment report preview PDF. Falling back to FPDF.', [
-                'error' => $e->getMessage(),
-                'filters' => $validated,
-            ]);
-
-            if (file_exists($tempPath)) {
-                unlink($tempPath);
-            }
-
-            try {
-                $pdfBinary = $this->generateEnrollmentReportPdfFallback($payload);
-
-                return response($pdfBinary, 200, [
-                    'Content-Type' => 'application/pdf',
-                    'Content-Disposition' => 'inline; filename="'.$downloadName.'"',
-                ]);
-            } catch (Exception $fallbackException) {
-                \Illuminate\Support\Facades\Log::error('Fallback renderer also failed for enrollment report preview PDF', [
-                    'error' => $fallbackException->getMessage(),
-                    'filters' => $validated,
-                ]);
-
-                abort(500, 'Failed to generate PDF preview.');
-            }
-        }
+        return response()->json([
+            'message' => 'Enrollment report preview queued. You will be notified when the PDF is ready.',
+        ], 202);
     }
 
     public function enrollmentReportExport(Request $request, GeneralSettingsService $settingsService): BinaryFileResponse

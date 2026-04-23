@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Enums\UserRole;
+use App\Jobs\GenerateEnrollmentReportPreviewPdfJob;
 use App\Models\Course;
 use App\Models\Department;
 use App\Models\GeneralSetting;
@@ -12,6 +13,7 @@ use App\Models\Subject;
 use App\Models\SubjectEnrollment;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Schema;
 
 beforeEach(function (): void {
@@ -338,7 +340,9 @@ it('filters enrolled by course report by course and year level', function (): vo
         ->assertJsonPath('report.students.0.course', 'BSIT');
 });
 
-it('returns enrollment report preview as pdf', function (): void {
+it('queues enrollment report preview PDF generation', function (): void {
+    Bus::fake();
+
     $user = User::factory()->create(['role' => UserRole::Admin]);
 
     $department = Department::factory()->withNameAndCode('Information Technology', 'IT')->create();
@@ -355,8 +359,10 @@ it('returns enrollment report preview as pdf', function (): void {
     ]);
 
     $response = $this->actingAs($user)
-        ->get(portalUrlForAdministrators('/administrators/enrollments/reports/preview-pdf?report_type=enrolled_by_course&course_filter=all&department_filter=all&year_level_filter=all&subject_filter=all&status_filter=active'));
+        ->getJson(portalUrlForAdministrators('/administrators/enrollments/reports/preview-pdf?report_type=enrolled_by_course&course_filter=all&department_filter=all&year_level_filter=all&subject_filter=all&status_filter=active'));
 
-    $response->assertOk();
-    expect($response->headers->get('Content-Type'))->toContain('application/pdf');
+    $response->assertAccepted()
+        ->assertJsonPath('message', 'Enrollment report preview queued. You will be notified when the PDF is ready.');
+
+    Bus::assertDispatched(GenerateEnrollmentReportPreviewPdfJob::class);
 });

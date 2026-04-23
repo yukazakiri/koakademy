@@ -11,6 +11,8 @@ use App\Http\Requests\StoreClassPostRequest;
 use App\Http\Requests\UpdateAttendanceRecordsRequest;
 use App\Http\Requests\UpdateAttendanceSessionRequest;
 use App\Http\Requests\UpdateClassSchedulesRequest;
+use App\Jobs\GenerateAttendancePdfJob;
+use App\Jobs\GenerateStudentListPdfJob;
 use App\Models\ClassAttendanceRecord;
 use App\Models\ClassAttendanceSession;
 use App\Models\ClassEnrollment;
@@ -1319,7 +1321,17 @@ final class FacultyClassController extends Controller
         $fileName = sprintf('attendance-%s-%s-%s', Str::slug($subjectCode), Str::slug($section), now()->format('Y-m-d'));
 
         if ($format === 'pdf') {
-            return $this->generateAttendancePdf($class, $sessions, $studentData, $primarySubject, $fileName);
+            GenerateAttendancePdfJob::dispatch($class->id, (int) Auth::id());
+
+            $message = 'Attendance PDF export started. You will receive a notification once the file is ready.';
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => $message,
+                ], 202);
+            }
+
+            return redirect()->back()->with('success', $message);
         }
 
         // Default: Excel/CSV format
@@ -1336,12 +1348,11 @@ final class FacultyClassController extends Controller
         $format = $request->query('format', 'excel');
 
         if ($format === 'pdf') {
-            // Dispatch job for PDF generation
-            \App\Jobs\GenerateStudentListPdfJob::dispatch($class, Auth::id());
+            GenerateStudentListPdfJob::dispatch($class, (int) Auth::id());
 
             return response()->json([
                 'message' => 'PDF export started',
-            ]);
+            ], 202);
         }
 
         // Default: Excel/CSV format
@@ -1394,80 +1405,21 @@ final class FacultyClassController extends Controller
     /**
      * Generate and download student list PDF immediately (no queue).
      */
-    public function downloadStudentListPdf(Classes $class): \Symfony\Component\HttpFoundation\Response
+    public function downloadStudentListPdf(Request $request, Classes $class): \Symfony\Component\HttpFoundation\Response
     {
         $this->assertFacultyOwnsClass($class);
 
-        $enrolledStudents = $class->class_enrollments()
-            ->with([
-                'student:id,student_id,first_name,last_name,middle_name,course_id,academic_year',
-                'student.course:id,code',
-            ])
-            ->where('status', true)
-            ->get()
-            ->sortBy([
-                ['student.last_name', 'asc'],
-                ['student.first_name', 'asc'],
-            ]);
+        GenerateStudentListPdfJob::dispatch($class, (int) Auth::id());
 
-        $data = [
-            'class' => $class,
-            'students' => $enrolledStudents,
-            'generated_at' => now()->format('F j, Y \a\t g:i A'),
-            'total_students' => $enrolledStudents->count(),
-        ];
+        $message = 'Student list PDF export started. You will receive a notification once the file is ready.';
 
-        $downloadName = sprintf(
-            'student-list-%s-%s-%s.pdf',
-            Str::slug($class->subject_code ?? 'class'),
-            Str::slug($class->section ?? 'section'),
-            now()->format('Y-m-d_His')
-        );
-
-        $tempBasePath = tempnam(sys_get_temp_dir(), 'student_list_');
-
-        if ($tempBasePath === false) {
+        if ($request->expectsJson()) {
             return response()->json([
-                'error' => 'Failed to allocate temporary file for PDF generation.',
-            ], 500);
+                'message' => $message,
+            ], 202);
         }
 
-        $tempPath = $tempBasePath.'.pdf';
-        rename($tempBasePath, $tempPath);
-
-        try {
-            $pdfService = app(\App\Services\PdfGenerationService::class);
-
-            $pdfService->generatePdfFromView('exports.student-list-pdf', $data, $tempPath, [
-                'headless' => true,
-                'no-sandbox' => true,
-                'disable-dev-shm-usage' => true,
-                'disable-gpu' => true,
-                'no-first-run' => true,
-                'disable-background-timer-throttling' => true,
-                'disable-backgrounding-occluded-windows' => true,
-                'disable-renderer-backgrounding' => true,
-                'print-to-pdf-no-header' => true,
-                'run-all-compositor-stages-before-draw' => true,
-                'disable-extensions' => true,
-                'virtual-time-budget' => 10000,
-            ]);
-
-            return response()->download($tempPath, $downloadName)->deleteFileAfterSend(true);
-        } catch (Exception $e) {
-            \Illuminate\Support\Facades\Log::error('Failed to generate student list PDF (direct download)', [
-                'class_id' => $class->id,
-                'error' => $e->getMessage(),
-            ]);
-
-            if (file_exists($tempPath)) {
-                unlink($tempPath);
-            }
-
-            return response()->json([
-                'error' => 'Failed to generate PDF: '.$e->getMessage(),
-            ], 500);
-        }
+        return redirect()->back()->with('success', $message);
     }
 
     /**

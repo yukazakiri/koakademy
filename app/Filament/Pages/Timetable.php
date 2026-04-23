@@ -891,9 +891,7 @@ final class Timetable extends Page implements HasForms, HasTable
             // Use PdfGenerationService for Docker/Sail-friendly PDF generation
             $pdfService = app(PdfGenerationService::class);
 
-            $pdfService->generatePdfFromHtml($html, $outputPath, [
-                'landscape' => true,
-            ]);
+            $pdfService->generatePdfFromHtml($html, $outputPath, [], 'timetable_landscape');
 
             // Verify the file was actually created
             if (! file_exists($outputPath)) {
@@ -1134,9 +1132,7 @@ final class Timetable extends Page implements HasForms, HasTable
             // Use PdfGenerationService for Docker/Sail-friendly PDF generation
             $pdfService = app(PdfGenerationService::class);
 
-            $pdfService->generatePdfFromHtml($html, $outputPath, [
-                'landscape' => false,
-            ]);
+            $pdfService->generatePdfFromHtml($html, $outputPath, [], 'timetable_portrait');
 
             // Verify the file was actually created
             if (! file_exists($outputPath)) {

@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Jobs;
 
+use App\Models\Resource;
 use App\Models\StudentEnrollment;
 use App\Models\User;
 use App\Notifications\PdfGenerationCompleted;
 use App\Services\GeneralSettingsService;
 use App\Services\PdfGenerationService;
+use App\Support\ResourceStorageLocator;
 use App\Support\StreamedStorage;
 use Exception;
 use Illuminate\Bus\Queueable;
@@ -95,10 +97,11 @@ final class GenerateAssessmentPdfJob implements ShouldQueue
 
             if (
                 $existingResource &&
-                file_exists($existingResource->file_path)
+                $this->resourceExistsOnDisk($existingResource)
             ) {
                 Log::info('Using existing recent PDF', [
                     'job_id' => $this->jobId,
+                    'disk' => $existingResource->disk,
                     'existing_path' => $existingResource->file_path,
                 ]);
                 $this->updateProgress(100, 'Using existing PDF');
@@ -172,6 +175,15 @@ final class GenerateAssessmentPdfJob implements ShouldQueue
         return $this->jobId;
     }
 
+    private function resourceExistsOnDisk(Resource $resource): bool
+    {
+        $disk = is_string($resource->disk) && $resource->disk !== ''
+            ? $resource->disk
+            : (string) config('filesystems.default');
+
+        return ResourceStorageLocator::exists($disk, (string) $resource->file_path);
+    }
+
     /**
      * Generate the PDF using PdfGenerationService
      */
@@ -226,15 +238,7 @@ final class GenerateAssessmentPdfJob implements ShouldQueue
 
         try {
             // Use PdfGenerationService to generate PDF from view
-            $pdfService->generatePdfFromView('pdf.assesment-form', $data, $temporaryFilePath, [
-                'format' => 'A4',
-                'landscape' => true,
-                'print_background' => true,
-                'margin_top' => '10mm',
-                'margin_bottom' => '10mm',
-                'margin_left' => '10mm',
-                'margin_right' => '10mm',
-            ]);
+            $pdfService->generatePdfFromView('pdf.assesment-form', $data, $temporaryFilePath, [], 'assessment_form');
 
             $this->updateProgress(70, 'Converting to PDF...');
 
@@ -301,6 +305,8 @@ final class GenerateAssessmentPdfJob implements ShouldQueue
                     ),
                     'generation_method' => 'browsershot_job',
                     'generated_at' => format_timestamp_now(),
+                    'storage_disk' => config('filesystems.default'),
+                    'storage_key' => $pdfPath,
                     'is_new_version' => true,
                 ],
             ]);
@@ -331,6 +337,8 @@ final class GenerateAssessmentPdfJob implements ShouldQueue
                         ),
                         'generation_method' => 'browsershot_job',
                         'generated_at' => format_timestamp_now(),
+                        'storage_disk' => config('filesystems.default'),
+                        'storage_key' => $pdfPath,
                     ],
                 ]
             );

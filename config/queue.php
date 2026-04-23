@@ -74,6 +74,15 @@ return [
             'after_commit' => false,
         ],
 
+        'redis-pdf' => [
+            'driver' => 'redis',
+            'connection' => 'queue-pdf',
+            'queue' => env('REDIS_PDF_QUEUE', 'pdf-generation'),
+            'retry_after' => (int) env('REDIS_PDF_QUEUE_RETRY_AFTER', 7200),
+            'block_for' => null,
+            'after_commit' => false,
+        ],
+
     ],
 
     /*

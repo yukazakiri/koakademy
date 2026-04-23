@@ -16,6 +16,7 @@ use App\Models\ShsTrack;
 use App\Models\Student;
 use App\Models\Subject;
 use App\Models\User;
+use App\Services\GeneralSettingsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -26,7 +27,7 @@ use Inertia\Response;
 
 final class AdministratorSchedulingAnalyticsController extends Controller
 {
-    public function index(Request $request): Response|\Illuminate\Http\RedirectResponse
+    public function index(Request $request, GeneralSettingsService $generalSettingsService): Response|\Illuminate\Http\RedirectResponse
     {
         $user = Auth::user();
 
@@ -247,6 +248,10 @@ final class AdministratorSchedulingAnalyticsController extends Controller
                     ['value' => '2', 'label' => '2nd Semester'],
                     ['value' => 'summer', 'label' => 'Summer'],
                 ],
+            ],
+            'defaults' => [
+                'semester' => (string) $generalSettingsService->getCurrentSemester(),
+                'school_year' => $generalSettingsService->getCurrentSchoolYearString(),
             ],
         ]);
     }

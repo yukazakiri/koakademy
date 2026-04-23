@@ -8,54 +8,50 @@ use Deprecated;
 use Exception;
 use Illuminate\Support\Facades\Log;
 use setasign\Fpdi\Fpdi;
+use Spatie\Browsershot\Browsershot;
+use Spatie\LaravelPdf\Facades\Pdf;
+use Spatie\LaravelPdf\PdfBuilder;
 
 final class PdfGenerationService
 {
     /**
-     * Generate PDF from HTML using Chrome/Google Chrome
+     * Generate PDF from HTML using spatie/laravel-pdf.
+     *
+     * @param  array<string, mixed>  $options
      */
     public function generatePdfFromHtml(string $html, string $outputPath, array $options = []): void
     {
-        // Create temp HTML file
-        $tempHtmlFile = tempnam(sys_get_temp_dir(), 'pdf_').'.html';
-        file_put_contents($tempHtmlFile, $html);
+        $this->ensureOutputDirectory($outputPath);
 
-        try {
-            $chromePath = $this->findChromeExecutable();
+        $pdfBuilder = Pdf::html($html);
+        $this->applyPdfOptions($pdfBuilder, $options);
+        $pdfBuilder->save($outputPath);
 
-            // Ensure output directory exists
-            $outputDir = dirname($outputPath);
-            if (! file_exists($outputDir)) {
-                mkdir($outputDir, 0755, true);
-                Log::info("Created output directory: {$outputDir}");
-            }
-
-            // Try multiple Chrome approaches for robustness
-            try {
-                $chromePath = $this->findChromeExecutable();
-                $this->attemptPdfGeneration($chromePath, $tempHtmlFile, $outputPath, $options);
-            } catch (Exception $e) {
-                Log::warning('Direct Chrome detection/generation failed: '.$e->getMessage().'. Attempting Browsershot fallback.');
-                $this->generateWithBrowsershotFallback($tempHtmlFile, $outputPath);
-            }
-
-            Log::info("PDF generated successfully: {$outputPath}");
-
-        } finally {
-            // Clean up temp file
-            if (file_exists($tempHtmlFile)) {
-                unlink($tempHtmlFile);
-            }
-        }
+        Log::info('PDF generated from HTML using Laravel PDF', [
+            'output_path' => $outputPath,
+            'driver' => $options['driver'] ?? config('laravel-pdf.driver'),
+        ]);
     }
 
     /**
      * Generate PDF from a view with data
+     *
+     * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>  $options
      */
     public function generatePdfFromView(string $viewName, array $data, string $outputPath, array $options = []): void
     {
-        $html = view($viewName, $data)->render();
-        $this->generatePdfFromHtml($html, $outputPath, $options);
+        $this->ensureOutputDirectory($outputPath);
+
+        $pdfBuilder = Pdf::view($viewName, $data);
+        $this->applyPdfOptions($pdfBuilder, $options);
+        $pdfBuilder->save($outputPath);
+
+        Log::info('PDF generated from view using Laravel PDF', [
+            'view' => $viewName,
+            'output_path' => $outputPath,
+            'driver' => $options['driver'] ?? config('laravel-pdf.driver'),
+        ]);
     }
 
     /**
@@ -200,330 +196,244 @@ final class PdfGenerationService
     }
 
     /**
-     * Fallback to default Browsershot configuration
+     * @param  array<string, mixed>  $options
      */
-    private function generateWithBrowsershotFallback(string $htmlFile, string $outputPath): void
+    private function applyPdfOptions(PdfBuilder $pdfBuilder, array $options): void
     {
-        Log::info('Attempting PDF generation with Browsershot fallback');
+        $normalizedOptions = $this->normalizeOptions($options);
 
-        $html = file_get_contents($htmlFile);
+        if (isset($normalizedOptions['driver']) && is_string($normalizedOptions['driver'])) {
+            $pdfBuilder->driver($normalizedOptions['driver']);
+        }
 
-        // Use Browsershot with standard options but default executable path
-        \Spatie\Browsershot\Browsershot::html($html)
-            ->format('A4')
-            ->landscape()
-            ->margins(10, 10, 10, 10)
-            ->noSandbox() // Essential for Docker environments
-            ->setOption('args', ['--disable-dev-shm-usage', '--disable-gpu']) // Additional stability options
-            ->save($outputPath);
+        if (isset($normalizedOptions['format']) && is_string($normalizedOptions['format'])) {
+            $pdfBuilder->format($normalizedOptions['format']);
+        }
 
-        if (file_exists($outputPath) && filesize($outputPath) > 0) {
-            Log::info('Browsershot fallback succeeded');
+        if (($normalizedOptions['landscape'] ?? false) === true || ($normalizedOptions['orientation'] ?? null) === 'landscape') {
+            $pdfBuilder->landscape();
+        }
 
+        $margins = $this->resolveMargins($normalizedOptions);
+        if ($margins !== null) {
+            $pdfBuilder->margins(
+                $margins['top'],
+                $margins['right'],
+                $margins['bottom'],
+                $margins['left'],
+                $margins['unit']
+            );
+        }
+
+        if (
+            isset($normalizedOptions['paper-width'], $normalizedOptions['paper-height'])
+            && is_numeric($normalizedOptions['paper-width'])
+            && is_numeric($normalizedOptions['paper-height'])
+        ) {
+            $pdfBuilder->paperSize(
+                (float) $normalizedOptions['paper-width'],
+                (float) $normalizedOptions['paper-height'],
+                isset($normalizedOptions['paper-unit']) && is_string($normalizedOptions['paper-unit'])
+                    ? $normalizedOptions['paper-unit']
+                    : 'mm'
+            );
+        }
+
+        if (isset($normalizedOptions['scale']) && is_numeric($normalizedOptions['scale'])) {
+            $pdfBuilder->scale((float) $normalizedOptions['scale']);
+        }
+
+        if (isset($normalizedOptions['page-ranges']) && is_string($normalizedOptions['page-ranges'])) {
+            $pdfBuilder->pageRanges($normalizedOptions['page-ranges']);
+        }
+
+        $this->applyBrowsershotOptions($pdfBuilder, $normalizedOptions);
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    private function applyBrowsershotOptions(PdfBuilder $pdfBuilder, array $options): void
+    {
+        $arguments = $this->buildBrowsershotArguments($options);
+
+        if ($arguments === [] && ! array_key_exists('print-background', $options)) {
             return;
         }
 
-        throw new Exception('Browsershot fallback failed to generate file');
-    }
+        $printBackground = $options['print-background'] ?? null;
 
-    /**
-     * Attempt PDF generation with multiple Chrome fallback approaches
-     */
-    private function attemptPdfGeneration(string $chromePath, string $htmlFile, string $outputPath, array $options): void
-    {
-        $attempts = [
-            'standard' => fn () => $this->generateWithStandardChrome($chromePath, $htmlFile, $outputPath, $options),
-            'minimal' => fn () => $this->generateWithMinimalChrome($chromePath, $htmlFile, $outputPath),
-            'alternative' => fn () => $this->generateWithAlternativePaths($htmlFile, $outputPath),
-        ];
-
-        $lastError = null;
-
-        foreach ($attempts as $attemptName => $attemptFn) {
-            try {
-                Log::info("Attempting PDF generation with method: {$attemptName}");
-
-                $attemptFn();
-
-                // Verify the PDF was created and is not empty
-                if (file_exists($outputPath) && filesize($outputPath) > 0) {
-                    Log::info("PDF generation successful with method: {$attemptName}");
-
-                    return;
-                }
-
-                Log::warning("PDF generation method {$attemptName} produced empty or no file");
-
-            } catch (Exception $e) {
-                $lastError = $e;
-                Log::warning("PDF generation method {$attemptName} failed: ".$e->getMessage());
-
-                // Clean up any partial file
-                if (file_exists($outputPath)) {
-                    unlink($outputPath);
-                }
-            }
-        }
-
-        // All attempts failed
-        throw $lastError ?: new Exception('All Chrome PDF generation methods failed');
-    }
-
-    /**
-     * Standard Chrome generation with full options
-     */
-    private function generateWithStandardChrome(string $chromePath, string $htmlFile, string $outputPath, array $options): void
-    {
-        $command = $this->buildChromeCommand($chromePath, $htmlFile, $outputPath, $options);
-        $this->executeChromeCommand($command, $outputPath, 'standard');
-    }
-
-    /**
-     * Minimal Chrome generation with essential options only
-     */
-    private function generateWithMinimalChrome(string $chromePath, string $htmlFile, string $outputPath): void
-    {
-        $minimalOptions = [
-            'headless' => true,
-            'no-sandbox' => true,
-            'disable-gpu' => true,
-        ];
-
-        $command = $this->buildChromeCommand($chromePath, $htmlFile, $outputPath, $minimalOptions);
-        $this->executeChromeCommand($command, $outputPath, 'minimal');
-    }
-
-    /**
-     * Try alternative Google Chrome paths
-     */
-    private function generateWithAlternativePaths(string $htmlFile, string $outputPath): void
-    {
-        // Focus only on Google Chrome paths as requested
-        $alternativePaths = [
-            '/usr/bin/google-chrome-stable',
-            '/usr/bin/google-chrome',
-            '/usr/local/bin/google-chrome-stable',
-            '/usr/local/bin/google-chrome',
-            '/opt/google/chrome/chrome',
-            '/snap/bin/google-chrome-stable',
-            '/snap/bin/google-chrome',
-            '/usr/bin/chromium',
-        ];
-
-        foreach ($alternativePaths as $path) {
-            if (file_exists($path)) {
-                try {
-                    Log::info("Trying alternative Google Chrome path: {$path}");
-
-                    $minimalOptions = [
-                        'headless' => true,
-                        'no-sandbox' => true,
-                        'disable-gpu' => true,
-                    ];
-
-                    $command = $this->buildChromeCommand($path, $htmlFile, $outputPath, $minimalOptions);
-                    $this->executeChromeCommand($command, $outputPath, "alternative-{$path}");
-
-                    if (file_exists($outputPath) && filesize($outputPath) > 0) {
-                        Log::info("Alternative Google Chrome path {$path} succeeded");
-
-                        return;
-                    }
-                } catch (Exception $e) {
-                    Log::warning("Alternative Google Chrome path {$path} failed: ".$e->getMessage());
-
-                    continue;
-                }
-            } else {
-                Log::info("Alternative Google Chrome path not found: {$path}");
-            }
-        }
-
-        throw new Exception('All alternative Google Chrome paths failed');
-    }
-
-    /**
-     * Execute Chrome command with enhanced error handling for Docker environments
-     */
-    private function executeChromeCommand(string $command, string $outputPath, string $method): void
-    {
-        Log::info("Executing Chrome command ({$method}): {$command}");
-        Log::info('Current working directory: '.getcwd());
-        Log::info('User: '.exec('whoami'));
-        Log::info('Environment DISPLAY: '.(getenv('DISPLAY') ?: 'Not set'));
-
-        // Docker-friendly environment variables for Google Chrome
-        $envVars = [
-            'DISPLAY' => ':99', // Virtual display for Docker
-            'HOME' => '/tmp',
-            'CHROME_BIN' => '/usr/bin/google-chrome-stable',
-            'GOOGLE_CHROME_BIN' => '/usr/bin/google-chrome-stable',
-        ];
-
-        // Build command with environment variables
-        $envCommand = '';
-        foreach ($envVars as $key => $value) {
-            $envCommand .= "{$key}=".escapeshellarg($value).' ';
-        }
-
-        // Create a temporary file for stderr capture
-        $stderrFile = tempnam(sys_get_temp_dir(), 'chrome_stderr_');
-
-        try {
-            // Execute with proper error handling
-            $output = [];
-            $returnCode = 0;
-
-            // Redirect stderr to a file for better error capture
-            $commandWithStderr = $command.' 2>'.escapeshellarg($stderrFile);
-            exec($commandWithStderr, $output, $returnCode);
-
-            // Read stderr content
-            $stderrContent = file_exists($stderrFile) ? file_get_contents($stderrFile) : '';
-
-            Log::info("Chrome execution ({$method}) - Return code: {$returnCode}");
-            Log::info("Chrome execution ({$method}) - stdout: ".implode("\n", $output));
-            Log::info("Chrome execution ({$method}) - stderr: ".$stderrContent);
-            Log::info('Output file exists: '.(file_exists($outputPath) ? 'Yes' : 'No'));
-
-            if (file_exists($outputPath)) {
-                Log::info('Output file size: '.filesize($outputPath).' bytes');
+        $pdfBuilder->withBrowsershot(function (Browsershot $browsershot) use ($arguments, $printBackground): void {
+            if ($arguments !== []) {
+                $browsershot->setOption('args', $arguments);
             }
 
-            if ($returnCode !== 0 || ! file_exists($outputPath) || filesize($outputPath) === 0) {
-                $errorMessage = "Chrome execution failed ({$method}). Return code: {$returnCode}. ";
-                $errorMessage .= 'stdout: '.implode("\n", $output).'. ';
-                $errorMessage .= 'stderr: '.$stderrContent;
-
-                // Additional Docker-specific debugging
-                $errorMessage .= '. Docker environment info: ';
-                $errorMessage .= 'User: '.exec('whoami').'. ';
-                $errorMessage .= 'PWD: '.getcwd().'. ';
-                $errorMessage .= 'Available Chrome binaries: ';
-
-                $chromeBinaries = [];
-                exec('ls /usr/bin/ 2>/dev/null | grep -i chrome', $chromeBinaries);
-                exec('ls /usr/bin/ 2>/dev/null | grep -i chromium', $chromeBinaries);
-                $errorMessage .= implode(', ', $chromeBinaries);
-
-                throw new Exception($errorMessage);
+            if ($printBackground === true) {
+                $browsershot->showBackground();
             }
 
-        } finally {
-            // Clean up stderr file
-            if (file_exists($stderrFile)) {
-                unlink($stderrFile);
+            if ($printBackground === false) {
+                $browsershot->hideBackground();
             }
-        }
+        });
     }
 
     /**
-     * Build Chrome command with Docker-friendly options
+     * @param  array<string, mixed>  $options
+     * @return array<string, mixed>
      */
-    private function buildChromeCommand(string $chromePath, string $htmlFile, string $outputPath, array $options): string
+    private function normalizeOptions(array $options): array
     {
-        // Simplified Docker-optimized default options to avoid timeouts
-        $defaultOptions = [
-            'headless' => true,
-            'no-sandbox' => true,
-            'disable-dev-shm-usage' => true,
-            'disable-gpu' => true,
-            'virtual-time-budget' => 5000, // Reduced timeout
-            'disable-extensions' => true,
-            'no-first-run' => true,
-            'no-default-browser-check' => true,
-            'disable-background-timer-throttling' => true,
-            'disable-backgrounding-occluded-windows' => true,
-            'disable-renderer-backgrounding' => true,
-        ];
-
-        $options = array_merge($defaultOptions, $options);
-
-        $commandParts = [escapeshellarg($chromePath)];
+        $normalized = [];
 
         foreach ($options as $key => $value) {
-            if (is_bool($value)) {
-                if ($value) {
-                    $commandParts[] = "--{$key}";
-                }
-            } else {
-                $commandParts[] = "--{$key}=".escapeshellarg((string) $value);
+            if (! is_string($key)) {
+                continue;
             }
+
+            $normalizedKey = mb_strtolower(str_replace('_', '-', $key));
+            $normalized[$normalizedKey] = $value;
         }
 
-        $commandParts[] = '--print-to-pdf='.escapeshellarg($outputPath);
-        $commandParts[] = escapeshellarg($htmlFile);
-
-        return implode(' ', $commandParts);
+        return $normalized;
     }
 
     /**
-     * Find Chrome executable path (prioritize Google Chrome Stable)
+     * @param  array<string, mixed>  $options
+     * @return array{top: float, right: float, bottom: float, left: float, unit: string}|null
      */
-    private function findChromeExecutable(): string
+    private function resolveMargins(array $options): ?array
     {
-        // Prioritize Google Chrome Stable as requested for Docker environment
-        $possiblePaths = [
-            '/usr/bin/google-chrome-stable',
-            '/usr/bin/google-chrome',
-            '/usr/local/bin/google-chrome-stable',
-            '/usr/local/bin/google-chrome',
-            '/opt/google/chrome/chrome',
-            '/snap/bin/google-chrome-stable',
-            '/snap/bin/google-chrome',
+        $marginDefinitions = [];
+        $sharedUnit = 'mm';
+
+        if (isset($options['margins']) && is_array($options['margins'])) {
+            $marginDefinitions['top'] = $options['margins']['top'] ?? null;
+            $marginDefinitions['right'] = $options['margins']['right'] ?? null;
+            $marginDefinitions['bottom'] = $options['margins']['bottom'] ?? null;
+            $marginDefinitions['left'] = $options['margins']['left'] ?? null;
+
+            if (isset($options['margins']['unit']) && is_string($options['margins']['unit'])) {
+                $sharedUnit = mb_strtolower($options['margins']['unit']);
+            }
+        } else {
+            $marginDefinitions['top'] = $options['margin-top'] ?? null;
+            $marginDefinitions['right'] = $options['margin-right'] ?? null;
+            $marginDefinitions['bottom'] = $options['margin-bottom'] ?? null;
+            $marginDefinitions['left'] = $options['margin-left'] ?? null;
+        }
+
+        if ($marginDefinitions['top'] === null && $marginDefinitions['right'] === null && $marginDefinitions['bottom'] === null && $marginDefinitions['left'] === null) {
+            return null;
+        }
+
+        $parsedMargins = [];
+
+        foreach (['top', 'right', 'bottom', 'left'] as $side) {
+            [$value, $unit] = $this->parseMarginValue($marginDefinitions[$side], $sharedUnit);
+            $parsedMargins[$side] = $value;
+            $sharedUnit = $unit;
+        }
+
+        $parsedMargins['unit'] = $sharedUnit;
+
+        return $parsedMargins;
+    }
+
+    /**
+     * @return array{0: float, 1: string}
+     */
+    private function parseMarginValue(mixed $value, string $fallbackUnit): array
+    {
+        if ($value === null) {
+            return [0.0, $fallbackUnit];
+        }
+
+        if (is_int($value) || is_float($value)) {
+            return [(float) $value, $fallbackUnit];
+        }
+
+        if (! is_string($value)) {
+            return [0.0, $fallbackUnit];
+        }
+
+        if (preg_match('/^(-?\d+(?:\.\d+)?)\s*(mm|cm|in|px|pt)?$/i', mb_trim($value), $matches) === 1) {
+            $numericValue = (float) $matches[1];
+            $unit = isset($matches[2]) ? mb_strtolower($matches[2]) : $fallbackUnit;
+
+            return [$numericValue, $unit];
+        }
+
+        return [0.0, $fallbackUnit];
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     * @return array<int, string>
+     */
+    private function buildBrowsershotArguments(array $options): array
+    {
+        $reservedOptionKeys = [
+            'driver',
+            'format',
+            'landscape',
+            'orientation',
+            'margins',
+            'margin-top',
+            'margin-right',
+            'margin-bottom',
+            'margin-left',
+            'paper-width',
+            'paper-height',
+            'paper-unit',
+            'scale',
+            'page-ranges',
+            'print-background',
         ];
 
-        Log::info('Searching for Google Chrome executable in Docker environment');
-        Log::info('Current working directory: '.getcwd());
-        Log::info('User: '.exec('whoami'));
+        $arguments = [];
 
-        foreach ($possiblePaths as $path) {
-            Log::info("Checking Google Chrome path: {$path}");
-            if (file_exists($path)) {
-                Log::info("Found Google Chrome at: {$path}");
-
-                // Test if it's executable
-                if (is_executable($path)) {
-                    Log::info("Google Chrome is executable: {$path}");
-
-                    // Test Chrome version
-                    $versionOutput = [];
-                    exec($path.' --version 2>&1', $versionOutput, $returnCode);
-                    Log::info("Google Chrome version test ({$path}) - Return code: {$returnCode}, Output: ".implode("\n", $versionOutput));
-
-                    return $path;
-                }
-                Log::warning("Google Chrome found but not executable: {$path}");
-
+        foreach ($options as $key => $value) {
+            if (in_array($key, $reservedOptionKeys, true)) {
+                continue;
             }
+
+            if ($key === 'args' && is_array($value)) {
+                foreach ($value as $argument) {
+                    if (is_string($argument)) {
+                        $arguments[] = $argument;
+                    }
+                }
+
+                continue;
+            }
+
+            if ($value === true) {
+                $arguments[] = "--{$key}";
+
+                continue;
+            }
+
+            if ($value === false || $value === null || is_array($value) || is_object($value)) {
+                continue;
+            }
+
+            $arguments[] = "--{$key}={$value}";
         }
 
-        // Try to find Chrome using 'which' command (Google Chrome only)
-        $chromeCommands = ['google-chrome-stable', 'google-chrome'];
-        foreach ($chromeCommands as $chromeCommand) {
-            $whichOutput = [];
-            exec("which {$chromeCommand} 2>&1", $whichOutput, $returnCode);
-            if ($returnCode === 0 && (isset($whichOutput[0]) && ($whichOutput[0] !== '' && $whichOutput[0] !== '0'))) {
-                $foundPath = mb_trim($whichOutput[0]);
-                Log::info("Found Google Chrome via 'which': {$foundPath}");
-                if (file_exists($foundPath) && is_executable($foundPath)) {
-                    return $foundPath;
-                }
-            }
+        return $arguments;
+    }
+
+    private function ensureOutputDirectory(string $outputPath): void
+    {
+        $outputDirectory = dirname($outputPath);
+
+        if (is_dir($outputDirectory)) {
+            return;
         }
 
-        // Log all available Google Chrome binaries for debugging
-        $debugDirs = ['/usr/bin', '/usr/local/bin', '/opt', '/snap/bin'];
-        foreach ($debugDirs as $dir) {
-            if (is_dir($dir)) {
-                $chromeBinaries = [];
-                exec("ls {$dir} 2>/dev/null | grep -i chrome", $chromeBinaries);
-                if ($chromeBinaries !== []) {
-                    Log::info("Found Google Chrome binaries in {$dir}: ".implode(', ', $chromeBinaries));
-                }
-            }
+        if (! mkdir($outputDirectory, 0755, true) && ! is_dir($outputDirectory)) {
+            throw new Exception("Unable to create PDF output directory: {$outputDirectory}");
         }
-
-        throw new Exception('Google Chrome executable not found. Please install Google Chrome Stable. Checked paths: '.implode(', ', $possiblePaths));
     }
 }

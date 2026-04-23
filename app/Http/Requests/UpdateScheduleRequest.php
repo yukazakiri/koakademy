@@ -28,6 +28,7 @@ final class UpdateScheduleRequest extends FormRequest
             'day_of_week' => ['required', 'string', 'in:Monday,Tuesday,Wednesday,Thursday,Friday,Saturday'],
             'start_time' => ['required', 'date_format:H:i'],
             'end_time' => ['required', 'date_format:H:i', 'after:start_time'],
+            'room_id' => ['nullable', 'integer', 'exists:rooms,id'],
         ];
     }
 

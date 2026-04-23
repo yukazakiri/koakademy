@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.4.2",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.4.2",
-  "commit": "c8ebbfd09b586bcb50a4d9c14f64cdd07018bd12",
+  "version": "1.1.0-dev.5.0",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.5.0",
+  "commit": "92e82f3987e723e67869319c2f739dd6645bc25a",
   "branch": "master",
-  "timestamp": "2026-04-23T13:27:57Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24837689860",
-  "release_type": "chore",
+  "timestamp": "2026-04-23T14:18:59Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24840168668",
+  "release_type": "feature",
   "changelog": {
-    "current": "Version 1.1.0-dev.4.2 - chore: ignore and remove generated Filament assets and TLS config",
-    "previous": "1.1.0-dev.4.1"
+    "current": "Version 1.1.0-dev.5.0 - feat(scheduling): add interactive class creation with drag-and-drop room assignment",
+    "previous": "1.1.0-dev.4.2"
   },
   "metadata": {
     "author": "yukazakiri",

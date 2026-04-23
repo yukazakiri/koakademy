@@ -102,7 +102,7 @@ final class ExportStudentDataJob implements ShouldQueue
             $filterSuffix .= '_year'.$exportJob->filters['year_level_filter'];
         }
 
-        $extension = $exportJob->format === 'pdf' ? 'html' : 'csv';
+        $extension = $exportJob->format === 'pdf' ? 'pdf' : 'csv';
 
         return sprintf('student_export_%s%s.%s', $timestamp, $filterSuffix, $extension);
     }

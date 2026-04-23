@@ -7,6 +7,7 @@ namespace App\Jobs;
 use App\Models\Classes;
 use App\Models\User;
 use App\Services\PdfGenerationService;
+use App\Support\StreamedStorage;
 use Exception;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
@@ -121,13 +122,17 @@ final class GenerateStudentListPdfJob implements ShouldQueue
                 'virtual-time-budget' => 10000,
             ];
 
-            $pdfService->generatePdfFromHtml($html, $tempPath, $pdfOptions);
+            try {
+                $pdfService->generatePdfFromHtml($html, $tempPath, $pdfOptions);
 
-            // Upload to configured storage
-            Storage::disk($disk)->put($path, file_get_contents($tempPath));
-
-            // Clean up temporary file
-            unlink($tempPath);
+                // Upload to configured storage
+                StreamedStorage::putFileFromPath($disk, $path, $tempPath);
+            } finally {
+                // Clean up temporary file
+                if (file_exists($tempPath)) {
+                    unlink($tempPath);
+                }
+            }
 
             Log::info('Student list PDF generated and uploaded successfully', [
                 'class_id' => $this->class->id,

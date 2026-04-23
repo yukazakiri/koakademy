@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Notifications\TimetablePdfFailedNotification;
 use App\Notifications\TimetablePdfGeneratedNotification;
 use App\Services\PdfGenerationService;
+use App\Support\StreamedStorage;
 use Exception;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -203,14 +204,19 @@ final class GenerateStudentTimetablePdfJob implements ShouldQueue
 
         // Generate PDF to temporary file first
         $tempPath = tempnam(sys_get_temp_dir(), 'pdf_').'.pdf';
-        $this->pdfService->generatePdfFromView('pdf.student-timetable', $viewData, $tempPath);
-
-        // Upload to configured storage
         $storagePath = $directory.'/'.$filename;
-        Storage::disk($disk)->put($storagePath, file_get_contents($tempPath));
 
-        // Clean up temporary file
-        unlink($tempPath);
+        try {
+            $this->pdfService->generatePdfFromView('pdf.student-timetable', $viewData, $tempPath);
+
+            // Upload to configured storage
+            StreamedStorage::putFileFromPath($disk, $storagePath, $tempPath);
+        } finally {
+            // Clean up temporary file
+            if (file_exists($tempPath)) {
+                unlink($tempPath);
+            }
+        }
 
         Log::info('PDF uploaded to storage', [
             'disk' => $disk,

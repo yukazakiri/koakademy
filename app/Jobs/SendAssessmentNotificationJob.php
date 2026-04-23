@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Notifications\MigrateToStudent;
 use App\Services\GeneralSettingsService;
 use App\Services\PdfGenerationService;
+use App\Support\StreamedStorage;
 use Exception;
 use Filament\Notifications\Notification;
 use Illuminate\Bus\Queueable;
@@ -310,42 +311,45 @@ final class SendAssessmentNotificationJob implements ShouldQueue
 
         // Generate to temporary file first (matches GenerateAssessmentPdfJob pattern)
         $temporaryFilePath = tempnam(sys_get_temp_dir(), 'pdf_').'.pdf';
-
-        Log::info('Generating PDF synchronously using PdfGenerationService', [
-            'job_id' => $this->jobId,
-            'temp_path' => $temporaryFilePath,
-            'target_filename' => $assessmentFilename,
-        ]);
-
-        // Use PdfGenerationService
-        $pdfService = app(PdfGenerationService::class);
-
-        $pdfService->generatePdfFromView(
-            'pdf.assesment-form',
-            $data,
-            $temporaryFilePath,
-            [
-                'format' => 'A4',
-                'landscape' => true,
-                'print_background' => true,
-                'margin_top' => '10mm',
-                'margin_bottom' => '10mm',
-                'margin_left' => '10mm',
-                'margin_right' => '10mm',
-            ]
-        );
-
-        // Verify file was created
-        if (! file_exists($temporaryFilePath) || filesize($temporaryFilePath) === 0) {
-            throw new Exception('PDF was not generated or is empty');
-        }
-
-        // Upload to configured storage with public visibility
         $relativePath = $storageDirectory.'/'.$assessmentFilename;
-        $storage->put($relativePath, file_get_contents($temporaryFilePath), ['visibility' => 'public']);
 
-        // Clean up temporary file
-        unlink($temporaryFilePath);
+        try {
+            Log::info('Generating PDF synchronously using PdfGenerationService', [
+                'job_id' => $this->jobId,
+                'temp_path' => $temporaryFilePath,
+                'target_filename' => $assessmentFilename,
+            ]);
+
+            // Use PdfGenerationService
+            $pdfService = app(PdfGenerationService::class);
+
+            $pdfService->generatePdfFromView(
+                'pdf.assesment-form',
+                $data,
+                $temporaryFilePath,
+                [
+                    'format' => 'A4',
+                    'landscape' => true,
+                    'print_background' => true,
+                    'margin_top' => '10mm',
+                    'margin_bottom' => '10mm',
+                    'margin_left' => '10mm',
+                    'margin_right' => '10mm',
+                ]
+            );
+
+            // Verify file was created
+            if (! file_exists($temporaryFilePath) || filesize($temporaryFilePath) === 0) {
+                throw new Exception('PDF was not generated or is empty');
+            }
+
+            // Upload to configured storage with public visibility
+            StreamedStorage::putFileFromPath($storageDisk, $relativePath, $temporaryFilePath, ['visibility' => 'public']);
+        } finally {
+            if (file_exists($temporaryFilePath)) {
+                unlink($temporaryFilePath);
+            }
+        }
 
         $assessmentPath = $storage->path($relativePath);
 

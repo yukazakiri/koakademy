@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 use Spatie\LaravelPdf\Jobs\GeneratePdfJob;
 
 return [
@@ -7,7 +9,43 @@ return [
      * The default driver to use for PDF generation.
      * Supported: "browsershot", "cloudflare", "dompdf", "gotenberg"
      */
-    'driver' => env('LARAVEL_PDF_DRIVER', 'browsershot'),
+    'driver' => env('LARAVEL_PDF_DRIVER', match (env('APP_ENV', 'production')) {
+        'local', 'development', 'testing' => env('LARAVEL_PDF_LOCAL_DRIVER', 'browsershot'),
+        'staging' => env('LARAVEL_PDF_STAGING_DRIVER', 'dompdf'),
+        default => env('LARAVEL_PDF_PRODUCTION_DRIVER', 'dompdf'),
+    }),
+
+    /*
+     * Driver strategy profiles by environment.
+     *
+     * Goal: keep production on a non-Chrome primary path.
+     */
+    'strategy' => [
+        'profiles' => [
+            'production' => [
+                'primary' => env('LARAVEL_PDF_PRODUCTION_DRIVER', 'dompdf'),
+                'fallback' => array_values(array_filter(array_map(
+                    static fn (string $driver): string => mb_trim($driver),
+                    explode(',', env('LARAVEL_PDF_PRODUCTION_FALLBACK', 'cloudflare,browsershot')),
+                ))),
+            ],
+            'staging' => [
+                'primary' => env('LARAVEL_PDF_STAGING_DRIVER', 'dompdf'),
+                'fallback' => array_values(array_filter(array_map(
+                    static fn (string $driver): string => mb_trim($driver),
+                    explode(',', env('LARAVEL_PDF_STAGING_FALLBACK', 'cloudflare,browsershot')),
+                ))),
+            ],
+            'local' => [
+                'primary' => env('LARAVEL_PDF_LOCAL_DRIVER', 'browsershot'),
+                'fallback' => array_values(array_filter(array_map(
+                    static fn (string $driver): string => mb_trim($driver),
+                    explode(',', env('LARAVEL_PDF_LOCAL_FALLBACK', 'dompdf')),
+                ))),
+            ],
+        ],
+        'rollback_driver' => env('LARAVEL_PDF_ROLLBACK_DRIVER', 'browsershot'),
+    ],
 
     /*
      * The job class used for queued PDF generation.

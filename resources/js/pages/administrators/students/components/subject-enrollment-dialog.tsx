@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { BookOpen, CheckCircle, ExternalLink, FileText } from "lucide-react";
+import { BookOpen, CheckCircle, ExternalLink, FileText, Trash2 } from "lucide-react";
 import type { FormEvent } from "react";
 import type { ChecklistHistoryRecord, ChecklistSubject, StudentOptions, SubjectEnrollmentFormData } from "../types";
 
@@ -22,6 +22,7 @@ interface SubjectEnrollmentDialogProps {
     errors: Partial<Record<keyof SubjectEnrollmentFormData, string>>;
     processing: boolean;
     onSubmit: (event: FormEvent) => void;
+    onDelete?: () => void;
 }
 
 export function SubjectEnrollmentDialog({
@@ -37,6 +38,7 @@ export function SubjectEnrollmentDialog({
     errors,
     processing,
     onSubmit,
+    onDelete,
 }: SubjectEnrollmentDialogProps) {
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -334,13 +336,30 @@ export function SubjectEnrollmentDialog({
                     </div>
 
                     <DialogFooter className="bg-muted/10 border-t p-6 pt-2">
-                        <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                            Cancel
-                        </Button>
-                        <Button type="submit" disabled={processing} className="gap-2">
-                            <CheckCircle className="h-4 w-4" />
-                            Save Changes
-                        </Button>
+                        <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+                            <div>
+                                {onDelete && selectedEnrollmentId !== "new" && selectedEnrollmentId !== null && (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        className="text-destructive hover:bg-destructive/10 border-destructive/50"
+                                        onClick={onDelete}
+                                    >
+                                        <Trash2 className="mr-2 h-4 w-4" />
+                                        Delete Record
+                                    </Button>
+                                )}
+                            </div>
+                            <div className="flex gap-2">
+                                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                                    Cancel
+                                </Button>
+                                <Button type="submit" disabled={processing} className="gap-2">
+                                    <CheckCircle className="h-4 w-4" />
+                                    Save Changes
+                                </Button>
+                            </div>
+                        </div>
                     </DialogFooter>
                 </form>
             </DialogContent>

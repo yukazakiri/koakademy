@@ -6,6 +6,7 @@ namespace App\Jobs;
 
 use App\Models\User;
 use App\Services\PdfGenerationService;
+use App\Support\StreamedStorage;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Illuminate\Bus\Queueable;
@@ -67,7 +68,7 @@ final class GenerateEnrollmentReportPreviewPdfJob implements ShouldQueue
             ]);
 
             $storagePath = $directory.'/'.$filename;
-            Storage::disk($disk)->put($storagePath, file_get_contents($temporaryFilePath));
+            StreamedStorage::putFileFromPath($disk, $storagePath, $temporaryFilePath);
 
             $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
             $outputSize = Storage::disk($disk)->size($storagePath);

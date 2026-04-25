@@ -9,8 +9,8 @@ return new class extends SettingsMigration
     public function up(): void
     {
         // Core application branding
-        $this->migrator->add('site.app_name', 'DCCP HUB');
-        $this->migrator->add('site.app_short_name', 'DCCP');
+        $this->migrator->add('site.app_name', 'KoAkademy');
+        $this->migrator->add('site.app_short_name', 'KOA');
 
         // Organization details
         $this->migrator->add('site.organization_name', 'KoAcademy');

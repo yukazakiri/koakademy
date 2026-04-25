@@ -11,15 +11,15 @@ return new class extends SettingsMigration
         $this->migrator->update('site.name', fn (?string $value): string => $this->replaceIfLegacy($value, [
             null,
             '',
-            'DCCP HUB',
-            'DCCP Faculty Portal',
+            'KoAkademy',
+            'KOA Faculty Portal',
         ], 'KoAkademy'));
 
         $this->migrator->update('site.portal_name', fn (?string $value): string => $this->replaceIfLegacy($value, [
             null,
             '',
-            'DCCP HUB',
-            'DCCP Faculty Portal',
+            'KoAkademy',
+            'KOA Faculty Portal',
         ], 'KoAkademy'));
 
         $this->migrator->update('site.portal_description', fn (?string $value): string => $this->replaceIfLegacy($value, [
@@ -31,7 +31,7 @@ return new class extends SettingsMigration
         $this->migrator->update('site.app_name', fn (?string $value): string => $this->replaceIfLegacy($value, [
             null,
             '',
-            'DCCP HUB',
+            'KoAkademy',
         ], 'KoAkademy'));
 
         $this->migrator->update('site.app_short_name', fn (?string $value): string => $this->replaceIfLegacy($value, [

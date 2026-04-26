@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.7.1",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.1",
-  "commit": "de3f1c504f9d98acca0996c122e525419a840060",
+  "version": "1.1.0-dev.7.2",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.2",
+  "commit": "702045ee6eeff9c763c46493efbe28cd35465456",
   "branch": "master",
-  "timestamp": "2026-04-25T08:58:00Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24927182135",
+  "timestamp": "2026-04-26T14:07:48Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24958490497",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.1.0-dev.7.1 - rebrand to KoAkademy",
-    "previous": "1.1.0-dev.7.0"
+    "current": "Version 1.1.0-dev.7.2 - add(frankenphp) addded workers and max requests",
+    "previous": "1.1.0-dev.7.1"
   },
   "metadata": {
     "author": "yukazakiri",

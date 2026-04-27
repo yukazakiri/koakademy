@@ -15,6 +15,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use RuntimeException;
 
 final class GenerateTimetablePdfJob implements ShouldQueue
 {
@@ -62,16 +63,7 @@ final class GenerateTimetablePdfJob implements ShouldQueue
                 default => 'pdf.timetable-export',
             };
 
-            // Force use R2 for PDF storage
-            $disk = 'r2';
-
-            // Verify R2 disk exists in config, otherwise use default
-            if (! config('filesystems.disks.r2')) {
-                $disk = config('filesystems.default');
-                Log::warning('R2 disk not configured, falling back to default disk', [
-                    'default_disk' => $disk,
-                ]);
-            }
+            $disk = config('filesystems.default');
 
             $directory = 'schedules';
 
@@ -103,15 +95,14 @@ final class GenerateTimetablePdfJob implements ShouldQueue
             if ($this->userId) {
                 $entityName = $this->scheduleData['entityName'] ?? 'Timetable';
 
-                // Generate appropriate download URL based on disk type
-                if ($disk === 'r2') {
-                    // For R2, generate a temporary signed URL (valid for 1 hour)
+                // Generate appropriate download URL
+                try {
                     $downloadUrl = Storage::disk($disk)->temporaryUrl(
                         $storagePath,
                         now()->addHour()
                     );
-                } else {
-                    // For local/public disks, use the download route
+                } catch (RuntimeException) {
+                    // For disks that do not support temporary URLs, use the download route
                     $downloadUrl = route('download.timetable-pdf', ['filename' => $this->filename]);
                 }
 

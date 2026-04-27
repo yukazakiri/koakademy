@@ -165,7 +165,7 @@ Route::get('/docs/v1/{slug?}', function (?string $slug = null) {
 
     // Use site's OG image or a default one
     $ogImageUrl = $siteSettings->og_image
-        ? Storage::disk('r2')->url($siteSettings->og_image)
+        ? Storage::url($siteSettings->og_image)
         : URL::to('/images/og-default.png');
 
     // SEO Meta Data

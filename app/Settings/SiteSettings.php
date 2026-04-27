@@ -226,6 +226,6 @@ final class SiteSettings extends Settings
             return $value;
         }
 
-        return Storage::disk('r2')->url($value);
+        return Storage::url($value);
     }
 }

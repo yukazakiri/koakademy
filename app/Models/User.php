@@ -236,7 +236,7 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
                 return $this->avatar_url;
             }
 
-            return Storage::disk('r2')->url($this->avatar_url);
+            return Storage::url($this->avatar_url);
         }
 
         // Fall back to Gravatar

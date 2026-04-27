@@ -406,7 +406,7 @@ final class ProfileController extends Controller
                 $oldPath = parse_url((string) $user->avatar_url, PHP_URL_PATH);
                 if ($oldPath) {
                     $oldPath = mb_ltrim($oldPath, '/');
-                    Storage::disk('r2')->delete($oldPath);
+                    Storage::delete($oldPath);
                 }
             }
 
@@ -414,7 +414,7 @@ final class ProfileController extends Controller
             $file = $request->file('avatar');
             $filename = 'avatar-'.$user->id.'-'.time().'.'.$file->getClientOriginalExtension();
             $path = "avatars/{$filename}";
-            Storage::disk('r2')->put($path, $file->getContent(), 'public');
+            Storage::put($path, $file->getContent(), 'public');
             $avatarUrl = env('R2_URL').'/'.$path;
         }
 

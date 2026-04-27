@@ -47,7 +47,6 @@ final class ManageSiteSettings extends SettingsPage
                             ->required(),
                         FileUpload::make('logo')
                             ->image()
-                            ->disk('r2')
                             ->imageEditor()
                             ->openable()
                             ->preserveFilenames()
@@ -56,7 +55,6 @@ final class ManageSiteSettings extends SettingsPage
                             ->deletable(),
                         FileUpload::make('favicon')
                             ->image()
-                            ->disk('r2')
                             ->imageEditor()
                             ->imageCropAspectRatio('1:1')
                             ->maxWidth('50')
@@ -76,7 +74,6 @@ final class ManageSiteSettings extends SettingsPage
                             ->label('Admin OG Image')
                             ->helperText('Recommended size: 1200x630px (40:21 ratio)')
                             ->image()
-                            ->disk('r2')
                             ->imageEditor()
                             ->imageCropAspectRatio('40:21')
                             ->openable()
@@ -106,7 +103,6 @@ final class ManageSiteSettings extends SettingsPage
                             ->label('Portal OG Image')
                             ->helperText('Recommended size: 1200x630px (40:21 ratio). Used when sharing portal links.')
                             ->image()
-                            ->disk('r2')
                             ->imageEditor()
                             ->imageCropAspectRatio('40:21')
                             ->openable()

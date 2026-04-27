@@ -53,7 +53,7 @@ final class DocumentLocation extends Model
             return $path;
         }
 
-        return Storage::disk('r2')->url($path);
+        return Storage::url($path);
     }
 
     /**

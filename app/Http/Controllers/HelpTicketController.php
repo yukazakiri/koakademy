@@ -58,14 +58,13 @@ final class HelpTicketController extends Controller
                 $filename = time().'_'.$file->getClientOriginalName();
                 $path = $file->storeAs(
                     "help-tickets/{$ticket->user_id}/{$ticket->id}",
-                    $filename,
-                    'r2'
+                    $filename
                 );
 
                 $attachments[] = [
                     'name' => $file->getClientOriginalName(),
                     'path' => $path,
-                    'url' => Storage::disk('r2')->url($path),
+                    'url' => Storage::url($path),
                     'type' => $file->getClientMimeType(),
                 ];
             }
@@ -131,14 +130,13 @@ final class HelpTicketController extends Controller
                 $filename = time().'_'.$file->getClientOriginalName();
                 $path = $file->storeAs(
                     "help-tickets/{$helpTicket->user_id}/{$helpTicket->id}",
-                    $filename,
-                    'r2'
+                    $filename
                 );
 
                 $attachments[] = [
                     'name' => $file->getClientOriginalName(),
                     'path' => $path,
-                    'url' => Storage::disk('r2')->url($path),
+                    'url' => Storage::url($path),
                     'type' => $file->getClientMimeType(),
                 ];
             }

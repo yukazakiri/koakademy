@@ -65,7 +65,6 @@ final class UserForm
                         ->label('Profile Photo')
                         ->image()
                         ->imageEditor()
-                        ->disk('r2')
                         ->directory('avatars')
                         ->visibility('public')
                         ->avatar()

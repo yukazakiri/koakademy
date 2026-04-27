@@ -27,7 +27,7 @@ function grantBrandPermissions(User $user): void
 }
 
 test('uploading a png logo generates all branding files and saves relative path to settings', function () {
-    Storage::fake('r2');
+    Storage::fake();
 
     $user = User::factory()->create(['role' => UserRole::Admin]);
     grantBrandPermissions($user);
@@ -42,7 +42,7 @@ test('uploading a png logo generates all branding files and saves relative path 
         ->assertRedirect()
         ->assertSessionHas('success');
 
-    $files = Storage::disk('r2')->allFiles('branding');
+    $files = Storage::disk()->allFiles('branding');
     expect($files)->not->toBeEmpty();
 
     $settings = app(SiteSettings::class);
@@ -63,7 +63,7 @@ test('uploading a png logo generates all branding files and saves relative path 
 });
 
 test('uploading an svg logo rasterizes it and generates all branding files', function () {
-    Storage::fake('r2');
+    Storage::fake();
 
     $user = User::factory()->create(['role' => UserRole::Admin]);
     grantBrandPermissions($user);
@@ -93,7 +93,7 @@ test('uploading an svg logo rasterizes it and generates all branding files', fun
         ->assertRedirect()
         ->assertSessionHas('success');
 
-    $files = Storage::disk('r2')->allFiles('branding');
+    $files = Storage::disk()->allFiles('branding');
     expect($files)->not->toBeEmpty();
 
     $settings = app(SiteSettings::class);
@@ -112,7 +112,7 @@ test('uploading an svg logo rasterizes it and generates all branding files', fun
 
     // The original SVG should also be stored
     $ts = explode('/', $settings->logo)[1];
-    expect(Storage::disk('r2')->exists("branding/{$ts}/logo.svg"))->toBeTrue();
+    expect(Storage::disk()->exists("branding/{$ts}/logo.svg"))->toBeTrue();
 
     // All derived sizes should be present
     $expectedFiles = [
@@ -128,13 +128,13 @@ test('uploading an svg logo rasterizes it and generates all branding files', fun
     ];
 
     foreach ($expectedFiles as $expectedFile) {
-        expect(Storage::disk('r2')->exists($expectedFile))
-            ->toBeTrue("Expected file {$expectedFile} to exist on r2 disk");
+        expect(Storage::disk()->exists($expectedFile))
+            ->toBeTrue("Expected file {$expectedFile} to exist on default disk");
     }
 });
 
 test('two successive logo uploads produce different storage paths and both files exist', function () {
-    Storage::fake('r2');
+    Storage::fake();
 
     $user = User::factory()->create(['role' => UserRole::Admin]);
     grantBrandPermissions($user);
@@ -172,12 +172,12 @@ test('two successive logo uploads produce different storage paths and both files
     expect($firstLogoPath)->not->toBe($secondLogoPath);
 
     // Both files must physically exist on disk
-    expect(Storage::disk('r2')->exists($firstLogoPath))->toBeTrue('First logo file was overwritten');
-    expect(Storage::disk('r2')->exists($secondLogoPath))->toBeTrue('Second logo file was not created');
+    expect(Storage::disk()->exists($firstLogoPath))->toBeTrue('First logo file was overwritten');
+    expect(Storage::disk()->exists($secondLogoPath))->toBeTrue('Second logo file was not created');
 });
 
 test('brand settings can be updated without uploading a logo', function () {
-    Storage::fake('r2');
+    Storage::fake();
 
     $user = User::factory()->create(['role' => UserRole::Admin]);
     grantBrandPermissions($user);
@@ -194,11 +194,11 @@ test('brand settings can be updated without uploading a logo', function () {
     expect($settings->app_name)->toBe('No Logo Update');
 
     // No files should have been uploaded
-    expect(Storage::disk('r2')->allFiles('branding'))->toBeEmpty();
+    expect(Storage::disk()->allFiles('branding'))->toBeEmpty();
 });
 
 test('svg logo upload is rejected when the file is invalid', function () {
-    Storage::fake('r2');
+    Storage::fake();
 
     $user = User::factory()->create(['role' => UserRole::Admin]);
     grantBrandPermissions($user);

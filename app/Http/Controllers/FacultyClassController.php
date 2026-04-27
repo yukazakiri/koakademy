@@ -371,16 +371,16 @@ final class FacultyClassController extends Controller
                     'kind' => 'link',
                 ]);
 
-            /** @var FilesystemAdapter $r2Disk */
-            $r2Disk = Storage::disk('r2');
+            /** @var FilesystemAdapter $storageDisk */
+            $storageDisk = Storage::disk();
 
             $fileAttachments = [];
 
             foreach ($request->file('files', []) as $file) {
-                $path = $file->store('class-post-attachments', 'r2');
+                $path = $file->store('class-post-attachments');
                 $fileAttachments[] = [
                     'name' => $file->getClientOriginalName() ?: $file->hashName(),
-                    'url' => $r2Disk->url($path),
+                    'url' => $storageDisk->url($path),
                     'kind' => 'file',
                 ];
             }
@@ -496,15 +496,15 @@ final class FacultyClassController extends Controller
                     'kind' => $attachment['kind'] ?? 'link',
                 ]);
 
-            /** @var FilesystemAdapter $r2Disk */
-            $r2Disk = Storage::disk('r2');
+            /** @var FilesystemAdapter $storageDisk */
+            $storageDisk = Storage::disk();
 
             $fileAttachments = [];
             foreach ($request->file('files', []) as $file) {
-                $path = $file->store('class-post-attachments', 'r2');
+                $path = $file->store('class-post-attachments');
                 $fileAttachments[] = [
                     'name' => $file->getClientOriginalName() ?: $file->hashName(),
-                    'url' => $r2Disk->url($path),
+                    'url' => $storageDisk->url($path),
                     'kind' => 'file',
                 ];
             }
@@ -1667,7 +1667,7 @@ final class FacultyClassController extends Controller
         $path = Str::after($path, '/storage/');
 
         if ($path !== '') {
-            Storage::disk('r2')->delete($path);
+            Storage::delete($path);
         }
     }
 

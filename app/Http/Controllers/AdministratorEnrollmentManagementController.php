@@ -2195,7 +2195,7 @@ final class AdministratorEnrollmentManagementController extends Controller
         }
 
         try {
-            return \Illuminate\Support\Facades\Storage::disk('r2')->url($logoValue);
+            return \Illuminate\Support\Facades\Storage::url($logoValue);
         } catch (Throwable) {
             return $logoValue;
         }

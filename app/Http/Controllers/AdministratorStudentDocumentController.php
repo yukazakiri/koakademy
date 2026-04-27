@@ -70,7 +70,7 @@ final class AdministratorStudentDocumentController extends Controller
         $type = $request->input('document_type');
         $file = $request->file('file');
 
-        $path = $file->store("students/{$student->id}/documents", 'r2');
+        $path = $file->store("students/{$student->id}/documents");
 
         if (! $student->DocumentLocation) {
             $docLocation = DocumentLocation::create([$type => $path]);
@@ -80,7 +80,7 @@ final class AdministratorStudentDocumentController extends Controller
             // Delete old file if exists
             $oldPath = $student->DocumentLocation->$type;
             if (is_string($oldPath) && $oldPath !== '' && ! filter_var($oldPath, FILTER_VALIDATE_URL) && ! str_starts_with($oldPath, '/')) {
-                foreach (['r2', 'public'] as $disk) {
+                foreach ([config('filesystems.default'), 'public'] as $disk) {
                     if (Storage::disk($disk)->exists($oldPath)) {
                         Storage::disk($disk)->delete($oldPath);
                     }

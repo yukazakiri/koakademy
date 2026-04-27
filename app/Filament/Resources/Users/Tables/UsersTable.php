@@ -42,7 +42,6 @@ final class UsersTable
                 ImageColumn::make('avatar_url')
                     ->label('')
                     ->circular()
-                    ->disk('r2')
                     ->defaultImageUrl(fn (User $record): string => 'https://www.gravatar.com/avatar/'.md5(mb_strtolower(mb_trim($record->email))).'?d=mp&r=g&s=250')
                     ->size(40),
                 TextColumn::make('name')

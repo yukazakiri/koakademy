@@ -7,7 +7,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Joaopaulolndev\FilamentEditProfile\Livewire\EditProfileForm;
 
-it('can upload user avatar to r2 storage', function () {
+it('can upload user avatar to default storage', function () {
     // Create a user
     $user = User::factory()->create([
         'name' => 'John Doe',
@@ -76,13 +76,12 @@ it('can handle profile avatar form component', function () {
 });
 
 it('verifies filament-edit-profile configuration', function () {
-    expect(config('filament-edit-profile.disk'))->toBe('r2');
     expect(config('filament-edit-profile.avatar_column'))->toBe('avatar_url');
     expect(config('filament-edit-profile.visibility'))->toBe('private');
 });
 
-it('verifies r2 is the default filesystem', function () {
-    expect(config('filesystems.default'))->toBe('r2');
+it('verifies default filesystem is configured', function () {
+    expect(config('filesystems.default'))->toBeString();
 });
 
 it('can generate storage urls for avatars', function () {

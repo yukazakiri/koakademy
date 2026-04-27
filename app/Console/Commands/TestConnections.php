@@ -53,7 +53,7 @@ final class TestConnections extends Command
             $results = [
                 'database' => $this->testDatabase(),
                 'redis' => $this->testRedis(),
-                'r2' => $this->testR2(),
+                'storage' => $this->testStorage(),
                 'minio' => $this->testMinio(),
                 'cache' => $this->testCache(),
                 'queue' => $this->testQueue(),
@@ -146,15 +146,16 @@ final class TestConnections extends Command
         }
     }
 
-    private function testR2(): array
+    private function testStorage(): array
     {
         try {
             $start = microtime(true);
 
-            $disk = Storage::disk('r2');
+            $disk = Storage::disk(config('filesystems.default'));
+            $diskName = config('filesystems.default');
 
             // Test file upload
-            $testContent = 'R2 connection test at '.format_timestamp_now();
+            $testContent = 'Storage connection test at '.format_timestamp_now();
             $testFile = 'test-connections/'.uniqid().'.txt';
             $disk->put($testFile, $testContent, 'public');
 
@@ -181,11 +182,9 @@ final class TestConnections extends Command
 
             return [
                 'success' => $exists && $contentMatch,
-                'message' => $exists && $contentMatch ? 'R2 storage connected successfully' : 'R2 storage test failed',
+                'message' => $exists && $contentMatch ? 'Default storage connected successfully' : 'Default storage test failed',
                 'details' => [
-                    'bucket' => config('filesystems.disks.r2.bucket'),
-                    'endpoint' => config('filesystems.disks.r2.endpoint'),
-                    'region' => config('filesystems.disks.r2.region'),
+                    'disk' => $diskName,
                     'url' => $url,
                     'file_uploaded' => $exists,
                     'content_verified' => $contentMatch,
@@ -195,7 +194,7 @@ final class TestConnections extends Command
         } catch (Exception $e) {
             return [
                 'success' => false,
-                'message' => 'R2 storage connection failed',
+                'message' => 'Default storage connection failed',
                 'error' => $e->getMessage(),
             ];
         }

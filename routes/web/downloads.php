@@ -39,13 +39,7 @@ Route::get('/download/student-list/{filename}', function (string $filename) {
 
 // Timetable PDF download
 Route::get('/download/timetable-pdf/{filename}', function (string $filename) {
-    // Force use R2 disk for timetable PDFs
-    $disk = 'r2';
-
-    // Verify R2 disk exists in config, otherwise use default
-    if (! config('filesystems.disks.r2')) {
-        $disk = config('filesystems.default');
-    }
+    $disk = config('filesystems.default');
 
     $path = 'schedules/'.$filename;
 
@@ -58,17 +52,17 @@ Route::get('/download/timetable-pdf/{filename}', function (string $filename) {
         ], 404);
     }
 
-    // For R2 disk, redirect to a temporary signed URL
-    if ($disk === 'r2') {
+    // Try to generate a temporary signed URL; fall back to direct download
+    try {
         $temporaryUrl = Storage::disk($disk)->temporaryUrl(
             $path,
             now()->addMinutes(5)
         );
 
         return redirect($temporaryUrl);
+    } catch (RuntimeException) {
+        // For disks that do not support temporary URLs, serve the file directly
     }
-
-    // For local/public disks, serve the file directly
     $file = Storage::disk($disk)->get($path);
     $mimeType = Storage::disk($disk)->mimeType($path) ?: 'application/pdf';
 

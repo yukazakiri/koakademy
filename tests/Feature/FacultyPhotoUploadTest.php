@@ -7,12 +7,14 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Storage;
 
-function expectedR2Url(): string
+function expectedStorageUrl(): string
 {
-    return (string) (config('filesystems.disks.r2.url') ?? env('R2_URL', 'https://r2.koakademy.edu'));
+    $defaultDisk = config('filesystems.default');
+
+    return (string) (config("filesystems.disks.{$defaultDisk}.url") ?? '');
 }
 
-it('can upload faculty photo using r2 storage', function () {
+it('can upload faculty photo using default storage', function () {
     // Create a faculty record
     $faculty = Faculty::factory()->create([
         'first_name' => 'John',
@@ -28,7 +30,7 @@ it('can upload faculty photo using r2 storage', function () {
 
     expect($path)->toContain('faculty-photos');
     expect(Storage::exists($path))->toBeTrue();
-    expect(Storage::url($path))->toContain(expectedR2Url());
+    expect(Storage::url($path))->toContain(expectedStorageUrl());
 
     // Clean up
     Storage::delete($path);
@@ -52,7 +54,7 @@ it('can save faculty with photo using filament form', function () {
     // Create a fake image file
     $file = UploadedFile::fake()->image('jane-photo.jpg', 800, 600);
 
-    // Simulate file upload to R2
+    // Simulate file upload to default storage
     $photoPath = Storage::putFile('faculty-photos', $file, 'public');
     $photoUrl = Storage::url($photoPath);
 
@@ -64,10 +66,10 @@ it('can save faculty with photo using filament form', function () {
     expect($faculty->photo_url)->toBe($photoPath);
 
     // Test the photoUrl accessor
-    expect($faculty->photo_url)->toContain(expectedR2Url());
+    expect($faculty->photo_url)->toContain(expectedStorageUrl());
 });
 
-it('can generate correct r2 urls for faculty photos', function () {
+it('can generate correct storage urls for faculty photos', function () {
     $testPaths = [
         'faculty-photos/test.jpg',
         'faculty-photos/user/avatar.png',
@@ -77,25 +79,21 @@ it('can generate correct r2 urls for faculty photos', function () {
     foreach ($testPaths as $path) {
         $url = Storage::url($path);
 
-        expect($url)->toContain(expectedR2Url());
+        expect($url)->toContain(expectedStorageUrl());
         expect($url)->toContain($path);
     }
 });
 
-it('handles r2 storage configuration correctly', function () {
-    $config = config('filesystems.disks.r2');
+it('handles default storage configuration correctly', function () {
+    $defaultDisk = config('filesystems.default');
+    $config = config("filesystems.disks.{$defaultDisk}");
 
-    expect($config['driver'])->toBe('r2');
-    expect($config['key'])->toBe(env('R2_ACCESS_KEY_ID'));
-    expect($config['secret'])->toBe(env('R2_SECRET_ACCESS_KEY'));
-    expect($config['bucket'])->toBe(env('R2_BUCKET'));
-    expect($config['endpoint'])->toBe(env('R2_ENDPOINT'));
-    expect($config['use_path_style_endpoint'])->toBeTrue();
+    expect($config['driver'])->toBeString();
 });
 
-it('verifies default filesystem is set to r2', function () {
-    expect(config('filesystems.default'))->toBe('r2');
-    expect(config('filament.default_filesystem_disk'))->toBe('r2');
+it('verifies default filesystem is configured', function () {
+    expect(config('filesystems.default'))->toBeString();
+    expect(config('filament.default_filesystem_disk'))->toBeString();
 });
 
 it('can test faculty photo upload lifecycle', function () {

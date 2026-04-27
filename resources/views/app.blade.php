@@ -20,7 +20,7 @@
                 return $value;
             }
 
-            return Storage::disk('r2')->url($value);
+            return Storage::url($value);
         };
 
         // Detect current domain and select appropriate settings

@@ -28,7 +28,6 @@ final class UserInfolist
                         ImageEntry::make('avatar_url')
                             ->label('')
                             ->circular()
-                            ->disk('r2')
                             ->defaultImageUrl(fn (User $record): string => 'https://www.gravatar.com/avatar/'.md5(mb_strtolower(mb_trim($record->email))).'?d=mp&r=g&s=250')
                             ->size(100)
                             ->columnSpan(1),

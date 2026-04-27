@@ -15,7 +15,7 @@ final class LogoConversionService
     /**
      * Process a single logo upload and generate all required formats.
      *
-     * Generated outputs stored on the 'r2' disk under a timestamped subdirectory:
+     * Generated outputs stored on the configured default disk under a timestamped subdirectory:
      *   - branding/{ts}/logo.png                     (max 512x512)
      *   - branding/{ts}/favicon.ico                   (32x32)
      *   - branding/{ts}/favicon-16x16.png
@@ -36,8 +36,10 @@ final class LogoConversionService
      *
      * @return array{logo: string, favicon: string, og_image: string}
      */
-    public function process(UploadedFile $file, string $disk = 'r2'): array
+    public function process(UploadedFile $file, ?string $disk = null): array
     {
+        $disk ??= config('filesystems.default');
+
         $tmpDir = storage_path('framework/logo-tmp');
 
         if (! File::isDirectory($tmpDir)) {

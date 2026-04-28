@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.7.4",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.4",
-  "commit": "40ac949e025e51c34ea80d2bfb12dce6d900f976",
+  "version": "1.1.0-dev.7.5",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.5",
+  "commit": "598354311bb95a80e661bb1551fc9331b1f94172",
   "branch": "master",
-  "timestamp": "2026-04-28T02:50:51Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25031106644",
+  "timestamp": "2026-04-28T03:04:32Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25031458065",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.1.0-dev.7.4 -  added drag and drop op of signatures and copy collumns in the table",
-    "previous": "1.1.0-dev.7.3"
+    "current": "Version 1.1.0-dev.7.5 - Replaced per-request Schema::hasColumn calls with Cache::remember('announcement_schema_columns', ...) + Schema::getColumnListing().",
+    "previous": "1.1.0-dev.7.4"
   },
   "metadata": {
     "author": "yukazakiri",

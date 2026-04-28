@@ -178,6 +178,15 @@ final class AdministratorStudentManagementController extends Controller
             ->paginate($perPage)
             ->withQueryString();
 
+        $hasActiveFilters = (is_string($search) && mb_trim($search) !== '')
+            || (is_string($type) && $type !== '' && $type !== 'all')
+            || (is_string($status) && $status !== '' && $status !== 'all')
+            || ($scholarshipType && $scholarshipType !== 'all')
+            || ($employmentStatus && $employmentStatus !== 'all')
+            || ($isIndigenousPerson !== null && $isIndigenousPerson !== 'all')
+            || ($regionOfOrigin && $regionOfOrigin !== 'all')
+            || ($previousSemesterCleared !== null && $previousSemesterCleared !== 'all');
+
         $students->through(function (Student $student) use ($clearanceCheckEnabled): array {
             $studentType = $student->student_type;
             $currentStatusRecord = $student->statusRecords->first();
@@ -250,7 +259,7 @@ final class AdministratorStudentManagementController extends Controller
             ->all();
 
         $stats = [
-            'total_students' => Student::count(),
+            'total_students' => $hasActiveFilters ? Student::count() : $students->total(),
             'total_enrolled' => StudentStatusRecord::query()
                 ->where('academic_year', $currentSchoolYear)
                 ->where('semester', $currentSemester)

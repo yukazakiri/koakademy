@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 
 final class Announcement extends Model
@@ -43,21 +44,23 @@ final class Announcement extends Model
     ];
 
     /**
-     * Per-request cache for Schema::hasColumn checks (SQLite issues many pragma queries per call).
+     * Cached column listing so SQLite schema introspection only happens once.
      *
-     * @var array<string, bool>|null
+     * @var list<string>|null
      */
     private static ?array $schemaColumnCache = null;
 
     public static function schemaHasCachedColumn(string $column): bool
     {
-        self::$schemaColumnCache ??= [];
-
-        if (! array_key_exists($column, self::$schemaColumnCache)) {
-            self::$schemaColumnCache[$column] = Schema::hasColumn('announcements', $column);
+        if (self::$schemaColumnCache === null) {
+            self::$schemaColumnCache = Cache::remember(
+                'announcement_schema_columns',
+                now()->addDay(),
+                static fn (): array => Schema::getColumnListing('announcements')
+            );
         }
 
-        return self::$schemaColumnCache[$column];
+        return in_array($column, self::$schemaColumnCache, true);
     }
 
     public function user(): BelongsTo

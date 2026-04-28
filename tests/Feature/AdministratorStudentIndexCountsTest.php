@@ -147,11 +147,15 @@ function captureExecutedSql(callable $callback): array
 
 function normalizeSqlQuery(string $sql): string
 {
-    $sql = mb_strtolower($sql);
-    $sql = str_replace(['"', '`', '[', ']'], '', $sql);
-    $sql = preg_replace('/\s+/', ' ', mb_trim($sql));
+    $normalizedSql = mb_strtolower($sql);
+    $normalizedSql = str_replace(['"', '`', '[', ']'], '', $normalizedSql);
+    $normalizedSql = preg_replace('/\s+/', ' ', mb_trim($normalizedSql));
 
-    return is_string($sql) ? $sql : mb_trim(mb_strtolower($sql));
+    if (! is_string($normalizedSql)) {
+        return mb_trim(mb_strtolower($sql));
+    }
+
+    return $normalizedSql;
 }
 
 /**
@@ -162,6 +166,6 @@ function studentAggregateQueries(array $queries): array
 {
     return array_values(array_filter(
         $queries,
-        static fn (string $query): bool => str_contains($query, 'count(*) as aggregate') && str_contains($query, 'students'),
+        static fn (string $query): bool => mb_stripos($query, 'count(*) as aggregate') !== false && mb_stripos($query, 'students') !== false,
     ));
 }

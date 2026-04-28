@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.7.3",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.3",
-  "commit": "d90e086c60ea552a7172cdf7a50d4795432b1aa7",
+  "version": "1.1.0-dev.7.4",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.4",
+  "commit": "40ac949e025e51c34ea80d2bfb12dce6d900f976",
   "branch": "master",
-  "timestamp": "2026-04-28T02:04:45Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25029796475",
-  "release_type": "chore",
+  "timestamp": "2026-04-28T02:50:51Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25031106644",
+  "release_type": "patch",
   "changelog": {
-    "current": "Version 1.1.0-dev.7.3 - refactor(library): move admin library surface into module ownership",
-    "previous": "1.1.0-dev.7.2"
+    "current": "Version 1.1.0-dev.7.4 -  added drag and drop op of signatures and copy collumns in the table",
+    "previous": "1.1.0-dev.7.3"
   },
   "metadata": {
     "author": "yukazakiri",

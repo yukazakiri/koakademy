@@ -32,25 +32,26 @@ final readonly class AdministratorSidebarCounts
             return null;
         }
 
-        $counts = $this->resolveCachedCounts();
+        $counts = $this->resolveCachedNonStudentCounts();
 
         if ($request->attributes->has('admin_students_global_total')) {
             $counts['students'] = (int) $request->attributes->get('admin_students_global_total');
+        } else {
+            $counts['students'] = $this->resolveCachedStudentCount();
         }
 
         return $counts;
     }
 
     /**
-     * @return array{students: int, enrollments: int, faculties: int, users: int}
+     * @return array{enrollments: int, faculties: int, users: int}
      */
-    private function resolveCachedCounts(): array
+    private function resolveCachedNonStudentCounts(): array
     {
         return $this->cache->remember(
             $this->getCacheKey(),
             60,
             fn (): array => [
-                'students' => Student::query()->count(),
                 'enrollments' => StudentEnrollment::query()
                     ->where('school_year', $this->settingsService->getCurrentSchoolYearString())
                     ->where('semester', $this->settingsService->getCurrentSemester())
@@ -61,6 +62,15 @@ final readonly class AdministratorSidebarCounts
         );
     }
 
+    private function resolveCachedStudentCount(): int
+    {
+        return $this->cache->remember(
+            $this->getStudentCacheKey(),
+            60,
+            fn (): int => Student::query()->count(),
+        );
+    }
+
     private function getCacheKey(): string
     {
         $schoolYear = $this->settingsService->getCurrentSchoolYearString();
@@ -68,5 +78,10 @@ final readonly class AdministratorSidebarCounts
         $schoolId = $this->tenantContext->getCurrentSchoolId() ?? 'all';
 
         return sprintf('admin_sidebar_counts:%s:%s:%s', $schoolId, $schoolYear, $semester);
+    }
+
+    private function getStudentCacheKey(): string
+    {
+        return $this->getCacheKey().':students';
     }
 }

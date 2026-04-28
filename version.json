@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.7.2",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.2",
-  "commit": "702045ee6eeff9c763c46493efbe28cd35465456",
+  "version": "1.1.0-dev.7.3",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.3",
+  "commit": "d90e086c60ea552a7172cdf7a50d4795432b1aa7",
   "branch": "master",
-  "timestamp": "2026-04-26T14:07:48Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/24958490497",
-  "release_type": "patch",
+  "timestamp": "2026-04-28T02:04:45Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25029796475",
+  "release_type": "chore",
   "changelog": {
-    "current": "Version 1.1.0-dev.7.2 - add(frankenphp) addded workers and max requests",
-    "previous": "1.1.0-dev.7.1"
+    "current": "Version 1.1.0-dev.7.3 - refactor(library): move admin library surface into module ownership",
+    "previous": "1.1.0-dev.7.2"
   },
   "metadata": {
     "author": "yukazakiri",

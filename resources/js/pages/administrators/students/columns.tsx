@@ -12,7 +12,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Link } from "@inertiajs/react";
 import { ColumnDef } from "@tanstack/react-table";
-import { ArrowUpDown, CheckCircle, Eye, FileText, HelpCircle, MoreHorizontal, UserCheck, XCircle } from "lucide-react";
+import { ArrowUpDown, Check, CheckCircle, Copy, Eye, FileText, HelpCircle, MoreHorizontal, UserCheck, XCircle } from "lucide-react";
+import { useState } from "react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 declare let route: any;
 
@@ -96,7 +98,43 @@ export const columns: ColumnDef<Student>[] = [
                 </Button>
             );
         },
-        cell: ({ row }) => <div className="font-mono text-xs">{row.getValue("student_id") ?? "—"}</div>,
+        cell: ({ row }) => {
+            const studentId = row.getValue("student_id") as string | number | null;
+            const [copied, setCopied] = useState(false);
+
+            if (!studentId) return <div className="font-mono text-xs">—</div>;
+
+            const handleCopy = async () => {
+                await navigator.clipboard.writeText(String(studentId));
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+            };
+
+            return (
+                <TooltipProvider delay={0}>
+                    <Tooltip open={copied || undefined}>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="-ml-2 h-7 gap-1.5 px-2 font-mono text-xs"
+                                onClick={handleCopy}
+                            >
+                                {studentId}
+                                {copied ? (
+                                    <Check className="h-3.5 w-3.5 text-green-500" />
+                                ) : (
+                                    <Copy className="text-muted-foreground h-3.5 w-3.5" />
+                                )}
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" sideOffset={4}>
+                            {copied ? "Copied!" : "Copy ID"}
+                        </TooltipContent>
+                    </Tooltip>
+                </TooltipProvider>
+            );
+        },
     },
     {
         accessorKey: "name",

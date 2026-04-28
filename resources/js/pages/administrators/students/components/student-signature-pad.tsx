@@ -178,6 +178,7 @@ export function StudentSignaturePad({ studentId, signatureUrl }: StudentSignatur
             return;
         }
 
+        setIsDialogOpen(true);
         setActiveTab("upload");
         processFile(file);
     };
@@ -333,11 +334,19 @@ export function StudentSignaturePad({ studentId, signatureUrl }: StudentSignatur
     };
 
     return (
-        <div className="w-full">
+        <div
+            className="w-full"
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+        >
             <button
                 type="button"
                 onClick={() => setIsDialogOpen(true)}
-                className="group w-full text-left"
+                className={cn(
+                    "group w-full text-left transition-colors",
+                    isDragOver && "bg-primary/5",
+                )}
             >
                 {signatureUrl ? (
                     <div className="relative">

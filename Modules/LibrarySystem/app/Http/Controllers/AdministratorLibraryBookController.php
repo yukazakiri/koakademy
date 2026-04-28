@@ -2,15 +2,16 @@
 
 declare(strict_types=1);
 
-namespace App\Http\Controllers;
+namespace Modules\LibrarySystem\Http\Controllers;
 
-use App\Http\Requests\Administrators\LibraryBookRequest;
+use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
+use Modules\LibrarySystem\Http\Requests\Administrators\LibraryBookRequest;
 use Modules\LibrarySystem\Models\Author;
 use Modules\LibrarySystem\Models\Book;
 use Modules\LibrarySystem\Models\Category;

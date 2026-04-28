@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace App\Http\Controllers;
+namespace Modules\LibrarySystem\Http\Controllers;
 
-use App\Http\Requests\Administrators\LibraryResearchPaperRequest;
+use App\Http\Controllers\Controller;
 use App\Models\Course;
 use App\Models\Student;
 use Illuminate\Http\RedirectResponse;
@@ -14,6 +14,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
+use Modules\LibrarySystem\Http\Requests\Administrators\LibraryResearchPaperRequest;
 use Modules\LibrarySystem\Models\ResearchPaper;
 use Spatie\Tags\Tag;
 

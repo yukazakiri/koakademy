@@ -8,6 +8,7 @@ return [
             'id' => 'admin-announcements',
             'title' => 'Announcements',
             'link' => '/administrators/announcements',
+            'inertiaPage' => 'Announcement/Index',
             'section' => 'core',
             'icon' => 'news',
             'requiredPermission' => [

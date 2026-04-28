@@ -2,13 +2,14 @@
 
 declare(strict_types=1);
 
-namespace App\Http\Controllers;
+namespace Modules\LibrarySystem\Http\Controllers;
 
-use App\Http\Requests\Administrators\LibraryCategoryRequest;
+use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use Modules\LibrarySystem\Http\Requests\Administrators\LibraryCategoryRequest;
 use Modules\LibrarySystem\Models\Category;
 
 final class AdministratorLibraryCategoryController extends Controller

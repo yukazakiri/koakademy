@@ -114,6 +114,8 @@ export interface ModuleAdminRoute {
     allowedRoles?: UserRole[];
     separator?: boolean;
     module?: string;
+    inertiaPage?: string;
+    autodiscovered?: boolean;
     subs?: {
         title: string;
         link: string;
@@ -123,6 +125,8 @@ export interface ModuleAdminRoute {
         badge?: string | null;
     }[];
 }
+
+const MODULE_REACT_PAGES = import.meta.glob("../../Modules/**/resources/assets/js/Pages/**/*.tsx");
 
 /**
  * Route sections for organizing the sidebar
@@ -833,26 +837,61 @@ function resolveRouteIcon(icon?: AdminRouteIconKey): React.ReactNode | undefined
 }
 
 function hydrateModuleRoutes(moduleRoutes: ModuleAdminRoute[]): AdminRoute[] {
-    return moduleRoutes.map((route) => ({
-        id: route.id,
-        title: route.title,
-        link: route.link,
-        section: route.section,
-        icon: resolveRouteIcon(route.icon),
-        badge: route.badge ?? undefined,
-        requiredPermission: route.requiredPermission,
-        allowedRoles: route.allowedRoles,
-        separator: route.separator,
-        moduleSource: route.module,
-        subs: route.subs?.map((subRoute) => ({
-            title: subRoute.title,
-            link: subRoute.link,
-            icon: resolveRouteIcon(subRoute.icon),
-            disabled: subRoute.disabled,
-            disabledTooltip: subRoute.disabledTooltip,
-            badge: subRoute.badge ?? undefined,
-        })),
-    }));
+    return moduleRoutes
+        .filter((route) => hasModuleBackedReactPage(route))
+        .map((route) => ({
+            id: route.id,
+            title: route.title,
+            link: route.link,
+            section: route.section,
+            icon: resolveRouteIcon(route.icon),
+            badge: route.badge ?? undefined,
+            requiredPermission: route.requiredPermission,
+            allowedRoles: route.allowedRoles,
+            separator: route.separator,
+            moduleSource: route.module,
+            subs: route.subs?.map((subRoute) => ({
+                title: subRoute.title,
+                link: subRoute.link,
+                icon: resolveRouteIcon(subRoute.icon),
+                disabled: subRoute.disabled,
+                disabledTooltip: subRoute.disabledTooltip,
+                badge: subRoute.badge ?? undefined,
+            })),
+        }));
+}
+
+function hasModuleBackedReactPage(route: ModuleAdminRoute): boolean {
+    if (!route.module) {
+        return true;
+    }
+
+    const explicitPage = route.inertiaPage?.trim();
+    if (explicitPage) {
+        return modulePageExists(route.module, explicitPage);
+    }
+
+    const inferredPages = inferInertiaPagesFromLink(route.link);
+    if (inferredPages.length === 0) {
+        return false;
+    }
+
+    return inferredPages.some((page) => modulePageExists(route.module as string, page));
+}
+
+function inferInertiaPagesFromLink(link: string): string[] {
+    const normalized = link.replace(/^\/+/, "").replace(/\/+$/, "");
+    if (normalized === "") {
+        return [];
+    }
+
+    return [`${normalized}/index`, normalized];
+}
+
+function modulePageExists(moduleName: string, inertiaPage: string): boolean {
+    const pageSuffix = `/Modules/${moduleName}/resources/assets/js/Pages/${inertiaPage}.tsx`;
+
+    return Object.keys(MODULE_REACT_PAGES).some((pagePath) => pagePath.endsWith(pageSuffix));
 }
 
 export function getResolvedAdminRoutes(moduleRoutes: ModuleAdminRoute[] = []): AdminRoute[] {
@@ -862,7 +901,15 @@ export function getResolvedAdminRoutes(moduleRoutes: ModuleAdminRoute[] = []): A
         deduplicatedRoutes.set(route.id, route);
     }
 
-    return [...deduplicatedRoutes.values()];
+    const deduplicatedLinks = new Map<string, AdminRoute>();
+
+    for (const route of deduplicatedRoutes.values()) {
+        if (!deduplicatedLinks.has(route.link)) {
+            deduplicatedLinks.set(route.link, route);
+        }
+    }
+
+    return [...deduplicatedLinks.values()];
 }
 
 export function getRoutesForRoleWithModules(userRole: string, userPermissions: string[] = [], moduleRoutes: ModuleAdminRoute[] = []): AdminRoute[] {

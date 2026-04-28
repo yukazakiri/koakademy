@@ -2,15 +2,16 @@
 
 declare(strict_types=1);
 
-namespace App\Http\Controllers;
+namespace Modules\LibrarySystem\Http\Controllers;
 
-use App\Http\Requests\Administrators\LibraryBorrowRecordRequest;
+use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
+use Modules\LibrarySystem\Http\Requests\Administrators\LibraryBorrowRecordRequest;
 use Modules\LibrarySystem\Models\Book;
 use Modules\LibrarySystem\Models\BorrowRecord;
 

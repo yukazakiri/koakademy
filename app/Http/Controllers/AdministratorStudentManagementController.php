@@ -224,11 +224,7 @@ final class AdministratorStudentManagementController extends Controller
             ];
         });
 
-        if ($hasActiveFilters) {
-            $globalStudentTotal = Student::query()->count();
-        } else {
-            $globalStudentTotal = $students->total();
-        }
+        $globalStudentTotal = $hasActiveFilters ? Student::query()->count() : $students->total();
 
         $request->attributes->set('admin_students_global_total', $globalStudentTotal);
 

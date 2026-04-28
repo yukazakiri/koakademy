@@ -61,9 +61,9 @@ final class StudentSeeder extends Seeder
             $lastName = fake()->randomElement(StudentData::filipinoLastNames());
             $suffix = fake()->randomElement(StudentData::filipinoSuffixes());
 
-            $email = mb_strtolower($firstName).'.'.mb_strtolower($lastName).'@student.koakademy.edu';
+            $email = mb_strtolower((string) $firstName).'.'.mb_strtolower((string) $lastName).'@student.koakademy.edu';
             if ($i > 0) {
-                $email = mb_strtolower($firstName).'.'.mb_strtolower($lastName).fake()->numerify('#').'@student.koakademy.edu';
+                $email = mb_strtolower((string) $firstName).'.'.mb_strtolower((string) $lastName).fake()->numerify('#').'@student.koakademy.edu';
             }
 
             $studentType = fake()->randomElement(['college', 'college', 'college', 'shs', 'tesda']);

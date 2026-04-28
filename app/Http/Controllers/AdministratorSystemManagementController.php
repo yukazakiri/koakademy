@@ -965,7 +965,7 @@ final class AdministratorSystemManagementController extends Controller
     {
         $tables = collect(Schema::getTableListing())
             ->filter(fn (string $table): bool => $table !== 'schools' && Schema::hasColumn($table, 'school_id'))
-            ->reject(fn (string $table): bool => in_array($table, ['users'], true))
+            ->reject(fn (string $table): bool => $table === 'users')
             ->values();
 
         $pendingTables = $tables->all();

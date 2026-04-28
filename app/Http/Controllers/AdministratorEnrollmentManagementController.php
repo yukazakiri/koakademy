@@ -2251,18 +2251,16 @@ final class AdministratorEnrollmentManagementController extends Controller
                 $pdf,
                 ['No.', 'Student ID', 'Full Name', 'Course', 'Department', 'Year Level', 'Subjects', 'Status'],
                 [10, 24, 55, 52, 22, 18, 18, 35],
-                collect($students)->map(function (array $student): array {
-                    return [
-                        (string) ($student['no'] ?? '—'),
-                        (string) ($student['student_id'] ?? '—'),
-                        Str::limit((string) ($student['full_name'] ?? '—'), 36),
-                        Str::limit((string) ($student['course'] ?? '—'), 30),
-                        (string) ($student['department'] ?? '—'),
-                        isset($student['year_level']) ? 'Year '.$student['year_level'] : '—',
-                        (string) ($student['subjects_count'] ?? '—'),
-                        Str::limit((string) ($student['status'] ?? '—'), 20),
-                    ];
-                })->all()
+                collect($students)->map(fn (array $student): array => [
+                    (string) ($student['no'] ?? '—'),
+                    (string) ($student['student_id'] ?? '—'),
+                    Str::limit((string) ($student['full_name'] ?? '—'), 36),
+                    Str::limit((string) ($student['course'] ?? '—'), 30),
+                    (string) ($student['department'] ?? '—'),
+                    isset($student['year_level']) ? 'Year '.$student['year_level'] : '—',
+                    (string) ($student['subjects_count'] ?? '—'),
+                    Str::limit((string) ($student['status'] ?? '—'), 20),
+                ])->all()
             );
         } elseif ($reportType === 'enrolled_by_subject') {
             /** @var array<int, array<string, mixed>> $subjectGroups */
@@ -2275,7 +2273,7 @@ final class AdministratorEnrollmentManagementController extends Controller
 
                 $pdf->SetFont('Arial', 'B', 9);
                 $heading = ($group['subject_code'] ?? '—').' - '.($group['subject_title'] ?? 'Unknown Subject');
-                $pdf->Cell(0, 6, $this->pdfText(Str::limit((string) $heading, 120)), 1, 1, 'L');
+                $pdf->Cell(0, 6, $this->pdfText(Str::limit($heading, 120)), 1, 1, 'L');
 
                 /** @var array<int, array<string, mixed>> $students */
                 $students = $group['students'] ?? [];
@@ -2283,17 +2281,15 @@ final class AdministratorEnrollmentManagementController extends Controller
                     $pdf,
                     ['No.', 'Student ID', 'Full Name', 'Course', 'Year', 'Section', 'Schedule'],
                     [10, 24, 56, 40, 16, 24, 64],
-                    collect($students)->map(function (array $student): array {
-                        return [
-                            (string) ($student['no'] ?? '—'),
-                            (string) ($student['student_id'] ?? '—'),
-                            Str::limit((string) ($student['full_name'] ?? '—'), 34),
-                            Str::limit((string) ($student['course'] ?? '—'), 22),
-                            isset($student['year_level']) ? (string) $student['year_level'] : '—',
-                            (string) ($student['section'] ?? '—'),
-                            Str::limit((string) ($student['class_schedule'] ?? '—'), 40),
-                        ];
-                    })->all()
+                    collect($students)->map(fn (array $student): array => [
+                        (string) ($student['no'] ?? '—'),
+                        (string) ($student['student_id'] ?? '—'),
+                        Str::limit((string) ($student['full_name'] ?? '—'), 34),
+                        Str::limit((string) ($student['course'] ?? '—'), 22),
+                        isset($student['year_level']) ? (string) $student['year_level'] : '—',
+                        (string) ($student['section'] ?? '—'),
+                        Str::limit((string) ($student['class_schedule'] ?? '—'), 40),
+                    ])->all()
                 );
                 $pdf->Ln(1);
             }
@@ -2371,7 +2367,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 $pdf->AddPage();
             }
 
-            foreach ($headers as $index => $header) {
+            foreach (array_keys($headers) as $index) {
                 $value = $row[$index] ?? '—';
                 $pdf->Cell($widths[$index] ?? 20, 6, $this->pdfText($value), 1, 0, 'L');
             }

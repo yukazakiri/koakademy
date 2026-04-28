@@ -42,13 +42,7 @@ final class EnrollmentPipelineService
             $raw['cashier_verified_status'] ?? null,
         ];
 
-        foreach ($legacyStatuses as $status) {
-            if (is_string($status) && mb_trim($status) !== '') {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any($legacyStatuses, fn ($status): bool => is_string($status) && mb_trim($status) !== '');
     }
 
     /**
@@ -199,18 +193,16 @@ final class EnrollmentPipelineService
         $completionStepKey = $config['completion_step_key'] ?? null;
 
         return collect($config['steps'])
-            ->map(function (array $step) use ($completionStepKey): array {
-                return [
-                    'status' => $step['status'],
-                    'label' => $step['label'],
-                    'color' => $step['color'],
-                    'allowed_roles' => $step['allowed_roles'],
-                    'is_core' => false,
-                    'key' => $step['key'],
-                    'action_type' => $step['action_type'],
-                    'is_completion' => $completionStepKey === $step['key'],
-                ];
-            })
+            ->map(fn (array $step): array => [
+                'status' => $step['status'],
+                'label' => $step['label'],
+                'color' => $step['color'],
+                'allowed_roles' => $step['allowed_roles'],
+                'is_core' => false,
+                'key' => $step['key'],
+                'action_type' => $step['action_type'],
+                'is_completion' => $completionStepKey === $step['key'],
+            ])
             ->values()
             ->all();
     }
@@ -611,8 +603,10 @@ final class EnrollmentPipelineService
 
             $status = $this->sanitizeString($stepRaw['status'] ?? null, '');
             $label = $this->sanitizeString($stepRaw['label'] ?? null, '');
-
-            if ($status === '' || $label === '') {
+            if ($status === '') {
+                continue;
+            }
+            if ($label === '') {
                 continue;
             }
 
@@ -677,8 +671,10 @@ final class EnrollmentPipelineService
 
                 $status = $this->sanitizeString($stepRaw['status'] ?? null, '');
                 $label = $this->sanitizeString($stepRaw['label'] ?? null, '');
-
-                if ($status === '' || $label === '') {
+                if ($status === '') {
+                    continue;
+                }
+                if ($label === '') {
                     continue;
                 }
 
@@ -733,13 +729,7 @@ final class EnrollmentPipelineService
      */
     private function stepKeyExists(array $steps, string $key): bool
     {
-        foreach ($steps as $step) {
-            if (($step['key'] ?? null) === $key) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any($steps, fn ($step): bool => ($step['key'] ?? null) === $key);
     }
 
     /**

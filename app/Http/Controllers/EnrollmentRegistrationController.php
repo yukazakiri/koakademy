@@ -7,12 +7,12 @@ namespace App\Http\Controllers;
 use App\Enums\StudentStatus;
 use App\Enums\StudentType;
 use App\Http\Requests\StoreEnrollmentRegistrationRequest;
+use App\Models\Classes;
 use App\Models\Course;
 use App\Models\Department;
 use App\Models\OnboardingFeature;
 use App\Models\School;
 use App\Models\Student;
-use App\Models\Classes;
 use App\Models\StudentEnrollment;
 use App\Models\Subject;
 use App\Services\EnrollmentService;
@@ -29,33 +29,10 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
+use Throwable;
 
 final class EnrollmentRegistrationController extends Controller
 {
-    /**
-     * Resolve the tenant (school) id that new public enrollment records should
-     * belong to. On public routes there is no authenticated user and no session
-     * school, so the BelongsToSchool global `creating` hook cannot auto-assign
-     * one — which causes rows to save with `school_id = NULL` and then get
-     * filtered out of admin views by `SchoolScope`.
-     *
-     * Order of resolution:
-     *   1. The student's own `school_id` (only known for returning students).
-     *   2. The single active `School` in the install.
-     *   3. null (fail-open so inserts don't blow up; caller may decide).
-     */
-    private function resolveSiteSchoolId(?Student $student = null): ?int
-    {
-        if ($student instanceof Student && $student->school_id) {
-            return (int) $student->school_id;
-        }
-
-        return School::query()
-            ->where('is_active', true)
-            ->orderBy('id')
-            ->value('id');
-    }
-
     public function create(): Response
     {
         $collegeEnabled = OnboardingFeature::query()
@@ -279,7 +256,7 @@ final class EnrollmentRegistrationController extends Controller
 
         $systemSchoolYearStart = $settings->getSystemDefaultSchoolYearStart();
         $schoolYear = $systemSchoolYearStart.' - '.($systemSchoolYearStart + 1);
-        $semester = (int) $settings->getSystemDefaultSemester();
+        $semester = $settings->getSystemDefaultSemester();
         $semesterLabel = match ($semester) {
             1 => '1st Semester',
             2 => '2nd Semester',
@@ -409,10 +386,12 @@ final class EnrollmentRegistrationController extends Controller
                 ->get();
 
             foreach ($classesWithSubjects as $class) {
-                if (empty($class->course_codes) || ! is_array($class->course_codes)) {
+                if (empty($class->course_codes)) {
                     continue;
                 }
-
+                if (! is_array($class->course_codes)) {
+                    continue;
+                }
                 $courseCodesAsStrings = array_map(strval(...), $class->course_codes);
                 if (! in_array((string) $student->course_id, $courseCodesAsStrings)) {
                     continue;
@@ -433,7 +412,7 @@ final class EnrollmentRegistrationController extends Controller
                     }
                 }
             }
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // If the Classes lookup fails, continue with an empty "has_classes" set.
         }
         $subjectsWithClasses = $subjectsWithClasses->unique();
@@ -656,7 +635,7 @@ final class EnrollmentRegistrationController extends Controller
         })->values()->all();
 
         $totalUnits = array_sum(array_map(
-            static fn (array $s): int => (int) $s['lecture_units'] + (int) $s['laboratory_units'],
+            static fn (array $s): int => $s['lecture_units'] + $s['laboratory_units'],
             $subjectsSummary
         ));
 
@@ -702,6 +681,30 @@ final class EnrollmentRegistrationController extends Controller
                 'balance' => (float) $tuition->total_balance,
             ] : null,
         ]);
+    }
+
+    /**
+     * Resolve the tenant (school) id that new public enrollment records should
+     * belong to. On public routes there is no authenticated user and no session
+     * school, so the BelongsToSchool global `creating` hook cannot auto-assign
+     * one — which causes rows to save with `school_id = NULL` and then get
+     * filtered out of admin views by `SchoolScope`.
+     *
+     * Order of resolution:
+     *   1. The student's own `school_id` (only known for returning students).
+     *   2. The single active `School` in the install.
+     *   3. null (fail-open so inserts don't blow up; caller may decide).
+     */
+    private function resolveSiteSchoolId(?Student $student = null): ?int
+    {
+        if ($student instanceof Student && $student->school_id) {
+            return (int) $student->school_id;
+        }
+
+        return School::query()
+            ->where('is_active', true)
+            ->orderBy('id')
+            ->value('id');
     }
 
     /**

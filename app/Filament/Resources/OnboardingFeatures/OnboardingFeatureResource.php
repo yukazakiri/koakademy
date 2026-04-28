@@ -43,7 +43,7 @@ final class OnboardingFeatureResource extends Resource
         return (string) self::getEloquentQuery()->count() ?: null;
     }
 
-    public static function getNavigationBadgeColor(): string|array|null
+    public static function getNavigationBadgeColor(): string
     {
         return self::getEloquentQuery()->where('is_active', true)->count() > 0 ? 'success' : 'gray';
     }

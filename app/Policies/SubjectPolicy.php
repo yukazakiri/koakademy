@@ -11,7 +11,7 @@ final class SubjectPolicy
 {
     use HandlesAuthorization;
 
-    public function before(User $user, string $ability): ?bool
+    public function before(User $user): ?bool
     {
         if ($user->hasRole('super_admin')) {
             return true;

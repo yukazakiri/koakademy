@@ -56,7 +56,7 @@ final class AdministratorCurriculumManagementController extends Controller
                 'subjects' => Subject::count(),
                 'curriculum_versions' => count($versions),
             ],
-            'departments' => $departments->map(fn (Department $dept) => [
+            'departments' => $departments->map(fn (Department $dept): array => [
                 'id' => $dept->id,
                 'name' => $dept->name,
                 'code' => $dept->code,

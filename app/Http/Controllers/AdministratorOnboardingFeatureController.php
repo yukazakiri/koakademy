@@ -65,9 +65,7 @@ final class AdministratorOnboardingFeatureController extends Controller
                     // Pennant metadata
                     'pennant_class' => $featureClass,
                     'pennant_type' => $featureClass ? 'class' : 'string',
-                    'pennant_global_state' => $featureClass
-                        ? $this->isGloballyActivated($featureClass)
-                        : false,
+                    'pennant_global_state' => $featureClass && $this->isGloballyActivated($featureClass),
                     'pennant_user_overrides_count' => $featureClass
                         ? $this->getUserOverrideCount($featureClass)
                         : 0,
@@ -303,7 +301,7 @@ final class AdministratorOnboardingFeatureController extends Controller
         $userIds = collect($userScopes)
             ->map(fn (string $scope) => Str::afterLast($scope, '|'))
             ->filter()
-            ->map(fn (string $id) => (int) $id)
+            ->map(fn (string $id): int => (int) $id)
             ->unique()
             ->values()
             ->all();

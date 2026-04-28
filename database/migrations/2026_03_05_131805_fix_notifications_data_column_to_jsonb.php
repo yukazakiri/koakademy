@@ -13,10 +13,10 @@ return new class extends Migration
         $driver = Schema::getConnection()->getDriverName();
 
         if ($driver === 'sqlite') {
-            Schema::table('notifications', function (Illuminate\Database\Schema\Blueprint $table) {
+            Schema::table('notifications', function (Illuminate\Database\Schema\Blueprint $table): void {
                 $table->dropColumn('data');
             });
-            Schema::table('notifications', function (Illuminate\Database\Schema\Blueprint $table) {
+            Schema::table('notifications', function (Illuminate\Database\Schema\Blueprint $table): void {
                 $table->json('data')->nullable();
             });
         } else {
@@ -33,10 +33,10 @@ return new class extends Migration
         $driver = Schema::getConnection()->getDriverName();
 
         if ($driver === 'sqlite') {
-            Schema::table('notifications', function (Illuminate\Database\Schema\Blueprint $table) {
+            Schema::table('notifications', function (Illuminate\Database\Schema\Blueprint $table): void {
                 $table->dropColumn('data');
             });
-            Schema::table('notifications', function (Illuminate\Database\Schema\Blueprint $table) {
+            Schema::table('notifications', function (Illuminate\Database\Schema\Blueprint $table): void {
                 $table->text('data')->nullable();
             });
         } else {

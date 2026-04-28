@@ -13,7 +13,7 @@ return new class extends Migration
         $mailsTable = config('mails.database.tables.mails', 'mails');
         $eventsTable = config('mails.database.tables.events', 'mail_events');
 
-        Schema::table($mailsTable, function (Blueprint $table) use ($mailsTable) {
+        Schema::table($mailsTable, function (Blueprint $table) use ($mailsTable): void {
             if (! Schema::hasIndex($mailsTable, 'mails_created_at_index')) {
                 $table->index('created_at', 'mails_created_at_index');
             }
@@ -22,7 +22,7 @@ return new class extends Migration
             }
         });
 
-        Schema::table($eventsTable, function (Blueprint $table) use ($eventsTable) {
+        Schema::table($eventsTable, function (Blueprint $table) use ($eventsTable): void {
             if (! Schema::hasIndex($eventsTable, 'mail_events_occurred_at_index')) {
                 $table->index('occurred_at', 'mail_events_occurred_at_index');
             }
@@ -37,7 +37,7 @@ return new class extends Migration
         $mailsTable = config('mails.database.tables.mails', 'mails');
         $eventsTable = config('mails.database.tables.events', 'mail_events');
 
-        Schema::table($mailsTable, function (Blueprint $table) use ($mailsTable) {
+        Schema::table($mailsTable, function (Blueprint $table) use ($mailsTable): void {
             if (Schema::hasIndex($mailsTable, 'mails_created_at_index')) {
                 $table->dropIndex('mails_created_at_index');
             }
@@ -46,7 +46,7 @@ return new class extends Migration
             }
         });
 
-        Schema::table($eventsTable, function (Blueprint $table) use ($eventsTable) {
+        Schema::table($eventsTable, function (Blueprint $table) use ($eventsTable): void {
             if (Schema::hasIndex($eventsTable, 'mail_events_occurred_at_index')) {
                 $table->dropIndex('mail_events_occurred_at_index');
             }
@@ -55,5 +55,4 @@ return new class extends Migration
             }
         });
     }
-
 };

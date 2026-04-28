@@ -50,4 +50,4 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/library/research-papers/{researchPaper}/edit', [AdministratorLibraryResearchPaperController::class, 'edit'])->name('library.research-papers.edit');
         Route::put('/library/research-papers/{researchPaper}', [AdministratorLibraryResearchPaperController::class, 'update'])->name('library.research-papers.update');
         Route::delete('/library/research-papers/{researchPaper}', [AdministratorLibraryResearchPaperController::class, 'destroy'])->name('library.research-papers.destroy');
-});
+    });

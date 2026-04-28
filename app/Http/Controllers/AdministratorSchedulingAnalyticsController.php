@@ -157,7 +157,7 @@ final class AdministratorSchedulingAnalyticsController extends Controller
                 ->map(fn ($group): int => $group->count())
                 ->toArray(),
             'classes_by_course' => $classes->groupBy('formatted_course_codes')
-                ->map(fn ($group) => $group->count())
+                ->map(fn ($group): int => $group->count())
                 ->toArray(),
             'schedule_conflicts' => $this->detectScheduleConflicts($classes),
         ];
@@ -522,10 +522,12 @@ final class AdministratorSchedulingAnalyticsController extends Controller
         // Flatten all schedules to easily compare pairs
         foreach ($classes as $class) {
             foreach ($class->Schedule as $schedule) {
-                if (! $schedule->start_time || ! $schedule->end_time) {
+                if (! $schedule->start_time) {
                     continue;
                 }
-
+                if (! $schedule->end_time) {
+                    continue;
+                }
                 $allSchedules[] = [
                     'class' => $class,
                     'schedule' => $schedule,

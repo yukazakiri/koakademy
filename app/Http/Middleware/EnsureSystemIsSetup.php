@@ -56,7 +56,10 @@ final class EnsureSystemIsSetup
 
     private function hasCoreSetupData(): bool
     {
-        return User::query()->exists()
-            || School::query()->exists();
+        if (User::query()->exists()) {
+            return true;
+        }
+
+        return School::query()->exists();
     }
 }

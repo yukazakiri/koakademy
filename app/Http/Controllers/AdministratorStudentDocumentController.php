@@ -55,7 +55,7 @@ final class AdministratorStudentDocumentController extends Controller
                 'course' => $student->course ? ['code' => $student->course->code, 'title' => $student->course->title] : null,
                 'student_type' => $student->student_type,
             ],
-            'fixed_documents' => $student->DocumentLocation?->toResolvedDocumentArray() ?? (new DocumentLocation())->toResolvedDocumentArray(),
+            'fixed_documents' => $student->DocumentLocation?->toResolvedDocumentArray() ?? new DocumentLocation()->toResolvedDocumentArray(),
             'dynamic_documents' => $student->resources,
         ]);
     }

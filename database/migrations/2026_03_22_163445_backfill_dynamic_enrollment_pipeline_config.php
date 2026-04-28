@@ -125,7 +125,10 @@ return new class extends Migration
 
                 $status = $this->stringOrDefault($step['status'] ?? null, '');
                 $label = $this->stringOrDefault($step['label'] ?? null, '');
-                if ($status === '' || $label === '') {
+                if ($status === '') {
+                    continue;
+                }
+                if ($label === '') {
                     continue;
                 }
 

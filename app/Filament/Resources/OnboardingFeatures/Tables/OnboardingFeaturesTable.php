@@ -85,21 +85,21 @@ final class OnboardingFeaturesTable
                     ->formatStateUsing(fn (?OnboardingFeature $record): string => ($record && self::resolveGlobalState($record)) ? 'On' : 'Default')
                     ->color(fn (?OnboardingFeature $record): string => ($record && self::resolveGlobalState($record)) ? 'success' : 'gray')
                     ->toggleable()
-                    ->visible(fn (?OnboardingFeature $record): bool => $record !== null && FeatureClassRegistry::classForKey($record->feature_key) !== null),
+                    ->visible(fn (?OnboardingFeature $record): bool => $record instanceof OnboardingFeature && FeatureClassRegistry::classForKey($record->feature_key) !== null),
                 TextColumn::make('pennant_user_overrides_count')
                     ->label('Overrides')
                     ->numeric()
                     ->alignEnd()
-                    ->formatStateUsing(fn (?OnboardingFeature $record): int => $record ? self::resolveOverrideCount($record) : 0)
+                    ->formatStateUsing(fn (?OnboardingFeature $record): int => $record instanceof OnboardingFeature ? self::resolveOverrideCount($record) : 0)
                     ->color(fn (?OnboardingFeature $record): string => ($record && self::resolveOverrideCount($record) > 0) ? 'purple' : 'gray')
                     ->badge()
                     ->toggleable()
-                    ->visible(fn (?OnboardingFeature $record): bool => $record !== null && FeatureClassRegistry::classForKey($record->feature_key) !== null),
+                    ->visible(fn (?OnboardingFeature $record): bool => $record instanceof OnboardingFeature && FeatureClassRegistry::classForKey($record->feature_key) !== null),
                 TextColumn::make('steps_count')
                     ->label('Steps')
                     ->numeric()
                     ->alignEnd()
-                    ->formatStateUsing(fn (?OnboardingFeature $record): int => $record ? count(is_array($record->steps) ? $record->steps : []) : 0)
+                    ->formatStateUsing(fn (?OnboardingFeature $record): int => $record instanceof OnboardingFeature ? count(is_array($record->steps) ? $record->steps : []) : 0)
                     ->badge()
                     ->color('gray')
                     ->toggleable(),
@@ -137,8 +137,8 @@ final class OnboardingFeaturesTable
                     ->modalHeading(fn (OnboardingFeature $record): string => "User Overrides — {$record->name}")
                     ->modalDescription('Manage per-user feature flag overrides. Users listed here have explicit overrides that bypass the default resolution.')
                     ->modalIcon(Heroicon::UserCircle)
-                    ->schema(fn (OnboardingFeature $record) => self::getOverridesSchema($record))
-                    ->modalFooterActions(fn (OnboardingFeature $record) => self::getOverridesFooterActions($record))
+                    ->schema(fn (OnboardingFeature $record): array => self::getOverridesSchema())
+                    ->modalFooterActions(fn (OnboardingFeature $record): array => self::getOverridesFooterActions($record))
                     ->modalWidth('lg')
                     ->slideOver(),
                 Action::make('preview')
@@ -200,7 +200,7 @@ final class OnboardingFeaturesTable
      *
      * @return array<int, mixed>
      */
-    private static function getOverridesSchema(OnboardingFeature $record): array
+    private static function getOverridesSchema(): array
     {
         return [
             TextInput::make('user_id_input')
@@ -271,7 +271,7 @@ final class OnboardingFeaturesTable
      *
      * @return \Illuminate\Contracts\View\View
      */
-    private static function getPreviewContent(OnboardingFeature $record)
+    private static function getPreviewContent(OnboardingFeature $record): \Illuminate\Contracts\View\Factory|\Illuminate\Contracts\View\View
     {
         $featureClass = FeatureClassRegistry::classForKey($record->feature_key);
         $steps = is_array($record->steps) ? $record->steps : [];

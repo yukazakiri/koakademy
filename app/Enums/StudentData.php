@@ -683,7 +683,7 @@ enum StudentData: string
     {
         return [
             'mobile' => self::randomPhoneNumber(),
-            'facebook' => mb_strtolower(fake()->randomElement(self::filipinoFirstNamesMale())).'.'.mb_strtolower(fake()->randomElement(self::filipinoLastNames())).fake()->numerify('###'),
+            'facebook' => mb_strtolower((string) fake()->randomElement(self::filipinoFirstNamesMale())).'.'.mb_strtolower((string) fake()->randomElement(self::filipinoLastNames())).fake()->numerify('###'),
             'messenger' => null,
             'viber' => self::randomPhoneNumber(),
             'whatsapp' => self::randomPhoneNumber(),

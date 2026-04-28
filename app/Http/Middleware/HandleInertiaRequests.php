@@ -6,19 +6,14 @@ namespace App\Http\Middleware;
 
 use App\Features\StudentAvatarUpload;
 use App\Features\StudentSignaturePad;
-use App\Models\Faculty;
-use App\Models\Student;
-use App\Models\StudentEnrollment;
-use App\Models\User;
 use App\Services\AnalyticsSettingsService;
 use App\Services\FacultyClassShareService;
-use App\Services\GeneralSettingsService;
 use App\Services\ModuleAdminNavigationService;
 use App\Services\NotificationShareService;
 use App\Services\OnboardingShareService;
 use App\Services\SettingsShareService;
+use App\Support\AdministratorSidebarCounts;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 use Inertia\Middleware;
 use Laravel\Pennant\Feature;
 use Modules\Announcement\Services\AnnouncementDataService;
@@ -52,6 +47,7 @@ final class HandleInertiaRequests extends Middleware
         $announcementService = app(AnnouncementDataService::class);
         $analyticsService = app(AnalyticsSettingsService::class);
         $moduleAdminNavigationService = app(ModuleAdminNavigationService::class);
+        $administratorSidebarCounts = app(AdministratorSidebarCounts::class);
 
         $featureValues = $onboardingService->getAllFeatureValues($user);
 
@@ -79,49 +75,19 @@ final class HandleInertiaRequests extends Middleware
                 'featureFlags' => [
                     'experimentalKeys' => config('onboarding.experimental_feature_keys', []),
                     'enabledRoutes' => $onboardingService->getSidebarFeatureFlags($featureValues),
-                    'studentSignaturePad' => $user ? Feature::for($user)->active(StudentSignaturePad::class) : false,
-                    'studentAvatarUpload' => $user ? Feature::for($user)->active(StudentAvatarUpload::class) : false,
+                    'studentSignaturePad' => $user && Feature::for($user)->active(StudentSignaturePad::class),
+                    'studentAvatarUpload' => $user && Feature::for($user)->active(StudentAvatarUpload::class),
                 ],
                 'facultyClasses' => $facultyClassService->getFacultyClasses($user),
                 'notifications' => $notificationService->transformNotifications($user),
                 'unreadNotificationsCount' => $notificationService->getUnreadCount($user),
                 'unresolvedHelpTicketsCount' => $onboardingService->getUnresolvedHelpTicketsCount($user),
-                'adminSidebarCounts' => $this->getAdminSidebarCounts($user),
+                'adminSidebarCounts' => fn () => $administratorSidebarCounts->resolve($request),
                 'moduleAdminRoutes' => $moduleAdminNavigationService->getRoutes(),
             ],
             [
                 'announcements' => $announcementService->getSharedBannerAnnouncements(...),
             ]
         );
-    }
-
-    /**
-     * @return array{students: int, enrollments: int, faculties: int, users: int}|null
-     */
-    private function getAdminSidebarCounts(?User $user): ?array
-    {
-        if (! $user || ! $user->canAccessAdminPortal()) {
-            return null;
-        }
-
-        /** @var GeneralSettingsService $settingsService */
-        $settingsService = app(GeneralSettingsService::class);
-        $schoolYear = $settingsService->getCurrentSchoolYearString();
-        $semester = $settingsService->getCurrentSemester();
-
-        $tenantContext = app(\App\Services\TenantContext::class);
-        $schoolId = $tenantContext->getCurrentSchoolId() ?? 'all';
-
-        $cacheKey = sprintf('admin_sidebar_counts:%s:%s:%s', $schoolId, $schoolYear, $semester);
-
-        return Cache::remember($cacheKey, 60, fn (): array => [
-            'students' => Student::query()->count(),
-            'enrollments' => StudentEnrollment::query()
-                ->where('school_year', $schoolYear)
-                ->where('semester', $semester)
-                ->count(),
-            'faculties' => Faculty::query()->count(),
-            'users' => User::query()->count(),
-        ]);
     }
 }

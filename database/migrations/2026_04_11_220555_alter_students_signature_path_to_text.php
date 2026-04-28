@@ -29,7 +29,7 @@ return new class extends Migration
             $value = $row->signature_path;
 
             // Skip values that are already encrypted (JSON-encoded with "iv" key).
-            $decoded = json_decode($value, true);
+            $decoded = json_decode((string) $value, true);
 
             if (is_array($decoded) && isset($decoded['iv'])) {
                 continue;

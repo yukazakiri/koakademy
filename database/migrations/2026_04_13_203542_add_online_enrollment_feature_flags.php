@@ -44,7 +44,7 @@ return new class extends Migration
             'is_active' => true,
         ]);
 
-        $college = OnboardingFeature::create([
+        OnboardingFeature::create([
             'feature_key' => 'online-college-enrollment',
             'name' => 'Online College Enrollment',
             'audience' => 'all',

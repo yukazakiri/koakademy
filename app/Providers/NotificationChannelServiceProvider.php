@@ -61,7 +61,7 @@ final class NotificationChannelServiceProvider extends ServiceProvider
      */
     private function applyPusherConfig(array $pusherConfig): void
     {
-        if (empty($pusherConfig)) {
+        if ($pusherConfig === []) {
             return;
         }
 
@@ -86,7 +86,7 @@ final class NotificationChannelServiceProvider extends ServiceProvider
      */
     private function applySmsConfig(array $smsConfig): void
     {
-        if (empty($smsConfig)) {
+        if ($smsConfig === []) {
             return;
         }
 

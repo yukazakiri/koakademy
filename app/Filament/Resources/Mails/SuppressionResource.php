@@ -34,7 +34,7 @@ final class SuppressionResource extends BaseSuppressionResource
                 $query
                     ->from("{$eventTable} as filtered_events")
                     ->join("{$mailTable} as filtered_mails", 'filtered_events.mail_id', '=', 'filtered_mails.id')
-                    ->selectRaw('distinct '.static::recipientExpression($connection, 'filtered_mails', 'to'))
+                    ->selectRaw('distinct '.self::recipientExpression($connection, 'filtered_mails', 'to'))
                     ->where('filtered_events.type', EventType::HARD_BOUNCED)
                     ->whereNull('filtered_events.unsuppressed_at');
             })

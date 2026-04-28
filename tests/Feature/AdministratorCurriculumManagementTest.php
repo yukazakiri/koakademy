@@ -114,8 +114,8 @@ it('updates program details and manages subjects', function (): void {
         'role' => UserRole::Admin,
     ]);
 
-    $department1 = \App\Models\Department::factory()->create(['code' => 'CBA']);
-    $department2 = \App\Models\Department::factory()->create(['code' => 'CCS']);
+    $department1 = App\Models\Department::factory()->create(['code' => 'CBA']);
+    $department2 = App\Models\Department::factory()->create(['code' => 'CCS']);
 
     $courseType1 = CourseType::factory()->create();
     $courseType2 = CourseType::factory()->create();

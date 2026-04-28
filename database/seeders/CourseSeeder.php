@@ -11,7 +11,7 @@ use Illuminate\Database\Seeder;
 
 final class CourseSeeder extends Seeder
 {
-    private const DEPARTMENT_MAP = [
+    private const array DEPARTMENT_MAP = [
         'BSIT' => 'IT',
         'BSCS' => 'CS',
         'BSIS' => 'IS',

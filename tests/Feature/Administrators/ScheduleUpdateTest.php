@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Administrators;
 
+use App\Enums\UserRole;
 use App\Models\Classes;
 use App\Models\Course;
 use App\Models\Faculty;
@@ -11,7 +12,6 @@ use App\Models\Room;
 use App\Models\Schedule;
 use App\Models\Subject;
 use App\Models\User;
-use App\Enums\UserRole;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -20,6 +20,7 @@ final class ScheduleUpdateTest extends TestCase
     use RefreshDatabase;
 
     private User $admin;
+
     private Schedule $schedule;
 
     protected function setUp(): void

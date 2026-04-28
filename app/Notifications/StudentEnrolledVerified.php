@@ -42,7 +42,7 @@ final class StudentEnrolledVerified extends Notification implements ShouldQueue
         $siteSettings = app(SiteSettings::class)->getBrandingArray();
 
         $logoUrl = $siteSettings['logo'] ?? null;
-        if ($logoUrl && ! str_starts_with($logoUrl, 'http')) {
+        if ($logoUrl && ! str_starts_with((string) $logoUrl, 'http')) {
             $logoUrl = url($logoUrl);
         }
 

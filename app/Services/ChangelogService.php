@@ -211,13 +211,13 @@ final readonly class ChangelogService
         // Remove full URLs (http/https)
         $text = preg_replace('/https?:\/\/\S+/', '', $text);
         // Remove @mentions
-        $text = preg_replace('/@[\w-]+/', '', $text);
+        $text = preg_replace('/@[\w-]+/', '', (string) $text);
         // Remove PR references like (#123)
-        $text = preg_replace('/\(#\d+\)/', '', $text);
+        $text = preg_replace('/\(#\d+\)/', '', (string) $text);
         // Remove commit hash references
-        $text = preg_replace('/\b[0-9a-f]{7,40}\b/', '', $text);
+        $text = preg_replace('/\b[0-9a-f]{7,40}\b/', '', (string) $text);
         // Remove markdown bold/italic
-        $text = preg_replace('/[*_]+/', '', $text);
+        $text = preg_replace('/[*_]+/', '', (string) $text);
         // Collapse whitespace
         $text = preg_replace('/\s+/', ' ', mb_trim($text));
         // Remove trailing punctuation artifacts
@@ -237,11 +237,7 @@ final readonly class ChangelogService
         }
 
         // Take first sentence (up to period, colon, or semicolon)
-        if (preg_match('/^(.+?)[.:;]/', $cleanedText, $match)) {
-            $short = mb_trim($match[1]);
-        } else {
-            $short = $cleanedText;
-        }
+        $short = preg_match('/^(.+?)[.:;]/', $cleanedText, $match) ? mb_trim($match[1]) : $cleanedText;
 
         // Cap at 60 chars
         if (mb_strlen($short) > 60) {

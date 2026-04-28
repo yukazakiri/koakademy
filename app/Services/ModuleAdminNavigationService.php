@@ -40,11 +40,7 @@ final class ModuleAdminNavigationService
             $configPath = base_path("Modules/{$moduleName}/config/navigation.php");
             $configuredLinks = [];
 
-            if (! is_file($configPath)) {
-                $config = null;
-            } else {
-                $config = require $configPath;
-            }
+            $config = is_file($configPath) ? require $configPath : null;
 
             if (is_array($config)) {
                 foreach (($config['admin'] ?? []) as $route) {
@@ -58,10 +54,8 @@ final class ModuleAdminNavigationService
                     }
 
                     $inertiaPage = $route['inertiaPage'] ?? null;
-                    if (is_string($inertiaPage) && $inertiaPage !== '') {
-                        if (! isset($modulePagesLookup[$inertiaPage])) {
-                            continue;
-                        }
+                    if (is_string($inertiaPage) && $inertiaPage !== '' && ! isset($modulePagesLookup[$inertiaPage])) {
+                        continue;
                     }
 
                     $routes[] = [
@@ -113,10 +107,12 @@ final class ModuleAdminNavigationService
                 continue;
             }
 
-            $withoutPrefix = substr($relativePath, strlen($prefix));
+            $withoutPrefix = mb_substr($relativePath, mb_strlen($prefix));
             $withoutExtension = preg_replace('/\.tsx$/', '', $withoutPrefix);
-
-            if (! is_string($withoutExtension) || $withoutExtension === '') {
+            if (! is_string($withoutExtension)) {
+                continue;
+            }
+            if ($withoutExtension === '') {
                 continue;
             }
 
@@ -142,7 +138,7 @@ final class ModuleAdminNavigationService
             }
 
             $moduleSlug = $matches[1] ?? null;
-            if (! is_string($moduleSlug) || $moduleSlug === '') {
+            if ($moduleSlug === '') {
                 continue;
             }
 
@@ -168,7 +164,7 @@ final class ModuleAdminNavigationService
     {
         $withDashes = preg_replace('/(?<!^)[A-Z]/', '-$0', $value);
 
-        return strtolower((string) $withDashes);
+        return mb_strtolower((string) $withDashes);
     }
 
     private function toTitleCase(string $slug): string

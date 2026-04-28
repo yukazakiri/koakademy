@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -12,8 +14,8 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('courses', function (Blueprint $table) {
-            $table->foreignIdFor(\App\Models\CourseType::class)
+        Schema::table('courses', function (Blueprint $table): void {
+            $table->foreignIdFor(App\Models\CourseType::class)
                 ->nullable()
                 ->after('department_id')
                 ->constrained()
@@ -40,8 +42,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('courses', function (Blueprint $table) {
-            $table->dropForeignIdFor(\App\Models\CourseType::class);
+        Schema::table('courses', function (Blueprint $table): void {
+            $table->dropForeignIdFor(App\Models\CourseType::class);
             $table->dropColumn('course_type_id');
         });
     }

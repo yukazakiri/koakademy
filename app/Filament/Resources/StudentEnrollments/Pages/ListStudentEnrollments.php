@@ -133,10 +133,15 @@ final class ListStudentEnrollments extends ListRecords
         ];
 
         foreach ($steps as $step) {
-            if ($step['status'] === $pendingStatus || $step['status'] === $deptVerifiedStatus || $step['status'] === $cashierVerifiedStatus) {
+            if ($step['status'] === $pendingStatus) {
                 continue;
             }
-
+            if ($step['status'] === $deptVerifiedStatus) {
+                continue;
+            }
+            if ($step['status'] === $cashierVerifiedStatus) {
+                continue;
+            }
             $tabKey = 'pipeline_'.str($step['status'])->slug('_');
             $tabs[$tabKey] = Tab::make($step['label'])
                 ->icon('heroicon-m-adjustments-vertical')

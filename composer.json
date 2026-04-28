@@ -141,7 +141,7 @@
         ],
         "test": [
             "@php artisan config:clear --ansi",
-            "@php artisan test"
+            "@php artisan test --parallel --compact"
         ],
         "lint": [
             "rector --debug",

@@ -1714,39 +1714,4 @@ final class FacultyClassController extends Controller
             'Content-Disposition' => 'attachment; filename="'.$fileName.'.csv"',
         ]);
     }
-
-    /**
-     * Generate PDF for attendance export.
-     */
-    private function generateAttendancePdf(Classes $class, $sessions, array $studentData, $primarySubject, string $fileName): \Symfony\Component\HttpFoundation\Response
-    {
-        $data = [
-            'class' => $class,
-            'subject' => $primarySubject,
-            'sessions' => $sessions,
-            'studentData' => $studentData,
-            'generatedAt' => now()->format('F j, Y g:i A'),
-        ];
-
-        $pdfService = app(\App\Services\PdfGenerationService::class);
-        $tempPath = storage_path('app/temp/'.$fileName.'.pdf');
-
-        if (! file_exists(dirname($tempPath))) {
-            mkdir(dirname($tempPath), 0755, true);
-        }
-
-        try {
-            $pdfService->generatePdfFromView('pdf.attendance-report', $data, $tempPath, [
-                'landscape' => true,
-                'format' => 'A4',
-                'margins' => ['top' => '10mm', 'right' => '10mm', 'bottom' => '10mm', 'left' => '10mm'],
-            ]);
-
-            return response()->download($tempPath, $fileName.'.pdf')->deleteFileAfterSend(true);
-        } catch (Exception $e) {
-            return response()->json([
-                'error' => 'Failed to generate PDF: '.$e->getMessage(),
-            ], 500);
-        }
-    }
 }

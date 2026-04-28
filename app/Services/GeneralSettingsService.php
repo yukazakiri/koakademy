@@ -13,12 +13,12 @@ use Illuminate\Support\Facades\Log;
 
 final class GeneralSettingsService
 {
-    private const API_MANAGEMENT_CONFIG_KEY = 'api_management';
+    private const string API_MANAGEMENT_CONFIG_KEY = 'api_management';
 
     /**
      * @var array<string, array{label: string, description: string, input: string, editable: bool}>
      */
-    private const PUBLIC_API_FIELD_DEFINITIONS = [
+    private const array PUBLIC_API_FIELD_DEFINITIONS = [
         'site_name' => [
             'label' => 'Site name',
             'description' => 'Primary website title shown in headers and browser tabs.',
@@ -108,7 +108,7 @@ final class GeneralSettingsService
     /**
      * @var list<string>
      */
-    private const DEFAULT_PUBLIC_API_FIELDS = [
+    private const array DEFAULT_PUBLIC_API_FIELDS = [
         'site_name',
         'site_description',
         'theme_color',

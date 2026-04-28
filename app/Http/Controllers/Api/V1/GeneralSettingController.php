@@ -401,7 +401,7 @@ final class GeneralSettingController extends Controller
             ], 404);
         }
 
-        if (! $this->settingsService->getGlobalSettingsModel()) {
+        if (! $this->settingsService->getGlobalSettingsModel() instanceof GeneralSetting) {
             return response()->json([
                 'message' => 'No general settings found',
                 'data' => null,

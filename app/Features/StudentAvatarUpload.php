@@ -19,12 +19,8 @@ final class StudentAvatarUpload
      */
     public function resolve(User $scope): bool
     {
-        if ($scope->role === UserRole::Admin) {
-            return true;
-        }
-
         // Incremental rollout: uncomment to enable for 50% of faculty
         // return Lottery::odds(1, 2)->make();
-        return false;
+        return $scope->role === UserRole::Admin;
     }
 }

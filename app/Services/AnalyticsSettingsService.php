@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-final class AnalyticsSettingsService
+final readonly class AnalyticsSettingsService
 {
     public function __construct(
-        private readonly GeneralSettingsService $generalSettingsService,
+        private GeneralSettingsService $generalSettingsService,
     ) {}
 
     /**

@@ -1,7 +1,7 @@
 {
     "job_id": "bulk-orchestration-test",
-    "batch_id": "a19c2375-3bc3-4c57-8e00-d94d78d17da3",
-    "user_id": 1,
+    "batch_id": "a1a67d22-8efe-48e5-8322-029f1344d818",
+    "user_id": 19,
     "filters": {
         "course_filter": "all",
         "year_level_filter": "all",
@@ -22,6 +22,6 @@
         }
     ],
     "skipped_enrollments": [],
-    "created_at": "2026-04-23T12:50:18+08:00",
-    "updated_at": "2026-04-23T12:50:18+08:00"
+    "created_at": "2026-04-28T16:19:20+08:00",
+    "updated_at": "2026-04-28T16:19:20+08:00"
 }

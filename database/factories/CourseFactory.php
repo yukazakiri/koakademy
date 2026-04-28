@@ -18,8 +18,6 @@ final class CourseFactory extends Factory
      */
     public function definition(): array
     {
-        $departments = ['CCS', 'CBA', 'CTE', 'CHTM'];
-
         return [
             'code' => $this->faker->unique()->regexify('[A-Z]{2,4}'),
             'title' => $this->faker->sentence(6),

@@ -92,11 +92,7 @@ final class StudentEnrollmentsTable
                     ]),
                 SelectFilter::make('status')
                     ->label('Enrollment Status')
-                    ->options(function (): array {
-                        $labels = app(EnrollmentPipelineService::class)->getStatusLabels();
-
-                        return $labels;
-                    }),
+                    ->options(fn (): array => app(EnrollmentPipelineService::class)->getStatusLabels()),
                 Filter::make('course')
                     ->form([
                         Select::make('course_id')

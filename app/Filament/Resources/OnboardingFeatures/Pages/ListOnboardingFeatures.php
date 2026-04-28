@@ -14,14 +14,14 @@ final class ListOnboardingFeatures extends ListRecords
 {
     protected static string $resource = OnboardingFeatureResource::class;
 
-    public function getSubheading(): ?string
+    public function getSubheading(): string
     {
         $query = OnboardingFeatureResource::getEloquentQuery();
         $total = $query->count();
         $active = (clone $query)->where('is_active', true)->count();
         $classBased = (clone $query)
             ->get()
-            ->filter(fn (OnboardingFeature $feature) => FeatureClassRegistry::classForKey($feature->feature_key) !== null)
+            ->filter(fn (OnboardingFeature $feature): bool => FeatureClassRegistry::classForKey($feature->feature_key) !== null)
             ->count();
 
         return "Total: {$total}  •  Active: {$active}  •  Class-based: {$classBased}";

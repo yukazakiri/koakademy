@@ -17,12 +17,12 @@ use Illuminate\Database\Eloquent\Model;
  *
  * @template TEnum of \BackedEnum
  */
-final class SafeEnumCast implements CastsAttributes
+final readonly class SafeEnumCast implements CastsAttributes
 {
     /**
      * @param  class-string<TEnum>  $enumClass
      */
-    public function __construct(private readonly string $enumClass) {}
+    public function __construct(private string $enumClass) {}
 
     /**
      * @param  class-string<TEnum>  $enumClass

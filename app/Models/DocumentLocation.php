@@ -64,7 +64,6 @@ final class DocumentLocation extends Model
         $documents = [];
 
         foreach (self::DOCUMENT_FIELDS as $field) {
-            /** @var mixed $value */
             $value = $this->getAttribute($field);
             $documents[$field] = is_string($value) ? $this->resolveDocumentUrl($value) : null;
         }

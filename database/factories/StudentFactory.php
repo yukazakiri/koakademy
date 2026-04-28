@@ -49,7 +49,7 @@ final class StudentFactory extends Factory
             'middle_name' => $this->faker->randomElement(StudentData::filipinoMiddleNames()),
             'last_name' => $lastName,
             'suffix' => $this->faker->randomElement(StudentData::filipinoSuffixes()),
-            'email' => mb_strtolower($firstName).'.'.mb_strtolower($lastName).$this->faker->numerify('#').'@student.koakademy.edu',
+            'email' => mb_strtolower((string) $firstName).'.'.mb_strtolower((string) $lastName).$this->faker->numerify('#').'@student.koakademy.edu',
             'phone' => StudentData::randomPhoneNumber(),
             'birth_date' => $birthDate,
             'gender' => $gender->value,

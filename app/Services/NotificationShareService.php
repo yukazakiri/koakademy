@@ -24,7 +24,7 @@ final class NotificationShareService
             ->latest()
             ->take(10)
             ->get()
-            ->map(fn ($notification): array => $this->transformNotification($notification))
+            ->map(fn (DatabaseNotification $notification): array => $this->transformNotification($notification))
             ->toArray();
     }
 

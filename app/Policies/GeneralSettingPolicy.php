@@ -12,13 +12,7 @@ final class GeneralSettingPolicy
 {
     public function viewAny(User $user): bool
     {
-        foreach (SystemManagementPermissions::sectionKeys() as $section) {
-            if ($this->canViewSection($user, $section)) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any(SystemManagementPermissions::sectionKeys(), fn (string $section): bool => $this->canViewSection($user, $section));
     }
 
     public function viewSchool(User $user): bool
@@ -144,9 +138,11 @@ final class GeneralSettingPolicy
 
         $permissions = $user->getAllPermissions()->pluck('name');
         $updatePermission = SystemManagementPermissions::updatePermission($section);
+        if ($permissions->contains(SystemManagementPermissions::viewPermission($section))) {
+            return true;
+        }
 
-        return $permissions->contains(SystemManagementPermissions::viewPermission($section))
-            || ($updatePermission !== null && $permissions->contains($updatePermission));
+        return $updatePermission !== null && $permissions->contains($updatePermission);
     }
 
     private function canUpdateSection(User $user, string $section): bool
@@ -171,7 +167,10 @@ final class GeneralSettingPolicy
         }
 
         $superAdminRoleName = (string) config('filament-shield.super_admin.name', 'super_admin');
+        if ($user->hasRole($superAdminRoleName)) {
+            return true;
+        }
 
-        return $user->hasRole($superAdminRoleName) || $user->hasRole(UserRole::Developer->value);
+        return $user->hasRole(UserRole::Developer->value);
     }
 }

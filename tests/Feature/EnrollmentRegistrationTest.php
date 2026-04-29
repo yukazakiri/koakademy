@@ -5,7 +5,13 @@ declare(strict_types=1);
 use App\Enums\StudentStatus;
 use App\Enums\StudentType;
 use App\Models\Course;
+use App\Models\GeneralSetting;
+use App\Models\School;
 use App\Models\Student;
+use App\Models\StudentEnrollment;
+use App\Models\Subject;
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
 
 beforeEach(function () {
     //
@@ -147,5 +153,101 @@ it('validates tesda course mismatch', function () {
     $this->assertDatabaseMissing('students', [
         'first_name' => 'Bob',
         'last_name' => 'Builder',
+    ]);
+});
+
+it('saves continuing enrollment using first school when no active school exists', function () {
+    GeneralSetting::query()->create([
+        'site_name' => 'KoAkademy',
+        'school_starting_date' => now()->startOfYear()->toDateString(),
+        'school_ending_date' => now()->endOfYear()->toDateString(),
+        'semester' => 1,
+    ]);
+
+    DB::table('schools')->delete();
+
+    School::factory()->inactive()->create();
+    School::factory()->inactive()->create();
+
+    $course = Course::factory()->create([
+        'is_active' => true,
+    ]);
+
+    $student = Student::factory()->create([
+        'course_id' => $course->id,
+        'email' => 'returning.student@example.com',
+        'student_id' => 200123,
+        'academic_year' => 1,
+    ]);
+
+    $student->update([
+        'school_id' => null,
+        'institution_id' => null,
+    ]);
+
+    $subject = Subject::factory()->create([
+        'course_id' => $course->id,
+        'academic_year' => 2,
+        'semester' => 1,
+    ]);
+
+    $admin = User::factory()->create([
+        'role' => 'admin',
+    ]);
+
+    $superAdmin = User::factory()->create([
+        'role' => 'super_admin',
+    ]);
+
+    $response = $this->post(route('enrollment.continuing.store'), [
+        'email' => 'returning.student@example.com',
+        'student_id' => '200123',
+        'academic_year' => 2,
+        'subjects' => [
+            [
+                'subject_id' => $subject->id,
+                'is_modular' => false,
+                'lecture_fee' => 1200,
+                'laboratory_fee' => 300,
+                'enrolled_lecture_units' => 3,
+                'enrolled_laboratory_units' => 1,
+            ],
+        ],
+        'consent' => true,
+    ]);
+
+    $response->assertRedirect(route('enrollment.create'));
+    $response->assertSessionHas('flash.success');
+
+    $enrollment = StudentEnrollment::query()
+        ->withoutSchoolScope()
+        ->where('student_id', $student->id)
+        ->latest('id')
+        ->first();
+
+    expect($enrollment)->not->toBeNull();
+    expect($enrollment?->school_id)->not->toBeNull();
+    $this->assertDatabaseHas('schools', [
+        'id' => $enrollment?->school_id,
+    ]);
+
+    $this->assertDatabaseHas('subject_enrollments', [
+        'enrollment_id' => $enrollment?->id,
+        'student_id' => $student->id,
+        'subject_id' => $subject->id,
+        'school_id' => $enrollment?->school_id,
+    ]);
+
+    // Verify admin notifications were created
+    $this->assertDatabaseHas('notifications', [
+        'notifiable_type' => User::class,
+        'notifiable_id' => $admin->id,
+        'type' => 'Filament\Notifications\DatabaseNotification',
+    ]);
+
+    $this->assertDatabaseHas('notifications', [
+        'notifiable_type' => User::class,
+        'notifiable_id' => $superAdmin->id,
+        'type' => 'Filament\Notifications\DatabaseNotification',
     ]);
 });

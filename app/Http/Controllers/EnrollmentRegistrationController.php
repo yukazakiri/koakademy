@@ -15,9 +15,11 @@ use App\Models\School;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\Subject;
+use App\Models\User;
 use App\Services\EnrollmentService;
 use App\Services\GeneralSettingsService;
 use Exception;
+use Filament\Notifications\Notification as FilamentNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -524,6 +526,12 @@ final class EnrollmentRegistrationController extends Controller
         $schoolYear = $systemSchoolYearStart.' - '.($systemSchoolYearStart + 1);
         $semester = (int) ($validated['semester'] ?? $settings->getSystemDefaultSemester());
 
+        $semesterLabel = match ($semester) {
+            1 => '1st Semester',
+            2 => '2nd Semester',
+            default => 'Semester '.$semester,
+        };
+
         // Duplicate guard 1: any enrollment for this exact student row in the
         // given school year + semester.
         $existing = StudentEnrollment::query()
@@ -610,6 +618,67 @@ final class EnrollmentRegistrationController extends Controller
 
                 return [$enrollment, $tuition];
             });
+
+            try {
+                $admins = User::query()
+                    ->whereNotNull('role')
+                    ->where(function ($query): void {
+                        $query->whereIn('role', [
+                            'developer',
+                            'super_admin',
+                            'admin',
+                            'president',
+                            'vice_president',
+                            'dean',
+                            'associate_dean',
+                            'department_head',
+                            'program_chair',
+                            'registrar',
+                            'assistant_registrar',
+                            'cashier',
+                            'accounting_officer',
+                            'bursar_officer',
+                            'student_affairs_officer',
+                            'hr_manager',
+                        ]);
+                    })
+                    ->get();
+
+                if ($admins->isNotEmpty()) {
+                    $enrollmentUrl = route(
+                        'filament.admin.resources.student-enrollments.view',
+                        ['record' => $enrollment->id],
+                        false
+                    );
+
+                    FilamentNotification::make()
+                        ->title('New Re-Enrollment Submitted')
+                        ->body(sprintf(
+                            '%s %s (ID: %s) submitted a re-enrollment for %s, %s.',
+                            (string) $student->first_name,
+                            (string) $student->last_name,
+                            (string) $student->student_id,
+                            $semesterLabel,
+                            $schoolYear
+                        ))
+                        ->icon('heroicon-o-user-plus')
+                        ->success()
+                        ->actions([
+                            \Filament\Actions\Action::make('view')
+                                ->label('View Enrollment')
+                                ->icon('heroicon-o-arrow-top-right-on-square')
+                                ->url($enrollmentUrl)
+                                ->openUrlInNewTab(),
+                        ])
+                        ->sendToDatabase($admins)
+                        ->send();
+                }
+            } catch (Exception $notifException) {
+                Log::warning('Admin notification failed for continuing enrollment', [
+                    'enrollment_id' => $enrollment->id,
+                    'error' => $notifException->getMessage(),
+                ]);
+            }
         } catch (Exception $exception) {
             return back()->with('flash', [
                 'error' => 'We could not save your re-enrollment: '.$exception->getMessage(),
@@ -638,12 +707,6 @@ final class EnrollmentRegistrationController extends Controller
             static fn (array $s): int => $s['lecture_units'] + $s['laboratory_units'],
             $subjectsSummary
         ));
-
-        $semesterLabel = match ($semester) {
-            1 => '1st Semester',
-            2 => '2nd Semester',
-            default => 'Semester '.$semester,
-        };
 
         $yearLevelLabel = match ((int) $validated['academic_year']) {
             1 => '1st Year',
@@ -701,8 +764,16 @@ final class EnrollmentRegistrationController extends Controller
             return (int) $student->school_id;
         }
 
-        return School::query()
+        $activeSchoolId = School::query()
             ->where('is_active', true)
+            ->orderBy('id')
+            ->value('id');
+
+        if ($activeSchoolId) {
+            return (int) $activeSchoolId;
+        }
+
+        return School::query()
             ->orderBy('id')
             ->value('id');
     }

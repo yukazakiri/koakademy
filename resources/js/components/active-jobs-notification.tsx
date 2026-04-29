@@ -31,7 +31,11 @@ interface ActiveJobsResponse {
     has_active: boolean;
 }
 
-const POLL_INTERVAL = 2000; // 2 seconds for responsive updates
+// Poll fast only while jobs are actively running, otherwise back off so we
+// don't hammer the backend (especially `php artisan serve`, which is single
+// threaded and will block every other request behind these polls).
+const ACTIVE_POLL_INTERVAL = 2000;
+const IDLE_POLL_INTERVAL = 30000;
 
 // Track which jobs have active toasts to prevent duplicates
 const activeToasts = new Map<string, string>();
@@ -154,8 +158,10 @@ function ExpandableJobContent({ job }: { job: ActiveJob }) {
 }
 
 export function ActiveJobsNotification() {
-    const pollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+    const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const mountedRef = React.useRef(true);
+    const inFlightRef = React.useRef(false);
+    const hasActiveRef = React.useRef(false);
 
     const getCsrfToken = React.useCallback(() => {
         return (
@@ -169,6 +175,8 @@ export function ActiveJobsNotification() {
 
     const fetchAndUpdateJobs = React.useCallback(async () => {
         if (!mountedRef.current) return;
+        if (inFlightRef.current) return;
+        inFlightRef.current = true;
 
         try {
             const csrfToken = getCsrfToken();
@@ -187,6 +195,7 @@ export function ActiveJobsNotification() {
             }
 
             const data: ActiveJobsResponse = await response.json();
+            hasActiveRef.current = data.has_active === true || data.jobs.some((j) => j.status === "pending" || j.status === "processing");
 
             // Process each job
             for (const job of data.jobs) {
@@ -277,24 +286,56 @@ export function ActiveJobsNotification() {
             }
         } catch (error) {
             console.error("Error fetching active jobs:", error);
+        } finally {
+            inFlightRef.current = false;
         }
     }, [getCsrfToken]);
 
-    // Start polling on mount
+    // Self-rescheduling poll: fast while active, slow while idle, paused while
+    // the tab is hidden. Uses setTimeout chained after each request so we never
+    // pile up overlapping polls behind a slow `php artisan serve`.
     React.useEffect(() => {
         mountedRef.current = true;
 
-        // Initial fetch
-        fetchAndUpdateJobs();
+        const clearPending = () => {
+            if (timeoutRef.current) {
+                clearTimeout(timeoutRef.current);
+                timeoutRef.current = null;
+            }
+        };
 
-        // Set up polling
-        pollRef.current = setInterval(fetchAndUpdateJobs, POLL_INTERVAL);
+        const schedule = (delay: number) => {
+            clearPending();
+            if (!mountedRef.current) return;
+            timeoutRef.current = setTimeout(tick, delay);
+        };
+
+        const tick = async () => {
+            if (!mountedRef.current) return;
+            if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+                // Re-check after the tab becomes visible again via the listener below.
+                return;
+            }
+            await fetchAndUpdateJobs();
+            schedule(hasActiveRef.current ? ACTIVE_POLL_INTERVAL : IDLE_POLL_INTERVAL);
+        };
+
+        const onVisibilityChange = () => {
+            if (document.visibilityState === "visible") {
+                schedule(0);
+            } else {
+                clearPending();
+            }
+        };
+
+        document.addEventListener("visibilitychange", onVisibilityChange);
+        // Kick off the first poll
+        schedule(0);
 
         return () => {
             mountedRef.current = false;
-            if (pollRef.current) {
-                clearInterval(pollRef.current);
-            }
+            clearPending();
+            document.removeEventListener("visibilitychange", onVisibilityChange);
         };
     }, [fetchAndUpdateJobs]);
 

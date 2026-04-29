@@ -1,4 +1,3 @@
-import { ActiveJobsNotification } from "@/components/active-jobs-notification";
 import { AdminHeader } from "@/components/administrators/admin-header";
 import { AdministratorSidebar } from "@/components/administrators/admin-sidebar";
 import { AnalyticsScripts } from "@/components/analytics-scripts";
@@ -50,7 +49,6 @@ export default function AdminLayout({ user, title, children }: AdminLayoutProps)
                     </div>
                 </SidebarInset>
                 <GlobalCommandPalette user={resolvedUser} />
-                <ActiveJobsNotification />
             </SidebarProvider>
         </ThemeProvider>
     );

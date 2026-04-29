@@ -1,8 +1,29 @@
 import tailwindcss from "@tailwindcss/vite";
 import legacy from "@vitejs/plugin-legacy";
 import react from "@vitejs/plugin-react";
+import fs from "node:fs";
 import laravel from "laravel-vite-plugin";
 import { defineConfig } from "vite";
+
+const CONTROL_CHARS_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g;
+
+// Rolldown plugin so optimizeDeps prebundling (Vite 8+) doesn't choke on
+// the stray control characters shipped inside @tabler/icons-react ESM files.
+const sanitizeTablerIconsRolldown = {
+    name: "sanitize-tabler-icons",
+    async load(id) {
+        if (!id.includes("/node_modules/@tabler/icons-react/dist/esm/")) {
+            return null;
+        }
+        const filePath = id.split("?")[0];
+        try {
+            const source = await fs.promises.readFile(filePath, "utf8");
+            return source.replace(CONTROL_CHARS_RE, "");
+        } catch {
+            return null;
+        }
+    },
+};
 
 export default defineConfig({
     plugins: [
@@ -14,7 +35,7 @@ export default defineConfig({
                     return null;
                 }
 
-                const sanitizedCode = code.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
+                const sanitizedCode = code.replace(CONTROL_CHARS_RE, "");
 
                 if (sanitizedCode === code) {
                     return null;
@@ -56,7 +77,10 @@ export default defineConfig({
         cors: true,
     },
     optimizeDeps: {
-        exclude: ["@tabler/icons-react"],
+        include: ["@tabler/icons-react"],
+        rolldownOptions: {
+            plugins: [sanitizeTablerIconsRolldown],
+        },
     },
     build: {
         cssCodeSplit: true,

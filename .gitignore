@@ -13,6 +13,7 @@
 /storage/framework/views/*
 !/storage/framework/views/.gitignore
 /storage/framework/cache/*
+/storage/framework/testing/*
 /vendor
 .DS_Store
 .env

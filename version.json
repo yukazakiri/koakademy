@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.7.6",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.6",
-  "commit": "9d933e4fc3de8833f4e55da1543fc52e10a83108",
+  "version": "1.1.0-dev.7.7",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.7",
+  "commit": "3d36294b921fe2c66626e06b58740da4a8c57d78",
   "branch": "master",
-  "timestamp": "2026-04-28T08:40:11Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25042601813",
+  "timestamp": "2026-04-29T08:31:45Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25098588563",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.1.0-dev.7.6 - Update AdministratorStudentIndexCountsTest.php",
-    "previous": "1.1.0-dev.7.5"
+    "current": "Version 1.1.0-dev.7.7 - Update .gitignore",
+    "previous": "1.1.0-dev.7.6"
   },
   "metadata": {
     "author": "yukazakiri",

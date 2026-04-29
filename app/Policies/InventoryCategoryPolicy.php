@@ -17,7 +17,7 @@ final class InventoryCategoryPolicy
         return $authUser->can('ViewAny:InventoryCategory');
     }
 
-    public function view(AuthUser $authUser, InventoryCategory $inventoryCategory): bool
+    public function view(AuthUser $authUser): bool
     {
         return $authUser->can('View:InventoryCategory');
     }
@@ -27,22 +27,22 @@ final class InventoryCategoryPolicy
         return $authUser->can('Create:InventoryCategory');
     }
 
-    public function update(AuthUser $authUser, InventoryCategory $inventoryCategory): bool
+    public function update(AuthUser $authUser): bool
     {
         return $authUser->can('Update:InventoryCategory');
     }
 
-    public function delete(AuthUser $authUser, InventoryCategory $inventoryCategory): bool
+    public function delete(AuthUser $authUser): bool
     {
         return $authUser->can('Delete:InventoryCategory');
     }
 
-    public function restore(AuthUser $authUser, InventoryCategory $inventoryCategory): bool
+    public function restore(AuthUser $authUser): bool
     {
         return $authUser->can('Restore:InventoryCategory');
     }
 
-    public function forceDelete(AuthUser $authUser, InventoryCategory $inventoryCategory): bool
+    public function forceDelete(AuthUser $authUser): bool
     {
         return $authUser->can('ForceDelete:InventoryCategory');
     }
@@ -57,7 +57,7 @@ final class InventoryCategoryPolicy
         return $authUser->can('RestoreAny:InventoryCategory');
     }
 
-    public function replicate(AuthUser $authUser, InventoryCategory $inventoryCategory): bool
+    public function replicate(AuthUser $authUser): bool
     {
         return $authUser->can('Replicate:InventoryCategory');
     }

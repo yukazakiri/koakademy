@@ -17,7 +17,7 @@ final class DepartmentPolicy
         return $authUser->can('ViewAny:Department');
     }
 
-    public function view(AuthUser $authUser, Department $department): bool
+    public function view(AuthUser $authUser): bool
     {
         return $authUser->can('View:Department');
     }
@@ -27,22 +27,22 @@ final class DepartmentPolicy
         return $authUser->can('Create:Department');
     }
 
-    public function update(AuthUser $authUser, Department $department): bool
+    public function update(AuthUser $authUser): bool
     {
         return $authUser->can('Update:Department');
     }
 
-    public function delete(AuthUser $authUser, Department $department): bool
+    public function delete(AuthUser $authUser): bool
     {
         return $authUser->can('Delete:Department');
     }
 
-    public function restore(AuthUser $authUser, Department $department): bool
+    public function restore(AuthUser $authUser): bool
     {
         return $authUser->can('Restore:Department');
     }
 
-    public function forceDelete(AuthUser $authUser, Department $department): bool
+    public function forceDelete(AuthUser $authUser): bool
     {
         return $authUser->can('ForceDelete:Department');
     }
@@ -57,7 +57,7 @@ final class DepartmentPolicy
         return $authUser->can('RestoreAny:Department');
     }
 
-    public function replicate(AuthUser $authUser, Department $department): bool
+    public function replicate(AuthUser $authUser): bool
     {
         return $authUser->can('Replicate:Department');
     }

@@ -17,7 +17,7 @@ final class InventoryProductPolicy
         return $authUser->can('ViewAny:InventoryProduct');
     }
 
-    public function view(AuthUser $authUser, InventoryProduct $inventoryProduct): bool
+    public function view(AuthUser $authUser): bool
     {
         return $authUser->can('View:InventoryProduct');
     }
@@ -27,22 +27,22 @@ final class InventoryProductPolicy
         return $authUser->can('Create:InventoryProduct');
     }
 
-    public function update(AuthUser $authUser, InventoryProduct $inventoryProduct): bool
+    public function update(AuthUser $authUser): bool
     {
         return $authUser->can('Update:InventoryProduct');
     }
 
-    public function delete(AuthUser $authUser, InventoryProduct $inventoryProduct): bool
+    public function delete(AuthUser $authUser): bool
     {
         return $authUser->can('Delete:InventoryProduct');
     }
 
-    public function restore(AuthUser $authUser, InventoryProduct $inventoryProduct): bool
+    public function restore(AuthUser $authUser): bool
     {
         return $authUser->can('Restore:InventoryProduct');
     }
 
-    public function forceDelete(AuthUser $authUser, InventoryProduct $inventoryProduct): bool
+    public function forceDelete(AuthUser $authUser): bool
     {
         return $authUser->can('ForceDelete:InventoryProduct');
     }
@@ -57,7 +57,7 @@ final class InventoryProductPolicy
         return $authUser->can('RestoreAny:InventoryProduct');
     }
 
-    public function replicate(AuthUser $authUser, InventoryProduct $inventoryProduct): bool
+    public function replicate(AuthUser $authUser): bool
     {
         return $authUser->can('Replicate:InventoryProduct');
     }

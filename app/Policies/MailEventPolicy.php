@@ -17,7 +17,7 @@ final class MailEventPolicy
         return $authUser->can('ViewAny:MailEvent');
     }
 
-    public function view(AuthUser $authUser, MailEvent $mailEvent): bool
+    public function view(AuthUser $authUser): bool
     {
         return $authUser->can('View:MailEvent');
     }
@@ -27,22 +27,22 @@ final class MailEventPolicy
         return $authUser->can('Create:MailEvent');
     }
 
-    public function update(AuthUser $authUser, MailEvent $mailEvent): bool
+    public function update(AuthUser $authUser): bool
     {
         return $authUser->can('Update:MailEvent');
     }
 
-    public function delete(AuthUser $authUser, MailEvent $mailEvent): bool
+    public function delete(AuthUser $authUser): bool
     {
         return $authUser->can('Delete:MailEvent');
     }
 
-    public function restore(AuthUser $authUser, MailEvent $mailEvent): bool
+    public function restore(AuthUser $authUser): bool
     {
         return $authUser->can('Restore:MailEvent');
     }
 
-    public function forceDelete(AuthUser $authUser, MailEvent $mailEvent): bool
+    public function forceDelete(AuthUser $authUser): bool
     {
         return $authUser->can('ForceDelete:MailEvent');
     }
@@ -57,7 +57,7 @@ final class MailEventPolicy
         return $authUser->can('RestoreAny:MailEvent');
     }
 
-    public function replicate(AuthUser $authUser, MailEvent $mailEvent): bool
+    public function replicate(AuthUser $authUser): bool
     {
         return $authUser->can('Replicate:MailEvent');
     }

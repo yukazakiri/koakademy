@@ -17,7 +17,7 @@ final class InventoryStockMovementPolicy
         return $authUser->can('ViewAny:InventoryStockMovement');
     }
 
-    public function view(AuthUser $authUser, InventoryStockMovement $inventoryStockMovement): bool
+    public function view(AuthUser $authUser): bool
     {
         return $authUser->can('View:InventoryStockMovement');
     }
@@ -27,22 +27,22 @@ final class InventoryStockMovementPolicy
         return $authUser->can('Create:InventoryStockMovement');
     }
 
-    public function update(AuthUser $authUser, InventoryStockMovement $inventoryStockMovement): bool
+    public function update(AuthUser $authUser): bool
     {
         return $authUser->can('Update:InventoryStockMovement');
     }
 
-    public function delete(AuthUser $authUser, InventoryStockMovement $inventoryStockMovement): bool
+    public function delete(AuthUser $authUser): bool
     {
         return $authUser->can('Delete:InventoryStockMovement');
     }
 
-    public function restore(AuthUser $authUser, InventoryStockMovement $inventoryStockMovement): bool
+    public function restore(AuthUser $authUser): bool
     {
         return $authUser->can('Restore:InventoryStockMovement');
     }
 
-    public function forceDelete(AuthUser $authUser, InventoryStockMovement $inventoryStockMovement): bool
+    public function forceDelete(AuthUser $authUser): bool
     {
         return $authUser->can('ForceDelete:InventoryStockMovement');
     }
@@ -57,7 +57,7 @@ final class InventoryStockMovementPolicy
         return $authUser->can('RestoreAny:InventoryStockMovement');
     }
 
-    public function replicate(AuthUser $authUser, InventoryStockMovement $inventoryStockMovement): bool
+    public function replicate(AuthUser $authUser): bool
     {
         return $authUser->can('Replicate:InventoryStockMovement');
     }

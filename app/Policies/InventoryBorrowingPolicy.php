@@ -17,7 +17,7 @@ final class InventoryBorrowingPolicy
         return $authUser->can('ViewAny:InventoryBorrowing');
     }
 
-    public function view(AuthUser $authUser, InventoryBorrowing $inventoryBorrowing): bool
+    public function view(AuthUser $authUser): bool
     {
         return $authUser->can('View:InventoryBorrowing');
     }
@@ -27,22 +27,22 @@ final class InventoryBorrowingPolicy
         return $authUser->can('Create:InventoryBorrowing');
     }
 
-    public function update(AuthUser $authUser, InventoryBorrowing $inventoryBorrowing): bool
+    public function update(AuthUser $authUser): bool
     {
         return $authUser->can('Update:InventoryBorrowing');
     }
 
-    public function delete(AuthUser $authUser, InventoryBorrowing $inventoryBorrowing): bool
+    public function delete(AuthUser $authUser): bool
     {
         return $authUser->can('Delete:InventoryBorrowing');
     }
 
-    public function restore(AuthUser $authUser, InventoryBorrowing $inventoryBorrowing): bool
+    public function restore(AuthUser $authUser): bool
     {
         return $authUser->can('Restore:InventoryBorrowing');
     }
 
-    public function forceDelete(AuthUser $authUser, InventoryBorrowing $inventoryBorrowing): bool
+    public function forceDelete(AuthUser $authUser): bool
     {
         return $authUser->can('ForceDelete:InventoryBorrowing');
     }
@@ -57,7 +57,7 @@ final class InventoryBorrowingPolicy
         return $authUser->can('RestoreAny:InventoryBorrowing');
     }
 
-    public function replicate(AuthUser $authUser, InventoryBorrowing $inventoryBorrowing): bool
+    public function replicate(AuthUser $authUser): bool
     {
         return $authUser->can('Replicate:InventoryBorrowing');
     }

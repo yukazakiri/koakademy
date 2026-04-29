@@ -146,7 +146,7 @@ final class OnboardingFeaturesTable
                     ->icon(Heroicon::Eye)
                     ->modalHeading(fn (OnboardingFeature $record): string => $record->name)
                     ->modalDescription(fn (OnboardingFeature $record): ?string => $record->summary)
-                    ->modalContent(fn (OnboardingFeature $record) => self::getPreviewContent($record))
+                    ->modalContent(fn (OnboardingFeature $record): \Illuminate\Contracts\View\Factory|\Illuminate\Contracts\View\View => self::getPreviewContent($record))
                     ->modalWidth('xl')
                     ->slideOver(),
                 EditAction::make()

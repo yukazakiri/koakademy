@@ -17,7 +17,7 @@ final class SanityContentPolicy
         return $authUser->can('ViewAny:SanityContent');
     }
 
-    public function view(AuthUser $authUser, SanityContent $sanityContent): bool
+    public function view(AuthUser $authUser): bool
     {
         return $authUser->can('View:SanityContent');
     }
@@ -27,22 +27,22 @@ final class SanityContentPolicy
         return $authUser->can('Create:SanityContent');
     }
 
-    public function update(AuthUser $authUser, SanityContent $sanityContent): bool
+    public function update(AuthUser $authUser): bool
     {
         return $authUser->can('Update:SanityContent');
     }
 
-    public function delete(AuthUser $authUser, SanityContent $sanityContent): bool
+    public function delete(AuthUser $authUser): bool
     {
         return $authUser->can('Delete:SanityContent');
     }
 
-    public function restore(AuthUser $authUser, SanityContent $sanityContent): bool
+    public function restore(AuthUser $authUser): bool
     {
         return $authUser->can('Restore:SanityContent');
     }
 
-    public function forceDelete(AuthUser $authUser, SanityContent $sanityContent): bool
+    public function forceDelete(AuthUser $authUser): bool
     {
         return $authUser->can('ForceDelete:SanityContent');
     }
@@ -57,7 +57,7 @@ final class SanityContentPolicy
         return $authUser->can('RestoreAny:SanityContent');
     }
 
-    public function replicate(AuthUser $authUser, SanityContent $sanityContent): bool
+    public function replicate(AuthUser $authUser): bool
     {
         return $authUser->can('Replicate:SanityContent');
     }

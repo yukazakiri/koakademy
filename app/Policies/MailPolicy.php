@@ -17,7 +17,7 @@ final class MailPolicy
         return $authUser->can('ViewAny:Mail');
     }
 
-    public function view(AuthUser $authUser, Mail $mail): bool
+    public function view(AuthUser $authUser): bool
     {
         return $authUser->can('View:Mail');
     }
@@ -27,22 +27,22 @@ final class MailPolicy
         return $authUser->can('Create:Mail');
     }
 
-    public function update(AuthUser $authUser, Mail $mail): bool
+    public function update(AuthUser $authUser): bool
     {
         return $authUser->can('Update:Mail');
     }
 
-    public function delete(AuthUser $authUser, Mail $mail): bool
+    public function delete(AuthUser $authUser): bool
     {
         return $authUser->can('Delete:Mail');
     }
 
-    public function restore(AuthUser $authUser, Mail $mail): bool
+    public function restore(AuthUser $authUser): bool
     {
         return $authUser->can('Restore:Mail');
     }
 
-    public function forceDelete(AuthUser $authUser, Mail $mail): bool
+    public function forceDelete(AuthUser $authUser): bool
     {
         return $authUser->can('ForceDelete:Mail');
     }
@@ -57,7 +57,7 @@ final class MailPolicy
         return $authUser->can('RestoreAny:Mail');
     }
 
-    public function replicate(AuthUser $authUser, Mail $mail): bool
+    public function replicate(AuthUser $authUser): bool
     {
         return $authUser->can('Replicate:Mail');
     }

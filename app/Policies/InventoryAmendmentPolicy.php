@@ -17,7 +17,7 @@ final class InventoryAmendmentPolicy
         return $authUser->can('ViewAny:InventoryAmendment');
     }
 
-    public function view(AuthUser $authUser, InventoryAmendment $inventoryAmendment): bool
+    public function view(AuthUser $authUser): bool
     {
         return $authUser->can('View:InventoryAmendment');
     }
@@ -27,22 +27,22 @@ final class InventoryAmendmentPolicy
         return $authUser->can('Create:InventoryAmendment');
     }
 
-    public function update(AuthUser $authUser, InventoryAmendment $inventoryAmendment): bool
+    public function update(AuthUser $authUser): bool
     {
         return $authUser->can('Update:InventoryAmendment');
     }
 
-    public function delete(AuthUser $authUser, InventoryAmendment $inventoryAmendment): bool
+    public function delete(AuthUser $authUser): bool
     {
         return $authUser->can('Delete:InventoryAmendment');
     }
 
-    public function restore(AuthUser $authUser, InventoryAmendment $inventoryAmendment): bool
+    public function restore(AuthUser $authUser): bool
     {
         return $authUser->can('Restore:InventoryAmendment');
     }
 
-    public function forceDelete(AuthUser $authUser, InventoryAmendment $inventoryAmendment): bool
+    public function forceDelete(AuthUser $authUser): bool
     {
         return $authUser->can('ForceDelete:InventoryAmendment');
     }
@@ -57,7 +57,7 @@ final class InventoryAmendmentPolicy
         return $authUser->can('RestoreAny:InventoryAmendment');
     }
 
-    public function replicate(AuthUser $authUser, InventoryAmendment $inventoryAmendment): bool
+    public function replicate(AuthUser $authUser): bool
     {
         return $authUser->can('Replicate:InventoryAmendment');
     }

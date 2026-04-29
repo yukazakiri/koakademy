@@ -17,7 +17,7 @@ final class ClassesPolicy
         return $authUser->can('ViewAny:Classes');
     }
 
-    public function view(AuthUser $authUser, Classes $classes): bool
+    public function view(AuthUser $authUser): bool
     {
         return $authUser->can('View:Classes');
     }
@@ -27,22 +27,22 @@ final class ClassesPolicy
         return $authUser->can('Create:Classes');
     }
 
-    public function update(AuthUser $authUser, Classes $classes): bool
+    public function update(AuthUser $authUser): bool
     {
         return $authUser->can('Update:Classes');
     }
 
-    public function delete(AuthUser $authUser, Classes $classes): bool
+    public function delete(AuthUser $authUser): bool
     {
         return $authUser->can('Delete:Classes');
     }
 
-    public function restore(AuthUser $authUser, Classes $classes): bool
+    public function restore(AuthUser $authUser): bool
     {
         return $authUser->can('Restore:Classes');
     }
 
-    public function forceDelete(AuthUser $authUser, Classes $classes): bool
+    public function forceDelete(AuthUser $authUser): bool
     {
         return $authUser->can('ForceDelete:Classes');
     }
@@ -57,7 +57,7 @@ final class ClassesPolicy
         return $authUser->can('RestoreAny:Classes');
     }
 
-    public function replicate(AuthUser $authUser, Classes $classes): bool
+    public function replicate(AuthUser $authUser): bool
     {
         return $authUser->can('Replicate:Classes');
     }

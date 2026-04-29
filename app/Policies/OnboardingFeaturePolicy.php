@@ -17,7 +17,7 @@ final class OnboardingFeaturePolicy
         return $authUser->can('ViewAny:OnboardingFeature');
     }
 
-    public function view(AuthUser $authUser, OnboardingFeature $onboardingFeature): bool
+    public function view(AuthUser $authUser): bool
     {
         return $authUser->can('View:OnboardingFeature');
     }
@@ -27,22 +27,22 @@ final class OnboardingFeaturePolicy
         return $authUser->can('Create:OnboardingFeature');
     }
 
-    public function update(AuthUser $authUser, OnboardingFeature $onboardingFeature): bool
+    public function update(AuthUser $authUser): bool
     {
         return $authUser->can('Update:OnboardingFeature');
     }
 
-    public function delete(AuthUser $authUser, OnboardingFeature $onboardingFeature): bool
+    public function delete(AuthUser $authUser): bool
     {
         return $authUser->can('Delete:OnboardingFeature');
     }
 
-    public function restore(AuthUser $authUser, OnboardingFeature $onboardingFeature): bool
+    public function restore(AuthUser $authUser): bool
     {
         return $authUser->can('Restore:OnboardingFeature');
     }
 
-    public function forceDelete(AuthUser $authUser, OnboardingFeature $onboardingFeature): bool
+    public function forceDelete(AuthUser $authUser): bool
     {
         return $authUser->can('ForceDelete:OnboardingFeature');
     }
@@ -57,7 +57,7 @@ final class OnboardingFeaturePolicy
         return $authUser->can('RestoreAny:OnboardingFeature');
     }
 
-    public function replicate(AuthUser $authUser, OnboardingFeature $onboardingFeature): bool
+    public function replicate(AuthUser $authUser): bool
     {
         return $authUser->can('Replicate:OnboardingFeature');
     }

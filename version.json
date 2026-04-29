@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.7.7",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.7",
-  "commit": "3d36294b921fe2c66626e06b58740da4a8c57d78",
+  "version": "1.1.0-dev.7.8",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.8",
+  "commit": "b207d5bf7b5773ad1cf52bc5784fe18a5f9d016e",
   "branch": "master",
-  "timestamp": "2026-04-29T08:31:45Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25098588563",
+  "timestamp": "2026-04-29T09:23:15Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25100779410",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.1.0-dev.7.7 - Update .gitignore",
-    "previous": "1.1.0-dev.7.6"
+    "current": "Version 1.1.0-dev.7.8 - imetable blocks now show subject title instead of subject code.",
+    "previous": "1.1.0-dev.7.7"
   },
   "metadata": {
     "author": "yukazakiri",

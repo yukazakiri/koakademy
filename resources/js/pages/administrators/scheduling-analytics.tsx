@@ -292,7 +292,7 @@ function ClassDetailsDialog({ classItem, open, onOpenChange }: { classItem: Clas
     const pal = getPalette(classItem.subject_code);
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[480px]">
+            <DialogContent className="bg-background text-foreground border-border sm:max-w-[480px]">
                 <DialogHeader>
                     <div className="mb-1 flex items-center gap-3">
                         <div className={`rounded-xl p-2.5 ${pal.badge}`}><BookOpen className="h-5 w-5" /></div>
@@ -416,7 +416,7 @@ function WeeklyTimetable({ data, onBlockClick, conflicts = [], editMode = false,
                     </>
                 )}
 
-                <div className={`truncate text-[11px] font-bold leading-tight ${hasConflict ? "text-red-700 dark:text-red-300" : pal.text}`}>{b.cls.subject_code}</div>
+                <div className={`truncate text-[11px] font-bold leading-tight ${hasConflict ? "text-red-700 dark:text-red-300" : pal.text}`}>{b.cls.subject_title}</div>
                 {b.heightPx > 28 && <div className="text-muted-foreground truncate text-[10px] leading-tight">{b.cls.section}</div>}
                 {b.heightPx > 48 && <div className="text-muted-foreground mt-0.5 flex items-center gap-0.5 truncate text-[9px]"><MapPin className="h-2.5 w-2.5 shrink-0" />{b.sched.room || "—"}</div>}
                 {b.heightPx > 64 && b.cls.faculty_name && <div className="text-muted-foreground mt-0.5 flex items-center gap-0.5 truncate text-[9px]"><UserIcon className="h-2.5 w-2.5 shrink-0" />{b.cls.faculty_name}</div>}
@@ -446,7 +446,7 @@ function WeeklyTimetable({ data, onBlockClick, conflicts = [], editMode = false,
                         type="button"
                         className="absolute inset-0 z-40"
                         onClick={(e) => { e.stopPropagation(); onScheduleSelect?.(isSelected ? null : schedId); }}
-                        aria-label={`Select ${b.cls.subject_code} schedule`}
+                        aria-label={`Select ${b.cls.subject_title} schedule`}
                     />
                     <div className="relative z-10 pointer-events-none">{blockInner}</div>
                 </DraggableBlock>
@@ -464,9 +464,9 @@ function WeeklyTimetable({ data, onBlockClick, conflicts = [], editMode = false,
                         {blockInner}
                     </button>
                 </TooltipTrigger>
-                <TooltipContent side="right" className="max-w-[260px] space-y-2 p-3">
+                <TooltipContent side="right" className="bg-popover text-popover-foreground border-border max-w-[260px] space-y-2 border p-3 shadow-md">
                     <div>
-                        <div className="font-bold">{b.cls.subject_code}</div>
+                        <div className="font-bold">{b.cls.subject_title}</div>
                         <div className="text-muted-foreground text-xs">{b.cls.subject_title}</div>
                     </div>
                     <div className="grid gap-0.5">
@@ -1343,7 +1343,7 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
                                             day: hoveredDay || activeDrag.originalDay,
                                             startMin: newStartMin,
                                             duration: duration,
-                                            subject: activeDrag.block.cls.subject_code,
+                                            subject: activeDrag.block.cls.subject_title,
                                             pal: getPalette(activeDrag.block.cls.subject_code)
                                         };
                                     }
@@ -1461,7 +1461,7 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
                                         className={baseClassName}
                                         style={{ width: '100%', height: '100%', boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.4)" }}
                                     >
-                                        <div className={`truncate text-[11px] font-bold leading-tight ${hasConflict ? "text-red-700 dark:text-red-300" : pal.text}`}>{activeDrag.block.cls.subject_code}</div>
+                                        <div className={`truncate text-[11px] font-bold leading-tight ${hasConflict ? "text-red-700 dark:text-red-300" : pal.text}`}>{activeDrag.block.cls.subject_title}</div>
                                         {activeDrag.block.heightPx > 28 && <div className="text-muted-foreground truncate text-[10px] leading-tight">{activeDrag.block.cls.section}</div>}
                                         {activeDrag.block.heightPx > 48 && <div className="text-muted-foreground mt-0.5 flex items-center gap-0.5 truncate text-[9px]"><MapPin className="h-2.5 w-2.5 shrink-0" />{activeDrag.block.sched.room || "—"}</div>}
                                         {activeDrag.block.heightPx > 64 && activeDrag.block.cls.faculty_name && <div className="text-muted-foreground mt-0.5 flex items-center gap-0.5 truncate text-[9px]"><UserIcon className="h-2.5 w-2.5 shrink-0" />{activeDrag.block.cls.faculty_name}</div>}

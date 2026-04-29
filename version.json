@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.7.8",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.8",
-  "commit": "b207d5bf7b5773ad1cf52bc5784fe18a5f9d016e",
+  "version": "1.1.0-dev.7.9",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.9",
+  "commit": "08c8cc0474bbf0178bd933ac4bd0bf3a966bf4be",
   "branch": "master",
-  "timestamp": "2026-04-29T09:23:15Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25100779410",
+  "timestamp": "2026-04-29T15:53:02Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25118978020",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.1.0-dev.7.8 - imetable blocks now show subject title instead of subject code.",
-    "previous": "1.1.0-dev.7.7"
+    "current": "Version 1.1.0-dev.7.9 - Improve continuing enrollment flow and admin alerts",
+    "previous": "1.1.0-dev.7.8"
   },
   "metadata": {
     "author": "yukazakiri",

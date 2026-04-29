@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Link } from "@inertiajs/react";
 import { ColumnDef } from "@tanstack/react-table";
-import { Copy, Eye, FileText, MoreHorizontal, Settings } from "lucide-react";
+import { Copy, Eye, MoreHorizontal, Pencil, Settings, Trash2 } from "lucide-react";
 import { route } from "ziggy-js";
 
 export type ClassRow = {
@@ -36,11 +36,13 @@ export type ClassRow = {
 interface GetColumnsProps {
     onManage: (id: number) => void;
     onCopy: (id: number) => void;
+    onEdit: (id: number) => void;
+    onDelete: (row: ClassRow) => void;
 }
 
 import { DataTableColumnHeader } from "./data-table-column-header";
 
-export const getColumns = ({ onManage, onCopy }: GetColumnsProps): ColumnDef<ClassRow>[] => [
+export const getColumns = ({ onManage, onCopy, onEdit, onDelete }: GetColumnsProps): ColumnDef<ClassRow>[] => [
     {
         id: "select",
         header: ({ table }) => (
@@ -132,49 +134,51 @@ export const getColumns = ({ onManage, onCopy }: GetColumnsProps): ColumnDef<Cla
             const data = row.original;
 
             return (
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" className="h-8 w-8 p-0">
-                            <span className="sr-only">Open menu</span>
-                            <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                        <DropdownMenuItem asChild>
-                            <Link href={route("administrators.classes.show", { class: data.id })} className="flex w-full cursor-pointer items-center">
-                                <Eye className="mr-2 h-4 w-4" /> View Details
-                            </Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => onManage(data.id)}>
-                            <Settings className="mr-2 h-4 w-4" /> Manage Class
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => onCopy(data.id)}>
-                            <Copy className="mr-2 h-4 w-4" /> Copy Class
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem asChild>
-                            <a
-                                href={data.filament.view_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="flex w-full cursor-pointer items-center opacity-70"
-                            >
-                                <FileText className="mr-2 h-4 w-4" /> Open in Filament
-                            </a>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
-                            <a
-                                href={data.filament.edit_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="flex w-full cursor-pointer items-center opacity-70"
-                            >
-                                <FileText className="mr-2 h-4 w-4" /> Edit in Filament
-                            </a>
-                        </DropdownMenuItem>
-                    </DropdownMenuContent>
-                </DropdownMenu>
+                <div className="flex items-center justify-end gap-1">
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-2"
+                        onClick={() => onEdit(data.id)}
+                        title="Quick edit"
+                    >
+                        <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                        Edit
+                    </Button>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" className="h-8 w-8 p-0">
+                                <span className="sr-only">More actions</span>
+                                <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-48">
+                            <DropdownMenuLabel>Class actions</DropdownMenuLabel>
+                            <DropdownMenuItem asChild>
+                                <Link
+                                    href={route("administrators.classes.show", { class: data.id })}
+                                    className="flex w-full cursor-pointer items-center"
+                                >
+                                    <Eye className="mr-2 h-4 w-4" /> Open class page
+                                </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => onEdit(data.id)}>
+                                <Pencil className="mr-2 h-4 w-4" /> Edit class
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => onManage(data.id)}>
+                                <Settings className="mr-2 h-4 w-4" /> Manage details
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => onCopy(data.id)}>
+                                <Copy className="mr-2 h-4 w-4" /> Duplicate class
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => onDelete(data)} className="text-destructive focus:text-destructive">
+                                <Trash2 className="mr-2 h-4 w-4" /> Delete class
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
             );
         },
     },

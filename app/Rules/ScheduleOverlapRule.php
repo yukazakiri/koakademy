@@ -15,7 +15,11 @@ use Illuminate\Translation\PotentiallyTranslatedString;
 
 final class ScheduleOverlapRule implements ValidationRule
 {
-    private $conflictingSchedule;
+    private ?Schedule $conflictingSchedule = null;
+
+    public function __construct(
+        private readonly ?int $excludedClassId = null,
+    ) {}
 
     /**
      * Run the validation rule.
@@ -27,6 +31,7 @@ final class ScheduleOverlapRule implements ValidationRule
         mixed $value,
         Closure $fail
     ): void {
+        $this->conflictingSchedule = null;
         $generalSettingsService = app(GeneralSettingsService::class);
         // dd($attribute);
         foreach ($value as $schedule) {
@@ -92,6 +97,10 @@ final class ScheduleOverlapRule implements ValidationRule
                 $query->whereKeyNot($scheduleIdForExclusion);
             }
 
+            if ($this->excludedClassId !== null) {
+                $query->where('class_id', '!=', $this->excludedClassId);
+            }
+
             $existingSchedule = $query->first();
 
             if ($existingSchedule) {
@@ -118,7 +127,7 @@ final class ScheduleOverlapRule implements ValidationRule
                 ? $this->conflictingSchedule->class->subject_code
                 : 'Unknown Class';
 
-            return sprintf("This schedule your are trying to add conflicts with another class on '%s' on ", $className).
+            return sprintf("The schedule you are trying to add conflicts with another class on '%s' on ", $className).
                 $this->conflictingSchedule->day_of_week.
                 ' in '.
                 $this->conflictingSchedule->room->name.

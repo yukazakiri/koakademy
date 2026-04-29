@@ -20,6 +20,7 @@ import {
     BookOpen,
     CalendarIcon,
     Clock,
+    Copy as CopyIcon,
     GraduationCap,
     Layers,
     LayoutGrid,
@@ -28,10 +29,12 @@ import {
     MapPin,
     MoreHorizontal,
     Palette,
+    Pencil,
     Plus,
     Search,
     Settings2,
     SlidersHorizontal,
+    Trash2,
     Users,
     X,
 } from "lucide-react";
@@ -183,7 +186,19 @@ interface ClassesIndexProps {
     };
 }
 
-function ClassCard({ classRow, onManage, onCopy }: { classRow: ClassRow; onManage: (id: number) => void; onCopy: (id: number) => void }) {
+function ClassCard({
+    classRow,
+    onManage,
+    onCopy,
+    onEdit,
+    onDelete,
+}: {
+    classRow: ClassRow;
+    onManage: (id: number) => void;
+    onCopy: (id: number) => void;
+    onEdit: (id: number) => void;
+    onDelete: (row: ClassRow) => void;
+}) {
     const atCapacity = classRow.maximum_slots > 0 && classRow.students_count >= classRow.maximum_slots;
     const percentage = classRow.maximum_slots > 0 ? Math.round((classRow.students_count / classRow.maximum_slots) * 100) : 0;
 
@@ -194,34 +209,47 @@ function ClassCard({ classRow, onManage, onCopy }: { classRow: ClassRow; onManag
                     <BookOpen className="text-muted-foreground/30 h-8 w-8" />
                 </div>
                 <div className="p-4">
-                    <div className="mb-3 flex items-start justify-between">
-                        <div>
-                            <a
-                                href={route("administrators.classes.show", { class: classRow.id })}
+                    <div className="mb-3 flex items-start justify-between gap-2">
+                        <button
+                            type="button"
+                            onClick={() => onEdit(classRow.id)}
+                            className="min-w-0 flex-1 text-left"
+                            title="Click to edit class"
+                        >
+                            <span
                                 className="text-foreground hover:text-primary line-clamp-1 block font-semibold transition-colors"
                                 title={classRow.record_title}
                             >
                                 {classRow.record_title}
-                            </a>
-                            <p className="text-muted-foreground line-clamp-1 text-xs" title={classRow.subject_title}>
+                            </span>
+                            <span className="text-muted-foreground line-clamp-1 block text-xs" title={classRow.subject_title}>
                                 {classRow.subject_title}
-                            </p>
-                        </div>
+                            </span>
+                        </button>
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="text-muted-foreground -mt-2 -mr-2 h-8 w-8">
+                                <Button variant="ghost" size="icon" className="text-muted-foreground -mt-1 -mr-1 h-8 w-8 shrink-0">
                                     <MoreHorizontal className="h-4 w-4" />
                                 </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                                <DropdownMenuItem asChild>
-                                    <Link href={route("administrators.classes.show", { class: classRow.id })}>View details</Link>
+                            <DropdownMenuContent align="end" className="w-48">
+                                <DropdownMenuItem onClick={() => onEdit(classRow.id)}>
+                                    <Pencil className="mr-2 h-4 w-4" /> Edit class
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => onManage(classRow.id)}>Manage class</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => onCopy(classRow.id)}>Copy class</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => onManage(classRow.id)}>
+                                    <Settings2 className="mr-2 h-4 w-4" /> Manage details
+                                </DropdownMenuItem>
+                                <DropdownMenuItem asChild>
+                                    <Link href={route("administrators.classes.show", { class: classRow.id })}>
+                                        <BookOpen className="mr-2 h-4 w-4" /> Open class page
+                                    </Link>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => onCopy(classRow.id)}>
+                                    <CopyIcon className="mr-2 h-4 w-4" /> Duplicate class
+                                </DropdownMenuItem>
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={() => window.open(classRow.filament.edit_url, "_blank")}>
-                                    Edit in Filament
+                                <DropdownMenuItem onClick={() => onDelete(classRow)} className="text-destructive focus:text-destructive">
+                                    <Trash2 className="mr-2 h-4 w-4" /> Delete class
                                 </DropdownMenuItem>
                             </DropdownMenuContent>
                         </DropdownMenu>
@@ -251,6 +279,19 @@ function ClassCard({ classRow, onManage, onCopy }: { classRow: ClassRow; onManag
                                 style={{ width: `${Math.min(percentage, 100)}%` }}
                             />
                         </div>
+                    </div>
+
+                    <div className="mt-4 flex items-center gap-2 border-t pt-3">
+                        <Button type="button" size="sm" variant="default" className="flex-1" onClick={() => onEdit(classRow.id)}>
+                            <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                            Edit
+                        </Button>
+                        <Button type="button" size="sm" variant="outline" onClick={() => onManage(classRow.id)} title="Manage details">
+                            <Settings2 className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button type="button" size="sm" variant="outline" onClick={() => onCopy(classRow.id)} title="Duplicate">
+                            <CopyIcon className="h-3.5 w-3.5" />
+                        </Button>
                     </div>
                 </div>
             </CardContent>
@@ -668,7 +709,7 @@ function SchedulePlanner({
     );
 }
 
-export default function AdministratorClassesIndex({ user, filament, classes, selected_class, filters, options, defaults }: ClassesIndexProps) {
+export default function AdministratorClassesIndex({ user, classes, selected_class, filters, options, defaults }: ClassesIndexProps) {
     const [search, setSearch] = React.useState(filters.search || "");
     const [viewMode, setViewMode] = React.useState<"grid" | "list">("grid");
     const [localClassification, setLocalClassification] = React.useState(filters.classification || "all");
@@ -681,6 +722,7 @@ export default function AdministratorClassesIndex({ user, filament, classes, sel
     const [editActiveTab, setEditActiveTab] = React.useState<ClassDialogTab>("details");
     const [copySourceId, setCopySourceId] = React.useState<number | null>(null);
     const [copySection, setCopySection] = React.useState("A");
+    const [pendingDelete, setPendingDelete] = React.useState<ClassRow | null>(null);
 
     const [collegeSubjectOptions, setCollegeSubjectOptions] = React.useState<{ id: number; label: string; code: string; title: string }[]>([]);
     const [collegeSubjectsLoading, setCollegeSubjectsLoading] = React.useState(false);
@@ -729,17 +771,50 @@ export default function AdministratorClassesIndex({ user, filament, classes, sel
         );
     };
 
+    const openEdit = (classId: number) => {
+        setIsEditOpen(true);
+        setEditActiveTab("details");
+
+        router.get(
+            route("administrators.classes.index"),
+            { ...filters, selected: classId },
+            {
+                preserveState: true,
+                replace: true,
+                only: ["selected_class"],
+            },
+        );
+    };
+
+    const confirmDelete = (row: ClassRow) => {
+        setPendingDelete(row);
+    };
+
+    const performDelete = () => {
+        if (!pendingDelete) return;
+
+        router.delete(route("administrators.classes.destroy", { class: pendingDelete.id }), {
+            preserveScroll: true,
+            onSuccess: () => {
+                setPendingDelete(null);
+                setIsManageOpen(false);
+            },
+        });
+    };
+
     const columns = React.useMemo(
         () =>
             getColumns({
                 onManage: openManage,
+                onEdit: openEdit,
+                onDelete: confirmDelete,
                 onCopy: (id) => {
                     setCopySourceId(id);
                     setCopySection("A");
                     setIsCopyOpen(true);
                 },
             }),
-        [openManage, setIsCopyOpen],
+        [openManage, openEdit, setIsCopyOpen],
     );
 
     const createForm = useForm({
@@ -870,6 +945,18 @@ export default function AdministratorClassesIndex({ user, filament, classes, sel
     const loadCollegeSubjects = async (courseIds: number[], target: "create" | "edit") => {
         if (courseIds.length === 0) {
             setCollegeSubjectOptions([]);
+            if (target === "create") {
+                createForm.setData("subject_ids", []);
+                if (!subjectCodeTouched) {
+                    createForm.setData("subject_code", "");
+                }
+            }
+            if (target === "edit") {
+                editForm.setData("subject_ids", []);
+                if (!subjectCodeTouched) {
+                    editForm.setData("subject_code", "");
+                }
+            }
             return;
         }
 
@@ -887,17 +974,35 @@ export default function AdministratorClassesIndex({ user, filament, classes, sel
 
             setCollegeSubjectOptions(data.data);
 
+            const availableSubjectIds = new Set(data.data.map((subject) => subject.id));
+
             if (target === "create" && !subjectCodeTouched) {
-                const computed = buildSubjectCodeFromSubjectOptions(createForm.data.subject_ids.map(String), data.data);
+                const validSubjectIds = createForm.data.subject_ids.filter((id) => availableSubjectIds.has(id));
+
+                if (validSubjectIds.length !== createForm.data.subject_ids.length) {
+                    createForm.setData("subject_ids", validSubjectIds);
+                }
+
+                const computed = buildSubjectCodeFromSubjectOptions(validSubjectIds.map(String), data.data);
                 if (computed) {
                     createForm.setData("subject_code", computed);
+                } else {
+                    createForm.setData("subject_code", "");
                 }
             }
 
             if (target === "edit" && !subjectCodeTouched) {
-                const computed = buildSubjectCodeFromSubjectOptions(editForm.data.subject_ids.map(String), data.data);
+                const validSubjectIds = editForm.data.subject_ids.filter((id) => availableSubjectIds.has(id));
+
+                if (validSubjectIds.length !== editForm.data.subject_ids.length) {
+                    editForm.setData("subject_ids", validSubjectIds);
+                }
+
+                const computed = buildSubjectCodeFromSubjectOptions(validSubjectIds.map(String), data.data);
                 if (computed) {
                     editForm.setData("subject_code", computed);
+                } else {
+                    editForm.setData("subject_code", "");
                 }
             }
         } finally {
@@ -1249,19 +1354,27 @@ export default function AdministratorClassesIndex({ user, filament, classes, sel
                 return (
                     <div className="flex flex-col gap-6">
                         <div className="flex flex-col gap-4">
-                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                <div>
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="min-w-0">
                                     <h2 className="text-foreground text-3xl font-bold tracking-tight">Classes</h2>
-                                    <p className="text-muted-foreground">Manage class schedules, enrollments, and academic settings.</p>
+                                    <p className="text-muted-foreground text-sm">
+                                        Quick-edit, duplicate, or remove classes. Click any class title to open the editor.
+                                    </p>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <Button variant="outline" onClick={() => setIsFiltersOpen(true)}>
+                                    <Button variant="outline" size="sm" onClick={() => setIsFiltersOpen(true)}>
                                         <SlidersHorizontal className="mr-2 h-4 w-4" />
                                         Filters
+                                        {hasActiveFilters ? (
+                                            <Badge variant="secondary" className="ml-2 h-5 px-1.5">
+                                                {activeFilterBadges.length}
+                                            </Badge>
+                                        ) : null}
                                     </Button>
-                                    <Button onClick={() => setIsCreateOpen(true)}>
-                                        <span className="hidden sm:inline">Create new class</span>
-                                        <span className="sm:hidden">Create</span>
+                                    <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+                                        <Plus className="mr-1.5 h-4 w-4" />
+                                        <span className="hidden sm:inline">New class</span>
+                                        <span className="sm:hidden">New</span>
                                     </Button>
                                 </div>
                             </div>
@@ -1362,6 +1475,8 @@ export default function AdministratorClassesIndex({ user, filament, classes, sel
                                                 key={row.id}
                                                 classRow={row}
                                                 onManage={openManage}
+                                                onEdit={openEdit}
+                                                onDelete={confirmDelete}
                                                 onCopy={(id) => {
                                                     setCopySourceId(id);
                                                     setCopySection("A");
@@ -1712,8 +1827,6 @@ export default function AdministratorClassesIndex({ user, filament, classes, sel
                                                                 onChange={(values) => {
                                                                     const next = values.map(Number);
                                                                     createForm.setData("course_codes", next);
-                                                                    createForm.setData("subject_ids", []);
-                                                                    if (!subjectCodeTouched) createForm.setData("subject_code", "");
                                                                     void loadCollegeSubjects(next, "create");
                                                                 }}
                                                             />
@@ -2157,8 +2270,6 @@ export default function AdministratorClassesIndex({ user, filament, classes, sel
                                                                     onChange={(values) => {
                                                                         const next = values.map(Number);
                                                                         editForm.setData("course_codes", next);
-                                                                        editForm.setData("subject_ids", []);
-                                                                        if (!subjectCodeTouched) editForm.setData("subject_code", "");
                                                                         void loadCollegeSubjects(next, "edit");
                                                                     }}
                                                                 />
@@ -2481,6 +2592,27 @@ export default function AdministratorClassesIndex({ user, filament, classes, sel
                 </DialogContent>
             </Dialog>
 
+            <Dialog open={pendingDelete !== null} onOpenChange={(open) => !open && setPendingDelete(null)}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Delete this class?</DialogTitle>
+                        <DialogDescription>
+                            This will permanently remove <span className="text-foreground font-medium">{pendingDelete?.record_title}</span> along with
+                            its schedules and settings. Enrolled students will lose access. This action cannot be undone.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setPendingDelete(null)}>
+                            Cancel
+                        </Button>
+                        <Button variant="destructive" onClick={performDelete}>
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete class
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
             <Sheet open={isManageOpen} onOpenChange={setIsManageOpen}>
                 <SheetContent side="right" className="w-full sm:max-w-xl">
                     <SheetHeader>
@@ -2695,9 +2827,9 @@ export default function AdministratorClassesIndex({ user, filament, classes, sel
                                             </div>
 
                                             <Button asChild variant="outline">
-                                                <a href={selected_class.filament.view_url} target="_blank" rel="noreferrer">
-                                                    Manage enrollments in Filament
-                                                </a>
+                                                <Link href={route("administrators.classes.show", { class: selected_class.id })}>
+                                                    Open full enrollments page
+                                                </Link>
                                             </Button>
                                         </TabsContent>
 
@@ -2721,9 +2853,9 @@ export default function AdministratorClassesIndex({ user, filament, classes, sel
                                             </div>
 
                                             <Button asChild variant="outline">
-                                                <a href={selected_class.filament.edit_url} target="_blank" rel="noreferrer">
-                                                    Manage posts in Filament
-                                                </a>
+                                                <Link href={route("administrators.classes.show", { class: selected_class.id })}>
+                                                    Open full posts page
+                                                </Link>
                                             </Button>
                                         </TabsContent>
                                     </Tabs>
@@ -2736,32 +2868,37 @@ export default function AdministratorClassesIndex({ user, filament, classes, sel
                         <div className="flex w-full flex-col gap-2">
                             <Button
                                 type="button"
-                                variant="secondary"
                                 onClick={() => {
                                     if (!selected_class) return;
                                     setIsEditOpen(true);
+                                    setEditActiveTab("details");
                                 }}
                             >
+                                <Pencil className="mr-2 h-4 w-4" />
                                 Edit class
                             </Button>
-                            <Button asChild variant="outline">
-                                <a href={selected_class?.filament.view_url ?? filament.classes.index_url} target="_blank" rel="noreferrer">
-                                    Open in Filament
-                                </a>
-                            </Button>
+                            {selected_class ? (
+                                <Button asChild variant="outline">
+                                    <Link href={route("administrators.classes.show", { class: selected_class.id })}>
+                                        <BookOpen className="mr-2 h-4 w-4" />
+                                        Open class page
+                                    </Link>
+                                </Button>
+                            ) : null}
                             <Button
                                 type="button"
                                 variant="ghost"
-                                className="text-destructive"
+                                className="text-destructive hover:text-destructive"
                                 onClick={() => {
                                     if (!selected_class) return;
-                                    router.delete(route("administrators.classes.destroy", { class: selected_class.id }), {
-                                        preserveScroll: true,
-                                        onSuccess: () => setIsManageOpen(false),
-                                    });
+                                    setPendingDelete({
+                                        id: selected_class.id,
+                                        record_title: selected_class.record_title,
+                                    } as ClassRow);
                                 }}
                             >
-                                Delete
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete class
                             </Button>
                         </div>
                     </SheetFooter>

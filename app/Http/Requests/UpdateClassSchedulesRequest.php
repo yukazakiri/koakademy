@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests;
 
+use App\Models\Classes;
 use App\Rules\ScheduleOverlapRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -22,8 +23,13 @@ final class UpdateClassSchedulesRequest extends FormRequest
      */
     public function rules(): array
     {
+        $classRouteParameter = $this->route('class');
+        $classIdForScheduleExclusion = $classRouteParameter instanceof Classes
+            ? $classRouteParameter->id
+            : (is_numeric($classRouteParameter) ? (int) $classRouteParameter : null);
+
         return [
-            'schedules' => ['required', 'array', new ScheduleOverlapRule],
+            'schedules' => ['required', 'array', new ScheduleOverlapRule($classIdForScheduleExclusion)],
             'schedules.*.id' => ['sometimes', 'integer', 'exists:schedule,id'],
             'schedules.*.day_of_week' => [
                 'required',

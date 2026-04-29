@@ -54,3 +54,4 @@ docker/traefik/certs/*
 docker/traefik/dynamic/tls.yml
 public/css/filament/**
 public/js/filament/**
+dccp_admin_testing

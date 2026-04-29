@@ -71,7 +71,7 @@ return new class extends Migration
                     ],
                 ],
             ],
-            'is_active' => false,
+            'is_active' => true,
         ]);
 
         // Activate TESDA enrollment in Pennant

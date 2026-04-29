@@ -13,25 +13,33 @@ return new class extends Migration
      */
     public function up(): void
     {
+        $isSqlite = Schema::getConnection()->getDriverName() === 'sqlite';
+
         // Add school_id to classes table for multi-tenancy
-        Schema::table('classes', function (Blueprint $table): void {
-            $table->foreignId('school_id')
-                ->nullable()
-                ->after('id')
-                ->constrained('schools')
-                ->nullOnDelete();
+        Schema::table('classes', function (Blueprint $table) use ($isSqlite): void {
+            $schoolIdColumn = $table->foreignId('school_id')
+                ->nullable();
+
+            if (! $isSqlite) {
+                $schoolIdColumn->after('id');
+            }
+
+            $schoolIdColumn->constrained('schools')->nullOnDelete();
 
             $table->index('school_id');
         });
 
         // Add school_id to announcements table
         if (Schema::hasTable('announcements') && ! Schema::hasColumn('announcements', 'school_id')) {
-            Schema::table('announcements', function (Blueprint $table): void {
-                $table->foreignId('school_id')
-                    ->nullable()
-                    ->after('id')
-                    ->constrained('schools')
-                    ->nullOnDelete();
+            Schema::table('announcements', function (Blueprint $table) use ($isSqlite): void {
+                $schoolIdColumn = $table->foreignId('school_id')
+                    ->nullable();
+
+                if (! $isSqlite) {
+                    $schoolIdColumn->after('id');
+                }
+
+                $schoolIdColumn->constrained('schools')->nullOnDelete();
 
                 $table->index('school_id');
             });
@@ -39,12 +47,15 @@ return new class extends Migration
 
         // Add school_id to rooms table
         if (Schema::hasTable('rooms') && ! Schema::hasColumn('rooms', 'school_id')) {
-            Schema::table('rooms', function (Blueprint $table): void {
-                $table->foreignId('school_id')
-                    ->nullable()
-                    ->after('id')
-                    ->constrained('schools')
-                    ->nullOnDelete();
+            Schema::table('rooms', function (Blueprint $table) use ($isSqlite): void {
+                $schoolIdColumn = $table->foreignId('school_id')
+                    ->nullable();
+
+                if (! $isSqlite) {
+                    $schoolIdColumn->after('id');
+                }
+
+                $schoolIdColumn->constrained('schools')->nullOnDelete();
 
                 $table->index('school_id');
             });
@@ -52,12 +63,15 @@ return new class extends Migration
 
         // Add school_id to subject table
         if (Schema::hasTable('subject') && ! Schema::hasColumn('subject', 'school_id')) {
-            Schema::table('subject', function (Blueprint $table): void {
-                $table->foreignId('school_id')
-                    ->nullable()
-                    ->after('id')
-                    ->constrained('schools')
-                    ->nullOnDelete();
+            Schema::table('subject', function (Blueprint $table) use ($isSqlite): void {
+                $schoolIdColumn = $table->foreignId('school_id')
+                    ->nullable();
+
+                if (! $isSqlite) {
+                    $schoolIdColumn->after('id');
+                }
+
+                $schoolIdColumn->constrained('schools')->nullOnDelete();
 
                 $table->index('school_id');
             });

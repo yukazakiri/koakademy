@@ -19,6 +19,7 @@ final class EnrollStatCastTest extends TestCase
             'student_id' => '99999',
             'status' => 'enrolled',
             'semester' => 1,
+            'academic_year' => 2024,
             'school_year' => '2024-2025',
         ]);
 
@@ -33,6 +34,7 @@ final class EnrollStatCastTest extends TestCase
             'student_id' => '99999',
             'status' => 'some_weird_unknown_value',
             'semester' => 1,
+            'academic_year' => 2024,
             'school_year' => '2024-2025',
         ]);
 

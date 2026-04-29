@@ -227,6 +227,17 @@ final class Course extends Model
         });
     }
 
+    protected function setDepartmentAttribute(mixed $value): void
+    {
+        $resolvedDepartmentId = $this->resolveDepartmentIdFromLegacyValue($value);
+
+        if ($resolvedDepartmentId !== null) {
+            $this->attributes['department_id'] = $resolvedDepartmentId;
+        }
+
+        unset($this->attributes['department']);
+    }
+
     protected function courseCode(): Attribute
     {
         return Attribute::make(get: fn () => mb_strtoupper((string) $this->attributes['code']));
@@ -242,5 +253,52 @@ final class Course extends Model
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
         ];
+    }
+
+    private function resolveDepartmentIdFromLegacyValue(mixed $value): ?int
+    {
+        if (is_int($value)) {
+            return $value;
+        }
+
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $normalizedCode = mb_strtoupper(mb_trim($value));
+
+        if ($normalizedCode === '') {
+            return null;
+        }
+
+        $existingDepartmentId = Department::query()
+            ->whereRaw('UPPER(TRIM(code)) = ?', [$normalizedCode])
+            ->value('id');
+
+        if ($existingDepartmentId !== null) {
+            return (int) $existingDepartmentId;
+        }
+
+        $schoolId = $this->school_id;
+
+        if (! is_int($schoolId)) {
+            $schoolId = School::query()->value('id');
+        }
+
+        if (! is_int($schoolId)) {
+            $defaultSchool = School::query()->firstOrCreate(
+                ['code' => 'DEFAULT'],
+                ['name' => 'Default School', 'is_active' => true],
+            );
+
+            $schoolId = $defaultSchool->id;
+        }
+
+        $department = Department::query()->firstOrCreate(
+            ['school_id' => $schoolId, 'code' => $normalizedCode],
+            ['name' => $normalizedCode, 'is_active' => true],
+        );
+
+        return (int) $department->id;
     }
 }

@@ -137,7 +137,24 @@ final class GeneralSettingsService
                 'general_settings_id',
                 fn () => optional(GeneralSetting::query()->first())->id
             );
-            $this->generalSetting = $globalSettingsId ? GeneralSetting::query()->find($globalSettingsId) : null;
+
+            $cachedSetting = $globalSettingsId ? GeneralSetting::query()->find($globalSettingsId) : null;
+
+            if ($cachedSetting !== null) {
+                $this->generalSetting = $cachedSetting;
+
+                return;
+            }
+
+            $freshSetting = GeneralSetting::query()->first();
+
+            if ($freshSetting !== null) {
+                Cache::forever('general_settings_id', $freshSetting->id);
+            } else {
+                Cache::forget('general_settings_id');
+            }
+
+            $this->generalSetting = $freshSetting;
         } catch (Exception $exception) {
             Log::error('Failed to initialize GeneralSettingsService', [
                 'error' => $exception->getMessage(),

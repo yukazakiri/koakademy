@@ -72,6 +72,10 @@ final class ScheduleUpdateTest extends TestCase
             'conflicts',
         ]);
 
+        $response->assertJsonPath('schedule.day_of_week', 'Wednesday');
+        $response->assertJsonPath('schedule.start_time', '01:00 PM');
+        $response->assertJsonPath('schedule.end_time', '02:30 PM');
+
         $this->assertDatabaseHas('schedule', [
             'id' => $this->schedule->id,
             'day_of_week' => 'Wednesday',

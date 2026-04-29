@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\UserRole;
 use App\Models\Course;
+use App\Models\Department;
 use App\Models\GeneralSetting;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
@@ -55,13 +56,48 @@ it('provides accurate enrollment analytics', function (): void {
         'school_starting_date' => '2024-08-01',
         'school_ending_date' => '2025-05-30',
         'semester' => 1,
+        'more_configs' => [
+            'enrollment_pipeline' => [
+                'steps' => [
+                    [
+                        'key' => 'pending',
+                        'status' => 'Pending',
+                        'label' => 'Pending',
+                        'color' => 'amber',
+                        'allowed_roles' => ['student'],
+                        'action_type' => 'standard',
+                    ],
+                    [
+                        'key' => 'department_review',
+                        'status' => 'Verified By Department',
+                        'label' => 'Verified By Department',
+                        'color' => 'blue',
+                        'allowed_roles' => ['admin'],
+                        'action_type' => 'department_verification',
+                    ],
+                    [
+                        'key' => 'cashier_verification',
+                        'status' => 'Verified By Cashier',
+                        'label' => 'Verified By Cashier',
+                        'color' => 'green',
+                        'allowed_roles' => ['cashier'],
+                        'action_type' => 'cashier_verification',
+                    ],
+                ],
+                'entry_step_key' => 'pending',
+                'completion_step_key' => 'cashier_verification',
+            ],
+        ],
     ]);
 
     $user = User::factory()->create(['role' => UserRole::Admin]);
 
     // 2. Setup Courses
-    $bscs = Course::factory()->create(['code' => 'BSCS', 'department' => 'CCS']);
-    $bsba = Course::factory()->create(['code' => 'BSBA', 'department' => 'CBA']);
+    $ccsDepartment = Department::factory()->create(['code' => 'CCS', 'name' => 'College of Computer Studies']);
+    $cbaDepartment = Department::factory()->create(['code' => 'CBA', 'name' => 'College of Business Administration']);
+
+    $bscs = Course::factory()->create(['code' => 'BSCS', 'department_id' => $ccsDepartment->id]);
+    $bsba = Course::factory()->create(['code' => 'BSBA', 'department_id' => $cbaDepartment->id]);
 
     // 3. Setup Enrollments
 

@@ -351,8 +351,8 @@ final class AdministratorSchedulingAnalyticsController extends Controller
 
         $updateData = [
             'day_of_week' => $validated['day_of_week'],
-            'start_time' => $validated['start_time'],
-            'end_time' => $validated['end_time'],
+            'start_time' => $validated['start_time'].':00',
+            'end_time' => $validated['end_time'].':00',
         ];
 
         if (array_key_exists('room_id', $validated)) {

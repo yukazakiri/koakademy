@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\StudentStatus;
 use App\Models\Course;
+use App\Models\Department;
 use App\Models\Student;
 use Inertia\Testing\AssertableInertia;
 
@@ -25,8 +26,13 @@ it('allows guests to open the online enrollment form', function (): void {
 });
 
 it('creates a student applicant from the online enrollment form', function (): void {
+    $department = Department::factory()->create([
+        'code' => 'IT',
+        'name' => 'Information Technology',
+    ]);
+
     $course = Course::factory()->create([
-        'department' => 'IT',
+        'department_id' => $department->id,
         'is_active' => true,
     ]);
 

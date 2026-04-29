@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Models\GeneralSetting;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -15,7 +14,8 @@ return new class extends Migration
             return;
         }
 
-        $settings = GeneralSetting::query()->first();
+        // Use raw query to avoid SoftDeletes trait issues
+        $settings = DB::table('general_settings')->first();
         $startYear = $settings?->school_starting_date?->format('Y') ?? date('Y');
         $academicYear = $startYear.' - '.((int) $startYear + 1);
         $semester = (int) ($settings?->semester ?? 1);

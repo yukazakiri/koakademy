@@ -7,6 +7,8 @@ use App\Enums\UserRole;
 use App\Models\GeneralSetting;
 use App\Models\Student;
 use App\Models\User;
+use App\Support\AdministratorSidebarCounts;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia;
@@ -122,6 +124,28 @@ it('keeps the global student total when filters return no matching students', fu
             ->where('stats.total_students', 4)
             ->where('adminSidebarCounts.students', 4)
         );
+});
+
+it('casts cached sidebar student counts to int', function (): void {
+    GeneralSetting::factory()->create([
+        'semester' => 2,
+        'school_starting_date' => '2024-08-01',
+        'school_ending_date' => '2025-05-31',
+        'enable_clearance_check' => true,
+    ]);
+
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+
+    Cache::put('admin_sidebar_counts:all:2024 - 2025:2:students', '7', 60);
+
+    $request = Request::create('/administrators/classes');
+    $request->setUserResolver(static fn (): User => $user);
+
+    $counts = app(AdministratorSidebarCounts::class)->resolve($request);
+
+    expect($counts)
+        ->not->toBeNull()
+        ->and($counts['students'])->toBeInt()->toBe(7);
 });
 
 function captureExecutedSql(callable $callback): array

@@ -51,6 +51,7 @@ final class AdministratorSchedulingAnalyticsController extends Controller
 
         // Get available courses for filtering (only those with schedules)
         $availableCourses = Course::query()
+            ->where('is_active', true)
             ->whereIn('id', $courseIds)
             ->orderBy('code')
             ->get(['id', 'code', 'title']);
@@ -174,6 +175,7 @@ final class AdministratorSchedulingAnalyticsController extends Controller
             ->get(['id', 'first_name', 'last_name', 'department']);
 
         $allCourses = Course::query()
+            ->where('is_active', true)
             ->orderBy('code')
             ->get(['id', 'code', 'title', 'curriculum_year']);
 

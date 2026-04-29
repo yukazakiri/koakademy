@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button"
 import {
   Command,
   CommandEmpty,
-  CommandGroup,
   CommandInput,
   CommandItem,
   CommandList,
@@ -48,6 +47,7 @@ export function MultiSelect({
   emptyText = "No item found.",
 }: MultiSelectProps) {
   const [open, setOpen] = React.useState(false)
+  const [query, setQuery] = React.useState("")
 
   const handleUnselect = (item: string) => {
     onChange(selected.filter((i) => i !== item))
@@ -65,8 +65,35 @@ export function MultiSelect({
     selected.includes(option.value)
   )
 
+  const filteredOptions = React.useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase()
+
+    if (!normalizedQuery) {
+      return options
+    }
+
+    return options.filter((option) => {
+      const searchable = [
+        option.label,
+        option.description,
+        option.searchText,
+        option.value,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+
+      return searchable.includes(normalizedQuery)
+    })
+  }, [options, query])
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={(nextOpen) => {
+      setOpen(nextOpen)
+      if (!nextOpen) {
+        setQuery("")
+      }
+    }}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -78,7 +105,7 @@ export function MultiSelect({
           )}
           disabled={disabled}
         >
-          <div className="flex flex-wrap gap-1">
+          <div className="flex max-h-24 flex-1 flex-wrap gap-1 overflow-y-auto pr-1 text-left">
             {selected.length === 0 && (
               <span className="text-muted-foreground font-normal">
                 {placeholder}
@@ -121,21 +148,38 @@ export function MultiSelect({
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
-          <Command>
-            <CommandInput placeholder={searchPlaceholder} />
-          <CommandList>
-            <CommandEmpty>{emptyText}</CommandEmpty>
-            <CommandGroup className="max-h-64 overflow-auto">
-              {options.map((option) => (
+      <PopoverContent
+        className="w-[var(--radix-popover-trigger-width)] p-0"
+        align="start"
+      >
+        <Command shouldFilter={false}>
+          <CommandInput
+            placeholder={searchPlaceholder}
+            value={query}
+            onValueChange={setQuery}
+          />
+          <CommandList
+            className="max-h-[min(22rem,55vh)] overflow-y-auto overscroll-contain"
+            onWheel={(event) => {
+              event.stopPropagation()
+            }}
+            onWheelCapture={(event) => {
+              event.stopPropagation()
+            }}
+          >
+            {filteredOptions.length === 0 ? (
+              <CommandEmpty>{emptyText}</CommandEmpty>
+            ) : (
+              filteredOptions.map((option) => (
                 <CommandItem
                   key={option.value}
-                  value={option.searchText || `${option.label} ${option.description ?? ""}`}
+                  value={option.value}
                   onSelect={() => handleSelect(option.value)}
+                  className="items-start py-2.5"
                 >
                   <Check
                     className={cn(
-                      "mr-2 h-4 w-4",
+                      "mt-0.5 mr-2 h-4 w-4",
                       selected.includes(option.value)
                         ? "opacity-100"
                         : "opacity-0"
@@ -150,8 +194,8 @@ export function MultiSelect({
                     ) : null}
                   </div>
                 </CommandItem>
-              ))}
-            </CommandGroup>
+              ))
+            )}
           </CommandList>
         </Command>
       </PopoverContent>

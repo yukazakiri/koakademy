@@ -64,7 +64,7 @@ final readonly class AdministratorSidebarCounts
 
     private function resolveCachedStudentCount(): int
     {
-        return $this->cache->remember(
+        return (int) $this->cache->remember(
             $this->getStudentCacheKey(),
             60,
             fn (): int => Student::query()->count(),

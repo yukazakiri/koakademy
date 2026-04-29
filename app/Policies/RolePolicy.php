@@ -6,7 +6,6 @@ namespace App\Policies;
 
 use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
-use Spatie\Permission\Models\Role;
 
 final class RolePolicy
 {

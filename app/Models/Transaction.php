@@ -307,9 +307,9 @@ final class Transaction extends Model
         $endYear = (int) $years[1];
 
         if ($semester === 1) {
-            // First semester: August to December (extended to Feb next year to cover late payments/enrollments)
-            // Range: StartYear-06-01 to StartYear+1-02-28
-            $startDate = $startYear.'-06-01 00:00:00';
+            // First semester: include early downpayments before June for the upcoming school year
+            // Range: StartYear-01-01 to StartYear+1-02-28
+            $startDate = $startYear.'-01-01 00:00:00';
             $endDate = ($startYear + 1).'-02-28 23:59:59';
         } else {
             // Second semester: January to July (extended to StartYear-11-01 to cover early downpayments)

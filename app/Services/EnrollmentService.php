@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\StudentStatus;
 use App\Jobs\SendAssessmentNotificationJob;
 use App\Models\Account;
 use App\Models\AdminTransaction;
@@ -11,6 +12,7 @@ use App\Models\Classes;
 use App\Models\GeneralSetting;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
+use App\Models\StudentStatusRecord;
 use App\Models\StudentTransaction;
 use App\Models\StudentTuition;
 use App\Models\Subject;
@@ -522,11 +524,12 @@ final class EnrollmentService
 
             $pipeline = app(EnrollmentPipelineService::class);
 
-            // Update Enrollment Status - DO NOT SOFT DELETE
-            // Keep the enrollment record active for record-keeping and analytics
-            $studentEnrollment->status = $pipeline->getCashierVerifiedStatus();
+            // Mark enrollment/student as fully enrolled once paid
+            $studentEnrollment->status = $pipeline->getCompletionStep()['status'];
             $studentEnrollment->save(); // Save status without soft deleting
             // $studentEnrollment->delete(); // Soft delete disabled - keeping enrollment records
+
+            $this->syncStudentEnrolledStatus($studentEnrollment);
 
             // Notify Super Admins
             $superadmins = User::role('super_admin')->get();
@@ -736,9 +739,8 @@ final class EnrollmentService
 
     /**
      * Undoes the Cashier verification step.
-     * Restores the enrollment record, reverts status to VerifiedByDeptHead,
-     * and removes the cashier signature.
-     * IMPORTANT: Does NOT automatically reverse financial transactions.
+     * Restores the enrollment record, reverts status to the previous step,
+     * and reverses cashier-created transactions for this enrollment period.
      *
      * @param  int  $enrollmentRecordId  The ID of the enrollment record (might be soft-deleted).
      * @return bool True on success, false on failure.
@@ -780,6 +782,15 @@ final class EnrollmentService
 
         DB::beginTransaction();
         try {
+            $enrollmentRecord->loadMissing('studentTuition');
+
+            $linkedStudentTransactions = $enrollmentRecord->enrollmentTransactions()->with('transaction')->get();
+            $transactionIds = $linkedStudentTransactions
+                ->pluck('transaction_id')
+                ->filter(fn ($id): bool => $id !== null)
+                ->unique()
+                ->values();
+
             // Restore the record if it was soft-deleted
             if ($enrollmentRecord->trashed()) {
                 $enrollmentRecord->restore();
@@ -790,7 +801,28 @@ final class EnrollmentService
             $enrollmentRecord->status = $previousStep['status'] ?? $pipeline->getDepartmentVerifiedStatus();
             $enrollmentRecord->save();
 
-            // IMPORTANT: We are NOT deleting transactions or reverting tuition automatically.
+            if ($transactionIds->isNotEmpty()) {
+                StudentTransaction::query()->whereIn('transaction_id', $transactionIds->all())->delete();
+                AdminTransaction::query()->whereIn('transaction_id', $transactionIds->all())->delete();
+                Transaction::query()->whereIn('id', $transactionIds->all())->delete();
+            }
+
+            if ($enrollmentRecord->studentTuition) {
+                $tuition = $enrollmentRecord->studentTuition;
+                $recomputedPaid = $tuition->total_paid;
+                $tuition->update([
+                    'status' => 'Pending',
+                    'downpayment' => 0,
+                    'total_balance' => max(0.0, (float) $tuition->overall_tuition - (float) $recomputedPaid),
+                ]);
+            }
+
+            Log::info('Cashier verification undo reversed linked transactions.', [
+                'enrollment_id' => $enrollmentRecord->id,
+                'student_id' => $enrollmentRecord->student_id,
+                'reversed_transaction_ids' => $transactionIds->all(),
+                'reversed_transactions_count' => $transactionIds->count(),
+            ]);
 
             DB::commit();
 
@@ -798,9 +830,8 @@ final class EnrollmentService
                 ->success()
                 ->title('Payment Verification Undone')
                 ->body(
-                    sprintf('Enrollment status reverted to the previous step for student %s. IMPORTANT: Financial transactions were NOT automatically reversed. Please review and adjust manually if needed.', $enrollmentRecord->student_id)
+                    sprintf('Enrollment status reverted for student %s. Reversed %d linked transaction(s). Action was logged for audit.', $enrollmentRecord->student_id, $transactionIds->count())
                 )
-                ->persistent() // Make it persistent so user acknowledges the manual step
                 ->sendToDatabase(User::role('super_admin')->get())
                 ->send();
 
@@ -931,11 +962,12 @@ final class EnrollmentService
 
             $pipeline = app(EnrollmentPipelineService::class);
 
-            // Update Enrollment Status - DO NOT SOFT DELETE
-            // This keeps the record active for analytics while marking as enrolled
-            $studentEnrollment->status = $pipeline->getCashierVerifiedStatus();
+            // Mark enrollment/student as fully enrolled once payment is verified
+            $studentEnrollment->status = $pipeline->getCompletionStep()['status'];
             $studentEnrollment->remarks = $remarks; // Store the remarks
             $studentEnrollment->save(); // Save without soft deleting
+
+            $this->syncStudentEnrolledStatus($studentEnrollment);
 
             // Notify Super Admins
             $superadmins = User::role('super_admin')->get();
@@ -1054,5 +1086,27 @@ final class EnrollmentService
         }
 
         return $options;
+    }
+
+    private function syncStudentEnrolledStatus(StudentEnrollment $studentEnrollment): void
+    {
+        if (! $studentEnrollment->student) {
+            return;
+        }
+
+        StudentStatusRecord::updateOrCreate(
+            [
+                'student_id' => $studentEnrollment->student_id,
+                'academic_year' => $studentEnrollment->school_year,
+                'semester' => $studentEnrollment->semester,
+            ],
+            [
+                'status' => StudentStatus::Enrolled->value,
+            ]
+        );
+
+        $studentEnrollment->student->update([
+            'status' => StudentStatus::Enrolled->value,
+        ]);
     }
 }

@@ -493,3 +493,71 @@ it('removes class enrollment when subject is removed from enrollment', function 
     expect(App\Models\ClassEnrollment::query()->where('student_id', $student->id)->where('class_id', $class1->id)->exists())->toBeTrue();
     expect(App\Models\ClassEnrollment::query()->where('student_id', $student->id)->where('class_id', $class2->id)->exists())->toBeFalse();
 });
+
+it('creates class enrollments when storing an enrollment with assigned classes', function (): void {
+    config(['activitylog.enabled' => false]);
+
+    GeneralSetting::factory()->create([
+        'school_starting_date' => '2026-06-01',
+        'school_ending_date' => '2027-03-31',
+        'semester' => 1,
+    ]);
+
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+
+    $course = Course::factory()->create([
+        'lec_per_unit' => 100,
+        'lab_per_unit' => 200,
+        'miscelaneous' => 3500,
+    ]);
+
+    $student = Student::factory()->create([
+        'id' => fake()->numberBetween(900000, 999999),
+        'course_id' => $course->id,
+        'academic_year' => 1,
+    ]);
+
+    $subject = Subject::factory()->create([
+        'course_id' => $course->id,
+        'code' => 'GE-1',
+        'lecture' => 3,
+        'laboratory' => 0,
+    ]);
+
+    $class = App\Models\Classes::factory()->create([
+        'subject_code' => $subject->code,
+        'subject_id' => $subject->id,
+        'course_codes' => [$course->id],
+        'semester' => 1,
+        'school_year' => '2026 - 2027',
+    ]);
+
+    $this->actingAs($user)
+        ->post(portalUrlForAdministrators('/administrators/enrollments'), [
+            'student_id' => (string) $student->id,
+            'semester' => 1,
+            'academic_year' => 1,
+            'subjects' => [
+                [
+                    'subject_id' => $subject->id,
+                    'class_id' => $class->id,
+                    'is_modular' => false,
+                    'lecture_fee' => 300,
+                    'laboratory_fee' => 0,
+                    'enrolled_lecture_units' => 3,
+                    'enrolled_laboratory_units' => 0,
+                ],
+            ],
+            'discount' => 0,
+            'downpayment' => 0,
+            'additional_fees' => [],
+        ])
+        ->assertRedirect();
+
+    $this->assertDatabaseHas('student_enrollment', [
+        'student_id' => $student->id,
+        'semester' => 1,
+    ]);
+
+    expect(App\Models\ClassEnrollment::query()->where('student_id', $student->id)->where('class_id', $class->id)->exists())->toBeTrue();
+});

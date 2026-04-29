@@ -1178,7 +1178,7 @@ final class AdministratorEnrollmentManagementController extends Controller
 
                 foreach ($incomingSubjects as $subjectData) {
                     $subjectId = $subjectData['subject_id'];
-                    $incomingClassId = $subjectData['class_id'] ?? null;
+                    $incomingClassId = isset($subjectData['class_id']) ? (int) $subjectData['class_id'] : null;
                     $payload = [
                         'class_id' => $incomingClassId,
                         'is_modular' => $subjectData['is_modular'] ?? false,
@@ -1206,11 +1206,43 @@ final class AdministratorEnrollmentManagementController extends Controller
                                 ->where('class_id', $previousClassId)
                                 ->delete();
                         }
+
+                        if ($incomingClassId) {
+                            $classEnrollment = ClassEnrollment::query()
+                                ->withTrashed()
+                                ->firstOrNew([
+                                    'student_id' => $enrollment->student_id,
+                                    'class_id' => $incomingClassId,
+                                ]);
+
+                            if ($classEnrollment->trashed()) {
+                                $classEnrollment->restore();
+                            }
+
+                            $classEnrollment->status = true;
+                            $classEnrollment->save();
+                        }
                     } else {
                         $enrollment->subjectsEnrolled()->create(array_merge($payload, [
                             'subject_id' => $subjectId,
                             'student_id' => $enrollment->student_id,
                         ]));
+
+                        if ($incomingClassId) {
+                            $classEnrollment = ClassEnrollment::query()
+                                ->withTrashed()
+                                ->firstOrNew([
+                                    'student_id' => $enrollment->student_id,
+                                    'class_id' => $incomingClassId,
+                                ]);
+
+                            if ($classEnrollment->trashed()) {
+                                $classEnrollment->restore();
+                            }
+
+                            $classEnrollment->status = true;
+                            $classEnrollment->save();
+                        }
                     }
                 }
 
@@ -1346,9 +1378,11 @@ final class AdministratorEnrollmentManagementController extends Controller
 
                 // Create subject enrollments
                 foreach ($validated['subjects'] as $subjectData) {
+                    $classId = isset($subjectData['class_id']) ? (int) $subjectData['class_id'] : null;
+
                     $enrollment->subjectsEnrolled()->create([
                         'subject_id' => $subjectData['subject_id'],
-                        'class_id' => $subjectData['class_id'] ?? null,
+                        'class_id' => $classId,
                         'student_id' => $student->id,
                         'is_modular' => $subjectData['is_modular'] ?? false,
                         'lecture_fee' => $subjectData['lecture_fee'],
@@ -1359,6 +1393,22 @@ final class AdministratorEnrollmentManagementController extends Controller
                         'school_year' => $schoolYear,
                         'semester' => $validated['semester'],
                     ]);
+
+                    if ($classId) {
+                        $classEnrollment = ClassEnrollment::query()
+                            ->withTrashed()
+                            ->firstOrNew([
+                                'student_id' => $student->id,
+                                'class_id' => $classId,
+                            ]);
+
+                        if ($classEnrollment->trashed()) {
+                            $classEnrollment->restore();
+                        }
+
+                        $classEnrollment->status = true;
+                        $classEnrollment->save();
+                    }
                 }
 
                 // Create tuition record

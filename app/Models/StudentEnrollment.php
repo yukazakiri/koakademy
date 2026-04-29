@@ -180,7 +180,7 @@ final class StudentEnrollment extends Model
         }
 
         if ($semester === 1) {
-            $startDate = $startYear.'-06-01 00:00:00';
+            $startDate = $startYear.'-01-01 00:00:00';
             $endDate = ($startYear + 1).'-02-28 23:59:59';
         } else {
             $startDate = $startYear.'-11-01 00:00:00';

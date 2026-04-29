@@ -136,6 +136,12 @@ services:
                 - "http://127.0.0.1:7700/health"
             retries: 3
             timeout: 5s
+    gotenberg:
+        image: gotenberg/gotenberg:8
+        networks:
+            - sail
+        ports:
+            - "9888:3000"
 networks:
     sail:
         driver: bridge

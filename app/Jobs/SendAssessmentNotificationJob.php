@@ -74,14 +74,21 @@ final class SendAssessmentNotificationJob implements ShouldQueue
                 );
             }
 
-            // Ensure PDF is generated and available
-            $this->ensurePdfIsAvailable();
+            // Ensure PDF is generated and available (best effort for resend flow)
+            $pdfAvailable = $this->ensurePdfIsAvailable();
 
             // Send the notification
             NotificationFacade::route(
                 'mail',
                 $this->studentEnrollment->student->email
             )->notify(new MigrateToStudent($this->studentEnrollment));
+
+            if (! $pdfAvailable) {
+                Log::warning('Assessment email sent without pre-validated PDF attachment.', [
+                    'job_id' => $this->jobId,
+                    'enrollment_id' => $this->studentEnrollment->id,
+                ]);
+            }
 
             // Send database notification to super admins using Filament notifications
             try {
@@ -233,31 +240,60 @@ final class SendAssessmentNotificationJob implements ShouldQueue
     /**
      * Ensure PDF is available, generate if needed
      */
-    private function ensurePdfIsAvailable(): void
+    private function ensurePdfIsAvailable(): bool
     {
-        // Check if PDF already exists and is recent
+        // Reuse latest assessment resource if available in configured storage
         $existingResource = $this->studentEnrollment
             ->resources()
             ->where('type', 'assessment')
-            ->where('created_at', '>', now()->subHours(1))
+            ->latest('id')
             ->first();
 
-        if ($existingResource && file_exists($existingResource->file_path)) {
-            Log::info('PDF already exists, using existing file', [
-                'job_id' => $this->jobId,
-                'existing_path' => $existingResource->file_path,
-            ]);
+        if ($existingResource) {
+            $disk = $existingResource->disk ?: config('filesystems.default');
+            $relativePath = $existingResource->file_path;
 
-            return;
+            try {
+                if ($relativePath && Storage::disk($disk)->exists($relativePath)) {
+                    Log::info('Existing assessment PDF found in storage, skipping regeneration.', [
+                        'job_id' => $this->jobId,
+                        'resource_id' => $existingResource->id,
+                        'disk' => $disk,
+                        'path' => $relativePath,
+                    ]);
+
+                    return true;
+                }
+            } catch (Exception $exception) {
+                Log::warning('Could not verify existing assessment resource in storage.', [
+                    'job_id' => $this->jobId,
+                    'resource_id' => $existingResource->id,
+                    'disk' => $disk,
+                    'path' => $relativePath,
+                    'error' => $exception->getMessage(),
+                ]);
+            }
         }
 
-        Log::info('PDF not found or expired, generating new PDF', [
+        Log::info('Assessment PDF not found in storage, attempting regeneration.', [
             'job_id' => $this->jobId,
             'enrollment_id' => $this->studentEnrollment->id,
         ]);
 
-        // Generate PDF synchronously
-        $this->generatePdfSynchronously();
+        try {
+            // Generate PDF synchronously
+            $this->generatePdfSynchronously();
+
+            return true;
+        } catch (Exception $exception) {
+            Log::warning('Assessment PDF regeneration failed during resend. Continuing without guaranteed attachment.', [
+                'job_id' => $this->jobId,
+                'enrollment_id' => $this->studentEnrollment->id,
+                'error' => $exception->getMessage(),
+            ]);
+
+            return false;
+        }
     }
 
     /**

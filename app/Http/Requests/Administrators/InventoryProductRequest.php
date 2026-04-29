@@ -8,6 +8,7 @@ use App\Enums\InventoryItemType;
 use App\Models\InventoryProduct;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\File;
 
 final class InventoryProductRequest extends FormRequest
 {
@@ -27,14 +28,17 @@ final class InventoryProductRequest extends FormRequest
 
         return [
             'name' => ['required', 'string', 'max:255'],
-            'sku' => ['required', 'string', 'max:255', Rule::unique('inventory_products', 'sku')->ignore($productId)],
+            'sku' => ['nullable', 'string', 'max:255', Rule::unique('inventory_products', 'sku')->ignore($productId)],
             'item_type' => ['required', Rule::in($itemTypes)],
             'description' => ['nullable', 'string'],
             'category_id' => ['nullable', 'exists:inventory_categories,id'],
+            'category_name' => ['nullable', 'string', 'max:255'],
             'supplier_id' => ['nullable', 'exists:inventory_suppliers,id'],
+            'supplier_name' => ['nullable', 'string', 'max:255'],
             'price' => ['required', 'numeric', 'min:0'],
             'cost' => ['required', 'numeric', 'min:0'],
             'stock_quantity' => ['required', 'integer', 'min:0'],
+            'defective_quantity' => ['required', 'integer', 'min:0'],
             'min_stock_level' => ['required', 'integer', 'min:0'],
             'max_stock_level' => ['nullable', 'integer', 'min:0'],
             'unit' => ['required', 'string', 'max:255'],
@@ -51,6 +55,8 @@ final class InventoryProductRequest extends FormRequest
             'wifi_password' => ['nullable', 'string', 'max:255'],
             'login_username' => ['nullable', 'string', 'max:255'],
             'login_password' => ['nullable', 'string', 'max:255'],
+            'images' => ['nullable', 'array', 'max:6'],
+            'images.*' => ['nullable', File::image()->max(5 * 1024)],
         ];
     }
 
@@ -58,13 +64,13 @@ final class InventoryProductRequest extends FormRequest
     {
         return [
             'name.required' => 'Item name is required.',
-            'sku.required' => 'SKU is required.',
             'sku.unique' => 'This SKU is already in use.',
             'item_type.in' => 'Select a valid item type.',
             'price.required' => 'Price is required.',
             'cost.required' => 'Cost is required.',
             'stock_quantity.required' => 'Stock quantity is required.',
             'min_stock_level.required' => 'Minimum stock level is required.',
+            'defective_quantity.required' => 'Defective quantity is required.',
             'unit.required' => 'Unit of measurement is required.',
             'ip_address.ip' => 'IP address must be a valid IPv4 or IPv6 address.',
         ];

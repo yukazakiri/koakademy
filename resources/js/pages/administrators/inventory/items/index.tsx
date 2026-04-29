@@ -32,6 +32,8 @@ interface InventoryItem {
     category?: string | null;
     supplier?: string | null;
     stock_quantity: number;
+    defective_quantity?: number;
+    total_quantity?: number;
     unit: string;
     track_stock: boolean;
     is_borrowable: boolean;
@@ -39,6 +41,7 @@ interface InventoryItem {
     location?: string | null;
     ip_address?: string | null;
     wifi_ssid?: string | null;
+    image_urls?: string[];
     updated_at?: string | null;
 }
 
@@ -51,6 +54,7 @@ interface Props {
         network_devices: number;
         borrowable_items: number;
         low_stock: number;
+        defective_units?: number;
     };
     filters: {
         search?: string | null;
@@ -138,6 +142,7 @@ export default function InventoryItemsIndex({ user, items, stats, filters, optio
                                 <span>Tools: {stats.tools}</span>
                                 <span>Network devices: {stats.network_devices}</span>
                                 <span>Low stock: {stats.low_stock}</span>
+                                <span>Defective units: {stats.defective_units ?? 0}</span>
                             </div>
                         </div>
                         <div className="flex flex-wrap gap-2">
@@ -236,11 +241,20 @@ export default function InventoryItemsIndex({ user, items, stats, filters, optio
                                     items.map((item) => (
                                         <TableRow key={item.id}>
                                             <TableCell>
-                                                <div className="space-y-1">
-                                                    <p className="text-foreground font-medium">{item.name}</p>
-                                                    <div className="text-muted-foreground text-xs">
-                                                        <span>{item.sku}</span>
-                                                        {item.category && <span> • {item.category}</span>}
+                                                <div className="flex items-center gap-3">
+                                                    {item.image_urls?.[0] ? (
+                                                        <img src={item.image_urls[0]} alt={item.name} className="h-10 w-10 rounded-md border object-cover" />
+                                                    ) : (
+                                                        <div className="bg-muted text-muted-foreground flex h-10 w-10 items-center justify-center rounded-md border text-xs">
+                                                            N/A
+                                                        </div>
+                                                    )}
+                                                    <div className="space-y-1">
+                                                        <p className="text-foreground font-medium">{item.name}</p>
+                                                        <div className="text-muted-foreground text-xs">
+                                                            <span>{item.sku}</span>
+                                                            {item.category && <span> • {item.category}</span>}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </TableCell>
@@ -262,7 +276,14 @@ export default function InventoryItemsIndex({ user, items, stats, filters, optio
                                                 </div>
                                             </TableCell>
                                             <TableCell className="text-muted-foreground text-sm">
-                                                {item.track_stock ? `${item.stock_quantity} ${item.unit}` : "Not tracked"}
+                                                {item.track_stock ? (
+                                                    <div className="space-y-1">
+                                                        <p>{item.total_quantity ?? item.stock_quantity + (item.defective_quantity ?? 0)} {item.unit}</p>
+                                                        <p className="text-xs">Good: {item.stock_quantity} • Defective: {item.defective_quantity ?? 0}</p>
+                                                    </div>
+                                                ) : (
+                                                    "Not tracked"
+                                                )}
                                             </TableCell>
                                             <TableCell>
                                                 <Badge

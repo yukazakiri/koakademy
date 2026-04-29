@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Administrators;
 
+use App\Enums\InventoryBorrowingStatus;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -29,11 +30,13 @@ final class InventoryBorrowingRequest extends FormRequest
             'borrower_phone' => ['nullable', 'string', 'max:255'],
             'department' => ['nullable', 'string', 'max:255'],
             'purpose' => ['nullable', 'string'],
-            'status' => ['required', Rule::in(['borrowed', 'returned', 'overdue', 'lost'])],
+            'status' => ['required', Rule::in(InventoryBorrowingStatus::values())],
             'borrowed_date' => ['required', 'date'],
             'expected_return_date' => ['nullable', 'date', 'after_or_equal:borrowed_date'],
             'actual_return_date' => ['nullable', 'date', 'after_or_equal:borrowed_date'],
             'quantity_returned' => ['nullable', 'integer', 'min:0', 'lte:quantity_borrowed'],
+            'quantity_returned_good' => ['nullable', 'integer', 'min:0', 'lte:quantity_borrowed'],
+            'quantity_returned_defective' => ['nullable', 'integer', 'min:0', 'lte:quantity_borrowed'],
             'return_notes' => ['nullable', 'string'],
             'issued_by' => ['required', 'exists:users,id'],
             'returned_to' => ['nullable', 'exists:users,id'],
@@ -51,6 +54,8 @@ final class InventoryBorrowingRequest extends FormRequest
             'status.in' => 'Select a valid borrowing status.',
             'borrowed_date.required' => 'Borrowed date is required.',
             'quantity_returned.lte' => 'Returned quantity cannot exceed borrowed quantity.',
+            'quantity_returned_good.lte' => 'Returned good quantity cannot exceed borrowed quantity.',
+            'quantity_returned_defective.lte' => 'Returned defective quantity cannot exceed borrowed quantity.',
             'issued_by.required' => 'Select the staff member who issued the item.',
         ];
     }

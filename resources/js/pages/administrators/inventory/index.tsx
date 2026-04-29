@@ -11,6 +11,9 @@ declare const route: any;
 
 interface InventoryStats {
     total_items: number;
+    good_units: number;
+    defective_units: number;
+    total_units: number;
     tools: number;
     network_devices: number;
     borrowable_items: number;
@@ -24,7 +27,10 @@ interface RecentItem {
     sku: string;
     item_type: string;
     stock_quantity: number;
+    defective_quantity?: number;
+    total_quantity?: number;
     unit: string;
+    image_url?: string | null;
     location?: string | null;
     updated_at?: string | null;
 }
@@ -116,9 +122,9 @@ export default function InventoryIndex({ user, stats, recent }: Props) {
                     <Card className="bg-background/60 border-0">
                         <CardContent className="flex items-center justify-between gap-4 p-5">
                             <div>
-                                <p className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Tool Inventory</p>
-                                <p className="text-2xl font-semibold">{stats.tools}</p>
-                                <p className="text-muted-foreground text-xs">Tools tracked for lending</p>
+                                <p className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Condition Status</p>
+                                <p className="text-2xl font-semibold">{stats.total_units}</p>
+                                <p className="text-muted-foreground text-xs">Good {stats.good_units} • Defective {stats.defective_units}</p>
                             </div>
                             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600">
                                 <Wrench className="h-5 w-5" />
@@ -183,9 +189,21 @@ export default function InventoryIndex({ user, stats, recent }: Props) {
                                         recent.items.map((item) => (
                                             <TableRow key={item.id}>
                                                 <TableCell>
-                                                    <div className="space-y-1">
-                                                        <p className="text-foreground font-medium">{item.name}</p>
-                                                        <p className="text-muted-foreground text-xs">{item.sku}</p>
+                                                    <div className="flex items-center gap-3">
+                                                        {item.image_url ? (
+                                                            <img src={item.image_url} alt={item.name} className="h-10 w-10 rounded-md border object-cover" />
+                                                        ) : (
+                                                            <div className="bg-muted text-muted-foreground flex h-10 w-10 items-center justify-center rounded-md border text-xs">
+                                                                N/A
+                                                            </div>
+                                                        )}
+                                                        <div className="space-y-1">
+                                                            <p className="text-foreground font-medium">{item.name}</p>
+                                                            <p className="text-muted-foreground text-xs">{item.sku}</p>
+                                                            <p className="text-muted-foreground text-xs">
+                                                                Good {item.stock_quantity} • Defective {item.defective_quantity ?? 0} • Total {item.total_quantity ?? item.stock_quantity}
+                                                            </p>
+                                                        </div>
                                                     </div>
                                                 </TableCell>
                                                 <TableCell>

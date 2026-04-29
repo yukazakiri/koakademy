@@ -1,6 +1,7 @@
 import AdminLayout from "@/components/administrators/admin-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -8,8 +9,9 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import type { User } from "@/types/user";
 import { Head, Link, useForm } from "@inertiajs/react";
-import { Save, Server, Wrench } from "lucide-react";
+import { Camera, Save, Server, Wrench } from "lucide-react";
 import type { FormEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 declare const route: any;
 
@@ -24,10 +26,13 @@ interface InventoryProductFormData {
     item_type: string;
     description: string;
     category_id: string;
+    category_name: string;
     supplier_id: string;
+    supplier_name: string;
     price: string;
     cost: string;
     stock_quantity: string;
+    defective_quantity: string;
     min_stock_level: string;
     max_stock_level: string;
     unit: string;
@@ -44,6 +49,7 @@ interface InventoryProductFormData {
     wifi_password: string;
     login_username: string;
     login_password: string;
+    images: File[];
 }
 
 interface InventoryProductRecord {
@@ -57,6 +63,7 @@ interface InventoryProductRecord {
     price: number;
     cost: number;
     stock_quantity: number;
+    defective_quantity?: number;
     min_stock_level: number;
     max_stock_level?: number | null;
     unit: string;
@@ -73,6 +80,30 @@ interface InventoryProductRecord {
     wifi_password?: string | null;
     login_username?: string | null;
     login_password?: string | null;
+    image_urls?: string[];
+    history?: {
+        id: number;
+        event_type: string;
+        before?: Record<string, unknown> | null;
+        after?: Record<string, unknown> | null;
+        notes?: string | null;
+        recorded_at?: string | null;
+    }[];
+    recent_borrowings?: {
+        id: number;
+        borrower_name: string;
+        status: string;
+        quantity_borrowed: number;
+        quantity_returned: number;
+        borrowed_date?: string | null;
+    }[];
+    location_history?: {
+        id: number;
+        from_location: string;
+        to_location: string;
+        notes?: string | null;
+        recorded_at?: string | null;
+    }[];
 }
 
 interface Props {
@@ -85,6 +116,11 @@ interface Props {
         item_types: SelectOption[];
         categories: SelectOption[];
         suppliers: SelectOption[];
+        locations: {
+            buildings: string[];
+            floors: string[];
+            areas: string[];
+        };
     };
 }
 
@@ -96,10 +132,13 @@ export default function InventoryItemEdit({ user, product, defaults, options }: 
         item_type: defaultType,
         description: product?.description ?? "",
         category_id: product?.category_id ? String(product.category_id) : "",
+        category_name: "",
         supplier_id: product?.supplier_id ? String(product.supplier_id) : "",
+        supplier_name: "",
         price: product?.price ? String(product.price) : "0",
         cost: product?.cost ? String(product.cost) : "0",
         stock_quantity: product?.stock_quantity ? String(product.stock_quantity) : "0",
+        defective_quantity: product?.defective_quantity ? String(product.defective_quantity) : "0",
         min_stock_level: product?.min_stock_level ? String(product.min_stock_level) : "0",
         max_stock_level: product?.max_stock_level ? String(product.max_stock_level) : "",
         unit: product?.unit ?? "pcs",
@@ -116,7 +155,32 @@ export default function InventoryItemEdit({ user, product, defaults, options }: 
         wifi_password: product?.wifi_password ?? "",
         login_username: product?.login_username ?? "",
         login_password: product?.login_password ?? "",
+        images: [],
     });
+
+    const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+    const locationForm = useForm({
+        location_building: product?.location_building ?? "",
+        location_floor: product?.location_floor ?? "",
+        location_area: product?.location_area ?? "",
+        notes: "",
+    });
+    const existingImages = product?.image_urls ?? [];
+
+    const generateSku = (itemType: string, locationBuilding: string) => {
+        const prefix = (itemType || "Tool").toUpperCase().slice(0, 3);
+        const buildingCode = (locationBuilding || "GEN")
+            .replace(/[^a-zA-Z0-9]/g, "")
+            .toUpperCase()
+            .slice(0, 4);
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = String(now.getMonth() + 1).padStart(2, "0");
+        const d = String(now.getDate()).padStart(2, "0");
+        const stamp = `${y}${m}${d}`;
+
+        return `${prefix}-${buildingCode || "GEN"}-${stamp}-001`;
+    };
 
     const isNetworkType = ["Router", "NVR", "CCTV"].includes(form.data.item_type);
     const isTool = form.data.item_type === "Tool";
@@ -128,17 +192,56 @@ export default function InventoryItemEdit({ user, product, defaults, options }: 
         } else if (!form.data.is_borrowable) {
             form.setData("is_borrowable", true);
         }
+
+        if (!product) {
+            form.setData("sku", generateSku(value, form.data.location_building));
+        }
     };
+
+    useEffect(() => {
+        if (product) {
+            return;
+        }
+
+        form.setData("sku", generateSku(form.data.item_type, form.data.location_building));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [product, form.data.item_type, form.data.location_building]);
 
     const handleSubmit = (event: FormEvent) => {
         event.preventDefault();
 
         if (product) {
-            form.put(route("administrators.inventory.items.update", product.id));
+            form.put(route("administrators.inventory.items.update", product.id), { forceFormData: true });
             return;
         }
 
-        form.post(route("administrators.inventory.items.store"));
+        form.post(route("administrators.inventory.items.store"), { forceFormData: true });
+    };
+
+    const totalUnits = useMemo(() => {
+        const good = Number(form.data.stock_quantity || 0);
+        const defective = Number(form.data.defective_quantity || 0);
+
+        return Math.max(good, 0) + Math.max(defective, 0);
+    }, [form.data.stock_quantity, form.data.defective_quantity]);
+
+    const locationOptions = useMemo(
+        () => ({
+            buildings: options.locations.buildings.map((value) => ({ label: value, value })),
+            floors: options.locations.floors.map((value) => ({ label: value, value })),
+            areas: options.locations.areas.map((value) => ({ label: value, value })),
+        }),
+        [options.locations.areas, options.locations.buildings, options.locations.floors],
+    );
+
+    const submitLocationUpdate = (event: FormEvent) => {
+        event.preventDefault();
+
+        if (!product) {
+            return;
+        }
+
+        locationForm.post(route("administrators.inventory.items.update-location", product.id));
     };
 
     return (
@@ -154,7 +257,9 @@ export default function InventoryItemEdit({ user, product, defaults, options }: 
                             </div>
                             <div>
                                 <CardTitle>{product ? "Update Inventory Item" : "New Inventory Item"}</CardTitle>
-                                <CardDescription>Capture location, credentials, and stock details accurately.</CardDescription>
+                                <CardDescription>
+                                    Step-by-step workflow: identify item, record condition stock, place location, then add photo evidence.
+                                </CardDescription>
                             </div>
                         </div>
                         <div className="flex flex-wrap gap-2">
@@ -171,8 +276,8 @@ export default function InventoryItemEdit({ user, product, defaults, options }: 
 
                 <Card>
                     <CardHeader>
-                        <CardTitle>Item Details</CardTitle>
-                        <CardDescription>Define how this item should be tracked.</CardDescription>
+                        <CardTitle>Step 1: Item Identity</CardTitle>
+                        <CardDescription>Start with the item name and type. SKU is auto-generated for consistency.</CardDescription>
                     </CardHeader>
                     <CardContent className="grid gap-5 sm:grid-cols-2">
                         <div className="space-y-2">
@@ -182,7 +287,17 @@ export default function InventoryItemEdit({ user, product, defaults, options }: 
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="sku">SKU</Label>
-                            <Input id="sku" value={form.data.sku} onChange={(event) => form.setData("sku", event.target.value)} />
+                            <div className="flex gap-2">
+                                <Input id="sku" value={form.data.sku} readOnly className="font-mono" />
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => form.setData("sku", generateSku(form.data.item_type, form.data.location_building))}
+                                >
+                                    Regenerate
+                                </Button>
+                            </div>
+                            <p className="text-muted-foreground text-xs">Auto-generated as TYPE-BUILDING-YYYYMMDD-SEQ.</p>
                             {form.errors.sku && <p className="text-destructive text-xs">{form.errors.sku}</p>}
                         </div>
                         <div className="space-y-2">
@@ -205,13 +320,20 @@ export default function InventoryItemEdit({ user, product, defaults, options }: 
                             <Label>Category</Label>
                             <Select
                                 value={form.data.category_id || "none"}
-                                onValueChange={(value) => form.setData("category_id", value === "none" ? "" : value)}
+                                onValueChange={(value) => {
+                                    if (value === "create") {
+                                        form.setData("category_id", "");
+                                        return;
+                                    }
+                                    form.setData("category_id", value === "none" ? "" : value);
+                                }}
                             >
                                 <SelectTrigger>
                                     <SelectValue placeholder="Select category" />
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="none">None</SelectItem>
+                                    <SelectItem value="create">+ Create new category</SelectItem>
                                     {options.categories.map((category) => (
                                         <SelectItem key={category.value} value={String(category.value)}>
                                             {category.label}
@@ -220,18 +342,30 @@ export default function InventoryItemEdit({ user, product, defaults, options }: 
                                 </SelectContent>
                             </Select>
                             {form.errors.category_id && <p className="text-destructive text-xs">{form.errors.category_id}</p>}
+                            <Input
+                                placeholder="New category (optional)"
+                                value={form.data.category_name}
+                                onChange={(event) => form.setData("category_name", event.target.value)}
+                            />
                         </div>
                         <div className="space-y-2">
                             <Label>Supplier</Label>
                             <Select
                                 value={form.data.supplier_id || "none"}
-                                onValueChange={(value) => form.setData("supplier_id", value === "none" ? "" : value)}
+                                onValueChange={(value) => {
+                                    if (value === "create") {
+                                        form.setData("supplier_id", "");
+                                        return;
+                                    }
+                                    form.setData("supplier_id", value === "none" ? "" : value);
+                                }}
                             >
                                 <SelectTrigger>
                                     <SelectValue placeholder="Select supplier" />
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="none">None</SelectItem>
+                                    <SelectItem value="create">+ Create new supplier</SelectItem>
                                     {options.suppliers.map((supplier) => (
                                         <SelectItem key={supplier.value} value={String(supplier.value)}>
                                             {supplier.label}
@@ -240,6 +374,11 @@ export default function InventoryItemEdit({ user, product, defaults, options }: 
                                 </SelectContent>
                             </Select>
                             {form.errors.supplier_id && <p className="text-destructive text-xs">{form.errors.supplier_id}</p>}
+                            <Input
+                                placeholder="New supplier (optional)"
+                                value={form.data.supplier_name}
+                                onChange={(event) => form.setData("supplier_name", event.target.value)}
+                            />
                         </div>
                         <div className="space-y-2 sm:col-span-2">
                             <Label htmlFor="description">Description</Label>
@@ -249,6 +388,34 @@ export default function InventoryItemEdit({ user, product, defaults, options }: 
                                 value={form.data.description}
                                 onChange={(event) => form.setData("description", event.target.value)}
                             />
+                        </div>
+                        <div className="space-y-2 sm:col-span-2">
+                            <Label htmlFor="images" className="flex items-center gap-2">
+                                <Camera className="h-4 w-4" />
+                                Item Photos
+                            </Label>
+                            <Input
+                                id="images"
+                                type="file"
+                                accept="image/*"
+                                capture="environment"
+                                multiple
+                                onChange={(event) => {
+                                    const files = Array.from(event.target.files ?? []);
+                                    form.setData("images", files);
+                                    setImagePreviews(files.map((file) => URL.createObjectURL(file)));
+                                }}
+                            />
+                            <p className="text-muted-foreground text-xs">Upload up to 6 photos. Mobile devices can capture directly using camera.</p>
+                            {form.errors.images && <p className="text-destructive text-xs">{form.errors.images}</p>}
+                            <div className="grid grid-cols-3 gap-3 md:grid-cols-6">
+                                {existingImages.map((url) => (
+                                    <img key={url} src={url} alt="Existing item" className="h-20 w-full rounded-md border object-cover" />
+                                ))}
+                                {imagePreviews.map((url) => (
+                                    <img key={url} src={url} alt="Preview" className="h-20 w-full rounded-md border object-cover" />
+                                ))}
+                            </div>
                         </div>
                     </CardContent>
                 </Card>
@@ -285,6 +452,68 @@ export default function InventoryItemEdit({ user, product, defaults, options }: 
                         </div>
                     </CardContent>
                 </Card>
+
+                {product && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Set New Current Location</CardTitle>
+                            <CardDescription>Use searchable combobox fields. If not found, create directly from the same input.</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <form onSubmit={submitLocationUpdate} className="grid gap-4 md:grid-cols-2">
+                                <Combobox
+                                    label="Building"
+                                    required
+                                    options={locationOptions.buildings}
+                                    value={locationForm.data.location_building}
+                                    onValueChange={(value) => locationForm.setData("location_building", value)}
+                                    placeholder="Select or create building"
+                                    searchPlaceholder="Search building"
+                                    allowCreate
+                                    createLabel="Create building"
+                                />
+                                {locationForm.errors.location_building ? <p className="text-destructive text-xs md:col-span-2">{locationForm.errors.location_building}</p> : null}
+                                <Combobox
+                                    label="Floor"
+                                    options={locationOptions.floors}
+                                    value={locationForm.data.location_floor}
+                                    onValueChange={(value) => locationForm.setData("location_floor", value)}
+                                    placeholder="Select or create floor"
+                                    searchPlaceholder="Search floor"
+                                    allowCreate
+                                    createLabel="Create floor"
+                                />
+                                <div className="md:col-span-2">
+                                    <Combobox
+                                        label="Area / Landmark"
+                                        options={locationOptions.areas}
+                                        value={locationForm.data.location_area}
+                                        onValueChange={(value) => locationForm.setData("location_area", value)}
+                                        placeholder="Select or create area"
+                                        searchPlaceholder="Search area"
+                                        allowCreate
+                                        createLabel="Create area"
+                                    />
+                                </div>
+                                <div className="md:col-span-2">
+                                    <Label htmlFor="location_notes">Move Notes</Label>
+                                    <Textarea
+                                        id="location_notes"
+                                        rows={2}
+                                        value={locationForm.data.notes}
+                                        onChange={(event) => locationForm.setData("notes", event.target.value)}
+                                        placeholder="Example: moved from Annex to Main Building for class deployment"
+                                    />
+                                </div>
+                                <div className="flex justify-end md:col-span-2">
+                                    <Button type="submit" disabled={locationForm.processing}>
+                                        Update current location
+                                    </Button>
+                                </div>
+                            </form>
+                        </CardContent>
+                    </Card>
+                )}
 
                 {isNetworkType && (
                     <Card>
@@ -344,12 +573,12 @@ export default function InventoryItemEdit({ user, product, defaults, options }: 
 
                 <Card>
                     <CardHeader>
-                        <CardTitle>Stock & Pricing</CardTitle>
-                        <CardDescription>Set quantity, thresholds, and pricing.</CardDescription>
+                        <CardTitle>Step 2: Condition & Stock</CardTitle>
+                        <CardDescription>Record current good and defective units so availability stays accurate.</CardDescription>
                     </CardHeader>
                     <CardContent className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
                         <div className="space-y-2">
-                            <Label htmlFor="stock_quantity">Stock Quantity</Label>
+                            <Label htmlFor="stock_quantity">Good Quantity</Label>
                             <Input
                                 id="stock_quantity"
                                 type="number"
@@ -358,6 +587,17 @@ export default function InventoryItemEdit({ user, product, defaults, options }: 
                                 onChange={(event) => form.setData("stock_quantity", event.target.value)}
                             />
                             {form.errors.stock_quantity && <p className="text-destructive text-xs">{form.errors.stock_quantity}</p>}
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="defective_quantity">Defective Quantity</Label>
+                            <Input
+                                id="defective_quantity"
+                                type="number"
+                                min={0}
+                                value={form.data.defective_quantity}
+                                onChange={(event) => form.setData("defective_quantity", event.target.value)}
+                            />
+                            {form.errors.defective_quantity && <p className="text-destructive text-xs">{form.errors.defective_quantity}</p>}
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="min_stock_level">Minimum Stock</Label>
@@ -410,6 +650,12 @@ export default function InventoryItemEdit({ user, product, defaults, options }: 
                             {form.errors.price && <p className="text-destructive text-xs">{form.errors.price}</p>}
                         </div>
                         <div className="space-y-2 lg:col-span-3">
+                            <div className="bg-muted/50 rounded-lg border px-3 py-2 text-sm">
+                                <p className="font-medium">Total physical units: {totalUnits}</p>
+                                <p className="text-muted-foreground text-xs">Total = Good + Defective. Borrowing uses Good Quantity.</p>
+                            </div>
+                        </div>
+                        <div className="space-y-2 lg:col-span-3">
                             <Label htmlFor="barcode">Barcode</Label>
                             <Input id="barcode" value={form.data.barcode} onChange={(event) => form.setData("barcode", event.target.value)} />
                         </div>
@@ -451,6 +697,93 @@ export default function InventoryItemEdit({ user, product, defaults, options }: 
                         </div>
                     </CardContent>
                 </Card>
+
+                {product && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Location Movement Timeline</CardTitle>
+                            <CardDescription>Track where the item was before and where it is now for every location change.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            {(product.location_history ?? []).length === 0 ? (
+                                <p className="text-muted-foreground text-sm">No location movement records yet.</p>
+                            ) : (
+                                (product.location_history ?? []).map((entry) => (
+                                    <div key={entry.id} className="rounded-lg border p-3">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <p className="text-sm font-semibold">{entry.from_location} → {entry.to_location}</p>
+                                            <p className="text-muted-foreground text-xs">{entry.recorded_at ?? "—"}</p>
+                                        </div>
+                                        {entry.notes ? <p className="text-muted-foreground mt-1 text-xs">{entry.notes}</p> : null}
+                                    </div>
+                                ))
+                            )}
+                        </CardContent>
+                    </Card>
+                )}
+
+                {product && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Item History</CardTitle>
+                            <CardDescription>Version-like timeline for location and stock condition changes.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            {(product.history ?? []).length === 0 ? (
+                                <p className="text-muted-foreground text-sm">No history records yet.</p>
+                            ) : (
+                                (product.history ?? []).map((entry) => (
+                                    <div key={entry.id} className="rounded-lg border p-3">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <p className="text-sm font-medium">{entry.event_type.replaceAll("_", " ")}</p>
+                                            <p className="text-muted-foreground text-xs">{entry.recorded_at ?? "—"}</p>
+                                        </div>
+                                        {entry.notes ? <p className="text-muted-foreground mt-1 text-xs">{entry.notes}</p> : null}
+                                        {entry.before || entry.after ? (
+                                            <div className="mt-2 grid gap-2 text-xs md:grid-cols-2">
+                                                <div className="rounded border bg-slate-50 p-2 dark:bg-slate-900/30">
+                                                    <p className="mb-1 font-semibold">Before</p>
+                                                    <pre className="overflow-x-auto whitespace-pre-wrap">{JSON.stringify(entry.before ?? {}, null, 2)}</pre>
+                                                </div>
+                                                <div className="rounded border bg-emerald-50 p-2 dark:bg-emerald-950/20">
+                                                    <p className="mb-1 font-semibold">After</p>
+                                                    <pre className="overflow-x-auto whitespace-pre-wrap">{JSON.stringify(entry.after ?? {}, null, 2)}</pre>
+                                                </div>
+                                            </div>
+                                        ) : null}
+                                    </div>
+                                ))
+                            )}
+                        </CardContent>
+                    </Card>
+                )}
+
+                {product && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Borrowing Timeline</CardTitle>
+                            <CardDescription>See who borrowed this item and if quantity decreased due to active borrows.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-2">
+                            {(product.recent_borrowings ?? []).length === 0 ? (
+                                <p className="text-muted-foreground text-sm">No borrowing activity yet.</p>
+                            ) : (
+                                (product.recent_borrowings ?? []).map((entry) => (
+                                    <div key={entry.id} className="flex items-center justify-between rounded border p-2 text-sm">
+                                        <div>
+                                            <p className="font-medium">{entry.borrower_name}</p>
+                                            <p className="text-muted-foreground text-xs">{entry.borrowed_date ?? "—"}</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p>{entry.quantity_borrowed - entry.quantity_returned} out</p>
+                                            <p className="text-muted-foreground text-xs">{entry.status}</p>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </CardContent>
+                    </Card>
+                )}
             </form>
         </AdminLayout>
     );

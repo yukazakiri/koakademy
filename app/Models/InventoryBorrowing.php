@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\InventoryBorrowingStatus;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -23,6 +24,8 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $expected_return_date
  * @property Carbon|null $actual_return_date
  * @property int $quantity_returned
+ * @property int $quantity_returned_good
+ * @property int $quantity_returned_defective
  * @property string|null $return_notes
  * @property int $issued_by
  * @property int|null $returned_to
@@ -78,6 +81,8 @@ final class InventoryBorrowing extends Model
         'expected_return_date',
         'actual_return_date',
         'quantity_returned',
+        'quantity_returned_good',
+        'quantity_returned_defective',
         'return_notes',
         'issued_by',
         'returned_to',
@@ -112,7 +117,7 @@ final class InventoryBorrowing extends Model
      */
     public function scopeActive(Builder $query): Builder
     {
-        return $query->whereIn('status', ['borrowed', 'overdue']);
+        return $query->whereIn('status', [InventoryBorrowingStatus::Borrowed->value, InventoryBorrowingStatus::Overdue->value]);
     }
 
     /**
@@ -120,9 +125,9 @@ final class InventoryBorrowing extends Model
      */
     public function scopeOverdue(Builder $query): Builder
     {
-        return $query->where('status', 'overdue')
+        return $query->where('status', InventoryBorrowingStatus::Overdue->value)
             ->orWhere(function ($q): void {
-                $q->where('status', 'borrowed')
+                $q->where('status', InventoryBorrowingStatus::Borrowed->value)
                     ->where('expected_return_date', '<', now());
             });
     }
@@ -132,7 +137,7 @@ final class InventoryBorrowing extends Model
      */
     public function isOverdue(): bool
     {
-        if ($this->status === 'returned') {
+        if ($this->status === InventoryBorrowingStatus::Returned->value) {
             return false;
         }
 
@@ -149,6 +154,8 @@ final class InventoryBorrowing extends Model
         return [
             'quantity_borrowed' => 'integer',
             'quantity_returned' => 'integer',
+            'quantity_returned_good' => 'integer',
+            'quantity_returned_defective' => 'integer',
             'borrowed_date' => 'datetime',
             'expected_return_date' => 'datetime',
             'actual_return_date' => 'datetime',

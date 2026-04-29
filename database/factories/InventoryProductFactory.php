@@ -30,6 +30,7 @@ final class InventoryProductFactory extends Factory
             'price' => $this->faker->randomFloat(2, 0, 2500),
             'cost' => $this->faker->randomFloat(2, 0, 2000),
             'stock_quantity' => $this->faker->numberBetween(1, 25),
+            'defective_quantity' => 0,
             'min_stock_level' => 1,
             'max_stock_level' => 50,
             'unit' => 'pcs',

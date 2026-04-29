@@ -240,6 +240,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/inventory/items', [AdministratorInventoryProductController::class, 'store'])->name('inventory.items.store');
         Route::get('/inventory/items/{inventoryProduct}/edit', [AdministratorInventoryProductController::class, 'edit'])->name('inventory.items.edit');
         Route::put('/inventory/items/{inventoryProduct}', [AdministratorInventoryProductController::class, 'update'])->name('inventory.items.update');
+        Route::post('/inventory/items/{inventoryProduct}/location', [AdministratorInventoryProductController::class, 'updateLocation'])->name('inventory.items.update-location');
         Route::delete('/inventory/items/{inventoryProduct}', [AdministratorInventoryProductController::class, 'destroy'])->name('inventory.items.destroy');
 
         Route::get('/inventory/borrowings', [AdministratorInventoryBorrowingController::class, 'index'])->name('inventory.borrowings.index');

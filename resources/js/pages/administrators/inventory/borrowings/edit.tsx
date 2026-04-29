@@ -35,6 +35,8 @@ interface BorrowingFormData {
     expected_return_date: string;
     actual_return_date: string;
     quantity_returned: string;
+    quantity_returned_good: string;
+    quantity_returned_defective: string;
     return_notes: string;
     issued_by: string;
     returned_to: string;
@@ -54,6 +56,8 @@ interface BorrowingRecord {
     expected_return_date?: string | null;
     actual_return_date?: string | null;
     quantity_returned?: number | null;
+    quantity_returned_good?: number | null;
+    quantity_returned_defective?: number | null;
     return_notes?: string | null;
     issued_by: number;
     returned_to?: number | null;
@@ -97,6 +101,8 @@ export default function InventoryBorrowingEdit({ user, record, options }: Props)
         expected_return_date: formatDateTimeLocal(record?.expected_return_date),
         actual_return_date: formatDateTimeLocal(record?.actual_return_date),
         quantity_returned: record?.quantity_returned ? String(record.quantity_returned) : "0",
+        quantity_returned_good: record?.quantity_returned_good ? String(record.quantity_returned_good) : "0",
+        quantity_returned_defective: record?.quantity_returned_defective ? String(record.quantity_returned_defective) : "0",
         return_notes: record?.return_notes ?? "",
         issued_by: record?.issued_by ? String(record.issued_by) : String(user.id),
         returned_to: record?.returned_to ? String(record.returned_to) : "",
@@ -120,12 +126,16 @@ export default function InventoryBorrowingEdit({ user, record, options }: Props)
             }
             if (!form.data.quantity_returned || form.data.quantity_returned === "0") {
                 form.setData("quantity_returned", form.data.quantity_borrowed || "0");
+                form.setData("quantity_returned_good", form.data.quantity_borrowed || "0");
+                form.setData("quantity_returned_defective", "0");
             }
             if (!form.data.returned_to) {
                 form.setData("returned_to", String(user.id));
             }
         } else if (value === "lost") {
             form.setData("quantity_returned", "0");
+            form.setData("quantity_returned_good", "0");
+            form.setData("quantity_returned_defective", "0");
             form.setData("actual_return_date", nowLocal());
         }
     };
@@ -408,20 +418,47 @@ export default function InventoryBorrowingEdit({ user, record, options }: Props)
                                 </CardHeader>
                                 <CardContent className="grid gap-4 sm:grid-cols-2">
                                     <div className="space-y-2">
-                                        <Label htmlFor="quantity_returned">Quantity Returned</Label>
+                                        <Label htmlFor="quantity_returned_good">Returned Good</Label>
                                         <Input
-                                            id="quantity_returned"
+                                            id="quantity_returned_good"
                                             type="number"
                                             min={0}
                                             max={Number(form.data.quantity_borrowed) || undefined}
-                                            value={form.data.quantity_returned}
-                                            onChange={(event) => form.setData("quantity_returned", event.target.value)}
+                                            value={form.data.quantity_returned_good}
+                                            onChange={(event) => {
+                                                form.setData("quantity_returned_good", event.target.value);
+                                                const total = Number(event.target.value || 0) + Number(form.data.quantity_returned_defective || 0);
+                                                form.setData("quantity_returned", String(total));
+                                            }}
                                             disabled={!showReturnFields}
                                         />
-                                        {form.errors.quantity_returned && (
+                                        {form.errors.quantity_returned_good && (
                                             <p className="text-destructive flex items-center gap-1 text-xs">
                                                 <AlertCircle className="h-3 w-3" />
-                                                {form.errors.quantity_returned}
+                                                {form.errors.quantity_returned_good}
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label htmlFor="quantity_returned_defective">Returned Defective</Label>
+                                        <Input
+                                            id="quantity_returned_defective"
+                                            type="number"
+                                            min={0}
+                                            max={Number(form.data.quantity_borrowed) || undefined}
+                                            value={form.data.quantity_returned_defective}
+                                            onChange={(event) => {
+                                                form.setData("quantity_returned_defective", event.target.value);
+                                                const total = Number(form.data.quantity_returned_good || 0) + Number(event.target.value || 0);
+                                                form.setData("quantity_returned", String(total));
+                                            }}
+                                            disabled={!showReturnFields}
+                                        />
+                                        {form.errors.quantity_returned_defective && (
+                                            <p className="text-destructive flex items-center gap-1 text-xs">
+                                                <AlertCircle className="h-3 w-3" />
+                                                {form.errors.quantity_returned_defective}
                                             </p>
                                         )}
                                     </div>
@@ -525,9 +562,17 @@ export default function InventoryBorrowingEdit({ user, record, options }: Props)
                                     </div>
                                     {showReturnFields && (
                                         <div className="flex justify-between">
-                                            <span className="text-muted-foreground">Returned</span>
+                                            <span className="text-muted-foreground">Returned (Total)</span>
                                             <Badge variant="outline" className={statusStyles.returned}>
                                                 {form.data.quantity_returned} {selectedProduct?.unit ?? "pcs"}
+                                            </Badge>
+                                        </div>
+                                    )}
+                                    {showReturnFields && (
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Good vs Defective</span>
+                                            <Badge variant="outline" className={statusStyles.returned}>
+                                                {form.data.quantity_returned_good} good • {form.data.quantity_returned_defective} defective
                                             </Badge>
                                         </div>
                                     )}

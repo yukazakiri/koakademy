@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Enums\InventoryItemType;
 use App\Models\InventoryBorrowing;
 use App\Models\InventoryProduct;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -15,9 +16,14 @@ final class AdministratorInventoryController extends Controller
     public function index(): Response
     {
         $networkTypes = InventoryItemType::networkValues();
+        $goodUnits = InventoryProduct::query()->sum('stock_quantity');
+        $defectiveUnits = InventoryProduct::query()->sum('defective_quantity');
 
         $stats = [
             'total_items' => InventoryProduct::count(),
+            'good_units' => $goodUnits,
+            'defective_units' => $defectiveUnits,
+            'total_units' => $goodUnits + $defectiveUnits,
             'tools' => InventoryProduct::query()
                 ->where('item_type', InventoryItemType::Tool->value)
                 ->count(),
@@ -43,8 +49,11 @@ final class AdministratorInventoryController extends Controller
                     ? $product->item_type->value
                     : (string) $product->item_type,
                 'stock_quantity' => $product->stock_quantity,
+                'defective_quantity' => $product->defective_quantity,
+                'total_quantity' => $product->stock_quantity + $product->defective_quantity,
                 'unit' => $product->unit,
                 'location' => $product->locationLabel(),
+                'image_url' => $this->resolvePrimaryImageUrl($product),
                 'updated_at' => format_timestamp($product->updated_at),
             ]);
 
@@ -96,5 +105,21 @@ final class AdministratorInventoryController extends Controller
             'avatar' => $user->avatar_url ?? null,
             'role' => $user->role?->getLabel() ?? 'Administrator',
         ];
+    }
+
+    private function resolvePrimaryImageUrl(InventoryProduct $product): ?string
+    {
+        if (! is_array($product->images) || $product->images === []) {
+            return null;
+        }
+
+        $firstPath = collect($product->images)
+            ->first(fn (mixed $path): bool => is_string($path) && $path !== '');
+
+        if (! is_string($firstPath) || $firstPath === '') {
+            return null;
+        }
+
+        return Storage::disk('public')->url($firstPath);
     }
 }

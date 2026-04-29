@@ -86,8 +86,10 @@ final class ScheduleOverlapRule implements ValidationRule
                         });
                 });
 
-            if (isset($schedule['id'])) {
-                $query->where('id', '!=', $schedule['id']);
+            $scheduleIdForExclusion = $this->resolveScheduleIdForExclusion($schedule['id'] ?? null);
+
+            if ($scheduleIdForExclusion !== null) {
+                $query->whereKeyNot($scheduleIdForExclusion);
             }
 
             $existingSchedule = $query->first();
@@ -128,5 +130,26 @@ final class ScheduleOverlapRule implements ValidationRule
         }
 
         return 'The schedule conflicts with another schedule. ';
+    }
+
+    private function resolveScheduleIdForExclusion(mixed $scheduleId): ?int
+    {
+        if (is_int($scheduleId)) {
+            return $scheduleId > 0 ? $scheduleId : null;
+        }
+
+        if (! is_string($scheduleId)) {
+            return null;
+        }
+
+        $trimmedScheduleId = mb_trim($scheduleId);
+
+        if ($trimmedScheduleId === '' || ! ctype_digit($trimmedScheduleId)) {
+            return null;
+        }
+
+        $resolvedScheduleId = (int) $trimmedScheduleId;
+
+        return $resolvedScheduleId > 0 ? $resolvedScheduleId : null;
     }
 }

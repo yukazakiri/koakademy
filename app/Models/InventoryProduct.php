@@ -24,6 +24,7 @@ use Illuminate\Support\Carbon;
  * @property float $price
  * @property float $cost
  * @property int $stock_quantity
+ * @property int $defective_quantity
  * @property int $min_stock_level
  * @property int|null $max_stock_level
  * @property string $unit
@@ -51,6 +52,8 @@ use Illuminate\Support\Carbon;
  * @property-read int|null $borrowings_count
  * @property-read Collection<int, InventoryAmendment> $amendments
  * @property-read int|null $amendments_count
+ * @property-read Collection<int, InventoryProductHistory> $histories
+ * @property-read int|null $histories_count
  *
  * @method static Builder<static>|InventoryProduct newModelQuery()
  * @method static Builder<static>|InventoryProduct newQuery()
@@ -116,6 +119,7 @@ final class InventoryProduct extends Model
         'price',
         'cost',
         'stock_quantity',
+        'defective_quantity',
         'min_stock_level',
         'max_stock_level',
         'unit',
@@ -173,6 +177,14 @@ final class InventoryProduct extends Model
     public function amendments(): HasMany
     {
         return $this->hasMany(InventoryAmendment::class, 'product_id');
+    }
+
+    /**
+     * Get change histories.
+     */
+    public function histories(): HasMany
+    {
+        return $this->hasMany(InventoryProductHistory::class, 'product_id');
     }
 
     /**
@@ -241,6 +253,7 @@ final class InventoryProduct extends Model
             'price' => 'decimal:2',
             'cost' => 'decimal:2',
             'stock_quantity' => 'integer',
+            'defective_quantity' => 'integer',
             'min_stock_level' => 'integer',
             'max_stock_level' => 'integer',
             'track_stock' => 'boolean',

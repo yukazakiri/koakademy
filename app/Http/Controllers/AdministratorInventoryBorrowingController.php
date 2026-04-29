@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Enums\InventoryBorrowingStatus;
+use App\Enums\InventoryHistoryEventType;
 use App\Http\Requests\Administrators\InventoryBorrowingRequest;
 use App\Models\InventoryBorrowing;
 use App\Models\InventoryProduct;
+use App\Models\InventoryProductHistory;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -32,7 +35,7 @@ final class AdministratorInventoryBorrowingController extends Controller
                 });
             })
             ->when(is_string($status) && $status !== '' && $status !== 'all', function ($query) use ($status): void {
-                if ($status === 'overdue') {
+                if ($status === InventoryBorrowingStatus::Overdue->value) {
                     $query->overdue();
 
                     return;
@@ -56,6 +59,8 @@ final class AdministratorInventoryBorrowingController extends Controller
                 ],
                 'quantity_borrowed' => $record->quantity_borrowed,
                 'quantity_returned' => $record->quantity_returned,
+                'quantity_returned_good' => $record->quantity_returned_good,
+                'quantity_returned_defective' => $record->quantity_returned_defective,
                 'borrowed_date' => format_timestamp($record->borrowed_date),
                 'expected_return_date' => format_timestamp($record->expected_return_date),
                 'actual_return_date' => format_timestamp($record->actual_return_date),
@@ -65,10 +70,10 @@ final class AdministratorInventoryBorrowingController extends Controller
 
         $stats = [
             'total' => InventoryBorrowing::count(),
-            'borrowed' => InventoryBorrowing::query()->where('status', 'borrowed')->count(),
-            'returned' => InventoryBorrowing::query()->where('status', 'returned')->count(),
+            'borrowed' => InventoryBorrowing::query()->where('status', InventoryBorrowingStatus::Borrowed->value)->count(),
+            'returned' => InventoryBorrowing::query()->where('status', InventoryBorrowingStatus::Returned->value)->count(),
             'overdue' => InventoryBorrowing::query()->overdue()->count(),
-            'lost' => InventoryBorrowing::query()->where('status', 'lost')->count(),
+            'lost' => InventoryBorrowing::query()->where('status', InventoryBorrowingStatus::Lost->value)->count(),
         ];
 
         return Inertia::render('administrators/inventory/borrowings/index', [
@@ -82,10 +87,10 @@ final class AdministratorInventoryBorrowingController extends Controller
             'options' => [
                 'statuses' => [
                     ['value' => 'all', 'label' => 'All records'],
-                    ['value' => 'borrowed', 'label' => 'Borrowed'],
-                    ['value' => 'returned', 'label' => 'Returned'],
-                    ['value' => 'overdue', 'label' => 'Overdue'],
-                    ['value' => 'lost', 'label' => 'Lost'],
+                    ['value' => InventoryBorrowingStatus::Borrowed->value, 'label' => 'Borrowed'],
+                    ['value' => InventoryBorrowingStatus::Returned->value, 'label' => 'Returned'],
+                    ['value' => InventoryBorrowingStatus::Overdue->value, 'label' => 'Overdue'],
+                    ['value' => InventoryBorrowingStatus::Lost->value, 'label' => 'Lost'],
                 ],
             ],
             'flash' => session('flash'),
@@ -105,23 +110,32 @@ final class AdministratorInventoryBorrowingController extends Controller
     {
         $validated = $this->normalizeBorrowingData($request->validated());
         $product = InventoryProduct::findOrFail($validated['product_id']);
-        $impact = $this->stockImpact(
+        [$goodImpact, $defectiveImpact] = $this->stockImpact(
             $validated['status'],
             (int) $validated['quantity_borrowed'],
-            (int) $validated['quantity_returned']
+            (int) $validated['quantity_returned_good'],
+            (int) $validated['quantity_returned_defective']
         );
 
-        if ($product->track_stock && $impact < 0 && $product->stock_quantity < abs($impact)) {
+        if ($product->track_stock && $goodImpact < 0 && $product->stock_quantity < abs($goodImpact)) {
             return back()->with('flash', [
                 'type' => 'error',
                 'message' => 'Not enough stock available for this item.',
             ]);
         }
 
-        DB::transaction(function () use ($validated, $product, $impact): void {
-            InventoryBorrowing::create($validated);
+        DB::transaction(function () use ($validated, $product, $goodImpact, $defectiveImpact): void {
+            $borrowing = InventoryBorrowing::create($validated);
 
-            $this->applyStockDelta($product, $impact);
+            $this->applyStockDelta(
+                $product,
+                $goodImpact,
+                $defectiveImpact,
+                InventoryHistoryEventType::BorrowingCreated->value,
+                'Borrowing recorded',
+                InventoryBorrowing::class,
+                $borrowing->id
+            );
         });
 
         return redirect()
@@ -150,6 +164,8 @@ final class AdministratorInventoryBorrowingController extends Controller
                 'expected_return_date' => $inventoryBorrowing->expected_return_date?->toDateTimeString(),
                 'actual_return_date' => $inventoryBorrowing->actual_return_date?->toDateTimeString(),
                 'quantity_returned' => $inventoryBorrowing->quantity_returned,
+                'quantity_returned_good' => $inventoryBorrowing->quantity_returned_good,
+                'quantity_returned_defective' => $inventoryBorrowing->quantity_returned_defective,
                 'return_notes' => $inventoryBorrowing->return_notes,
                 'issued_by' => $inventoryBorrowing->issued_by,
                 'returned_to' => $inventoryBorrowing->returned_to,
@@ -164,29 +180,31 @@ final class AdministratorInventoryBorrowingController extends Controller
     ): RedirectResponse {
         $validated = $this->normalizeBorrowingData($request->validated());
         $originalProduct = $inventoryBorrowing->product;
-        $originalImpact = $this->stockImpact(
+        [$originalGoodImpact, $originalDefectiveImpact] = $this->stockImpact(
             $inventoryBorrowing->status,
             $inventoryBorrowing->quantity_borrowed,
-            $inventoryBorrowing->quantity_returned
+            $inventoryBorrowing->quantity_returned_good,
+            $inventoryBorrowing->quantity_returned_defective
         );
-        $newImpact = $this->stockImpact(
+        [$newGoodImpact, $newDefectiveImpact] = $this->stockImpact(
             $validated['status'],
             (int) $validated['quantity_borrowed'],
-            (int) $validated['quantity_returned']
+            (int) $validated['quantity_returned_good'],
+            (int) $validated['quantity_returned_defective']
         );
 
         $newProduct = $inventoryBorrowing->product_id === $validated['product_id']
             ? $originalProduct
             : InventoryProduct::findOrFail($validated['product_id']);
 
-        if ($newProduct && $newProduct->track_stock && $newImpact < 0) {
+        if ($newProduct && $newProduct->track_stock && $newGoodImpact < 0) {
             $availableStock = $newProduct->stock_quantity;
 
             if ($originalProduct && $newProduct->is($originalProduct)) {
-                $availableStock += abs($originalImpact);
+                $availableStock += abs($originalGoodImpact);
             }
 
-            if ($availableStock < abs($newImpact)) {
+            if ($availableStock < abs($newGoodImpact)) {
                 return back()->with('flash', [
                     'type' => 'error',
                     'message' => 'Not enough stock available for this update.',
@@ -199,24 +217,49 @@ final class AdministratorInventoryBorrowingController extends Controller
             $validated,
             $originalProduct,
             $newProduct,
-            $originalImpact,
-            $newImpact
+            $originalGoodImpact,
+            $originalDefectiveImpact,
+            $newGoodImpact,
+            $newDefectiveImpact
         ): void {
             $inventoryBorrowing->update($validated);
 
             if ($originalProduct && $newProduct && $originalProduct->is($newProduct)) {
-                $delta = $newImpact - $originalImpact;
-                $this->applyStockDelta($originalProduct, $delta);
+                $this->applyStockDelta(
+                    $originalProduct,
+                    $newGoodImpact - $originalGoodImpact,
+                    $newDefectiveImpact - $originalDefectiveImpact,
+                    InventoryHistoryEventType::BorrowingUpdated->value,
+                    'Borrowing record updated',
+                    InventoryBorrowing::class,
+                    $inventoryBorrowing->id
+                );
 
                 return;
             }
 
             if ($originalProduct) {
-                $this->applyStockDelta($originalProduct, -$originalImpact);
+                $this->applyStockDelta(
+                    $originalProduct,
+                    -$originalGoodImpact,
+                    -$originalDefectiveImpact,
+                    InventoryHistoryEventType::BorrowingReverted->value,
+                    'Borrowing impact reverted due to reassignment',
+                    InventoryBorrowing::class,
+                    $inventoryBorrowing->id
+                );
             }
 
             if ($newProduct) {
-                $this->applyStockDelta($newProduct, $newImpact);
+                $this->applyStockDelta(
+                    $newProduct,
+                    $newGoodImpact,
+                    $newDefectiveImpact,
+                    InventoryHistoryEventType::BorrowingReassigned->value,
+                    'Borrowing reassigned to a different item',
+                    InventoryBorrowing::class,
+                    $inventoryBorrowing->id
+                );
             }
         });
 
@@ -231,17 +274,26 @@ final class AdministratorInventoryBorrowingController extends Controller
     public function destroy(InventoryBorrowing $inventoryBorrowing): RedirectResponse
     {
         $product = $inventoryBorrowing->product;
-        $impact = $this->stockImpact(
+        [$goodImpact, $defectiveImpact] = $this->stockImpact(
             $inventoryBorrowing->status,
             $inventoryBorrowing->quantity_borrowed,
-            $inventoryBorrowing->quantity_returned
+            $inventoryBorrowing->quantity_returned_good,
+            $inventoryBorrowing->quantity_returned_defective
         );
 
-        DB::transaction(function () use ($inventoryBorrowing, $product, $impact): void {
+        DB::transaction(function () use ($inventoryBorrowing, $product, $goodImpact, $defectiveImpact): void {
             $inventoryBorrowing->delete();
 
             if ($product) {
-                $this->applyStockDelta($product, -$impact);
+                $this->applyStockDelta(
+                    $product,
+                    -$goodImpact,
+                    -$defectiveImpact,
+                    InventoryHistoryEventType::BorrowingDeleted->value,
+                    'Borrowing record deleted',
+                    InventoryBorrowing::class,
+                    $inventoryBorrowing->id
+                );
             }
         });
 
@@ -255,44 +307,86 @@ final class AdministratorInventoryBorrowingController extends Controller
 
     private function normalizeBorrowingData(array $validated): array
     {
-        $validated['quantity_returned'] = (int) ($validated['quantity_returned'] ?? 0);
+        $validated['quantity_returned_good'] = (int) ($validated['quantity_returned_good'] ?? $validated['quantity_returned'] ?? 0);
+        $validated['quantity_returned_defective'] = (int) ($validated['quantity_returned_defective'] ?? 0);
+        $validated['quantity_returned'] = $validated['quantity_returned_good'] + $validated['quantity_returned_defective'];
 
-        if ($validated['status'] === 'returned') {
-            $validated['quantity_returned'] = max(
-                $validated['quantity_returned'],
-                (int) $validated['quantity_borrowed']
-            );
+        if ($validated['status'] === InventoryBorrowingStatus::Returned->value) {
+            if ($validated['quantity_returned'] === 0) {
+                $validated['quantity_returned_good'] = (int) $validated['quantity_borrowed'];
+                $validated['quantity_returned'] = (int) $validated['quantity_borrowed'];
+            }
+
+            $validated['quantity_returned'] = min((int) $validated['quantity_borrowed'], $validated['quantity_returned']);
             $validated['actual_return_date'] ??= now()->toDateTimeString();
         } else {
             $validated['actual_return_date'] = null;
+            $validated['quantity_returned_good'] = 0;
+            $validated['quantity_returned_defective'] = 0;
+            $validated['quantity_returned'] = 0;
         }
 
-        if ($validated['status'] !== 'returned') {
+        if ($validated['status'] !== InventoryBorrowingStatus::Returned->value) {
             $validated['returned_to'] = null;
         }
 
         return $validated;
     }
 
-    private function stockImpact(string $status, int $quantityBorrowed, int $quantityReturned): int
-    {
-        if ($status === 'returned') {
-            return 0;
+    /**
+     * @return array{0:int,1:int}
+     */
+    private function stockImpact(
+        string $status,
+        int $quantityBorrowed,
+        int $quantityReturnedGood,
+        int $quantityReturnedDefective
+    ): array {
+        if ($status !== InventoryBorrowingStatus::Returned->value) {
+            return [-$quantityBorrowed, 0];
         }
 
-        $netBorrowed = max(0, $quantityBorrowed - $quantityReturned);
-
-        return -$netBorrowed;
+        return [$quantityReturnedGood - $quantityBorrowed, $quantityReturnedDefective];
     }
 
-    private function applyStockDelta(InventoryProduct $product, int $delta): void
-    {
-        if (! $product->track_stock || $delta === 0) {
+    private function applyStockDelta(
+        InventoryProduct $product,
+        int $goodDelta,
+        int $defectiveDelta,
+        string $eventType,
+        ?string $notes = null,
+        ?string $referenceType = null,
+        ?int $referenceId = null
+    ): void {
+        if (! $product->track_stock || ($goodDelta === 0 && $defectiveDelta === 0)) {
             return;
         }
 
-        $product->stock_quantity = max(0, $product->stock_quantity + $delta);
+        $before = [
+            'good_quantity' => $product->stock_quantity,
+            'defective_quantity' => $product->defective_quantity,
+            'location' => $product->locationLabel(),
+        ];
+
+        $product->stock_quantity = max(0, $product->stock_quantity + $goodDelta);
+        $product->defective_quantity = max(0, $product->defective_quantity + $defectiveDelta);
         $product->save();
+
+        InventoryProductHistory::query()->create([
+            'product_id' => $product->id,
+            'event_type' => $eventType,
+            'before' => $before,
+            'after' => [
+                'good_quantity' => $product->stock_quantity,
+                'defective_quantity' => $product->defective_quantity,
+                'location' => $product->locationLabel(),
+            ],
+            'reference_type' => $referenceType,
+            'reference_id' => $referenceId,
+            'notes' => $notes,
+            'recorded_by' => request()->user()?->id,
+            'recorded_at' => now(),
+        ]);
     }
 
     private function getBorrowOptions(): array
@@ -323,10 +417,10 @@ final class AdministratorInventoryBorrowingController extends Controller
                 ->values()
                 ->all(),
             'statuses' => [
-                ['value' => 'borrowed', 'label' => 'Borrowed'],
-                ['value' => 'returned', 'label' => 'Returned'],
-                ['value' => 'overdue', 'label' => 'Overdue'],
-                ['value' => 'lost', 'label' => 'Lost'],
+                ['value' => InventoryBorrowingStatus::Borrowed->value, 'label' => 'Borrowed'],
+                ['value' => InventoryBorrowingStatus::Returned->value, 'label' => 'Returned'],
+                ['value' => InventoryBorrowingStatus::Overdue->value, 'label' => 'Overdue'],
+                ['value' => InventoryBorrowingStatus::Lost->value, 'label' => 'Lost'],
             ],
         ];
     }

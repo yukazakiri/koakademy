@@ -10,6 +10,7 @@ import {
   CommandGroup,
   CommandInput,
   CommandItem,
+  CommandList,
 } from "@/components/ui/command"
 import {
   Popover,
@@ -35,6 +36,8 @@ interface ComboboxProps {
   className?: string
   label?: string
   required?: boolean
+  allowCreate?: boolean
+  createLabel?: string
 }
 
 export function Combobox({
@@ -48,15 +51,25 @@ export function Combobox({
   className,
   label,
   required = false,
+  allowCreate = false,
+  createLabel = "Create",
 }: ComboboxProps) {
   const [open, setOpen] = React.useState(false)
+  const [searchValue, setSearchValue] = React.useState("")
 
   const selectedOption = options.find((option) => option.value === value)
 
   const handleSelect = (optionValue: string) => {
     onValueChange?.(optionValue)
+    setSearchValue("")
     setOpen(false)
   }
+
+  const normalizedSearch = searchValue.trim()
+  const canCreate =
+    allowCreate &&
+    normalizedSearch.length > 0 &&
+    !options.some((option) => option.label.toLowerCase() === normalizedSearch.toLowerCase())
 
   // Custom filter function for cmdk
   const filterFunction = React.useCallback((value: string, search: string) => {
@@ -99,33 +112,48 @@ export function Combobox({
         </PopoverTrigger>
         <PopoverContent className="w-full p-0" align="start">
           <Command filter={filterFunction}>
-            <CommandInput placeholder={searchPlaceholder} />
-            <CommandEmpty>{emptyText}</CommandEmpty>
-            <CommandGroup className="max-h-64 overflow-auto">
-              {options.map((option) => (
-                <CommandItem
-                  key={option.value}
-                  value={option.value}
-                  onSelect={() => handleSelect(option.value)}
-                  className="flex items-center gap-2"
-                >
-                  <IconCheck
-                    className={cn(
-                      "h-4 w-4",
-                      value === option.value ? "opacity-100" : "opacity-0"
-                    )}
-                  />
-                  <div className="flex-1">
-                    <div className="font-medium">{option.label}</div>
-                    {option.description && (
-                      <div className="text-xs text-muted-foreground">
-                        {option.description}
-                      </div>
-                    )}
-                  </div>
-                </CommandItem>
-              ))}
-            </CommandGroup>
+            <CommandInput
+              placeholder={searchPlaceholder}
+              value={searchValue}
+              onValueChange={setSearchValue}
+            />
+            <CommandList>
+              <CommandEmpty>{emptyText}</CommandEmpty>
+              <CommandGroup className="max-h-64 overflow-auto">
+                {canCreate && (
+                  <CommandItem
+                    value={`create-${normalizedSearch}`}
+                    onSelect={() => handleSelect(normalizedSearch)}
+                    className="flex items-center gap-2"
+                  >
+                    <div className="text-sm font-medium">{createLabel}: "{normalizedSearch}"</div>
+                  </CommandItem>
+                )}
+                {options.map((option) => (
+                  <CommandItem
+                    key={option.value}
+                    value={option.value}
+                    onSelect={() => handleSelect(option.value)}
+                    className="flex items-center gap-2"
+                  >
+                    <IconCheck
+                      className={cn(
+                        "h-4 w-4",
+                        value === option.value ? "opacity-100" : "opacity-0"
+                      )}
+                    />
+                    <div className="flex-1">
+                      <div className="font-medium">{option.label}</div>
+                      {option.description && (
+                        <div className="text-xs text-muted-foreground">
+                          {option.description}
+                        </div>
+                      )}
+                    </div>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
           </Command>
         </PopoverContent>
       </Popover>

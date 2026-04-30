@@ -8,14 +8,22 @@ use App\Models\Schedule;
 use App\Services\GeneralSettingsService;
 use Closure;
 use Filament\Notifications\Notification;
+use Illuminate\Contracts\Validation\DataAwareRule;
 use Illuminate\Contracts\Validation\ValidationRule;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Translation\PotentiallyTranslatedString;
 
 // use Illuminate\Translation\PotentiallyTranslatedString;
 
-final class ScheduleOverlapRule implements ValidationRule
+final class ScheduleOverlapRule implements DataAwareRule, ValidationRule
 {
     private ?Schedule $conflictingSchedule = null;
+
+    /**
+     * @var array<string, mixed>
+     */
+    private array $data = [];
 
     public function __construct(
         private readonly ?int $excludedClassId = null,
@@ -33,6 +41,9 @@ final class ScheduleOverlapRule implements ValidationRule
     ): void {
         $this->conflictingSchedule = null;
         $generalSettingsService = app(GeneralSettingsService::class);
+        $schoolYearVariants = $this->resolveSchoolYearVariants($generalSettingsService);
+        $semester = $this->resolveSemester($generalSettingsService);
+
         // dd($attribute);
         foreach ($value as $schedule) {
             if (empty($schedule['room_id'])) {
@@ -42,8 +53,9 @@ final class ScheduleOverlapRule implements ValidationRule
             $query = Schedule::with('class')
                 ->where('day_of_week', $schedule['day_of_week'])
                 ->where('room_id', $schedule['room_id'])
-                ->whereHas('class', function ($query) use ($generalSettingsService): void {
-                    $query->where('semester', $generalSettingsService->getCurrentSemester());
+                ->whereHas('class', function (Builder $query) use ($schoolYearVariants, $semester): void {
+                    $query->whereIn('school_year', $schoolYearVariants)
+                        ->where('semester', $semester);
                 })
                 ->where(function ($query) use ($schedule): void {
                     $query
@@ -111,12 +123,17 @@ final class ScheduleOverlapRule implements ValidationRule
 
         if ($this->conflictingSchedule) {
             $fail($this->message());
-            Notification::make()
+            $notification = Notification::make()
                 ->danger()
                 ->title('Schedule Conflict')
-                ->body($this->message())
-                ->send()
-                ->sendToDatabase(auth()->user());
+                ->body($this->message());
+            $authenticatedUser = Auth::guard()->user();
+
+            $notification->send();
+
+            if ($authenticatedUser !== null) {
+                $notification->sendToDatabase($authenticatedUser);
+            }
         }
     }
 
@@ -141,6 +158,16 @@ final class ScheduleOverlapRule implements ValidationRule
         return 'The schedule conflicts with another schedule. ';
     }
 
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function setData(array $data): static
+    {
+        $this->data = $data;
+
+        return $this;
+    }
+
     private function resolveScheduleIdForExclusion(mixed $scheduleId): ?int
     {
         if (is_int($scheduleId)) {
@@ -160,5 +187,37 @@ final class ScheduleOverlapRule implements ValidationRule
         $resolvedScheduleId = (int) $trimmedScheduleId;
 
         return $resolvedScheduleId > 0 ? $resolvedScheduleId : null;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function resolveSchoolYearVariants(GeneralSettingsService $generalSettingsService): array
+    {
+        $schoolYear = $this->data['school_year'] ?? $generalSettingsService->getCurrentSchoolYearString();
+
+        if (! is_string($schoolYear) || mb_trim($schoolYear) === '') {
+            $schoolYear = $generalSettingsService->getCurrentSchoolYearString();
+        }
+
+        $normalizedSchoolYear = GeneralSettingsService::normalizeSchoolYear($schoolYear);
+        $compactSchoolYear = str_replace(' ', '', $normalizedSchoolYear);
+
+        return array_values(array_unique([$normalizedSchoolYear, $compactSchoolYear]));
+    }
+
+    private function resolveSemester(GeneralSettingsService $generalSettingsService): int
+    {
+        $semester = $this->data['semester'] ?? $generalSettingsService->getCurrentSemester();
+
+        if (is_int($semester)) {
+            return $semester;
+        }
+
+        if (is_string($semester) && ctype_digit($semester)) {
+            return (int) $semester;
+        }
+
+        return $generalSettingsService->getCurrentSemester();
     }
 }

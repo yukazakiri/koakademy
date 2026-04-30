@@ -14,7 +14,11 @@ final readonly class ChangelogService
 {
     private const string CACHE_KEY = 'changelog_entries';
 
+    private const string RATE_LIMIT_CACHE_KEY = 'changelog_github_rate_limited';
+
     private const int CACHE_TTL = 3600; // 1 hour
+
+    private const int RATE_LIMIT_TTL = 600; // 10 minutes
 
     public function __construct(
         private ?string $githubRepo = null,
@@ -34,7 +38,9 @@ final readonly class ChangelogService
      */
     public function getChangelog(int $limit = 20, bool $includePrereleases = false): Collection
     {
-        return Cache::remember(self::CACHE_KEY, self::CACHE_TTL, function () use ($limit, $includePrereleases) {
+        $cacheKey = self::CACHE_KEY.".limit:{$limit}.prereleases:".($includePrereleases ? '1' : '0');
+
+        return Cache::remember($cacheKey, self::CACHE_TTL, function () use ($limit, $includePrereleases) {
             Log::info('ChangelogService: getChangelog called', [
                 'limit' => $limit,
                 'includePrereleases' => $includePrereleases,
@@ -143,6 +149,7 @@ final readonly class ChangelogService
     public function clearCache(): void
     {
         Cache::forget(self::CACHE_KEY);
+        Cache::forget(self::RATE_LIMIT_CACHE_KEY);
         Cache::forget('showcase_changelog');
         Cache::forget('latest_stable_version');
     }
@@ -261,6 +268,14 @@ final readonly class ChangelogService
             return [];
         }
 
+        if (Cache::get(self::RATE_LIMIT_CACHE_KEY) === true) {
+            Log::warning('ChangelogService: Skipping GitHub call due to recent rate limit', [
+                'retry_after_seconds' => self::RATE_LIMIT_TTL,
+            ]);
+
+            return [];
+        }
+
         try {
             Log::info('ChangelogService: Fetching releases from GitHub', [
                 'repo' => $repo,
@@ -270,6 +285,7 @@ final readonly class ChangelogService
 
             $headers = [
                 'Accept' => 'application/vnd.github.v3+json',
+                'User-Agent' => config('app.name', 'Laravel').'/changelog-service',
             ];
 
             if ($token) {
@@ -277,12 +293,25 @@ final readonly class ChangelogService
             }
 
             $response = Http::timeout(10)
+                ->retry(2, 200)
                 ->withHeaders($headers)
                 ->get("https://api.github.com/repos/{$repo}/releases", [
                     'per_page' => $limit,
                 ]);
 
             if (! $response->successful()) {
+                if ($response->status() === 403 && str_contains(mb_strtolower($response->body()), 'rate limit exceeded')) {
+                    Cache::put(self::RATE_LIMIT_CACHE_KEY, true, self::RATE_LIMIT_TTL);
+
+                    Log::warning('ChangelogService: GitHub API rate limit exceeded', [
+                        'status' => $response->status(),
+                        'has_token' => (bool) $token,
+                        'repo' => $repo,
+                    ]);
+
+                    return [];
+                }
+
                 Log::error('ChangelogService: GitHub API request failed', [
                     'status' => $response->status(),
                     'body' => $response->body(),

@@ -110,7 +110,7 @@ final readonly class SettingsShareService
                 'name' => $user->name,
                 'email' => $user->email,
                 'role' => $user->role instanceof \App\Enums\UserRole ? $user->role->value : $user->role,
-                'avatar' => $user->avatar_url,
+                'avatar' => $user->getFilamentAvatarUrl(),
                 'permissions' => $this->getUserPermissions($user),
             ] : null,
             'isImpersonating' => session()->has('impersonator_id'),

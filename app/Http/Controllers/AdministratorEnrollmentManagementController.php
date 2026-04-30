@@ -65,7 +65,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'user' => [
                     'name' => $user->name,
                     'email' => $user->email,
-                    'avatar' => $user->avatar_url ?? null,
+                    'avatar' => $user->getFilamentAvatarUrl(),
                     'role' => $user->role?->getLabel() ?? 'Administrator',
                 ],
                 'filament' => [
@@ -308,7 +308,7 @@ final class AdministratorEnrollmentManagementController extends Controller
             'user' => [
                 'name' => $user->name,
                 'email' => $user->email,
-                'avatar' => $user->avatar_url ?? null,
+                'avatar' => $user->getFilamentAvatarUrl(),
                 'role' => $user->role?->getLabel() ?? 'Administrator',
             ],
             'filament' => [
@@ -431,7 +431,7 @@ final class AdministratorEnrollmentManagementController extends Controller
             'user' => [
                 'name' => $user->name,
                 'email' => $user->email,
-                'avatar' => $user->avatar_url ?? null,
+                'avatar' => $user->getFilamentAvatarUrl(),
                 'role' => $user->role?->getLabel() ?? 'Administrator',
             ],
             'applicants' => $applicants,
@@ -1082,7 +1082,7 @@ final class AdministratorEnrollmentManagementController extends Controller
             'user' => [
                 'name' => $user->name,
                 'email' => $user->email,
-                'avatar' => $user->avatar_url ?? null,
+                'avatar' => $user->getFilamentAvatarUrl(),
                 'role' => $user->role?->getLabel() ?? 'Administrator',
             ],
             'settings' => [
@@ -1307,7 +1307,7 @@ final class AdministratorEnrollmentManagementController extends Controller
             'user' => [
                 'name' => $user->name,
                 'email' => $user->email,
-                'avatar' => $user->avatar_url ?? null,
+                'avatar' => $user->getFilamentAvatarUrl(),
                 'role' => $user->role?->getLabel() ?? 'Administrator',
             ],
             'settings' => [

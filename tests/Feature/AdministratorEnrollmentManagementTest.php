@@ -15,6 +15,7 @@ use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia;
 
 beforeEach(function (): void {
@@ -47,6 +48,30 @@ it('allows administrative users to view the enrollments management page', functi
             ->has('filters')
             ->has('filament.student_enrollments.index_url')
             ->has('filament.student_enrollments.create_url')
+        );
+});
+
+it('returns 404 when enrollments path receives a non-numeric identifier', function (): void {
+    $user = User::factory()->create([
+        'role' => UserRole::Admin,
+    ]);
+
+    $this->actingAs($user)
+        ->get(portalUrlForAdministrators('/administrators/enrollments/avatar.png'))
+        ->assertNotFound();
+});
+
+it('shares an absolute avatar URL for authenticated admin data', function (): void {
+    $user = User::factory()->create([
+        'role' => UserRole::Admin,
+        'avatar_url' => 'avatar.png',
+    ]);
+
+    $this->actingAs($user)
+        ->get(portalUrlForAdministrators('/administrators/enrollments'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->where('auth.user.avatar', Storage::url('avatar.png'))
         );
 });
 

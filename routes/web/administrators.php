@@ -134,32 +134,32 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/enrollments/api/year-level-by-department', [AdministratorEnrollmentManagementController::class, 'yearLevelByDepartment'])->name('enrollments.api.year-level-by-department');
         Route::get('/enrollments/api/department-by-year-level', [AdministratorEnrollmentManagementController::class, 'departmentByYearLevel'])->name('enrollments.api.department-by-year-level');
 
-        Route::patch('/enrollments/{student}', [AdministratorEnrollmentManagementController::class, 'update'])->name('enrollments.scholarship.update');
-        Route::get('/enrollments/{enrollment}', [AdministratorEnrollmentManagementController::class, 'show'])->name('enrollments.show');
+        Route::patch('/enrollments/{student}', [AdministratorEnrollmentManagementController::class, 'update'])->whereNumber('student')->name('enrollments.scholarship.update');
+        Route::get('/enrollments/{enrollment}', [AdministratorEnrollmentManagementController::class, 'show'])->whereNumber('enrollment')->name('enrollments.show');
 
         // Enrollment Actions
-        Route::post('/enrollments/{enrollment}/verify-head-dept', [AdministratorEnrollmentManagementController::class, 'verifyHeadDept'])->name('enrollments.verify-head-dept');
-        Route::post('/enrollments/{enrollment}/verify-cashier', [AdministratorEnrollmentManagementController::class, 'verifyCashier'])->name('enrollments.verify-cashier');
-        Route::post('/enrollments/{enrollment}/verify-cashier-no-receipt', [AdministratorEnrollmentManagementController::class, 'verifyCashierNoReceipt'])->name('enrollments.verify-cashier-no-receipt');
-        Route::post('/enrollments/{enrollment}/undo-cashier', [AdministratorEnrollmentManagementController::class, 'undoCashierVerification'])->name('enrollments.undo-cashier');
-        Route::post('/enrollments/{enrollment}/undo-head-dept', [AdministratorEnrollmentManagementController::class, 'undoHeadDeptVerification'])->name('enrollments.undo-head-dept');
-        Route::post('/enrollments/{enrollment}/advance-pipeline-step', [AdministratorEnrollmentManagementController::class, 'advancePipelineStep'])->name('enrollments.advance-pipeline-step');
-        Route::post('/enrollments/{enrollment}/enroll-class', [AdministratorEnrollmentManagementController::class, 'enrollInClass'])->name('enrollments.enroll-class');
-        Route::post('/enrollments/{enrollment}/retry-enrollment', [AdministratorEnrollmentManagementController::class, 'retryEnrollment'])->name('enrollments.retry-enrollment');
-        Route::post('/enrollments/{enrollment}/resend-assessment', [AdministratorEnrollmentManagementController::class, 'resendAssessment'])->name('enrollments.resend-assessment');
-        Route::post('/enrollments/{enrollment}/create-assessment-pdf', [AdministratorEnrollmentManagementController::class, 'createAssessmentPdf'])->name('enrollments.create-assessment-pdf');
-        Route::get('/enrollments/{enrollment}/assessment-preview-data', [AdministratorEnrollmentManagementController::class, 'assessmentPreviewData'])->name('enrollments.assessment-preview-data');
-        Route::get('/enrollments/{enrollment}/assessment-preview', [AdministratorEnrollmentManagementController::class, 'assessmentPreview'])->name('enrollments.assessment-preview');
-        Route::get('/enrollments/{enrollment}/edit', [AdministratorEnrollmentManagementController::class, 'edit'])->name('enrollments.edit');
-        Route::put('/enrollments/{enrollment}', [AdministratorEnrollmentManagementController::class, 'updateEnrollment'])->name('enrollments.update');
-        Route::post('/enrollments/{enrollment}/quick-enroll', [AdministratorEnrollmentManagementController::class, 'quickEnroll'])->name('enrollments.quick-enroll');
-        Route::patch('/enrollments/{enrollment}/transactions/{transaction}', [AdministratorEnrollmentManagementController::class, 'updateTransaction'])->name('enrollments.transactions.update');
-        Route::patch('/enrollments/{enrollment}/tuition', [AdministratorEnrollmentManagementController::class, 'updateTuition'])->name('enrollments.tuition.update');
-        Route::delete('/enrollments/{enrollment}', [AdministratorEnrollmentManagementController::class, 'destroy'])->name('enrollments.destroy');
-        Route::delete('/enrollments/{enrollment}/force', [AdministratorEnrollmentManagementController::class, 'forceDestroy'])->name('enrollments.force-destroy');
-        Route::post('/enrollments/{enrollment}/restore', [AdministratorEnrollmentManagementController::class, 'restore'])->name('enrollments.restore');
-        Route::get('/enrollments/{enrollment}/activity-log', [AdministratorEnrollmentManagementController::class, 'activityLog'])->name('enrollments.activity-log');
-        Route::post('/enrollments/{enrollment}/restore-subjects', [AdministratorEnrollmentManagementController::class, 'restoreSubjects'])->name('enrollments.restore-subjects');
+        Route::post('/enrollments/{enrollment}/verify-head-dept', [AdministratorEnrollmentManagementController::class, 'verifyHeadDept'])->whereNumber('enrollment')->name('enrollments.verify-head-dept');
+        Route::post('/enrollments/{enrollment}/verify-cashier', [AdministratorEnrollmentManagementController::class, 'verifyCashier'])->whereNumber('enrollment')->name('enrollments.verify-cashier');
+        Route::post('/enrollments/{enrollment}/verify-cashier-no-receipt', [AdministratorEnrollmentManagementController::class, 'verifyCashierNoReceipt'])->whereNumber('enrollment')->name('enrollments.verify-cashier-no-receipt');
+        Route::post('/enrollments/{enrollment}/undo-cashier', [AdministratorEnrollmentManagementController::class, 'undoCashierVerification'])->whereNumber('enrollment')->name('enrollments.undo-cashier');
+        Route::post('/enrollments/{enrollment}/undo-head-dept', [AdministratorEnrollmentManagementController::class, 'undoHeadDeptVerification'])->whereNumber('enrollment')->name('enrollments.undo-head-dept');
+        Route::post('/enrollments/{enrollment}/advance-pipeline-step', [AdministratorEnrollmentManagementController::class, 'advancePipelineStep'])->whereNumber('enrollment')->name('enrollments.advance-pipeline-step');
+        Route::post('/enrollments/{enrollment}/enroll-class', [AdministratorEnrollmentManagementController::class, 'enrollInClass'])->whereNumber('enrollment')->name('enrollments.enroll-class');
+        Route::post('/enrollments/{enrollment}/retry-enrollment', [AdministratorEnrollmentManagementController::class, 'retryEnrollment'])->whereNumber('enrollment')->name('enrollments.retry-enrollment');
+        Route::post('/enrollments/{enrollment}/resend-assessment', [AdministratorEnrollmentManagementController::class, 'resendAssessment'])->whereNumber('enrollment')->name('enrollments.resend-assessment');
+        Route::post('/enrollments/{enrollment}/create-assessment-pdf', [AdministratorEnrollmentManagementController::class, 'createAssessmentPdf'])->whereNumber('enrollment')->name('enrollments.create-assessment-pdf');
+        Route::get('/enrollments/{enrollment}/assessment-preview-data', [AdministratorEnrollmentManagementController::class, 'assessmentPreviewData'])->whereNumber('enrollment')->name('enrollments.assessment-preview-data');
+        Route::get('/enrollments/{enrollment}/assessment-preview', [AdministratorEnrollmentManagementController::class, 'assessmentPreview'])->whereNumber('enrollment')->name('enrollments.assessment-preview');
+        Route::get('/enrollments/{enrollment}/edit', [AdministratorEnrollmentManagementController::class, 'edit'])->whereNumber('enrollment')->name('enrollments.edit');
+        Route::put('/enrollments/{enrollment}', [AdministratorEnrollmentManagementController::class, 'updateEnrollment'])->whereNumber('enrollment')->name('enrollments.update');
+        Route::post('/enrollments/{enrollment}/quick-enroll', [AdministratorEnrollmentManagementController::class, 'quickEnroll'])->whereNumber('enrollment')->name('enrollments.quick-enroll');
+        Route::patch('/enrollments/{enrollment}/transactions/{transaction}', [AdministratorEnrollmentManagementController::class, 'updateTransaction'])->whereNumber('enrollment')->whereNumber('transaction')->name('enrollments.transactions.update');
+        Route::patch('/enrollments/{enrollment}/tuition', [AdministratorEnrollmentManagementController::class, 'updateTuition'])->whereNumber('enrollment')->name('enrollments.tuition.update');
+        Route::delete('/enrollments/{enrollment}', [AdministratorEnrollmentManagementController::class, 'destroy'])->whereNumber('enrollment')->name('enrollments.destroy');
+        Route::delete('/enrollments/{enrollment}/force', [AdministratorEnrollmentManagementController::class, 'forceDestroy'])->whereNumber('enrollment')->name('enrollments.force-destroy');
+        Route::post('/enrollments/{enrollment}/restore', [AdministratorEnrollmentManagementController::class, 'restore'])->whereNumber('enrollment')->name('enrollments.restore');
+        Route::get('/enrollments/{enrollment}/activity-log', [AdministratorEnrollmentManagementController::class, 'activityLog'])->whereNumber('enrollment')->name('enrollments.activity-log');
+        Route::post('/enrollments/{enrollment}/restore-subjects', [AdministratorEnrollmentManagementController::class, 'restoreSubjects'])->whereNumber('enrollment')->name('enrollments.restore-subjects');
 
         // Enrollment Reports
         Route::post('/enrollments/reports/bulk-assessments', [AdministratorEnrollmentManagementController::class, 'generateBulkAssessments'])->name('enrollments.reports.bulk-assessments');

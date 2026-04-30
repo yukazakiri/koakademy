@@ -126,6 +126,20 @@ it('falls back to static config when GitHub API is unreachable', function (): vo
     expect($showcase)->toBe($staticChangelog);
 });
 
+it('falls back to static config when GitHub API rate limit is exceeded', function (): void {
+    Http::fake([
+        'api.github.com/repos/yukazakiri/koakademy/releases*' => Http::response([
+            'message' => 'API rate limit exceeded for 58.69.240.72.',
+        ], 403),
+    ]);
+
+    $service = app(ChangelogService::class);
+    $showcase = $service->getShowcaseChangelog();
+
+    $staticChangelog = config('filament-feature-showcase.changelog', []);
+    expect($showcase)->toBe($staticChangelog);
+});
+
 it('returns latest stable version from GitHub', function (): void {
     Http::fake([
         'api.github.com/repos/yukazakiri/koakademy/releases*' => Http::response([

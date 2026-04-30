@@ -194,9 +194,8 @@ final class AdministratorClassManagementController extends Controller
 
         /** @var LengthAwarePaginator $classes */
         $classes = $classesQuery
-            ->orderByDesc('school_year')
-            ->orderBy('semester')
-            ->orderBy('section')
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
             ->paginate(20)
             ->withQueryString();
 

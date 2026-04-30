@@ -140,3 +140,34 @@ it('can filter classes by fully enrolled', function () {
             ->where('classes.data.0.id', $classAvailable->id)
         );
 });
+
+it('lists classes by most recent first by default', function () {
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $this->actingAs($user);
+
+    $currentYear = date('Y');
+    $schoolYear = $currentYear.' - '.($currentYear + 1);
+    $semester = 1;
+
+    $olderClass = Classes::factory()->create([
+        'school_year' => $schoolYear,
+        'semester' => $semester,
+        'classification' => 'college',
+        'created_at' => now()->subDay(),
+    ]);
+
+    $newerClass = Classes::factory()->create([
+        'school_year' => $schoolYear,
+        'semester' => $semester,
+        'classification' => 'college',
+        'created_at' => now(),
+    ]);
+
+    $this->get(route('administrators.classes.index'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->component('administrators/classes/index', false)
+            ->where('classes.data.0.id', $newerClass->id)
+            ->where('classes.data.1.id', $olderClass->id)
+        );
+});

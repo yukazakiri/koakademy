@@ -711,6 +711,8 @@ function SchedulePlanner({
 
 export default function AdministratorClassesIndex({ user, classes, selected_class, filters, options, defaults }: ClassesIndexProps) {
     const [search, setSearch] = React.useState(filters.search || "");
+    const [isSearchLoading, setIsSearchLoading] = React.useState(false);
+    const [isSelectedClassLoading, setIsSelectedClassLoading] = React.useState(false);
     const [viewMode, setViewMode] = React.useState<"grid" | "list">("grid");
     const [localClassification, setLocalClassification] = React.useState(filters.classification || "all");
     const [isCreateOpen, setIsCreateOpen] = React.useState(false);
@@ -742,8 +744,27 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
         return classes.data.filter((cls) => cls.classification?.toLowerCase() === localClassification.toLowerCase());
     }, [classes.data, localClassification]);
 
+    React.useEffect(() => {
+        setSearch(filters.search ?? "");
+    }, [filters.search]);
+
     const handleSearch = useDebouncedCallback((term: string) => {
-        router.get(route("administrators.classes.index"), { ...filters, search: term }, { preserveState: true, replace: true });
+        router.get(
+            route("administrators.classes.index"),
+            {
+                ...filters,
+                search: term.trim() ? term : null,
+                page: 1,
+            },
+            {
+                preserveState: true,
+                preserveScroll: true,
+                replace: true,
+                only: ["classes", "filters"],
+                onStart: () => setIsSearchLoading(true),
+                onFinish: () => setIsSearchLoading(false),
+            },
+        );
     }, 300);
 
     const handleFilterChange = (key: string, value: string | number | boolean | null) => {
@@ -752,13 +773,20 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
             {
                 ...filters,
                 [key]: value === "all" ? null : value,
+                page: 1,
             },
-            { preserveState: true, replace: true },
+            {
+                preserveState: true,
+                preserveScroll: true,
+                replace: true,
+                only: ["classes", "filters"],
+            },
         );
     };
 
     const openManage = (classId: number) => {
         setIsManageOpen(true);
+        setIsSelectedClassLoading(true);
 
         router.get(
             route("administrators.classes.index"),
@@ -767,6 +795,7 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
                 preserveState: true,
                 replace: true,
                 only: ["selected_class"],
+                onFinish: () => setIsSelectedClassLoading(false),
             },
         );
     };
@@ -774,6 +803,7 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
     const openEdit = (classId: number) => {
         setIsEditOpen(true);
         setEditActiveTab("details");
+        setIsSelectedClassLoading(true);
 
         router.get(
             route("administrators.classes.index"),
@@ -782,6 +812,7 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
                 preserveState: true,
                 replace: true,
                 only: ["selected_class"],
+                onFinish: () => setIsSelectedClassLoading(false),
             },
         );
     };
@@ -1394,6 +1425,9 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
                                         handleSearch(e.target.value);
                                     }}
                                 />
+                                {isSearchLoading ? (
+                                    <span className="text-muted-foreground absolute top-2.5 right-2.5 text-xs">Searching…</span>
+                                ) : null}
                             </div>
 
                             <div className="flex items-center gap-2 overflow-x-auto pb-2 md:pb-0">
@@ -2152,6 +2186,9 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
                 open={isEditOpen}
                 onOpenChange={(open) => {
                     setIsEditOpen(open);
+                    if (!open) {
+                        setIsSelectedClassLoading(false);
+                    }
                     if (open) {
                         setEditActiveTab("details");
                     }
@@ -2164,7 +2201,9 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
                     </DialogHeader>
 
                     {!selected_class ? (
-                        <div className="text-muted-foreground flex-1 p-6 text-sm">Select a class first.</div>
+                        <div className="text-muted-foreground flex-1 p-6 text-sm">
+                            {isSelectedClassLoading ? "Loading class details..." : "Select a class first."}
+                        </div>
                     ) : (
                         <Tabs
                             value={editActiveTab}

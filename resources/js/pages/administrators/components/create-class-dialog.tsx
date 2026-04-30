@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MultiSelect as SearchableMultiSelect } from "@/components/ui/multi-select";
@@ -14,6 +15,7 @@ import {
     AlertTriangle,
     BookOpen,
     Check,
+    Copy,
     ChevronLeft,
     ChevronRight,
     Clock,
@@ -325,6 +327,24 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
         else if (selectedBlockIndex !== null && selectedBlockIndex > index) setSelectedBlockIndex(selectedBlockIndex - 1);
     };
 
+    const duplicateScheduleBlock = (blockId: string) => {
+        const sourceIndex = form.data.schedules.findIndex((schedule) => schedule.id === blockId);
+        if (sourceIndex < 0) {
+            return;
+        }
+
+        const source = form.data.schedules[sourceIndex];
+        const duplicate = {
+            ...source,
+            id: crypto.randomUUID(),
+        };
+
+        const next = [...form.data.schedules];
+        next.splice(sourceIndex + 1, 0, duplicate);
+        form.setData("schedules", next);
+        setSelectedBlockIndex(sourceIndex + 1);
+    };
+
     const updateBlock = (index: number, patch: Partial<typeof form.data.schedules[0]>) => {
         form.setData("schedules", form.data.schedules.map((s, i) => (i === index ? { ...s, ...patch } : s)));
     };
@@ -369,17 +389,26 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
         const startMin = parseTimeToMinutes(block.start_time);
         const endMin = parseTimeToMinutes(block.end_time);
         if (startMin === null || endMin === null) return;
+
+        const pxPerMinute = CELL_H / 60;
+        const rawDeltaMinutes = Math.round(event.delta.y / pxPerMinute);
+        const snappedDeltaMinutes = Math.round(rawDeltaMinutes / SNAP_MINUTES) * SNAP_MINUTES;
+        const duration = endMin - startMin;
+
+        let nextStartMin = startMin + snappedDeltaMinutes;
+        nextStartMin = Math.max(HOUR_START * 60, Math.min(nextStartMin, HOUR_END * 60 - duration));
+
         setDragPreview({
             dayIdx,
-            startMin,
-            duration: endMin - startMin,
+            startMin: nextStartMin,
+            duration,
             blockId,
         });
     };
 
     const handleDragEnd = (event: DragEndEvent) => {
         setDragPreview(null);
-        const { active, over } = event;
+        const { active, over, delta } = event;
         if (!over || !active.data.current) return;
         const dayIdx = (over.data.current as { dayIdx?: number })?.dayIdx;
         const blockId = (active.data.current as { blockId?: string })?.blockId;
@@ -388,7 +417,29 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
         if (!day) return;
         const idx = form.data.schedules.findIndex((s) => s.id === blockId);
         if (idx === -1) return;
-        updateBlock(idx, { day_of_week: day });
+
+        const block = form.data.schedules[idx];
+        const startMin = parseTimeToMinutes(block.start_time);
+        const endMin = parseTimeToMinutes(block.end_time);
+        if (startMin === null || endMin === null) {
+            updateBlock(idx, { day_of_week: day });
+            return;
+        }
+
+        const pxPerMinute = CELL_H / 60;
+        const rawDeltaMinutes = Math.round(delta.y / pxPerMinute);
+        const snappedDeltaMinutes = Math.round(rawDeltaMinutes / SNAP_MINUTES) * SNAP_MINUTES;
+        const duration = endMin - startMin;
+
+        let nextStartMin = startMin + snappedDeltaMinutes;
+        nextStartMin = Math.max(HOUR_START * 60, Math.min(nextStartMin, HOUR_END * 60 - duration));
+        const nextEndMin = nextStartMin + duration;
+
+        updateBlock(idx, {
+            day_of_week: day,
+            start_time: minutesToTime(nextStartMin),
+            end_time: minutesToTime(nextEndMin),
+        });
     };
 
     React.useEffect(() => {
@@ -974,8 +1025,7 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                                 </CardContent>
                             </Card>
 
-                            {form.data.schedules.length > 0 && (
-                                <Card className="border-border/60 shadow-sm">
+                            <Card className="border-border/60 shadow-sm">
                                     <CardHeader className="bg-muted/20 border-b pb-4">
                                         <CardTitle className="text-base font-semibold">
                                             Visual Timetable
@@ -1014,10 +1064,17 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                                                                 onBlockClick={setSelectedBlockIndex}
                                                                 onBlockHover={setHoveredBlockIndex}
                                                                 blockHasConflict={blockHasConflict}
-                                                                getBlockConflicts={getBlockConflicts}
+                                                             getBlockConflicts={getBlockConflicts}
                                                                 onAddBlock={(time) => addScheduleBlock(day, time, minutesToTime(parseTimeToMinutes(time)! + 120))}
                                                                 dragPreview={dragPreview?.dayIdx === dayIdx ? dragPreview : null}
                                                                 onResizeStart={handleResizeStart}
+                                                                onDeleteBlock={(blockId) => {
+                                                                    const targetIndex = form.data.schedules.findIndex((s) => s.id === blockId);
+                                                                    if (targetIndex >= 0) {
+                                                                        removeScheduleBlock(targetIndex);
+                                                                    }
+                                                                }}
+                                                                onDuplicateBlock={duplicateScheduleBlock}
                                                             />
                                                         );
                                                     })}
@@ -1026,7 +1083,6 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
                                         </DndContext>
                                     </CardContent>
                                 </Card>
-                            )}
 
                             {form.data.schedules.length > 0 && (
                                 <Card className="border-border/60 shadow-sm">
@@ -1248,7 +1304,7 @@ export default function CreateClassDialog({ open, onOpenChange, options, default
     );
 }
 
-function DayColumn({ dayIdx, dayBlocks, allBlocks, existingBlocks, onBlockClick, onBlockHover, blockHasConflict, getBlockConflicts, onAddBlock, dragPreview, onResizeStart }: {
+function DayColumn({ dayIdx, dayBlocks, allBlocks, existingBlocks, onBlockClick, onBlockHover, blockHasConflict, getBlockConflicts, onAddBlock, dragPreview, onResizeStart, onDeleteBlock, onDuplicateBlock }: {
     dayIdx: number;
     dayBlocks: Array<{ id: string; day_of_week: string; start_time: string; end_time: string; room_id: number | null }>;
     allBlocks: Array<{ id: string; day_of_week: string; start_time: string; end_time: string; room_id: number | null }>;
@@ -1260,6 +1316,8 @@ function DayColumn({ dayIdx, dayBlocks, allBlocks, existingBlocks, onBlockClick,
     onAddBlock: (time: string) => void;
     dragPreview: { dayIdx: number; startMin: number; duration: number; blockId: string } | null;
     onResizeStart: (blockId: string, edge: "top" | "bottom", initialY: number, originalStartMin: number, originalEndMin: number) => void;
+    onDeleteBlock: (blockId: string) => void;
+    onDuplicateBlock: (blockId: string) => void;
 }) {
     const { setNodeRef, isOver } = useDroppable({ id: `day-${dayIdx}`, data: { dayIdx } });
     const totalH = (HOUR_END - HOUR_START + 1) * CELL_H;
@@ -1340,6 +1398,8 @@ function DayColumn({ dayIdx, dayBlocks, allBlocks, existingBlocks, onBlockClick,
                         onClick={() => onBlockClick(globalIndex)}
                         onHover={(hovering) => onBlockHover(hovering ? globalIndex : null)}
                         onResizeStart={onResizeStart}
+                        onDelete={() => onDeleteBlock(block.id)}
+                        onDuplicate={() => onDuplicateBlock(block.id)}
                     />
                 );
             })}
@@ -1347,7 +1407,7 @@ function DayColumn({ dayIdx, dayBlocks, allBlocks, existingBlocks, onBlockClick,
     );
 }
 
-function DraggableScheduleBlock({ block, globalIndex, style, hasConflict, palette, onClick, onHover, onResizeStart }: {
+function DraggableScheduleBlock({ block, globalIndex, style, hasConflict, palette, onClick, onHover, onResizeStart, onDelete, onDuplicate }: {
     block: { id: string; day_of_week: string; start_time: string; end_time: string; room_id: number | null };
     globalIndex: number;
     style: React.CSSProperties;
@@ -1356,6 +1416,8 @@ function DraggableScheduleBlock({ block, globalIndex, style, hasConflict, palett
     onClick: () => void;
     onHover: (hovering: boolean) => void;
     onResizeStart: (blockId: string, edge: "top" | "bottom", initialY: number, originalStartMin: number, originalEndMin: number) => void;
+    onDelete: () => void;
+    onDuplicate: () => void;
 }) {
     const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
         id: `block-${block.id}`,
@@ -1373,41 +1435,57 @@ function DraggableScheduleBlock({ block, globalIndex, style, hasConflict, palett
     };
 
     return (
-        <div
-            ref={setNodeRef}
-            {...listeners}
-            {...attributes}
-            onClick={(e) => { e.stopPropagation(); onClick(); }}
-            onMouseEnter={() => onHover(true)}
-            onMouseLeave={() => onHover(false)}
-            className={`absolute overflow-hidden rounded-md border-l-[3px] px-1.5 py-1 text-left cursor-grab active:cursor-grabbing transition-all z-10 ${
-                hasConflict
-                    ? "border-l-red-500 bg-red-500/12 dark:bg-red-400/15 ring-2 ring-red-400/40"
-                    : `${palette.accent} ${palette.bg}`
-            } ${isDragging ? "opacity-40" : "hover:shadow-md hover:z-20"}`}
-            style={style}
-        >
-            <div
-                className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize z-30 opacity-0 hover:opacity-100 transition-opacity"
-                onPointerDown={(e) => handleResizePointerDown(e, "top")}
-            >
-                <div className="mx-auto w-8 h-1 rounded-full bg-foreground/30 mt-0.5" />
-            </div>
+        <ContextMenu>
+            <ContextMenuTrigger asChild>
+                <div
+                    ref={setNodeRef}
+                    {...listeners}
+                    {...attributes}
+                    onClick={(e) => { e.stopPropagation(); onClick(); }}
+                    onMouseEnter={() => onHover(true)}
+                    onMouseLeave={() => onHover(false)}
+                    className={`absolute overflow-hidden rounded-md border-l-[3px] px-1.5 py-1 text-left cursor-grab active:cursor-grabbing transition-all z-10 ${
+                        hasConflict
+                            ? "border-l-red-500 bg-red-500/12 dark:bg-red-400/15 ring-2 ring-red-400/40"
+                            : `${palette.accent} ${palette.bg}`
+                    } ${isDragging ? "opacity-40" : "hover:shadow-md hover:z-20"}`}
+                    style={style}
+                >
+                    <div
+                        className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize z-30 opacity-0 hover:opacity-100 transition-opacity"
+                        onPointerDown={(e) => handleResizePointerDown(e, "top")}
+                    >
+                        <div className="mx-auto w-8 h-1 rounded-full bg-foreground/30 mt-0.5" />
+                    </div>
 
-            <div className="flex items-center gap-1">
-                <GripVertical className="text-muted-foreground h-3 w-3 shrink-0 opacity-60" />
-                <div className={`truncate text-[10px] font-bold leading-tight ${hasConflict ? "text-red-700 dark:text-red-300" : palette.text}`}>
-                    {fmtTime(block.start_time)}
+                    <div className="flex items-center gap-1">
+                        <GripVertical className="text-muted-foreground h-3 w-3 shrink-0 opacity-60" />
+                        <div className={`truncate text-[10px] font-bold leading-tight ${hasConflict ? "text-red-700 dark:text-red-300" : palette.text}`}>
+                            {fmtTime(block.start_time)}
+                        </div>
+                    </div>
+                    <div className="text-muted-foreground truncate text-[9px] leading-tight">{fmtTime(block.end_time)}</div>
+
+                    <div
+                        className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize z-30 opacity-0 hover:opacity-100 transition-opacity"
+                        onPointerDown={(e) => handleResizePointerDown(e, "bottom")}
+                    >
+                        <div className="mx-auto w-8 h-1 rounded-full bg-foreground/30 mb-0.5" />
+                    </div>
                 </div>
-            </div>
-            <div className="text-muted-foreground truncate text-[9px] leading-tight">{fmtTime(block.end_time)}</div>
-
-            <div
-                className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize z-30 opacity-0 hover:opacity-100 transition-opacity"
-                onPointerDown={(e) => handleResizePointerDown(e, "bottom")}
-            >
-                <div className="mx-auto w-8 h-1 rounded-full bg-foreground/30 mb-0.5" />
-            </div>
-        </div>
+            </ContextMenuTrigger>
+            <ContextMenuContent className="w-48">
+                <ContextMenuItem onClick={onClick}>Edit block</ContextMenuItem>
+                <ContextMenuItem onClick={onDuplicate}>
+                    <Copy className="h-3.5 w-3.5" />
+                    Duplicate block
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+                <ContextMenuItem variant="destructive" onClick={onDelete}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete block
+                </ContextMenuItem>
+            </ContextMenuContent>
+        </ContextMenu>
     );
 }

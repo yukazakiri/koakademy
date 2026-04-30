@@ -12,6 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -20,7 +21,7 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { User } from "@/types/user";
-import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
+import type { DragEndEvent, DragMoveEvent, DragOverEvent, DragStartEvent } from "@dnd-kit/core";
 import { DndContext, DragOverlay, MouseSensor, TouchSensor, useDraggable, useDroppable, useSensor, useSensors } from "@dnd-kit/core";
 import { Head, router } from "@inertiajs/react";
 import axios from "axios";
@@ -36,6 +37,7 @@ import {
     Loader2,
     MapPin,
     Search,
+    Trash2,
     User as UserIcon,
     Users,
 } from "lucide-react";
@@ -521,6 +523,7 @@ function WeeklyTimetable({
     dropPreview,
     selectedScheduleId,
     onScheduleSelect,
+    onScheduleDelete,
 }: {
     data: ClassScheduleData[];
     onBlockClick: (c: ClassScheduleData) => void;
@@ -536,6 +539,7 @@ function WeeklyTimetable({
     } | null;
     selectedScheduleId?: number | null;
     onScheduleSelect?: (scheduleId: number | null) => void;
+    onScheduleDelete?: (scheduleId: number) => void;
 }) {
     const hours = React.useMemo(() => Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_START + i), []);
     const blocks = React.useMemo(() => buildBlocks(data), [data]);
@@ -650,24 +654,49 @@ function WeeklyTimetable({
                 originalEndTime: b.sched.end_time,
             };
             return (
-                <DraggableBlock
-                    key={`${b.cls.id}-${schedId}-${i}`}
-                    id={`sched-${schedId}`}
-                    data={dragData}
-                    className={`${baseClassName} cursor-grab active:cursor-grabbing`}
-                    style={blockStyle}
-                >
-                    <button
-                        type="button"
-                        className="absolute inset-0 z-40"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onScheduleSelect?.(isSelected ? null : schedId);
-                        }}
-                        aria-label={`Select ${b.cls.subject_title} schedule`}
-                    />
-                    <div className="pointer-events-none relative z-10">{blockInner}</div>
-                </DraggableBlock>
+                <ContextMenu key={`${b.cls.id}-${schedId}-${i}`}>
+                    <ContextMenuTrigger asChild>
+                        <DraggableBlock
+                            id={`sched-${schedId}`}
+                            data={dragData}
+                            className={`${baseClassName} cursor-grab active:cursor-grabbing`}
+                            style={blockStyle}
+                        >
+                            <button
+                                type="button"
+                                className="absolute inset-0 z-40"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onScheduleSelect?.(isSelected ? null : schedId);
+                                }}
+                                aria-label={`Select ${b.cls.subject_title} schedule`}
+                            />
+                            <div className="pointer-events-none relative z-10">{blockInner}</div>
+                        </DraggableBlock>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent className="w-52">
+                        <ContextMenuItem onSelect={() => onScheduleSelect?.(isSelected ? null : schedId)}>
+                            {isSelected ? "Clear selection" : "Select for room assignment"}
+                        </ContextMenuItem>
+                        <ContextMenuItem onSelect={() => onBlockClick(b.cls)}>
+                            <BookOpen className="h-3.5 w-3.5" />
+                            View class details
+                        </ContextMenuItem>
+                        <ContextMenuSeparator />
+                        <ContextMenuItem
+                            variant="destructive"
+                            disabled={!onScheduleDelete}
+                            onSelect={() => {
+                                if (schedId && onScheduleDelete) {
+                                    onScheduleDelete(schedId);
+                                }
+                            }}
+                        >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Delete block
+                        </ContextMenuItem>
+                    </ContextMenuContent>
+                </ContextMenu>
             );
         }
 
@@ -938,6 +967,7 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
         currentEndMin?: number;
     } | null>(null);
     const localDataRef = React.useRef(localData);
+    const [isDeletingSchedule, setIsDeletingSchedule] = React.useState(false);
     const resizeTooltipRef = React.useRef<HTMLDivElement>(null);
 
     // Sync localData when server data changes
@@ -1399,6 +1429,71 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
         }
     };
 
+    const deleteSchedule = React.useCallback(
+        async (scheduleId: number) => {
+            if (!editMode || isDeletingSchedule) {
+                return;
+            }
+
+            const targetClass = localData.find((c) => c.schedules.some((s) => s.id === scheduleId));
+            const targetSchedule = targetClass?.schedules.find((s) => s.id === scheduleId);
+
+            if (!targetClass || !targetSchedule) {
+                toast.error("Selected schedule block was not found.");
+                return;
+            }
+
+            const shouldDelete = window.confirm(
+                `Delete ${targetClass.subject_code} (${targetClass.section}) on ${targetSchedule.day_of_week} ${targetSchedule.time_range}?`,
+            );
+
+            if (!shouldDelete) {
+                return;
+            }
+
+            setIsDeletingSchedule(true);
+
+            const previousData = localData;
+
+            setLocalData((prev) =>
+                prev
+                    .map((cls) => ({
+                        ...cls,
+                        schedules: cls.schedules.filter((schedule) => schedule.id !== scheduleId),
+                    }))
+                    .filter((cls) => cls.schedules.length > 0),
+            );
+
+            try {
+                const res = await axios.delete(route("administrators.scheduling-analytics.schedules.destroy", { schedule: scheduleId }));
+                const result = res.data as { conflicts?: ScheduleConflict[] };
+
+                setLocalConflicts(result.conflicts ?? []);
+
+                if (selectedScheduleForRoom === scheduleId) {
+                    setSelectedScheduleForRoom(null);
+                }
+
+                toast.success("Schedule block deleted.");
+            } catch (error: unknown) {
+                setLocalData(previousData);
+                logError("deleteSchedule.delete", error, { scheduleId });
+
+                let message = "Failed to delete schedule block.";
+                if (axios.isAxiosError(error) && error.response?.data?.message) {
+                    message = String(error.response.data.message);
+                } else if (error instanceof Error) {
+                    message = error.message;
+                }
+
+                toast.error(message);
+            } finally {
+                setIsDeletingSchedule(false);
+            }
+        },
+        [editMode, isDeletingSchedule, localData, selectedScheduleForRoom],
+    );
+
     // Combined filtering
     const filteredData = React.useMemo(() => {
         let d = localData;
@@ -1637,6 +1732,7 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
                                                 dropPreview={dropPreview}
                                                 selectedScheduleId={selectedScheduleForRoom}
                                                 onScheduleSelect={setSelectedScheduleForRoom}
+                                                onScheduleDelete={deleteSchedule}
                                             />
                                         );
                                     })()

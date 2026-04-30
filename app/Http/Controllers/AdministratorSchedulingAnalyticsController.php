@@ -394,6 +394,24 @@ final class AdministratorSchedulingAnalyticsController extends Controller
     }
 
     /**
+     * Delete a schedule entry from the scheduling analytics page.
+     */
+    public function destroySchedule(Schedule $schedule): JsonResponse
+    {
+        $schedule->delete();
+
+        $allClasses = Classes::currentAcademicPeriod()
+            ->with(['Subject', 'Faculty', 'Room', 'Schedule.room'])
+            ->get();
+
+        $conflicts = $this->detectScheduleConflicts($allClasses);
+
+        return response()->json([
+            'conflicts' => $conflicts,
+        ]);
+    }
+
+    /**
      * Create a new class with schedules from the scheduling analytics page.
      */
     public function storeClass(StoreClassRequest $request): JsonResponse

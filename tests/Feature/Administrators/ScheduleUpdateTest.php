@@ -110,4 +110,31 @@ final class ScheduleUpdateTest extends TestCase
 
         $response->assertForbidden();
     }
+
+    public function test_admin_can_delete_schedule_block(): void
+    {
+        $response = $this->actingAs($this->admin)
+            ->deleteJson(route('administrators.scheduling-analytics.schedules.destroy', $this->schedule->id));
+
+        $response->assertOk();
+        $response->assertJsonStructure([
+            'conflicts',
+        ]);
+
+        $this->assertSoftDeleted('schedule', [
+            'id' => $this->schedule->id,
+        ]);
+    }
+
+    public function test_non_admin_cannot_delete_schedule_block(): void
+    {
+        $student = User::factory()->create([
+            'role' => UserRole::Student,
+        ]);
+
+        $response = $this->actingAs($student)
+            ->deleteJson(route('administrators.scheduling-analytics.schedules.destroy', $this->schedule->id));
+
+        $response->assertForbidden();
+    }
 }

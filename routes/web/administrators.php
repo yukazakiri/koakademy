@@ -281,6 +281,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/scheduling-analytics/students/search', [AdministratorSchedulingAnalyticsController::class, 'searchStudents'])->name('scheduling-analytics.students.search');
         Route::get('/scheduling-analytics/students/{studentId}/schedule', [AdministratorSchedulingAnalyticsController::class, 'getStudentSchedule'])->name('scheduling-analytics.students.schedule');
         Route::patch('/scheduling-analytics/schedules/{schedule}', [AdministratorSchedulingAnalyticsController::class, 'updateSchedule'])->name('scheduling-analytics.schedules.update');
+        Route::delete('/scheduling-analytics/schedules/{schedule}', [AdministratorSchedulingAnalyticsController::class, 'destroySchedule'])->name('scheduling-analytics.schedules.destroy');
         Route::post('/scheduling-analytics/classes', [AdministratorSchedulingAnalyticsController::class, 'storeClass'])->name('scheduling-analytics.classes.store');
 
         // Faculty Management

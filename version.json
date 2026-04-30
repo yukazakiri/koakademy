@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.7.9",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.9",
-  "commit": "08c8cc0474bbf0178bd933ac4bd0bf3a966bf4be",
+  "version": "1.1.0-dev.7.10",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.10",
+  "commit": "63e8421456b5edf865f9d3da42121ba0826832a4",
   "branch": "master",
-  "timestamp": "2026-04-29T15:53:02Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25118978020",
+  "timestamp": "2026-04-30T01:37:12Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25142718831",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.1.0-dev.7.9 - Improve continuing enrollment flow and admin alerts",
-    "previous": "1.1.0-dev.7.8"
+    "current": "Version 1.1.0-dev.7.10 - fixed overlap issue and avatar png not exist when getting enrollment records",
+    "previous": "1.1.0-dev.7.9"
   },
   "metadata": {
     "author": "yukazakiri",

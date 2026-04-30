@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.7.10",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.10",
-  "commit": "63e8421456b5edf865f9d3da42121ba0826832a4",
+  "version": "1.1.0-dev.7.11",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.11",
+  "commit": "17c4711380a69887cc6cd027e4e872f1af5182b3",
   "branch": "master",
-  "timestamp": "2026-04-30T01:37:12Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25142718831",
-  "release_type": "patch",
+  "timestamp": "2026-04-30T04:17:26Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25146861650",
+  "release_type": "bugfix",
   "changelog": {
-    "current": "Version 1.1.0-dev.7.10 - fixed overlap issue and avatar png not exist when getting enrollment records",
-    "previous": "1.1.0-dev.7.9"
+    "current": "Version 1.1.0-dev.7.11 - fix: make class search and edit loading feel real-time",
+    "previous": "1.1.0-dev.7.10"
   },
   "metadata": {
     "author": "yukazakiri",

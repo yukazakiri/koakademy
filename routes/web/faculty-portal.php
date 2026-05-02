@@ -14,6 +14,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\StudentInfoController;
 use App\Http\Controllers\UserSettingController;
 use App\Support\FacultyPortalData;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -38,6 +39,9 @@ Route::middleware(['auth', 'faculty.verified', 'faculty.only', 'ensure.feature']
         Route::get('/dashboard', function () {
             $user = Auth::user();
             $facultyData = FacultyPortalData::build($user);
+            $isNewFacultyUser = $user->created_at instanceof CarbonInterface
+                ? $user->created_at->greaterThanOrEqualTo(now()->subDays(14))
+                : false;
 
             // Generate ID card data
             $idCardService = app(App\Services\DigitalIdCardService::class);
@@ -57,6 +61,7 @@ Route::middleware(['auth', 'faculty.verified', 'faculty.only', 'ensure.feature']
                 'id_card' => $idCardData,
                 'current_semester' => (string) $settingsService->getCurrentSemester(),
                 'current_school_year' => $settingsService->getCurrentSchoolYearString(),
+                'is_new_user' => $isNewFacultyUser,
                 'flash' => session('flash'),
             ]);
         })->name('dashboard');

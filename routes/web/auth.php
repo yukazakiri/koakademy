@@ -68,6 +68,13 @@ Route::post('/onboarding/dismiss', [App\Http\Controllers\OnboardingDismissalCont
     ->middleware('auth')
     ->name('onboarding.dismiss');
 
+Route::middleware('auth')->group(function (): void {
+    Route::get('/onboarding/progress', [App\Http\Controllers\OnboardingProgressController::class, 'show'])
+        ->name('onboarding.progress.show');
+    Route::post('/onboarding/progress', [App\Http\Controllers\OnboardingProgressController::class, 'store'])
+        ->name('onboarding.progress.store');
+});
+
 // Two Factor Challenge
 Route::get('/two-factor-challenge', [App\Http\Controllers\TwoFactorChallengeController::class, 'create'])->name('two-factor.login');
 Route::post('/two-factor-challenge', [App\Http\Controllers\TwoFactorChallengeController::class, 'store']);

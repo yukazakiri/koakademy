@@ -13,39 +13,43 @@ import {
     Trophy,
     Users,
     Zap,
+    X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-interface OnboardingStat {
-    label: string;
-    value: string;
-}
+import { useOnboarding } from "./onboarding-context";
 
 interface OnboardingStep {
     id: string;
     title: string;
     description: string;
+    ahaMoment?: string;
     highlights: string[];
-    stats: OnboardingStat[];
+    stats: { label: string; value: string }[];
     badge: string;
     accent: string;
     icon: LucideIcon;
     image?: string | null;
+    actionLabel?: string;
+    actionRoute?: string;
 }
 
 interface OnboardingStepData {
     id?: string;
     title: string;
     summary: string;
+    ahaMoment?: string;
     highlights: string[];
-    stats: OnboardingStat[];
+    stats: { label: string; value: string }[];
     badge: string;
     accent: string;
     icon: string;
     image?: string | null;
+    actionLabel?: string;
+    actionRoute?: string;
 }
 
 export interface OnboardingFeatureData {
@@ -61,9 +65,6 @@ export interface OnboardingFeatureData {
 }
 
 interface OnboardingExperienceProps {
-    variant: "faculty" | "student";
-    userId?: number | string | null;
-    force?: boolean;
     enabled?: boolean;
     features?: OnboardingFeatureData[];
     onDismiss?: (featureKey: string) => void;
@@ -88,6 +89,8 @@ const accents: Record<
         ctaBg: string;
         glowBg: string;
         headerBg: string;
+        svgPrimary: string;
+        svgSecondary: string;
     }
 > = {
     primary: {
@@ -104,6 +107,8 @@ const accents: Record<
         ctaBg: "bg-primary text-primary-foreground hover:bg-primary/90",
         glowBg: "bg-primary",
         headerBg: "bg-primary/5",
+        svgPrimary: "#0ea5e9",
+        svgSecondary: "#e0f2fe",
     },
     indigo: {
         iconBg: "bg-indigo-500/10",
@@ -119,6 +124,8 @@ const accents: Record<
         ctaBg: "bg-indigo-600 text-white hover:bg-indigo-700",
         glowBg: "bg-indigo-500",
         headerBg: "bg-indigo-500/5",
+        svgPrimary: "#6366f1",
+        svgSecondary: "#e0e7ff",
     },
     rose: {
         iconBg: "bg-rose-500/10",
@@ -134,6 +141,8 @@ const accents: Record<
         ctaBg: "bg-rose-600 text-white hover:bg-rose-700",
         glowBg: "bg-rose-500",
         headerBg: "bg-rose-500/5",
+        svgPrimary: "#f43f5e",
+        svgSecondary: "#ffe4e6",
     },
     emerald: {
         iconBg: "bg-emerald-500/10",
@@ -149,6 +158,8 @@ const accents: Record<
         ctaBg: "bg-emerald-600 text-white hover:bg-emerald-700",
         glowBg: "bg-emerald-500",
         headerBg: "bg-emerald-500/5",
+        svgPrimary: "#10b981",
+        svgSecondary: "#d1fae5",
     },
     amber: {
         iconBg: "bg-amber-500/10",
@@ -164,6 +175,8 @@ const accents: Record<
         ctaBg: "bg-amber-600 text-white hover:bg-amber-700",
         glowBg: "bg-amber-500",
         headerBg: "bg-amber-500/5",
+        svgPrimary: "#f59e0b",
+        svgSecondary: "#fef3c7",
     },
     sky: {
         iconBg: "bg-sky-500/10",
@@ -179,6 +192,8 @@ const accents: Record<
         ctaBg: "bg-sky-600 text-white hover:bg-sky-700",
         glowBg: "bg-sky-500",
         headerBg: "bg-sky-500/5",
+        svgPrimary: "#0ea5e9",
+        svgSecondary: "#e0f2fe",
     },
     purple: {
         iconBg: "bg-purple-500/10",
@@ -194,6 +209,8 @@ const accents: Record<
         ctaBg: "bg-purple-600 text-white hover:bg-purple-700",
         glowBg: "bg-purple-500",
         headerBg: "bg-purple-500/5",
+        svgPrimary: "#a855f7",
+        svgSecondary: "#f3e8ff",
     },
 };
 
@@ -208,65 +225,6 @@ const resolveAccentKey = (accentClass: string): AccentKey => {
     if (raw === "purple") return "purple";
     return "primary";
 };
-
-const facultySteps: OnboardingStep[] = [
-    {
-        id: "faculty-flow",
-        title: "Your command center",
-        description: "Everything you need for today is in one focused view — classes, alerts, and quick actions.",
-        highlights: ["Dashboard stats at a glance", "Today's schedule and upcoming classes", "Quick actions for class work"],
-        stats: [
-            { label: "Classes", value: "4 today" },
-            { label: "Alerts", value: "2 items" },
-            { label: "Actions", value: "Ready" },
-        ],
-        badge: "Dashboard",
-        accent: "text-primary",
-        icon: Sparkles,
-    },
-    {
-        id: "faculty-classes",
-        title: "Class tools built in",
-        description: "Open any class to manage students, grades, and attendance — no switching between pages.",
-        highlights: ["Class roster and student profiles", "Grades and attendance workflows", "Materials and resources"],
-        stats: [
-            { label: "Roster", value: "Live" },
-            { label: "Grades", value: "Fast" },
-            { label: "Attendance", value: "Tracked" },
-        ],
-        badge: "Classes",
-        accent: "text-emerald-500",
-        icon: BookOpen,
-    },
-    {
-        id: "faculty-insights",
-        title: "Spot trends instantly",
-        description: "Performance snapshots and progress signals — no digging through reports.",
-        highlights: ["Student performance trends", "Exportable grade reports", "Progress signals at a glance"],
-        stats: [
-            { label: "Trends", value: "Weekly" },
-            { label: "Reports", value: "One click" },
-            { label: "Visibility", value: "High" },
-        ],
-        badge: "Insights",
-        accent: "text-sky-500",
-        icon: Trophy,
-    },
-    {
-        id: "faculty-community",
-        title: "Stay in sync",
-        description: "Post announcements and updates that reach your entire class instantly.",
-        highlights: ["Announcements and notices", "Classwide updates", "Help and support access"],
-        stats: [
-            { label: "Reach", value: "Classwide" },
-            { label: "Updates", value: "Instant" },
-            { label: "Support", value: "Ready" },
-        ],
-        badge: "Connect",
-        accent: "text-amber-500",
-        icon: MessagesSquare,
-    },
-];
 
 const iconMap: Record<string, LucideIcon> = {
     sparkles: Sparkles,
@@ -284,67 +242,285 @@ const iconMap: Record<string, LucideIcon> = {
 
 const resolveIcon = (name: string): LucideIcon => iconMap[name] ?? Sparkles;
 
-const studentSteps: OnboardingStep[] = [
-    {
-        id: "student-hub",
-        title: "Welcome to your hub",
-        description: "Your classes, grades, and key stats — all in one place. No hunting, no guessing.",
-        highlights: ["Semester overview and quick stats", "Clearance and balance at a glance", "Digital ID card access"],
-        stats: [
-            { label: "Subjects", value: "6 enrolled" },
-            { label: "Clearance", value: "Pending" },
-            { label: "Balance", value: "Updated" },
-        ],
-        badge: "Dashboard",
-        accent: "text-primary",
-        icon: Stars,
-    },
-    {
-        id: "student-schedule",
-        title: "Know where to be",
-        description: "A weekly class matrix and daily focus view so you never miss a room or time.",
-        highlights: ["Weekly class matrix at a glance", "Room and instructor info on each slot", "Daily schedule with one tap"],
-        stats: [
-            { label: "Next class", value: "9:30 AM" },
-            { label: "Room", value: "Lab 3" },
-            { label: "Day view", value: "Focus" },
-        ],
-        badge: "Schedule",
-        accent: "text-indigo-500",
-        icon: CalendarDays,
-    },
-    {
-        id: "student-growth",
-        title: "Track your grades",
-        description: "Subject-by-subject grade cards and performance charts so you always know where you stand.",
-        highlights: ["Subject grade breakdowns", "Visual performance trends", "Goal-aware progress tracking"],
-        stats: [
-            { label: "GWA", value: "1.75" },
-            { label: "Trend", value: "Up" },
-            { label: "Subjects", value: "6" },
-        ],
-        badge: "Grades",
-        accent: "text-rose-500",
-        icon: GraduationCap,
-    },
-    {
-        id: "student-ready",
-        title: "Stay in the loop",
-        description: "Announcements and reminders — you will never miss a deadline or update again.",
-        highlights: ["Real-time announcements feed", "Smart deadline reminders", "Quick access to help and support"],
-        stats: [
-            { label: "Alerts", value: "2 new" },
-            { label: "Reminders", value: "Active" },
-            { label: "Support", value: "Ready" },
-        ],
-        badge: "Updates",
-        accent: "text-emerald-500",
-        icon: Zap,
-    },
-];
+function StepIllustration({ step, accent }: { step: OnboardingStep; accent: AccentKey }) {
+    const colors = accents[accent];
 
-export function OnboardingExperience({ variant, userId, force = false, enabled = true, features, onDismiss, className }: OnboardingExperienceProps) {
-    const fallbackSteps = useMemo(() => (variant === "student" ? studentSteps : facultySteps), [variant]);
+    return (
+        <div className="border-border/50 bg-background/80 relative overflow-hidden rounded-xl border p-4">
+            <svg viewBox="0 0 400 160" role="img" aria-label={`${step.title} visual guide`} className="h-32 w-full">
+                {/* Background */}
+                <rect x="0" y="0" width="400" height="160" rx="12" fill={colors.svgSecondary} opacity="0.4" />
+
+                {/* Connection lines */}
+                <motion.path
+                    d="M60 120 C120 80, 180 100, 240 60 C280 30, 340 70, 380 40"
+                    stroke={colors.svgPrimary}
+                    strokeWidth="3"
+                    fill="none"
+                    strokeLinecap="round"
+                    initial={{ pathLength: 0 }}
+                    animate={{ pathLength: 1 }}
+                    transition={{ duration: 1.2, ease: "easeInOut" }}
+                />
+
+                {/* Start node */}
+                <motion.circle
+                    cx="60"
+                    cy="120"
+                    r="10"
+                    fill={colors.svgPrimary}
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ delay: 0.3, type: "spring" }}
+                />
+                <text x="60" y="145" textAnchor="middle" fontSize="11" fill="#64748b">
+                    Start
+                </text>
+
+                {/* Mid node */}
+                <motion.circle
+                    cx="240"
+                    cy="60"
+                    r="10"
+                    fill={colors.svgPrimary}
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ delay: 0.6, type: "spring" }}
+                />
+                <text x="240" y="85" textAnchor="middle" fontSize="11" fill="#64748b">
+                    Explore
+                </text>
+
+                {/* End node */}
+                <motion.circle
+                    cx="380"
+                    cy="40"
+                    r="12"
+                    fill={colors.svgPrimary}
+                    initial={{ scale: 0 }}
+                    animate={{ scale: [1, 1.2, 1] }}
+                    transition={{ delay: 0.9, type: "spring", repeat: Infinity, repeatDelay: 2 }}
+                />
+                <text x="380" y="20" textAnchor="middle" fontSize="11" fill="#64748b">
+                    Action
+                </text>
+
+                {/* Floating cards */}
+                <motion.rect
+                    x="100"
+                    y="30"
+                    width="80"
+                    height="40"
+                    rx="8"
+                    fill="white"
+                    opacity="0.9"
+                    initial={{ y: 10, opacity: 0 }}
+                    animate={{ y: 0, opacity: 0.9 }}
+                    transition={{ delay: 0.4 }}
+                />
+                <motion.rect
+                    x="110"
+                    y="40"
+                    width="60"
+                    height="6"
+                    rx="3"
+                    fill={colors.svgPrimary}
+                    opacity="0.3"
+                    initial={{ width: 0 }}
+                    animate={{ width: 60 }}
+                    transition={{ delay: 0.6, duration: 0.5 }}
+                />
+                <motion.rect
+                    x="110"
+                    y="52"
+                    width="40"
+                    height="6"
+                    rx="3"
+                    fill={colors.svgPrimary}
+                    opacity="0.2"
+                    initial={{ width: 0 }}
+                    animate={{ width: 40 }}
+                    transition={{ delay: 0.7, duration: 0.5 }}
+                />
+
+                {/* Second floating card */}
+                <motion.rect
+                    x="280"
+                    y="90"
+                    width="80"
+                    height="40"
+                    rx="8"
+                    fill="white"
+                    opacity="0.9"
+                    initial={{ y: 10, opacity: 0 }}
+                    animate={{ y: 0, opacity: 0.9 }}
+                    transition={{ delay: 0.7 }}
+                />
+                <motion.rect
+                    x="290"
+                    y="100"
+                    width="60"
+                    height="6"
+                    rx="3"
+                    fill={colors.svgPrimary}
+                    opacity="0.3"
+                    initial={{ width: 0 }}
+                    animate={{ width: 60 }}
+                    transition={{ delay: 0.9, duration: 0.5 }}
+                />
+            </svg>
+        </div>
+    );
+}
+
+export function OnboardingExperience({ enabled = true, features, onDismiss, className }: OnboardingExperienceProps) {
+    const {
+        variant,
+        isOpen,
+        currentStepIndex,
+        progress,
+        goToStep,
+        nextStep,
+        previousStep,
+        completeStep,
+        dismissOnboarding,
+        trackEvent,
+    } = useOnboarding();
+
+    const [direction, setDirection] = useState(1);
+    const contentRef = useRef<HTMLDivElement>(null);
+    const touchStartXRef = useRef<number | null>(null);
+    const touchStartYRef = useRef<number | null>(null);
+    const swipeActionRef = useRef<"next" | "prev" | null>(null);
+
+    const fallbackSteps: OnboardingStep[] = useMemo(() => {
+        if (variant === "student") {
+            return [
+                {
+                    id: "student-hub",
+                    title: "Welcome to your hub",
+                    description: "Your classes, grades, and key stats — all in one place. No hunting, no guessing.",
+                    ahaMoment: "Your semester overview is your command center. Everything you need is right here.",
+                    highlights: ["Semester overview and quick stats", "Clearance and balance at a glance", "Digital ID card access"],
+                    stats: [
+                        { label: "Subjects", value: "6 enrolled" },
+                        { label: "Clearance", value: "Pending" },
+                        { label: "Balance", value: "Updated" },
+                    ],
+                    badge: "Dashboard",
+                    accent: "text-primary",
+                    icon: Stars,
+                },
+                {
+                    id: "student-schedule",
+                    title: "Know where to be",
+                    description: "A weekly class matrix and daily focus view so you never miss a room or time.",
+                    highlights: ["Weekly class matrix at a glance", "Room and instructor info on each slot", "Daily schedule with one tap"],
+                    stats: [
+                        { label: "Next class", value: "9:30 AM" },
+                        { label: "Room", value: "Lab 3" },
+                        { label: "Day view", value: "Focus" },
+                    ],
+                    badge: "Schedule",
+                    accent: "text-indigo-500",
+                    icon: CalendarDays,
+                },
+                {
+                    id: "student-growth",
+                    title: "Track your grades",
+                    description: "Subject-by-subject grade cards and performance charts so you always know where you stand.",
+                    highlights: ["Subject grade breakdowns", "Visual performance trends", "Goal-aware progress tracking"],
+                    stats: [
+                        { label: "GWA", value: "1.75" },
+                        { label: "Trend", value: "Up" },
+                        { label: "Subjects", value: "6" },
+                    ],
+                    badge: "Grades",
+                    accent: "text-rose-500",
+                    icon: GraduationCap,
+                },
+                {
+                    id: "student-ready",
+                    title: "Stay in the loop",
+                    description: "Announcements and reminders — you will never miss a deadline or update again.",
+                    highlights: ["Real-time announcements feed", "Smart deadline reminders", "Quick access to help and support"],
+                    stats: [
+                        { label: "Alerts", value: "2 new" },
+                        { label: "Reminders", value: "Active" },
+                        { label: "Support", value: "Ready" },
+                    ],
+                    badge: "Updates",
+                    accent: "text-emerald-500",
+                    icon: Zap,
+                },
+            ];
+        }
+
+        return [
+            {
+                id: "faculty-flow",
+                title: "Your command center",
+                description: "Everything you need for today is in one focused view — classes, alerts, and quick actions.",
+                ahaMoment: "Open any class and take attendance in under 60 seconds. That is your fastest path to value.",
+                highlights: ["Dashboard stats at a glance", "Today's schedule and upcoming classes", "Quick actions for class work"],
+                stats: [
+                    { label: "Classes", value: "4 today" },
+                    { label: "Alerts", value: "2 items" },
+                    { label: "Actions", value: "Ready" },
+                ],
+                badge: "Dashboard",
+                accent: "text-primary",
+                icon: Sparkles,
+                actionLabel: "Open My Classes",
+                actionRoute: "/faculty/classes",
+            },
+            {
+                id: "faculty-classes",
+                title: "Class tools built in",
+                description: "Open any class to manage students, grades, and attendance — no switching between pages.",
+                highlights: ["Class roster and student profiles", "Grades and attendance workflows", "Materials and resources"],
+                stats: [
+                    { label: "Roster", value: "Live" },
+                    { label: "Grades", value: "Fast" },
+                    { label: "Attendance", value: "Tracked" },
+                ],
+                badge: "Classes",
+                accent: "text-emerald-500",
+                icon: BookOpen,
+                actionLabel: "Try It Now",
+                actionRoute: "/faculty/classes",
+            },
+            {
+                id: "faculty-insights",
+                title: "Spot trends instantly",
+                description: "Performance snapshots and progress signals — no digging through reports.",
+                highlights: ["Student performance trends", "Exportable grade reports", "Progress signals at a glance"],
+                stats: [
+                    { label: "Trends", value: "Weekly" },
+                    { label: "Reports", value: "One click" },
+                    { label: "Visibility", value: "High" },
+                ],
+                badge: "Insights",
+                accent: "text-sky-500",
+                icon: Trophy,
+            },
+            {
+                id: "faculty-community",
+                title: "Stay in sync",
+                description: "Post announcements and updates that reach your entire class instantly.",
+                highlights: ["Announcements and notices", "Classwide updates", "Help and support access"],
+                stats: [
+                    { label: "Reach", value: "Classwide" },
+                    { label: "Updates", value: "Instant" },
+                    { label: "Support", value: "Ready" },
+                ],
+                badge: "Connect",
+                accent: "text-amber-500",
+                icon: MessagesSquare,
+            },
+        ];
+    }, [variant]);
+
     const featureSteps = useMemo(() => {
         if (!features || features.length === 0) return [];
 
@@ -353,52 +529,29 @@ export function OnboardingExperience({ variant, userId, force = false, enabled =
                 id: step.id ?? `${feature.featureKey}-${index}`,
                 title: step.title,
                 description: step.summary,
+                ahaMoment: step.ahaMoment,
                 highlights: step.highlights ?? [],
                 stats: step.stats ?? [],
                 badge: step.badge ?? feature.badge ?? "Feature",
                 accent: step.accent ?? feature.accent ?? "text-primary",
                 image: step.image,
                 icon: resolveIcon(step.icon),
+                actionLabel: step.actionLabel,
+                actionRoute: step.actionRoute,
             })),
         );
     }, [features]);
+
     const steps = useMemo(() => {
         if (featureSteps.length > 0) return featureSteps;
         return fallbackSteps;
     }, [featureSteps, fallbackSteps]);
 
-    const [currentIndex, setCurrentIndex] = useState(0);
-    const [isOpen, setIsOpen] = useState(false);
-    const [direction, setDirection] = useState(1);
-    const contentRef = useRef<HTMLDivElement>(null);
-    const touchStartXRef = useRef<number | null>(null);
-    const touchStartYRef = useRef<number | null>(null);
-    const swipeActionRef = useRef<"next" | "prev" | null>(null);
-
     useEffect(() => {
-        if (steps.length > 0 && currentIndex >= steps.length) {
-            setCurrentIndex(steps.length - 1);
+        if (steps.length > 0 && currentStepIndex >= steps.length) {
+            goToStep(steps.length - 1);
         }
-    }, [steps.length, currentIndex]);
-
-    const storageKey = useMemo(() => {
-        const safeId = userId ?? "guest";
-        return `dccp.onboarding.${variant}.${safeId}`;
-    }, [variant, userId]);
-
-    useEffect(() => {
-        if (typeof window === "undefined") return;
-        if (!enabled) {
-            setIsOpen(false);
-            return;
-        }
-        if (force || (features && features.length > 0)) {
-            setIsOpen(true);
-            return;
-        }
-        const completed = window.localStorage.getItem(storageKey);
-        setIsOpen(!completed);
-    }, [force, storageKey, features, enabled]);
+    }, [steps.length, currentStepIndex, goToStep]);
 
     useEffect(() => {
         if (!isOpen || typeof window === "undefined") return;
@@ -409,48 +562,40 @@ export function OnboardingExperience({ variant, userId, force = false, enabled =
         };
     }, [isOpen]);
 
-    const step = steps[currentIndex];
-    const isLastStep = currentIndex === steps.length - 1;
-
-    const goToStep = useCallback(
-        (index: number) => {
-            setDirection(index > currentIndex ? 1 : -1);
-            setCurrentIndex(index);
-        },
-        [currentIndex],
-    );
+    const step = steps[currentStepIndex];
+    const isLastStep = currentStepIndex === steps.length - 1;
 
     const handleNext = useCallback(() => {
+        if (step) {
+            completeStep(step.id);
+        }
         if (isLastStep) {
-            handleFinish();
+            trackEvent("completed");
+            dismissOnboarding();
             return;
         }
         setDirection(1);
-        setCurrentIndex((prev) => Math.min(prev + 1, steps.length - 1));
-    }, [isLastStep, steps.length, currentIndex]);
+        nextStep();
+        trackEvent("step_advanced", { step: currentStepIndex + 1 });
+    }, [isLastStep, step, completeStep, nextStep, trackEvent, dismissOnboarding, currentStepIndex]);
 
     const handlePrevious = useCallback(() => {
         setDirection(-1);
-        setCurrentIndex((prev) => Math.max(prev - 1, 0));
-    }, []);
+        previousStep();
+        trackEvent("step_back", { step: currentStepIndex - 1 });
+    }, [previousStep, trackEvent, currentStepIndex]);
+
+    const handleSkip = useCallback(() => {
+        trackEvent("skipped", { step: currentStepIndex });
+        dismissOnboarding();
+    }, [dismissOnboarding, trackEvent, currentStepIndex]);
 
     const handleDismiss = useCallback(() => {
-        if (typeof window !== "undefined" && !force && (!features || features.length === 0)) {
-            window.localStorage.setItem(storageKey, "true");
-        }
         if (features && features.length > 0 && onDismiss) {
             features.forEach((feature) => onDismiss(feature.featureKey));
         }
-        setIsOpen(false);
-    }, [features, force, onDismiss, storageKey]);
-
-    const handleFinish = useCallback(() => {
-        handleDismiss();
-    }, [handleDismiss]);
-
-    const handleSkip = useCallback(() => {
-        handleDismiss();
-    }, [handleDismiss]);
+        handleSkip();
+    }, [features, onDismiss, handleSkip]);
 
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
@@ -462,7 +607,6 @@ export function OnboardingExperience({ variant, userId, force = false, enabled =
         return () => window.removeEventListener("keydown", handleKeyDown);
     }, [handleSkip, handleNext, handlePrevious]);
 
-    // Touch / swipe — only trigger if horizontal swipe exceeds vertical
     const handleTouchStart = (e: React.TouchEvent) => {
         touchStartXRef.current = e.targetTouches[0].clientX;
         touchStartYRef.current = e.targetTouches[0].clientY;
@@ -480,13 +624,13 @@ export function OnboardingExperience({ variant, userId, force = false, enabled =
 
     const handleTouchEnd = () => {
         if (swipeActionRef.current === "next" && !isLastStep) handleNext();
-        if (swipeActionRef.current === "prev" && currentIndex > 0) handlePrevious();
+        if (swipeActionRef.current === "prev" && currentStepIndex > 0) handlePrevious();
         touchStartXRef.current = null;
         touchStartYRef.current = null;
         swipeActionRef.current = null;
     };
 
-    if (!isOpen || !step) return null;
+    if (!isOpen || !step || !enabled) return null;
 
     const Icon = step.icon;
     const accent = accents[resolveAccentKey(step.accent)];
@@ -496,6 +640,9 @@ export function OnboardingExperience({ variant, userId, force = false, enabled =
         center: { x: 0, opacity: 1 },
         exit: (dir: number) => ({ x: dir > 0 ? -60 : 60, opacity: 0 }),
     };
+
+    // Calculate overall progress
+    const overallProgress = steps.length > 0 ? ((currentStepIndex + 1) / steps.length) * 100 : 0;
 
     return (
         <div
@@ -525,8 +672,18 @@ export function OnboardingExperience({ variant, userId, force = false, enabled =
                     onTouchStart={handleTouchStart}
                     onTouchMove={handleTouchMove}
                     onTouchEnd={handleTouchEnd}
-                    className="sm:border-border/50 bg-background relative z-10 flex h-full w-full flex-col sm:h-auto sm:max-h-[88vh] sm:max-w-[480px] sm:rounded-2xl sm:border sm:shadow-2xl"
+                    className="sm:border-border/50 bg-background relative z-10 flex h-full w-full flex-col sm:h-auto sm:max-h-[92vh] sm:max-w-[520px] sm:rounded-2xl sm:border sm:shadow-2xl"
                 >
+                    {/* Progress bar at top */}
+                    <div className="h-1 w-full bg-muted">
+                        <motion.div
+                            className={cn("h-full", accent.dotActive)}
+                            initial={{ width: 0 }}
+                            animate={{ width: `${overallProgress}%` }}
+                            transition={{ duration: 0.5, ease: "easeOut" }}
+                        />
+                    </div>
+
                     {/* Accent header strip */}
                     <div className={cn("relative shrink-0 px-5 pt-6 pb-5 sm:px-7 sm:pt-7 sm:pb-6", accent.headerBg)}>
                         {/* Decorative glow */}
@@ -535,15 +692,13 @@ export function OnboardingExperience({ variant, userId, force = false, enabled =
                         />
 
                         <div className="relative">
-                            {/* Close button — top right */}
+                            {/* Close button */}
                             <button
                                 onClick={handleSkip}
                                 className="text-muted-foreground hover:bg-foreground/5 hover:text-foreground absolute -top-1 -right-1 rounded-lg p-1.5 transition-colors"
                                 aria-label="Close"
                             >
-                                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                </svg>
+                                <X className="h-5 w-5" />
                             </button>
 
                             {/* Icon + badge + title */}
@@ -563,7 +718,7 @@ export function OnboardingExperience({ variant, userId, force = false, enabled =
                                             {step.badge}
                                         </span>
                                         <span className="text-muted-foreground/50 text-[10px] font-medium">
-                                            Step {currentIndex + 1} / {steps.length}
+                                            Step {currentStepIndex + 1} / {steps.length}
                                         </span>
                                     </div>
                                     <h2 id="onboarding-title" className="text-foreground text-lg font-bold tracking-tight sm:text-xl">
@@ -578,8 +733,27 @@ export function OnboardingExperience({ variant, userId, force = false, enabled =
 
                     {/* Scrollable content */}
                     <div ref={contentRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 sm:px-7 sm:py-6">
+                        {/* SVG Visual Guide */}
+                        <StepIllustration step={step} accent={resolveAccentKey(step.accent)} />
+
+                        {/* Aha Moment */}
+                        {step.ahaMoment && (
+                            <motion.div
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.2 }}
+                                className={cn("mt-4 rounded-lg border p-3", accent.statBorder, accent.statBg)}
+                            >
+                                <div className="flex items-center gap-2 mb-1">
+                                    <Sparkles className={cn("h-4 w-4", accent.iconText)} />
+                                    <p className={cn("text-xs font-bold uppercase tracking-wide", accent.statText)}>Aha Moment</p>
+                                </div>
+                                <p className="text-foreground/90 text-sm">{step.ahaMoment}</p>
+                            </motion.div>
+                        )}
+
                         {/* Highlights */}
-                        <div className="space-y-2.5">
+                        <div className="mt-4 space-y-2.5">
                             {step.highlights.map((highlight, i) => (
                                 <motion.div
                                     key={highlight}
@@ -626,7 +800,19 @@ export function OnboardingExperience({ variant, userId, force = false, enabled =
                             </div>
                         )}
 
-                        {/* Feature CTA */}
+                        {/* Action button */}
+                        {step.actionRoute && (
+                            <div className="mt-5">
+                                <Button asChild className={cn("w-full", accent.ctaBg)} size="lg">
+                                    <a href={step.actionRoute}>
+                                        {step.actionLabel ?? "Try it now"}
+                                        <ArrowRight className="ml-1.5 h-4 w-4" />
+                                    </a>
+                                </Button>
+                            </div>
+                        )}
+
+                        {/* Feature CTA from backend */}
                         {features && features.length > 0 && features[0]?.ctaUrl && (
                             <div className="mt-5">
                                 <Button asChild className="w-full" size="lg">
@@ -639,31 +825,46 @@ export function OnboardingExperience({ variant, userId, force = false, enabled =
                         )}
                     </div>
 
-                    {/* Footer — progress dots + nav */}
+                    {/* Footer — checklist + progress dots + nav */}
                     <div className="border-border/40 shrink-0 border-t px-5 pt-4 pb-5 sm:px-7 sm:pb-6">
-                        {/* Progress dots — tappable */}
+                        {/* Mini checklist summary */}
+                        <div className="mb-3 flex items-center justify-between">
+                            <span className="text-muted-foreground text-xs">
+                                {progress.completedSteps.length} of {steps.length} steps viewed
+                            </span>
+                            <span className="text-muted-foreground text-xs">
+                                {Math.round((progress.completedSteps.length / steps.length) * 100)}% complete
+                            </span>
+                        </div>
+
+                        {/* Progress dots */}
                         <div className="mb-4 flex items-center justify-center gap-2">
-                            {steps.map((_, i) => (
-                                <button
-                                    key={i}
-                                    onClick={() => goToStep(i)}
-                                    className={cn(
-                                        "h-2 rounded-full transition-all duration-250",
-                                        i === currentIndex ? cn("w-6", accent.dotActive) : "bg-foreground/15 w-2",
-                                    )}
-                                    aria-label={`Go to step ${i + 1}`}
-                                />
-                            ))}
+                            {steps.map((_, i) => {
+                                const isCompleted = progress.completedSteps.includes(steps[i].id);
+                                const isCurrent = i === currentStepIndex;
+
+                                return (
+                                    <button
+                                        key={i}
+                                        onClick={() => goToStep(i)}
+                                        className={cn(
+                                            "h-2.5 rounded-full transition-all duration-250",
+                                            isCurrent ? cn("w-8", accent.dotActive) : isCompleted ? "bg-emerald-500 w-2.5" : "bg-foreground/15 w-2.5",
+                                        )}
+                                        aria-label={`Go to step ${i + 1}`}
+                                    />
+                                );
+                            })}
                         </div>
 
                         {/* Nav buttons */}
                         <div className="flex items-center justify-between gap-3">
-                            <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={handleSkip}>
+                            <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={handleDismiss}>
                                 Skip tour
                             </Button>
 
                             <div className="flex items-center gap-2">
-                                {currentIndex > 0 && (
+                                {currentStepIndex > 0 && (
                                     <Button variant="outline" size="sm" onClick={handlePrevious}>
                                         <ArrowLeft className="mr-1 h-3.5 w-3.5" />
                                         Back

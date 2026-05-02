@@ -4,7 +4,10 @@ import { StatsGrid, Stat } from "@/components/dashboard/stats-grid";
 import { TodaySchedule } from "@/components/dashboard/today-schedule";
 import { DigitalIdCard, type IdCardData } from "@/components/digital-id-card";
 import FacultyLayout from "@/components/faculty/faculty-layout";
-import { OnboardingExperience, type OnboardingFeatureData } from "@/components/onboarding-experience";
+import { OnboardingChecklistWidget } from "@/components/onboarding-checklist";
+import { OnboardingProvider } from "@/components/onboarding-context";
+import { OnboardingTour, type TourStep } from "@/components/onboarding-tour";
+import type { OnboardingFeatureData } from "@/components/onboarding-experience";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -77,6 +80,7 @@ interface DashboardClass {
 
 interface DashboardProps {
     user: User;
+    is_new_user: boolean;
     current_semester: string;
     current_school_year: string;
     faculty_data: {
@@ -187,19 +191,93 @@ function ClassListCard({ classItem, index }: { classItem: DashboardClass; index:
     );
 }
 
-export default function FacultyDashboard({ user, faculty_data, id_card, current_semester, current_school_year }: DashboardProps) {
+// Faculty onboarding checklist items
+const facultyChecklist = [
+    {
+        id: "profile-complete",
+        label: "Complete your profile",
+        description: "Add your photo and verify your faculty information.",
+        actionRoute: "/faculty/profile",
+        actionLabel: "Go to Profile",
+        isCompleted: false,
+    },
+    {
+        id: "first-class",
+        label: "Open your first class",
+        description: "Access your class roster and explore available tools.",
+        actionRoute: "/faculty/classes",
+        actionLabel: "View Classes",
+        isCompleted: false,
+    },
+    {
+        id: "take-attendance",
+        label: "Take attendance",
+        description: "Record student attendance for one of your classes.",
+        actionRoute: "/faculty/classes",
+        actionLabel: "Start",
+        isCompleted: false,
+    },
+    {
+        id: "review-insights",
+        label: "Review class insights",
+        description: "Check performance trends and exportable reports.",
+        actionRoute: "/faculty/classes",
+        actionLabel: "Explore",
+        isCompleted: false,
+    },
+];
+
+// Interactive walkthrough steps
+const facultyTourSteps: TourStep[] = [
+    {
+        id: "faculty-welcome",
+        target: '[data-tour="welcome-header"]',
+        title: "Your Command Center",
+        description: "Everything you need for today is in one focused view — classes, alerts, and quick actions.",
+        placement: "bottom",
+    },
+    {
+        id: "faculty-stats",
+        target: '[data-tour="stats-grid"]',
+        title: "Quick Stats",
+        description: "See your teaching load, student count, and key metrics at a glance.",
+        placement: "bottom",
+    },
+    {
+        id: "faculty-schedule",
+        target: '[data-tour="today-schedule"]',
+        title: "Today's Schedule",
+        description: "Never miss a class. Your daily schedule is always visible right here.",
+        placement: "right",
+    },
+    {
+        id: "faculty-classes",
+        target: '[data-tour="my-classes"]',
+        title: "Your Classes",
+        description: "This is where the magic happens. Open any class to manage students, grades, and attendance — all in one place.",
+        placement: "top",
+        ahaMoment: "Open a class and take attendance in under 60 seconds. That is your fastest path to value!",
+    },
+    {
+        id: "faculty-id-card",
+        target: '[data-tour="id-card"]',
+        title: "Digital ID Card",
+        description: "Your faculty ID is always accessible. Tap to expand or refresh your QR code instantly.",
+        placement: "left",
+    },
+];
+
+function DashboardContent({ user, is_new_user, faculty_data, id_card, current_semester, current_school_year }: DashboardProps) {
     const { props } = usePage<{
         onboarding?: {
             forceOnLogin?: boolean;
             features?: OnboardingFeatureData[];
-            dismissEndpoint?: string;
         };
     }>();
-    const shouldForceOnboarding = props.onboarding?.forceOnLogin ?? false;
+    const shouldForceOnboarding = (props.onboarding?.forceOnLogin ?? false) && is_new_user;
     const onboardingFeatures = props.onboarding?.features ?? [];
-    const dismissEndpoint = props.onboarding?.dismissEndpoint;
     const hasOnboardingFeatures = onboardingFeatures.length > 0;
-    const onboardingEnabled = shouldForceOnboarding || hasOnboardingFeatures;
+    const onboardingEnabled = hasOnboardingFeatures || shouldForceOnboarding;
 
     const [qrCode, setQrCode] = useState(id_card?.qr_code ?? "");
     const [isRefreshingQr, setIsRefreshingQr] = useState(false);
@@ -239,30 +317,13 @@ export default function FacultyDashboard({ user, faculty_data, id_card, current_
     const hasClasses = faculty_data.upcoming_classes.length > 0;
 
     return (
-        <FacultyLayout
-            user={{
-                name: user.name,
-                email: user.email,
-                avatar: user.avatar,
-                role: user.role,
-            }}
-        >
+        <>
             <Head title="Faculty Dashboard" />
-            <OnboardingExperience
-                variant="faculty"
-                userId={user.id}
-                enabled={onboardingEnabled}
-                force={!hasOnboardingFeatures && shouldForceOnboarding}
-                features={hasOnboardingFeatures ? onboardingFeatures : undefined}
-                onDismiss={(featureKey) => {
-                    if (!dismissEndpoint) return;
-                    router.post(dismissEndpoint, { feature_key: featureKey }, { preserveScroll: true });
-                }}
-            />
+            <OnboardingTour steps={facultyTourSteps} />
 
             <main className="mx-auto w-full max-w-7xl space-y-6 p-4 sm:p-6 lg:p-8">
                 {/* Header */}
-                <section className="flex flex-col gap-4 rounded-2xl border bg-gradient-to-r from-sky-50 to-blue-50 p-5 md:flex-row md:items-center md:justify-between md:p-6 dark:from-sky-950/20 dark:to-blue-950/20">
+                <section data-tour="welcome-header" className="flex flex-col gap-4 rounded-2xl border bg-gradient-to-r from-sky-50 to-blue-50 p-5 md:flex-row md:items-center md:justify-between md:p-6 dark:from-sky-950/20 dark:to-blue-950/20">
                     <div className="space-y-2">
                         <div className="flex flex-wrap items-center gap-2">
                             <h1 className="text-2xl font-bold tracking-tight">Welcome back, {user.name.split(" ")[0]}</h1>
@@ -284,17 +345,26 @@ export default function FacultyDashboard({ user, faculty_data, id_card, current_
                     </div>
                 </section>
 
+                {/* Onboarding Checklist Widget */}
+                {onboardingEnabled && (
+                    <OnboardingChecklistWidget />
+                )}
+
                 {/* Stats */}
-                <StatsGrid stats={faculty_data.stats} />
+                <div data-tour="stats-grid">
+                    <StatsGrid stats={faculty_data.stats} />
+                </div>
 
                 <div className="grid gap-6 lg:grid-cols-12">
                     {/* Main Column */}
                     <div className="flex flex-col gap-6 lg:col-span-8">
                         {/* Today's Schedule */}
-                        <TodaySchedule schedule={faculty_data.today_schedule} />
+                        <div data-tour="today-schedule">
+                            <TodaySchedule schedule={faculty_data.today_schedule} />
+                        </div>
 
                         {/* My Classes */}
-                        <div className="space-y-4">
+                        <div data-tour="my-classes" className="space-y-4">
                             <div className="flex items-center justify-between">
                                 <div>
                                     <h3 className="text-foreground text-lg font-semibold">My Classes</h3>
@@ -347,6 +417,7 @@ export default function FacultyDashboard({ user, faculty_data, id_card, current_
                     <div className="flex flex-col gap-6 lg:col-span-4">
                         {id_card && (
                             <motion.div
+                                data-tour="id-card"
                                 initial={{ opacity: 0, x: 20 }}
                                 animate={{ opacity: 1, x: 0 }}
                                 transition={{ delay: 0.2 }}
@@ -369,6 +440,46 @@ export default function FacultyDashboard({ user, faculty_data, id_card, current_
                     </div>
                 </div>
             </main>
+        </>
+    );
+}
+
+export default function FacultyDashboard(props: DashboardProps) {
+    const { user, is_new_user } = props;
+    const { props: pageProps } = usePage<{
+        onboarding?: {
+            forceOnLogin?: boolean;
+            features?: OnboardingFeatureData[];
+        };
+    }>();
+
+    const shouldForceOnboarding = (pageProps.onboarding?.forceOnLogin ?? false) && is_new_user;
+    const onboardingFeatures = pageProps.onboarding?.features ?? [];
+    const hasOnboardingFeatures = onboardingFeatures.length > 0;
+    const onboardingEnabled = hasOnboardingFeatures || shouldForceOnboarding;
+
+    return (
+        <FacultyLayout
+            user={{
+                name: user.name,
+                email: user.email,
+                avatar: user.avatar,
+                role: user.role,
+            }}
+        >
+            {onboardingEnabled ? (
+                <OnboardingProvider
+                    variant="faculty"
+                    userId={user.id}
+                    checklist={facultyChecklist}
+                    totalSteps={4}
+                    enabled={onboardingEnabled}
+                >
+                    <DashboardContent {...props} />
+                </OnboardingProvider>
+            ) : (
+                <DashboardContent {...props} />
+            )}
         </FacultyLayout>
     );
 }

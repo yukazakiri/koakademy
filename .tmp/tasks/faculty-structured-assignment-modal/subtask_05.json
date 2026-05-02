@@ -1,0 +1,37 @@
+{
+  "id": "faculty-structured-assignment-modal-05",
+  "seq": "05",
+  "title": "Render structured assignment metadata in stream and classwork tabs",
+  "status": "pending",
+  "depends_on": [
+    "02",
+    "04"
+  ],
+  "parallel": false,
+  "suggested_agent": "OpenFrontendSpecialist",
+  "context_files": [
+    "/home/admin/.opencode/context/ui/web/ui-styling-standards.md",
+    "/home/admin/.opencode/context/ui/web/react-patterns.md",
+    "/home/admin/.opencode/context/ui/web/animation-components.md",
+    "/home/admin/.opencode/context/development/ui-navigation.md"
+  ],
+  "reference_files": [
+    "resources/js/components/class/tabs/stream-tab.tsx",
+    "resources/js/components/class/tabs/classwork-tab.tsx",
+    "resources/js/types/class-detail-types.ts"
+  ],
+  "acceptance_criteria": [
+    "Saved assignment audience, points, due date, and rubric summary render clearly in stream and classwork views",
+    "Rendering changes do not break announcement, quiz, and activity cards",
+    "Follows 4-stage design workflow",
+    "Responsive at all breakpoints"
+  ],
+  "deliverables": [
+    "resources/js/components/class/tabs/stream-tab.tsx",
+    "resources/js/components/class/tabs/classwork-tab.tsx"
+  ],
+  "agent_id": null,
+  "started_at": null,
+  "completed_at": null,
+  "completion_summary": null
+}

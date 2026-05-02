@@ -319,7 +319,7 @@ function DashboardContent({ user, is_new_user, faculty_data, id_card, current_se
     return (
         <>
             <Head title="Faculty Dashboard" />
-            <OnboardingTour steps={facultyTourSteps} />
+            {onboardingEnabled && <OnboardingTour steps={facultyTourSteps} />}
 
             <main className="mx-auto w-full max-w-7xl space-y-6 p-4 sm:p-6 lg:p-8">
                 {/* Header */}

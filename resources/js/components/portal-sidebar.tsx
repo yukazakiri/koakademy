@@ -5,7 +5,7 @@ import { NavMain, type NavItem } from "@/components/nav-main";
 import { NavSecondary } from "@/components/nav-secondary";
 import { NavUser } from "@/components/nav-user";
 import { NotificationsPopover } from "@/components/sidebar-03/nav-notifications";
-import { getStudentPortalNavigation } from "@/components/student/student-navigation";
+import { getStudentPortalNavigation, type StudentPortalClass } from "@/components/student/student-navigation";
 import {
     Sidebar,
     SidebarContent,
@@ -48,26 +48,32 @@ interface PageProps {
     };
     branding?: Partial<Branding> | null;
     facultyClasses?: FacultyClass[];
+    studentClasses?: StudentPortalClass[];
     [key: string]: unknown;
 }
 
-function useFeatureFlagRoutes(isStudent: boolean, isFaculty: boolean, facultyClasses: FacultyClass[] = []): NavItem[] {
+function useFeatureFlagRoutes(
+    isStudent: boolean,
+    isFaculty: boolean,
+    facultyClasses: FacultyClass[] = [],
+    studentClasses: StudentPortalClass[] = [],
+): NavItem[] {
     const { props } = usePage<PageProps>();
     const enabledRoutes = props.featureFlags?.enabledRoutes || {};
 
     return useMemo(() => {
         if (isStudent) {
-            return getStudentRoutes(enabledRoutes);
+            return getStudentRoutes(enabledRoutes, studentClasses);
         }
         if (isFaculty) {
             return getFacultyRoutes(enabledRoutes, facultyClasses);
         }
         return getStaffRoutes(enabledRoutes);
-    }, [isStudent, isFaculty, enabledRoutes, facultyClasses]);
+    }, [isStudent, isFaculty, enabledRoutes, facultyClasses, studentClasses]);
 }
 
-function getStudentRoutes(enabledRoutes: Record<string, boolean>): NavItem[] {
-    return getStudentPortalNavigation(enabledRoutes);
+function getStudentRoutes(enabledRoutes: Record<string, boolean>, studentClasses: StudentPortalClass[] = []): NavItem[] {
+    return getStudentPortalNavigation(enabledRoutes, studentClasses);
 }
 
 function getFacultyRoutes(enabledRoutes: Record<string, boolean>, facultyClasses: FacultyClass[] = []): NavItem[] {
@@ -166,13 +172,14 @@ export function PortalSidebar({ user, ...props }: React.ComponentProps<typeof Si
     const organizationShortName = branding.organizationShortName;
     const version = pageProps.version || "1.0.0";
     const facultyClasses = pageProps.facultyClasses || [];
+    const studentClasses = pageProps.studentClasses || [];
     const pathname = url.split("?")[0];
     const resolvedUser = pageProps.auth?.user ?? user;
     const normalizedRole = normalizePortalRole(resolvedUser?.role);
     const isStudent = pathname.startsWith("/student") || isStudentPortalRole(normalizedRole);
     const isFaculty = pathname.startsWith("/faculty") || isFacultyPortalRole(normalizedRole);
     const isStaff = !isStudent && !isFaculty;
-    const mainRoutes = useFeatureFlagRoutes(isStudent, isFaculty, facultyClasses);
+    const mainRoutes = useFeatureFlagRoutes(isStudent, isFaculty, facultyClasses, studentClasses);
     const secondaryRoutes = getSecondaryRoutes(isStudent, isStaff);
     const { state } = useSidebar();
 

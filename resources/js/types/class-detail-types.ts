@@ -52,6 +52,39 @@ export interface ClassPostAttachment {
     kind: "link" | "file";
 }
 
+export type AssignmentAudienceMode = "all_students" | "specific_students";
+
+export interface AssignmentRubricLevel {
+    title: string;
+    description?: string | null;
+}
+
+export interface AssignmentRubricCriterion {
+    title: string;
+    description?: string | null;
+    points: number;
+    levels: AssignmentRubricLevel[];
+}
+
+export interface AssignmentStructure {
+    instruction?: string | null;
+    audience_mode: AssignmentAudienceMode;
+    assigned_student_ids: Array<number | string>;
+    rubric: AssignmentRubricCriterion[];
+}
+
+export interface ClassPostSubmissionEntry {
+    id: number;
+    student_name: string;
+    student_id: string;
+    content?: string | null;
+    attachments: ClassPostAttachment[];
+    points?: number | null;
+    status: string;
+    submitted_at?: string | null;
+    graded_at?: string | null;
+}
+
 export interface ClassPostEntry {
     id: number;
     title: string;
@@ -65,6 +98,16 @@ export interface ClassPostEntry {
     total_points?: number | null;
     assigned_faculty_id?: string | null;
     attachments: ClassPostAttachment[];
+    assignment?: AssignmentStructure | null;
+    submission_count?: number;
+    graded_count?: number;
+    my_submission?: {
+        id: number;
+        points?: number | null;
+        status: string;
+        submitted_at?: string | null;
+        graded_at?: string | null;
+    } | null;
     created_at?: string | null;
 }
 

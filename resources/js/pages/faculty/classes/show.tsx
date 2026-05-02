@@ -79,7 +79,7 @@ export default function ClassDetail({
     // Student Info Sheet State
     const [studentInfoOpen, setStudentInfoOpen] = useState(false);
     const [selectedStudent, setSelectedStudent] = useState<StudentEntry | null>(null);
-    const [studentInfo, setStudentInfo] = useState<any>(null);
+    const [studentInfo, setStudentInfo] = useState<Record<string, unknown> | null>(null);
     const [loadingStudentInfo, setLoadingStudentInfo] = useState(false);
     const [focusedAttendanceStudentId, setFocusedAttendanceStudentId] = useState<number | null>(null);
 
@@ -235,12 +235,19 @@ export default function ClassDetail({
 
                     {/* Stream Tab */}
                     <TabsContent value="stream" className="animate-in fade-in-50 slide-in-from-bottom-2 mt-0 space-y-6 duration-500">
-                        <StreamTab classData={classData} currentFaculty={current_faculty} classPosts={posts} />
+                        <StreamTab classData={classData} currentFaculty={current_faculty} students={students} classPosts={posts} />
                     </TabsContent>
 
                     {/* Classwork Tab */}
                     <TabsContent value="classwork" className="animate-in fade-in-50 slide-in-from-bottom-2 mt-0 duration-500">
-                        <ClassworkTab classPosts={posts} />
+                        <ClassworkTab
+                            classId={classData.id}
+                            classCode={classData.subject_code}
+                            classSection={classData.section}
+                            currentFacultyId={current_faculty.id}
+                            classPosts={posts}
+                            students={students}
+                        />
                     </TabsContent>
 
                     {/* Attendance Tab */}

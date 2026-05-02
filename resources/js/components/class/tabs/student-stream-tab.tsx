@@ -1,9 +1,11 @@
+import { StudentSubmissionDialog } from "@/components/class/student-submission-dialog";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { ClassPostEntry } from "@/types/class-detail-types";
-import { IconDownload, IconEye, IconLink, IconPaperclip } from "@tabler/icons-react";
-import { useMemo } from "react";
+import { IconCheck, IconDownload, IconEye, IconFileUpload, IconLink, IconPaperclip } from "@tabler/icons-react";
+import { useMemo, useState } from "react";
 
 interface StudentStreamTabProps {
     classData: {
@@ -27,6 +29,9 @@ const classPostTypeLabels: Record<string, { label: string; badge: string; intent
 };
 
 export function StudentStreamTab({ classData, teacher, classPosts }: StudentStreamTabProps) {
+    const [submittingPost, setSubmittingPost] = useState<ClassPostEntry | null>(null);
+    const [submitDialogOpen, setSubmitDialogOpen] = useState(false);
+
     const dateFormatter = useMemo(
         () =>
             new Intl.DateTimeFormat(undefined, {
@@ -35,6 +40,11 @@ export function StudentStreamTab({ classData, teacher, classPosts }: StudentStre
             }),
         [],
     );
+
+    const handleSubmitClick = (post: ClassPostEntry) => {
+        setSubmittingPost(post);
+        setSubmitDialogOpen(true);
+    };
 
     const streamPosts = useMemo(() => {
         return classPosts
@@ -120,6 +130,41 @@ export function StudentStreamTab({ classData, teacher, classPosts }: StudentStre
                                                 {post.title}
                                                 {post.content && <div className="text-muted-foreground mt-1">{post.content}</div>}
                                             </div>
+
+                                            {/* Submit Button for Assignments */}
+                                            {post.type === "assignment" && (
+                                                <div className="mt-3">
+                                                    {post.my_submission ? (
+                                                        <div className="flex items-center gap-2">
+                                                            <Badge
+                                                                variant={post.my_submission.status === "graded" ? "default" : "secondary"}
+                                                                className="h-6 text-xs"
+                                                            >
+                                                                <IconCheck className="mr-1 size-3" />
+                                                                {post.my_submission.status === "graded"
+                                                                    ? `Graded: ${post.my_submission.points ?? 0}/${post.total_points ?? 100}`
+                                                                    : "Submitted"}
+                                                            </Badge>
+                                                            {post.my_submission.submitted_at && (
+                                                                <span className="text-muted-foreground text-xs">
+                                                                    {new Date(post.my_submission.submitted_at).toLocaleDateString()}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    ) : (
+                                                        <Button
+                                                            type="button"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            className="h-8 text-xs"
+                                                            onClick={() => handleSubmitClick(post)}
+                                                        >
+                                                            <IconFileUpload className="mr-1 size-3.5" />
+                                                            Submit Assignment
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            )}
 
                                             {/* Media Attachments (Images, Videos, YouTube) */}
                                             {mediaAttachments.length > 0 && (
@@ -266,6 +311,13 @@ export function StudentStreamTab({ classData, teacher, classPosts }: StudentStre
                     </div>
                 )}
             </Card>
+
+            <StudentSubmissionDialog
+                open={submitDialogOpen}
+                onOpenChange={setSubmitDialogOpen}
+                classId={classData.id}
+                post={submittingPost}
+            />
         </div>
     );
 }

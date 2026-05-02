@@ -1,3 +1,5 @@
+import { AssignmentComposerDialog } from "@/components/class/assignment-composer-dialog";
+import { SubmissionViewerSheet } from "@/components/class/submission-viewer-sheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -8,9 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { ClassPostAttachment, ClassPostEntry, LinkPreview } from "@/types/class-detail-types";
+import { ClassPostAttachment, ClassPostEntry, LinkPreview, StudentEntry } from "@/types/class-detail-types";
 import { router, useForm } from "@inertiajs/react";
-import { IconDownload, IconEye, IconLink, IconPaperclip, IconPlus, IconSparkles, IconTrash, IconUpload } from "@tabler/icons-react";
+import { IconDownload, IconEdit, IconEye, IconLink, IconPaperclip, IconPlus, IconSparkles, IconTrash, IconUpload } from "@tabler/icons-react";
 import { DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -25,6 +27,7 @@ interface StreamTabProps {
         name: string;
         email?: string | null;
     };
+    students: StudentEntry[];
     classPosts: ClassPostEntry[];
 }
 
@@ -35,10 +38,14 @@ const classPostTypeLabels: Record<string, { label: string; badge: string; intent
     activity: { label: "Activity", badge: "bg-emerald-500/15 text-emerald-600", intent: "both" },
 };
 
-const postTypeOptions = ["announcement", "quiz", "assignment", "activity"] as const;
+const postTypeOptions = ["announcement", "quiz", "activity"] as const;
 
-export function StreamTab({ classData, currentFaculty, classPosts }: StreamTabProps) {
+export function StreamTab({ classData, currentFaculty, students, classPosts }: StreamTabProps) {
     const [editingPostId, setEditingPostId] = useState<number | null>(null);
+    const [editingAssignmentPost, setEditingAssignmentPost] = useState<ClassPostEntry | null>(null);
+    const [editAssignmentOpen, setEditAssignmentOpen] = useState(false);
+    const [viewingSubmissionsPost, setViewingSubmissionsPost] = useState<ClassPostEntry | null>(null);
+    const [viewingSubmissionsOpen, setViewingSubmissionsOpen] = useState(false);
     const [deletingPostId, setDeletingPostId] = useState<number | null>(null);
     const [isLinkDialogOpen, setIsLinkDialogOpen] = useState(false);
     const [linkUrl, setLinkUrl] = useState("");
@@ -365,6 +372,14 @@ export function StreamTab({ classData, currentFaculty, classPosts }: StreamTabPr
 
     return (
         <div className="space-y-6">
+            <AssignmentComposerDialog
+                classId={classData.id}
+                classCode={classData.subject_code}
+                classSection={classData.section}
+                currentFacultyId={currentFaculty.id}
+                students={students}
+            />
+
             <Card className="border-border/70 bg-card/90 shadow-sm">
                 <CardContent className="space-y-5 p-6">
                     <div className="flex items-center gap-3">
@@ -373,7 +388,9 @@ export function StreamTab({ classData, currentFaculty, classPosts }: StreamTabPr
                         </div>
                         <div>
                             <p className="text-muted-foreground text-xs tracking-[0.3em] uppercase">New post</p>
-                            <p className="text-muted-foreground text-sm">Announcements stay in Stream; Quiz/Material/Activity also go to Classwork</p>
+                            <p className="text-muted-foreground text-sm">
+                                Use <span className="font-medium">Create assignment</span> for structured work. Announcements and quick activities stay here.
+                            </p>
                         </div>
                     </div>
                     {editingPostId !== null && (
@@ -890,14 +907,43 @@ export function StreamTab({ classData, currentFaculty, classPosts }: StreamTabPr
                                 <div key={post.id} className="group hover:bg-muted/30 relative -mx-4 rounded-lg px-4 py-4 pl-4 transition-all">
                                     {/* Discord-style Hover Actions */}
                                     <div className="bg-background border-border/60 absolute top-2 right-4 hidden items-center gap-1 rounded-lg border p-1 shadow-sm group-hover:flex">
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="text-muted-foreground hover:text-foreground h-7 w-7 rounded-md"
-                                            onClick={() => handleEditPost(post)}
-                                        >
-                                            <IconSparkles className="size-4" />
-                                        </Button>
+                                        {post.type === "assignment" && (
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="text-muted-foreground hover:text-foreground h-7 w-7 rounded-md"
+                                                onClick={() => {
+                                                    setViewingSubmissionsPost(post);
+                                                    setViewingSubmissionsOpen(true);
+                                                }}
+                                                title="View submissions"
+                                            >
+                                                <IconEye className="size-4" />
+                                            </Button>
+                                        )}
+                                        {post.type === "assignment" ? (
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="text-muted-foreground hover:text-foreground h-7 w-7 rounded-md"
+                                                onClick={() => {
+                                                    setEditingAssignmentPost(post);
+                                                    setEditAssignmentOpen(true);
+                                                }}
+                                                title="Edit assignment"
+                                            >
+                                                <IconEdit className="size-4" />
+                                            </Button>
+                                        ) : (
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="text-muted-foreground hover:text-foreground h-7 w-7 rounded-md"
+                                                onClick={() => handleEditPost(post)}
+                                            >
+                                                <IconSparkles className="size-4" />
+                                            </Button>
+                                        )}
                                         <Button
                                             variant="ghost"
                                             size="icon"
@@ -955,6 +1001,28 @@ export function StreamTab({ classData, currentFaculty, classPosts }: StreamTabPr
                                                 {post.title}
                                                 {post.content && <div className="text-muted-foreground mt-1">{post.content}</div>}
                                             </div>
+
+                                            {post.assignment && (
+                                                <div className="bg-muted/30 mt-2 space-y-2 rounded-lg border p-3">
+                                                    {post.assignment.instruction && (
+                                                        <p className="text-foreground text-sm whitespace-pre-wrap">{post.assignment.instruction}</p>
+                                                    )}
+                                                    <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">
+                                                        <span>
+                                                            Audience:{" "}
+                                                            {post.assignment.audience_mode === "all_students"
+                                                                ? "All students"
+                                                                : `${post.assignment.assigned_student_ids.length} selected students`}
+                                                        </span>
+                                                        <span>•</span>
+                                                        <span>Rubric criteria: {post.assignment.rubric.length}</span>
+                                                        <span>•</span>
+                                                        <span>
+                                                            Levels: {post.assignment.rubric.reduce((sum, criterion) => sum + criterion.levels.length, 0)}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            )}
 
                                             {/* Media Attachments (Images, Videos, YouTube) */}
                                             {mediaAttachments.length > 0 && (
@@ -1101,6 +1169,27 @@ export function StreamTab({ classData, currentFaculty, classPosts }: StreamTabPr
                     </div>
                 )}
             </Card>
+
+            <SubmissionViewerSheet
+                open={viewingSubmissionsOpen}
+                onOpenChange={setViewingSubmissionsOpen}
+                classId={classData.id}
+                post={viewingSubmissionsPost}
+            />
+
+            {editingAssignmentPost && (
+                <AssignmentComposerDialog
+                    classId={classData.id}
+                    classCode={classData.subject_code}
+                    classSection={classData.section}
+                    currentFacultyId={currentFaculty.id}
+                    students={students}
+                    mode="edit"
+                    post={editingAssignmentPost}
+                    open={editAssignmentOpen}
+                    onOpenChange={setEditAssignmentOpen}
+                />
+            )}
         </div>
     );
 }

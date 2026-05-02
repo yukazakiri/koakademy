@@ -169,16 +169,17 @@ export function NavMain({ items, showQuickActions = true }: { items: NavItem[]; 
                                                 onOpenChange={(open) => handleOpenChange(itemId, open)}
                                                 className="w-full"
                                             >
-                                                <CollapsibleTrigger asChild>
-                                                    <div className="relative">
-                                                        <SidebarMenuButton
-                                                            isActive={isOpen || hasActiveChild}
-                                                            tooltip={item.title}
-                                                            className={cn(
-                                                                "relative z-10 transition-all duration-200",
-                                                                hasActiveChild && !isOpen && "bg-sidebar-accent/30",
-                                                            )}
-                                                        >
+                                                <div className="relative flex items-center">
+                                                    <SidebarMenuButton
+                                                        asChild
+                                                        isActive={isOpen || hasActiveChild || isActive}
+                                                        tooltip={item.title}
+                                                        className={cn(
+                                                            "relative z-10 flex-1 transition-all duration-200",
+                                                            hasActiveChild && !isOpen && "bg-sidebar-accent/30",
+                                                        )}
+                                                    >
+                                                        <Link href={item.url}>
                                                             {item.icon && (
                                                                 <div
                                                                     className={cn(
@@ -191,26 +192,35 @@ export function NavMain({ items, showQuickActions = true }: { items: NavItem[]; 
                                                             )}
                                                             <span className="flex-1 text-sm font-medium">{item.title}</span>
                                                             {item.badge && <span className="ml-1">{item.badge}</span>}
-                                                            <motion.div
-                                                                initial={false}
-                                                                animate={{ rotate: isOpen || hasActiveChild ? 90 : 0 }}
-                                                                transition={{ duration: 0.2, ease: "easeInOut" }}
+                                                        </Link>
+                                                    </SidebarMenuButton>
+                                                    {!isCollapsed && (
+                                                        <CollapsibleTrigger asChild>
+                                                            <button
+                                                                type="button"
+                                                                className="text-muted-foreground hover:text-foreground z-10 flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors"
                                                             >
-                                                                <IconChevronRight className="text-muted-foreground size-4" />
-                                                            </motion.div>
-                                                        </SidebarMenuButton>
-                                                        {(isOpen || hasActiveChild) && !isCollapsed && (
-                                                            <motion.div
-                                                                layoutId={`active-sidebar-${itemId}`}
-                                                                className="bg-sidebar-accent/40 border-sidebar-border/50 absolute inset-0 z-0 rounded-lg border"
-                                                                initial={{ opacity: 0, scale: 0.98 }}
-                                                                animate={{ opacity: 1, scale: 1 }}
-                                                                exit={{ opacity: 0, scale: 0.98 }}
-                                                                transition={{ duration: 0.15 }}
-                                                            />
-                                                        )}
-                                                    </div>
-                                                </CollapsibleTrigger>
+                                                                <motion.div
+                                                                    initial={false}
+                                                                    animate={{ rotate: isOpen || hasActiveChild ? 90 : 0 }}
+                                                                    transition={{ duration: 0.2, ease: "easeInOut" }}
+                                                                >
+                                                                    <IconChevronRight className="size-4" />
+                                                                </motion.div>
+                                                            </button>
+                                                        </CollapsibleTrigger>
+                                                    )}
+                                                    {(isOpen || hasActiveChild) && !isCollapsed && (
+                                                        <motion.div
+                                                            layoutId={`active-sidebar-${itemId}`}
+                                                            className="bg-sidebar-accent/40 border-sidebar-border/50 absolute inset-0 z-0 rounded-lg border"
+                                                            initial={{ opacity: 0, scale: 0.98 }}
+                                                            animate={{ opacity: 1, scale: 1 }}
+                                                            exit={{ opacity: 0, scale: 0.98 }}
+                                                            transition={{ duration: 0.15 }}
+                                                        />
+                                                    )}
+                                                </div>
 
                                                 {!isCollapsed && (
                                                     <AnimatePresence initial={false}>

@@ -68,6 +68,7 @@ Route::middleware(['auth', 'student.only', 'ensure.feature'])->prefix('student')
     // Classes / Enrollment
     Route::get('/classes', App\Http\Controllers\StudentClassesController::class)->name('classes.index');
     Route::get('/classes/{class}', [App\Http\Controllers\StudentClassController::class, 'show'])->name('classes.show');
+    Route::post('/classes/{class}/posts/{post}/submit', [App\Http\Controllers\StudentClassController::class, 'storeSubmission'])->name('classes.posts.submit');
     Route::get('/schedule', App\Http\Controllers\StudentScheduleController::class)->name('schedule');
     Route::get('/tuition', [App\Http\Controllers\StudentTuitionController::class, 'index'])->name('tuition.index');
     Route::get('/tuition/soa', [App\Http\Controllers\StudentTuitionController::class, 'soa'])->name('tuition.soa');

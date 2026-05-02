@@ -110,6 +110,9 @@ Route::middleware(['auth', 'faculty.verified', 'faculty.only', 'ensure.feature']
         Route::post('/classes/{class}/posts', [FacultyClassController::class, 'storePost'])->name('classes.posts.store');
         Route::put('/classes/{class}/posts/{post}', [FacultyClassController::class, 'updatePost'])->name('classes.posts.update');
         Route::delete('/classes/{class}/posts/{post}', [FacultyClassController::class, 'destroyPost'])->name('classes.posts.destroy');
+        Route::get('/classes/{class}/posts/{post}/submissions', [FacultyClassController::class, 'getSubmissions'])->name('classes.posts.submissions');
+        Route::patch('/classes/{class}/posts/{post}/status', [FacultyClassController::class, 'updatePostStatus'])->name('classes.posts.status');
+        Route::post('/classes/{class}/posts/{post}/submissions/{submission}/grade', [FacultyClassController::class, 'gradeSubmission'])->name('classes.posts.submissions.grade');
 
         // Class Students
         Route::get('/classes/{class}/students/search', FacultyClassStudentSearchController::class)->name('classes.students.search');

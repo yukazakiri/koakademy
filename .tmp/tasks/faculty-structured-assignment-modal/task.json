@@ -1,0 +1,42 @@
+{
+  "id": "faculty-structured-assignment-modal",
+  "name": "Faculty Structured Assignment Modal",
+  "status": "active",
+  "objective": "Revamp faculty class post creation into a structured assignment modal with audience targeting, rubric builder, attachments, and persisted assignment metadata.",
+  "context_files": [
+    "/home/admin/.opencode/context/core/standards/code-quality.md",
+    "/home/admin/.opencode/context/core/standards/navigation.md",
+    "/home/admin/.opencode/context/development/navigation.md",
+    "/home/admin/.opencode/context/ui/web/navigation.md",
+    "/home/admin/.opencode/context/ui/web/react-patterns.md",
+    "/home/admin/.opencode/context/ui/web/ui-styling-standards.md",
+    "/home/admin/.opencode/context/ui/web/animation-components.md",
+    "/home/admin/.opencode/context/ui/web/animation-forms.md",
+    "/home/admin/.opencode/context/development/ui-navigation.md"
+  ],
+  "reference_files": [
+    "resources/js/pages/faculty/classes/show.tsx",
+    "resources/js/components/class/tabs/stream-tab.tsx",
+    "resources/js/components/class/tabs/classwork-tab.tsx",
+    "resources/js/types/class-detail-types.ts",
+    "app/Http/Requests/StoreClassPostRequest.php",
+    "app/Http/Controllers/FacultyClassController.php",
+    "app/Models/ClassPost.php",
+    "routes/web/faculty-portal.php",
+    "database/migrations/2025_12_03_143028_create_class_posts_table.php",
+    "database/migrations/2025_12_21_224035_add_action_center_fields_to_class_posts_table.php",
+    "database/migrations/2025_12_21_232043_add_total_points_to_class_posts_table.php"
+  ],
+  "exit_criteria": [
+    "Faculty can create assignment from modal with title, instruction, files, audience, points, and optional due date",
+    "Faculty can add one or more rubric criteria with points and one or more levels per criterion",
+    "Assignment audience supports all students or specific student selections",
+    "Assignment data persists and returns correctly in class posts payload",
+    "Updated UI displays saved assignment metadata without breaking stream/classwork tabs",
+    "Added or updated tests pass for validation and assignment creation flow"
+  ],
+  "subtask_count": 7,
+  "completed_count": 0,
+  "created_at": "2026-05-02T00:00:00Z",
+  "completed_at": null
+}

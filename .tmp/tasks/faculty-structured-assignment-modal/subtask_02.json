@@ -1,0 +1,37 @@
+{
+  "id": "faculty-structured-assignment-modal-02",
+  "seq": "02",
+  "title": "Implement assignment creation modal UI and dynamic form behavior",
+  "status": "pending",
+  "depends_on": [
+    "01"
+  ],
+  "parallel": false,
+  "suggested_agent": "OpenFrontendSpecialist",
+  "context_files": [
+    "/home/admin/.opencode/context/ui/web/ui-styling-standards.md",
+    "/home/admin/.opencode/context/ui/web/react-patterns.md",
+    "/home/admin/.opencode/context/ui/web/animation-components.md",
+    "/home/admin/.opencode/context/ui/web/animation-forms.md",
+    "/home/admin/.opencode/context/development/ui-navigation.md"
+  ],
+  "reference_files": [
+    "resources/js/pages/faculty/classes/show.tsx",
+    "resources/js/components/class/tabs/stream-tab.tsx",
+    "resources/js/types/class-detail-types.ts"
+  ],
+  "acceptance_criteria": [
+    "Modal supports assignment fields for title, instruction, attachments, audience mode, total points, optional due date, and rubric criteria with levels",
+    "Audience selector allows all students or specific students from class roster",
+    "Rubric builder supports adding and removing criteria and nested levels dynamically",
+    "Follows 4-stage design workflow",
+    "Responsive at all breakpoints"
+  ],
+  "deliverables": [
+    "resources/js/pages/faculty/classes/show.tsx"
+  ],
+  "agent_id": null,
+  "started_at": null,
+  "completed_at": null,
+  "completion_summary": null
+}

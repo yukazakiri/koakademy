@@ -1,5 +1,6 @@
 import { DigitalIdCard, type IdCardData } from "@/components/digital-id-card";
 import { OnboardingExperience, type OnboardingFeatureData } from "@/components/onboarding-experience";
+import { OnboardingProvider, type OnboardingChecklistItem } from "@/components/onboarding-context";
 import StudentLayout from "@/components/student/student-layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -665,6 +666,41 @@ const CourseTicket = ({ cls, index }: { cls: ClassInfo; index: number }) => {
     );
 };
 
+const studentChecklist: OnboardingChecklistItem[] = [
+    {
+        id: "profile-complete",
+        label: "Complete your profile",
+        description: "Add your photo and verify your student information.",
+        actionRoute: "/student/profile",
+        actionLabel: "Go to Profile",
+        isCompleted: false,
+    },
+    {
+        id: "view-schedule",
+        label: "View your class schedule",
+        description: "Check your weekly schedule and room assignments.",
+        actionRoute: "/student/schedule",
+        actionLabel: "View Schedule",
+        isCompleted: false,
+    },
+    {
+        id: "check-grades",
+        label: "Check your grades",
+        description: "Review your academic performance and progress.",
+        actionRoute: "/student/grades",
+        actionLabel: "View Grades",
+        isCompleted: false,
+    },
+    {
+        id: "explore-id",
+        label: "Get your digital ID",
+        description: "Access your student ID card and QR code.",
+        actionRoute: "/student/id-card/view",
+        actionLabel: "View ID",
+        isCompleted: false,
+    },
+];
+
 export default function StudentDashboard({ user, student_data, id_card }: StudentDashboardProps) {
     const { props } = usePage<{
         branding?: Branding;
@@ -785,17 +821,24 @@ export default function StudentDashboard({ user, student_data, id_card }: Studen
             }}
         >
             <Head title="Student Hub" />
-            <OnboardingExperience
-                variant="student"
-                userId={user.id}
-                enabled={onboardingEnabled}
-                force={!hasOnboardingFeatures && shouldForceOnboarding}
-                features={hasOnboardingFeatures ? onboardingFeatures : undefined}
-                onDismiss={(featureKey) => {
-                    if (!dismissEndpoint) return;
-                    router.post(dismissEndpoint, { feature_key: featureKey }, { preserveScroll: true });
-                }}
-            />
+            {onboardingEnabled && (
+                <OnboardingProvider
+                    variant="student"
+                    userId={user.id}
+                    checklist={studentChecklist}
+                    totalSteps={4}
+                    enabled={onboardingEnabled}
+                >
+                    <OnboardingExperience
+                        enabled={onboardingEnabled}
+                        features={hasOnboardingFeatures ? onboardingFeatures : undefined}
+                        onDismiss={(featureKey) => {
+                            if (!dismissEndpoint) return;
+                            router.post(dismissEndpoint, { feature_key: featureKey }, { preserveScroll: true });
+                        }}
+                    />
+                </OnboardingProvider>
+            )}
 
             <div className="mx-auto w-full max-w-7xl space-y-8 p-4 md:p-6">
                 {/* Hero Section */}

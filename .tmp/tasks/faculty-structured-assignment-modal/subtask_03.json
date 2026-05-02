@@ -1,0 +1,36 @@
+{
+  "id": "faculty-structured-assignment-modal-03",
+  "seq": "03",
+  "title": "Add backend schema and validation rules for structured assignment fields",
+  "status": "pending",
+  "depends_on": [
+    "01"
+  ],
+  "parallel": true,
+  "suggested_agent": "CoderAgent",
+  "context_files": [
+    "/home/admin/.opencode/context/core/standards/code-quality.md",
+    "/home/admin/.opencode/context/development/navigation.md"
+  ],
+  "reference_files": [
+    "app/Http/Requests/StoreClassPostRequest.php",
+    "app/Models/ClassPost.php",
+    "database/migrations/2025_12_03_143028_create_class_posts_table.php",
+    "database/migrations/2025_12_21_224035_add_action_center_fields_to_class_posts_table.php",
+    "database/migrations/2025_12_21_232043_add_total_points_to_class_posts_table.php"
+  ],
+  "acceptance_criteria": [
+    "Validation rules cover assignment audience mode, selected students list, instruction, and rubric nested arrays",
+    "Database schema supports persisting new structured assignment fields",
+    "Model fillable and casts support reading and writing new assignment structure"
+  ],
+  "deliverables": [
+    "app/Http/Requests/StoreClassPostRequest.php",
+    "app/Models/ClassPost.php",
+    "database/migrations/*class_posts*structured_assignment*.php"
+  ],
+  "agent_id": null,
+  "started_at": null,
+  "completed_at": null,
+  "completion_summary": null
+}

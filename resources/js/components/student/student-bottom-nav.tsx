@@ -1,5 +1,5 @@
 import { GlobalCommandContent } from "@/components/global-command-palette";
-import { getStudentPortalNavigation } from "@/components/student/student-navigation";
+import { getStudentPortalNavigation, type StudentPortalClass } from "@/components/student/student-navigation";
 import { Command } from "@/components/ui/command";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer";
 import { cn } from "@/lib/utils";
@@ -15,6 +15,7 @@ interface StudentBottomNavPageProps {
     featureFlags?: {
         enabledRoutes?: Record<string, boolean>;
     };
+    studentClasses?: StudentPortalClass[];
 }
 
 export function StudentBottomNav() {
@@ -22,7 +23,8 @@ export function StudentBottomNav() {
     const [searchOpen, setSearchOpen] = useState(false);
     const resolvedUser = props.auth?.user;
     const enabledRoutes = props.featureFlags?.enabledRoutes ?? {};
-    const studentBottomNavItems = useMemo(() => getStudentPortalNavigation(enabledRoutes), [enabledRoutes]);
+    const studentClasses = props.studentClasses ?? [];
+    const studentBottomNavItems = useMemo(() => getStudentPortalNavigation(enabledRoutes, studentClasses), [enabledRoutes, studentClasses]);
 
     const isActive = (href: string): boolean => {
         return url === href || url.startsWith(`${href}/`);

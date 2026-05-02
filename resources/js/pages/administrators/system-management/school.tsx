@@ -106,7 +106,7 @@ export default function SystemManagementSchoolPage({
             school_starting_date: system_school_starting_date ?? "",
             school_ending_date: system_school_ending_date ?? "",
         });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }, [system_semester, system_school_starting_date, system_school_ending_date]);
 
     useEffect(() => {

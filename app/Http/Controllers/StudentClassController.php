@@ -8,8 +8,12 @@ use App\Enums\AttendanceStatus;
 use App\Models\ClassEnrollment;
 use App\Models\Classes;
 use App\Models\ClassPost;
+use App\Models\ClassPostSubmission;
 use App\Models\Student;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -156,6 +160,25 @@ final class StudentClassController extends Controller
             ->sortBy('name')
             ->values();
 
+        // Add submission status to posts
+        $classPosts = $classPosts->map(function (array $post) use ($student): array {
+            if ($post['type'] === 'assignment') {
+                $submission = ClassPostSubmission::where('class_post_id', $post['id'])
+                    ->where('student_id', $student->id)
+                    ->first();
+
+                $post['my_submission'] = $submission ? [
+                    'id' => $submission->id,
+                    'points' => $submission->points,
+                    'status' => $submission->status,
+                    'submitted_at' => $submission->submitted_at?->toDateTimeString(),
+                    'graded_at' => $submission->graded_at?->toDateTimeString(),
+                ] : null;
+            }
+
+            return $post;
+        });
+
         return Inertia::render('student/classes/show', [
             'user' => [
                 'name' => $user->name,
@@ -175,5 +198,74 @@ final class StudentClassController extends Controller
             'classmates' => $classmates,
             'flash' => session('flash'),
         ]);
+    }
+
+    public function storeSubmission(Request $request, Classes $class, ClassPost $post): RedirectResponse
+    {
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
+
+        $student = Student::where('email', $user->email)
+            ->orWhere('user_id', $user->id)
+            ->firstOrFail();
+
+        $enrollment = ClassEnrollment::where('class_id', $class->id)
+            ->where('student_id', $student->id)
+            ->firstOrFail();
+
+        if ($post->class_id !== $class->id) {
+            abort(404);
+        }
+
+        if ($post->type !== \App\Enums\ClassPostType::Assignment) {
+            throw ValidationException::withMessages([
+                'post' => 'This post is not an assignment.',
+            ]);
+        }
+
+        $validated = $request->validate([
+            'content' => ['nullable', 'string'],
+            'files' => ['nullable', 'array'],
+            'files.*' => ['file', 'max:51200'],
+        ]);
+
+        // Check if already submitted
+        $existingSubmission = ClassPostSubmission::where('class_post_id', $post->id)
+            ->where('student_id', $student->id)
+            ->first();
+
+        if ($existingSubmission) {
+            return redirect()
+                ->back()
+                ->withErrors(['error' => 'You have already submitted this assignment.']);
+        }
+
+        /** @var \Illuminate\Filesystem\FilesystemAdapter $storageDisk */
+        $storageDisk = \Illuminate\Support\Facades\Storage::disk();
+
+        $attachments = [];
+        foreach ($request->file('files', []) as $file) {
+            $path = $file->store('class-post-submissions');
+            $attachments[] = [
+                'name' => $file->getClientOriginalName() ?: $file->hashName(),
+                'url' => $storageDisk->url($path),
+                'kind' => 'file',
+            ];
+        }
+
+        ClassPostSubmission::create([
+            'class_post_id' => $post->id,
+            'student_id' => $student->id,
+            'content' => $validated['content'] ?? null,
+            'attachments' => $attachments,
+            'status' => 'submitted',
+            'submitted_at' => now(),
+        ]);
+
+        return redirect()
+            ->back()
+            ->with('flash', [
+                'success' => 'Assignment submitted successfully.',
+            ]);
     }
 }

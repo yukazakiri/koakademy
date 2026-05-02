@@ -163,7 +163,7 @@ export default function StudentClassShow({
 
                     {/* Classwork Tab */}
                     <TabsContent value="classwork" className="animate-in fade-in-50 slide-in-from-bottom-2 mt-0 duration-500">
-                        <ClassworkTab classPosts={posts} />
+                        <ClassworkTab classPosts={posts} isStudentView={true} />
                     </TabsContent>
 
                     {/* Attendance Tab */}

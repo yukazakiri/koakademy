@@ -18,6 +18,7 @@ use App\Models\ClassAttendanceSession;
 use App\Models\ClassEnrollment;
 use App\Models\Classes;
 use App\Models\ClassPost;
+use App\Models\ClassPostSubmission;
 use App\Models\Faculty;
 use App\Models\Room;
 use App\Models\User;
@@ -233,6 +234,9 @@ final class FacultyClassController extends Controller
                     'total_points' => $post->total_points,
                     'assigned_faculty_id' => $post->assigned_faculty_id,
                     'attachments' => $attachments,
+                    'assignment' => $this->formatAssignmentPayload($post),
+                    'submission_count' => $post->submissions()->count(),
+                    'graded_count' => $post->submissions()->whereNotNull('points')->count(),
                     'created_at' => format_timestamp($post->created_at),
                 ];
             });
@@ -396,10 +400,13 @@ final class FacultyClassController extends Controller
                 $progressPercent = 100;
             }
 
+            $assignmentPayload = $this->extractAssignmentPayload($class, $data);
+
             ClassPost::create([
                 'class_id' => $class->id,
                 'title' => $data['title'],
                 'content' => $data['content'] ?? null,
+                'instruction' => $assignmentPayload['instruction'],
                 'type' => $data['type'],
                 'status' => $status,
                 'priority' => $priority,
@@ -407,6 +414,9 @@ final class FacultyClassController extends Controller
                 'due_date' => $data['due_date'] ?? null,
                 'progress_percent' => $progressPercent,
                 'total_points' => $data['total_points'] ?? null,
+                'audience_mode' => $assignmentPayload['audience_mode'],
+                'assigned_student_ids' => $assignmentPayload['assigned_student_ids'],
+                'rubric' => $assignmentPayload['rubric'],
                 'assigned_faculty_id' => $assignedFacultyId,
                 'attachments' => array_values($linkAttachments->merge($fileAttachments)->all()),
             ]);
@@ -534,9 +544,12 @@ final class FacultyClassController extends Controller
                 $progressPercent = 100;
             }
 
+            $assignmentPayload = $this->extractAssignmentPayload($class, $data);
+
             $post->update([
                 'title' => $data['title'],
                 'content' => $data['content'] ?? null,
+                'instruction' => $assignmentPayload['instruction'],
                 'type' => $data['type'],
                 'status' => $status,
                 'priority' => $priority,
@@ -544,6 +557,9 @@ final class FacultyClassController extends Controller
                 'due_date' => $data['due_date'] ?? $post->due_date,
                 'progress_percent' => $progressPercent,
                 'total_points' => $data['total_points'] ?? null,
+                'audience_mode' => $assignmentPayload['audience_mode'],
+                'assigned_student_ids' => $assignmentPayload['assigned_student_ids'],
+                'rubric' => $assignmentPayload['rubric'],
                 'assigned_faculty_id' => $assignedFacultyId,
                 'attachments' => array_values($incomingLinks->merge($fileAttachments)->all()),
             ]);
@@ -597,6 +613,89 @@ final class FacultyClassController extends Controller
                 ->back()
                 ->withErrors(['error' => 'Unable to delete post.']);
         }
+    }
+
+    public function getSubmissions(Classes $class, ClassPost $post): \Illuminate\Http\JsonResponse
+    {
+        $this->assertFacultyOwnsClass($class);
+
+        if ($post->class_id !== $class->id) {
+            abort(404);
+        }
+
+        $submissions = $post->submissions()
+            ->with(['student'])
+            ->get()
+            ->map(function (ClassPostSubmission $submission): array {
+                $student = $submission->student;
+
+                return [
+                    'id' => $submission->id,
+                    'student_name' => $student?->full_name ?? 'Unknown',
+                    'student_id' => $student?->student_id ?? 'N/A',
+                    'content' => $submission->content,
+                    'attachments' => $submission->attachments ?? [],
+                    'points' => $submission->points,
+                    'status' => $submission->status,
+                    'submitted_at' => $submission->submitted_at?->toDateTimeString(),
+                    'graded_at' => $submission->graded_at?->toDateTimeString(),
+                ];
+            });
+
+        return response()->json([
+            'submissions' => $submissions,
+            'submission_count' => $submissions->count(),
+            'graded_count' => $submissions->whereNotNull('points')->count(),
+        ]);
+    }
+
+    public function updatePostStatus(Request $request, Classes $class, ClassPost $post): RedirectResponse
+    {
+        $this->assertFacultyOwnsClass($class);
+
+        if ($post->class_id !== $class->id) {
+            abort(404);
+        }
+
+        $validated = $request->validate([
+            'status' => ['required', 'string', 'in:backlog,in_progress,review,done,blocked'],
+        ]);
+
+        $post->update([
+            'status' => $validated['status'],
+            'progress_percent' => $validated['status'] === 'done' ? 100 : $post->progress_percent,
+        ]);
+
+        return redirect()
+            ->back()
+            ->with('flash', [
+                'success' => 'Assignment status updated.',
+            ]);
+    }
+
+    public function gradeSubmission(Request $request, Classes $class, ClassPost $post, ClassPostSubmission $submission): RedirectResponse
+    {
+        $this->assertFacultyOwnsClass($class);
+
+        if ($post->class_id !== $class->id || $submission->class_post_id !== $post->id) {
+            abort(404);
+        }
+
+        $validated = $request->validate([
+            'points' => ['required', 'integer', 'min:0', 'max:'.$post->total_points],
+        ]);
+
+        $submission->update([
+            'points' => $validated['points'],
+            'status' => 'graded',
+            'graded_at' => now(),
+        ]);
+
+        return redirect()
+            ->back()
+            ->with('flash', [
+                'success' => 'Submission graded.',
+            ]);
     }
 
     public function storeAttendanceSession(StoreAttendanceSessionRequest $request, Classes $class): RedirectResponse
@@ -1669,6 +1768,114 @@ final class FacultyClassController extends Controller
         if ($path !== '') {
             Storage::delete($path);
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{instruction: ?string, audience_mode: string, assigned_student_ids: array<int>, rubric: array<int, array<string, mixed>>}
+     */
+    private function extractAssignmentPayload(Classes $class, array $data): array
+    {
+        if (($data['type'] ?? null) !== ClassPostType::Assignment->value) {
+            return [
+                'instruction' => null,
+                'audience_mode' => 'all_students',
+                'assigned_student_ids' => [],
+                'rubric' => [],
+            ];
+        }
+
+        $audienceMode = (string) ($data['audience_mode'] ?? 'all_students');
+        $requestedEnrollmentIds = is_array($data['assigned_student_ids'] ?? null)
+            ? $data['assigned_student_ids']
+            : [];
+
+        $assignedStudentIds = $this->resolveClassEnrollmentIds($class, $requestedEnrollmentIds);
+
+        if ($audienceMode === 'specific_students' && $assignedStudentIds === []) {
+            throw ValidationException::withMessages([
+                'assigned_student_ids' => 'Select at least one enrolled student for this assignment.',
+            ]);
+        }
+
+        return [
+            'instruction' => isset($data['instruction']) ? (string) $data['instruction'] : null,
+            'audience_mode' => $audienceMode,
+            'assigned_student_ids' => $audienceMode === 'specific_students' ? $assignedStudentIds : [],
+            'rubric' => $this->normalizeRubric($data['rubric'] ?? []),
+        ];
+    }
+
+    /**
+     * @param  array<int, mixed>  $rubric
+     * @return array<int, array<string, mixed>>
+     */
+    private function normalizeRubric(array $rubric): array
+    {
+        return collect($rubric)
+            ->map(function ($criterion): array {
+                $levels = collect($criterion['levels'] ?? [])
+                    ->map(fn ($level): array => [
+                        'title' => (string) ($level['title'] ?? ''),
+                        'description' => isset($level['description']) ? (string) $level['description'] : null,
+                    ])
+                    ->values()
+                    ->all();
+
+                return [
+                    'title' => (string) ($criterion['title'] ?? ''),
+                    'description' => isset($criterion['description']) ? (string) $criterion['description'] : null,
+                    'points' => (int) ($criterion['points'] ?? 0),
+                    'levels' => $levels,
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<int, mixed>  $requestedEnrollmentIds
+     * @return array<int>
+     */
+    private function resolveClassEnrollmentIds(Classes $class, array $requestedEnrollmentIds): array
+    {
+        $normalizedIds = collect($requestedEnrollmentIds)
+            ->map(fn ($id): int => (int) $id)
+            ->filter(fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($normalizedIds === []) {
+            return [];
+        }
+
+        return ClassEnrollment::query()
+            ->where('class_id', $class->id)
+            ->whereIn('id', $normalizedIds)
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function formatAssignmentPayload(ClassPost $post): ?array
+    {
+        $postType = $post->type instanceof ClassPostType ? $post->type->value : (string) $post->type;
+
+        if ($postType !== ClassPostType::Assignment->value) {
+            return null;
+        }
+
+        return [
+            'instruction' => $post->instruction,
+            'audience_mode' => $post->audience_mode ?? 'all_students',
+            'assigned_student_ids' => $post->assigned_student_ids ?? [],
+            'rubric' => $this->normalizeRubric($post->rubric ?? []),
+        ];
     }
 
     /**

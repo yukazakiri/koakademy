@@ -204,7 +204,7 @@ export default function InventoryItemEdit({ user, product, defaults, options }: 
         }
 
         form.setData("sku", generateSku(form.data.item_type, form.data.location_building));
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }, [product, form.data.item_type, form.data.location_building]);
 
     const handleSubmit = (event: FormEvent) => {

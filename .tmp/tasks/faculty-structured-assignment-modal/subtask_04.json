@@ -1,0 +1,33 @@
+{
+  "id": "faculty-structured-assignment-modal-04",
+  "seq": "04",
+  "title": "Update class post store and update flows for assignment payload persistence",
+  "status": "pending",
+  "depends_on": [
+    "03"
+  ],
+  "parallel": false,
+  "suggested_agent": "CoderAgent",
+  "context_files": [
+    "/home/admin/.opencode/context/core/standards/code-quality.md",
+    "/home/admin/.opencode/context/development/navigation.md"
+  ],
+  "reference_files": [
+    "app/Http/Controllers/FacultyClassController.php",
+    "app/Http/Requests/StoreClassPostRequest.php",
+    "app/Models/ClassPost.php",
+    "routes/web/faculty-portal.php"
+  ],
+  "acceptance_criteria": [
+    "storePost and updatePost persist structured assignment data while preserving existing ownership and authorization checks",
+    "Existing announcement, quiz, and activity creation and update behavior remains intact",
+    "show payload mapping returns assignment structure needed by frontend stream and classwork views"
+  ],
+  "deliverables": [
+    "app/Http/Controllers/FacultyClassController.php"
+  ],
+  "agent_id": null,
+  "started_at": null,
+  "completed_at": null,
+  "completion_summary": null
+}

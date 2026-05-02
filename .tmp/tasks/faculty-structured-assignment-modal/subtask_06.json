@@ -1,0 +1,32 @@
+{
+  "id": "faculty-structured-assignment-modal-06",
+  "seq": "06",
+  "title": "Add or update tests for assignment validation and creation flow",
+  "status": "pending",
+  "depends_on": [
+    "04"
+  ],
+  "parallel": true,
+  "suggested_agent": "TestEngineer",
+  "context_files": [
+    "/home/admin/.opencode/context/core/standards/code-quality.md",
+    "/home/admin/.opencode/context/development/navigation.md"
+  ],
+  "reference_files": [
+    "app/Http/Requests/StoreClassPostRequest.php",
+    "app/Http/Controllers/FacultyClassController.php",
+    "routes/web/faculty-portal.php"
+  ],
+  "acceptance_criteria": [
+    "Tests cover required assignment fields and nested rubric validation rules",
+    "Tests verify faculty assignment creation persists audience and rubric payload data",
+    "Targeted test suite passes for class post assignment flow"
+  ],
+  "deliverables": [
+    "tests/Feature/FacultyClassPostAssignmentTest.php"
+  ],
+  "agent_id": null,
+  "started_at": null,
+  "completed_at": null,
+  "completion_summary": null
+}

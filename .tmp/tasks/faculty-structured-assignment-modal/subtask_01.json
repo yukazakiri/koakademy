@@ -1,0 +1,31 @@
+{
+  "id": "faculty-structured-assignment-modal-01",
+  "seq": "01",
+  "title": "Define structured assignment payload and shared frontend types",
+  "status": "pending",
+  "depends_on": [],
+  "parallel": false,
+  "suggested_agent": "CoderAgent",
+  "context_files": [
+    "/home/admin/.opencode/context/core/standards/code-quality.md",
+    "/home/admin/.opencode/context/development/navigation.md",
+    "/home/admin/.opencode/context/ui/web/react-patterns.md"
+  ],
+  "reference_files": [
+    "resources/js/types/class-detail-types.ts",
+    "resources/js/pages/faculty/classes/show.tsx",
+    "resources/js/components/class/tabs/stream-tab.tsx"
+  ],
+  "acceptance_criteria": [
+    "Class post types include explicit structured assignment fields needed for audience, due date, rubric, and attachments",
+    "Type definitions are backward compatible with existing announcement, quiz, and activity data",
+    "No TypeScript errors introduced in files consuming ClassPostEntry"
+  ],
+  "deliverables": [
+    "resources/js/types/class-detail-types.ts"
+  ],
+  "agent_id": null,
+  "started_at": null,
+  "completed_at": null,
+  "completion_summary": null
+}

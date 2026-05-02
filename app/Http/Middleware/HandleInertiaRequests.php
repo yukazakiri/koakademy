@@ -12,6 +12,7 @@ use App\Services\ModuleAdminNavigationService;
 use App\Services\NotificationShareService;
 use App\Services\OnboardingShareService;
 use App\Services\SettingsShareService;
+use App\Services\StudentClassShareService;
 use App\Support\AdministratorSidebarCounts;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -44,6 +45,7 @@ final class HandleInertiaRequests extends Middleware
         $notificationService = app(NotificationShareService::class);
         $onboardingService = app(OnboardingShareService::class);
         $facultyClassService = app(FacultyClassShareService::class);
+        $studentClassService = app(StudentClassShareService::class);
         $announcementService = app(AnnouncementDataService::class);
         $analyticsService = app(AnalyticsSettingsService::class);
         $moduleAdminNavigationService = app(ModuleAdminNavigationService::class);
@@ -79,6 +81,7 @@ final class HandleInertiaRequests extends Middleware
                     'studentAvatarUpload' => $user && Feature::for($user)->active(StudentAvatarUpload::class),
                 ],
                 'facultyClasses' => $facultyClassService->getFacultyClasses($user),
+                'studentClasses' => $studentClassService->getStudentClasses($user),
                 'notifications' => $notificationService->transformNotifications($user),
                 'unreadNotificationsCount' => $notificationService->getUnreadCount($user),
                 'unresolvedHelpTicketsCount' => $onboardingService->getUnresolvedHelpTicketsCount($user),

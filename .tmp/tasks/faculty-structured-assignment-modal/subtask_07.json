@@ -1,0 +1,36 @@
+{
+  "id": "faculty-structured-assignment-modal-07",
+  "seq": "07",
+  "title": "Run regression verification, finalize formatting, and confirm task exit criteria",
+  "status": "pending",
+  "depends_on": [
+    "05",
+    "06"
+  ],
+  "parallel": false,
+  "suggested_agent": "CoderAgent",
+  "context_files": [
+    "/home/admin/.opencode/context/core/standards/code-quality.md",
+    "/home/admin/.opencode/context/core/standards/navigation.md"
+  ],
+  "reference_files": [
+    "resources/js/pages/faculty/classes/show.tsx",
+    "resources/js/components/class/tabs/stream-tab.tsx",
+    "resources/js/components/class/tabs/classwork-tab.tsx",
+    "app/Http/Controllers/FacultyClassController.php",
+    "app/Http/Requests/StoreClassPostRequest.php"
+  ],
+  "acceptance_criteria": [
+    "Existing class post types still function after assignment modal rollout",
+    "Required formatting and targeted tests run successfully",
+    "All feature exit criteria are demonstrably satisfied"
+  ],
+  "deliverables": [
+    "Verification notes in task completion summary",
+    "Formatted code and passing targeted tests"
+  ],
+  "agent_id": null,
+  "started_at": null,
+  "completed_at": null,
+  "completion_summary": null
+}

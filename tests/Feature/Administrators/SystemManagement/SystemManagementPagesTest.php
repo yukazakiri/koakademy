@@ -51,7 +51,6 @@ it('renders all refactored system management pages', function (string $url, stri
             ->has('general_settings')
             ->has('active_school')
             ->has('schools')
-            ->has('sanity_config')
             ->has('socialite_config')
             ->has('mail_config')
             ->has('analytics')
@@ -67,7 +66,6 @@ it('renders all refactored system management pages', function (string $url, stri
     'seo page' => ['/administrators/system-management/seo', 'administrators/system-management/seo'],
     'analytics page' => ['/administrators/system-management/analytics', 'administrators/system-management/analytics'],
     'brand page' => ['/administrators/system-management/brand', 'administrators/system-management/brand'],
-    'sanity page' => ['/administrators/system-management/sanity', 'administrators/system-management/sanity'],
     'socialite page' => ['/administrators/system-management/socialite', 'administrators/system-management/socialite'],
     'mail page' => ['/administrators/system-management/mail', 'administrators/system-management/mail'],
     'notifications page' => ['/administrators/system-management/notifications', 'administrators/system-management/notifications'],

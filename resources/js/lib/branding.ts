@@ -12,6 +12,7 @@ export interface Branding {
     copyrightText: string;
     themeColor: string;
     currency: string;
+    authLayout: "card" | "split" | "minimal";
     logo: string;
     favicon: string;
 }
@@ -28,6 +29,7 @@ export const DEFAULT_BRANDING: Branding = {
     copyrightText: `${new Date().getFullYear()} KoAkademy. All rights reserved.`,
     themeColor: "#0f172a",
     currency: "PHP",
+    authLayout: "split",
     logo: "/web-app-manifest-192x192.png",
     favicon: "/web-app-manifest-192x192.png",
 };
@@ -45,6 +47,7 @@ export function resolveBranding(branding?: Partial<Branding> | null): Branding {
         copyrightText: branding?.copyrightText ?? DEFAULT_BRANDING.copyrightText,
         themeColor: branding?.themeColor ?? DEFAULT_BRANDING.themeColor,
         currency: branding?.currency ?? DEFAULT_BRANDING.currency,
+        authLayout: branding?.authLayout ?? DEFAULT_BRANDING.authLayout,
         logo: branding?.logo ?? DEFAULT_BRANDING.logo,
         favicon: branding?.favicon ?? DEFAULT_BRANDING.favicon,
     };

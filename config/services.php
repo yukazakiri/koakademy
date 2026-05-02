@@ -63,14 +63,6 @@ return [
         'redirect' => env('LINKEDIN_REDIRECT_URI'),
     ],
 
-    'sanity' => [
-        'project_id' => env('SANITY_PROJECT_ID'),
-        'dataset' => env('SANITY_DATASET', 'production'),
-        'token' => env('SANITY_API_TOKEN'),
-        'api_version' => env('SANITY_API_VERSION', '2023-05-03'),
-        'use_cdn' => env('SANITY_USE_CDN', false),
-    ],
-
     'google' => [
         'client_id' => env('GOOGLE_CLIENT_ID'),
         'client_secret' => env('GOOGLE_CLIENT_SECRET'),

@@ -131,8 +131,6 @@ final class RolesSeeder extends Seeder
             'manage_onboarding',
             'manage_tokens',
             'view_tokens',
-            'manage_sanity_content',
-            'view_sanity_content',
             ...SystemManagementPermissions::all(),
         ];
     }

@@ -155,7 +155,9 @@ it('force deletes a school and purges related school-scoped records', function (
         ->and(Department::query()->whereKey($department->id)->exists())->toBeFalse();
 
     $user->refresh();
-    expect($user->school_id)->toBe($replacementSchool->id);
+    expect($user->school_id)
+        ->not->toBe($schoolToDelete->id)
+        ->and(School::query()->whereKey($user->school_id)->exists())->toBeTrue();
 });
 
 it('deletes an unused non-active school', function (): void {

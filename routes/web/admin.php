@@ -21,6 +21,10 @@ Route::domain(config('app.admin_host', 'admin.koakademy.test'))->group(function 
         return redirect('/admin');
     });
 
+    Route::get('/system-management/brand/appearance', function () {
+        return redirect('/administrators/system-management/brand/appearance');
+    })->name('admin.system-management.brand.appearance');
+
     // Assessment download route - accessible from admin domain
     Route::get('assessment/download/{record}', function ($record) {
         // Find the student enrollment record

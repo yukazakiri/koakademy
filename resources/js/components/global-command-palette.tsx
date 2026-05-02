@@ -21,7 +21,6 @@ import {
     IconGridDots,
     IconHelp,
     IconHome,
-    IconNews,
     IconSchool,
     IconSettings,
     IconShieldLock,
@@ -297,14 +296,6 @@ export function GlobalCommandContent({
                     keywords: "admin scheduling timetable analytics",
                     icon: <IconCalendarStats className="h-4 w-4" />,
                     onSelect: () => router.visit("/administrators/scheduling-analytics"),
-                },
-                {
-                    id: "nav:admin-sanity",
-                    routeId: "admin-sanity-content",
-                    label: "Website Content (CMS)",
-                    keywords: "admin website content cms sanity",
-                    icon: <IconNews className="h-4 w-4" />,
-                    onSelect: () => router.visit("/administrators/sanity-content"),
                 },
                 {
                     id: "nav:admin-users",

@@ -65,16 +65,6 @@ final class GeneralSettingPolicy
         return $this->canUpdateSection($user, 'brand');
     }
 
-    public function viewSanity(User $user): bool
-    {
-        return $this->canViewSection($user, 'sanity');
-    }
-
-    public function updateSanity(User $user): bool
-    {
-        return $this->canUpdateSection($user, 'sanity');
-    }
-
     public function viewSocialite(User $user): bool
     {
         return $this->canViewSection($user, 'socialite');

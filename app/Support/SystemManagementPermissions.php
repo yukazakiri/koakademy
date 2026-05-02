@@ -32,10 +32,6 @@ final class SystemManagementPermissions
                 'view' => 'View:SystemManagementBrand',
                 'update' => 'Update:SystemManagementBrand',
             ],
-            'sanity' => [
-                'view' => 'View:SystemManagementSanity',
-                'update' => 'Update:SystemManagementSanity',
-            ],
             'socialite' => [
                 'view' => 'View:SystemManagementSocialite',
                 'update' => 'Update:SystemManagementSocialite',

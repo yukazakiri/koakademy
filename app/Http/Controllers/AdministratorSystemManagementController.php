@@ -79,11 +79,6 @@ final class AdministratorSystemManagementController extends Controller
         return $this->renderSystemManagementPage('administrators/system-management/brand', 'brand', 'viewBrand');
     }
 
-    public function sanity(): Response
-    {
-        return $this->renderSystemManagementPage('administrators/system-management/sanity', 'sanity', 'viewSanity');
-    }
-
     public function socialite(): Response
     {
         return $this->renderSystemManagementPage('administrators/system-management/socialite', 'socialite', 'viewSocialite');
@@ -441,6 +436,7 @@ final class AdministratorSystemManagementController extends Controller
             'copyright_text' => 'nullable|string|max:255',
             'theme_color' => 'nullable|string|max:50',
             'currency' => 'nullable|string|in:PHP,USD',
+            'auth_layout' => 'nullable|string|in:card,split,minimal',
             'logo' => 'nullable|file|mimes:jpeg,png,gif,webp,svg|max:5120',
         ]);
 
@@ -464,30 +460,10 @@ final class AdministratorSystemManagementController extends Controller
         $this->siteSettings->copyright_text = $validated['copyright_text'] ?? null;
         $this->siteSettings->theme_color = $validated['theme_color'] ?? null;
         $this->siteSettings->currency = $validated['currency'] ?? null;
+        $this->siteSettings->auth_layout = $validated['auth_layout'] ?? 'split';
         $this->siteSettings->save();
 
         return Redirect::back()->with('success', 'Brand settings updated successfully. Logo has been converted for all formats — favicon, PWA icons, and OG image.');
-    }
-
-    public function updateSanity(Request $request)
-    {
-        $this->authorize('updateSanity', GeneralSetting::class);
-
-        $settings = GeneralSetting::first();
-        $validated = $request->validate([
-            'project_id' => 'nullable|string',
-            'dataset' => 'nullable|string',
-            'token' => 'nullable|string',
-            'api_version' => 'nullable|string',
-            'use_cdn' => 'boolean',
-        ]);
-
-        $moreConfigs = $settings->more_configs ?? [];
-        $moreConfigs['sanity'] = $validated;
-
-        $settings->update(['more_configs' => $moreConfigs]);
-
-        return Redirect::back()->with('success', 'Sanity configuration updated successfully.');
     }
 
     public function updateSocialite(Request $request)
@@ -813,7 +789,7 @@ final class AdministratorSystemManagementController extends Controller
 
         // Auto-detect third party services (excluding those configured elsewhere)
         $allServices = config('services', []);
-        $excludedServices = ['github', 'facebook', 'twitter', 'linkedin', 'google', 'sanity'];
+        $excludedServices = ['github', 'facebook', 'twitter', 'linkedin', 'google'];
         $thirdPartyServices = array_diff_key($allServices, array_flip($excludedServices));
         $user = Auth::user();
         $analyticsService = app(AnalyticsSettingsService::class);
@@ -836,13 +812,6 @@ final class AdministratorSystemManagementController extends Controller
             'access' => [
                 'active_section' => $activeSection,
                 'sections' => $this->getSectionAccessMap($user),
-            ],
-            'sanity_config' => $settings->more_configs['sanity'] ?? [
-                'project_id' => config('services.sanity.project_id'),
-                'dataset' => config('services.sanity.dataset'),
-                'token' => '',
-                'api_version' => config('services.sanity.api_version'),
-                'use_cdn' => config('services.sanity.use_cdn'),
             ],
             'socialite_config' => $socialiteConfig,
             'mail_config' => $finalMailConfig,
@@ -893,6 +862,7 @@ final class AdministratorSystemManagementController extends Controller
                 'copyright_text' => $this->siteSettings->copyright_text,
                 'theme_color' => $this->siteSettings->theme_color,
                 'currency' => $this->siteSettings->currency,
+                'auth_layout' => $this->siteSettings->getAuthLayout(),
                 'logo' => $this->siteSettings->getLogo(),
                 'favicon' => $this->siteSettings->getFavicon(),
             ],
@@ -915,7 +885,6 @@ final class AdministratorSystemManagementController extends Controller
                 'seo' => 'updateSeo',
                 'analytics' => 'updateAnalytics',
                 'brand' => 'updateBrand',
-                'sanity' => 'updateSanity',
                 'socialite' => 'updateSocialite',
                 'mail' => 'updateMail',
                 'api' => 'updateApi',
@@ -930,7 +899,6 @@ final class AdministratorSystemManagementController extends Controller
                 'seo' => 'viewSeo',
                 'analytics' => 'viewAnalytics',
                 'brand' => 'viewBrand',
-                'sanity' => 'viewSanity',
                 'socialite' => 'viewSocialite',
                 'mail' => 'viewMail',
                 'api' => 'viewApi',

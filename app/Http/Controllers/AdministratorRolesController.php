@@ -386,8 +386,6 @@ final class AdministratorRolesController extends Controller
             'manage_onboarding' => 'Manage onboarding features',
             'manage_tokens' => 'Manage access tokens',
             'view_tokens' => 'View access tokens',
-            'manage_sanity_content' => 'Manage CMS content',
-            'view_sanity_content' => 'View CMS content',
             'view_dashboard' => 'Access the dashboard',
             'view_audit_logs' => 'View system audit logs',
         ];

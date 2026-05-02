@@ -17,9 +17,11 @@ export default function LoginPage() {
     const appName = resolvedBranding.appName;
     const organizationName = resolvedBranding.organizationName;
     const organizationShortName = resolvedBranding.organizationShortName;
+    const authLayout = resolvedBranding.authLayout;
+    const isSplitLayout = authLayout === "split";
 
     return (
-        <div className="grid min-h-svh lg:grid-cols-2">
+        <div className={isSplitLayout ? "grid min-h-svh lg:grid-cols-2" : "min-h-svh"}>
             <Head title={`${appName} - Academic Management System`}>
                 <meta
                     name="description"
@@ -39,7 +41,15 @@ export default function LoginPage() {
                     </div>
                 </div>
                 <div className="flex flex-1 items-center justify-center">
-                    <div className="w-full max-w-sm space-y-6">
+                    <div
+                        className={
+                            authLayout === "card"
+                                ? "bg-card border-border w-full max-w-md space-y-6 rounded-2xl border p-6 shadow-sm"
+                                : authLayout === "minimal"
+                                  ? "w-full max-w-sm space-y-4"
+                                  : "w-full max-w-sm space-y-6"
+                        }
+                    >
                         <div className="space-y-2 text-center">
                             <h1 className="text-foreground text-2xl font-bold tracking-tight">Academic Management Portal</h1>
                             <p className="text-muted-foreground text-sm text-pretty">
@@ -55,11 +65,13 @@ export default function LoginPage() {
                 </div>
             </div>
 
-            <div className="bg-muted relative hidden lg:block">
-                <TransitionWrapper className="h-full">
-                    <OnboardingPanel className="h-full" />
-                </TransitionWrapper>
-            </div>
+            {isSplitLayout ? (
+                <div className="bg-muted relative hidden lg:block">
+                    <TransitionWrapper className="h-full">
+                        <OnboardingPanel className="h-full" />
+                    </TransitionWrapper>
+                </div>
+            ) : null}
         </div>
     );
 }

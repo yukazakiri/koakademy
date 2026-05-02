@@ -51,14 +51,7 @@ export const systemManagementNavItems: SystemManagementNavItem[] = [
         href: "/administrators/system-management/brand",
         icon: Palette,
     },
-    {
-        key: "sanity",
-        label: "Content (Sanity)",
-        description: "Sanity project connection details.",
-        href: "/administrators/system-management/sanity",
-        icon: Database,
-    },
-    {
+        {
         key: "socialite",
         label: "Social Auth",
         description: "OAuth credentials for supported providers.",

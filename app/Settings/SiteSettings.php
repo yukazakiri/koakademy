@@ -25,6 +25,8 @@ final class SiteSettings extends Settings
 
     private const string DEFAULT_CURRENCY = 'PHP';
 
+    private const string DEFAULT_AUTH_LAYOUT = 'split';
+
     private const string DEFAULT_TAGLINE = 'Your Campus, Your Connection';
 
     // Core site identity
@@ -64,6 +66,8 @@ final class SiteSettings extends Settings
     public ?string $theme_color = null;
 
     public ?string $currency = null;
+
+    public ?string $auth_layout = null;
 
     // Portal-specific settings
     public ?string $portal_name = null;
@@ -131,6 +135,11 @@ final class SiteSettings extends Settings
     public function getCurrency(): string
     {
         return $this->currency ?? self::DEFAULT_CURRENCY;
+    }
+
+    public function getAuthLayout(): string
+    {
+        return $this->auth_layout ?? self::DEFAULT_AUTH_LAYOUT;
     }
 
     /**
@@ -207,6 +216,7 @@ final class SiteSettings extends Settings
             'copyrightText' => $this->getCopyrightText(),
             'themeColor' => $this->getThemeColor(),
             'currency' => $this->getCurrency(),
+            'authLayout' => $this->getAuthLayout(),
             'logo' => $this->getLogo(),
             'favicon' => $this->getFavicon(),
         ];

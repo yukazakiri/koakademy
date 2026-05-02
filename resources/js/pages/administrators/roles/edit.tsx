@@ -127,7 +127,6 @@ export default function RolesEdit({ role, permissions: permissionCategories, use
             BorrowRecord: "Borrow Records",
             HelpTicket: "Help Tickets",
             GeneralSetting: "General Settings",
-            SanityContent: "Sanity Content",
             OnboardingFeature: "Onboarding Features",
             Role: "Roles",
             Permission: "Permissions",
@@ -182,8 +181,6 @@ export default function RolesEdit({ role, permissions: permissionCategories, use
             manage_onboarding: "Manage Onboarding",
             manage_tokens: "Tokens",
             view_tokens: "View Tokens",
-            manage_sanity_content: "Sanity Content",
-            view_sanity_content: "View Sanity Content",
             other: "Other",
         };
 

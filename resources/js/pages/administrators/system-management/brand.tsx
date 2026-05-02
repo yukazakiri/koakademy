@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useForm } from "@inertiajs/react";
@@ -25,6 +26,7 @@ interface BrandFormData {
     copyright_text: string;
     theme_color: string;
     currency: string;
+    auth_layout: "card" | "split" | "minimal";
     logo: File | null;
 }
 
@@ -41,6 +43,7 @@ export default function SystemManagementBrandPage({ user, branding, access }: Sy
         copyright_text: branding?.copyright_text || "",
         theme_color: branding?.theme_color || "#0f172a",
         currency: branding?.currency || "PHP",
+        auth_layout: branding?.auth_layout || "split",
         logo: null,
     });
 
@@ -328,6 +331,57 @@ export default function SystemManagementBrandPage({ user, branding, access }: Sy
                                             Used for auth screens and global accents.
                                         </div>
                                     </div>
+                                </div>
+
+                                <div className="space-y-2.5">
+                                    <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Authentication Page Layout</Label>
+                                    <p className="text-muted-foreground text-xs">Choose how login and password recovery screens are presented.</p>
+
+                                    <RadioGroup
+                                        value={brandForm.data.auth_layout}
+                                        onValueChange={(value) => brandForm.setData("auth_layout", value as "card" | "split" | "minimal")}
+                                        className="grid gap-3 md:grid-cols-3"
+                                    >
+                                        <label
+                                            htmlFor="auth-layout-card"
+                                            className="has-[:checked]:border-primary has-[:checked]:bg-primary/5 border-border hover:border-primary/50 cursor-pointer rounded-xl border p-3 transition-colors"
+                                        >
+                                            <RadioGroupItem id="auth-layout-card" value="card" className="sr-only" />
+                                            <div className="mb-3 h-20 rounded-lg border bg-gradient-to-b from-slate-100 to-slate-200 p-2 dark:from-slate-900 dark:to-slate-800">
+                                                <div className="mx-auto h-full w-3/4 rounded-md border bg-white shadow-sm dark:bg-slate-950" />
+                                            </div>
+                                            <p className="text-sm font-medium">Card</p>
+                                            <p className="text-muted-foreground text-xs">Centered form card on a simple background.</p>
+                                        </label>
+
+                                        <label
+                                            htmlFor="auth-layout-split"
+                                            className="has-[:checked]:border-primary has-[:checked]:bg-primary/5 border-border hover:border-primary/50 cursor-pointer rounded-xl border p-3 transition-colors"
+                                        >
+                                            <RadioGroupItem id="auth-layout-split" value="split" className="sr-only" />
+                                            <div className="mb-3 grid h-20 grid-cols-2 overflow-hidden rounded-lg border">
+                                                <div className="bg-white p-2 dark:bg-slate-950">
+                                                    <div className="h-full rounded border" />
+                                                </div>
+                                                <div style={{ backgroundColor: primaryColor }} className="opacity-70" />
+                                            </div>
+                                            <p className="text-sm font-medium">Split</p>
+                                            <p className="text-muted-foreground text-xs">Form panel with a branded side panel.</p>
+                                        </label>
+
+                                        <label
+                                            htmlFor="auth-layout-minimal"
+                                            className="has-[:checked]:border-primary has-[:checked]:bg-primary/5 border-border hover:border-primary/50 cursor-pointer rounded-xl border p-3 transition-colors"
+                                        >
+                                            <RadioGroupItem id="auth-layout-minimal" value="minimal" className="sr-only" />
+                                            <div className="mb-3 h-20 rounded-lg border bg-white p-2 dark:bg-slate-950">
+                                                <div className="mx-auto mt-2 h-2 w-20 rounded bg-slate-300 dark:bg-slate-700" />
+                                                <div className="mx-auto mt-3 h-7 w-full max-w-[140px] rounded border" />
+                                            </div>
+                                            <p className="text-sm font-medium">Minimal</p>
+                                            <p className="text-muted-foreground text-xs">Compact form-first layout with less chrome.</p>
+                                        </label>
+                                    </RadioGroup>
                                 </div>
                             </CardContent>
                         </Card>

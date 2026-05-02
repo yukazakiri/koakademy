@@ -13,7 +13,6 @@ use App\Http\Controllers\AdministratorInventoryBorrowingController;
 use App\Http\Controllers\AdministratorInventoryController;
 use App\Http\Controllers\AdministratorInventoryProductController;
 use App\Http\Controllers\AdministratorRolesController;
-use App\Http\Controllers\AdministratorSanityContentController;
 use App\Http\Controllers\AdministratorSchedulingAnalyticsController;
 use App\Http\Controllers\AdministratorStudentDocumentController;
 use App\Http\Controllers\AdministratorStudentManagementController;
@@ -328,21 +327,6 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/permissions', [AdministratorRolesController::class, 'createPermission'])->name('permissions.store');
         Route::delete('/permissions/{permission}', [AdministratorRolesController::class, 'destroyPermission'])->name('permissions.destroy');
 
-        // Sanity Content Management
-        Route::get('/sanity-content', [AdministratorSanityContentController::class, 'index'])->name('sanity-content.index');
-        Route::get('/sanity-content/create', [AdministratorSanityContentController::class, 'create'])->name('sanity-content.create');
-        Route::post('/sanity-content', [AdministratorSanityContentController::class, 'store'])->name('sanity-content.store');
-        Route::get('/sanity-content/{sanityContent}', [AdministratorSanityContentController::class, 'show'])->name('sanity-content.show');
-        Route::get('/sanity-content/{sanityContent}/edit', [AdministratorSanityContentController::class, 'edit'])->name('sanity-content.edit');
-        Route::put('/sanity-content/{sanityContent}', [AdministratorSanityContentController::class, 'update'])->name('sanity-content.update');
-        Route::delete('/sanity-content/{sanityContent}', [AdministratorSanityContentController::class, 'destroy'])->name('sanity-content.destroy');
-
-        // Sanity Sync Actions
-        Route::post('/sanity-content/sync/from-sanity', [AdministratorSanityContentController::class, 'syncFromSanity'])->name('sanity-content.sync-from-sanity');
-        Route::post('/sanity-content/{sanityContent}/sync/to-sanity', [AdministratorSanityContentController::class, 'syncToSanity'])->name('sanity-content.sync-to-sanity');
-        Route::post('/sanity-content/sync/bulk-to-sanity', [AdministratorSanityContentController::class, 'bulkSyncToSanity'])->name('sanity-content.bulk-sync-to-sanity');
-        Route::post('/sanity-content/upload-image', [AdministratorSanityContentController::class, 'uploadImage'])->name('sanity-content.upload-image');
-
         // Onboarding Features Management
         Route::get('/onboarding-features', [App\Http\Controllers\AdministratorOnboardingFeatureController::class, 'index'])->name('onboarding-features.index');
         Route::get('/onboarding-features/create', [App\Http\Controllers\AdministratorOnboardingFeatureController::class, 'create'])->name('onboarding-features.create');
@@ -364,7 +348,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/system-management/seo', [App\Http\Controllers\AdministratorSystemManagementController::class, 'seo'])->name('system-management.seo.index');
         Route::get('/system-management/analytics', [App\Http\Controllers\AdministratorSystemManagementController::class, 'analytics'])->name('system-management.analytics.index');
         Route::get('/system-management/brand', [App\Http\Controllers\AdministratorSystemManagementController::class, 'brand'])->name('system-management.brand.index');
-        Route::get('/system-management/sanity', [App\Http\Controllers\AdministratorSystemManagementController::class, 'sanity'])->name('system-management.sanity.index');
+        Route::get('/system-management/brand/appearance', [App\Http\Controllers\AdministratorSystemManagementController::class, 'brand'])->name('system-management.brand.appearance.index');
         Route::get('/system-management/socialite', [App\Http\Controllers\AdministratorSystemManagementController::class, 'socialite'])->name('system-management.socialite.index');
         Route::get('/system-management/mail', [App\Http\Controllers\AdministratorSystemManagementController::class, 'mail'])->name('system-management.mail.index');
         Route::get('/system-management/api', [App\Http\Controllers\AdministratorSystemManagementController::class, 'api'])->name('system-management.api.index');
@@ -380,7 +364,6 @@ Route::middleware(['auth', 'administrators.only'])
         Route::put('/system-management/seo', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateSeo'])->name('system-management.seo.update');
         Route::put('/system-management/analytics', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateAnalytics'])->name('system-management.analytics.update');
         Route::put('/system-management/brand', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateBrand'])->name('system-management.brand.update');
-        Route::put('/system-management/sanity', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateSanity'])->name('system-management.sanity.update');
         Route::put('/system-management/socialite', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateSocialite'])->name('system-management.socialite.update');
         Route::put('/system-management/mail', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateMail'])->name('system-management.mail.update');
         Route::put('/system-management/api', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateApiManagement'])->name('system-management.api.update');

@@ -8,7 +8,6 @@ export type SystemManagementSectionKey =
     | "seo"
     | "analytics"
     | "brand"
-    | "sanity"
     | "socialite"
     | "mail"
     | "api"
@@ -90,14 +89,6 @@ export interface GeneralSettings {
     school_portal_description: string | null;
     school_year_string?: string | null;
     semester_name?: string | null;
-}
-
-export interface SanityConfig {
-    project_id: string;
-    dataset: string;
-    token: string;
-    api_version: string;
-    use_cdn: boolean;
 }
 
 export interface SocialiteConfig {
@@ -236,6 +227,7 @@ export interface BrandingSettings {
     copyright_text: string | null;
     theme_color: string | null;
     currency: string | null;
+    auth_layout: "card" | "split" | "minimal" | null;
     logo: string | null;
     favicon: string | null;
 }

@@ -13,6 +13,8 @@ export default function ForgotPasswordPage() {
     const branding = resolveBranding(props.branding);
     const appName = branding.appName;
     const orgShortName = branding.organizationShortName;
+    const authLayout = branding.authLayout;
+    const isSplitLayout = authLayout === "split";
 
     const { data, setData, post, processing, errors } = useForm({
         email: "",
@@ -32,7 +34,7 @@ export default function ForgotPasswordPage() {
     };
 
     return (
-        <div className="grid min-h-svh lg:grid-cols-2">
+        <div className={isSplitLayout ? "grid min-h-svh lg:grid-cols-2" : "min-h-svh"}>
             <div className="relative flex flex-col gap-4 p-6 md:p-10">
                 <div className="flex items-center justify-between md:justify-start">
                     <a href="#" className="flex items-center gap-2 font-medium">
@@ -46,7 +48,7 @@ export default function ForgotPasswordPage() {
                     </div>
                 </div>
                 <div className="flex flex-1 items-center justify-center">
-                    <div className="w-full max-w-xs">
+                    <div className={authLayout === "card" ? "bg-card border-border w-full max-w-sm rounded-2xl border p-6 shadow-sm" : "w-full max-w-xs"}>
                         <TransitionWrapper>
                             <form onSubmit={submit} className="flex flex-col gap-6">
                                 <div className="flex flex-col items-center gap-2 text-center">
@@ -85,10 +87,11 @@ export default function ForgotPasswordPage() {
                     </div>
                 </div>
             </div>
-            <div className="bg-muted relative hidden lg:block">
-                <TransitionWrapper className="h-full">
-                    <div className="flex h-full items-center justify-center p-8">
-                        <div className="mx-auto max-w-md">
+            {isSplitLayout ? (
+                <div className="bg-muted relative hidden lg:block">
+                    <TransitionWrapper className="h-full">
+                        <div className="flex h-full items-center justify-center p-8">
+                            <div className="mx-auto max-w-md">
                             <div className="text-muted-foreground/40 mb-6 font-serif text-4xl">“</div>
 
                             <blockquote className="text-foreground mb-8 text-xl leading-relaxed font-medium">
@@ -104,10 +107,11 @@ export default function ForgotPasswordPage() {
                                     <div className="text-muted-foreground text-xs">{orgShortName} System Administrator</div>
                                 </div>
                             </div>
+                            </div>
                         </div>
-                    </div>
-                </TransitionWrapper>
-            </div>
+                    </TransitionWrapper>
+                </div>
+            ) : null}
         </div>
     );
 }

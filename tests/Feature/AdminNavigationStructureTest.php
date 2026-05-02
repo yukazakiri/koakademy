@@ -21,7 +21,6 @@ use App\Filament\Resources\InventoryStockMovements\InventoryStockMovementResourc
 use App\Filament\Resources\InventorySuppliers\InventorySupplierResource;
 use App\Filament\Resources\OnboardingFeatures\OnboardingFeatureResource;
 use App\Filament\Resources\Rooms\RoomResource;
-use App\Filament\Resources\SanityContents\SanityContentResource;
 use App\Filament\Resources\Schools\SchoolResource;
 use App\Filament\Resources\StudentEnrollments\StudentEnrollmentResource;
 use App\Filament\Resources\Students\StudentResource;
@@ -71,7 +70,6 @@ it('keeps admin navigation groups, labels, and plugin config aligned', function 
         BorrowRecordResource::class => 'Library',
         EventResource::class => 'Operations',
         AnnouncementResource::class => 'Communications',
-        SanityContentResource::class => 'Content',
         OnboardingFeatureResource::class => 'Content',
         SettingsCluster::class => 'Administration',
         AccountResource::class => 'Administration',
@@ -89,7 +87,6 @@ it('keeps admin navigation groups, labels, and plugin config aligned', function 
         ManageStudentClearances::class => 'Clearances',
         FacultyResource::class => 'Faculty',
         AccountResource::class => 'Portal Accounts',
-        SanityContentResource::class => 'CMS Content',
         OnboardingFeatureResource::class => 'Onboarding',
         InventoryStockMovementResource::class => 'Stock Movements',
         InventoryAmendmentResource::class => 'Stock Adjustments',

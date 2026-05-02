@@ -424,6 +424,10 @@ final class AdministratorSystemManagementController extends Controller
     {
         $this->authorize('updateBrand', GeneralSetting::class);
 
+        $this->ensureSiteSettingExists('auth_layout', 'split');
+        app()->forgetInstance(SiteSettings::class);
+        $siteSettings = app(SiteSettings::class);
+
         $validated = $request->validate([
             'app_name' => 'nullable|string|max:255',
             'app_short_name' => 'nullable|string|max:50',
@@ -443,25 +447,25 @@ final class AdministratorSystemManagementController extends Controller
         // Handle single logo upload — generates all formats automatically
         if ($request->hasFile('logo')) {
             $paths = app(LogoConversionService::class)->process($request->file('logo'));
-            $this->siteSettings->logo = $paths['logo'];
-            $this->siteSettings->favicon = $paths['favicon'];
-            $this->siteSettings->og_image = $paths['og_image'];
+            $siteSettings->logo = $paths['logo'];
+            $siteSettings->favicon = $paths['favicon'];
+            $siteSettings->og_image = $paths['og_image'];
         }
 
         // Update Spatie Settings
-        $this->siteSettings->app_name = $validated['app_name'] ?? null;
-        $this->siteSettings->app_short_name = $validated['app_short_name'] ?? null;
-        $this->siteSettings->organization_name = $validated['organization_name'] ?? null;
-        $this->siteSettings->organization_short_name = $validated['organization_short_name'] ?? null;
-        $this->siteSettings->organization_address = $validated['organization_address'] ?? null;
-        $this->siteSettings->support_email = $validated['support_email'] ?? null;
-        $this->siteSettings->support_phone = $validated['support_phone'] ?? null;
-        $this->siteSettings->tagline = $validated['tagline'] ?? null;
-        $this->siteSettings->copyright_text = $validated['copyright_text'] ?? null;
-        $this->siteSettings->theme_color = $validated['theme_color'] ?? null;
-        $this->siteSettings->currency = $validated['currency'] ?? null;
-        $this->siteSettings->auth_layout = $validated['auth_layout'] ?? 'split';
-        $this->siteSettings->save();
+        $siteSettings->app_name = $validated['app_name'] ?? null;
+        $siteSettings->app_short_name = $validated['app_short_name'] ?? null;
+        $siteSettings->organization_name = $validated['organization_name'] ?? null;
+        $siteSettings->organization_short_name = $validated['organization_short_name'] ?? null;
+        $siteSettings->organization_address = $validated['organization_address'] ?? null;
+        $siteSettings->support_email = $validated['support_email'] ?? null;
+        $siteSettings->support_phone = $validated['support_phone'] ?? null;
+        $siteSettings->tagline = $validated['tagline'] ?? null;
+        $siteSettings->copyright_text = $validated['copyright_text'] ?? null;
+        $siteSettings->theme_color = $validated['theme_color'] ?? null;
+        $siteSettings->currency = $validated['currency'] ?? null;
+        $siteSettings->auth_layout = $validated['auth_layout'] ?? 'split';
+        $siteSettings->save();
 
         return Redirect::back()->with('success', 'Brand settings updated successfully. Logo has been converted for all formats — favicon, PWA icons, and OG image.');
     }
@@ -714,6 +718,27 @@ final class AdministratorSystemManagementController extends Controller
         $generalSettingsService->updateGlobalAcademicCalendar($validated);
 
         return Redirect::back()->with('success', 'Academic calendar defaults updated successfully.');
+    }
+
+    private function ensureSiteSettingExists(string $name, mixed $value): void
+    {
+        $exists = DB::table('settings')
+            ->where('group', SiteSettings::group())
+            ->where('name', $name)
+            ->exists();
+
+        if ($exists) {
+            return;
+        }
+
+        DB::table('settings')->insert([
+            'group' => SiteSettings::group(),
+            'name' => $name,
+            'locked' => false,
+            'payload' => json_encode($value, JSON_THROW_ON_ERROR),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     private function renderSystemManagementPage(string $component, string $section, string $ability): Response

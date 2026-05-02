@@ -13,6 +13,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { submitSystemForm } from "./form-submit";
 import SystemManagementLayout from "./layout";
 import type { SystemManagementPageProps } from "./types";
+import { cn } from "@/lib/utils";
 
 interface BrandFormData {
     app_name: string;
@@ -335,7 +336,12 @@ export default function SystemManagementBrandPage({ user, branding, access }: Sy
 
                                 <div className="space-y-2.5">
                                     <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Authentication Page Layout</Label>
-                                    <p className="text-muted-foreground text-xs">Choose how login and password recovery screens are presented.</p>
+                                    <div className="flex items-center justify-between gap-3">
+                                        <p className="text-muted-foreground text-xs">Choose how login and password recovery screens are presented.</p>
+                                        <span className="text-muted-foreground text-xs">
+                                            Selected: <span className="text-foreground font-medium capitalize">{brandForm.data.auth_layout}</span>
+                                        </span>
+                                    </div>
 
                                     <RadioGroup
                                         value={brandForm.data.auth_layout}
@@ -344,7 +350,11 @@ export default function SystemManagementBrandPage({ user, branding, access }: Sy
                                     >
                                         <label
                                             htmlFor="auth-layout-card"
-                                            className="has-[:checked]:border-primary has-[:checked]:bg-primary/5 border-border hover:border-primary/50 cursor-pointer rounded-xl border p-3 transition-colors"
+                                            onClick={() => brandForm.setData("auth_layout", "card")}
+                                            className={cn(
+                                                "border-border hover:border-primary/50 cursor-pointer rounded-xl border p-3 transition-colors",
+                                                brandForm.data.auth_layout === "card" && "border-primary bg-primary/5",
+                                            )}
                                         >
                                             <RadioGroupItem id="auth-layout-card" value="card" className="sr-only" />
                                             <div className="mb-3 h-20 rounded-lg border bg-gradient-to-b from-slate-100 to-slate-200 p-2 dark:from-slate-900 dark:to-slate-800">
@@ -356,7 +366,11 @@ export default function SystemManagementBrandPage({ user, branding, access }: Sy
 
                                         <label
                                             htmlFor="auth-layout-split"
-                                            className="has-[:checked]:border-primary has-[:checked]:bg-primary/5 border-border hover:border-primary/50 cursor-pointer rounded-xl border p-3 transition-colors"
+                                            onClick={() => brandForm.setData("auth_layout", "split")}
+                                            className={cn(
+                                                "border-border hover:border-primary/50 cursor-pointer rounded-xl border p-3 transition-colors",
+                                                brandForm.data.auth_layout === "split" && "border-primary bg-primary/5",
+                                            )}
                                         >
                                             <RadioGroupItem id="auth-layout-split" value="split" className="sr-only" />
                                             <div className="mb-3 grid h-20 grid-cols-2 overflow-hidden rounded-lg border">
@@ -371,7 +385,11 @@ export default function SystemManagementBrandPage({ user, branding, access }: Sy
 
                                         <label
                                             htmlFor="auth-layout-minimal"
-                                            className="has-[:checked]:border-primary has-[:checked]:bg-primary/5 border-border hover:border-primary/50 cursor-pointer rounded-xl border p-3 transition-colors"
+                                            onClick={() => brandForm.setData("auth_layout", "minimal")}
+                                            className={cn(
+                                                "border-border hover:border-primary/50 cursor-pointer rounded-xl border p-3 transition-colors",
+                                                brandForm.data.auth_layout === "minimal" && "border-primary bg-primary/5",
+                                            )}
                                         >
                                             <RadioGroupItem id="auth-layout-minimal" value="minimal" className="sr-only" />
                                             <div className="mb-3 h-20 rounded-lg border bg-white p-2 dark:bg-slate-950">
@@ -382,6 +400,7 @@ export default function SystemManagementBrandPage({ user, branding, access }: Sy
                                             <p className="text-muted-foreground text-xs">Compact form-first layout with less chrome.</p>
                                         </label>
                                     </RadioGroup>
+                                    {brandForm.isDirty ? <p className="text-amber-600 text-xs">You have unsaved appearance changes.</p> : null}
                                 </div>
                             </CardContent>
                         </Card>

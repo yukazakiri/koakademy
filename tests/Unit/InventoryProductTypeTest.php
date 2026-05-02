@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Enums\InventoryItemType;
-use App\Models\InventoryProduct;
+use Modules\Inventory\Enums\InventoryItemType;
+use Modules\Inventory\Models\InventoryProduct;
 
 it('casts item type to enum instances', function () {
     $product = new InventoryProduct([

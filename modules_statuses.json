@@ -3,5 +3,6 @@
     "LibrarySystem": true,
     "StudentMedicalRecords": true,
     "NotificationCenter": true,
-    "Announcement": true
+    "Announcement": true,
+    "Inventory": true
 }

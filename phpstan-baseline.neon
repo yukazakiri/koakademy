@@ -5937,19 +5937,19 @@ parameters:
 			path: app/Filament/Resources/InventoryCategories/Schemas/InventoryCategoryInfolist.php
 
 		-
-			message: '#^Method App\\Filament\\Resources\\InventoryProducts\\InventoryProductResource\:\:canDelete\(\) has parameter \$record with no type specified\.$#'
+			message: '#^Method Modules\\Inventory\\Filament\\Resources\\InventoryProducts\\InventoryProductResource\:\:canDelete\(\) has parameter \$record with no type specified\.$#'
 			identifier: missingType.parameter
 			count: 1
 			path: app/Filament/Resources/InventoryProducts/InventoryProductResource.php
 
 		-
-			message: '#^Method App\\Filament\\Resources\\InventoryProducts\\InventoryProductResource\:\:canEdit\(\) has parameter \$record with no type specified\.$#'
+			message: '#^Method Modules\\Inventory\\Filament\\Resources\\InventoryProducts\\InventoryProductResource\:\:canEdit\(\) has parameter \$record with no type specified\.$#'
 			identifier: missingType.parameter
 			count: 1
 			path: app/Filament/Resources/InventoryProducts/InventoryProductResource.php
 
 		-
-			message: '#^Method App\\Filament\\Resources\\InventoryProducts\\InventoryProductResource\:\:canView\(\) has parameter \$record with no type specified\.$#'
+			message: '#^Method Modules\\Inventory\\Filament\\Resources\\InventoryProducts\\InventoryProductResource\:\:canView\(\) has parameter \$record with no type specified\.$#'
 			identifier: missingType.parameter
 			count: 1
 			path: app/Filament/Resources/InventoryProducts/InventoryProductResource.php
@@ -6057,7 +6057,7 @@ parameters:
 			path: app/Filament/Resources/InventoryStockMovements/Tables/InventoryStockMovementsTable.php
 
 		-
-			message: '#^Using nullsafe property access on non\-nullable type App\\Models\\InventoryProduct\. Use \-\> instead\.$#'
+			message: '#^Using nullsafe property access on non\-nullable type Modules\\Inventory\\Models\\InventoryProduct\. Use \-\> instead\.$#'
 			identifier: nullsafe.neverNull
 			count: 1
 			path: app/Filament/Resources/InventoryStockMovements/Tables/InventoryStockMovementsTable.php
@@ -13958,7 +13958,7 @@ parameters:
 			path: app/Http/Controllers/AdministratorFacultyManagementController.php
 
 		-
-			message: '#^Access to an undefined property App\\Models\\InventoryProduct\|Illuminate\\Database\\Eloquent\\Collection\<int, App\\Models\\InventoryProduct\>\:\:\$track_stock\.$#'
+			message: '#^Access to an undefined property Modules\\Inventory\\Models\\InventoryProduct\|Illuminate\\Database\\Eloquent\\Collection\<int, Modules\\Inventory\\Models\\InventoryProduct\>\:\:\$track_stock\.$#'
 			identifier: property.notFound
 			count: 1
 			path: app/Http/Controllers/AdministratorFinanceController.php
@@ -14012,7 +14012,7 @@ parameters:
 			path: app/Http/Controllers/AdministratorFinanceController.php
 
 		-
-			message: '#^Call to an undefined method App\\Models\\InventoryProduct\|Illuminate\\Database\\Eloquent\\Collection\<int, App\\Models\\InventoryProduct\>\:\:decrement\(\)\.$#'
+			message: '#^Call to an undefined method Modules\\Inventory\\Models\\InventoryProduct\|Illuminate\\Database\\Eloquent\\Collection\<int, Modules\\Inventory\\Models\\InventoryProduct\>\:\:decrement\(\)\.$#'
 			identifier: method.notFound
 			count: 1
 			path: app/Http/Controllers/AdministratorFinanceController.php
@@ -14720,19 +14720,19 @@ parameters:
 			path: app/Http/Controllers/AdministratorHelpTicketController.php
 
 		-
-			message: '#^Access to an undefined property App\\Models\\InventoryProduct\|Illuminate\\Database\\Eloquent\\Collection\<int, App\\Models\\InventoryProduct\>\:\:\$stock_quantity\.$#'
+			message: '#^Access to an undefined property Modules\\Inventory\\Models\\InventoryProduct\|Illuminate\\Database\\Eloquent\\Collection\<int, Modules\\Inventory\\Models\\InventoryProduct\>\:\:\$stock_quantity\.$#'
 			identifier: property.notFound
 			count: 2
 			path: app/Http/Controllers/AdministratorInventoryBorrowingController.php
 
 		-
-			message: '#^Access to an undefined property App\\Models\\InventoryProduct\|Illuminate\\Database\\Eloquent\\Collection\<int, App\\Models\\InventoryProduct\>\:\:\$track_stock\.$#'
+			message: '#^Access to an undefined property Modules\\Inventory\\Models\\InventoryProduct\|Illuminate\\Database\\Eloquent\\Collection\<int, Modules\\Inventory\\Models\\InventoryProduct\>\:\:\$track_stock\.$#'
 			identifier: property.notFound
 			count: 2
 			path: app/Http/Controllers/AdministratorInventoryBorrowingController.php
 
 		-
-			message: '#^Call to an undefined method App\\Models\\InventoryProduct\|Illuminate\\Database\\Eloquent\\Collection\<int, App\\Models\\InventoryProduct\>\:\:is\(\)\.$#'
+			message: '#^Call to an undefined method Modules\\Inventory\\Models\\InventoryProduct\|Illuminate\\Database\\Eloquent\\Collection\<int, Modules\\Inventory\\Models\\InventoryProduct\>\:\:is\(\)\.$#'
 			identifier: method.notFound
 			count: 1
 			path: app/Http/Controllers/AdministratorInventoryBorrowingController.php
@@ -14762,25 +14762,25 @@ parameters:
 			path: app/Http/Controllers/AdministratorInventoryBorrowingController.php
 
 		-
-			message: '#^Method App\\Http\\Controllers\\AdministratorInventoryBorrowingController\:\:getBorrowOptions\(\) return type has no value type specified in iterable type array\.$#'
+			message: '#^Method Modules\\Inventory\\Http\\Controllers\\AdministratorInventoryBorrowingController\:\:getBorrowOptions\(\) return type has no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
 			path: app/Http/Controllers/AdministratorInventoryBorrowingController.php
 
 		-
-			message: '#^Method App\\Http\\Controllers\\AdministratorInventoryBorrowingController\:\:getUserProps\(\) return type has no value type specified in iterable type array\.$#'
+			message: '#^Method Modules\\Inventory\\Http\\Controllers\\AdministratorInventoryBorrowingController\:\:getUserProps\(\) return type has no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
 			path: app/Http/Controllers/AdministratorInventoryBorrowingController.php
 
 		-
-			message: '#^Method App\\Http\\Controllers\\AdministratorInventoryBorrowingController\:\:normalizeBorrowingData\(\) has parameter \$validated with no value type specified in iterable type array\.$#'
+			message: '#^Method Modules\\Inventory\\Http\\Controllers\\AdministratorInventoryBorrowingController\:\:normalizeBorrowingData\(\) has parameter \$validated with no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
 			path: app/Http/Controllers/AdministratorInventoryBorrowingController.php
 
 		-
-			message: '#^Method App\\Http\\Controllers\\AdministratorInventoryBorrowingController\:\:normalizeBorrowingData\(\) return type has no value type specified in iterable type array\.$#'
+			message: '#^Method Modules\\Inventory\\Http\\Controllers\\AdministratorInventoryBorrowingController\:\:normalizeBorrowingData\(\) return type has no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
 			path: app/Http/Controllers/AdministratorInventoryBorrowingController.php
@@ -14792,25 +14792,25 @@ parameters:
 			path: app/Http/Controllers/AdministratorInventoryBorrowingController.php
 
 		-
-			message: '#^Parameter \#1 \$attributes of static method Illuminate\\Database\\Eloquent\\Builder\<App\\Models\\InventoryBorrowing\>\:\:create\(\) expects array\<string, mixed\>, array given\.$#'
+			message: '#^Parameter \#1 \$attributes of static method Illuminate\\Database\\Eloquent\\Builder\<Modules\\Inventory\\Models\\InventoryBorrowing\>\:\:create\(\) expects array\<string, mixed\>, array given\.$#'
 			identifier: argument.type
 			count: 1
 			path: app/Http/Controllers/AdministratorInventoryBorrowingController.php
 
 		-
-			message: '#^Parameter \#1 \$model of method Illuminate\\Database\\Eloquent\\Model\:\:is\(\) expects Illuminate\\Database\\Eloquent\\Model\|null, App\\Models\\InventoryProduct\|Illuminate\\Database\\Eloquent\\Collection\<int, App\\Models\\InventoryProduct\> given\.$#'
+			message: '#^Parameter \#1 \$model of method Illuminate\\Database\\Eloquent\\Model\:\:is\(\) expects Illuminate\\Database\\Eloquent\\Model\|null, Modules\\Inventory\\Models\\InventoryProduct\|Illuminate\\Database\\Eloquent\\Collection\<int, Modules\\Inventory\\Models\\InventoryProduct\> given\.$#'
 			identifier: argument.type
 			count: 1
 			path: app/Http/Controllers/AdministratorInventoryBorrowingController.php
 
 		-
-			message: '#^Parameter \#1 \$product of method App\\Http\\Controllers\\AdministratorInventoryBorrowingController\:\:applyStockDelta\(\) expects App\\Models\\InventoryProduct, App\\Models\\InventoryProduct\|Illuminate\\Database\\Eloquent\\Collection\<int, App\\Models\\InventoryProduct\> given\.$#'
+			message: '#^Parameter \#1 \$product of method Modules\\Inventory\\Http\\Controllers\\AdministratorInventoryBorrowingController\:\:applyStockDelta\(\) expects Modules\\Inventory\\Models\\InventoryProduct, Modules\\Inventory\\Models\\InventoryProduct\|Illuminate\\Database\\Eloquent\\Collection\<int, Modules\\Inventory\\Models\\InventoryProduct\> given\.$#'
 			identifier: argument.type
 			count: 2
 			path: app/Http/Controllers/AdministratorInventoryBorrowingController.php
 
 		-
-			message: '#^Parameter \#1 \$status of method App\\Http\\Controllers\\AdministratorInventoryBorrowingController\:\:stockImpact\(\) expects string, mixed given\.$#'
+			message: '#^Parameter \#1 \$status of method Modules\\Inventory\\Http\\Controllers\\AdministratorInventoryBorrowingController\:\:stockImpact\(\) expects string, mixed given\.$#'
 			identifier: argument.type
 			count: 2
 			path: app/Http/Controllers/AdministratorInventoryBorrowingController.php
@@ -14840,7 +14840,7 @@ parameters:
 			path: app/Http/Controllers/AdministratorInventoryBorrowingController.php
 
 		-
-			message: '#^Using nullsafe property access on non\-nullable type App\\Models\\InventoryProduct\. Use \-\> instead\.$#'
+			message: '#^Using nullsafe property access on non\-nullable type Modules\\Inventory\\Models\\InventoryProduct\. Use \-\> instead\.$#'
 			identifier: nullsafe.neverNull
 			count: 2
 			path: app/Http/Controllers/AdministratorInventoryBorrowingController.php
@@ -14852,7 +14852,7 @@ parameters:
 			path: app/Http/Controllers/AdministratorInventoryController.php
 
 		-
-			message: '#^Method App\\Http\\Controllers\\AdministratorInventoryController\:\:getUserProps\(\) return type has no value type specified in iterable type array\.$#'
+			message: '#^Method Modules\\Inventory\\Http\\Controllers\\AdministratorInventoryController\:\:getUserProps\(\) return type has no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
 			path: app/Http/Controllers/AdministratorInventoryController.php
@@ -14864,7 +14864,7 @@ parameters:
 			path: app/Http/Controllers/AdministratorInventoryController.php
 
 		-
-			message: '#^Using nullsafe property access on non\-nullable type App\\Models\\InventoryProduct\. Use \-\> instead\.$#'
+			message: '#^Using nullsafe property access on non\-nullable type Modules\\Inventory\\Models\\InventoryProduct\. Use \-\> instead\.$#'
 			identifier: nullsafe.neverNull
 			count: 2
 			path: app/Http/Controllers/AdministratorInventoryController.php
@@ -14876,25 +14876,25 @@ parameters:
 			path: app/Http/Controllers/AdministratorInventoryProductController.php
 
 		-
-			message: '#^Method App\\Http\\Controllers\\AdministratorInventoryProductController\:\:getItemOptions\(\) return type has no value type specified in iterable type array\.$#'
+			message: '#^Method Modules\\Inventory\\Http\\Controllers\\AdministratorInventoryProductController\:\:getItemOptions\(\) return type has no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
 			path: app/Http/Controllers/AdministratorInventoryProductController.php
 
 		-
-			message: '#^Method App\\Http\\Controllers\\AdministratorInventoryProductController\:\:getUserProps\(\) return type has no value type specified in iterable type array\.$#'
+			message: '#^Method Modules\\Inventory\\Http\\Controllers\\AdministratorInventoryProductController\:\:getUserProps\(\) return type has no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
 			path: app/Http/Controllers/AdministratorInventoryProductController.php
 
 		-
-			message: '#^Method App\\Http\\Controllers\\AdministratorInventoryProductController\:\:normalizeProductData\(\) has parameter \$validated with no value type specified in iterable type array\.$#'
+			message: '#^Method Modules\\Inventory\\Http\\Controllers\\AdministratorInventoryProductController\:\:normalizeProductData\(\) has parameter \$validated with no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
 			path: app/Http/Controllers/AdministratorInventoryProductController.php
 
 		-
-			message: '#^Method App\\Http\\Controllers\\AdministratorInventoryProductController\:\:normalizeProductData\(\) return type has no value type specified in iterable type array\.$#'
+			message: '#^Method Modules\\Inventory\\Http\\Controllers\\AdministratorInventoryProductController\:\:normalizeProductData\(\) return type has no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
 			path: app/Http/Controllers/AdministratorInventoryProductController.php
@@ -14906,13 +14906,13 @@ parameters:
 			path: app/Http/Controllers/AdministratorInventoryProductController.php
 
 		-
-			message: '#^Parameter \#1 \$attributes of static method Illuminate\\Database\\Eloquent\\Builder\<App\\Models\\InventoryProduct\>\:\:create\(\) expects array\<string, mixed\>, array given\.$#'
+			message: '#^Parameter \#1 \$attributes of static method Illuminate\\Database\\Eloquent\\Builder\<Modules\\Inventory\\Models\\InventoryProduct\>\:\:create\(\) expects array\<string, mixed\>, array given\.$#'
 			identifier: argument.type
 			count: 1
 			path: app/Http/Controllers/AdministratorInventoryProductController.php
 
 		-
-			message: '#^Parameter \#1 \$value of static method App\\Enums\\InventoryItemType\:\:from\(\) expects int\|string, mixed given\.$#'
+			message: '#^Parameter \#1 \$value of static method Modules\\Inventory\\Enums\\InventoryItemType\:\:from\(\) expects int\|string, mixed given\.$#'
 			identifier: argument.type
 			count: 1
 			path: app/Http/Controllers/AdministratorInventoryProductController.php
@@ -24034,13 +24034,13 @@ parameters:
 			path: app/Http/Requests/Administrators/CopyClassRequest.php
 
 		-
-			message: '#^Method App\\Http\\Requests\\Administrators\\InventoryBorrowingRequest\:\:rules\(\) return type has no value type specified in iterable type array\.$#'
+			message: '#^Method Modules\\Inventory\\Http\\Requests\\Administrators\\InventoryBorrowingRequest\:\:rules\(\) return type has no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
 			path: app/Http/Requests/Administrators/InventoryBorrowingRequest.php
 
 		-
-			message: '#^Method App\\Http\\Requests\\Administrators\\InventoryProductRequest\:\:rules\(\) return type has no value type specified in iterable type array\.$#'
+			message: '#^Method Modules\\Inventory\\Http\\Requests\\Administrators\\InventoryProductRequest\:\:rules\(\) return type has no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
 			path: app/Http/Requests/Administrators/InventoryProductRequest.php
@@ -27598,199 +27598,199 @@ parameters:
 			path: app/Models/HelpTicketReply.php
 
 		-
-			message: '#^Method App\\Models\\InventoryAmendment\:\:amendedBy\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\BelongsTo does not specify its types\: TRelatedModel, TDeclaringModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryAmendment\:\:amendedBy\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\BelongsTo does not specify its types\: TRelatedModel, TDeclaringModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryAmendment.php
 
 		-
-			message: '#^Method App\\Models\\InventoryAmendment\:\:approvedBy\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\BelongsTo does not specify its types\: TRelatedModel, TDeclaringModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryAmendment\:\:approvedBy\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\BelongsTo does not specify its types\: TRelatedModel, TDeclaringModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryAmendment.php
 
 		-
-			message: '#^Method App\\Models\\InventoryAmendment\:\:product\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\BelongsTo does not specify its types\: TRelatedModel, TDeclaringModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryAmendment\:\:product\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\BelongsTo does not specify its types\: TRelatedModel, TDeclaringModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryAmendment.php
 
 		-
-			message: '#^Method App\\Models\\InventoryAmendment\:\:scopeApproved\(\) has parameter \$query with generic class Illuminate\\Database\\Eloquent\\Builder but does not specify its types\: TModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryAmendment\:\:scopeApproved\(\) has parameter \$query with generic class Illuminate\\Database\\Eloquent\\Builder but does not specify its types\: TModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryAmendment.php
 
 		-
-			message: '#^Method App\\Models\\InventoryAmendment\:\:scopeApproved\(\) return type with generic class Illuminate\\Database\\Eloquent\\Builder does not specify its types\: TModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryAmendment\:\:scopeApproved\(\) return type with generic class Illuminate\\Database\\Eloquent\\Builder does not specify its types\: TModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryAmendment.php
 
 		-
-			message: '#^Method App\\Models\\InventoryAmendment\:\:scopePending\(\) has parameter \$query with generic class Illuminate\\Database\\Eloquent\\Builder but does not specify its types\: TModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryAmendment\:\:scopePending\(\) has parameter \$query with generic class Illuminate\\Database\\Eloquent\\Builder but does not specify its types\: TModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryAmendment.php
 
 		-
-			message: '#^Method App\\Models\\InventoryAmendment\:\:scopePending\(\) return type with generic class Illuminate\\Database\\Eloquent\\Builder does not specify its types\: TModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryAmendment\:\:scopePending\(\) return type with generic class Illuminate\\Database\\Eloquent\\Builder does not specify its types\: TModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryAmendment.php
 
 		-
-			message: '#^Method App\\Models\\InventoryBorrowing\:\:issuedBy\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\BelongsTo does not specify its types\: TRelatedModel, TDeclaringModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryBorrowing\:\:issuedBy\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\BelongsTo does not specify its types\: TRelatedModel, TDeclaringModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryBorrowing.php
 
 		-
-			message: '#^Method App\\Models\\InventoryBorrowing\:\:product\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\BelongsTo does not specify its types\: TRelatedModel, TDeclaringModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryBorrowing\:\:product\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\BelongsTo does not specify its types\: TRelatedModel, TDeclaringModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryBorrowing.php
 
 		-
-			message: '#^Method App\\Models\\InventoryBorrowing\:\:returnedTo\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\BelongsTo does not specify its types\: TRelatedModel, TDeclaringModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryBorrowing\:\:returnedTo\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\BelongsTo does not specify its types\: TRelatedModel, TDeclaringModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryBorrowing.php
 
 		-
-			message: '#^Method App\\Models\\InventoryBorrowing\:\:scopeActive\(\) has parameter \$query with generic class Illuminate\\Database\\Eloquent\\Builder but does not specify its types\: TModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryBorrowing\:\:scopeActive\(\) has parameter \$query with generic class Illuminate\\Database\\Eloquent\\Builder but does not specify its types\: TModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryBorrowing.php
 
 		-
-			message: '#^Method App\\Models\\InventoryBorrowing\:\:scopeActive\(\) return type with generic class Illuminate\\Database\\Eloquent\\Builder does not specify its types\: TModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryBorrowing\:\:scopeActive\(\) return type with generic class Illuminate\\Database\\Eloquent\\Builder does not specify its types\: TModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryBorrowing.php
 
 		-
-			message: '#^Method App\\Models\\InventoryBorrowing\:\:scopeOverdue\(\) has parameter \$query with generic class Illuminate\\Database\\Eloquent\\Builder but does not specify its types\: TModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryBorrowing\:\:scopeOverdue\(\) has parameter \$query with generic class Illuminate\\Database\\Eloquent\\Builder but does not specify its types\: TModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryBorrowing.php
 
 		-
-			message: '#^Method App\\Models\\InventoryBorrowing\:\:scopeOverdue\(\) return type with generic class Illuminate\\Database\\Eloquent\\Builder does not specify its types\: TModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryBorrowing\:\:scopeOverdue\(\) return type with generic class Illuminate\\Database\\Eloquent\\Builder does not specify its types\: TModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryBorrowing.php
 
 		-
-			message: '#^Method App\\Models\\InventoryCategory\:\:children\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\HasMany does not specify its types\: TRelatedModel, TDeclaringModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryCategory\:\:children\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\HasMany does not specify its types\: TRelatedModel, TDeclaringModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryCategory.php
 
 		-
-			message: '#^Method App\\Models\\InventoryCategory\:\:parent\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\BelongsTo does not specify its types\: TRelatedModel, TDeclaringModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryCategory\:\:parent\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\BelongsTo does not specify its types\: TRelatedModel, TDeclaringModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryCategory.php
 
 		-
-			message: '#^Method App\\Models\\InventoryCategory\:\:products\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\HasMany does not specify its types\: TRelatedModel, TDeclaringModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryCategory\:\:products\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\HasMany does not specify its types\: TRelatedModel, TDeclaringModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryCategory.php
 
 		-
-			message: '#^Class App\\Models\\InventoryProduct has PHPDoc tag @property for property \$images with no value type specified in iterable type array\.$#'
+			message: '#^Class Modules\\Inventory\\Models\\InventoryProduct has PHPDoc tag @property for property \$images with no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
 			path: app/Models/InventoryProduct.php
 
 		-
-			message: '#^Class App\\Models\\InventoryProduct uses generic trait Illuminate\\Database\\Eloquent\\Factories\\HasFactory but does not specify its types\: TFactory$#'
+			message: '#^Class Modules\\Inventory\\Models\\InventoryProduct uses generic trait Illuminate\\Database\\Eloquent\\Factories\\HasFactory but does not specify its types\: TFactory$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryProduct.php
 
 		-
-			message: '#^Method App\\Models\\InventoryProduct\:\:amendments\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\HasMany does not specify its types\: TRelatedModel, TDeclaringModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryProduct\:\:amendments\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\HasMany does not specify its types\: TRelatedModel, TDeclaringModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryProduct.php
 
 		-
-			message: '#^Method App\\Models\\InventoryProduct\:\:borrowings\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\HasMany does not specify its types\: TRelatedModel, TDeclaringModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryProduct\:\:borrowings\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\HasMany does not specify its types\: TRelatedModel, TDeclaringModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryProduct.php
 
 		-
-			message: '#^Method App\\Models\\InventoryProduct\:\:category\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\BelongsTo does not specify its types\: TRelatedModel, TDeclaringModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryProduct\:\:category\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\BelongsTo does not specify its types\: TRelatedModel, TDeclaringModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryProduct.php
 
 		-
-			message: '#^Method App\\Models\\InventoryProduct\:\:scopeBorrowable\(\) has parameter \$query with generic class Illuminate\\Database\\Eloquent\\Builder but does not specify its types\: TModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryProduct\:\:scopeBorrowable\(\) has parameter \$query with generic class Illuminate\\Database\\Eloquent\\Builder but does not specify its types\: TModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryProduct.php
 
 		-
-			message: '#^Method App\\Models\\InventoryProduct\:\:scopeBorrowable\(\) return type with generic class Illuminate\\Database\\Eloquent\\Builder does not specify its types\: TModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryProduct\:\:scopeBorrowable\(\) return type with generic class Illuminate\\Database\\Eloquent\\Builder does not specify its types\: TModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryProduct.php
 
 		-
-			message: '#^Method App\\Models\\InventoryProduct\:\:scopeLowStock\(\) has parameter \$query with generic class Illuminate\\Database\\Eloquent\\Builder but does not specify its types\: TModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryProduct\:\:scopeLowStock\(\) has parameter \$query with generic class Illuminate\\Database\\Eloquent\\Builder but does not specify its types\: TModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryProduct.php
 
 		-
-			message: '#^Method App\\Models\\InventoryProduct\:\:scopeLowStock\(\) return type with generic class Illuminate\\Database\\Eloquent\\Builder does not specify its types\: TModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryProduct\:\:scopeLowStock\(\) return type with generic class Illuminate\\Database\\Eloquent\\Builder does not specify its types\: TModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryProduct.php
 
 		-
-			message: '#^Method App\\Models\\InventoryProduct\:\:stockMovements\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\HasMany does not specify its types\: TRelatedModel, TDeclaringModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryProduct\:\:stockMovements\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\HasMany does not specify its types\: TRelatedModel, TDeclaringModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryProduct.php
 
 		-
-			message: '#^Method App\\Models\\InventoryProduct\:\:supplier\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\BelongsTo does not specify its types\: TRelatedModel, TDeclaringModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryProduct\:\:supplier\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\BelongsTo does not specify its types\: TRelatedModel, TDeclaringModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryProduct.php
 
 		-
-			message: '#^Method App\\Models\\InventoryStockMovement\:\:product\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\BelongsTo does not specify its types\: TRelatedModel, TDeclaringModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryStockMovement\:\:product\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\BelongsTo does not specify its types\: TRelatedModel, TDeclaringModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryStockMovement.php
 
 		-
-			message: '#^Method App\\Models\\InventoryStockMovement\:\:scopeOfType\(\) has parameter \$query with generic class Illuminate\\Database\\Eloquent\\Builder but does not specify its types\: TModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryStockMovement\:\:scopeOfType\(\) has parameter \$query with generic class Illuminate\\Database\\Eloquent\\Builder but does not specify its types\: TModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryStockMovement.php
 
 		-
-			message: '#^Method App\\Models\\InventoryStockMovement\:\:scopeOfType\(\) return type with generic class Illuminate\\Database\\Eloquent\\Builder does not specify its types\: TModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryStockMovement\:\:scopeOfType\(\) return type with generic class Illuminate\\Database\\Eloquent\\Builder does not specify its types\: TModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryStockMovement.php
 
 		-
-			message: '#^Method App\\Models\\InventoryStockMovement\:\:user\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\BelongsTo does not specify its types\: TRelatedModel, TDeclaringModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventoryStockMovement\:\:user\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\BelongsTo does not specify its types\: TRelatedModel, TDeclaringModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventoryStockMovement.php
 
 		-
-			message: '#^Method App\\Models\\InventorySupplier\:\:products\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\HasMany does not specify its types\: TRelatedModel, TDeclaringModel$#'
+			message: '#^Method Modules\\Inventory\\Models\\InventorySupplier\:\:products\(\) return type with generic class Illuminate\\Database\\Eloquent\\Relations\\HasMany does not specify its types\: TRelatedModel, TDeclaringModel$#'
 			identifier: missingType.generics
 			count: 1
 			path: app/Models/InventorySupplier.php

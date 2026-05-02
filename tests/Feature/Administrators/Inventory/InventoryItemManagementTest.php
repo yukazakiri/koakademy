@@ -2,17 +2,17 @@
 
 declare(strict_types=1);
 
-use App\Enums\InventoryHistoryEventType;
-use App\Enums\InventoryItemType;
 use App\Enums\UserRole;
-use App\Models\InventoryBorrowing;
-use App\Models\InventoryCategory;
-use App\Models\InventoryProduct;
-use App\Models\InventoryProductHistory;
-use App\Models\InventorySupplier;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Modules\Inventory\Enums\InventoryHistoryEventType;
+use Modules\Inventory\Enums\InventoryItemType;
+use Modules\Inventory\Models\InventoryBorrowing;
+use Modules\Inventory\Models\InventoryCategory;
+use Modules\Inventory\Models\InventoryProduct;
+use Modules\Inventory\Models\InventoryProductHistory;
+use Modules\Inventory\Models\InventorySupplier;
 
 use function Pest\Laravel\actingAs;
 

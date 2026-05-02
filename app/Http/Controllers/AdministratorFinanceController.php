@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
-use App\Models\InventoryProduct;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\StudentTransaction;
@@ -21,6 +20,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
+use Modules\Inventory\Models\InventoryProduct;
 
 final class AdministratorFinanceController extends Controller
 {

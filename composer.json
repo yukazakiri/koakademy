@@ -62,7 +62,6 @@
         "marcelweidum/filament-passkeys": "^2.0",
         "meilisearch/meilisearch-php": "^1.16",
         "moataz-01/filament-notification-sound": "^1.0",
-        "nativephp/desktop": "^2.1",
         "owenvoke/blade-fontawesome": "^2.9",
         "predis/predis": "^3.2",
         "pusher/pusher-php-server": "^7.2",
@@ -125,8 +124,7 @@
             "@php artisan filament:upgrade"
         ],
         "post-update-cmd": [
-            "@php artisan vendor:publish --tag=laravel-assets --ansi --force",
-            "@php artisan native:install --force --quiet --publish"
+            "@php artisan vendor:publish --tag=laravel-assets --ansi --force"
         ],
         "post-root-package-install": [
             "@php -r \"file_exists('.env') || copy('.env.example', '.env');\""
@@ -153,11 +151,8 @@
         ],
         "stan": [
             "php -d memory_limit=-1 vendor/bin/phpstan analyse"
-        ],
-        "native:dev": [
-            "Composer\\Config::disableProcessTimeout",
-            "npx concurrently -k -c \"#93c5fd,#c4b5fd\" \"php artisan native:run --no-interaction\" \"npm run dev\" --names=app,vite"
         ]
+
     },
     "extra": {
         "laravel": {

@@ -24,8 +24,6 @@ import {
 import { ChangeEvent, FormEvent, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { store as storeClassPost } from "@/routes/faculty/classes/posts";
-
 interface AssignmentComposerDialogProps {
     classId: number;
     classCode: string;
@@ -402,7 +400,7 @@ export function AssignmentComposerDialog({
                 },
             });
         } else {
-            form.post(storeClassPost.url({ class: classId }), {
+            form.post(route("faculty.classes.posts.store", { class: classId }), {
                 forceFormData: true,
                 preserveScroll: true,
                 onSuccess: () => {

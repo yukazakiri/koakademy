@@ -26,6 +26,7 @@ import { getRoutesForRoleWithModules, ROUTE_SECTIONS, type AdminRoute, type Modu
 import { resolveBranding, type Branding } from "@/lib/branding";
 import type { User } from "@/types/user";
 import { USER_ROLE_LABELS, UserRole } from "@/types/user-role";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { Link, usePage } from "@inertiajs/react";
 
 interface PageProps {
@@ -210,6 +211,7 @@ function getActiveSectionFromUrl(
 }
 
 export function AdministratorSidebar({ user }: { user: User }) {
+    const isMobile = useIsMobile();
     const { props, url: currentUrl } = usePage<PageProps>();
     const { setOpen } = useSidebar();
     const version = props.version || "1.0.0";
@@ -323,8 +325,147 @@ export function AdministratorSidebar({ user }: { user: User }) {
         [renderCountBadge, routeCountMap],
     );
 
+    if (isMobile) {
+        return (
+            <Sidebar collapsible="offcanvas" className="overflow-hidden">
+                <SidebarHeader className="gap-2 border-b p-3">
+                    <SchoolSwitcher />
+                    <div className="text-foreground text-base font-medium">
+                        {searchQuery.trim() ? `Search: "${searchQuery}"` : SECTION_LABELS[displayedSection]}
+                    </div>
+                    <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1">
+                        {sectionsWithRoutes.map((section) => {
+                            const isActive = displayedSection === section.id;
+                            return (
+                                <button
+                                    key={section.id}
+                                    type="button"
+                                    onClick={() => setUserSelectedSection(section.id)}
+                                    className={
+                                        isActive
+                                            ? "bg-primary/10 text-primary rounded-md px-2 py-1 text-xs font-medium"
+                                            : "text-muted-foreground hover:text-foreground hover:bg-accent rounded-md px-2 py-1 text-xs font-medium"
+                                    }
+                                >
+                                    {SECTION_LABELS[section.id]}
+                                </button>
+                            );
+                        })}
+                    </div>
+                    <SidebarInput placeholder="Search navigation..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                </SidebarHeader>
+
+                <SidebarContent>
+                    <SidebarGroup className="px-0">
+                        <SidebarGroupContent>
+                            <SidebarMenu>
+                                {searchQuery.trim() ? (
+                                    filteredRoutes && filteredRoutes.length > 0 ? (
+                                        filteredRoutes.map((route) => {
+                                            const isActive = isRouteActive(currentUrl, route.link);
+                                            const badgeContent = renderRouteBadge(route.id, route.badge);
+                                            return (
+                                                <SidebarMenuItem key={route.id}>
+                                                    <SidebarMenuButton asChild isActive={isActive}>
+                                                        <Link href={route.link}>
+                                                            {route.icon}
+                                                            <div className="flex flex-col">
+                                                                <span>{route.title}</span>
+                                                                {route.isSub && route.parentTitle && (
+                                                                    <span className="text-muted-foreground text-xs">
+                                                                        {route.parentTitle} • {route.sectionLabel}
+                                                                    </span>
+                                                                )}
+                                                                {!route.isSub && <span className="text-muted-foreground text-xs">{route.sectionLabel}</span>}
+                                                            </div>
+                                                            {badgeContent}
+                                                        </Link>
+                                                    </SidebarMenuButton>
+                                                </SidebarMenuItem>
+                                            );
+                                        })
+                                    ) : (
+                                        <SidebarMenuItem>
+                                            <div className="text-muted-foreground px-4 py-2 text-sm">No results found for "{searchQuery}"</div>
+                                        </SidebarMenuItem>
+                                    )
+                                ) : (
+                                    activeRoutes.map((route) => {
+                                        const hasSubs = route.subs && route.subs.length > 0;
+
+                                        if (hasSubs) {
+                                            const isActive = isParentRouteActive(currentUrl, route.link, route.subs);
+                                            const badgeContent = renderRouteBadge(route.id, route.badge);
+
+                                            return (
+                                                <SidebarMenuItem key={route.id}>
+                                                    <SidebarMenuButton asChild isActive={isActive}>
+                                                        <Link href={route.link}>
+                                                            {route.icon}
+                                                            <span>{route.title}</span>
+                                                            {badgeContent}
+                                                        </Link>
+                                                    </SidebarMenuButton>
+                                                    <SidebarMenuSub>
+                                                        {route.subs?.map((sub, idx) => {
+                                                            const isSubActive = isRouteActive(currentUrl, sub.link, sub.link === route.link);
+                                                            return (
+                                                                <SidebarMenuSubItem key={idx}>
+                                                                    <SidebarMenuSubButton asChild isActive={isSubActive}>
+                                                                        <Link href={sub.link}>
+                                                                            {sub.icon}
+                                                                            <span>{sub.title}</span>
+                                                                        </Link>
+                                                                    </SidebarMenuSubButton>
+                                                                </SidebarMenuSubItem>
+                                                            );
+                                                        })}
+                                                    </SidebarMenuSub>
+                                                </SidebarMenuItem>
+                                            );
+                                        }
+
+                                        const isActive = isRouteActive(currentUrl, route.link);
+                                        const badgeContent = renderRouteBadge(route.id, route.badge);
+
+                                        return (
+                                            <SidebarMenuItem key={route.id}>
+                                                <SidebarMenuButton asChild isActive={isActive}>
+                                                    <Link href={route.link}>
+                                                        {route.icon}
+                                                        <span>{route.title}</span>
+                                                        {badgeContent}
+                                                    </Link>
+                                                </SidebarMenuButton>
+                                            </SidebarMenuItem>
+                                        );
+                                    })
+                                )}
+                            </SidebarMenu>
+                        </SidebarGroupContent>
+                    </SidebarGroup>
+                </SidebarContent>
+
+                <SidebarFooter className="border-t p-3">
+                    <div className="flex items-center justify-between">
+                        <Link
+                            href="/changelog"
+                            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium transition-colors"
+                        >
+                            <span className="inline-flex items-center gap-1">
+                                <span className="h-1.5 w-1.5 rounded-full bg-green-500"></span>v{version}
+                            </span>
+                        </Link>
+                        <span className="text-muted-foreground text-xs">{organizationShortName}</span>
+                    </div>
+                </SidebarFooter>
+            </Sidebar>
+        );
+    }
+
     return (
-        <Sidebar
+        <>
+            <Sidebar
             collapsible="icon"
             className="overflow-hidden"
             style={
@@ -551,6 +692,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                 </Sidebar>
             </div>
         </Sidebar>
+        </>
     );
 }
 

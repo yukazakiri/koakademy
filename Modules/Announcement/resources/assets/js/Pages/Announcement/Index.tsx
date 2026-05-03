@@ -179,19 +179,29 @@ export default function AnnouncementIndex({ auth, announcements }: { auth: { use
         if (editingId) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             put(route("administrators.announcements.update", [editingId]) as any, {
+                preserveScroll: true,
                 onSuccess: () => {
                     toast.success("Announcement updated successfully");
                     setIsCreateModalOpen(false);
                     reset();
                 },
+                onError: (errors: Record<string, string>) => {
+                    const firstError = Object.values(errors)[0];
+                    toast.error(firstError || "Failed to update announcement");
+                },
             });
         } else {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             post(route("administrators.announcements.store") as any, {
+                preserveScroll: true,
                 onSuccess: () => {
                     toast.success("Announcement created successfully");
                     setIsCreateModalOpen(false);
                     reset();
+                },
+                onError: (errors: Record<string, string>) => {
+                    const firstError = Object.values(errors)[0];
+                    toast.error(firstError || "Failed to create announcement");
                 },
             });
         }
@@ -336,6 +346,16 @@ export default function AnnouncementIndex({ auth, announcements }: { auth: { use
                     </DialogHeader>
 
                     <form onSubmit={handleSubmit} className="space-y-6 pt-4">
+                        {Object.keys(errors).length > 0 && (
+                            <div className="rounded-md border border-red-200 bg-red-50 p-3 dark:bg-red-950/20">
+                                <p className="text-sm font-medium text-red-600">Please fix the following errors:</p>
+                                <ul className="mt-1 list-inside list-disc text-sm text-red-600">
+                                    {Object.entries(errors).map(([field, message]) => (
+                                        <li key={field}>{message}</li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
                         <div className="space-y-4">
                             <div className="grid gap-2">
                                 <Label htmlFor="title">

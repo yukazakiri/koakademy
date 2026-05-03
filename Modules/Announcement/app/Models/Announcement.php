@@ -43,6 +43,16 @@ final class Announcement extends Model
     ];
 
     /**
+     * Default attribute values that mirror database defaults.
+     * Ensures new model instances have sensible values before saving.
+     */
+    protected $attributes = [
+        'status' => 'draft',
+        'is_global' => true,
+        'is_active' => true,
+    ];
+
+    /**
      * Per-request cache for Schema::hasColumn checks (SQLite issues many pragma queries per call).
      *
      * @var array<string, bool>|null

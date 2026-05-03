@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.7.11",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.11",
-  "commit": "17c4711380a69887cc6cd027e4e872f1af5182b3",
+  "version": "1.1.0-dev.7.12",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.12",
+  "commit": "21c09b5071fab72c5e73802ad815cb2959957845",
   "branch": "master",
-  "timestamp": "2026-04-30T04:17:26Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25146861650",
+  "timestamp": "2026-05-03T15:36:20Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25283229227",
   "release_type": "bugfix",
   "changelog": {
-    "current": "Version 1.1.0-dev.7.11 - fix: make class search and edit loading feel real-time",
-    "previous": "1.1.0-dev.7.10"
+    "current": "Version 1.1.0-dev.7.12 - fix: remove Wayfinder Vite plugin from asset build",
+    "previous": "1.1.0-dev.7.11"
   },
   "metadata": {
     "author": "yukazakiri",

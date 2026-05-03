@@ -44,7 +44,17 @@ final class Announcement extends Model
     ];
 
     /**
-     * Cached column listing so SQLite schema introspection only happens once.
+     * Default attribute values that mirror database defaults.
+     * Ensures new model instances have sensible values before saving.
+     */
+    protected $attributes = [
+        'status' => 'draft',
+        'is_global' => true,
+        'is_active' => true,
+    ];
+
+    /**
+     * Per-request cache for Schema::hasColumn checks (SQLite issues many pragma queries per call).
      *
      * @var list<string>|null
      */

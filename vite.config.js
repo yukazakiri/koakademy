@@ -1,5 +1,4 @@
 import tailwindcss from "@tailwindcss/vite";
-import { wayfinder } from "@laravel/vite-plugin-wayfinder";
 import legacy from "@vitejs/plugin-legacy";
 import react from "@vitejs/plugin-react";
 import fs from "node:fs";
@@ -62,7 +61,6 @@ export default defineConfig({
                 ],
             },
         }),
-        wayfinder(),
         laravel({
             input: ["resources/css/app.css", "resources/js/App.tsx", "resources/css/filament/admin/theme.css"],
             refresh: true,

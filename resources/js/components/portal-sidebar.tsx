@@ -5,11 +5,15 @@ import { NavMain, type NavItem } from "@/components/nav-main";
 import { NavSecondary } from "@/components/nav-secondary";
 import { NavUser } from "@/components/nav-user";
 import { NotificationsPopover } from "@/components/sidebar-03/nav-notifications";
+import type { SemesterSelectorProps } from "@/components/semester-selector";
 import { getStudentPortalNavigation, type StudentPortalClass } from "@/components/student/student-navigation";
 import {
     Sidebar,
     SidebarContent,
     SidebarFooter,
+    SidebarGroup,
+    SidebarGroupContent,
+    SidebarGroupLabel,
     SidebarHeader,
     SidebarMenu,
     SidebarMenuButton,
@@ -20,10 +24,12 @@ import { resolveBranding, type Branding } from "@/lib/branding";
 import { isFacultyPortalRole, isStudentPortalRole, normalizePortalRole } from "@/lib/portal-role";
 import { cn } from "@/lib/utils";
 import { User } from "@/types/user";
-import { Link, usePage } from "@inertiajs/react";
+import { Link, router, usePage } from "@inertiajs/react";
 import {
     IconBriefcase,
+    IconCalendar,
     IconChartBar,
+    IconChevronDown,
     IconDashboard,
     IconHelp,
     IconReceipt,
@@ -33,7 +39,7 @@ import {
     IconUsers,
 } from "@tabler/icons-react";
 import * as React from "react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 type FacultyClass = FacultyPortalClass;
 
@@ -49,6 +55,7 @@ interface PageProps {
     branding?: Partial<Branding> | null;
     facultyClasses?: FacultyClass[];
     studentClasses?: StudentPortalClass[];
+    settings?: SemesterSelectorProps;
     [key: string]: unknown;
 }
 
@@ -165,6 +172,155 @@ function getSecondaryRoutes(isStudent: boolean, isStaff: boolean): NavItem[] {
     ];
 }
 
+/**
+ * Compact semester / school-year selector designed for the sidebar.
+ * Shown for student and faculty portals where the header version
+ * is hidden on mobile.
+ */
+function SidebarSemesterSelector({ settings }: { settings: SemesterSelectorProps }) {
+    const [open, setOpen] = useState(false);
+
+    const {
+        currentSemester,
+        currentSchoolYear,
+        systemSemester,
+        systemSchoolYear,
+        availableSemesters,
+        availableSchoolYears,
+    } = settings;
+
+    const safeAvailableSemesters: Record<number, string> = availableSemesters ?? {};
+    const safeAvailableSchoolYears: Record<number, string> = availableSchoolYears ?? {};
+
+    const currentSemesterLabel = currentSemester != null ? safeAvailableSemesters[currentSemester] ?? "\u2014" : "\u2014";
+    const currentSchoolYearLabel = currentSchoolYear != null ? safeAvailableSchoolYears[currentSchoolYear] ?? "\u2014" : "\u2014";
+
+    const hasSemesterOverride =
+        systemSemester != null && currentSemester != null && systemSemester !== currentSemester;
+    const hasSchoolYearOverride =
+        systemSchoolYear != null && currentSchoolYear != null && systemSchoolYear !== currentSchoolYear;
+    const hasAnyOverride = hasSemesterOverride || hasSchoolYearOverride;
+
+    function resolveSettingsEndpoint(path: "semester" | "school-year"): string {
+        if (typeof window !== "undefined") {
+            const pathname = window.location.pathname;
+            if (pathname.startsWith("/student")) return `/student/settings/${path}`;
+            if (pathname.startsWith("/faculty")) return `/faculty/settings/${path}`;
+        }
+        return `/settings/${path}`;
+    }
+
+    const handleSemesterChange = (value: string) => {
+        router.put(
+            resolveSettingsEndpoint("semester"),
+            { semester: parseInt(value) },
+            { preserveScroll: true },
+        );
+    };
+
+    const handleSchoolYearChange = (value: string) => {
+        router.put(
+            resolveSettingsEndpoint("school-year"),
+            { school_year_start: parseInt(value) },
+            { preserveScroll: true },
+        );
+    };
+
+    return (
+        <SidebarGroup>
+            <SidebarGroupLabel asChild>
+                <button
+                    type="button"
+                    onClick={() => setOpen((v) => !v)}
+                    className="flex w-full items-center justify-between"
+                >
+                    <span className="flex items-center gap-1.5">
+                        <IconCalendar className="size-3.5" />
+                        Academic Period
+                    </span>
+                    <IconChevronDown
+                        className={cn(
+                            "size-3.5 transition-transform duration-200",
+                            open && "rotate-180",
+                        )}
+                    />
+                </button>
+            </SidebarGroupLabel>
+
+            {!open && (
+                <SidebarGroupContent>
+                    <button
+                        type="button"
+                        onClick={() => setOpen(true)}
+                        className="text-muted-foreground hover:text-foreground hover:bg-accent mx-2 mb-1 flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors"
+                    >
+                        <span className="truncate">
+                            {currentSemesterLabel} &middot; {currentSchoolYearLabel}
+                        </span>
+                        {hasAnyOverride && (
+                            <span className="bg-primary/15 text-primary shrink-0 rounded px-1 py-0.5 text-[9px] font-semibold leading-none">
+                                Custom
+                            </span>
+                        )}
+                    </button>
+                </SidebarGroupContent>
+            )}
+
+            {open && (
+                <SidebarGroupContent>
+                    <div className="flex flex-col gap-2 px-2 pb-2">
+                        {/* Semester select */}
+                        <div className="flex flex-col gap-1">
+                            <label className="text-muted-foreground px-0.5 text-[10px] font-medium uppercase tracking-wider">
+                                Semester
+                            </label>
+                            <select
+                                value={currentSemester?.toString() ?? ""}
+                                onChange={(e) => handleSemesterChange(e.target.value)}
+                                className="bg-muted/50 text-foreground border-border hover:bg-muted focus:ring-primary h-8 w-full rounded-md border px-2.5 text-xs transition-colors focus:ring-1 focus:outline-none"
+                            >
+                                {Object.entries(safeAvailableSemesters).map(([key, label]) => (
+                                    <option key={key} value={key}>
+                                        {label}
+                                    </option>
+                                ))}
+                            </select>
+                            {hasSemesterOverride && (
+                                <span className="text-muted-foreground/70 px-0.5 text-[10px]">
+                                    System: {systemSemester != null ? safeAvailableSemesters[systemSemester] ?? "Default" : "Default"}
+                                </span>
+                            )}
+                        </div>
+
+                        {/* School Year select */}
+                        <div className="flex flex-col gap-1">
+                            <label className="text-muted-foreground px-0.5 text-[10px] font-medium uppercase tracking-wider">
+                                School Year
+                            </label>
+                            <select
+                                value={currentSchoolYear?.toString() ?? ""}
+                                onChange={(e) => handleSchoolYearChange(e.target.value)}
+                                className="bg-muted/50 text-foreground border-border hover:bg-muted focus:ring-primary h-8 w-full rounded-md border px-2.5 text-xs transition-colors focus:ring-1 focus:outline-none"
+                            >
+                                {Object.entries(safeAvailableSchoolYears).map(([key, label]) => (
+                                    <option key={key} value={key}>
+                                        {label}
+                                    </option>
+                                ))}
+                            </select>
+                            {hasSchoolYearOverride && (
+                                <span className="text-muted-foreground/70 px-0.5 text-[10px]">
+                                    System: {systemSchoolYear != null ? safeAvailableSchoolYears[systemSchoolYear] ?? "Default" : "Default"}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                </SidebarGroupContent>
+            )}
+        </SidebarGroup>
+    );
+}
+
 export function PortalSidebar({ user, ...props }: React.ComponentProps<typeof Sidebar> & { user?: User }) {
     const { props: pageProps, url } = usePage<PageProps>();
     const branding = resolveBranding(pageProps.branding);
@@ -223,6 +379,9 @@ export function PortalSidebar({ user, ...props }: React.ComponentProps<typeof Si
             </SidebarHeader>
             <SidebarContent>
                 <NavMain items={mainRoutes} showQuickActions={isFaculty} />
+                {(isStudent || isFaculty) && pageProps.settings ? (
+                    <SidebarSemesterSelector settings={pageProps.settings} />
+                ) : null}
                 <NavSecondary items={secondaryRoutes} className="mt-auto" />
             </SidebarContent>
             <SidebarFooter>

@@ -1,12 +1,12 @@
 import { getFacultyPortalNavigation, type FacultyPortalClass } from "@/components/faculty/faculty-navigation";
 import { GlobalCommandContent } from "@/components/global-command-palette";
 import { Command } from "@/components/ui/command";
-import { Drawer, DrawerContent, DrawerDescription, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer";
+import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/components/ui/drawer";
 import { cn } from "@/lib/utils";
 import type { User } from "@/types/user";
 import { Link, usePage } from "@inertiajs/react";
 import { motion } from "framer-motion";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 interface FacultyBottomNavPageProps {
     auth?: {
@@ -35,9 +35,30 @@ export function FacultyBottomNav() {
         [enabledRoutes, facultyClasses],
     );
 
+    const touchStart = useRef<{ x: number; y: number; time: number } | null>(null);
+
     const isActive = (href: string): boolean => {
         return url === href || url.startsWith(`${href}/`);
     };
+
+    const handleTouchStart = useCallback((e: React.TouchEvent) => {
+        const t = e.touches[0];
+        touchStart.current = { x: t.clientX, y: t.clientY, time: Date.now() };
+    }, []);
+
+    const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+        if (!touchStart.current) return;
+        const t = e.changedTouches[0];
+        const dx = t.clientX - touchStart.current.x;
+        const dy = touchStart.current.y - t.clientY;
+        const dt = Date.now() - touchStart.current.time;
+
+        // Swipe up: dy > 40px, mostly vertical, within 400ms
+        if (dy > 40 && Math.abs(dx) < 60 && dt < 400 && resolvedUser) {
+            setSearchOpen(true);
+        }
+        touchStart.current = null;
+    }, [resolvedUser]);
 
     return (
         <nav className="fixed right-0 bottom-0 left-0 z-50 md:hidden">
@@ -60,19 +81,17 @@ export function FacultyBottomNav() {
                     </DrawerContent>
                 ) : null}
 
-                <div className="safe-area-inset-bottom border-border/60 bg-background/96 border-t backdrop-blur-xl">
-                    <div className="mx-auto max-w-xl px-3 pt-2 pb-2">
+                <div
+                    className="safe-area-inset-bottom border-border/60 bg-background/96 border-t backdrop-blur-xl"
+                    onTouchStart={handleTouchStart}
+                    onTouchEnd={handleTouchEnd}
+                >
+                    <div className="mx-auto max-w-xl px-3 pt-1.5 pb-2">
+                        {/* Swipe-up handle — no text, just a subtle grab bar */}
                         {resolvedUser ? (
-                            <DrawerTrigger asChild>
-                                <button
-                                    type="button"
-                                    className="mb-2 flex w-full flex-col items-center gap-1 rounded-xl py-1.5"
-                                    aria-label="Open faculty search"
-                                >
-                                    <span className="bg-muted-foreground/35 block h-1 w-12 rounded-full" />
-                                    <span className="text-muted-foreground text-[11px] font-medium">Open search</span>
-                                </button>
-                            </DrawerTrigger>
+                            <div className="flex items-center justify-center pb-1 pointer-events-none select-none">
+                                <span className="bg-muted-foreground/25 block h-[3px] w-9 rounded-full" />
+                            </div>
                         ) : null}
 
                         <div className="grid grid-cols-5 gap-1">
@@ -86,7 +105,7 @@ export function FacultyBottomNav() {
                                         key={item.id}
                                         href={disabled ? "#" : item.url}
                                         className={cn(
-                                            "relative flex min-w-0 flex-col items-center gap-1 rounded-2xl px-1 py-2.5 transition-colors",
+                                            "relative flex min-w-0 flex-col items-center gap-0.5 rounded-2xl px-1 py-2 transition-colors",
                                             disabled && "pointer-events-none opacity-45",
                                         )}
                                         aria-disabled={disabled}
@@ -94,17 +113,17 @@ export function FacultyBottomNav() {
                                     >
                                         <div
                                             className={cn(
-                                                "flex h-9 w-9 items-center justify-center rounded-2xl transition-all duration-200",
+                                                "flex h-8 w-8 items-center justify-center rounded-2xl transition-all duration-200",
                                                 active
                                                     ? "bg-primary text-primary-foreground shadow-primary/30 shadow-lg"
-                                                    : "bg-muted/50 text-muted-foreground",
+                                                    : "text-muted-foreground",
                                             )}
                                         >
                                             {Icon ? <Icon className="h-5 w-5" /> : null}
                                         </div>
                                         <span
                                             className={cn(
-                                                "max-w-full truncate text-[10px] font-medium transition-colors",
+                                                "max-w-full truncate text-[10px] font-medium leading-tight transition-colors",
                                                 active ? "text-primary" : "text-muted-foreground",
                                             )}
                                         >
@@ -114,7 +133,7 @@ export function FacultyBottomNav() {
                                         {active && (
                                             <motion.div
                                                 layoutId="bottom-nav-indicator"
-                                                className="bg-primary absolute top-0 h-1 w-8 rounded-full"
+                                                className="bg-primary absolute top-0 h-0.5 w-6 rounded-full"
                                                 transition={{ type: "spring", stiffness: 400, damping: 30 }}
                                             />
                                         )}

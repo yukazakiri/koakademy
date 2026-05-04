@@ -156,7 +156,10 @@
     },
     "extra": {
         "laravel": {
-            "dont-discover": []
+            "dont-discover": [
+                "nativephp/desktop",
+                "nativephp/laravel"
+            ]
         },
         "merge-plugin": {
             "include": [

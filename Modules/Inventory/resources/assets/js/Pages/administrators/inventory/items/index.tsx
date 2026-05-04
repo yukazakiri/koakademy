@@ -37,10 +37,9 @@ interface InventoryItem {
     unit: string;
     track_stock: boolean;
     is_borrowable: boolean;
+    is_consumable: boolean;
     is_active: boolean;
     location?: string | null;
-    ip_address?: string | null;
-    wifi_ssid?: string | null;
     image_urls?: string[];
     updated_at?: string | null;
 }
@@ -50,8 +49,9 @@ interface Props {
     items: InventoryItem[];
     stats: {
         total_items: number;
-        tools: number;
-        network_devices: number;
+        general_equipment: number;
+        specialized_assets: number;
+        consumables: number;
         borrowable_items: number;
         low_stock: number;
         defective_units?: number;
@@ -78,6 +78,13 @@ const typeStyles: Record<string, string> = {
     Router: "bg-amber-500/10 text-amber-700 dark:text-amber-300",
     NVR: "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300",
     CCTV: "bg-sky-500/10 text-sky-700 dark:text-sky-300",
+};
+
+const typeLabels: Record<string, string> = {
+    Tool: "General Equipment",
+    Router: "Distribution Unit",
+    NVR: "Recording Unit",
+    CCTV: "Monitoring Unit",
 };
 
 const statusStyles: Record<string, string> = {
@@ -134,13 +141,14 @@ export default function InventoryItemsIndex({ user, items, stats, filters, optio
                                 </div>
                                 <div>
                                     <CardTitle>Inventory Items</CardTitle>
-                                    <CardDescription>Manage tools and installed network assets.</CardDescription>
+                                    <CardDescription>Manage all inventory assets, supplies, and stock-tracked items.</CardDescription>
                                 </div>
                             </div>
                             <div className="text-muted-foreground flex flex-wrap gap-3 text-sm">
                                 <span>Total items: {stats.total_items}</span>
-                                <span>Tools: {stats.tools}</span>
-                                <span>Network devices: {stats.network_devices}</span>
+                                <span>General: {stats.general_equipment}</span>
+                                <span>Specialized: {stats.specialized_assets}</span>
+                                <span>Consumables: {stats.consumables}</span>
                                 <span>Low stock: {stats.low_stock}</span>
                                 <span>Defective units: {stats.defective_units ?? 0}</span>
                             </div>
@@ -149,11 +157,11 @@ export default function InventoryItemsIndex({ user, items, stats, filters, optio
                             <Button asChild className="gap-2">
                                 <Link href={route("administrators.inventory.items.create", { item_type: "tool" })}>
                                     <Plus className="h-4 w-4" />
-                                    Add Tool
+                                    Add Item
                                 </Link>
                             </Button>
                             <Button variant="outline" asChild>
-                                <Link href={route("administrators.inventory.items.create", { item_type: "router" })}>Add Network Device</Link>
+                                <Link href={route("administrators.inventory.ledger.index")}>View Ledger</Link>
                             </Button>
                         </div>
                     </CardHeader>
@@ -163,7 +171,7 @@ export default function InventoryItemsIndex({ user, items, stats, filters, optio
                     <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                         <div>
                             <CardTitle>Inventory Overview</CardTitle>
-                            <CardDescription>Search by item name, SKU, or IP address.</CardDescription>
+                            <CardDescription>Search by item name, SKU, or location.</CardDescription>
                         </div>
                         <div className="flex w-full flex-col gap-3 lg:w-auto lg:flex-row lg:items-center">
                             <div className="relative w-full lg:w-64">
@@ -223,7 +231,7 @@ export default function InventoryItemsIndex({ user, items, stats, filters, optio
                                 <TableRow>
                                     <TableHead>Item</TableHead>
                                     <TableHead>Type</TableHead>
-                                    <TableHead>Location / Network</TableHead>
+                                    <TableHead>Location</TableHead>
                                     <TableHead>Stock</TableHead>
                                     <TableHead>Borrowable</TableHead>
                                     <TableHead>Status</TableHead>
@@ -259,20 +267,16 @@ export default function InventoryItemsIndex({ user, items, stats, filters, optio
                                                 </div>
                                             </TableCell>
                                             <TableCell>
-                                                <Badge className={typeStyles[item.item_type] ?? "bg-muted text-muted-foreground"}>
-                                                    {item.item_type}
-                                                </Badge>
+                                                <div className="flex flex-wrap gap-1">
+                                                    <Badge className={typeStyles[item.item_type] ?? "bg-muted text-muted-foreground"}>
+                                                        {typeLabels[item.item_type] ?? item.item_type}
+                                                    </Badge>
+                                                    {item.is_consumable ? <Badge className="bg-sky-500/10 text-sky-700 dark:text-sky-300">Consumable</Badge> : null}
+                                                </div>
                                             </TableCell>
                                             <TableCell className="text-muted-foreground text-sm">
                                                 <div className="space-y-1">
                                                     <p>{item.location ?? "No location"}</p>
-                                                    {(item.ip_address || item.wifi_ssid) && (
-                                                        <p className="text-muted-foreground text-xs">
-                                                            {item.ip_address ? `IP ${item.ip_address}` : ""}
-                                                            {item.ip_address && item.wifi_ssid ? " • " : ""}
-                                                            {item.wifi_ssid ? item.wifi_ssid : ""}
-                                                        </p>
-                                                    )}
                                                 </div>
                                             </TableCell>
                                             <TableCell className="text-muted-foreground text-sm">

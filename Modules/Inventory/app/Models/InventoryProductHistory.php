@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Modules\Inventory\Models;
 
+use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 

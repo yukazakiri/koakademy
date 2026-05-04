@@ -21,9 +21,14 @@ use Modules\Inventory\Models\InventoryCategory;
 use Modules\Inventory\Models\InventoryProduct;
 use Modules\Inventory\Models\InventoryProductHistory;
 use Modules\Inventory\Models\InventorySupplier;
+use Modules\Inventory\Services\InventoryLedgerService;
 
 final class AdministratorInventoryProductController extends Controller
 {
+    public function __construct(private readonly InventoryLedgerService $ledger)
+    {
+    }
+
     public function index(Request $request): Response
     {
         $search = $request->input('search');
@@ -41,10 +46,7 @@ final class AdministratorInventoryProductController extends Controller
                     ->orWhere('sku', 'ilike', "%{$term}%")
                     ->orWhere('location_building', 'ilike', "%{$term}%")
                     ->orWhere('location_floor', 'ilike', "%{$term}%")
-                    ->orWhere('location_area', 'ilike', "%{$term}%")
-                    ->orWhere('ip_address', 'ilike', "%{$term}%")
-                    ->orWhere('wifi_ssid', 'ilike', "%{$term}%")
-                    ->orWhere('login_username', 'ilike', "%{$term}%");
+                    ->orWhere('location_area', 'ilike', "%{$term}%");
             });
         }
 
@@ -80,26 +82,26 @@ final class AdministratorInventoryProductController extends Controller
                 'unit' => $product->unit,
                 'track_stock' => $product->track_stock,
                 'is_borrowable' => $product->is_borrowable,
+                'is_consumable' => $product->is_consumable,
                 'is_active' => $product->is_active,
                 'location' => $product->locationLabel(),
-                'ip_address' => $product->ip_address,
-                'wifi_ssid' => $product->wifi_ssid,
                 'image_urls' => $this->resolveImageUrls($product->images),
                 'updated_at' => format_timestamp($product->updated_at),
             ]);
 
-        $networkTypes = InventoryItemType::networkValues();
+        $specializedTypes = InventoryItemType::networkValues();
         $stats = [
             'total_items' => InventoryProduct::count(),
-            'tools' => InventoryProduct::query()
+            'general_equipment' => InventoryProduct::query()
                 ->where('item_type', InventoryItemType::Tool->value)
                 ->count(),
-            'network_devices' => InventoryProduct::query()
-                ->whereIn('item_type', $networkTypes)
+            'specialized_assets' => InventoryProduct::query()
+                ->whereIn('item_type', $specializedTypes)
                 ->count(),
             'borrowable_items' => InventoryProduct::query()
                 ->where('is_borrowable', true)
                 ->count(),
+            'consumables' => InventoryProduct::query()->where('is_consumable', true)->count(),
             'low_stock' => InventoryProduct::query()->lowStock()->count(),
             'defective_units' => InventoryProduct::query()->sum('defective_quantity'),
         ];
@@ -117,11 +119,8 @@ final class AdministratorInventoryProductController extends Controller
             'options' => [
                 'item_types' => [
                     ['value' => 'all', 'label' => 'All items'],
-                    ['value' => 'tool', 'label' => 'Tools & equipment'],
-                    ['value' => 'network', 'label' => 'Network devices'],
-                    ['value' => 'router', 'label' => 'Routers'],
-                    ['value' => 'nvr', 'label' => 'NVR'],
-                    ['value' => 'cctv', 'label' => 'CCTV'],
+                    ['value' => 'tool', 'label' => 'General equipment'],
+                    ['value' => 'network', 'label' => 'Specialized assets'],
                 ],
                 'borrowable' => [
                     ['value' => 'all', 'label' => 'All items'],
@@ -191,6 +190,7 @@ final class AdministratorInventoryProductController extends Controller
                 'barcode' => $inventoryProduct->barcode,
                 'track_stock' => $inventoryProduct->track_stock,
                 'is_borrowable' => $inventoryProduct->is_borrowable,
+                'is_consumable' => $inventoryProduct->is_consumable,
                 'is_active' => $inventoryProduct->is_active,
                 'notes' => $inventoryProduct->notes,
                 'location_building' => $inventoryProduct->location_building,
@@ -367,7 +367,7 @@ final class AdministratorInventoryProductController extends Controller
             ignoreProductId: $inventoryProduct?->id
         );
 
-        if ($itemType !== InventoryItemType::Tool) {
+        if (($validated['is_consumable'] ?? false) === true) {
             $validated['is_borrowable'] = false;
         }
 
@@ -543,7 +543,7 @@ final class AdministratorInventoryProductController extends Controller
             'item_types' => array_map(
                 fn (InventoryItemType $type): array => [
                     'value' => $type->value,
-                    'label' => $type->value,
+                    'label' => $this->resolveItemTypeLabel($type),
                 ],
                 InventoryItemType::cases()
             ),
@@ -555,6 +555,16 @@ final class AdministratorInventoryProductController extends Controller
                 'areas' => $areas,
             ],
         ];
+    }
+
+    private function resolveItemTypeLabel(InventoryItemType $itemType): string
+    {
+        return match ($itemType) {
+            InventoryItemType::Tool => 'General Equipment',
+            InventoryItemType::Router => 'Distribution Unit',
+            InventoryItemType::Nvr => 'Recording Unit',
+            InventoryItemType::Cctv => 'Monitoring Unit',
+        };
     }
 
     private function getUserProps(): array
@@ -578,16 +588,7 @@ final class AdministratorInventoryProductController extends Controller
      */
     private function snapshotProductState(InventoryProduct $product): array
     {
-        return [
-            'name' => $product->name,
-            'sku' => $product->sku,
-            'good_quantity' => $product->stock_quantity,
-            'defective_quantity' => $product->defective_quantity,
-            'location_building' => $product->location_building,
-            'location_floor' => $product->location_floor,
-            'location_area' => $product->location_area,
-            'location_label' => $product->locationLabel(),
-        ];
+        return $this->ledger->snapshot($product);
     }
 
     /**
@@ -623,16 +624,18 @@ final class AdministratorInventoryProductController extends Controller
         string $eventType,
         ?array $before,
         array $after,
-        string $notes
+        string $notes,
+        ?string $referenceType = null,
+        ?int $referenceId = null
     ): void {
-        InventoryProductHistory::query()->create([
-            'product_id' => $product->id,
-            'event_type' => $eventType,
-            'before' => $before,
-            'after' => $after,
-            'notes' => $notes,
-            'recorded_by' => request()->user()?->id,
-            'recorded_at' => now(),
-        ]);
+        $this->ledger->record(
+            product: $product,
+            eventType: $eventType,
+            before: $before,
+            after: $after,
+            notes: $notes,
+            referenceType: $referenceType,
+            referenceId: $referenceId,
+        );
     }
 }

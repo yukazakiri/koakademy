@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import type { User } from "@/types/user";
 import { Head, Link, useForm } from "@inertiajs/react";
-import { Camera, Save, Server, Wrench } from "lucide-react";
+import { Camera, Save, Wrench } from "lucide-react";
 import type { FormEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -39,6 +39,7 @@ interface InventoryProductFormData {
     barcode: string;
     track_stock: boolean;
     is_borrowable: boolean;
+    is_consumable: boolean;
     is_active: boolean;
     notes: string;
     location_building: string;
@@ -70,6 +71,7 @@ interface InventoryProductRecord {
     barcode?: string | null;
     track_stock: boolean;
     is_borrowable: boolean;
+    is_consumable: boolean;
     is_active: boolean;
     notes?: string | null;
     location_building?: string | null;
@@ -144,7 +146,8 @@ export default function InventoryItemEdit({ user, product, defaults, options }: 
         unit: product?.unit ?? "pcs",
         barcode: product?.barcode ?? "",
         track_stock: product?.track_stock ?? true,
-        is_borrowable: product?.is_borrowable ?? defaultType === "Tool",
+        is_borrowable: product?.is_borrowable ?? true,
+        is_consumable: product?.is_consumable ?? false,
         is_active: product?.is_active ?? true,
         notes: product?.notes ?? "",
         location_building: product?.location_building ?? "",
@@ -182,16 +185,10 @@ export default function InventoryItemEdit({ user, product, defaults, options }: 
         return `${prefix}-${buildingCode || "GEN"}-${stamp}-001`;
     };
 
-    const isNetworkType = ["Router", "NVR", "CCTV"].includes(form.data.item_type);
-    const isTool = form.data.item_type === "Tool";
+    const canBeBorrowed = !form.data.is_consumable;
 
     const handleItemTypeChange = (value: string) => {
         form.setData("item_type", value);
-        if (value !== "Tool") {
-            form.setData("is_borrowable", false);
-        } else if (!form.data.is_borrowable) {
-            form.setData("is_borrowable", true);
-        }
 
         if (!product) {
             form.setData("sku", generateSku(value, form.data.location_building));
@@ -253,7 +250,7 @@ export default function InventoryItemEdit({ user, product, defaults, options }: 
                     <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                         <div className="flex items-center gap-3">
                             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600">
-                                {isNetworkType ? <Server className="h-5 w-5" /> : <Wrench className="h-5 w-5" />}
+                                <Wrench className="h-5 w-5" />
                             </div>
                             <div>
                                 <CardTitle>{product ? "Update Inventory Item" : "New Inventory Item"}</CardTitle>
@@ -515,62 +512,6 @@ export default function InventoryItemEdit({ user, product, defaults, options }: 
                     </Card>
                 )}
 
-                {isNetworkType && (
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Network Configuration</CardTitle>
-                            <CardDescription>Record IP, WiFi, and access credentials.</CardDescription>
-                        </CardHeader>
-                        <CardContent className="grid gap-5 sm:grid-cols-2">
-                            <div className="space-y-2">
-                                <Label htmlFor="ip_address">IP Address</Label>
-                                <Input
-                                    id="ip_address"
-                                    value={form.data.ip_address}
-                                    onChange={(event) => form.setData("ip_address", event.target.value)}
-                                />
-                                {form.errors.ip_address && <p className="text-destructive text-xs">{form.errors.ip_address}</p>}
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="wifi_ssid">WiFi SSID</Label>
-                                <Input
-                                    id="wifi_ssid"
-                                    value={form.data.wifi_ssid}
-                                    onChange={(event) => form.setData("wifi_ssid", event.target.value)}
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="wifi_password">WiFi Password</Label>
-                                <Input
-                                    id="wifi_password"
-                                    type="password"
-                                    autoComplete="new-password"
-                                    value={form.data.wifi_password}
-                                    onChange={(event) => form.setData("wifi_password", event.target.value)}
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="login_username">Login Username</Label>
-                                <Input
-                                    id="login_username"
-                                    value={form.data.login_username}
-                                    onChange={(event) => form.setData("login_username", event.target.value)}
-                                />
-                            </div>
-                            <div className="space-y-2 sm:col-span-2">
-                                <Label htmlFor="login_password">Login Password</Label>
-                                <Input
-                                    id="login_password"
-                                    type="password"
-                                    autoComplete="new-password"
-                                    value={form.data.login_password}
-                                    onChange={(event) => form.setData("login_password", event.target.value)}
-                                />
-                            </div>
-                        </CardContent>
-                    </Card>
-                )}
-
                 <Card>
                     <CardHeader>
                         <CardTitle>Step 2: Condition & Stock</CardTitle>
@@ -679,15 +620,30 @@ export default function InventoryItemEdit({ user, product, defaults, options }: 
                             </div>
                             <Switch checked={form.data.track_stock} onCheckedChange={(value) => form.setData("track_stock", value)} />
                         </div>
-                        {isTool && (
+                        {canBeBorrowed && (
                             <div className="flex items-center justify-between rounded-lg border px-4 py-3">
                                 <div>
                                     <p className="text-sm font-medium">Borrowable</p>
-                                    <p className="text-muted-foreground text-xs">Allow staff to borrow this tool.</p>
+                                    <p className="text-muted-foreground text-xs">Allow this item to be issued and returned.</p>
                                 </div>
                                 <Switch checked={form.data.is_borrowable} onCheckedChange={(value) => form.setData("is_borrowable", value)} />
                             </div>
                         )}
+                        <div className="flex items-center justify-between rounded-lg border px-4 py-3">
+                            <div>
+                                <p className="text-sm font-medium">Consumable</p>
+                                <p className="text-muted-foreground text-xs">Consumables are deducted from stock and are not borrowable.</p>
+                            </div>
+                            <Switch
+                                checked={form.data.is_consumable}
+                                onCheckedChange={(value) => {
+                                    form.setData("is_consumable", value);
+                                    if (value) {
+                                        form.setData("is_borrowable", false);
+                                    }
+                                }}
+                            />
+                        </div>
                         <div className="flex items-center justify-between rounded-lg border px-4 py-3">
                             <div>
                                 <p className="text-sm font-medium">Active Item</p>

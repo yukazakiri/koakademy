@@ -11,12 +11,13 @@ use Inertia\Response;
 use Modules\Inventory\Enums\InventoryItemType;
 use Modules\Inventory\Models\InventoryBorrowing;
 use Modules\Inventory\Models\InventoryProduct;
+use Modules\Inventory\Models\InventoryProductHistory;
 
 final class AdministratorInventoryController extends Controller
 {
     public function index(): Response
     {
-        $networkTypes = InventoryItemType::networkValues();
+        $specializedTypes = InventoryItemType::networkValues();
         $goodUnits = InventoryProduct::query()->sum('stock_quantity');
         $defectiveUnits = InventoryProduct::query()->sum('defective_quantity');
 
@@ -25,17 +26,16 @@ final class AdministratorInventoryController extends Controller
             'good_units' => $goodUnits,
             'defective_units' => $defectiveUnits,
             'total_units' => $goodUnits + $defectiveUnits,
-            'tools' => InventoryProduct::query()
-                ->where('item_type', InventoryItemType::Tool->value)
-                ->count(),
-            'network_devices' => InventoryProduct::query()
-                ->whereIn('item_type', $networkTypes)
-                ->count(),
+            'general_equipment' => InventoryProduct::query()->where('item_type', InventoryItemType::Tool->value)->count(),
+            'specialized_assets' => InventoryProduct::query()->whereIn('item_type', $specializedTypes)->count(),
+            'consumables' => InventoryProduct::query()->where('is_consumable', true)->count(),
             'borrowable_items' => InventoryProduct::query()
                 ->where('is_borrowable', true)
                 ->count(),
             'active_borrowings' => InventoryBorrowing::query()->active()->count(),
             'overdue_borrowings' => InventoryBorrowing::query()->overdue()->count(),
+            'ledger_entries' => InventoryProductHistory::query()->count(),
+            'ledger_today' => InventoryProductHistory::query()->whereDate('recorded_at', now()->toDateString())->count(),
         ];
 
         $recentItems = InventoryProduct::query()
@@ -81,12 +81,37 @@ final class AdministratorInventoryController extends Controller
                 'is_overdue' => $record->isOverdue(),
             ]);
 
+        $recentTransactions = InventoryProductHistory::query()
+            ->with(['product:id,name,sku,unit,is_consumable'])
+            ->latest('recorded_at')
+            ->take(8)
+            ->get()
+            ->map(fn (InventoryProductHistory $entry): array => [
+                'id' => $entry->id,
+                'event_type' => $entry->event_type,
+                'notes' => $entry->notes,
+                'recorded_at' => format_timestamp($entry->recorded_at),
+                'reference_type' => $entry->reference_type,
+                'product' => [
+                    'id' => $entry->product?->id,
+                    'name' => $entry->product?->name,
+                    'sku' => $entry->product?->sku,
+                    'unit' => $entry->product?->unit,
+                    'is_consumable' => $entry->product?->is_consumable ?? false,
+                ],
+                'movement' => [
+                    'good_delta' => is_array($entry->after) ? ($entry->after['good_delta'] ?? null) : null,
+                    'defective_delta' => is_array($entry->after) ? ($entry->after['defective_delta'] ?? null) : null,
+                ],
+            ]);
+
         return Inertia::render('administrators/inventory/index', [
             'user' => $this->getUserProps(),
             'stats' => $stats,
             'recent' => [
                 'items' => $recentItems,
                 'borrowings' => $recentBorrowings,
+                'transactions' => $recentTransactions,
             ],
             'flash' => session('flash'),
         ]);

@@ -121,7 +121,7 @@ export default function InventoryBorrowingsIndex({ user, records, stats, filters
                                 </div>
                                 <div>
                                     <CardTitle>Borrow Logs</CardTitle>
-                                    <CardDescription>Monitor who borrowed tools and equipment.</CardDescription>
+                                    <CardDescription>Monitor issued inventory items and return transactions.</CardDescription>
                                 </div>
                             </div>
                             <div className="text-muted-foreground flex flex-wrap gap-3 text-sm">
@@ -132,6 +132,9 @@ export default function InventoryBorrowingsIndex({ user, records, stats, filters
                         </div>
                         <Button asChild className="gap-2">
                             <Link href={route("administrators.inventory.borrowings.create")}>Log Borrow</Link>
+                        </Button>
+                        <Button variant="outline" asChild>
+                            <Link href={route("administrators.inventory.ledger.index")}>Ledger</Link>
                         </Button>
                     </CardHeader>
                 </Card>

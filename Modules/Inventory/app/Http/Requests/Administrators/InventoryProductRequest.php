@@ -45,6 +45,7 @@ final class InventoryProductRequest extends FormRequest
             'barcode' => ['nullable', 'string', 'max:255'],
             'track_stock' => ['required', 'boolean'],
             'is_borrowable' => ['required', 'boolean'],
+            'is_consumable' => ['required', 'boolean'],
             'is_active' => ['required', 'boolean'],
             'notes' => ['nullable', 'string'],
             'location_building' => ['nullable', 'string', 'max:255'],

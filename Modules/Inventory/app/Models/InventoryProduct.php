@@ -31,6 +31,7 @@ use Modules\Inventory\Enums\InventoryItemType;
  * @property string|null $barcode
  * @property bool $track_stock
  * @property bool $is_borrowable
+ * @property bool $is_consumable
  * @property bool $is_active
  * @property array|null $images
  * @property string|null $notes
@@ -102,6 +103,7 @@ final class InventoryProduct extends Model
     protected $attributes = [
         'item_type' => InventoryItemType::Tool->value,
         'is_borrowable' => true,
+        'is_consumable' => false,
     ];
 
     /**
@@ -126,6 +128,7 @@ final class InventoryProduct extends Model
         'barcode',
         'track_stock',
         'is_borrowable',
+        'is_consumable',
         'is_active',
         'images',
         'notes',
@@ -263,6 +266,7 @@ final class InventoryProduct extends Model
             'max_stock_level' => 'integer',
             'track_stock' => 'boolean',
             'is_borrowable' => 'boolean',
+            'is_consumable' => 'boolean',
             'is_active' => 'boolean',
             'images' => 'array',
             'wifi_password' => 'encrypted',

@@ -16,10 +16,14 @@ use Modules\Inventory\Enums\InventoryHistoryEventType;
 use Modules\Inventory\Http\Requests\Administrators\InventoryBorrowingRequest;
 use Modules\Inventory\Models\InventoryBorrowing;
 use Modules\Inventory\Models\InventoryProduct;
-use Modules\Inventory\Models\InventoryProductHistory;
+use Modules\Inventory\Services\InventoryLedgerService;
 
 final class AdministratorInventoryBorrowingController extends Controller
 {
+    public function __construct(private readonly InventoryLedgerService $ledger)
+    {
+    }
+
     public function index(Request $request): Response
     {
         $search = $request->input('search');
@@ -128,7 +132,7 @@ final class AdministratorInventoryBorrowingController extends Controller
         DB::transaction(function () use ($validated, $product, $goodImpact, $defectiveImpact): void {
             $borrowing = InventoryBorrowing::create($validated);
 
-            $this->applyStockDelta(
+            $this->ledger->applyStockDelta(
                 $product,
                 $goodImpact,
                 $defectiveImpact,
@@ -226,7 +230,7 @@ final class AdministratorInventoryBorrowingController extends Controller
             $inventoryBorrowing->update($validated);
 
             if ($originalProduct && $newProduct && $originalProduct->is($newProduct)) {
-                $this->applyStockDelta(
+                $this->ledger->applyStockDelta(
                     $originalProduct,
                     $newGoodImpact - $originalGoodImpact,
                     $newDefectiveImpact - $originalDefectiveImpact,
@@ -240,7 +244,7 @@ final class AdministratorInventoryBorrowingController extends Controller
             }
 
             if ($originalProduct) {
-                $this->applyStockDelta(
+                $this->ledger->applyStockDelta(
                     $originalProduct,
                     -$originalGoodImpact,
                     -$originalDefectiveImpact,
@@ -252,7 +256,7 @@ final class AdministratorInventoryBorrowingController extends Controller
             }
 
             if ($newProduct) {
-                $this->applyStockDelta(
+                $this->ledger->applyStockDelta(
                     $newProduct,
                     $newGoodImpact,
                     $newDefectiveImpact,
@@ -286,7 +290,7 @@ final class AdministratorInventoryBorrowingController extends Controller
             $inventoryBorrowing->delete();
 
             if ($product) {
-                $this->applyStockDelta(
+                $this->ledger->applyStockDelta(
                     $product,
                     -$goodImpact,
                     -$defectiveImpact,
@@ -348,46 +352,6 @@ final class AdministratorInventoryBorrowingController extends Controller
         }
 
         return [$quantityReturnedGood - $quantityBorrowed, $quantityReturnedDefective];
-    }
-
-    private function applyStockDelta(
-        InventoryProduct $product,
-        int $goodDelta,
-        int $defectiveDelta,
-        string $eventType,
-        ?string $notes = null,
-        ?string $referenceType = null,
-        ?int $referenceId = null
-    ): void {
-        if (! $product->track_stock || ($goodDelta === 0 && $defectiveDelta === 0)) {
-            return;
-        }
-
-        $before = [
-            'good_quantity' => $product->stock_quantity,
-            'defective_quantity' => $product->defective_quantity,
-            'location' => $product->locationLabel(),
-        ];
-
-        $product->stock_quantity = max(0, $product->stock_quantity + $goodDelta);
-        $product->defective_quantity = max(0, $product->defective_quantity + $defectiveDelta);
-        $product->save();
-
-        InventoryProductHistory::query()->create([
-            'product_id' => $product->id,
-            'event_type' => $eventType,
-            'before' => $before,
-            'after' => [
-                'good_quantity' => $product->stock_quantity,
-                'defective_quantity' => $product->defective_quantity,
-                'location' => $product->locationLabel(),
-            ],
-            'reference_type' => $referenceType,
-            'reference_id' => $referenceId,
-            'notes' => $notes,
-            'recorded_by' => request()->user()?->id,
-            'recorded_at' => now(),
-        ]);
     }
 
     private function getBorrowOptions(): array

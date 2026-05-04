@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { User } from "@/types/user";
 import { Head, Link } from "@inertiajs/react";
-import { ClipboardList, Package, Server, Wrench } from "lucide-react";
+import { ClipboardList, Package, ScrollText, Wrench } from "lucide-react";
 
 declare const route: any;
 
@@ -14,11 +14,14 @@ interface InventoryStats {
     good_units: number;
     defective_units: number;
     total_units: number;
-    tools: number;
-    network_devices: number;
+    general_equipment: number;
+    specialized_assets: number;
+    consumables: number;
     borrowable_items: number;
     active_borrowings: number;
     overdue_borrowings: number;
+    ledger_entries: number;
+    ledger_today: number;
 }
 
 interface RecentItem {
@@ -53,6 +56,15 @@ interface Props {
     recent: {
         items: RecentItem[];
         borrowings: RecentBorrowing[];
+        transactions: {
+            id: number;
+            event_type: string;
+            notes?: string | null;
+            recorded_at?: string | null;
+            reference_type?: string | null;
+            product?: { id?: number | null; name?: string | null; sku?: string | null; unit?: string | null; is_consumable?: boolean };
+            movement?: { good_delta?: number | null; defective_delta?: number | null };
+        }[];
     };
 }
 
@@ -63,11 +75,11 @@ const statusStyles: Record<string, string> = {
     lost: "bg-rose-500/10 text-rose-700 dark:text-rose-300",
 };
 
-const typeStyles: Record<string, string> = {
-    Tool: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-    Router: "bg-amber-500/10 text-amber-700 dark:text-amber-300",
-    NVR: "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300",
-    CCTV: "bg-sky-500/10 text-sky-700 dark:text-sky-300",
+const typeLabels: Record<string, string> = {
+    Tool: "General Equipment",
+    Router: "Distribution Unit",
+    NVR: "Recording Unit",
+    CCTV: "Monitoring Unit",
 };
 
 const formatDate = (value?: string | null) => {
@@ -77,8 +89,8 @@ const formatDate = (value?: string | null) => {
 
 export default function InventoryIndex({ user, stats, recent }: Props) {
     return (
-        <AdminLayout user={user} title="Inventory System">
-            <Head title="Administrators • Inventory System" />
+        <AdminLayout user={user} title="Inventory Transactions">
+            <Head title="Administrators • Inventory Transactions" />
 
             <div className="flex flex-col gap-6">
                 <Card className="via-background border-0 bg-gradient-to-r from-slate-900/5 to-emerald-500/10">
@@ -88,19 +100,19 @@ export default function InventoryIndex({ user, stats, recent }: Props) {
                                 <Package className="h-6 w-6" />
                             </div>
                             <div>
-                                <CardTitle className="text-2xl">Inventory Control Center</CardTitle>
-                                <CardDescription>Track tools, network devices, and borrowing activity in one place.</CardDescription>
+                                <CardTitle className="text-2xl">Inventory Ledger Center</CardTitle>
+                                <CardDescription>Track transactional entries for stock, location, borrowings, and consumables in one place.</CardDescription>
                             </div>
                         </div>
                         <div className="flex flex-wrap gap-2">
                             <Button asChild>
-                                <Link href={route("administrators.inventory.items.create", { item_type: "tool" })}>Add Tool</Link>
-                            </Button>
-                            <Button variant="outline" asChild>
-                                <Link href={route("administrators.inventory.items.create", { item_type: "router" })}>Add Network Device</Link>
+                                <Link href={route("administrators.inventory.items.create")}>Add Item</Link>
                             </Button>
                             <Button variant="outline" asChild>
                                 <Link href={route("administrators.inventory.borrowings.create")}>Log Borrowing</Link>
+                            </Button>
+                            <Button variant="outline" asChild>
+                                <Link href={route("administrators.inventory.ledger.index")}>Open Ledger</Link>
                             </Button>
                         </div>
                     </CardHeader>
@@ -112,7 +124,7 @@ export default function InventoryIndex({ user, stats, recent }: Props) {
                             <div>
                                 <p className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Total Items</p>
                                 <p className="text-2xl font-semibold">{stats.total_items}</p>
-                                <p className="text-muted-foreground text-xs">{stats.borrowable_items} borrowable</p>
+                                <p className="text-muted-foreground text-xs">{stats.consumables} consumable</p>
                             </div>
                             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-900/10 text-slate-700 dark:text-slate-200">
                                 <Package className="h-5 w-5" />
@@ -134,12 +146,12 @@ export default function InventoryIndex({ user, stats, recent }: Props) {
                     <Card className="bg-background/60 border-0">
                         <CardContent className="flex items-center justify-between gap-4 p-5">
                             <div>
-                                <p className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Network Devices</p>
-                                <p className="text-2xl font-semibold">{stats.network_devices}</p>
-                                <p className="text-muted-foreground text-xs">Routers, NVRs, CCTV</p>
+                                <p className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Asset Mix</p>
+                                <p className="text-2xl font-semibold">{stats.specialized_assets}</p>
+                                <p className="text-muted-foreground text-xs">General {stats.general_equipment} • Specialized {stats.specialized_assets}</p>
                             </div>
-                            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-sky-500/10 text-sky-600">
-                                <Server className="h-5 w-5" />
+                            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-600">
+                                <ScrollText className="h-5 w-5" />
                             </div>
                         </CardContent>
                     </Card>
@@ -148,7 +160,7 @@ export default function InventoryIndex({ user, stats, recent }: Props) {
                             <div>
                                 <p className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Active Borrowings</p>
                                 <p className="text-2xl font-semibold">{stats.active_borrowings}</p>
-                                <p className="text-muted-foreground text-xs">{stats.overdue_borrowings} overdue</p>
+                                <p className="text-muted-foreground text-xs">{stats.ledger_today} logged today</p>
                             </div>
                             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600">
                                 <ClipboardList className="h-5 w-5" />
@@ -162,7 +174,7 @@ export default function InventoryIndex({ user, stats, recent }: Props) {
                         <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                             <div>
                                 <CardTitle>Recently Updated Items</CardTitle>
-                                <CardDescription>Latest changes across tools and devices.</CardDescription>
+                                <CardDescription>Latest changes across inventory items and stock records.</CardDescription>
                             </div>
                             <Button variant="outline" size="sm" asChild>
                                 <Link href={route("administrators.inventory.items.index")}>View inventory</Link>
@@ -207,9 +219,7 @@ export default function InventoryIndex({ user, stats, recent }: Props) {
                                                     </div>
                                                 </TableCell>
                                                 <TableCell>
-                                                    <Badge className={typeStyles[item.item_type] ?? "bg-muted text-muted-foreground"}>
-                                                        {item.item_type}
-                                                    </Badge>
+                                                    <Badge className="bg-muted text-muted-foreground">{typeLabels[item.item_type] ?? item.item_type}</Badge>
                                                 </TableCell>
                                                 <TableCell className="text-muted-foreground text-sm">{item.location ?? "Not set"}</TableCell>
                                                 <TableCell className="text-muted-foreground text-right text-xs">
@@ -260,6 +270,61 @@ export default function InventoryIndex({ user, stats, recent }: Props) {
                         </CardContent>
                     </Card>
                 </div>
+
+                <Card className="border">
+                    <CardHeader className="flex flex-row items-center justify-between">
+                        <div>
+                            <CardTitle>Recent Ledger Entries</CardTitle>
+                            <CardDescription>Unified transaction timeline across all inventory changes.</CardDescription>
+                        </div>
+                        <Button variant="outline" size="sm" asChild>
+                            <Link href={route("administrators.inventory.ledger.index")}>View full ledger</Link>
+                        </Button>
+                    </CardHeader>
+                    <CardContent>
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>When</TableHead>
+                                    <TableHead>Item</TableHead>
+                                    <TableHead>Event</TableHead>
+                                    <TableHead>Movement</TableHead>
+                                    <TableHead>Notes</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {recent.transactions.length === 0 ? (
+                                    <TableRow>
+                                        <TableCell colSpan={5} className="text-muted-foreground h-24 text-center text-sm">
+                                            No ledger entries yet.
+                                        </TableCell>
+                                    </TableRow>
+                                ) : (
+                                    recent.transactions.map((entry) => (
+                                        <TableRow key={entry.id}>
+                                            <TableCell className="text-muted-foreground text-xs">{formatDate(entry.recorded_at)}</TableCell>
+                                            <TableCell>
+                                                <div className="space-y-1">
+                                                    <p className="text-foreground font-medium">{entry.product?.name ?? "Unknown item"}</p>
+                                                    <p className="text-muted-foreground text-xs">{entry.product?.sku ?? "—"}</p>
+                                                </div>
+                                            </TableCell>
+                                            <TableCell>
+                                                <Badge className="bg-muted text-muted-foreground">{entry.event_type.replaceAll("_", " ")}</Badge>
+                                            </TableCell>
+                                            <TableCell className="text-muted-foreground text-xs">
+                                                {(entry.movement?.good_delta ?? 0) !== 0 || (entry.movement?.defective_delta ?? 0) !== 0
+                                                    ? `Good ${entry.movement?.good_delta ?? 0}, Def ${entry.movement?.defective_delta ?? 0}`
+                                                    : "—"}
+                                            </TableCell>
+                                            <TableCell className="text-muted-foreground text-xs">{entry.notes ?? "—"}</TableCell>
+                                        </TableRow>
+                                    ))
+                                )}
+                            </TableBody>
+                        </Table>
+                    </CardContent>
+                </Card>
             </div>
         </AdminLayout>
     );

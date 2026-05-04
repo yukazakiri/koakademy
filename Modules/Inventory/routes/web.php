@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Illuminate\Support\Facades\Route;
 use Modules\Inventory\Http\Controllers\AdministratorInventoryBorrowingController;
 use Modules\Inventory\Http\Controllers\AdministratorInventoryController;
+use Modules\Inventory\Http\Controllers\AdministratorInventoryLedgerController;
 use Modules\Inventory\Http\Controllers\AdministratorInventoryProductController;
 
 Route::middleware(['auth', 'administrators.only'])
@@ -12,6 +13,7 @@ Route::middleware(['auth', 'administrators.only'])
     ->name('administrators.')
     ->group(function (): void {
         Route::get('/inventory', [AdministratorInventoryController::class, 'index'])->name('inventory.index');
+        Route::get('/inventory/ledger', [AdministratorInventoryLedgerController::class, 'index'])->name('inventory.ledger.index');
 
         Route::get('/inventory/items', [AdministratorInventoryProductController::class, 'index'])->name('inventory.items.index');
         Route::get('/inventory/items/create', [AdministratorInventoryProductController::class, 'create'])->name('inventory.items.create');

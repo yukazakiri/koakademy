@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.7.12",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.12",
-  "commit": "21c09b5071fab72c5e73802ad815cb2959957845",
+  "version": "1.1.0-dev.7.13",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.13",
+  "commit": "06b50921bcd83c722baa6829ddc421dc170a7c71",
   "branch": "master",
-  "timestamp": "2026-05-03T15:36:20Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25283229227",
+  "timestamp": "2026-05-04T02:38:50Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25298204028",
   "release_type": "bugfix",
   "changelog": {
-    "current": "Version 1.1.0-dev.7.12 - fix: remove Wayfinder Vite plugin from asset build",
-    "previous": "1.1.0-dev.7.11"
+    "current": "Version 1.1.0-dev.7.13 - fix: clear bootstrap cache manifests before startup artisan tasks",
+    "previous": "1.1.0-dev.7.12"
   },
   "metadata": {
     "author": "yukazakiri",

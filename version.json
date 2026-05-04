@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.7.14",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.14",
-  "commit": "e74e1bd1411286a9ab902df2069d96e7148f81c5",
+  "version": "1.1.0-dev.7.15",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.15",
+  "commit": "8c203bff6c16cf27fe325aee48c40bc6b0f37f71",
   "branch": "master",
-  "timestamp": "2026-05-04T02:56:25Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25298588355",
-  "release_type": "bugfix",
+  "timestamp": "2026-05-04T09:30:39Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25311382692",
+  "release_type": "patch",
   "changelog": {
-    "current": "Version 1.1.0-dev.7.14 - fix: remove NativePHP wiring and block package auto-discovery",
-    "previous": "1.1.0-dev.7.13"
+    "current": "Version 1.1.0-dev.7.15 - fixed inventory system",
+    "previous": "1.1.0-dev.7.14"
   },
   "metadata": {
     "author": "yukazakiri",

@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.7.13",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.13",
-  "commit": "06b50921bcd83c722baa6829ddc421dc170a7c71",
+  "version": "1.1.0-dev.7.14",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.14",
+  "commit": "e74e1bd1411286a9ab902df2069d96e7148f81c5",
   "branch": "master",
-  "timestamp": "2026-05-04T02:38:50Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25298204028",
+  "timestamp": "2026-05-04T02:56:25Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25298588355",
   "release_type": "bugfix",
   "changelog": {
-    "current": "Version 1.1.0-dev.7.13 - fix: clear bootstrap cache manifests before startup artisan tasks",
-    "previous": "1.1.0-dev.7.12"
+    "current": "Version 1.1.0-dev.7.14 - fix: remove NativePHP wiring and block package auto-discovery",
+    "previous": "1.1.0-dev.7.13"
   },
   "metadata": {
     "author": "yukazakiri",

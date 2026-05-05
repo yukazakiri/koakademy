@@ -56,8 +56,6 @@ if (Test-Path $EnvFile) {
 $PortalHost = if ($EnvVars.ContainsKey("PORTAL_HOST")) { $EnvVars["PORTAL_HOST"] } else { "portal.dccp.test" }
 $AdminHost = if ($EnvVars.ContainsKey("ADMIN_HOST")) { $EnvVars["ADMIN_HOST"] } else { "admin.dccp.test" }
 $MailpitHost = if ($EnvVars.ContainsKey("MAILPIT_HOST")) { $EnvVars["MAILPIT_HOST"] } else { "mailpit.local.test" }
-$MinioHost = if ($EnvVars.ContainsKey("MINIO_HOST")) { $EnvVars["MINIO_HOST"] } else { "minio.local.test" }
-$MinioConsoleHost = if ($EnvVars.ContainsKey("MINIO_CONSOLE_HOST")) { $EnvVars["MINIO_CONSOLE_HOST"] } else { "minio-console.local.test" }
 
 # Extract base domain from PORTAL_HOST
 if ($PortalHost -match '^[^.]+\.(.+)$') {
@@ -75,8 +73,6 @@ $CertDomains = @(
     $AdminHost,
     "*.$BaseDomain",
     $MailpitHost,
-    $MinioHost,
-    $MinioConsoleHost,
     "*.local.test"
 )
 
@@ -84,9 +80,7 @@ $CertDomains = @(
 $HostsDomains = @(
     $PortalHost,
     $AdminHost,
-    $MailpitHost,
-    $MinioHost,
-    $MinioConsoleHost
+    $MailpitHost
 )
 
 # Colors for output
@@ -329,6 +323,4 @@ Write-Host "Your local development URLs:" -ForegroundColor Yellow
 Write-Host "   https://${PortalHost}" -ForegroundColor Cyan
 Write-Host "   https://${AdminHost}" -ForegroundColor Cyan
 Write-Host "   http://${MailpitHost}" -ForegroundColor Cyan
-Write-Host "   http://${MinioHost}" -ForegroundColor Cyan
-Write-Host "   http://${MinioConsoleHost}" -ForegroundColor Cyan
 Write-Host ""

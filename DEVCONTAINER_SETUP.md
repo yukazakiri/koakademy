@@ -16,8 +16,6 @@ Add these entries to the host machine:
 127.0.0.1 portal.koakademy.test
 127.0.0.1 admin.koakademy.test
 127.0.0.1 mailpit.local.test
-127.0.0.1 minio.local.test
-127.0.0.1 minio-console.local.test
 ```
 
 On Windows PowerShell, from the repository root:
@@ -48,7 +46,6 @@ vendor/bin/sail npm run dev
 - `https://portal.koakademy.test`
 - `https://admin.koakademy.test`
 - `http://mailpit.local.test:8025`
-- `http://minio.local.test:9000`
 
 ## Helpful Dev Container Files
 

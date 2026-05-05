@@ -24,8 +24,6 @@
 - `portal.koakademy.test`
 - `*.koakademy.test`
 - `mailpit.local.test`
-- `minio.local.test`
-- `minio-console.local.test`
 - `*.local.test`
 
 ### Common Issues

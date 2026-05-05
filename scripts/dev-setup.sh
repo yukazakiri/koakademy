@@ -43,8 +43,6 @@ fi
 PORTAL_HOST=${PORTAL_HOST:-portal.dccp.test}
 ADMIN_HOST=${ADMIN_HOST:-admin.dccp.test}
 MAILPIT_HOST=${MAILPIT_HOST:-mailpit.local.test}
-MINIO_HOST=${MINIO_HOST:-minio.local.test}
-MINIO_CONSOLE_HOST=${MINIO_CONSOLE_HOST:-minio-console.local.test}
 
 # Extract base domain from PORTAL_HOST
 BASE_DOMAIN=$(echo "$PORTAL_HOST" | sed 's/^[^.]*\.//')
@@ -57,14 +55,13 @@ DOMAINS=(
     "$PORTAL_HOST"
     "$ADMIN_HOST"
     "$MAILPIT_HOST"
-    "$MINIO_HOST"
-    "$MINIO_CONSOLE_HOST"
 )
 
 # Flags
 SKIP_SSL=false
 SKIP_HOSTS=false
 SKIP_DOCKER=false
+FRESH=false
 
 # Colors
 RED='\033[0;31m'
@@ -284,9 +281,33 @@ configure_docker_access() {
     return 0
 }
 
+fresh_cleanup() {
+    section "Fresh Install Cleanup"
+
+    warn "This will remove all containers, volumes, and networks for this project!"
+    info "Stopping and removing containers, volumes, and networks..."
+
+    cd "$PROJECT_ROOT"
+
+    if docker_compose_cmd down -v --remove-orphans 2>&1; then
+        success "All containers, volumes, and networks removed"
+    else
+        warn "Some cleanup errors occurred (containers may not have existed)"
+    fi
+
+    info "Pruning project-specific images..."
+    if docker_cmd image prune -f --filter "label=com.docker.compose.project=$(docker_compose_cmd config --project-name 2>/dev/null || basename "$PROJECT_ROOT")" 2>/dev/null; then
+        success "Unused images pruned"
+    fi
+}
+
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --fresh)
+            FRESH=true
+            shift
+            ;;
         --skip-ssl)
             SKIP_SSL=true
             shift
@@ -303,6 +324,7 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
+            echo "  --fresh        Remove all containers, volumes, and networks for a fresh install"
             echo "  --skip-ssl     Skip SSL certificate setup"
             echo "  --skip-hosts   Skip hosts file setup"
             echo "  --skip-docker  Skip Docker Compose setup"
@@ -372,6 +394,10 @@ if [ ! -f "$PROJECT_ROOT/.env" ]; then
     success ".env file created"
 else
     success ".env file already exists"
+fi
+
+if [[ "$FRESH" == true ]]; then
+    fresh_cleanup
 fi
 
 # Step 3: Setup Docker Compose services
@@ -483,8 +509,6 @@ if [[ "$SKIP_SSL" == false ]]; then
                 "$ADMIN_HOST"
                 "*.$BASE_DOMAIN"
                 "$MAILPIT_HOST"
-                "$MINIO_HOST"
-                "$MINIO_CONSOLE_HOST"
                 "*.local.test"
             )
 
@@ -547,32 +571,6 @@ http:
       middlewares:
         - redirect-websecure
 
-    # MinIO
-    minio-secure:
-      rule: "Host(\`${MINIO_HOST}\`)"
-      entrypoints:
-        - websecure
-      service: minio
-      tls: true
-    minio-http:
-      rule: "Host(\`${MINIO_HOST}\`)"
-      entrypoints:
-        - web
-      service: minio
-
-    # MinIO Console
-    minio-console-secure:
-      rule: "Host(\`${MINIO_CONSOLE_HOST}\`)"
-      entrypoints:
-        - websecure
-      service: minio-console
-      tls: true
-    minio-console-http:
-      rule: "Host(\`${MINIO_CONSOLE_HOST}\`)"
-      entrypoints:
-        - web
-      service: minio-console
-
     # Mailpit
     mailpit-secure:
       rule: "Host(\`${MAILPIT_HOST}\`)"
@@ -591,14 +589,6 @@ http:
       loadBalancer:
         servers:
           - url: "http://laravel:80"
-    minio:
-      loadBalancer:
-        servers:
-          - url: "http://minio:9000"
-    minio-console:
-      loadBalancer:
-        servers:
-          - url: "http://minio:8900"
     mailpit:
       loadBalancer:
         servers:
@@ -682,8 +672,6 @@ echo -e "${CYAN}Access your application at:${NC}"
 echo -e "  ${CYAN}Portal:${NC}              https://${PORTAL_HOST}"
 echo -e "  ${CYAN}Admin:${NC}               https://${ADMIN_HOST}"
 echo -e "  ${CYAN}Mailpit (Email):${NC}     http://${MAILPIT_HOST}:8025"
-echo -e "  ${CYAN}MinIO (File Storage):${NC} http://${MINIO_HOST}:9000"
-echo -e "  ${CYAN}MinIO Console:${NC}       http://${MINIO_CONSOLE_HOST}:8900"
 echo -e "  ${CYAN}Traefik Dashboard:${NC}   http://localhost:8080"
 echo ""
 
@@ -699,10 +687,6 @@ echo "  4. Start Vite dev server: npm run dev"
 echo "  5. Start Laravel: php artisan octane:start (in another terminal)"
 echo ""
 
-echo -e "${YELLOW}Default Credentials:${NC}"
-echo "  MinIO:"
-echo "    Access Key: sail"
-echo "    Secret Key: password"
 echo ""
 
 echo -e "${CYAN}Useful Commands:${NC}"

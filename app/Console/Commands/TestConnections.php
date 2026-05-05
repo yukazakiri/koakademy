@@ -27,7 +27,7 @@ final class TestConnections extends Command
      *
      * @var string
      */
-    protected $description = 'Test connections to all configured services (R2, Redis, PostgreSQL, Minio, Pusher, etc.)';
+    protected $description = 'Test connections to all configured services (R2, Redis, PostgreSQL, Pusher, etc.)';
 
     /**
      * Execute the console command.
@@ -54,7 +54,6 @@ final class TestConnections extends Command
                 'database' => $this->testDatabase(),
                 'redis' => $this->testRedis(),
                 'storage' => $this->testStorage(),
-                'minio' => $this->testMinio(),
                 'cache' => $this->testCache(),
                 'queue' => $this->testQueue(),
                 'supabase' => $this->testSupabase(),
@@ -195,67 +194,6 @@ final class TestConnections extends Command
             return [
                 'success' => false,
                 'message' => 'Default storage connection failed',
-                'error' => $e->getMessage(),
-            ];
-        }
-    }
-
-    private function testMinio(): array
-    {
-        try {
-            $start = microtime(true);
-
-            $disk = Storage::disk('minio');
-
-            // Test file upload
-            $testContent = 'Minio connection test at '.format_timestamp_now();
-            $testFile = 'test-connections/'.uniqid().'.txt';
-            $disk->put($testFile, $testContent, 'public');
-
-            // Test file existence
-            $exists = $disk->exists($testFile);
-
-            // Test file URL generation
-            $url = $disk->url($testFile);
-
-            // Test temporary URL
-            $tempUrl = method_exists($disk, 'temporaryUrl')
-                ? $disk->temporaryUrl($testFile, now()->addMinutes(5))
-                : 'N/A';
-
-            // Test file download
-            if ($exists) {
-                $downloaded = $disk->get($testFile);
-                $contentMatch = $downloaded === $testContent;
-            } else {
-                $contentMatch = false;
-            }
-
-            // Cleanup
-            if ($exists) {
-                $disk->delete($testFile);
-            }
-
-            $duration = round((microtime(true) - $start) * 1000, 2);
-
-            return [
-                'success' => $exists && $contentMatch,
-                'message' => $exists && $contentMatch ? 'Minio storage connected successfully' : 'Minio storage test failed',
-                'details' => [
-                    'bucket' => config('filesystems.disks.minio.bucket'),
-                    'endpoint' => config('filesystems.disks.minio.endpoint'),
-                    'region' => config('filesystems.disks.minio.region'),
-                    'url' => $url,
-                    'temporary_url' => $tempUrl,
-                    'file_uploaded' => $exists,
-                    'content_verified' => $contentMatch,
-                    'response_time' => "{$duration}ms",
-                ],
-            ];
-        } catch (Exception $e) {
-            return [
-                'success' => false,
-                'message' => 'Minio storage connection failed',
                 'error' => $e->getMessage(),
             ];
         }

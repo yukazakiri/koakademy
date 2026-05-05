@@ -75,7 +75,7 @@ final class StudentTimetablePdfService
             $pdf = file_get_contents($tempPath);
             unlink($tempPath);
 
-            // Store PDF in MinIO (default filesystem)
+            // Store PDF in default filesystem
             $path = 'pdfs/'.$filename;
             Storage::put($path, $pdf);
 

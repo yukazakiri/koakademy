@@ -91,8 +91,6 @@ If you want to manage hosts manually, add these entries:
 127.0.0.1 portal.koakademy.test
 127.0.0.1 admin.koakademy.test
 127.0.0.1 mailpit.local.test
-127.0.0.1 minio.local.test
-127.0.0.1 minio-console.local.test
 ```
 
 If local HTTPS certificates need to be created or repaired, use:

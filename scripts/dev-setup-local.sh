@@ -46,8 +46,6 @@ fi
 PORTAL_HOST=${PORTAL_HOST:-portal.dccp.com}
 ADMIN_HOST=${ADMIN_HOST:-admin.dccp.com}
 MAILPIT_HOST=${MAILPIT_HOST:-mailpit.local.com}
-MINIO_HOST=${MINIO_HOST:-minio.local.com}
-MINIO_CONSOLE_HOST=${MINIO_CONSOLE_HOST:-minio-console.local.com}
 
 # Extract base domain
 BASE_DOMAIN=$(echo "$PORTAL_HOST" | sed 's/^[^.]*\.//')
@@ -62,8 +60,6 @@ DOMAINS=(
     "$PORTAL_HOST"
     "$ADMIN_HOST"
     "$MAILPIT_HOST"
-    "$MINIO_HOST"
-    "$MINIO_CONSOLE_HOST"
     "localhost"
 )
 
@@ -956,8 +952,6 @@ setup_ssl() {
         "$ADMIN_HOST"
         "*.$BASE_DOMAIN"
         "$MAILPIT_HOST"
-        "$MINIO_HOST"
-        "$MINIO_CONSOLE_HOST"
         "*.local.test"
         "localhost"
     )

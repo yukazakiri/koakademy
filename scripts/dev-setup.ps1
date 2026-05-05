@@ -151,8 +151,6 @@ SESSION_LIFETIME=120
 PORTAL_HOST=portal.dccp.test
 ADMIN_HOST=admin.dccp.test
 MAILPIT_HOST=mailpit.local.test
-MINIO_HOST=minio.local.test
-MINIO_CONSOLE_HOST=minio-console.local.test
 "@ | Out-File -FilePath $EnvFile -Encoding UTF8
         Write-Success "Minimal .env file created"
     }
@@ -239,18 +237,7 @@ $MailpitHost = if ($EnvContent -match 'MAILPIT_HOST=(.*)')
 } else
 { "mailpit.local.test"
 }
-$MinioHost = if ($EnvContent -match 'MINIO_HOST=(.*)')
-{ $matches[1].Trim()
-} else
-{ "minio.local.test"
-}
-$MinioConsoleHost = if ($EnvContent -match 'MINIO_CONSOLE_HOST=(.*)')
-{ $matches[1].Trim()
-} else
-{ "minio-console.local.test"
-}
-
-$Domains = @($PortalHost, $AdminHost, $MailpitHost, $MinioHost, $MinioConsoleHost)
+$Domains = @($PortalHost, $AdminHost, $MailpitHost)
 
 Write-Info "Configuring Herd proxy for the following domains:"
 foreach ($domain in $Domains)
@@ -423,8 +410,6 @@ Write-Host "Access your application at:" -ForegroundColor Cyan
 Write-Host "  Portal:            https://$PortalHost"
 Write-Host "  Admin:             https://$AdminHost"
 Write-Host "  Mailpit (Email):    https://$MailpitHost"
-Write-Host "  MinIO (Storage):    https://$MinioHost"
-Write-Host "  MinIO Console:      https://$MinioConsoleHost"
 Write-Host ""
 
 Write-Host "Herd Status:" -ForegroundColor Cyan

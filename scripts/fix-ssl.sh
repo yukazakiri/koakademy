@@ -37,8 +37,6 @@ fi
 PORTAL_HOST=${PORTAL_HOST:-portal.koakademy.test}
 ADMIN_HOST=${ADMIN_HOST:-admin.koakademy.test}
 MAILPIT_HOST=${MAILPIT_HOST:-mailpit.local.test}
-MINIO_HOST=${MINIO_HOST:-minio.local.test}
-MINIO_CONSOLE_HOST=${MINIO_CONSOLE_HOST:-minio-console.local.test}
 
 # Extract base domain from PORTAL_HOST
 BASE_DOMAIN=$(echo "$PORTAL_HOST" | sed 's/^[^.]*\.//')
@@ -50,8 +48,6 @@ DOMAINS=(
     "$ADMIN_HOST"
     "$PORTAL_HOST"
     "*.$BASE_DOMAIN"
-    "$MINIO_HOST"
-    "$MINIO_CONSOLE_HOST"
     "$MAILPIT_HOST"
     "local.test"
     "*.local.test"

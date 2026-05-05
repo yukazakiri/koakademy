@@ -80,20 +80,6 @@ return [
             'throw' => false,
             'report' => false,
         ],
-        'minio' => [
-            'driver' => 's3',
-            'endpoint' => env('AWS_ENDPOINT', 'http://minio:9000'),
-            'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', true),
-            'key' => env('AWS_ACCESS_KEY_ID'),
-            'secret' => env('AWS_SECRET_ACCESS_KEY'),
-            'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
-            'bucket' => env('AWS_BUCKET', 'default-minio-bucket'),
-            'url' => env('MINIO_URL', env('APP_URL').':9000/local'),
-            'temporary_url' => env('AWS_TEMPORARY_URL', 'https://admin.koakademy.edu:9000'),
-            'throw' => false,
-            'report' => false,
-        ],
-
     ],
 
     /*

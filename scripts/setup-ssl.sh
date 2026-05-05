@@ -37,8 +37,6 @@ fi
 PORTAL_HOST=${PORTAL_HOST:-portal.dccp.test}
 ADMIN_HOST=${ADMIN_HOST:-admin.dccp.test}
 MAILPIT_HOST=${MAILPIT_HOST:-mailpit.local.test}
-MINIO_HOST=${MINIO_HOST:-minio.local.test}
-MINIO_CONSOLE_HOST=${MINIO_CONSOLE_HOST:-minio-console.local.test}
 
 # Extract base domain from PORTAL_HOST (e.g., dccp.test from portal.dccp.test)
 # This assumes the structure [subdomain].[domain].[tld] or [subdomain].[tld]
@@ -53,8 +51,6 @@ CERT_DOMAINS=(
     "$ADMIN_HOST"
     "*.$BASE_DOMAIN"
     "$MAILPIT_HOST"
-    "$MINIO_HOST"
-    "$MINIO_CONSOLE_HOST"
     "*.local.test"
 )
 
@@ -63,8 +59,6 @@ HOSTS_DOMAINS=(
     "$PORTAL_HOST"
     "$ADMIN_HOST"
     "$MAILPIT_HOST"
-    "$MINIO_HOST"
-    "$MINIO_CONSOLE_HOST"
 )
 
 # Flags
@@ -352,6 +346,4 @@ echo -e "${YELLOW}Your local development URLs:${NC}"
 echo -e "${CYAN}   https://${PORTAL_HOST}${NC}"
 echo -e "${CYAN}   https://${ADMIN_HOST}${NC}"
 echo -e "${CYAN}   http://${MAILPIT_HOST}${NC}"
-echo -e "${CYAN}   http://${MINIO_HOST}${NC}"
-echo -e "${CYAN}   http://${MINIO_CONSOLE_HOST}${NC}"
 echo ""

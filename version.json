@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.7.17",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.17",
-  "commit": "709e41b5bba21b25234134e0a4dd1e3993cfd09f",
+  "version": "1.1.0-dev.8.0",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.8.0",
+  "commit": "8472e63862b6da02614ef4aff4e5e32c3de8ef94",
   "branch": "master",
-  "timestamp": "2026-05-05T04:23:32Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25357611710",
-  "release_type": "patch",
+  "timestamp": "2026-05-05T06:25:42Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25361073870",
+  "release_type": "feature",
   "changelog": {
-    "current": "Version 1.1.0-dev.7.17 - Update README.md",
-    "previous": "1.1.0-dev.7.16"
+    "current": "Version 1.1.0-dev.8.0 - feat: enhance enrollment form with complete student fields, signature pad, and missing DB columns",
+    "previous": "1.1.0-dev.7.17"
   },
   "metadata": {
     "author": "yukazakiri",

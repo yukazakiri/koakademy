@@ -25,11 +25,88 @@ jobs:
     outputs:
       skip: ${{ steps.check_skip.outputs.skip }}
     steps:
-      - name: Set CI optimization fallback
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Check if changes are code-relevant
         id: check_skip
         shell: bash
         run: |
-          echo 'skip=false' >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+
+          # Determine changed files in this push
+          if [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            CHANGED_FILES=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")
+          else
+            # New branch or force push
+            CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r "${{ github.sha }}")
+          fi
+
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "No files changed, skipping."
+            echo 'skip=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Patterns for files that don't affect the Docker build or application logic
+          # and therefore should not trigger an auto-release
+          SKIP_PATTERNS=(
+            '^README'
+            '^CHANGELOG'
+            '^LICENSE'
+            '^CODE_OF_CONDUCT'
+            '^CONTRIBUTING'
+            '^SECURITY'
+            '^docs/'
+            '\.md$'
+            '^\.github/workflows/'
+            '^\.gitignore'
+            '^\.gitattributes'
+            '^\.editorconfig'
+            '^\.prettier'
+            '^\.eslint'
+            '^\.stylelintrc'
+            '^\.markdownlint'
+            '^\.vscode/'
+            '^\.idea/'
+            '^scripts/'
+            '^\.husky/'
+            '^\.commitlintrc'
+            '^\.releaserc'
+            '^\.semantic-release'
+            '^\.dockerignore'
+            '^\.npmignore'
+            '^\.nvmrc'
+            '^\.node-version'
+          )
+
+          CODE_CHANGES=false
+          while IFS= read -r file; do
+            [ -n "$file" ] || continue
+            MATCHED=false
+            for pattern in "${SKIP_PATTERNS[@]}"; do
+              if echo "$file" | grep -qiE "$pattern"; then
+                MATCHED=true
+                break
+              fi
+            done
+            if [ "$MATCHED" = "false" ]; then
+              CODE_CHANGES=true
+              break
+            fi
+          done <<< "$CHANGED_FILES"
+
+          if [ "$CODE_CHANGES" = "false" ]; then
+            echo "Only non-code files changed, skipping release."
+            echo "Changed files:"
+            echo "$CHANGED_FILES"
+            echo 'skip=true' >> "$GITHUB_OUTPUT"
+          else
+            echo "Code changes detected, proceeding with release."
+            echo 'skip=false' >> "$GITHUB_OUTPUT"
+          fi
 
   analyze-commit:
     runs-on: ubuntu-24.04

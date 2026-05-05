@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.7.16",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.16",
-  "commit": "f27dfdd5ebb6d1501725ae305596bf8ee91f845b",
+  "version": "1.1.0-dev.7.17",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.17",
+  "commit": "709e41b5bba21b25234134e0a4dd1e3993cfd09f",
   "branch": "master",
-  "timestamp": "2026-05-05T04:15:51Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25357408309",
-  "release_type": "bugfix",
+  "timestamp": "2026-05-05T04:23:32Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25357611710",
+  "release_type": "patch",
   "changelog": {
-    "current": "Version 1.1.0-dev.7.16 - fix: resolve Traefik 404 by adding routing config, SELinux labels, and trusted hosts",
-    "previous": "1.1.0-dev.7.15"
+    "current": "Version 1.1.0-dev.7.17 - Update README.md",
+    "previous": "1.1.0-dev.7.16"
   },
   "metadata": {
     "author": "yukazakiri",

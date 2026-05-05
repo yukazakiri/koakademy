@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.7.15",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.15",
-  "commit": "8c203bff6c16cf27fe325aee48c40bc6b0f37f71",
+  "version": "1.1.0-dev.7.16",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.7.16",
+  "commit": "f27dfdd5ebb6d1501725ae305596bf8ee91f845b",
   "branch": "master",
-  "timestamp": "2026-05-04T09:30:39Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25311382692",
-  "release_type": "patch",
+  "timestamp": "2026-05-05T04:15:51Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25357408309",
+  "release_type": "bugfix",
   "changelog": {
-    "current": "Version 1.1.0-dev.7.15 - fixed inventory system",
-    "previous": "1.1.0-dev.7.14"
+    "current": "Version 1.1.0-dev.7.16 - fix: resolve Traefik 404 by adding routing config, SELinux labels, and trusted hosts",
+    "previous": "1.1.0-dev.7.15"
   },
   "metadata": {
     "author": "yukazakiri",

@@ -124,7 +124,11 @@ type EnrollmentFormData = {
     is_magna_carta: boolean;
     is_underprivileged: boolean;
     is_first_generation: boolean;
+    income_bracket_mode: string;
+    use_same_parent_income: boolean;
     family_income_bracket: string;
+    father_income_bracket: string;
+    mother_income_bracket: string;
 
     personal_info: {
         birthplace: string;
@@ -186,13 +190,20 @@ type IncomeBracketOption = {
     label: string;
 };
 
+type IncomeModeOption = {
+    value: string;
+    label: string;
+    brackets: IncomeBracketOption[];
+};
+
 interface EnrollmentCreateProps {
     departments: Department[];
     courses: Course[];
     flash?: Flash;
     college_enrollment_enabled?: boolean;
     tesda_enrollment_enabled?: boolean;
-    income_brackets?: IncomeBracketOption[];
+    income_modes?: IncomeModeOption[];
+    default_income_mode?: string;
     currency_symbol?: string;
 }
 
@@ -297,7 +308,7 @@ interface Branding {
 const sanitizeNumberInput = (value: string) => value.replace(/\D/g, "");
 const sanitizeNameInput = (value: string) => value.replace(/[^a-zA-Z\s.-]/g, "");
 
-export default function EnrollmentCreate({ departments, courses, flash, college_enrollment_enabled = false, tesda_enrollment_enabled = true, income_brackets = [], currency_symbol = '₱' }: EnrollmentCreateProps) {
+export default function EnrollmentCreate({ departments, courses, flash, college_enrollment_enabled = false, tesda_enrollment_enabled = true, income_modes = [], default_income_mode = 'annual', currency_symbol = '₱' }: EnrollmentCreateProps) {
     const { props } = usePage<{ branding?: Branding }>();
     const appName = props.branding?.appName || "School Portal";
     const orgShortName = props.branding?.organizationShortName || "UNI";
@@ -428,7 +439,11 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
         is_magna_carta: false,
         is_underprivileged: false,
         is_first_generation: false,
+        income_bracket_mode: default_income_mode,
+        use_same_parent_income: true,
         family_income_bracket: "",
+        father_income_bracket: "",
+        mother_income_bracket: "",
 
         personal_info: {
             birthplace: "",
@@ -594,6 +609,28 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
         return courses.find((course) => course.id === id) ?? null;
     }, [courses, data.course_id]);
 
+    const selectedIncomeMode = useMemo(() => {
+        return income_modes.find((mode) => mode.value === data.income_bracket_mode) ?? income_modes[0] ?? null;
+    }, [income_modes, data.income_bracket_mode]);
+
+    const activeIncomeBrackets = selectedIncomeMode?.brackets ?? [];
+
+    useEffect(() => {
+        setData("family_income_bracket", "");
+        setData("father_income_bracket", "");
+        setData("mother_income_bracket", "");
+    }, [data.income_bracket_mode]);
+
+    useEffect(() => {
+        if (data.use_same_parent_income) {
+            setData("father_income_bracket", "");
+            setData("mother_income_bracket", "");
+            return;
+        }
+
+        setData("family_income_bracket", "");
+    }, [data.use_same_parent_income]);
+
     const validateStep = (step: number) => {
         try {
             if (step === 0) {
@@ -678,7 +715,11 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
         formData.append("is_magna_carta", data.is_magna_carta ? "1" : "0");
         formData.append("is_underprivileged", data.is_underprivileged ? "1" : "0");
         formData.append("is_first_generation", data.is_first_generation ? "1" : "0");
+        formData.append("income_bracket_mode", data.income_bracket_mode);
+        formData.append("use_same_parent_income", data.use_same_parent_income ? "1" : "0");
         formData.append("family_income_bracket", data.family_income_bracket);
+        formData.append("father_income_bracket", data.father_income_bracket);
+        formData.append("mother_income_bracket", data.mother_income_bracket);
         formData.append("remarks", data.remarks);
         formData.append("consent", data.consent ? "1" : "0");
 
@@ -2602,20 +2643,74 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                             <School className="text-primary h-5 w-5" />
                                             <h3 className="text-base font-semibold">Family Income</h3>
                                         </div>
-                                        <p className="text-muted-foreground text-sm">Select your family's approximate monthly income range. This helps the institution assess eligibility for scholarships and support programs.</p>
-                                        <div className="space-y-1.5">
-                                            <Label className="text-sm">Monthly Income Bracket</Label>
-                                            <select
-                                                value={data.family_income_bracket}
-                                                onChange={(e) => setData("family_income_bracket", e.target.value)}
-                                                className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-50"
-                                            >
-                                                <option value="">Select income range...</option>
-                                                {income_brackets.map((bracket) => (
-                                                    <option key={bracket.value} value={bracket.value}>{bracket.label}</option>
-                                                ))}
-                                            </select>
+                                        <p className="text-muted-foreground text-sm">Set income basis first (monthly or annual), then choose one shared family range or separate father and mother ranges.</p>
+                                        <div className="grid gap-3 sm:grid-cols-2">
+                                            <div className="space-y-1.5">
+                                                <Label className="text-sm">Income Basis</Label>
+                                                <select
+                                                    value={data.income_bracket_mode}
+                                                    onChange={(e) => setData("income_bracket_mode", e.target.value)}
+                                                    className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-50"
+                                                >
+                                                    {income_modes.map((mode) => (
+                                                        <option key={mode.value} value={mode.value}>{mode.label}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div className="flex items-center gap-2 rounded-lg border p-3">
+                                                <Checkbox
+                                                    id="same_parent_income"
+                                                    checked={data.use_same_parent_income}
+                                                    onCheckedChange={(checked) => setData("use_same_parent_income", checked === true)}
+                                                />
+                                                <Label htmlFor="same_parent_income" className="cursor-pointer text-sm font-medium">Father and mother have the same income bracket</Label>
+                                            </div>
                                         </div>
+
+                                        {data.use_same_parent_income ? (
+                                            <div className="space-y-1.5">
+                                                <Label className="text-sm">Family Income Bracket</Label>
+                                                <select
+                                                    value={data.family_income_bracket}
+                                                    onChange={(e) => setData("family_income_bracket", e.target.value)}
+                                                    className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-50"
+                                                >
+                                                    <option value="">Select income range...</option>
+                                                    {activeIncomeBrackets.map((bracket) => (
+                                                        <option key={bracket.value} value={bracket.value}>{bracket.label}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        ) : (
+                                            <div className="grid gap-3 sm:grid-cols-2">
+                                                <div className="space-y-1.5">
+                                                    <Label className="text-sm">Father's Income Bracket</Label>
+                                                    <select
+                                                        value={data.father_income_bracket}
+                                                        onChange={(e) => setData("father_income_bracket", e.target.value)}
+                                                        className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-50"
+                                                    >
+                                                        <option value="">Select income range...</option>
+                                                        {activeIncomeBrackets.map((bracket) => (
+                                                            <option key={bracket.value} value={bracket.value}>{bracket.label}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <Label className="text-sm">Mother's Income Bracket</Label>
+                                                    <select
+                                                        value={data.mother_income_bracket}
+                                                        onChange={(e) => setData("mother_income_bracket", e.target.value)}
+                                                        className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-50"
+                                                    >
+                                                        <option value="">Select income range...</option>
+                                                        {activeIncomeBrackets.map((bracket) => (
+                                                            <option key={bracket.value} value={bracket.value}>{bracket.label}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        )}
                                     </CardContent>
                                 </Card>
 
@@ -3214,10 +3309,29 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                                         {data.is_first_generation && <Badge variant="secondary" className="text-xs">First Gen</Badge>}
                                                     </div>
                                                 )}
-                                                {data.family_income_bracket && (
-                                                    <p className="text-muted-foreground mt-2 text-sm">
-                                                        Income: {income_brackets.find((b) => b.value === data.family_income_bracket)?.label || data.family_income_bracket}
-                                                    </p>
+                                                {(data.family_income_bracket || data.father_income_bracket || data.mother_income_bracket) && (
+                                                    <div className="text-muted-foreground mt-2 space-y-1 text-sm">
+                                                        <p>Income Basis: {selectedIncomeMode?.label || data.income_bracket_mode}</p>
+                                                        {data.use_same_parent_income && data.family_income_bracket && (
+                                                            <p>
+                                                                Family Income: {activeIncomeBrackets.find((b) => b.value === data.family_income_bracket)?.label || data.family_income_bracket}
+                                                            </p>
+                                                        )}
+                                                        {!data.use_same_parent_income && (
+                                                            <>
+                                                                {data.father_income_bracket && (
+                                                                    <p>
+                                                                        Father: {activeIncomeBrackets.find((b) => b.value === data.father_income_bracket)?.label || data.father_income_bracket}
+                                                                    </p>
+                                                                )}
+                                                                {data.mother_income_bracket && (
+                                                                    <p>
+                                                                        Mother: {activeIncomeBrackets.find((b) => b.value === data.mother_income_bracket)?.label || data.mother_income_bracket}
+                                                                    </p>
+                                                                )}
+                                                            </>
+                                                        )}
+                                                    </div>
                                                 )}
                                             </div>
 

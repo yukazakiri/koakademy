@@ -18,6 +18,10 @@ final class StoreEnrollmentRegistrationRequest extends FormRequest
      */
     public function rules(): array
     {
+        $incomeModes = array_keys(config('income_brackets.modes', []));
+        $selectedMode = (string) $this->input('income_bracket_mode', config('income_brackets.default_mode', 'annual'));
+        $incomeBracketKeys = $this->incomeBracketKeysForMode($selectedMode);
+
         return [
             'student_type' => ['required', 'in:college,tesda'],
             'department' => ['required_if:student_type,college', 'exists:departments,code'],
@@ -85,7 +89,11 @@ final class StoreEnrollmentRegistrationRequest extends FormRequest
             'is_magna_carta' => ['nullable', 'boolean'],
             'is_underprivileged' => ['nullable', 'boolean'],
             'is_first_generation' => ['nullable', 'boolean'],
-            'family_income_bracket' => ['nullable', 'string', 'in:'.implode(',', array_keys(config('income_brackets.brackets', [])))],
+            'income_bracket_mode' => ['required', 'string', 'in:'.implode(',', $incomeModes)],
+            'use_same_parent_income' => ['nullable', 'boolean'],
+            'family_income_bracket' => ['required_if:use_same_parent_income,true,1', 'nullable', 'string', 'in:'.implode(',', $incomeBracketKeys)],
+            'father_income_bracket' => ['required_if:use_same_parent_income,false,0', 'nullable', 'string', 'in:'.implode(',', $incomeBracketKeys)],
+            'mother_income_bracket' => ['required_if:use_same_parent_income,false,0', 'nullable', 'string', 'in:'.implode(',', $incomeBracketKeys)],
             'remarks' => ['nullable', 'string', 'max:2000'],
 
             // Social media
@@ -132,9 +140,38 @@ final class StoreEnrollmentRegistrationRequest extends FormRequest
             'parents.guardian_name.required' => 'Guardian name is required.',
             'parents.guardian_relationship.required' => 'Guardian relationship is required.',
             'parents.guardian_contact.required' => 'Guardian contact number is required.',
+            'family_income_bracket.required_if' => 'Please select a family income range when both parents have the same income bracket.',
+            'father_income_bracket.required_if' => 'Please select the father\'s income bracket.',
+            'mother_income_bracket.required_if' => 'Please select the mother\'s income bracket.',
             'documents.*.file.max' => 'Each document must be no larger than 10MB.',
             'documents.*.file.mimes' => 'Documents must be JPG, PNG, WebP, or PDF files.',
             'consent.accepted' => 'You must confirm that the information is accurate and you agree to the data privacy notice.',
         ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function incomeBracketKeysForMode(string $mode): array
+    {
+        $configuredModes = config('income_brackets.modes', []);
+
+        if (! is_array($configuredModes)) {
+            return [];
+        }
+
+        $modeConfig = $configuredModes[$mode] ?? $configuredModes[config('income_brackets.default_mode', 'annual')] ?? null;
+
+        if (! is_array($modeConfig)) {
+            return [];
+        }
+
+        $brackets = $modeConfig['brackets'] ?? [];
+
+        if (! is_array($brackets)) {
+            return [];
+        }
+
+        return array_keys($brackets);
     }
 }

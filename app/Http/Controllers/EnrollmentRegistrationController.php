@@ -76,11 +76,22 @@ final class EnrollmentRegistrationController extends Controller
 
         $currencySymbol = app(SiteSettings::class)->getCurrency() === 'PHP' ? '₱' : (app(SiteSettings::class)->getCurrency() === 'USD' ? '$' : app(SiteSettings::class)->getCurrency());
 
-        $incomeBrackets = collect(config('income_brackets.brackets', []))
-            ->map(fn (array $bracket, string $key): array => [
-                'value' => $key,
-                'label' => str_replace('{symbol}', $currencySymbol, $bracket['label']),
-            ])
+        $incomeModes = collect(config('income_brackets.modes', []))
+            ->map(function (array $modeConfig, string $modeKey) use ($currencySymbol): array {
+                $brackets = collect($modeConfig['brackets'] ?? [])
+                    ->map(fn (array $bracket, string $key): array => [
+                        'value' => $key,
+                        'label' => str_replace('{symbol}', $currencySymbol, (string) ($bracket['label'] ?? '')),
+                    ])
+                    ->values()
+                    ->all();
+
+                return [
+                    'value' => $modeKey,
+                    'label' => (string) ($modeConfig['label'] ?? ucfirst($modeKey)),
+                    'brackets' => $brackets,
+                ];
+            })
             ->values()
             ->all();
 
@@ -97,7 +108,8 @@ final class EnrollmentRegistrationController extends Controller
             'flash' => session('flash'),
             'college_enrollment_enabled' => $collegeEnabled,
             'tesda_enrollment_enabled' => $tesdaEnabled,
-            'income_brackets' => $incomeBrackets,
+            'income_modes' => $incomeModes,
+            'default_income_mode' => (string) config('income_brackets.default_mode', 'annual'),
             'currency_symbol' => $currencySymbol,
         ]);
     }
@@ -314,7 +326,11 @@ final class EnrollmentRegistrationController extends Controller
                 'is_magna_carta' => $payload['is_magna_carta'] ?? false,
                 'is_underprivileged' => $payload['is_underprivileged'] ?? false,
                 'is_first_generation' => $payload['is_first_generation'] ?? false,
+                'income_bracket_mode' => $payload['income_bracket_mode'] ?? (string) config('income_brackets.default_mode', 'annual'),
+                'use_same_parent_income' => (bool) ($payload['use_same_parent_income'] ?? true),
                 'family_income_bracket' => $payload['family_income_bracket'] ?? null,
+                'father_income_bracket' => $payload['father_income_bracket'] ?? null,
+                'mother_income_bracket' => $payload['mother_income_bracket'] ?? null,
                 'remarks' => $payload['remarks'] ?? null,
                 'scholarship_type' => null, // Explicitly not a scholar yet
             ]);

@@ -41,6 +41,9 @@ it('allows tesda student registration', function () {
         'email' => 'john@example.com',
         'phone' => '09123456789',
         'civil_status' => 'Single',
+        'income_bracket_mode' => 'annual',
+        'use_same_parent_income' => true,
+        'family_income_bracket' => 'below_250k',
         'contacts' => [
             'personal_contact' => '09123456789',
             'emergency_contact_name' => 'Jane Doe',
@@ -92,6 +95,9 @@ it('prevents college student registration', function () {
         'address' => '456 Test Ave',
         'department' => 'IT',
         'academic_year' => 1,
+        'income_bracket_mode' => 'annual',
+        'use_same_parent_income' => true,
+        'family_income_bracket' => 'below_250k',
         'contacts' => [
             'emergency_contact_name' => 'John Smith',
             'emergency_contact_phone' => '09111111111',
@@ -132,6 +138,9 @@ it('validates tesda course mismatch', function () {
         'gender' => 'male',
         'nationality' => 'Filipino',
         'address' => '789 Test Rd',
+        'income_bracket_mode' => 'annual',
+        'use_same_parent_income' => true,
+        'family_income_bracket' => 'below_250k',
         'contacts' => [
             'emergency_contact_name' => 'Alice Builder',
             'emergency_contact_phone' => '09222222222',

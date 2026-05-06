@@ -249,6 +249,7 @@ final class Student extends Model
         'is_magna_carta',
         'is_underprivileged',
         'is_first_generation',
+        'family_income_bracket',
         'withdrawal_date',
         'withdrawal_reason',
         'attrition_category',

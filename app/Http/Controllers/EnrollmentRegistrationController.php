@@ -18,6 +18,7 @@ use App\Models\Subject;
 use App\Models\User;
 use App\Services\EnrollmentService;
 use App\Services\GeneralSettingsService;
+use App\Settings\SiteSettings;
 use Exception;
 use Filament\Notifications\Notification as FilamentNotification;
 use Illuminate\Http\JsonResponse;
@@ -73,6 +74,16 @@ final class EnrollmentRegistrationController extends Controller
             ->values()
             ->all();
 
+        $currencySymbol = app(SiteSettings::class)->getCurrency() === 'PHP' ? '₱' : (app(SiteSettings::class)->getCurrency() === 'USD' ? '$' : app(SiteSettings::class)->getCurrency());
+
+        $incomeBrackets = collect(config('income_brackets.brackets', []))
+            ->map(fn (array $bracket, string $key): array => [
+                'value' => $key,
+                'label' => str_replace('{symbol}', $currencySymbol, $bracket['label']),
+            ])
+            ->values()
+            ->all();
+
         return Inertia::render('enrollment/index', [
             'departments' => $departments,
             'courses' => $courses->map(fn (Course $course): array => [
@@ -86,6 +97,8 @@ final class EnrollmentRegistrationController extends Controller
             'flash' => session('flash'),
             'college_enrollment_enabled' => $collegeEnabled,
             'tesda_enrollment_enabled' => $tesdaEnabled,
+            'income_brackets' => $incomeBrackets,
+            'currency_symbol' => $currencySymbol,
         ]);
     }
 
@@ -301,6 +314,7 @@ final class EnrollmentRegistrationController extends Controller
                 'is_magna_carta' => $payload['is_magna_carta'] ?? false,
                 'is_underprivileged' => $payload['is_underprivileged'] ?? false,
                 'is_first_generation' => $payload['is_first_generation'] ?? false,
+                'family_income_bracket' => $payload['family_income_bracket'] ?? null,
                 'remarks' => $payload['remarks'] ?? null,
                 'scholarship_type' => null, // Explicitly not a scholar yet
             ]);

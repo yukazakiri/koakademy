@@ -124,6 +124,7 @@ type EnrollmentFormData = {
     is_magna_carta: boolean;
     is_underprivileged: boolean;
     is_first_generation: boolean;
+    family_income_bracket: string;
 
     personal_info: {
         birthplace: string;
@@ -180,12 +181,19 @@ type EnrollmentFormData = {
     consent: boolean;
 };
 
+type IncomeBracketOption = {
+    value: string;
+    label: string;
+};
+
 interface EnrollmentCreateProps {
     departments: Department[];
     courses: Course[];
     flash?: Flash;
     college_enrollment_enabled?: boolean;
     tesda_enrollment_enabled?: boolean;
+    income_brackets?: IncomeBracketOption[];
+    currency_symbol?: string;
 }
 
 const steps = [
@@ -289,7 +297,7 @@ interface Branding {
 const sanitizeNumberInput = (value: string) => value.replace(/\D/g, "");
 const sanitizeNameInput = (value: string) => value.replace(/[^a-zA-Z\s.-]/g, "");
 
-export default function EnrollmentCreate({ departments, courses, flash, college_enrollment_enabled = false, tesda_enrollment_enabled = true }: EnrollmentCreateProps) {
+export default function EnrollmentCreate({ departments, courses, flash, college_enrollment_enabled = false, tesda_enrollment_enabled = true, income_brackets = [], currency_symbol = '₱' }: EnrollmentCreateProps) {
     const { props } = usePage<{ branding?: Branding }>();
     const appName = props.branding?.appName || "School Portal";
     const orgShortName = props.branding?.organizationShortName || "UNI";
@@ -420,6 +428,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
         is_magna_carta: false,
         is_underprivileged: false,
         is_first_generation: false,
+        family_income_bracket: "",
 
         personal_info: {
             birthplace: "",
@@ -669,6 +678,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
         formData.append("is_magna_carta", data.is_magna_carta ? "1" : "0");
         formData.append("is_underprivileged", data.is_underprivileged ? "1" : "0");
         formData.append("is_first_generation", data.is_first_generation ? "1" : "0");
+        formData.append("family_income_bracket", data.family_income_bracket);
         formData.append("remarks", data.remarks);
         formData.append("consent", data.consent ? "1" : "0");
 
@@ -2589,6 +2599,29 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                 <Card className="border shadow-sm">
                                     <CardContent className="space-y-4 p-4 sm:p-6">
                                         <div className="mb-1 flex items-center gap-2">
+                                            <School className="text-primary h-5 w-5" />
+                                            <h3 className="text-base font-semibold">Family Income</h3>
+                                        </div>
+                                        <p className="text-muted-foreground text-sm">Select your family's approximate monthly income range. This helps the institution assess eligibility for scholarships and support programs.</p>
+                                        <div className="space-y-1.5">
+                                            <Label className="text-sm">Monthly Income Bracket</Label>
+                                            <select
+                                                value={data.family_income_bracket}
+                                                onChange={(e) => setData("family_income_bracket", e.target.value)}
+                                                className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-50"
+                                            >
+                                                <option value="">Select income range...</option>
+                                                {income_brackets.map((bracket) => (
+                                                    <option key={bracket.value} value={bracket.value}>{bracket.label}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </CardContent>
+                                </Card>
+
+                                <Card className="border shadow-sm">
+                                    <CardContent className="space-y-4 p-4 sm:p-6">
+                                        <div className="mb-1 flex items-center gap-2">
                                             <User className="text-primary h-5 w-5" />
                                             <h3 className="text-base font-semibold">Physical Info</h3>
                                         </div>
@@ -3180,6 +3213,11 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                                         {data.is_underprivileged && <Badge variant="secondary" className="text-xs">Underprivileged</Badge>}
                                                         {data.is_first_generation && <Badge variant="secondary" className="text-xs">First Gen</Badge>}
                                                     </div>
+                                                )}
+                                                {data.family_income_bracket && (
+                                                    <p className="text-muted-foreground mt-2 text-sm">
+                                                        Income: {income_brackets.find((b) => b.value === data.family_income_bracket)?.label || data.family_income_bracket}
+                                                    </p>
                                                 )}
                                             </div>
 

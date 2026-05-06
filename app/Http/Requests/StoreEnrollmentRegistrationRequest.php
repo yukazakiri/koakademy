@@ -85,6 +85,7 @@ final class StoreEnrollmentRegistrationRequest extends FormRequest
             'is_magna_carta' => ['nullable', 'boolean'],
             'is_underprivileged' => ['nullable', 'boolean'],
             'is_first_generation' => ['nullable', 'boolean'],
+            'family_income_bracket' => ['nullable', 'string', 'in:'.implode(',', array_keys(config('income_brackets.brackets', [])))],
             'remarks' => ['nullable', 'string', 'max:2000'],
 
             // Social media

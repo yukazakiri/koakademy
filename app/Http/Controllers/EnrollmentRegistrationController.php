@@ -40,6 +40,13 @@ final class EnrollmentRegistrationController extends Controller
 {
     public function create(): Response
     {
+        $generalSettings = app(GeneralSettingsService::class)->getGlobalSettingsModel();
+        $configuredEnrollmentCourseIds = collect($generalSettings?->enrollment_courses ?? [])
+            ->map(fn (mixed $courseId): int => (int) $courseId)
+            ->filter(fn (int $courseId): bool => $courseId > 0)
+            ->unique()
+            ->values();
+
         $collegeEnabled = OnboardingFeature::query()
             ->where('feature_key', 'online-college-enrollment')
             ->where('is_active', true)
@@ -59,6 +66,10 @@ final class EnrollmentRegistrationController extends Controller
         $courses = Course::query()
             ->where('is_active', true)
             ->with('department')
+            ->when(
+                $configuredEnrollmentCourseIds->isNotEmpty(),
+                fn ($query) => $query->whereIn('id', $configuredEnrollmentCourseIds)
+            )
             ->when(! $tesdaEnabled, fn ($q) => $q->whereHas('department', fn ($q) => $q->whereRaw('UPPER(TRIM(code)) != ?', ['TESDA'])))
             ->when(! $collegeEnabled, fn ($q) => $q->whereHas('department', fn ($q) => $q->whereRaw('UPPER(TRIM(code)) = ?', ['TESDA'])))
             ->orderBy('title')
@@ -147,6 +158,18 @@ final class EnrollmentRegistrationController extends Controller
 
         $courseId = (int) $payload['course_id'];
         $course = Course::query()->findOrFail($courseId);
+
+        $configuredEnrollmentCourseIds = collect($settings->getGlobalSettingsModel()?->enrollment_courses ?? [])
+            ->map(fn (mixed $configuredId): int => (int) $configuredId)
+            ->filter(fn (int $configuredId): bool => $configuredId > 0)
+            ->unique()
+            ->values();
+
+        if ($configuredEnrollmentCourseIds->isNotEmpty() && ! $configuredEnrollmentCourseIds->contains($courseId)) {
+            return redirect()->back()->with('flash', [
+                'error' => 'The selected course is currently unavailable for new applicant enrollment.',
+            ]);
+        }
 
         if ($studentType === StudentType::TESDA && mb_strtoupper(mb_trim((string) ($course->department?->code ?? ''))) !== 'TESDA') {
             return redirect()->back()->with('flash', [

@@ -87,8 +87,15 @@ export interface GeneralSettings {
     school_portal_maintenance: boolean;
     school_portal_title: string | null;
     school_portal_description: string | null;
+    enrollment_courses?: number[] | null;
     school_year_string?: string | null;
     semester_name?: string | null;
+}
+
+export interface EnrollmentCourseOption {
+    id: number;
+    code: string;
+    title: string;
 }
 
 export interface SocialiteConfig {
@@ -308,6 +315,7 @@ export interface SystemManagementPageProps {
     api_management: ApiManagementConfig;
     grading_config: GradingConfigPayload;
     courses_with_subjects: CourseWithSubjects[];
+    available_enrollment_courses?: EnrollmentCourseOption[];
     public_api_url: string;
     public_api_fields: Record<string, PublicApiFieldDefinition>;
     available_roles: string[];

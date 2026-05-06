@@ -2216,93 +2216,66 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                             <Separator className="mt-6" />
                         </div>
 
-                        {/* Step 1: Program Selection — Mobile-Native App Design */}
+                        {/* Step 1: Program Selection — High-Focus Progressive UI */}
                         {currentStep === 0 && (
-                            <div className="-mx-4 flex flex-col gap-0 px-4 sm:mx-0 sm:gap-6 sm:rounded-2xl sm:px-0">
-                                {/* ── Student Type: Full-width banners ── */}
-                                <div className="space-y-2.5 pb-5 sm:pb-0">
-                                    <h3 className="text-base font-bold sm:text-lg">What are you enrolling as?</h3>
-                                    <RadioGroup
-                                        value={data.student_type}
-                                        onValueChange={(val: "college" | "tesda") => {
-                                            setData("student_type", val);
-                                            setProgramSearch("");
-                                        }}
-                                        className="flex flex-col gap-2.5 sm:flex-row sm:gap-3"
-                                    >
-                                        {/* College Banner */}
-                                        <div className={cn("relative", !college_enrollment_enabled && "opacity-40")}>
-                                            <RadioGroupItem value="college" id="type-college" className="peer sr-only" disabled={!college_enrollment_enabled} />
-                                            <Label
-                                                htmlFor="type-college"
-                                                className={cn(
-                                                    "flex cursor-pointer items-center gap-4 rounded-2xl border-2 p-4 transition-all active:scale-[0.98] sm:flex-1 sm:justify-center",
-                                                    college_enrollment_enabled
-                                                        ? "border-border/50 bg-card hover:border-primary/30 peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/5 peer-data-[state=checked]:shadow-md"
-                                                        : "cursor-not-allowed grayscale",
-                                                )}
-                                            >
-                                                <div className="bg-primary/10 flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl sm:h-14 sm:w-14">
-                                                    <BookOpen className="text-primary h-6 w-6 sm:h-7 sm:w-7" />
-                                                </div>
-                                                <div className="min-w-0 flex-1 sm:text-center">
-                                                    <span className="text-base font-bold">College</span>
-                                                    <p className="text-muted-foreground text-xs">4-year bachelor&apos;s degree programs</p>
-                                                </div>
-                                                <div className="peer-data-[state=checked]:opacity-100 text-primary shrink-0 opacity-0 transition-opacity">
-                                                    <CheckCircle2 className="h-6 w-6" />
-                                                </div>
-                                                {!college_enrollment_enabled && (
-                                                    <Badge variant="destructive" className="absolute top-3 right-3 px-2 py-0.5 text-[10px]">Closed</Badge>
-                                                )}
-                                            </Label>
-                                        </div>
-
-                                        {/* TESDA Banner */}
-                                        <div className={cn("relative", !tesda_enrollment_enabled && "opacity-40")}>
-                                            <RadioGroupItem value="tesda" id="type-tesda" className="peer sr-only" disabled={!tesda_enrollment_enabled} />
-                                            <Label
-                                                htmlFor="type-tesda"
-                                                className={cn(
-                                                    "flex cursor-pointer items-center gap-4 rounded-2xl border-2 p-4 transition-all active:scale-[0.98] sm:flex-1 sm:justify-center",
-                                                    tesda_enrollment_enabled
-                                                        ? "border-border/50 bg-card hover:border-orange-400/30 peer-data-[state=checked]:border-orange-500 peer-data-[state=checked]:bg-orange-50 peer-data-[state=checked]:shadow-md dark:peer-data-[state=checked]:bg-orange-950/30"
-                                                        : "cursor-not-allowed grayscale",
-                                                )}
-                                            >
-                                                <div className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl sm:h-14 sm:w-14", tesda_enrollment_enabled ? "bg-orange-500/10" : "bg-muted")}>
-                                                    <Sparkles className={cn("h-6 w-6 sm:h-7 sm:w-7", tesda_enrollment_enabled ? "text-orange-600 dark:text-orange-400" : "text-muted-foreground")} />
-                                                </div>
-                                                <div className="min-w-0 flex-1 sm:text-center">
-                                                    <span className="text-base font-bold">TESDA</span>
-                                                    <p className="text-muted-foreground text-xs">Technical-vocational &amp; skills training</p>
-                                                </div>
-                                                <div className="peer-data-[state=checked]:opacity-100 text-orange-500 shrink-0 opacity-0 transition-opacity dark:text-orange-400">
-                                                    <CheckCircle2 className="h-6 w-6" />
-                                                </div>
-                                                {!tesda_enrollment_enabled && (
-                                                    <Badge variant="destructive" className="absolute top-3 right-3 px-2 py-0.5 text-[10px]">Closed</Badge>
-                                                )}
-                                            </Label>
-                                        </div>
-                                    </RadioGroup>
+                            <div className="flex flex-col gap-6 sm:gap-8">
+                                {/* ── 1. Enrollment Type (Segmented Control) ── */}
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <Label className="text-base font-bold sm:text-lg">1. Choose Enrollment Path</Label>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-muted/50 p-1.5 dark:bg-muted/20">
+                                        <button
+                                            type="button"
+                                            disabled={!college_enrollment_enabled}
+                                            onClick={() => { setData("student_type", "college"); setProgramSearch(""); setData("course_id", ""); }}
+                                            className={cn(
+                                                "flex items-center justify-center gap-2.5 rounded-lg py-3 text-sm font-semibold transition-all",
+                                                data.student_type === "college"
+                                                    ? "bg-background text-foreground shadow-sm ring-1 ring-border/50"
+                                                    : "text-muted-foreground hover:bg-background/50 hover:text-foreground",
+                                                !college_enrollment_enabled && "cursor-not-allowed opacity-50"
+                                            )}
+                                        >
+                                            <BookOpen className="h-4 w-4" />
+                                            College Degree
+                                        </button>
+                                        <button
+                                            type="button"
+                                            disabled={!tesda_enrollment_enabled}
+                                            onClick={() => { setData("student_type", "tesda"); setProgramSearch(""); setData("course_id", ""); }}
+                                            className={cn(
+                                                "flex items-center justify-center gap-2.5 rounded-lg py-3 text-sm font-semibold transition-all",
+                                                data.student_type === "tesda"
+                                                    ? "bg-background text-foreground shadow-sm ring-1 ring-border/50"
+                                                    : "text-muted-foreground hover:bg-background/50 hover:text-foreground",
+                                                !tesda_enrollment_enabled && "cursor-not-allowed opacity-50"
+                                            )}
+                                        >
+                                            <Sparkles className="h-4 w-4" />
+                                            TESDA Training
+                                        </button>
+                                    </div>
                                 </div>
 
-                                {/* ── Department Chips (College only) ── */}
-                                {data.student_type === "college" && availableDepartments.length > 1 && (
-                                    <div className="border-border/40 border-b pb-4 sm:border-0 sm:pb-0">
-                                        <div className="scrollbar-none -mx-4 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:flex-wrap sm:px-0 sm:gap-2">
+                                {/* ── 2. Filters & Search ── */}
+                                <div className="space-y-4">
+                                    <Label className="text-base font-bold sm:text-lg">2. Find Your Program</Label>
+
+                                    {/* Department Pills */}
+                                    {data.student_type === "college" && availableDepartments.length > 1 && (
+                                        <div className="scrollbar-none -mx-2 flex gap-2 overflow-x-auto px-2 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
                                             <button
                                                 type="button"
                                                 onClick={() => { setData("department", ""); setData("course_id", ""); }}
                                                 className={cn(
-                                                    "inline-flex shrink-0 items-center rounded-full px-4 py-2 text-sm font-semibold transition-all active:scale-95",
+                                                    "inline-flex shrink-0 items-center rounded-full px-4 py-1.5 text-xs font-semibold transition-all active:scale-95",
                                                     data.department === ""
                                                         ? "bg-primary text-primary-foreground shadow-sm"
                                                         : "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground",
                                                 )}
                                             >
-                                                All
+                                                All Departments
                                             </button>
                                             {availableDepartments.map((dept) => (
                                                 <button
@@ -2310,7 +2283,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                                     type="button"
                                                     onClick={() => { setData("department", dept.code); setData("course_id", ""); }}
                                                     className={cn(
-                                                        "inline-flex shrink-0 items-center rounded-full px-4 py-2 text-sm font-semibold transition-all active:scale-95",
+                                                        "inline-flex shrink-0 items-center rounded-full px-4 py-1.5 text-xs font-semibold transition-all active:scale-95",
                                                         data.department === dept.code
                                                             ? "bg-primary text-primary-foreground shadow-sm"
                                                             : "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground",
@@ -2320,18 +2293,16 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                                 </button>
                                             ))}
                                         </div>
-                                    </div>
-                                )}
+                                    )}
 
-                                {/* ── Search Bar ── */}
-                                <div className="py-3 sm:py-0">
+                                    {/* Global Search Bar */}
                                     <div className="relative">
                                         <Search className="text-muted-foreground/70 absolute top-1/2 left-4 h-5 w-5 -translate-y-1/2" />
                                         <Input
                                             value={programSearch}
                                             onChange={(e) => setProgramSearch(e.target.value)}
-                                            placeholder={data.student_type === "tesda" ? "Search TESDA courses..." : "Search college programs..."}
-                                            className="h-14 rounded-2xl bg-muted/50 pl-12 text-base shadow-none border-0 focus-visible:ring-2 focus-visible:ring-primary/30 sm:h-12 sm:rounded-xl sm:bg-card sm:border"
+                                            placeholder="Fast search (e.g., BSIT, Culinary, Tourism)..."
+                                            className="h-12 rounded-xl bg-card pl-12 text-base shadow-sm border-border/50 focus-visible:ring-primary/30"
                                         />
                                         {programSearch && (
                                             <button
@@ -2345,116 +2316,121 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                     </div>
                                 </div>
 
-                                {/* ── Program List ── */}
-                                <div className="space-y-1">
-                                    <div className="flex items-center gap-2 pb-1">
+                                {/* ── 3. Expandable Course List ── */}
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between pb-1">
                                         <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                            {data.student_type === "tesda" ? "TESDA Courses" : "College Programs"}
+                                            {filteredCoursesForGrid.length} {filteredCoursesForGrid.length === 1 ? "Program" : "Programs"} Available
                                         </span>
-                                        <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
-                                            {filteredCoursesForGrid.length}
-                                        </Badge>
                                     </div>
 
                                     {filteredCoursesForGrid.length === 0 ? (
-                                        <div className="flex flex-col items-center py-16">
+                                        <div className="flex flex-col items-center rounded-2xl border-2 border-dashed py-16">
                                             <div className="bg-muted mb-3 flex h-14 w-14 items-center justify-center rounded-full">
                                                 <Search className="text-muted-foreground h-6 w-6" />
                                             </div>
-                                            <p className="font-semibold">No programs found</p>
-                                            <p className="text-muted-foreground mt-1 text-sm">Try a different search or department.</p>
+                                            <p className="text-foreground font-semibold">No programs matched your search</p>
+                                            <p className="text-muted-foreground mt-1 text-sm">Try clearing your filters or search term.</p>
+                                            {(programSearch || data.department) && (
+                                                <Button 
+                                                    variant="outline" 
+                                                    className="mt-4"
+                                                    onClick={() => { setProgramSearch(""); setData("department", ""); }}
+                                                >
+                                                    Clear All Filters
+                                                </Button>
+                                            )}
                                         </div>
                                     ) : (
-                                        <div className="divide-border/40 divide-y overflow-hidden rounded-2xl border border-border/40 bg-card sm:divide-y-0 sm:gap-2 sm:space-y-0 sm:rounded-none sm:border-0 sm:bg-transparent">
+                                        <div className="space-y-2.5">
                                             {filteredCoursesForGrid.map((course) => {
                                                 const isSelected = String(course.id) === data.course_id;
-                                                const deptColor = getDeptColor(course.department);
                                                 return (
-                                                    <button
+                                                    <div
                                                         key={course.id}
-                                                        type="button"
-                                                        onClick={() => setData("course_id", String(course.id))}
                                                         className={cn(
-                                                            "flex w-full items-center gap-3 px-4 py-3.5 text-left transition-all active:bg-muted/80 sm:rounded-xl sm:border sm:px-4 sm:py-3",
-                                                            isSelected
-                                                                ? "bg-primary/5 sm:border-primary sm:bg-primary/5 sm:shadow-sm"
-                                                                : "hover:bg-muted/30 sm:border-border/40 sm:bg-card sm:hover:border-primary/20",
+                                                            "group overflow-hidden rounded-xl border transition-all duration-300",
+                                                            isSelected 
+                                                                ? "border-primary bg-primary/[0.02] ring-1 ring-primary/20 shadow-md" 
+                                                                : "border-border/50 bg-card hover:border-primary/40 cursor-pointer"
                                                         )}
                                                     >
-                                                        {/* Radio-style circle */}
-                                                        <div className={cn(
-                                                            "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-all",
-                                                            isSelected
-                                                                ? "border-primary bg-primary"
-                                                                : "border-muted-foreground/30",
-                                                        )}>
-                                                            {isSelected && <Check className="h-3.5 w-3.5 text-primary-foreground" />}
-                                                        </div>
-
-                                                        {/* Content */}
-                                                        <div className="min-w-0 flex-1">
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="text-primary font-mono text-xs font-bold">{course.code}</span>
-                                                                {course.department_name && (
-                                                                    <span className={cn(
-                                                                        "rounded px-1.5 py-0.5 text-[9px] font-semibold",
-                                                                        deptColor.light, deptColor.text,
-                                                                    )}>
-                                                                        {course.department_name}
-                                                                    </span>
-                                                                )}
+                                                        {/* Compact Header Row */}
+                                                        <div 
+                                                            className="flex items-center gap-3 p-4 sm:px-5"
+                                                            onClick={() => setData("course_id", String(course.id))}
+                                                        >
+                                                            <div className={cn(
+                                                                "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-all duration-300",
+                                                                isSelected 
+                                                                    ? "border-primary bg-primary scale-110" 
+                                                                    : "border-muted-foreground/30 group-hover:border-primary/50"
+                                                            )}>
+                                                                {isSelected && <Check className="h-3.5 w-3.5 text-primary-foreground" />}
                                                             </div>
-                                                            <h4 className={cn("mt-0.5 text-sm font-semibold leading-snug", isSelected && "text-primary")}>
-                                                                {course.title}
-                                                            </h4>
-                                                            {course.description && (
-                                                                <p className="text-muted-foreground mt-0.5 line-clamp-1 text-xs">
-                                                                    {course.description}
-                                                                </p>
-                                                            )}
+                                                            <div className="min-w-0 flex-1 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4">
+                                                                <span className={cn(
+                                                                    "font-mono text-xs font-bold sm:w-20 shrink-0",
+                                                                    isSelected ? "text-primary" : "text-muted-foreground group-hover:text-primary/80"
+                                                                )}>
+                                                                    {course.code}
+                                                                </span>
+                                                                <h4 className={cn(
+                                                                    "text-sm font-semibold truncate transition-colors", 
+                                                                    isSelected ? "text-primary" : "text-foreground group-hover:text-primary/90"
+                                                                )}>
+                                                                    {course.title}
+                                                                </h4>
+                                                            </div>
                                                         </div>
 
-                                                        {/* Chevron */}
-                                                        <ChevronRight className="text-muted-foreground/40 h-4 w-4 shrink-0" />
-                                                    </button>
+                                                        {/* Expanded Context Details (Only visible when selected) */}
+                                                        <AnimatePresence>
+                                                            {isSelected && (
+                                                                <motion.div
+                                                                    initial={{ height: 0, opacity: 0 }}
+                                                                    animate={{ height: "auto", opacity: 1 }}
+                                                                    exit={{ height: 0, opacity: 0 }}
+                                                                    transition={{ duration: 0.2 }}
+                                                                    className="border-t border-primary/10 bg-primary/[0.04] dark:bg-primary/[0.08]"
+                                                                >
+                                                                    <div className="p-4 sm:px-5 pl-[48px] sm:pl-[68px] space-y-3 pb-5">
+                                                                        {/* Context Tags */}
+                                                                        <div className="flex flex-wrap items-center gap-2">
+                                                                            <Badge className="bg-primary/10 text-primary hover:bg-primary/20 shadow-none border-0">
+                                                                                {data.student_type === "college" ? "4-Year Degree Program" : "Tech-Voc Training"}
+                                                                            </Badge>
+                                                                            {course.department_name && (
+                                                                                <Badge variant="outline" className="bg-background text-muted-foreground border-border/60">
+                                                                                    {course.department_name}
+                                                                                </Badge>
+                                                                            )}
+                                                                        </div>
+
+                                                                        {/* Description */}
+                                                                        {course.description ? (
+                                                                            <p className="text-sm text-muted-foreground leading-relaxed">
+                                                                                {course.description}
+                                                                            </p>
+                                                                        ) : (
+                                                                            <p className="text-sm text-muted-foreground italic">No specific description available for this program.</p>
+                                                                        )}
+
+                                                                        {/* Next Step Context Note */}
+                                                                        <div className="mt-4 flex items-center gap-2 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                                                                            <CheckCircle2 className="h-4 w-4" />
+                                                                            Selection confirmed. You can proceed to the next step.
+                                                                        </div>
+                                                                    </div>
+                                                                </motion.div>
+                                                            )}
+                                                        </AnimatePresence>
+                                                    </div>
                                                 );
                                             })}
                                         </div>
                                     )}
                                 </div>
-
-                                {/* ── Selected Program Confirmation ── */}
-                                {selectedCourse && (
-                                    <motion.div
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        transition={{ duration: 0.2 }}
-                                        className="rounded-2xl border-2 border-primary/20 bg-primary/5 p-4 dark:bg-primary/[0.08] sm:rounded-xl"
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            <div className="bg-primary text-primary-foreground flex h-10 w-10 shrink-0 items-center justify-center rounded-xl">
-                                                <CheckCircle2 className="h-5 w-5" />
-                                            </div>
-                                            <div className="min-w-0 flex-1">
-                                                <h4 className="text-sm font-bold leading-snug">{selectedCourse.title}</h4>
-                                                <div className="text-muted-foreground flex items-center gap-1.5 text-xs">
-                                                    <span className="font-mono font-bold">{selectedCourse.code}</span>
-                                                    {selectedCourse.department_name && (
-                                                        <>
-                                                            <span>·</span>
-                                                            <span>{selectedCourse.department_name}</span>
-                                                        </>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                        {selectedCourse.description && (
-                                            <p className="text-muted-foreground mt-2 text-xs leading-relaxed">
-                                                {selectedCourse.description}
-                                            </p>
-                                        )}
-                                    </motion.div>
-                                )}
                             </div>
                         )}
 

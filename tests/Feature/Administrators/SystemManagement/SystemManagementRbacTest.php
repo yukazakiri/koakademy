@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Enums\UserRole;
+use App\Models\Course;
 use App\Models\GeneralSetting;
 use App\Models\User;
 use Inertia\Testing\AssertableInertia;
@@ -172,4 +173,53 @@ it('persists enrollment automation settings on the active global settings record
     expect(data_get($settings->more_configs, 'enrollment_pipeline.automation.auto_create_student_enrollment'))->toBeTrue();
     expect(data_get($settings->more_configs, 'enrollment_pipeline.automation.auto_assign_subjects'))->toBeTrue();
     expect(GeneralSetting::query()->count())->toBe(1);
+});
+
+it('persists selected enrollment courses from pipeline configuration', function (): void {
+    $user = User::factory()->create([
+        'role' => UserRole::Admin,
+    ]);
+
+    foreach (['View:SystemManagementEnrollmentPipeline', 'Update:SystemManagementEnrollmentPipeline'] as $permission) {
+        createSystemManagementPermission($permission);
+    }
+
+    $user->givePermissionTo(['View:SystemManagementEnrollmentPipeline', 'Update:SystemManagementEnrollmentPipeline']);
+
+    $settings = GeneralSetting::query()->create([
+        'site_name' => 'Legacy Site Name',
+    ]);
+
+    $courseA = Course::factory()->create(['is_active' => true]);
+    $courseB = Course::factory()->create(['is_active' => true]);
+
+    actingAs($user)
+        ->put(portalUrlForAdministrators('/administrators/system-management/enrollment-pipeline'), [
+            'submitted_label' => 'Submitted',
+            'entry_step_key' => 'pending',
+            'completion_step_key' => 'pending',
+            'enrollment_courses' => [$courseA->id, $courseB->id, $courseA->id],
+            'steps' => [
+                [
+                    'key' => 'pending',
+                    'status' => 'Pending',
+                    'label' => 'Pending',
+                    'color' => 'yellow',
+                    'allowed_roles' => [],
+                    'action_type' => 'standard',
+                ],
+            ],
+            'automation' => [
+                'default_new_applicant_to_first_year' => true,
+                'auto_create_student_enrollment' => false,
+                'auto_assign_subjects' => false,
+            ],
+        ])
+        ->assertRedirect();
+
+    $settings->refresh();
+
+    expect($settings->enrollment_courses)
+        ->toBeArray()
+        ->toBe([$courseA->id, $courseB->id]);
 });

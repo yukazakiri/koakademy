@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,6 +26,7 @@ import type {
 
 interface EnrollmentPipelineFormData {
     submitted_label: string;
+    enrollment_courses: number[];
     entry_step_key: string;
     completion_step_key: string;
     steps: EnrollmentPipelineStep[];
@@ -56,15 +58,18 @@ const statsMetricOptions: Array<{ value: EnrollmentStatMetric; label: string }> 
 
 export default function SystemManagementEnrollmentPipelinePage({
     user,
+    general_settings,
     enrollment_pipeline,
     enrollment_stats,
     available_roles,
+    available_enrollment_courses,
     access,
 }: SystemManagementPageProps) {
     const initialSteps = enrollment_pipeline?.steps || [];
 
     const pipelineForm = useForm<EnrollmentPipelineFormData>({
         submitted_label: enrollment_pipeline?.submitted_label || "Submitted",
+        enrollment_courses: (general_settings.enrollment_courses ?? []).map((courseId) => Number(courseId)).filter((courseId) => Number.isInteger(courseId) && courseId > 0),
         entry_step_key: enrollment_pipeline?.entry_step_key || initialSteps[0]?.key || "",
         completion_step_key: enrollment_pipeline?.completion_step_key || initialSteps[initialSteps.length - 1]?.key || "",
         steps: initialSteps.map((step) => ({
@@ -87,6 +92,7 @@ export default function SystemManagementEnrollmentPipelinePage({
 
     const [selectedStepIndex, setSelectedStepIndex] = useState<number | null>(initialSteps.length > 0 ? 0 : null);
     const [selectedRoleByStep, setSelectedRoleByStep] = useState<Record<number, string>>({});
+    const [enrollmentCourseSearch, setEnrollmentCourseSearch] = useState("");
 
     const roleComboboxOptions: ComboboxOption[] = useMemo(
         () =>
@@ -97,6 +103,61 @@ export default function SystemManagementEnrollmentPipelinePage({
             })),
         [available_roles],
     );
+
+    const filteredEnrollmentCourses = useMemo(() => {
+        const search = enrollmentCourseSearch.trim().toLowerCase();
+
+        if (search.length === 0) {
+            return available_enrollment_courses ?? [];
+        }
+
+        return (available_enrollment_courses ?? []).filter((course) => {
+            const haystack = `${course.code} ${course.title}`.toLowerCase();
+
+            return haystack.includes(search);
+        });
+    }, [available_enrollment_courses, enrollmentCourseSearch]);
+
+    const selectedEnrollmentCourses = useMemo(() => {
+        const selectedIds = new Set(pipelineForm.data.enrollment_courses.map((courseId) => Number(courseId)));
+
+        return (available_enrollment_courses ?? []).filter((course) => selectedIds.has(course.id));
+    }, [available_enrollment_courses, pipelineForm.data.enrollment_courses]);
+
+    const toggleEnrollmentCourse = (courseId: number, checked: boolean) => {
+        const normalizedIds = pipelineForm.data.enrollment_courses.map((id) => Number(id));
+
+        if (checked && !normalizedIds.includes(courseId)) {
+            pipelineForm.setData("enrollment_courses", [...normalizedIds, courseId]);
+
+            return;
+        }
+
+        if (!checked) {
+            pipelineForm.setData(
+                "enrollment_courses",
+                normalizedIds.filter((selectedId) => selectedId !== courseId),
+            );
+        }
+    };
+
+    const selectAllEnrollmentCourses = () => {
+        pipelineForm.setData(
+            "enrollment_courses",
+            (available_enrollment_courses ?? []).map((course) => course.id),
+        );
+    };
+
+    const clearEnrollmentCourses = () => {
+        pipelineForm.setData("enrollment_courses", []);
+    };
+
+    const removeEnrollmentCourse = (courseId: number) => {
+        pipelineForm.setData(
+            "enrollment_courses",
+            pipelineForm.data.enrollment_courses.filter((selectedId) => selectedId !== courseId),
+        );
+    };
 
     const updatePipelineStep = (index: number, field: keyof EnrollmentPipelineStep, value: string | string[]) => {
         const steps = [...pipelineForm.data.steps];
@@ -341,6 +402,89 @@ export default function SystemManagementEnrollmentPipelinePage({
                                 </Select>
                                 <p className="text-muted-foreground text-[10px]">The step when enrollment is fully completed.</p>
                             </div>
+                        </CardContent>
+                    </Card>
+
+                    <Card className="border shadow-none">
+                        <CardHeader className="pb-4">
+                            <div className="flex items-center gap-2">
+                                <LayoutDashboard className="text-primary h-5 w-5" />
+                                <CardTitle className="text-lg">Available Courses for New Applicants</CardTitle>
+                            </div>
+                            <CardDescription>
+                                Select which active courses appear in the public enrollment form. Leave empty to allow all active courses.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="relative w-full sm:max-w-md">
+                                    <Input
+                                        value={enrollmentCourseSearch}
+                                        onChange={(event) => setEnrollmentCourseSearch(event.target.value)}
+                                        placeholder="Search courses by code or title..."
+                                        className="w-full"
+                                    />
+                                </div>
+                                <div className="flex gap-2">
+                                    <Button type="button" variant="outline" onClick={selectAllEnrollmentCourses}>
+                                        Select All
+                                    </Button>
+                                    <Button type="button" variant="ghost" onClick={clearEnrollmentCourses}>
+                                        Clear
+                                    </Button>
+                                </div>
+                            </div>
+
+                            <div className="max-h-72 space-y-2 overflow-y-auto rounded-lg border p-3">
+                                {filteredEnrollmentCourses.length === 0 ? (
+                                    <p className="text-muted-foreground py-4 text-center text-sm">No matching courses found.</p>
+                                ) : (
+                                    filteredEnrollmentCourses.map((course) => {
+                                        const isChecked = pipelineForm.data.enrollment_courses.includes(course.id);
+
+                                        return (
+                                            <label
+                                                key={course.id}
+                                                className="hover:bg-muted/50 flex cursor-pointer items-center gap-3 rounded-md px-2 py-2"
+                                            >
+                                                <Checkbox
+                                                    checked={isChecked}
+                                                    onCheckedChange={(checked) => toggleEnrollmentCourse(course.id, checked === true)}
+                                                />
+                                                <div className="min-w-0">
+                                                    <p className="text-sm font-medium leading-tight">{course.title}</p>
+                                                    <p className="text-muted-foreground font-mono text-xs">{course.code}</p>
+                                                </div>
+                                            </label>
+                                        );
+                                    })
+                                )}
+                            </div>
+
+                            <div className="text-muted-foreground text-xs">
+                                {pipelineForm.data.enrollment_courses.length > 0
+                                    ? `${pipelineForm.data.enrollment_courses.length} course(s) selected for new applicants.`
+                                    : "No restrictions selected: all active courses will be shown in the enrollment form."}
+                            </div>
+
+                            {selectedEnrollmentCourses.length > 0 && (
+                                <div className="flex flex-wrap gap-2">
+                                    {selectedEnrollmentCourses.map((course) => (
+                                        <Badge key={course.id} variant="secondary" className="gap-2 px-3 py-1">
+                                            <span className="font-mono text-[11px]">{course.code}</span>
+                                            <span className="max-w-[220px] truncate">{course.title}</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => removeEnrollmentCourse(course.id)}
+                                                className="text-muted-foreground hover:text-foreground"
+                                                aria-label={`Remove ${course.code}`}
+                                            >
+                                                <Trash2 className="h-3.5 w-3.5" />
+                                            </button>
+                                        </Badge>
+                                    ))}
+                                </div>
+                            )}
                         </CardContent>
                     </Card>
 

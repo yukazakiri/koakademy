@@ -9,6 +9,7 @@ use App\Http\Requests\Administrators\StoreSchoolRequest;
 use App\Http\Requests\Administrators\UpdateApiManagementRequest;
 use App\Http\Requests\Administrators\UpdateSchoolRequest;
 use App\Http\Requests\Administrators\UpdateSchoolStatusRequest;
+use App\Models\Course;
 use App\Models\GeneralSetting;
 use App\Models\School;
 use App\Models\User;
@@ -571,6 +572,8 @@ final class AdministratorSystemManagementController extends Controller
 
         $validated = $request->validate([
             'submitted_label' => ['required', 'string', 'max:100'],
+            'enrollment_courses' => ['nullable', 'array'],
+            'enrollment_courses.*' => ['integer', 'exists:courses,id'],
             'steps' => ['nullable', 'array', 'min:1'],
             'steps.*.key' => ['nullable', 'string', 'max:100'],
             'steps.*.status' => ['required_with:steps', 'string', 'max:100'],
@@ -623,6 +626,14 @@ final class AdministratorSystemManagementController extends Controller
         );
 
         $settings->update(['more_configs' => $moreConfigs]);
+
+        $settings->update([
+            'enrollment_courses' => collect($validated['enrollment_courses'] ?? [])
+                ->map(fn (mixed $courseId): int => (int) $courseId)
+                ->unique()
+                ->values()
+                ->all(),
+        ]);
 
         return Redirect::back()->with('success', 'Enrollment pipeline updated successfully.');
     }
@@ -856,6 +867,17 @@ final class AdministratorSystemManagementController extends Controller
             'api_management' => $generalSettingsService->getApiManagementConfig(),
             'grading_config' => app(GradingSystemService::class)->getConfig(),
             'courses_with_subjects' => app(GradingSystemService::class)->getCoursesWithSubjects(),
+            'available_enrollment_courses' => Course::query()
+                ->where('is_active', true)
+                ->orderBy('title')
+                ->get(['id', 'code', 'title'])
+                ->map(fn (Course $course): array => [
+                    'id' => $course->id,
+                    'code' => $course->code,
+                    'title' => $course->title,
+                ])
+                ->values()
+                ->all(),
             'system_semester' => $generalSettingsService->getSystemDefaultSemester(),
             'system_school_year_start' => $generalSettingsService->getSystemDefaultSchoolYearStart(),
             'system_school_year_end' => $generalSettingsService->getSystemDefaultSchoolYearStart() + 1,

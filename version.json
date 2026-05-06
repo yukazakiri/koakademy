@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.10.0",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.10.0",
-  "commit": "f0c240168f5754d838c5f4495c4b7024b471bc33",
+  "version": "1.1.0-dev.11.0",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.11.0",
+  "commit": "7ef31e6e8a2bba38abed40e0ecc8b0c8d7bc47dc",
   "branch": "master",
-  "timestamp": "2026-05-06T03:45:49Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25415202840",
+  "timestamp": "2026-05-06T04:34:12Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25416510489",
   "release_type": "feature",
   "changelog": {
-    "current": "Version 1.1.0-dev.10.0 - feat: support parent-specific income brackets with monthly/annual modes",
-    "previous": "1.1.0-dev.9.0"
+    "current": "Version 1.1.0-dev.11.0 - feat: add applicant enrollment automation and harden academic period guards",
+    "previous": "1.1.0-dev.10.0"
   },
   "metadata": {
     "author": "yukazakiri",

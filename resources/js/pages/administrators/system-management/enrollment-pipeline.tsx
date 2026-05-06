@@ -66,10 +66,14 @@ export default function SystemManagementEnrollmentPipelinePage({
     access,
 }: SystemManagementPageProps) {
     const initialSteps = enrollment_pipeline?.steps || [];
+    const availableEnrollmentCourseIds = new Set((available_enrollment_courses ?? []).map((course) => course.id));
 
     const pipelineForm = useForm<EnrollmentPipelineFormData>({
         submitted_label: enrollment_pipeline?.submitted_label || "Submitted",
-        enrollment_courses: (general_settings.enrollment_courses ?? []).map((courseId) => Number(courseId)).filter((courseId) => Number.isInteger(courseId) && courseId > 0),
+        enrollment_courses: (general_settings.enrollment_courses ?? [])
+            .map((courseId) => Number(courseId))
+            .filter((courseId) => Number.isInteger(courseId) && courseId > 0)
+            .filter((courseId) => availableEnrollmentCourseIds.has(courseId)),
         entry_step_key: enrollment_pipeline?.entry_step_key || initialSteps[0]?.key || "",
         completion_step_key: enrollment_pipeline?.completion_step_key || initialSteps[initialSteps.length - 1]?.key || "",
         steps: initialSteps.map((step) => ({

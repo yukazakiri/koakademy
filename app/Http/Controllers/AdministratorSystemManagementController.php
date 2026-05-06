@@ -573,7 +573,7 @@ final class AdministratorSystemManagementController extends Controller
         $validated = $request->validate([
             'submitted_label' => ['required', 'string', 'max:100'],
             'enrollment_courses' => ['nullable', 'array'],
-            'enrollment_courses.*' => ['integer', 'exists:courses,id'],
+            'enrollment_courses.*' => ['integer'],
             'steps' => ['nullable', 'array', 'min:1'],
             'steps.*.key' => ['nullable', 'string', 'max:100'],
             'steps.*.status' => ['required_with:steps', 'string', 'max:100'],
@@ -625,12 +625,23 @@ final class AdministratorSystemManagementController extends Controller
             $validated['enrollment_stats'] ?? []
         );
 
+        $normalizedEnrollmentCourseIds = collect($validated['enrollment_courses'] ?? [])
+            ->map(fn (mixed $courseId): int => (int) $courseId)
+            ->filter(fn (int $courseId): bool => $courseId > 0)
+            ->unique()
+            ->values();
+
+        $existingEnrollmentCourseIds = Course::query()
+            ->whereIn('id', $normalizedEnrollmentCourseIds->all())
+            ->pluck('id')
+            ->map(fn (mixed $courseId): int => (int) $courseId)
+            ->flip();
+
         $settings->update(['more_configs' => $moreConfigs]);
 
         $settings->update([
-            'enrollment_courses' => collect($validated['enrollment_courses'] ?? [])
-                ->map(fn (mixed $courseId): int => (int) $courseId)
-                ->unique()
+            'enrollment_courses' => $normalizedEnrollmentCourseIds
+                ->filter(fn (int $courseId): bool => $existingEnrollmentCourseIds->has($courseId))
                 ->values()
                 ->all(),
         ]);

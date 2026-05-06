@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.8.1",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.8.1",
-  "commit": "9eb5e9bbc0ee61f17de0eefe0cfe5e8d90f46ab5",
+  "version": "1.1.0-dev.9.0",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.9.0",
+  "commit": "9664f45636d771567e66c359e6424aac0db0d1e3",
   "branch": "master",
-  "timestamp": "2026-05-05T10:01:09Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25369693354",
-  "release_type": "patch",
+  "timestamp": "2026-05-06T01:15:28Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25411067000",
+  "release_type": "feature",
   "changelog": {
-    "current": "Version 1.1.0-dev.8.1 - redesgined proram selector in enrollment",
-    "previous": "1.1.0-dev.8.0"
+    "current": "Version 1.1.0-dev.9.0 - feat: add configurable income brackets and special equity groups to enrollment",
+    "previous": "1.1.0-dev.8.1"
   },
   "metadata": {
     "author": "yukazakiri",

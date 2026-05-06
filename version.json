@@ -1,18 +1,18 @@
 {
-  "version": "1.1.0-dev.12.0",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.12.0",
-  "commit": "2d337b44602f952827d75c1eed900f04f9b7e1e2",
+  "version": "1.2.0",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.2.0",
+  "commit": "843f9ba7005e2f937b901c9df68526abd6e8cbe6",
   "branch": "master",
-  "timestamp": "2026-05-06T06:21:31Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25419658846",
-  "release_type": "feature",
+  "timestamp": "2026-05-06T06:30:29Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25419924665",
+  "release_type": "official",
   "changelog": {
-    "current": "Version 1.1.0-dev.12.0 - feat: implement enrollment course selection and management in system pipeline",
-    "previous": "1.1.0-dev.11.0"
+    "current": "Version 1.2.0 - manual release",
+    "previous": "1.1.0-dev.12.0"
   },
   "metadata": {
     "author": "yukazakiri",
-    "workflow": "Auto Pre-release and Docker Tag",
+    "workflow": "Manual Official Release",
     "repository": "yukazakiri/koakademy"
   }
 }

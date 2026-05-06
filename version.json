@@ -1,14 +1,14 @@
 {
-  "version": "1.1.0-dev.11.0",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.11.0",
-  "commit": "7ef31e6e8a2bba38abed40e0ecc8b0c8d7bc47dc",
+  "version": "1.1.0-dev.12.0",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.1.0-dev.12.0",
+  "commit": "2d337b44602f952827d75c1eed900f04f9b7e1e2",
   "branch": "master",
-  "timestamp": "2026-05-06T04:34:12Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25416510489",
+  "timestamp": "2026-05-06T06:21:31Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25419658846",
   "release_type": "feature",
   "changelog": {
-    "current": "Version 1.1.0-dev.11.0 - feat: add applicant enrollment automation and harden academic period guards",
-    "previous": "1.1.0-dev.10.0"
+    "current": "Version 1.1.0-dev.12.0 - feat: implement enrollment course selection and management in system pipeline",
+    "previous": "1.1.0-dev.11.0"
   },
   "metadata": {
     "author": "yukazakiri",

@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Enums\UserRole;
+use App\Filament\Auth\MultiFactor\SecurityAwareAppAuthentication;
+use App\Filament\Auth\MultiFactor\SecurityAwareEmailAuthentication;
 use App\Models\User;
 use Spatie\LaravelPasskeys\Models\Passkey;
 
@@ -68,4 +70,21 @@ it('disables login challenges without deleting existing two factor credentials',
         ->and($user->app_authentication_recovery_codes)->toBe(['first-code', 'second-code'])
         ->and($user->hasEmailAuthentication())->toBeTrue()
         ->and($user->passkeys()->count())->toBe(1);
+});
+
+it('disables Filament app and email multi factor providers when login challenges are paused', function (): void {
+    $user = User::factory()->create([
+        'app_authentication_secret' => 'authenticator-secret',
+        'has_email_authentication' => true,
+        'security_two_factor_enabled' => false,
+    ]);
+
+    expect(SecurityAwareAppAuthentication::make()->isEnabled($user))->toBeFalse()
+        ->and(SecurityAwareEmailAuthentication::make()->isEnabled($user))->toBeFalse();
+
+    $user->forceFill(['security_two_factor_enabled' => true])->save();
+    $user->refresh();
+
+    expect(SecurityAwareAppAuthentication::make()->isEnabled($user))->toBeTrue()
+        ->and(SecurityAwareEmailAuthentication::make()->isEnabled($user))->toBeTrue();
 });

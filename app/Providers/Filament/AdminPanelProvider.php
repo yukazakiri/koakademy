@@ -7,6 +7,8 @@ namespace App\Providers\Filament;
 use AchyutN\FilamentLogViewer\FilamentLogViewer;
 use AlizHarb\ActivityLog\ActivityLogPlugin;
 use App\Enums\UserRole;
+use App\Filament\Auth\MultiFactor\SecurityAwareAppAuthentication;
+use App\Filament\Auth\MultiFactor\SecurityAwareEmailAuthentication;
 use App\Filament\Pages\Backups;
 use App\Filament\Pages\GeneralSettings;
 use App\Services\AnalyticsSettingsService;
@@ -18,8 +20,6 @@ use BezhanSalleh\FilamentShield\FilamentShieldPlugin;
 use Coolsam\Modules\ModulesPlugin;
 use Exception;
 use Filament\Actions\Action;
-use Filament\Auth\MultiFactor\App\AppAuthentication;
-use Filament\Auth\MultiFactor\Email\EmailAuthentication;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -273,9 +273,9 @@ final class AdminPanelProvider extends PanelProvider
             ->databaseTransactions()
             ->profile()
             ->multiFactorAuthentication([
-                AppAuthentication::make()
+                SecurityAwareAppAuthentication::make()
                     ->recoverable(),
-                EmailAuthentication::make()
+                SecurityAwareEmailAuthentication::make()
                     ->codeExpiryMinutes(30),
 
             ])

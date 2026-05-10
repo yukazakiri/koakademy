@@ -14,6 +14,8 @@ import { ColumnDef } from "@tanstack/react-table";
 import { Copy, Eye, MoreHorizontal, Pencil, Settings, Trash2 } from "lucide-react";
 import { route } from "ziggy-js";
 
+import { DataTableColumnHeader } from "./data-table-column-header";
+
 export type ClassRow = {
     id: number;
     record_title: string;
@@ -23,7 +25,9 @@ export type ClassRow = {
     school_year: string;
     semester: string | number;
     classification: "college" | "shs" | string;
-    display_info: string | null;
+    course_abbreviations: string[] | null;
+    shs_track: string | null;
+    shs_strand: string | null;
     faculty: string;
     students_count: number;
     maximum_slots: number;
@@ -39,8 +43,6 @@ interface GetColumnsProps {
     onEdit: (id: number) => void;
     onDelete: (row: ClassRow) => void;
 }
-
-import { DataTableColumnHeader } from "./data-table-column-header";
 
 export const getColumns = ({ onManage, onCopy, onEdit, onDelete }: GetColumnsProps): ColumnDef<ClassRow>[] => [
     {
@@ -69,30 +71,43 @@ export const getColumns = ({ onManage, onCopy, onEdit, onDelete }: GetColumnsPro
         header: ({ column }) => <DataTableColumnHeader column={column} title="Class" />,
         cell: ({ row }) => {
             const data = row.original;
+            const classColor = data.classification === "shs" ? "border-l-amber-500" : "border-l-blue-500";
+
             return (
-                <div className="flex max-w-[300px] flex-col gap-1">
-                    <a
+                <div className={`min-w-[280px] space-y-1.5 border-l-2 py-1 pl-3 ${classColor}`}>
+                    <Link
                         href={route("administrators.classes.show", { class: data.id })}
-                        className="text-foreground hover:text-primary truncate font-medium transition-colors"
+                        className="text-foreground hover:text-primary line-clamp-1 font-medium transition-colors"
                         title={data.record_title}
                     >
                         {data.record_title}
-                    </a>
-                    <div className="text-muted-foreground truncate text-xs" title={data.subject_title}>
+                    </Link>
+                    <div className="text-muted-foreground line-clamp-1 text-xs" title={data.subject_title}>
                         {data.subject_title}
                     </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-2">
-                        <Badge variant="outline" className="h-5 px-1.5 py-0 text-[10px] capitalize">
-                            {data.classification}
+                    <div className="flex flex-wrap items-center gap-1">
+                        <Badge
+                            variant="outline"
+                            className={`h-5 px-1.5 text-[10px] ${data.classification === "shs" ? "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-300" : "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-950 dark:text-blue-300"}`}
+                        >
+                            {data.classification === "shs" ? "SHS" : "College"}
                         </Badge>
-                        <Badge variant="outline" className="h-5 px-1.5 py-0 text-[10px]">
-                            Section {data.section}
+                        <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                            {data.subject_code}
                         </Badge>
-                        {data.display_info ? (
-                            <Badge variant="secondary" className="h-5 px-1.5 py-0 text-[10px]">
-                                {data.display_info}
+                        <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                            Sec {data.section}
+                        </Badge>
+                        {data.classification === "shs" && data.shs_track ? (
+                            <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                                {data.shs_strand ? `${data.shs_track} – ${data.shs_strand}` : data.shs_track}
                             </Badge>
                         ) : null}
+                        {data.course_abbreviations?.map((code) => (
+                            <Badge key={code} variant="outline" className="h-5 px-1.5 text-[10px]">
+                                {code}
+                            </Badge>
+                        ))}
                     </div>
                 </div>
             );
@@ -101,15 +116,20 @@ export const getColumns = ({ onManage, onCopy, onEdit, onDelete }: GetColumnsPro
     {
         accessorKey: "faculty",
         header: ({ column }) => <DataTableColumnHeader column={column} title="Faculty" />,
-        cell: ({ row }) => <div className="text-sm">{row.getValue("faculty")}</div>,
+        cell: ({ row }) => (
+            <span className="text-sm" title={String(row.getValue("faculty") || "Not assigned")}>
+                {row.getValue("faculty") || "Not assigned"}
+            </span>
+        ),
     },
     {
         id: "period",
         header: ({ column }) => <DataTableColumnHeader column={column} title="Period" />,
         accessorFn: (row) => `${row.school_year} ${row.semester}`,
         cell: ({ row }) => (
-            <div className="text-muted-foreground text-sm">
-                {row.original.school_year} • Sem {row.original.semester}
+            <div className="text-sm">
+                <span className="font-medium">{row.original.school_year}</span>
+                <span className="text-muted-foreground"> · Sem {row.original.semester}</span>
             </div>
         ),
     },
@@ -120,11 +140,28 @@ export const getColumns = ({ onManage, onCopy, onEdit, onDelete }: GetColumnsPro
         cell: ({ row }) => {
             const data = row.original;
             const atCapacity = data.maximum_slots > 0 && data.students_count >= data.maximum_slots;
+            const percentage = data.maximum_slots > 0 ? Math.round((data.students_count / data.maximum_slots) * 100) : 0;
+            const barColor = atCapacity ? "bg-destructive" : percentage >= 75 ? "bg-amber-500" : "bg-primary";
+            const capacityDot = atCapacity ? "bg-destructive" : percentage >= 75 ? "bg-amber-500" : "bg-emerald-500";
+            const capacityLabel = atCapacity ? "Full" : "Open";
+            const slotsLeft = Math.max(data.maximum_slots - data.students_count, 0);
 
             return (
-                <Badge variant={atCapacity ? "destructive" : "secondary"}>
-                    {data.students_count} / {data.maximum_slots || "—"}
-                </Badge>
+                <div className="min-w-[140px] space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-1.5">
+                            <span className={`h-2 w-2 shrink-0 rounded-full ${capacityDot}`} />
+                            <span className="font-medium">{capacityLabel}</span>
+                            {!atCapacity && <span className="text-muted-foreground">· {slotsLeft}</span>}
+                        </div>
+                        <span className={`tabular-nums ${atCapacity ? "text-destructive font-medium" : "text-muted-foreground"}`}>
+                            {data.students_count}/{data.maximum_slots} ({percentage}%)
+                        </span>
+                    </div>
+                    <div className="bg-secondary h-2 w-full overflow-hidden rounded-full">
+                        <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${Math.min(percentage, 100)}%` }} />
+                    </div>
+                </div>
             );
         },
     },
@@ -135,14 +172,7 @@ export const getColumns = ({ onManage, onCopy, onEdit, onDelete }: GetColumnsPro
 
             return (
                 <div className="flex items-center justify-end gap-1">
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 px-2"
-                        onClick={() => onEdit(data.id)}
-                        title="Quick edit"
-                    >
+                    <Button type="button" variant="outline" size="sm" className="h-8 px-2" onClick={() => onEdit(data.id)} title="Quick edit">
                         <Pencil className="mr-1.5 h-3.5 w-3.5" />
                         Edit
                     </Button>
@@ -154,7 +184,7 @@ export const getColumns = ({ onManage, onCopy, onEdit, onDelete }: GetColumnsPro
                             </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-48">
-                            <DropdownMenuLabel>Class actions</DropdownMenuLabel>
+                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
                             <DropdownMenuItem asChild>
                                 <Link
                                     href={route("administrators.classes.show", { class: data.id })}

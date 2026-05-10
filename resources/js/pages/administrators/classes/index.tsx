@@ -21,7 +21,6 @@ import {
     CalendarIcon,
     Clock,
     Copy as CopyIcon,
-    GraduationCap,
     Layers,
     LayoutGrid,
     List,
@@ -86,6 +85,7 @@ type SelectedClass = {
     faculty: (EntityOption & { email?: string | null }) | null;
     room: EntityOption | null;
     course_codes: string[];
+    course_abbreviations: string[] | null;
     course_ids: number[];
     subject_ids: number[];
     subjects: { id: number; code: string; title: string }[];
@@ -201,98 +201,118 @@ function ClassCard({
 }) {
     const atCapacity = classRow.maximum_slots > 0 && classRow.students_count >= classRow.maximum_slots;
     const percentage = classRow.maximum_slots > 0 ? Math.round((classRow.students_count / classRow.maximum_slots) * 100) : 0;
+    const barColor = atCapacity ? "bg-destructive" : percentage >= 75 ? "bg-amber-500" : "bg-primary";
+    const borderColor = classRow.classification === "shs" ? "border-l-amber-500" : "border-l-blue-500";
+    const capacityDot = atCapacity ? "bg-destructive" : percentage >= 75 ? "bg-amber-500" : "bg-emerald-500";
+    const capacityLabel = atCapacity ? "Full" : "Open";
+    const slotsLeft = Math.max(classRow.maximum_slots - classRow.students_count, 0);
 
     return (
-        <Card className="hover:border-primary/50 transition-colors">
-            <CardContent className="p-0">
-                <div className="bg-muted/30 flex h-20 items-center justify-center rounded-t-lg">
-                    <BookOpen className="text-muted-foreground/30 h-8 w-8" />
-                </div>
-                <div className="p-4">
-                    <div className="mb-3 flex items-start justify-between gap-2">
-                        <button
-                            type="button"
-                            onClick={() => onEdit(classRow.id)}
-                            className="min-w-0 flex-1 text-left"
-                            title="Click to edit class"
-                        >
-                            <span
-                                className="text-foreground hover:text-primary line-clamp-1 block font-semibold transition-colors"
-                                title={classRow.record_title}
-                            >
+        <Card className={`hover:border-primary/40 border-l-4 shadow-sm ${borderColor} transition-colors`}>
+            <CardContent className="space-y-3 p-4">
+                <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                        <button type="button" onClick={() => onEdit(classRow.id)} className="text-left" title="Click to edit">
+                            <span className="text-foreground hover:text-primary line-clamp-1 block font-semibold transition-colors">
                                 {classRow.record_title}
                             </span>
-                            <span className="text-muted-foreground line-clamp-1 block text-xs" title={classRow.subject_title}>
+                            <span className="text-muted-foreground line-clamp-1 block text-sm" title={classRow.subject_title}>
                                 {classRow.subject_title}
                             </span>
                         </button>
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="text-muted-foreground -mt-1 -mr-1 h-8 w-8 shrink-0">
-                                    <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-48">
-                                <DropdownMenuItem onClick={() => onEdit(classRow.id)}>
-                                    <Pencil className="mr-2 h-4 w-4" /> Edit class
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => onManage(classRow.id)}>
-                                    <Settings2 className="mr-2 h-4 w-4" /> Manage details
-                                </DropdownMenuItem>
-                                <DropdownMenuItem asChild>
-                                    <Link href={route("administrators.classes.show", { class: classRow.id })}>
-                                        <BookOpen className="mr-2 h-4 w-4" /> Open class page
-                                    </Link>
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => onCopy(classRow.id)}>
-                                    <CopyIcon className="mr-2 h-4 w-4" /> Duplicate class
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={() => onDelete(classRow)} className="text-destructive focus:text-destructive">
-                                    <Trash2 className="mr-2 h-4 w-4" /> Delete class
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
                     </div>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="text-muted-foreground h-8 w-8 shrink-0">
+                                <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-48">
+                            <DropdownMenuItem onClick={() => onEdit(classRow.id)}>
+                                <Pencil className="mr-2 h-4 w-4" /> Edit class
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => onManage(classRow.id)}>
+                                <Settings2 className="mr-2 h-4 w-4" /> Manage details
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                                <Link href={route("administrators.classes.show", { class: classRow.id })}>
+                                    <BookOpen className="mr-2 h-4 w-4" /> Open class page
+                                </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => onCopy(classRow.id)}>
+                                <CopyIcon className="mr-2 h-4 w-4" /> Duplicate class
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => onDelete(classRow)} className="text-destructive focus:text-destructive">
+                                <Trash2 className="mr-2 h-4 w-4" /> Delete class
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
 
-                    <div className="text-muted-foreground mb-4 grid gap-1.5 text-sm">
-                        <div className="flex items-center gap-2">
-                            <GraduationCap className="h-4 w-4 opacity-70" />
-                            <span className="truncate">{classRow.section}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <Users className="h-4 w-4 opacity-70" />
-                            <span className="truncate">{classRow.faculty}</span>
-                        </div>
-                    </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                    <Badge
+                        variant="outline"
+                        className={`text-[10px] ${classRow.classification === "shs" ? "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-300" : "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-950 dark:text-blue-300"}`}
+                    >
+                        {classRow.classification === "shs" ? "SHS" : "College"}
+                    </Badge>
+                    <Badge variant="secondary" className="text-[10px]">
+                        {classRow.subject_code}
+                    </Badge>
+                    <Badge variant="outline" className="text-[10px]">
+                        Sec {classRow.section}
+                    </Badge>
+                    {classRow.classification === "shs" && classRow.shs_track ? (
+                        <Badge variant="outline" className="text-[10px]">
+                            {classRow.shs_strand ? `${classRow.shs_track} – ${classRow.shs_strand}` : classRow.shs_track}
+                        </Badge>
+                    ) : null}
+                    {classRow.course_abbreviations?.map((code) => (
+                        <Badge key={code} variant="outline" className="text-[10px]">
+                            {code}
+                        </Badge>
+                    ))}
+                </div>
 
-                    <div className="space-y-1.5">
-                        <div className="flex items-center justify-between text-xs">
-                            <span className={atCapacity ? "text-destructive font-medium" : "text-muted-foreground"}>
-                                {classRow.students_count} / {classRow.maximum_slots} students
-                            </span>
-                            <span className="text-muted-foreground">{percentage}%</span>
-                        </div>
-                        <div className="bg-secondary h-2 w-full overflow-hidden rounded-full">
-                            <div
-                                className={`h-full ${atCapacity ? "bg-destructive" : "bg-primary"}`}
-                                style={{ width: `${Math.min(percentage, 100)}%` }}
-                            />
-                        </div>
-                    </div>
+                <div className="text-muted-foreground grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                    <span className="flex items-center gap-1.5 truncate" title={classRow.faculty || "Not assigned"}>
+                        <Users className="h-3 w-3 shrink-0" />
+                        {classRow.faculty || "Not assigned"}
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                        <CalendarIcon className="h-3 w-3 shrink-0" />
+                        {classRow.school_year} · Sem {classRow.semester}
+                    </span>
+                </div>
 
-                    <div className="mt-4 flex items-center gap-2 border-t pt-3">
-                        <Button type="button" size="sm" variant="default" className="flex-1" onClick={() => onEdit(classRow.id)}>
-                            <Pencil className="mr-1.5 h-3.5 w-3.5" />
-                            Edit
-                        </Button>
-                        <Button type="button" size="sm" variant="outline" onClick={() => onManage(classRow.id)} title="Manage details">
-                            <Settings2 className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button type="button" size="sm" variant="outline" onClick={() => onCopy(classRow.id)} title="Duplicate">
-                            <CopyIcon className="h-3.5 w-3.5" />
-                        </Button>
+                <div className="space-y-1.5 border-t pt-3">
+                    <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-1.5">
+                            <span className={`h-2 w-2 shrink-0 rounded-full ${capacityDot}`} />
+                            <span className="font-medium">{capacityLabel}</span>
+                            {!atCapacity && <span className="text-muted-foreground">· {slotsLeft} slots</span>}
+                        </div>
+                        <span className={`tabular-nums ${atCapacity ? "text-destructive font-medium" : "text-muted-foreground"}`}>
+                            {classRow.students_count}/{classRow.maximum_slots} ({percentage}%)
+                        </span>
                     </div>
+                    <div className="bg-secondary h-2 w-full overflow-hidden rounded-full">
+                        <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${Math.min(percentage, 100)}%` }} />
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-2 border-t pt-3">
+                    <Button type="button" size="sm" variant="default" className="flex-1" onClick={() => onEdit(classRow.id)}>
+                        <Pencil className="mr-1 h-3 w-3" />
+                        Edit
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" onClick={() => onManage(classRow.id)} title="Manage">
+                        <Settings2 className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" onClick={() => onCopy(classRow.id)} title="Duplicate">
+                        <CopyIcon className="h-3.5 w-3.5" />
+                    </Button>
                 </div>
             </CardContent>
         </Card>
@@ -300,20 +320,31 @@ function ClassCard({
 }
 
 function StatsOverview({ totalClasses, totalStudents }: { totalClasses: number; totalStudents: number }) {
+    const averageStudents = totalClasses > 0 ? Math.round(totalStudents / totalClasses) : 0;
+
     return (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Card>
-                <CardContent className="flex flex-col justify-center p-6">
-                    <div className="text-2xl font-bold">{totalClasses}</div>
-                    <div className="text-muted-foreground text-xs">Total classes</div>
-                </CardContent>
-            </Card>
-            <Card>
-                <CardContent className="flex flex-col justify-center p-6">
-                    <div className="text-2xl font-bold">{totalStudents.toLocaleString()}</div>
-                    <div className="text-muted-foreground text-xs">Total enrolled students</div>
-                </CardContent>
-            </Card>
+        <div className="grid grid-cols-3 gap-3">
+            <div className="bg-card rounded-lg border-l-4 border-l-blue-500 p-3 shadow-sm">
+                <div className="flex items-center gap-2">
+                    <Layers className="h-4 w-4 text-blue-500" />
+                    <span className="text-muted-foreground text-xs font-medium tracking-wider uppercase">Classes</span>
+                </div>
+                <div className="mt-1 text-2xl font-bold tabular-nums">{totalClasses}</div>
+            </div>
+            <div className="bg-card rounded-lg border-l-4 border-l-emerald-500 p-3 shadow-sm">
+                <div className="flex items-center gap-2">
+                    <Users className="h-4 w-4 text-emerald-500" />
+                    <span className="text-muted-foreground text-xs font-medium tracking-wider uppercase">Students</span>
+                </div>
+                <div className="mt-1 text-2xl font-bold tabular-nums">{totalStudents.toLocaleString()}</div>
+            </div>
+            <div className="bg-card rounded-lg border-l-4 border-l-amber-500 p-3 shadow-sm">
+                <div className="flex items-center gap-2">
+                    <BookOpen className="h-4 w-4 text-amber-500" />
+                    <span className="text-muted-foreground text-xs font-medium tracking-wider uppercase">Avg Size</span>
+                </div>
+                <div className="mt-1 text-2xl font-bold tabular-nums">{averageStudents}</div>
+            </div>
         </div>
     );
 }
@@ -1384,41 +1415,37 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
 
                 return (
                     <div className="flex flex-col gap-6">
-                        <div className="flex flex-col gap-4">
-                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                                <div className="min-w-0">
-                                    <h2 className="text-foreground text-3xl font-bold tracking-tight">Classes</h2>
-                                    <p className="text-muted-foreground text-sm">
-                                        Quick-edit, duplicate, or remove classes. Click any class title to open the editor.
-                                    </p>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <Button variant="outline" size="sm" onClick={() => setIsFiltersOpen(true)}>
-                                        <SlidersHorizontal className="mr-2 h-4 w-4" />
-                                        Filters
-                                        {hasActiveFilters ? (
-                                            <Badge variant="secondary" className="ml-2 h-5 px-1.5">
-                                                {activeFilterBadges.length}
-                                            </Badge>
-                                        ) : null}
-                                    </Button>
-                                    <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-                                        <Plus className="mr-1.5 h-4 w-4" />
-                                        <span className="hidden sm:inline">New class</span>
-                                        <span className="sm:hidden">New</span>
-                                    </Button>
-                                </div>
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="min-w-0">
+                                <h2 className="text-2xl font-semibold tracking-tight">Classes</h2>
+                                <p className="text-muted-foreground text-sm">Manage classes, track enrollment, and organize schedules.</p>
                             </div>
-
-                            <StatsOverview totalClasses={filteredStatsTotalClasses} totalStudents={filteredStatsTotalStudents} />
+                            <div className="flex items-center gap-2">
+                                <Button variant="outline" size="sm" onClick={() => setIsFiltersOpen(true)}>
+                                    <SlidersHorizontal className="mr-2 h-4 w-4" />
+                                    Filters
+                                    {hasActiveFilters ? (
+                                        <Badge variant="secondary" className="ml-2 h-5 px-1.5">
+                                            {activeFilterBadges.length}
+                                        </Badge>
+                                    ) : null}
+                                </Button>
+                                <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+                                    <Plus className="mr-1.5 h-4 w-4" />
+                                    <span className="hidden sm:inline">New class</span>
+                                    <span className="sm:hidden">New</span>
+                                </Button>
+                            </div>
                         </div>
 
-                        <div className="bg-card flex flex-col gap-4 rounded-lg border p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+                        <StatsOverview totalClasses={filteredStatsTotalClasses} totalStudents={filteredStatsTotalStudents} />
+
+                        <div className="bg-card flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between">
                             <div className="relative max-w-sm flex-1">
                                 <Search className="text-muted-foreground absolute top-2.5 left-2.5 h-4 w-4" />
                                 <Input
                                     placeholder="Search classes..."
-                                    className="pl-8"
+                                    className="h-9 pl-8"
                                     value={search}
                                     onChange={(e) => {
                                         setSearch(e.target.value);
@@ -1430,7 +1457,7 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
                                 ) : null}
                             </div>
 
-                            <div className="flex items-center gap-2 overflow-x-auto pb-2 md:pb-0">
+                            <div className="flex items-center gap-2">
                                 <Tabs value={localClassification} onValueChange={(val) => setLocalClassification(val)} className="w-auto">
                                     <TabsList>
                                         <TabsTrigger value="all">All</TabsTrigger>
@@ -1439,9 +1466,9 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
                                     </TabsList>
                                 </Tabs>
 
-                                <div className="bg-border mx-2 h-6 w-px" />
+                                <div className="bg-border mx-1 h-6 w-px" />
 
-                                <div className="bg-background flex items-center rounded-md border p-1">
+                                <div className="flex items-center rounded-md border p-0.5">
                                     <Button
                                         variant={viewMode === "grid" ? "secondary" : "ghost"}
                                         size="icon"
@@ -1488,22 +1515,22 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
                         ) : null}
 
                         {filteredClassesByClassification.length === 0 ? (
-                            <div className="bg-muted/10 animate-in fade-in zoom-in-95 flex min-h-[300px] flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center duration-300">
-                                <div className="bg-muted rounded-full p-4">
-                                    <Search className="text-muted-foreground h-8 w-8" />
+                            <div className="flex min-h-[320px] flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 text-center">
+                                <div className="bg-muted/50 border-border flex h-14 w-14 items-center justify-center rounded-full border">
+                                    <Layers className="text-muted-foreground h-7 w-7" />
                                 </div>
                                 <h3 className="mt-4 text-lg font-semibold">No classes found</h3>
-                                <p className="text-muted-foreground mt-2 max-w-sm text-sm">
-                                    We couldn't find any classes matching your search or filters. Try adjusting them or create a new class.
+                                <p className="text-muted-foreground mt-1.5 max-w-sm text-sm">
+                                    Try adjusting your search or filters, or create a new class to get started.
                                 </p>
-                                <Button variant="outline" className="mt-6" onClick={clearAll}>
+                                <Button variant="outline" size="sm" className="mt-5" onClick={clearAll}>
                                     Clear filters
                                 </Button>
                             </div>
                         ) : (
                             <>
                                 {viewMode === "grid" ? (
-                                    <div className="animate-in fade-in slide-in-from-bottom-4 grid gap-4 duration-500 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                                    <div className="animate-in fade-in slide-in-from-bottom-4 grid gap-4 duration-500 md:grid-cols-2 2xl:grid-cols-3">
                                         {filteredClassesByClassification.map((row) => (
                                             <ClassCard
                                                 key={row.id}

@@ -61,6 +61,12 @@ final class AdministratorClassManagementController extends Controller
 
         $courseCodeById = $courses
             ->mapWithKeys(fn (Course $course): array => [
+                $course->id => $course->code,
+            ])
+            ->all();
+
+        $courseLabelById = $courses
+            ->mapWithKeys(fn (Course $course): array => [
                 $course->id => $course->curriculum_year
                     ? sprintf('%s (%s)', $course->code, $course->curriculum_year)
                     : $course->code,
@@ -208,16 +214,13 @@ final class AdministratorClassManagementController extends Controller
                     : ($class->Subject ?: $class->SubjectByCodeFallback);
             }
 
-            $displayInfo = null;
-            if ($class->isShs()) {
-                $displayInfo = $class->formatted_track_strand;
-            } else {
-                $courseCodes = array_values(array_unique(array_filter(array_map(
-                    fn ($id) => $courseCodeById[(int) $id] ?? null,
-                    is_array($class->course_codes) ? $class->course_codes : []
-                ))));
-                $displayInfo = $courseCodes === [] ? null : implode(', ', $courseCodes);
-            }
+            $courseAbbreviations = array_values(array_unique(array_filter(array_map(
+                fn ($id) => $courseCodeById[(int) $id] ?? null,
+                is_array($class->course_codes) ? $class->course_codes : []
+            ))));
+
+            $shsTrack = $class->shsTrack?->track_name;
+            $shsStrand = $class->shsStrand?->strand_name;
 
             return [
                 'id' => $class->id,
@@ -228,7 +231,9 @@ final class AdministratorClassManagementController extends Controller
                 'school_year' => $class->school_year ?? 'N/A',
                 'semester' => $class->semester ?? 'N/A',
                 'classification' => $class->classification ?? 'college',
-                'display_info' => $displayInfo,
+                'course_abbreviations' => $courseAbbreviations === [] ? null : $courseAbbreviations,
+                'shs_track' => $shsTrack,
+                'shs_strand' => $shsStrand,
                 'faculty' => $class->faculty?->full_name ?? 'TBA',
                 'students_count' => (int) ($class->class_enrollments_count ?? 0),
                 'maximum_slots' => (int) ($class->maximum_slots ?? 0),
@@ -243,7 +248,7 @@ final class AdministratorClassManagementController extends Controller
         $selectedId = $this->nullableInt($request->input('selected'));
 
         if (is_int($selectedId)) {
-            $selectedClass = $this->buildSelectedClassProps($selectedId, $courseCodeById);
+            $selectedClass = $this->buildSelectedClassProps($selectedId, $courseCodeById, $courseLabelById);
         }
 
         return Inertia::render('administrators/classes/index', [
@@ -289,7 +294,7 @@ final class AdministratorClassManagementController extends Controller
                 ],
                 'courses' => $courses->map(fn (Course $course): array => [
                     'id' => $course->id,
-                    'label' => $courseCodeById[$course->id],
+                    'label' => $courseLabelById[$course->id],
                 ])->values(),
                 'faculties' => Faculty::query()
                     ->orderBy('last_name')
@@ -936,7 +941,7 @@ final class AdministratorClassManagementController extends Controller
         }
     }
 
-    private function buildSelectedClassProps(int $classId, array $courseCodeById): ?array
+    private function buildSelectedClassProps(int $classId, array $courseCodeById, array $courseLabelById): ?array
     {
         $class = Classes::query()
             ->withCount('class_enrollments')
@@ -977,6 +982,11 @@ final class AdministratorClassManagementController extends Controller
             ->get(['id', 'title', 'type', 'created_at']);
 
         $courseCodes = array_values(array_unique(array_filter(array_map(
+            fn ($id) => $courseLabelById[(int) $id] ?? null,
+            is_array($class->course_codes) ? $class->course_codes : []
+        ))));
+
+        $courseAbbreviations = array_values(array_unique(array_filter(array_map(
             fn ($id) => $courseCodeById[(int) $id] ?? null,
             is_array($class->course_codes) ? $class->course_codes : []
         ))));
@@ -1010,6 +1020,7 @@ final class AdministratorClassManagementController extends Controller
                 'label' => $class->Room->name,
             ] : null,
             'course_codes' => $courseCodes,
+            'course_abbreviations' => $courseAbbreviations === [] ? null : $courseAbbreviations,
             'course_ids' => is_array($class->course_codes) ? $class->course_codes : [],
             'subjects' => $subjects->map(fn (Subject $subject): array => [
                 'id' => $subject->id,

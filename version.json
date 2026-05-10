@@ -1,14 +1,14 @@
 {
-  "version": "1.2.0-dev.0.4",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.2.0-dev.0.4",
-  "commit": "16609057dca71db636418fb9c766f85b4eafe100",
+  "version": "1.2.0-dev.0.5",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.2.0-dev.0.5",
+  "commit": "db8a8e076b174dfa7dc6b2b96b4aecb15d54f7eb",
   "branch": "master",
-  "timestamp": "2026-05-10T08:40:30Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25624202595",
+  "timestamp": "2026-05-10T14:35:52Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25631285408",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.2.0-dev.0.4 - updated readme for database configurations",
-    "previous": "1.2.0-dev.0.3"
+    "current": "Version 1.2.0-dev.0.5 - Refactor 2FA to use pluggable providers",
+    "previous": "1.2.0-dev.0.4"
   },
   "metadata": {
     "author": "yukazakiri",

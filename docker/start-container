@@ -3,6 +3,8 @@ set -e
 
 container_mode=${CONTAINER_MODE:-"http"}
 
+horizon_enabled=true
+
 # Schedule all Scout tasks to run after services are already running under
 # supervisord. This prevents search indexing from delaying first request time.
 schedule_scout_tasks_post_start() {
@@ -112,6 +114,69 @@ purge_laravel_provider_caches() {
 
 is_primary_container() {
     [ "${container_mode}" = "http" ]
+}
+
+is_truthy() {
+    case "${1:-}" in
+        true|1|yes|on)
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
+is_falsy() {
+    case "${1:-}" in
+        false|0|no|off)
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
+resolve_horizon_enabled() {
+    queue_connection=$(printf '%s' "${QUEUE_CONNECTION:-database}" | tr '[:upper:]' '[:lower:]')
+    horizon_env=$(printf '%s' "${HORIZON_ENABLED:-}" | tr '[:upper:]' '[:lower:]')
+
+    if [ "${queue_connection}" = "redis" ]; then
+        horizon_enabled=true
+        return 0
+    fi
+
+    if is_truthy "${horizon_env}"; then
+        horizon_enabled=true
+        return 0
+    fi
+
+    if is_falsy "${horizon_env}"; then
+        horizon_enabled=false
+        return 0
+    fi
+
+    horizon_enabled=false
+}
+
+is_redis_required() {
+    queue_connection=$(printf '%s' "${QUEUE_CONNECTION:-database}" | tr '[:upper:]' '[:lower:]')
+    cache_store=$(printf '%s' "${CACHE_STORE:-database}" | tr '[:upper:]' '[:lower:]')
+    session_driver=$(printf '%s' "${SESSION_DRIVER:-database}" | tr '[:upper:]' '[:lower:]')
+    pulse_ingest=$(printf '%s' "${PULSE_INGEST_DRIVER:-redis}" | tr '[:upper:]' '[:lower:]')
+
+    if [ "${queue_connection}" = "redis" ] || [ "${queue_connection}" = "redis-pdf" ]; then
+        return 0
+    fi
+
+    if [ "${cache_store}" = "redis" ] || [ "${session_driver}" = "redis" ]; then
+        return 0
+    fi
+
+    if [ "${pulse_ingest}" = "redis" ] && [ "${PULSE_ENABLED:-true}" != "false" ]; then
+        return 0
+    fi
+
+    return 1
 }
 
 is_http_url_reachable() {
@@ -309,7 +374,11 @@ check_connections() {
     export CONNECTION_RETRY_SLEEP="${connection_retry_sleep}"
     export SERVICE_CONNECT_TIMEOUT="${service_connect_timeout}"
 
-    check_redis_connection
+    if is_redis_required; then
+        check_redis_connection
+    else
+        echo "Skipping Redis check (no Redis-backed services configured)."
+    fi
     check_database_connection
     check_storage_permissions
     check_opcache_directory
@@ -535,6 +604,9 @@ run_primary_startup_tasks() {
 bootstrap_container() {
     echo "Container mode: ${container_mode}"
 
+    resolve_horizon_enabled
+    echo "Horizon enabled: ${horizon_enabled}"
+
     fix_storage_permissions
     purge_laravel_provider_caches
     check_connections
@@ -553,7 +625,11 @@ start_http_container() {
     fix_storage_permissions
 
     if [ "${octane_server}" = "frankenphp" ]; then
-        exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.frankenphp.conf
+        if [ "${horizon_enabled}" = "true" ]; then
+            exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.frankenphp.conf
+        fi
+
+        exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.frankenphp.no-horizon.conf
     elif [ "${octane_server}" = "swoole" ]; then
         exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.swoole.conf
     elif [ "${octane_server}" = "roadrunner" ]; then
@@ -566,6 +642,11 @@ start_http_container() {
 
 start_non_http_container() {
     if [ "${container_mode}" = "horizon" ]; then
+        if [ "${horizon_enabled}" != "true" ]; then
+            echo "CONTAINER_MODE=horizon requested but Horizon is disabled for queue driver '${QUEUE_CONNECTION:-database}'."
+            exit 0
+        fi
+
         exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.horizon.conf
     elif [ "${container_mode}" = "reverb" ]; then
         exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.reverb.conf

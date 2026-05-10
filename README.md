@@ -86,16 +86,19 @@ Here's why:
 <!-- GETTING STARTED -->
 ## Getting Started
 
-KoAkademy is a self-hostable academic management platform for student portals, admin operations, enrollment workflows, finance, schedules, and school content.
+KoAkademy is a self-hosted academic management platform for student portals, admin work, enrollment, finance, schedules, and content.
 
-If you just want to try it, use the Docker image. If you want to work on the code, jump to [Development](#development).
+Just want to run it? Start with Docker below. Want to contribute code? Jump to [Development](#development).
 
 ### Quick Start
 
-The quick-start uses the smallest practical stack: KoAkademy + SQLite + Redis. SQLite is the app default, and Redis is included because the production image runs Horizon for queues.
+This quick start uses the smallest practical setup: KoAkademy + SQLite + Redis.
+
+- SQLite is the default database.
+- Redis is included because the production image uses Horizon for queues.
 
 <details open>
-<summary><strong>Run KoAkademy with one copy-paste command</strong></summary>
+<summary><strong>One copy-paste quick start</strong></summary>
 
 ```sh
 mkdir -p koakademy && cd koakademy
@@ -151,10 +154,10 @@ docker compose exec app php artisan make:filament-user
 </details>
 
 <details>
-<summary><strong>Image tags</strong></summary>
+<summary><strong>Image tags (which one should I use?)</strong></summary>
 
-* `docker.io/yukazakiri/koakademy:latest` — stable release channel.
-* `docker.io/yukazakiri/koakademy:dev-latest` — rolling development channel.
+* `docker.io/yukazakiri/koakademy:latest` — stable (recommended for most users).
+* `docker.io/yukazakiri/koakademy:dev-latest` — rolling updates (for early testing).
 * `ghcr.io/yukazakiri/koakademy:latest` — GitHub Container Registry mirror when enabled for a release.
 
 To try the rolling build, change the app image to:
@@ -170,10 +173,17 @@ image: docker.io/yukazakiri/koakademy:dev-latest
 <!-- DEPLOYMENT -->
 ## Deployment
 
-For self-hosting, start with Docker Compose and add services only when you need them. The app has sensible defaults: SQLite for the database, database-backed cache/sessions, log mail, and collection search.
+For self-hosting, start small with Docker Compose and add extra services only when you need them.
+
+By default, the app already works with:
+
+- SQLite database
+- database-backed cache/sessions
+- log mail driver
+- collection search
 
 <details>
-<summary><strong>Minimal Docker Compose</strong></summary>
+<summary><strong>Minimal Docker Compose (recommended starting point)</strong></summary>
 
 ```yaml
 services:
@@ -217,7 +227,7 @@ QUEUE_CONNECTION=redis
 </details>
 
 <details>
-<summary><strong>Docker run version</strong></summary>
+<summary><strong>Same thing with docker run</strong></summary>
 
 ```sh
 mkdir -p koakademy/database
@@ -252,10 +262,10 @@ printf 'base64:%s\n' "$(openssl rand -base64 32)"
 </details>
 
 <details>
-<summary><strong>Recommended production add-ons</strong></summary>
+<summary><strong>Production add-ons you’ll probably want later</strong></summary>
 
 * Put Caddy, Traefik, Nginx, Cloudflare Tunnel, or your platform proxy in front of port `8000` for HTTPS.
-* Move to PostgreSQL when you need stronger multi-user production database operations.
+* Move to PostgreSQL when you need stronger multi-user production database operations (recommended).
 * Add Meilisearch when you want external Scout search indexing.
 * Configure SMTP for real outbound email.
 * Use S3 or Cloudflare R2 for durable uploads if you run more than one app node or replace hosts often.
@@ -264,16 +274,85 @@ printf 'base64:%s\n' "$(openssl rand -base64 32)"
 </details>
 
 <details>
+<summary><strong>Database options (pick one)</strong></summary>
+
+### 1) SQLite (fastest way to get running)
+
+```env
+DB_CONNECTION=sqlite
+```
+
+Mount a writable file:
+
+```yaml
+volumes:
+  - ./database/database.sqlite:/app/database/database.sqlite
+```
+
+### 2) PostgreSQL (recommended for production)
+
+```env
+DB_CONNECTION=pgsql
+DB_HOST=pgsql
+DB_PORT=5432
+DB_DATABASE=koakademy
+DB_USERNAME=koakademy
+DB_PASSWORD=replace-with-strong-password
+```
+
+Example service:
+
+```yaml
+pgsql:
+  image: postgres:17-alpine
+  restart: unless-stopped
+  environment:
+    POSTGRES_DB: koakademy
+    POSTGRES_USER: koakademy
+    POSTGRES_PASSWORD: replace-with-strong-password
+  volumes:
+    - koakademy-pgsql:/var/lib/postgresql/data
+```
+
+### 3) MySQL / MariaDB (if that’s your existing stack)
+
+```env
+DB_CONNECTION=mysql
+DB_HOST=mysql
+DB_PORT=3306
+DB_DATABASE=koakademy
+DB_USERNAME=koakademy
+DB_PASSWORD=replace-with-strong-password
+```
+
+Example service:
+
+```yaml
+mysql:
+  image: mysql:8.4
+  restart: unless-stopped
+  environment:
+    MYSQL_DATABASE: koakademy
+    MYSQL_USER: koakademy
+    MYSQL_PASSWORD: replace-with-strong-password
+    MYSQL_ROOT_PASSWORD: replace-with-strong-root-password
+  volumes:
+    - koakademy-mysql:/var/lib/mysql
+```
+
+</details>
+
+<details>
 <summary><strong>Environment notes</strong></summary>
 
-The only values you usually need to set for the minimal Docker setup are:
+For the minimal Docker setup, these are the main values you should set:
 
 * `APP_KEY` — required encryption key.
 * `APP_NAME` — display name, defaults to `KoAkademy`.
 * `APP_URL` — public URL used for generated links.
 * `PORTAL_HOST` — portal route hostname. Use `localhost` for local testing.
 * `ADMIN_HOST` — admin route hostname. Use `localhost` for local testing.
-* `REDIS_HOST` and `QUEUE_CONNECTION=redis` — needed because Horizon is supervised inside the production image.
+* `REDIS_HOST` and `QUEUE_CONNECTION=redis` — needed because Horizon runs in the production image.
 
 The Docker image runs migrations by default (`RUN_MIGRATIONS=true`) and listens on port `8000`.
 
@@ -284,7 +363,7 @@ The Docker image runs migrations by default (`RUN_MIGRATIONS=true`) and listens 
 <!-- DEVELOPMENT -->
 ## Development
 
-Working on KoAkademy locally? Use the setup scripts. They handle the boring bits: environment file, dependencies, local domains, certificates, and services.
+Working on KoAkademy locally? Use the setup scripts. They handle the boring setup for you: env file, dependencies, local domains, certs, and services.
 
 <details open>
 <summary><strong>Linux</strong></summary>
@@ -304,7 +383,7 @@ Useful flags:
 ./scripts/dev-setup.sh --skip-docker
 ```
 
-The Linux script prepares the Docker Compose development stack, local HTTPS certificates, and hosts entries for the `.test` domains.
+This script prepares the Docker Compose dev stack, local HTTPS certs, and hosts entries for `.test` domains.
 
 </details>
 
@@ -334,7 +413,7 @@ The PowerShell script expects Laravel Herd and configures Herd-managed local dom
 <details>
 <summary><strong>Local development URLs</strong></summary>
 
-The scripts use the domains in your `.env`. Common defaults are:
+The scripts use domains from your `.env`. Common defaults are:
 
 * `https://portal.koakademy.test`
 * `https://admin.koakademy.test`
@@ -362,13 +441,13 @@ If you are using Sail / Docker Compose for development, prefix PHP and Node comm
 <!-- USAGE EXAMPLES -->
 ## Usage
 
-Quick links after the Docker quick-start:
+Quick links after the Docker quick start:
 
 * `http://localhost:8000`
 * `http://localhost:8000/admin`
 * `http://localhost:8000/administrators`
 
-Handy container commands:
+Useful container commands:
 
 ```sh
 docker compose up -d

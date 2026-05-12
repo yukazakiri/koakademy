@@ -1,14 +1,14 @@
 {
-  "version": "1.2.0-dev.0.5",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.2.0-dev.0.5",
-  "commit": "db8a8e076b174dfa7dc6b2b96b4aecb15d54f7eb",
+  "version": "1.2.0-dev.0.6",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.2.0-dev.0.6",
+  "commit": "c902f21071a8c66141d1613cd2c08d13378504db",
   "branch": "master",
-  "timestamp": "2026-05-10T14:35:52Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25631285408",
+  "timestamp": "2026-05-12T12:28:02Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25734022438",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.2.0-dev.0.5 - Refactor 2FA to use pluggable providers",
-    "previous": "1.2.0-dev.0.4"
+    "current": "Version 1.2.0-dev.0.6 - Merge pull request #67 from yukazakiri/codex/increase-search-input-delay-and-make-persistent-5uruur",
+    "previous": "1.2.0-dev.0.5"
   },
   "metadata": {
     "author": "yukazakiri",

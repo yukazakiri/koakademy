@@ -741,7 +741,7 @@ function SchedulePlanner({
 }
 
 export default function AdministratorClassesIndex({ user, classes, selected_class, filters, options, defaults }: ClassesIndexProps) {
-    const [search, setSearch] = React.useState(filters.search || "");
+    const [search, setSearch] = React.useState(() => filters.search || "");
     const [isSearchLoading, setIsSearchLoading] = React.useState(false);
     const [isSelectedClassLoading, setIsSelectedClassLoading] = React.useState(false);
     const [viewMode, setViewMode] = React.useState<"grid" | "list">("grid");
@@ -796,7 +796,7 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
                 onFinish: () => setIsSearchLoading(false),
             },
         );
-    }, 300);
+    }, 700);
 
     const handleFilterChange = (key: string, value: string | number | boolean | null) => {
         router.get(

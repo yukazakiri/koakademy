@@ -4,19 +4,20 @@ declare(strict_types=1);
 
 namespace Modules\Inventory\Policies;
 
-use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
+use Modules\Inventory\Models\InventoryAmendment;
+use Illuminate\Auth\Access\HandlesAuthorization;
 
-final class InventoryAmendmentPolicy
+class InventoryAmendmentPolicy
 {
     use HandlesAuthorization;
-
+    
     public function viewAny(AuthUser $authUser): bool
     {
         return $authUser->can('ViewAny:InventoryAmendment');
     }
 
-    public function view(AuthUser $authUser): bool
+    public function view(AuthUser $authUser, InventoryAmendment $inventoryAmendment): bool
     {
         return $authUser->can('View:InventoryAmendment');
     }
@@ -26,22 +27,22 @@ final class InventoryAmendmentPolicy
         return $authUser->can('Create:InventoryAmendment');
     }
 
-    public function update(AuthUser $authUser): bool
+    public function update(AuthUser $authUser, InventoryAmendment $inventoryAmendment): bool
     {
         return $authUser->can('Update:InventoryAmendment');
     }
 
-    public function delete(AuthUser $authUser): bool
+    public function delete(AuthUser $authUser, InventoryAmendment $inventoryAmendment): bool
     {
         return $authUser->can('Delete:InventoryAmendment');
     }
 
-    public function restore(AuthUser $authUser): bool
+    public function restore(AuthUser $authUser, InventoryAmendment $inventoryAmendment): bool
     {
         return $authUser->can('Restore:InventoryAmendment');
     }
 
-    public function forceDelete(AuthUser $authUser): bool
+    public function forceDelete(AuthUser $authUser, InventoryAmendment $inventoryAmendment): bool
     {
         return $authUser->can('ForceDelete:InventoryAmendment');
     }
@@ -56,7 +57,7 @@ final class InventoryAmendmentPolicy
         return $authUser->can('RestoreAny:InventoryAmendment');
     }
 
-    public function replicate(AuthUser $authUser): bool
+    public function replicate(AuthUser $authUser, InventoryAmendment $inventoryAmendment): bool
     {
         return $authUser->can('Replicate:InventoryAmendment');
     }
@@ -65,4 +66,5 @@ final class InventoryAmendmentPolicy
     {
         return $authUser->can('Reorder:InventoryAmendment');
     }
+
 }

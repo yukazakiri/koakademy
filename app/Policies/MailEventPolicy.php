@@ -4,19 +4,20 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
+use Backstage\Mails\Laravel\Models\MailEvent;
+use Illuminate\Auth\Access\HandlesAuthorization;
 
-final class MailEventPolicy
+class MailEventPolicy
 {
     use HandlesAuthorization;
-
+    
     public function viewAny(AuthUser $authUser): bool
     {
         return $authUser->can('ViewAny:MailEvent');
     }
 
-    public function view(AuthUser $authUser): bool
+    public function view(AuthUser $authUser, MailEvent $mailEvent): bool
     {
         return $authUser->can('View:MailEvent');
     }
@@ -26,22 +27,22 @@ final class MailEventPolicy
         return $authUser->can('Create:MailEvent');
     }
 
-    public function update(AuthUser $authUser): bool
+    public function update(AuthUser $authUser, MailEvent $mailEvent): bool
     {
         return $authUser->can('Update:MailEvent');
     }
 
-    public function delete(AuthUser $authUser): bool
+    public function delete(AuthUser $authUser, MailEvent $mailEvent): bool
     {
         return $authUser->can('Delete:MailEvent');
     }
 
-    public function restore(AuthUser $authUser): bool
+    public function restore(AuthUser $authUser, MailEvent $mailEvent): bool
     {
         return $authUser->can('Restore:MailEvent');
     }
 
-    public function forceDelete(AuthUser $authUser): bool
+    public function forceDelete(AuthUser $authUser, MailEvent $mailEvent): bool
     {
         return $authUser->can('ForceDelete:MailEvent');
     }
@@ -56,7 +57,7 @@ final class MailEventPolicy
         return $authUser->can('RestoreAny:MailEvent');
     }
 
-    public function replicate(AuthUser $authUser): bool
+    public function replicate(AuthUser $authUser, MailEvent $mailEvent): bool
     {
         return $authUser->can('Replicate:MailEvent');
     }
@@ -65,4 +66,5 @@ final class MailEventPolicy
     {
         return $authUser->can('Reorder:MailEvent');
     }
+
 }

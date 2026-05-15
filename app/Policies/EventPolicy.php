@@ -4,19 +4,20 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
+use App\Models\Event;
+use Illuminate\Auth\Access\HandlesAuthorization;
 
-final class EventPolicy
+class EventPolicy
 {
     use HandlesAuthorization;
-
+    
     public function viewAny(AuthUser $authUser): bool
     {
         return $authUser->can('ViewAny:Event');
     }
 
-    public function view(AuthUser $authUser): bool
+    public function view(AuthUser $authUser, Event $event): bool
     {
         return $authUser->can('View:Event');
     }
@@ -26,22 +27,22 @@ final class EventPolicy
         return $authUser->can('Create:Event');
     }
 
-    public function update(AuthUser $authUser): bool
+    public function update(AuthUser $authUser, Event $event): bool
     {
         return $authUser->can('Update:Event');
     }
 
-    public function delete(AuthUser $authUser): bool
+    public function delete(AuthUser $authUser, Event $event): bool
     {
         return $authUser->can('Delete:Event');
     }
 
-    public function restore(AuthUser $authUser): bool
+    public function restore(AuthUser $authUser, Event $event): bool
     {
         return $authUser->can('Restore:Event');
     }
 
-    public function forceDelete(AuthUser $authUser): bool
+    public function forceDelete(AuthUser $authUser, Event $event): bool
     {
         return $authUser->can('ForceDelete:Event');
     }
@@ -56,7 +57,7 @@ final class EventPolicy
         return $authUser->can('RestoreAny:Event');
     }
 
-    public function replicate(AuthUser $authUser): bool
+    public function replicate(AuthUser $authUser, Event $event): bool
     {
         return $authUser->can('Replicate:Event');
     }
@@ -65,4 +66,5 @@ final class EventPolicy
     {
         return $authUser->can('Reorder:Event');
     }
+
 }

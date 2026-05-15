@@ -4,19 +4,20 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
+use App\Models\Classes;
+use Illuminate\Auth\Access\HandlesAuthorization;
 
-final class ClassesPolicy
+class ClassesPolicy
 {
     use HandlesAuthorization;
-
+    
     public function viewAny(AuthUser $authUser): bool
     {
         return $authUser->can('ViewAny:Classes');
     }
 
-    public function view(AuthUser $authUser): bool
+    public function view(AuthUser $authUser, Classes $classes): bool
     {
         return $authUser->can('View:Classes');
     }
@@ -26,22 +27,22 @@ final class ClassesPolicy
         return $authUser->can('Create:Classes');
     }
 
-    public function update(AuthUser $authUser): bool
+    public function update(AuthUser $authUser, Classes $classes): bool
     {
         return $authUser->can('Update:Classes');
     }
 
-    public function delete(AuthUser $authUser): bool
+    public function delete(AuthUser $authUser, Classes $classes): bool
     {
         return $authUser->can('Delete:Classes');
     }
 
-    public function restore(AuthUser $authUser): bool
+    public function restore(AuthUser $authUser, Classes $classes): bool
     {
         return $authUser->can('Restore:Classes');
     }
 
-    public function forceDelete(AuthUser $authUser): bool
+    public function forceDelete(AuthUser $authUser, Classes $classes): bool
     {
         return $authUser->can('ForceDelete:Classes');
     }
@@ -56,7 +57,7 @@ final class ClassesPolicy
         return $authUser->can('RestoreAny:Classes');
     }
 
-    public function replicate(AuthUser $authUser): bool
+    public function replicate(AuthUser $authUser, Classes $classes): bool
     {
         return $authUser->can('Replicate:Classes');
     }
@@ -65,4 +66,5 @@ final class ClassesPolicy
     {
         return $authUser->can('Reorder:Classes');
     }
+
 }

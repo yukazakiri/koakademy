@@ -12,9 +12,11 @@ import { Head, useForm, usePage } from "@inertiajs/react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
     AlertCircle,
+    ArrowRight,
     BookOpen,
     Building2,
     CalendarDays,
+    CheckCircle2,
     ChevronLeft,
     ChevronRight,
     Eye,
@@ -24,6 +26,7 @@ import {
     Loader2,
     Palette,
     Rocket,
+    Settings2,
     ShieldCheck,
     Sparkles,
     ToggleRight,
@@ -320,6 +323,7 @@ export default function Setup() {
 
     const [step, setStep] = useState(1);
     const [direction, setDirection] = useState(1);
+    const [showSplash, setShowSplash] = useState(true);
     const [logoPreview, setLogoPreview] = useState<string | null>(null);
 
     const goToStep = (next: number) => {
@@ -431,6 +435,105 @@ export default function Setup() {
 
     const requiredStepsComplete = step >= 4;
     const currentStepConfig = STEPS[step - 1];
+
+    if (showSplash) {
+        return (
+            <div className="bg-background relative flex min-h-screen items-center justify-center overflow-hidden p-4 py-10">
+                <Head title={`Welcome to ${appName}`} />
+
+                <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+                    <div className="bg-primary/5 absolute -top-1/4 -left-1/4 h-1/2 w-1/2 rounded-full blur-[120px]" />
+                    <div className="bg-secondary/10 absolute -right-1/4 -bottom-1/4 h-1/2 w-1/2 rounded-full blur-[120px]" />
+                    <div className="absolute inset-0 bg-[linear-gradient(to_right,hsl(var(--border))_1px,transparent_1px),linear-gradient(to_bottom,hsl(var(--border))_1px,transparent_1px)] [mask-image:radial-gradient(ellipse_65%_55%_at_50%_50%,#000_20%,transparent_100%)] bg-[size:4rem_4rem] opacity-20" />
+                </div>
+
+                <motion.main
+                    initial={{ opacity: 0, y: 18 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ type: "spring", stiffness: 260, damping: 28 }}
+                    className="relative z-10 grid w-full max-w-[1100px] gap-8 lg:grid-cols-[1fr_420px] lg:items-center"
+                >
+                    <section className="space-y-8">
+                        <div className="flex items-center gap-3">
+                            {logoUrl ? (
+                                <img src={logoUrl} alt={appName} className="h-11 w-auto" />
+                            ) : (
+                                <div className="bg-primary/10 ring-primary/20 rounded-xl p-2.5 ring-1">
+                                    <ShieldCheck className="text-primary h-6 w-6" />
+                                </div>
+                            )}
+                            <span className="text-foreground text-xl font-bold tracking-tight">{appName}</span>
+                        </div>
+
+                        <div className="max-w-2xl space-y-5">
+                            <Badge variant="outline" className="border-primary/30 text-primary bg-primary/5 w-fit px-3 py-1 text-xs">
+                                First-time initialization
+                            </Badge>
+                            <h1 className="text-foreground font-serif text-4xl leading-tight font-semibold sm:text-5xl lg:text-6xl">
+                                Welcome to your academic command center.
+                            </h1>
+                            <p className="text-muted-foreground max-w-xl text-base leading-relaxed sm:text-lg">
+                                We will prepare the essentials for your institution: the administrator account, campus profile, academic period,
+                                branding, and the modules your team will use day to day.
+                            </p>
+                        </div>
+
+                        <div className="grid max-w-3xl gap-3 sm:grid-cols-3">
+                            {[
+                                { label: "Secure access", description: "Create the first super admin account.", icon: ShieldCheck },
+                                { label: "School profile", description: "Add institution identity and contacts.", icon: Building2 },
+                                { label: "Academic flow", description: "Set dates, semester, and features.", icon: GraduationCap },
+                            ].map((item) => (
+                                <div key={item.label} className="border-border bg-card/70 rounded-lg border p-4 shadow-sm backdrop-blur">
+                                    <item.icon className="text-primary mb-3 h-5 w-5" />
+                                    <h2 className="text-foreground text-sm font-semibold">{item.label}</h2>
+                                    <p className="text-muted-foreground mt-1 text-xs leading-relaxed">{item.description}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+
+                    <Card className="border-border bg-card shadow-foreground/5 overflow-hidden shadow-xl">
+                        <CardContent className="space-y-6 p-6 sm:p-8">
+                            <div className="bg-primary text-primary-foreground flex h-12 w-12 items-center justify-center rounded-lg">
+                                <Settings2 className="h-6 w-6" />
+                            </div>
+
+                            <div className="space-y-2">
+                                <CardTitle className="text-foreground text-2xl font-bold tracking-tight">Setup takes a few guided steps.</CardTitle>
+                                <CardDescription className="text-muted-foreground text-sm leading-relaxed">
+                                    Required items come first so the system can run immediately. Optional branding and modules can be tuned now or
+                                    adjusted later from System Management.
+                                </CardDescription>
+                            </div>
+
+                            <div className="space-y-3">
+                                {[
+                                    "Create the unrestricted administrator account",
+                                    "Register your institution and school year",
+                                    "Review appearance and feature toggles",
+                                ].map((item) => (
+                                    <div key={item} className="flex items-start gap-3">
+                                        <CheckCircle2 className="text-primary mt-0.5 h-4 w-4 shrink-0" />
+                                        <span className="text-muted-foreground text-sm">{item}</span>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <Button
+                                type="button"
+                                onClick={() => setShowSplash(false)}
+                                className="group bg-primary text-primary-foreground hover:bg-primary/90 h-11 w-full"
+                            >
+                                Continue to Setup
+                                <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                            </Button>
+                        </CardContent>
+                    </Card>
+                </motion.main>
+            </div>
+        );
+    }
 
     return (
         <div className="bg-background relative flex min-h-screen flex-col items-center justify-center overflow-hidden p-4 py-10">

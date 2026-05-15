@@ -4,19 +4,20 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
+use App\Models\Department;
+use Illuminate\Auth\Access\HandlesAuthorization;
 
-final class DepartmentPolicy
+class DepartmentPolicy
 {
     use HandlesAuthorization;
-
+    
     public function viewAny(AuthUser $authUser): bool
     {
         return $authUser->can('ViewAny:Department');
     }
 
-    public function view(AuthUser $authUser): bool
+    public function view(AuthUser $authUser, Department $department): bool
     {
         return $authUser->can('View:Department');
     }
@@ -26,22 +27,22 @@ final class DepartmentPolicy
         return $authUser->can('Create:Department');
     }
 
-    public function update(AuthUser $authUser): bool
+    public function update(AuthUser $authUser, Department $department): bool
     {
         return $authUser->can('Update:Department');
     }
 
-    public function delete(AuthUser $authUser): bool
+    public function delete(AuthUser $authUser, Department $department): bool
     {
         return $authUser->can('Delete:Department');
     }
 
-    public function restore(AuthUser $authUser): bool
+    public function restore(AuthUser $authUser, Department $department): bool
     {
         return $authUser->can('Restore:Department');
     }
 
-    public function forceDelete(AuthUser $authUser): bool
+    public function forceDelete(AuthUser $authUser, Department $department): bool
     {
         return $authUser->can('ForceDelete:Department');
     }
@@ -56,7 +57,7 @@ final class DepartmentPolicy
         return $authUser->can('RestoreAny:Department');
     }
 
-    public function replicate(AuthUser $authUser): bool
+    public function replicate(AuthUser $authUser, Department $department): bool
     {
         return $authUser->can('Replicate:Department');
     }
@@ -65,4 +66,5 @@ final class DepartmentPolicy
     {
         return $authUser->can('Reorder:Department');
     }
+
 }

@@ -4,19 +4,20 @@ declare(strict_types=1);
 
 namespace Modules\Inventory\Policies;
 
-use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
+use Modules\Inventory\Models\InventoryStockMovement;
+use Illuminate\Auth\Access\HandlesAuthorization;
 
-final class InventoryStockMovementPolicy
+class InventoryStockMovementPolicy
 {
     use HandlesAuthorization;
-
+    
     public function viewAny(AuthUser $authUser): bool
     {
         return $authUser->can('ViewAny:InventoryStockMovement');
     }
 
-    public function view(AuthUser $authUser): bool
+    public function view(AuthUser $authUser, InventoryStockMovement $inventoryStockMovement): bool
     {
         return $authUser->can('View:InventoryStockMovement');
     }
@@ -26,22 +27,22 @@ final class InventoryStockMovementPolicy
         return $authUser->can('Create:InventoryStockMovement');
     }
 
-    public function update(AuthUser $authUser): bool
+    public function update(AuthUser $authUser, InventoryStockMovement $inventoryStockMovement): bool
     {
         return $authUser->can('Update:InventoryStockMovement');
     }
 
-    public function delete(AuthUser $authUser): bool
+    public function delete(AuthUser $authUser, InventoryStockMovement $inventoryStockMovement): bool
     {
         return $authUser->can('Delete:InventoryStockMovement');
     }
 
-    public function restore(AuthUser $authUser): bool
+    public function restore(AuthUser $authUser, InventoryStockMovement $inventoryStockMovement): bool
     {
         return $authUser->can('Restore:InventoryStockMovement');
     }
 
-    public function forceDelete(AuthUser $authUser): bool
+    public function forceDelete(AuthUser $authUser, InventoryStockMovement $inventoryStockMovement): bool
     {
         return $authUser->can('ForceDelete:InventoryStockMovement');
     }
@@ -56,7 +57,7 @@ final class InventoryStockMovementPolicy
         return $authUser->can('RestoreAny:InventoryStockMovement');
     }
 
-    public function replicate(AuthUser $authUser): bool
+    public function replicate(AuthUser $authUser, InventoryStockMovement $inventoryStockMovement): bool
     {
         return $authUser->can('Replicate:InventoryStockMovement');
     }
@@ -65,4 +66,5 @@ final class InventoryStockMovementPolicy
     {
         return $authUser->can('Reorder:InventoryStockMovement');
     }
+
 }

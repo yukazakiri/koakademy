@@ -4,19 +4,20 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
+use App\Models\ShsStudent;
+use Illuminate\Auth\Access\HandlesAuthorization;
 
-final class ShsStudentPolicy
+class ShsStudentPolicy
 {
     use HandlesAuthorization;
-
+    
     public function viewAny(AuthUser $authUser): bool
     {
         return $authUser->can('ViewAny:ShsStudent');
     }
 
-    public function view(AuthUser $authUser): bool
+    public function view(AuthUser $authUser, ShsStudent $shsStudent): bool
     {
         return $authUser->can('View:ShsStudent');
     }
@@ -26,22 +27,22 @@ final class ShsStudentPolicy
         return $authUser->can('Create:ShsStudent');
     }
 
-    public function update(AuthUser $authUser): bool
+    public function update(AuthUser $authUser, ShsStudent $shsStudent): bool
     {
         return $authUser->can('Update:ShsStudent');
     }
 
-    public function delete(AuthUser $authUser): bool
+    public function delete(AuthUser $authUser, ShsStudent $shsStudent): bool
     {
         return $authUser->can('Delete:ShsStudent');
     }
 
-    public function restore(AuthUser $authUser): bool
+    public function restore(AuthUser $authUser, ShsStudent $shsStudent): bool
     {
         return $authUser->can('Restore:ShsStudent');
     }
 
-    public function forceDelete(AuthUser $authUser): bool
+    public function forceDelete(AuthUser $authUser, ShsStudent $shsStudent): bool
     {
         return $authUser->can('ForceDelete:ShsStudent');
     }
@@ -56,7 +57,7 @@ final class ShsStudentPolicy
         return $authUser->can('RestoreAny:ShsStudent');
     }
 
-    public function replicate(AuthUser $authUser): bool
+    public function replicate(AuthUser $authUser, ShsStudent $shsStudent): bool
     {
         return $authUser->can('Replicate:ShsStudent');
     }
@@ -65,4 +66,5 @@ final class ShsStudentPolicy
     {
         return $authUser->can('Reorder:ShsStudent');
     }
+
 }

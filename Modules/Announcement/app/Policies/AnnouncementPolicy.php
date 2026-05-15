@@ -4,95 +4,67 @@ declare(strict_types=1);
 
 namespace Modules\Announcement\Policies;
 
-use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
 use Modules\Announcement\Models\Announcement;
+use Illuminate\Auth\Access\HandlesAuthorization;
 
-final class AnnouncementPolicy
+class AnnouncementPolicy
 {
     use HandlesAuthorization;
-
+    
     public function viewAny(AuthUser $authUser): bool
     {
-        return $this->hasAdministrativeAccess($authUser)
-            || $authUser->can('ViewAny:Announcement')
-            || $authUser->can('view_announcements')
-            || $authUser->can('manage_announcements');
+        return $authUser->can('ViewAny:Announcement');
     }
 
     public function view(AuthUser $authUser, Announcement $announcement): bool
     {
-        return $this->hasAdministrativeAccess($authUser)
-            || $authUser->can('View:Announcement')
-            || $authUser->can('view_announcements')
-            || $authUser->can('manage_announcements');
+        return $authUser->can('View:Announcement');
     }
 
     public function create(AuthUser $authUser): bool
     {
-        return $this->hasAdministrativeAccess($authUser)
-            || $authUser->can('Create:Announcement')
-            || $authUser->can('manage_announcements');
+        return $authUser->can('Create:Announcement');
     }
 
     public function update(AuthUser $authUser, Announcement $announcement): bool
     {
-        return $this->hasAdministrativeAccess($authUser)
-            || $authUser->can('Update:Announcement')
-            || $authUser->can('manage_announcements');
+        return $authUser->can('Update:Announcement');
     }
 
     public function delete(AuthUser $authUser, Announcement $announcement): bool
     {
-        return $this->hasAdministrativeAccess($authUser)
-            || $authUser->can('Delete:Announcement')
-            || $authUser->can('manage_announcements');
+        return $authUser->can('Delete:Announcement');
     }
 
     public function restore(AuthUser $authUser, Announcement $announcement): bool
     {
-        return $this->hasAdministrativeAccess($authUser)
-            || $authUser->can('Restore:Announcement')
-            || $authUser->can('manage_announcements');
+        return $authUser->can('Restore:Announcement');
     }
 
     public function forceDelete(AuthUser $authUser, Announcement $announcement): bool
     {
-        return $this->hasAdministrativeAccess($authUser)
-            || $authUser->can('ForceDelete:Announcement')
-            || $authUser->can('manage_announcements');
+        return $authUser->can('ForceDelete:Announcement');
     }
 
     public function forceDeleteAny(AuthUser $authUser): bool
     {
-        return $this->hasAdministrativeAccess($authUser)
-            || $authUser->can('ForceDeleteAny:Announcement')
-            || $authUser->can('manage_announcements');
+        return $authUser->can('ForceDeleteAny:Announcement');
     }
 
     public function restoreAny(AuthUser $authUser): bool
     {
-        return $this->hasAdministrativeAccess($authUser)
-            || $authUser->can('RestoreAny:Announcement')
-            || $authUser->can('manage_announcements');
+        return $authUser->can('RestoreAny:Announcement');
     }
 
     public function replicate(AuthUser $authUser, Announcement $announcement): bool
     {
-        return $this->hasAdministrativeAccess($authUser)
-            || $authUser->can('Replicate:Announcement')
-            || $authUser->can('manage_announcements');
+        return $authUser->can('Replicate:Announcement');
     }
 
     public function reorder(AuthUser $authUser): bool
     {
-        return $this->hasAdministrativeAccess($authUser)
-            || $authUser->can('Reorder:Announcement')
-            || $authUser->can('manage_announcements');
+        return $authUser->can('Reorder:Announcement');
     }
 
-    private function hasAdministrativeAccess(AuthUser $authUser): bool
-    {
-        return method_exists($authUser, 'isAdministrative') && $authUser->isAdministrative();
-    }
 }

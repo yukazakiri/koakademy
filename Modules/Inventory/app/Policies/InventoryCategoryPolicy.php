@@ -4,19 +4,20 @@ declare(strict_types=1);
 
 namespace Modules\Inventory\Policies;
 
-use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
+use Modules\Inventory\Models\InventoryCategory;
+use Illuminate\Auth\Access\HandlesAuthorization;
 
-final class InventoryCategoryPolicy
+class InventoryCategoryPolicy
 {
     use HandlesAuthorization;
-
+    
     public function viewAny(AuthUser $authUser): bool
     {
         return $authUser->can('ViewAny:InventoryCategory');
     }
 
-    public function view(AuthUser $authUser): bool
+    public function view(AuthUser $authUser, InventoryCategory $inventoryCategory): bool
     {
         return $authUser->can('View:InventoryCategory');
     }
@@ -26,22 +27,22 @@ final class InventoryCategoryPolicy
         return $authUser->can('Create:InventoryCategory');
     }
 
-    public function update(AuthUser $authUser): bool
+    public function update(AuthUser $authUser, InventoryCategory $inventoryCategory): bool
     {
         return $authUser->can('Update:InventoryCategory');
     }
 
-    public function delete(AuthUser $authUser): bool
+    public function delete(AuthUser $authUser, InventoryCategory $inventoryCategory): bool
     {
         return $authUser->can('Delete:InventoryCategory');
     }
 
-    public function restore(AuthUser $authUser): bool
+    public function restore(AuthUser $authUser, InventoryCategory $inventoryCategory): bool
     {
         return $authUser->can('Restore:InventoryCategory');
     }
 
-    public function forceDelete(AuthUser $authUser): bool
+    public function forceDelete(AuthUser $authUser, InventoryCategory $inventoryCategory): bool
     {
         return $authUser->can('ForceDelete:InventoryCategory');
     }
@@ -56,7 +57,7 @@ final class InventoryCategoryPolicy
         return $authUser->can('RestoreAny:InventoryCategory');
     }
 
-    public function replicate(AuthUser $authUser): bool
+    public function replicate(AuthUser $authUser, InventoryCategory $inventoryCategory): bool
     {
         return $authUser->can('Replicate:InventoryCategory');
     }
@@ -65,4 +66,5 @@ final class InventoryCategoryPolicy
     {
         return $authUser->can('Reorder:InventoryCategory');
     }
+
 }

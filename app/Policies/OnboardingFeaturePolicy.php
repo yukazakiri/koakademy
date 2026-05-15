@@ -4,19 +4,20 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
+use App\Models\OnboardingFeature;
+use Illuminate\Auth\Access\HandlesAuthorization;
 
-final class OnboardingFeaturePolicy
+class OnboardingFeaturePolicy
 {
     use HandlesAuthorization;
-
+    
     public function viewAny(AuthUser $authUser): bool
     {
         return $authUser->can('ViewAny:OnboardingFeature');
     }
 
-    public function view(AuthUser $authUser): bool
+    public function view(AuthUser $authUser, OnboardingFeature $onboardingFeature): bool
     {
         return $authUser->can('View:OnboardingFeature');
     }
@@ -26,22 +27,22 @@ final class OnboardingFeaturePolicy
         return $authUser->can('Create:OnboardingFeature');
     }
 
-    public function update(AuthUser $authUser): bool
+    public function update(AuthUser $authUser, OnboardingFeature $onboardingFeature): bool
     {
         return $authUser->can('Update:OnboardingFeature');
     }
 
-    public function delete(AuthUser $authUser): bool
+    public function delete(AuthUser $authUser, OnboardingFeature $onboardingFeature): bool
     {
         return $authUser->can('Delete:OnboardingFeature');
     }
 
-    public function restore(AuthUser $authUser): bool
+    public function restore(AuthUser $authUser, OnboardingFeature $onboardingFeature): bool
     {
         return $authUser->can('Restore:OnboardingFeature');
     }
 
-    public function forceDelete(AuthUser $authUser): bool
+    public function forceDelete(AuthUser $authUser, OnboardingFeature $onboardingFeature): bool
     {
         return $authUser->can('ForceDelete:OnboardingFeature');
     }
@@ -56,7 +57,7 @@ final class OnboardingFeaturePolicy
         return $authUser->can('RestoreAny:OnboardingFeature');
     }
 
-    public function replicate(AuthUser $authUser): bool
+    public function replicate(AuthUser $authUser, OnboardingFeature $onboardingFeature): bool
     {
         return $authUser->can('Replicate:OnboardingFeature');
     }
@@ -65,4 +66,5 @@ final class OnboardingFeaturePolicy
     {
         return $authUser->can('Reorder:OnboardingFeature');
     }
+
 }

@@ -4,74 +4,67 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use App\Models\User;
+use Illuminate\Foundation\Auth\User as AuthUser;
+use App\Models\Course;
 use Illuminate\Auth\Access\HandlesAuthorization;
 
-final class CoursePolicy
+class CoursePolicy
 {
     use HandlesAuthorization;
-
-    public function before(User $user): ?bool
+    
+    public function viewAny(AuthUser $authUser): bool
     {
-        if ($user->hasRole('super_admin')) {
-            return true;
-        }
-
-        return null;
+        return $authUser->can('ViewAny:Course');
     }
 
-    public function viewAny(User $user): bool
+    public function view(AuthUser $authUser, Course $course): bool
     {
-        return $user->can('ViewAny:Course');
+        return $authUser->can('View:Course');
     }
 
-    public function view(User $user): bool
+    public function create(AuthUser $authUser): bool
     {
-        return $user->can('View:Course');
+        return $authUser->can('Create:Course');
     }
 
-    public function create(User $user): bool
+    public function update(AuthUser $authUser, Course $course): bool
     {
-        return $user->can('Create:Course');
+        return $authUser->can('Update:Course');
     }
 
-    public function update(User $user): bool
+    public function delete(AuthUser $authUser, Course $course): bool
     {
-        return $user->can('Update:Course');
+        return $authUser->can('Delete:Course');
     }
 
-    public function delete(User $user): bool
+    public function restore(AuthUser $authUser, Course $course): bool
     {
-        return $user->can('Delete:Course');
+        return $authUser->can('Restore:Course');
     }
 
-    public function restore(User $user): bool
+    public function forceDelete(AuthUser $authUser, Course $course): bool
     {
-        return $user->can('Restore:Course');
+        return $authUser->can('ForceDelete:Course');
     }
 
-    public function forceDelete(User $user): bool
+    public function forceDeleteAny(AuthUser $authUser): bool
     {
-        return $user->can('ForceDelete:Course');
+        return $authUser->can('ForceDeleteAny:Course');
     }
 
-    public function forceDeleteAny(User $user): bool
+    public function restoreAny(AuthUser $authUser): bool
     {
-        return $user->can('ForceDeleteAny:Course');
+        return $authUser->can('RestoreAny:Course');
     }
 
-    public function restoreAny(User $user): bool
+    public function replicate(AuthUser $authUser, Course $course): bool
     {
-        return $user->can('RestoreAny:Course');
+        return $authUser->can('Replicate:Course');
     }
 
-    public function replicate(User $user): bool
+    public function reorder(AuthUser $authUser): bool
     {
-        return $user->can('Replicate:Course');
+        return $authUser->can('Reorder:Course');
     }
 
-    public function reorder(User $user): bool
-    {
-        return $user->can('Reorder:Course');
-    }
 }

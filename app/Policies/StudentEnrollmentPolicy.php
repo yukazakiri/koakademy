@@ -4,19 +4,20 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
+use App\Models\StudentEnrollment;
+use Illuminate\Auth\Access\HandlesAuthorization;
 
-final class StudentEnrollmentPolicy
+class StudentEnrollmentPolicy
 {
     use HandlesAuthorization;
-
+    
     public function viewAny(AuthUser $authUser): bool
     {
         return $authUser->can('ViewAny:StudentEnrollment');
     }
 
-    public function view(AuthUser $authUser): bool
+    public function view(AuthUser $authUser, StudentEnrollment $studentEnrollment): bool
     {
         return $authUser->can('View:StudentEnrollment');
     }
@@ -26,22 +27,22 @@ final class StudentEnrollmentPolicy
         return $authUser->can('Create:StudentEnrollment');
     }
 
-    public function update(AuthUser $authUser): bool
+    public function update(AuthUser $authUser, StudentEnrollment $studentEnrollment): bool
     {
         return $authUser->can('Update:StudentEnrollment');
     }
 
-    public function delete(AuthUser $authUser): bool
+    public function delete(AuthUser $authUser, StudentEnrollment $studentEnrollment): bool
     {
         return $authUser->can('Delete:StudentEnrollment');
     }
 
-    public function restore(AuthUser $authUser): bool
+    public function restore(AuthUser $authUser, StudentEnrollment $studentEnrollment): bool
     {
         return $authUser->can('Restore:StudentEnrollment');
     }
 
-    public function forceDelete(AuthUser $authUser): bool
+    public function forceDelete(AuthUser $authUser, StudentEnrollment $studentEnrollment): bool
     {
         return $authUser->can('ForceDelete:StudentEnrollment');
     }
@@ -56,7 +57,7 @@ final class StudentEnrollmentPolicy
         return $authUser->can('RestoreAny:StudentEnrollment');
     }
 
-    public function replicate(AuthUser $authUser): bool
+    public function replicate(AuthUser $authUser, StudentEnrollment $studentEnrollment): bool
     {
         return $authUser->can('Replicate:StudentEnrollment');
     }
@@ -65,4 +66,5 @@ final class StudentEnrollmentPolicy
     {
         return $authUser->can('Reorder:StudentEnrollment');
     }
+
 }

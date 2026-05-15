@@ -4,19 +4,20 @@ declare(strict_types=1);
 
 namespace Modules\Inventory\Policies;
 
-use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
+use Modules\Inventory\Models\InventorySupplier;
+use Illuminate\Auth\Access\HandlesAuthorization;
 
-final class InventorySupplierPolicy
+class InventorySupplierPolicy
 {
     use HandlesAuthorization;
-
+    
     public function viewAny(AuthUser $authUser): bool
     {
         return $authUser->can('ViewAny:InventorySupplier');
     }
 
-    public function view(AuthUser $authUser): bool
+    public function view(AuthUser $authUser, InventorySupplier $inventorySupplier): bool
     {
         return $authUser->can('View:InventorySupplier');
     }
@@ -26,22 +27,22 @@ final class InventorySupplierPolicy
         return $authUser->can('Create:InventorySupplier');
     }
 
-    public function update(AuthUser $authUser): bool
+    public function update(AuthUser $authUser, InventorySupplier $inventorySupplier): bool
     {
         return $authUser->can('Update:InventorySupplier');
     }
 
-    public function delete(AuthUser $authUser): bool
+    public function delete(AuthUser $authUser, InventorySupplier $inventorySupplier): bool
     {
         return $authUser->can('Delete:InventorySupplier');
     }
 
-    public function restore(AuthUser $authUser): bool
+    public function restore(AuthUser $authUser, InventorySupplier $inventorySupplier): bool
     {
         return $authUser->can('Restore:InventorySupplier');
     }
 
-    public function forceDelete(AuthUser $authUser): bool
+    public function forceDelete(AuthUser $authUser, InventorySupplier $inventorySupplier): bool
     {
         return $authUser->can('ForceDelete:InventorySupplier');
     }
@@ -56,7 +57,7 @@ final class InventorySupplierPolicy
         return $authUser->can('RestoreAny:InventorySupplier');
     }
 
-    public function replicate(AuthUser $authUser): bool
+    public function replicate(AuthUser $authUser, InventorySupplier $inventorySupplier): bool
     {
         return $authUser->can('Replicate:InventorySupplier');
     }
@@ -65,4 +66,5 @@ final class InventorySupplierPolicy
     {
         return $authUser->can('Reorder:InventorySupplier');
     }
+
 }

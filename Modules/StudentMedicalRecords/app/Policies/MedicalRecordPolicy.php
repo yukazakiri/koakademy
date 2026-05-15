@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace Modules\StudentMedicalRecords\Policies;
 
-use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
 use Modules\StudentMedicalRecords\Models\MedicalRecord;
+use Illuminate\Auth\Access\HandlesAuthorization;
 
-final class MedicalRecordPolicy
+class MedicalRecordPolicy
 {
     use HandlesAuthorization;
-
+    
     public function viewAny(AuthUser $authUser): bool
     {
         return $authUser->can('ViewAny:MedicalRecord');
@@ -66,4 +66,5 @@ final class MedicalRecordPolicy
     {
         return $authUser->can('Reorder:MedicalRecord');
     }
+
 }

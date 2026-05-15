@@ -45,18 +45,18 @@ function Write-Error
 function Write-Section
 { param([string]$msg)
     Write-Host ""
-    Write-Host "═══════════════════════════════════════" -ForegroundColor Blue
+    Write-Host "=======================================" -ForegroundColor Blue
     Write-Host "$msg" -ForegroundColor Blue
-    Write-Host "═══════════════════════════════════════" -ForegroundColor Blue
+    Write-Host "=======================================" -ForegroundColor Blue
     Write-Host ""
 }
 
 # Banner
 Write-Host ""
-Write-Host "╔═══════════════════════════════════════════════════════╗" -ForegroundColor Blue
-Write-Host "║       DCCP Admin V3 - Local Development Setup          ║" -ForegroundColor Blue
-Write-Host "║           (Windows + Laravel Herd)                     ║" -ForegroundColor Blue
-Write-Host "╚═══════════════════════════════════════════════════════╝" -ForegroundColor Blue
+Write-Host "+-------------------------------------------------------+" -ForegroundColor Blue
+Write-Host "|       DCCP Admin V3 - Local Development Setup        |" -ForegroundColor Blue
+Write-Host "|           (Windows + Laravel Herd)                   |" -ForegroundColor Blue
+Write-Host "+-------------------------------------------------------+" -ForegroundColor Blue
 Write-Host ""
 
 # Check if running as administrator (for hosts file modification)
@@ -130,28 +130,29 @@ if (-not (Test-Path $EnvFile))
     } else
     {
         Write-Warn ".env.example not found, creating minimal .env..."
-        @"
-APP_NAME="DCCP Admin V3"
-APP_ENV=local
-APP_KEY=
-APP_DEBUG=true
-APP_URL=http://dccpadminv3.test
-
-LOG_CHANNEL=stack
-LOG_DEPRECATIONS_CHANNEL=null
-LOG_LEVEL=debug
-
-BROADCAST_DRIVER=log
-CACHE_DRIVER=file
-FILESYSTEM_DISK=local
-QUEUE_CONNECTION=sync
-SESSION_DRIVER=file
-SESSION_LIFETIME=120
-
-PORTAL_HOST=portal.dccp.test
-ADMIN_HOST=admin.dccp.test
-MAILPIT_HOST=mailpit.local.test
-"@ | Out-File -FilePath $EnvFile -Encoding UTF8
+        $MinimalEnv = @(
+            'APP_NAME="DCCP Admin V3"'
+            'APP_ENV=local'
+            'APP_KEY='
+            'APP_DEBUG=true'
+            'APP_URL=http://dccpadminv3.test'
+            ''
+            'LOG_CHANNEL=stack'
+            'LOG_DEPRECATIONS_CHANNEL=null'
+            'LOG_LEVEL=debug'
+            ''
+            'BROADCAST_DRIVER=log'
+            'CACHE_DRIVER=file'
+            'FILESYSTEM_DISK=local'
+            'QUEUE_CONNECTION=sync'
+            'SESSION_DRIVER=file'
+            'SESSION_LIFETIME=120'
+            ''
+            'PORTAL_HOST=portal.dccp.test'
+            'ADMIN_HOST=admin.dccp.test'
+            'MAILPIT_HOST=mailpit.local.test'
+        )
+        $MinimalEnv | Out-File -FilePath $EnvFile -Encoding UTF8
         Write-Success "Minimal .env file created"
     }
 } else

@@ -1,14 +1,14 @@
 {
-  "version": "1.2.0-dev.0.6",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.2.0-dev.0.6",
-  "commit": "c902f21071a8c66141d1613cd2c08d13378504db",
+  "version": "1.2.0-dev.0.7",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.2.0-dev.0.7",
+  "commit": "4b29ce1741b8798c5ccb3cd94a028e0c13f72b0d",
   "branch": "master",
-  "timestamp": "2026-05-12T12:28:02Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25734022438",
+  "timestamp": "2026-05-15T10:53:34Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25913824238",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.2.0-dev.0.6 - Merge pull request #67 from yukazakiri/codex/increase-search-input-delay-and-make-persistent-5uruur",
-    "previous": "1.2.0-dev.0.5"
+    "current": "Version 1.2.0-dev.0.7 - Merge pull request #70 from koamishin/master",
+    "previous": "1.2.0-dev.0.6"
   },
   "metadata": {
     "author": "yukazakiri",

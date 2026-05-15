@@ -16,7 +16,6 @@ import {
     BookOpen,
     Building2,
     CalendarDays,
-    CheckCircle2,
     ChevronLeft,
     ChevronRight,
     Eye,
@@ -26,7 +25,6 @@ import {
     Loader2,
     Palette,
     Rocket,
-    Settings2,
     ShieldCheck,
     Sparkles,
     ToggleRight,
@@ -451,85 +449,62 @@ export default function Setup() {
                     initial={{ opacity: 0, y: 18 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ type: "spring", stiffness: 260, damping: 28 }}
-                    className="relative z-10 grid w-full max-w-[1100px] gap-8 lg:grid-cols-[1fr_420px] lg:items-center"
+                    className="relative z-10 flex min-h-[calc(100vh-5rem)] w-full max-w-[900px] flex-col items-center justify-center text-center"
                 >
-                    <section className="space-y-8">
-                        <div className="flex items-center gap-3">
+                    <div className="space-y-10">
+                        <div className="flex flex-col items-center gap-5">
                             {logoUrl ? (
-                                <img src={logoUrl} alt={appName} className="h-11 w-auto" />
+                                <img src={logoUrl} alt={appName} className="h-20 w-auto drop-shadow-sm" />
                             ) : (
-                                <div className="bg-primary/10 ring-primary/20 rounded-xl p-2.5 ring-1">
-                                    <ShieldCheck className="text-primary h-6 w-6" />
+                                <div className="bg-primary/10 ring-primary/20 rounded-xl p-4 ring-1">
+                                    <ShieldCheck className="text-primary h-9 w-9" />
                                 </div>
                             )}
-                            <span className="text-foreground text-xl font-bold tracking-tight">{appName}</span>
+                            <div className="text-muted-foreground text-xs font-semibold tracking-[0.28em] uppercase">First-time setup</div>
                         </div>
 
-                        <div className="max-w-2xl space-y-5">
-                            <Badge variant="outline" className="border-primary/30 text-primary bg-primary/5 w-fit px-3 py-1 text-xs">
-                                First-time initialization
-                            </Badge>
-                            <h1 className="text-foreground font-serif text-4xl leading-tight font-semibold sm:text-5xl lg:text-6xl">
-                                Welcome to your academic command center.
+                        <div className="space-y-5">
+                            <h1 className="text-foreground font-serif text-5xl leading-tight font-semibold sm:text-6xl lg:text-7xl">
+                                Welcome to {appName}
                             </h1>
-                            <p className="text-muted-foreground max-w-xl text-base leading-relaxed sm:text-lg">
-                                We will prepare the essentials for your institution: the administrator account, campus profile, academic period,
-                                branding, and the modules your team will use day to day.
+                            <p className="text-muted-foreground mx-auto max-w-2xl text-lg leading-relaxed sm:text-xl">
+                                A few guided steps will prepare your administrator account, institution profile, academic year, and portal
+                                preferences.
                             </p>
                         </div>
 
-                        <div className="grid max-w-3xl gap-3 sm:grid-cols-3">
-                            {[
-                                { label: "Secure access", description: "Create the first super admin account.", icon: ShieldCheck },
-                                { label: "School profile", description: "Add institution identity and contacts.", icon: Building2 },
-                                { label: "Academic flow", description: "Set dates, semester, and features.", icon: GraduationCap },
-                            ].map((item) => (
-                                <div key={item.label} className="border-border bg-card/70 rounded-lg border p-4 shadow-sm backdrop-blur">
-                                    <item.icon className="text-primary mb-3 h-5 w-5" />
-                                    <h2 className="text-foreground text-sm font-semibold">{item.label}</h2>
-                                    <p className="text-muted-foreground mt-1 text-xs leading-relaxed">{item.description}</p>
-                                </div>
-                            ))}
+                        <div className="text-muted-foreground flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-sm">
+                            <span>Administrator</span>
+                            <span className="bg-border h-px w-8" aria-hidden />
+                            <span>Institution</span>
+                            <span className="bg-border h-px w-8" aria-hidden />
+                            <span>Academic Period</span>
+                            <span className="bg-border h-px w-8" aria-hidden />
+                            <span>Preferences</span>
                         </div>
-                    </section>
 
-                    <Card className="border-border bg-card shadow-foreground/5 overflow-hidden shadow-xl">
-                        <CardContent className="space-y-6 p-6 sm:p-8">
-                            <div className="bg-primary text-primary-foreground flex h-12 w-12 items-center justify-center rounded-lg">
-                                <Settings2 className="h-6 w-6" />
-                            </div>
-
-                            <div className="space-y-2">
-                                <CardTitle className="text-foreground text-2xl font-bold tracking-tight">Setup takes a few guided steps.</CardTitle>
-                                <CardDescription className="text-muted-foreground text-sm leading-relaxed">
-                                    Required items come first so the system can run immediately. Optional branding and modules can be tuned now or
-                                    adjusted later from System Management.
-                                </CardDescription>
-                            </div>
-
-                            <div className="space-y-3">
-                                {[
-                                    "Create the unrestricted administrator account",
-                                    "Register your institution and school year",
-                                    "Review appearance and feature toggles",
-                                ].map((item) => (
-                                    <div key={item} className="flex items-start gap-3">
-                                        <CheckCircle2 className="text-primary mt-0.5 h-4 w-4 shrink-0" />
-                                        <span className="text-muted-foreground text-sm">{item}</span>
-                                    </div>
-                                ))}
-                            </div>
-
+                        <div className="flex justify-center pt-2">
                             <Button
                                 type="button"
                                 onClick={() => setShowSplash(false)}
-                                className="group bg-primary text-primary-foreground hover:bg-primary/90 h-11 w-full"
+                                className="group bg-primary text-primary-foreground hover:bg-primary/90 h-12 min-w-[220px] px-8 text-base shadow-lg shadow-black/10"
                             >
-                                Continue to Setup
+                                Continue
                                 <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                             </Button>
-                        </CardContent>
-                    </Card>
+                        </div>
+
+                        <div className="flex justify-center">
+                            <div className="from-border via-primary/60 to-border h-px w-32 bg-gradient-to-r" aria-hidden />
+                        </div>
+                    </div>
+
+                    <div className="pointer-events-none absolute inset-x-0 bottom-8 hidden justify-center md:flex" aria-hidden>
+                        <div className="text-muted-foreground/50 flex items-center gap-3 text-xs">
+                            <Sparkles className="h-3.5 w-3.5" />
+                            <span>Setup can be adjusted later from System Management</span>
+                        </div>
+                    </div>
                 </motion.main>
             </div>
         );

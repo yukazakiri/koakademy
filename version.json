@@ -1,18 +1,18 @@
 {
-  "version": "1.5.0",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.5.0",
-  "commit": "0fda68c6f7526b82853b509a6e7c7748cfcddb6c",
+  "version": "1.5.0-dev.0.1",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.5.0-dev.0.1",
+  "commit": "6336928cb37e4277b7688574c4fe3750c97ac588",
   "branch": "master",
-  "timestamp": "2026-05-16T08:36:59Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25957417055",
-  "release_type": "official",
+  "timestamp": "2026-05-16T10:54:14Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25960045922",
+  "release_type": "patch",
   "changelog": {
-    "current": "Version 1.5.0 - manual release",
-    "previous": "1.2.0-dev.2.1"
+    "current": "Version 1.5.0-dev.0.1 - Merge pull request #81 from yukazakiri/05-16-chore_update_docker_startup_script_and_related_unit_test",
+    "previous": "1.5.0"
   },
   "metadata": {
     "author": "yukazakiri",
-    "workflow": "Manual Official Release",
+    "workflow": "Auto Pre-release and Docker Tag",
     "repository": "yukazakiri/koakademy"
   }
 }

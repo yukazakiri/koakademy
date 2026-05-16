@@ -11,7 +11,6 @@ use App\Models\ClassEnrollment;
 use App\Models\Classes;
 use App\Models\Course;
 use App\Models\Department;
-use App\Models\OnboardingFeature;
 use App\Models\School;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
@@ -47,15 +46,8 @@ final class EnrollmentRegistrationController extends Controller
             ->unique()
             ->values();
 
-        $collegeEnabled = OnboardingFeature::query()
-            ->where('feature_key', 'online-college-enrollment')
-            ->where('is_active', true)
-            ->value('is_active') ?? false;
-
-        $tesdaEnabled = OnboardingFeature::query()
-            ->where('feature_key', 'online-tesda-enrollment')
-            ->where('is_active', true)
-            ->value('is_active') ?? false;
+        $collegeEnabled = Feature::active(\App\Features\Toggles\OnlineCollegeEnrollment::class);
+        $tesdaEnabled = Feature::active(\App\Features\Toggles\OnlineTesdaEnrollment::class);
 
         if (! $collegeEnabled && ! $tesdaEnabled) {
             return Inertia::render('enrollment/closed', [
@@ -133,19 +125,13 @@ final class EnrollmentRegistrationController extends Controller
         $studentTypeValue = $payload['student_type'] ?? '';
 
         // Check feature flags before allowing submission
-        if ($studentTypeValue === 'college' && ! OnboardingFeature::query()
-            ->where('feature_key', 'online-college-enrollment')
-            ->where('is_active', true)
-            ->exists()) {
+        if ($studentTypeValue === 'college' && ! Feature::active(\App\Features\Toggles\OnlineCollegeEnrollment::class)) {
             return redirect()->back()->with('flash', [
                 'error' => 'College online registration is currently unavailable.',
             ]);
         }
 
-        if ($studentTypeValue === 'tesda' && ! OnboardingFeature::query()
-            ->where('feature_key', 'online-tesda-enrollment')
-            ->where('is_active', true)
-            ->exists()) {
+        if ($studentTypeValue === 'tesda' && ! Feature::active(\App\Features\Toggles\OnlineTesdaEnrollment::class)) {
             return redirect()->back()->with('flash', [
                 'error' => 'TESDA online registration is currently unavailable.',
             ]);

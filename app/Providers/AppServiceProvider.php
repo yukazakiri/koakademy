@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
-use App\Features\Onboarding\FeatureClassRegistry;
 use App\Filament\Handlers\ExportFailureHandler;
 use App\Models\User;
 use App\Services\ChangelogService;
+use App\Services\FeatureToggleRegistry;
 use App\Services\GeneralSettingsService;
 use App\Services\VersionService;
 use Illuminate\Database\Eloquent\Model;
@@ -47,7 +47,7 @@ final class AppServiceProvider extends ServiceProvider
         // Register all class-based Pennant features from the registry.
         // Pennant's discover() only looks at app/Features depth 0, so nested
         // namespaces (App\Features\Onboarding\*) must be registered explicitly.
-        foreach (FeatureClassRegistry::allClasses() as $featureClass) {
+        foreach (FeatureToggleRegistry::allClasses() as $featureClass) {
             Feature::define($featureClass);
         }
 

@@ -5,10 +5,8 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Enums\UserRole;
-use App\Features\Onboarding\FeatureClassRegistry;
 use App\Models\HelpTicket;
 use App\Models\OnboardingDismissal;
-use App\Models\OnboardingFeature;
 use App\Models\User;
 use Laravel\Pennant\Feature;
 
@@ -21,21 +19,21 @@ final class OnboardingShareService
      * @var array<string, array<string>>
      */
     public const array FEATURE_TO_ROUTES = [
-        'onboarding-faculty-toolkit' => ['faculty-toolkit'],
-        'onboarding-faculty-at-risk-alerts' => ['faculty-toolkit-at-risk'],
-        'onboarding-faculty-assessments' => ['faculty-toolkit-assessments'],
-        'onboarding-faculty-inbox' => ['faculty-toolkit-inbox'],
-        'onboarding-faculty-office-hours' => ['faculty-toolkit-office-hours'],
-        'onboarding-faculty-requests-approvals' => ['faculty-toolkit-requests'],
-        'onboarding-faculty-insights' => ['faculty-toolkit-insights'],
-        'onboarding-faculty-action-center' => ['action-center'],
-        'onboarding-faculty-grades' => ['grades'],
-        'onboarding-faculty-attendance' => ['attendance'],
-        'onboarding-faculty-resources' => ['resources'],
-        'onboarding-faculty-forms' => ['forms'],
-        'onboarding-student-tuition' => ['tuition'],
-        'onboarding-student-schedule' => ['schedule'],
-        'onboarding-student-classes' => ['classes'],
+        'faculty-toolkit' => ['faculty-toolkit'],
+        'faculty-at-risk-alerts' => ['faculty-toolkit-at-risk'],
+        'faculty-assessments' => ['faculty-toolkit-assessments'],
+        'faculty-inbox' => ['faculty-toolkit-inbox'],
+        'faculty-office-hours' => ['faculty-toolkit-office-hours'],
+        'faculty-requests-approvals' => ['faculty-toolkit-requests'],
+        'faculty-insights' => ['faculty-toolkit-insights'],
+        'faculty-action-center' => ['action-center'],
+        'faculty-grades' => ['grades'],
+        'faculty-attendance' => ['attendance'],
+        'faculty-resources' => ['resources'],
+        'faculty-forms' => ['forms'],
+        'student-tuition' => ['tuition'],
+        'student-schedule' => ['schedule'],
+        'student-classes' => ['classes'],
     ];
 
     /**
@@ -51,52 +49,42 @@ final class OnboardingShareService
 
         $audience = $user->isStudentRole() ? 'student' : ($user->isFaculty() ? 'faculty' : 'all');
 
-        $features = OnboardingFeature::query()
-            ->where('is_active', true)
-            ->whereIn('audience', [$audience, 'all'])
-            ->get();
-
         $dismissed = OnboardingDismissal::query()
             ->where('user_id', $user->id)
             ->pluck('feature_key')
             ->all();
 
-        $allFeatureKeys = array_unique(array_merge(
-            $features->pluck('feature_key')->all(),
-            array_keys(self::FEATURE_TO_ROUTES)
-        ));
+        $allToggles = FeatureToggleRegistry::all();
 
-        // Resolve feature values using class-based Pennant features
-        $featureClasses = collect($allFeatureKeys)
-            ->map(fn (string $key): ?string => FeatureClassRegistry::classForKey($key))
-            ->filter()
+        $featureClasses = collect($allToggles)
+            ->map(fn ($toggle) => get_class($toggle))
             ->values()
             ->all();
 
         $featureValues = Feature::for($user)->values($featureClasses);
 
-        return $features
-            ->filter(function (OnboardingFeature $feature) use ($featureValues): bool {
-                $featureClass = FeatureClassRegistry::classForKey($feature->feature_key);
-
-                if ($featureClass) {
-                    return (bool) ($featureValues[$featureClass] ?? false);
+        return collect($allToggles)
+            ->filter(function ($toggle) use ($audience, $featureValues): bool {
+                if ($toggle->audience() !== 'all' && $toggle->audience() !== $audience) {
+                    return false;
                 }
 
-                return (bool) ($featureValues[$feature->feature_key] ?? false);
+                $featureClass = get_class($toggle);
+
+                return (bool) ($featureValues[$featureClass] ?? false);
             })
-            ->reject(fn (OnboardingFeature $feature): bool => in_array($feature->feature_key, $dismissed, true))
+            ->reject(fn ($toggle): bool => in_array($toggle->key(), $dismissed, true))
             ->values()
-            ->map(fn (OnboardingFeature $feature): array => [
-                'featureKey' => $feature->feature_key,
-                'name' => $feature->name,
-                'audience' => $feature->audience,
-                'summary' => $feature->summary,
-                'badge' => $feature->badge,
-                'accent' => $feature->accent,
-                'ctaLabel' => $feature->cta_label,
-                'ctaUrl' => $feature->cta_url,
-                'steps' => $feature->steps,
+            ->map(fn ($toggle): array => [
+                'featureKey' => $toggle->key(),
+                'name' => $toggle->name(),
+                'audience' => $toggle->audience(),
+                'summary' => $toggle->summary(),
+                'badge' => $toggle->badge(),
+                'accent' => $toggle->accent(),
+                'ctaLabel' => $toggle->ctaLabel(),
+                'ctaUrl' => $toggle->ctaUrl(),
+                'steps' => $toggle->steps(),
             ])
             ->all();
     }
@@ -112,7 +100,7 @@ final class OnboardingShareService
         $enabledRoutes = [];
 
         foreach (self::FEATURE_TO_ROUTES as $featureKey => $routeIds) {
-            $featureClass = FeatureClassRegistry::classForKey($featureKey);
+            $featureClass = FeatureToggleRegistry::classForKey($featureKey);
             $isActive = (bool) ($featureValues[$featureClass ?? $featureKey] ?? false);
 
             foreach ($routeIds as $routeId) {
@@ -138,7 +126,7 @@ final class OnboardingShareService
         }
 
         $featureClasses = collect(array_keys(self::FEATURE_TO_ROUTES))
-            ->map(fn (string $key): ?string => FeatureClassRegistry::classForKey($key))
+            ->map(fn (string $key): ?string => FeatureToggleRegistry::classForKey($key))
             ->filter()
             ->values()
             ->all();

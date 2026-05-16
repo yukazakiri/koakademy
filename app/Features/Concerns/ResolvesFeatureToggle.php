@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Features\Concerns;
 
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Lottery;
 
 /**
@@ -14,11 +15,23 @@ use Illuminate\Support\Lottery;
 trait ResolvesFeatureToggle
 {
     /**
-     * Default resolution: check audience matching.
+     * Default resolution: check global activation state first, then audience matching.
      * Override in feature classes for custom logic.
      */
     public function resolve(User $scope): bool
     {
+        // Check global activation state first
+        $globalState = DB::table('features')
+            ->where('name', static::class)
+            ->where('scope', '__laravel_null')
+            ->value('value');
+
+        // If explicitly deactivated globally, deny access
+        if ($globalState === 'false') {
+            return false;
+        }
+
+        // If explicitly activated globally or no global state set, apply audience matching
         $audience = $this->audience();
 
         if ($audience === 'all') {

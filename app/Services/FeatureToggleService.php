@@ -23,7 +23,7 @@ final class FeatureToggleService
         $featureClass = FeatureToggleRegistry::classForKey($featureKey);
         $featureRef = $featureClass ?? $featureKey;
 
-        Feature::activateForEveryone($featureRef);
+        $this->setGlobalState($featureRef, true);
     }
 
     /**
@@ -34,7 +34,7 @@ final class FeatureToggleService
         $featureClass = FeatureToggleRegistry::classForKey($featureKey);
         $featureRef = $featureClass ?? $featureKey;
 
-        Feature::deactivateForEveryone($featureRef);
+        $this->setGlobalState($featureRef, false);
     }
 
     /**
@@ -72,6 +72,7 @@ final class FeatureToggleService
 
     /**
      * Check if a feature is globally activated.
+     * Returns true by default (fresh install = all features active).
      */
     public function isGloballyActivated(string $featureKey): bool
     {
@@ -81,11 +82,17 @@ final class FeatureToggleService
             return false;
         }
 
-        return DB::table('features')
+        $row = DB::table('features')
             ->where('name', $featureClass)
             ->where('scope', '__laravel_null')
-            ->where('value', 'true')
-            ->exists();
+            ->first();
+
+        // No global state row = active by default (fresh install)
+        if ($row === null) {
+            return true;
+        }
+
+        return $row->value === 'true';
     }
 
     /**
@@ -167,5 +174,45 @@ final class FeatureToggleService
             'override_count' => $this->getUserOverrideCount($featureKey),
             'has_class' => true,
         ];
+    }
+
+    /**
+     * Store the global activation state for a feature.
+     * Uses a __laravel_null scope row so class-based resolve() methods can check it.
+     * Also uses Pennant's activateForEveryone/deactivateForEveryone to update existing
+     * per-user rows and clear Pennant's in-memory cache.
+     */
+    private function setGlobalState(string $featureRef, bool $active): void
+    {
+        // Insert/update the __laravel_null row for class-based resolve() check
+        $existing = DB::table('features')
+            ->where('name', $featureRef)
+            ->where('scope', '__laravel_null')
+            ->first();
+
+        if ($existing) {
+            DB::table('features')
+                ->where('name', $featureRef)
+                ->where('scope', '__laravel_null')
+                ->update([
+                    'value' => json_encode($active, JSON_THROW_ON_ERROR),
+                    'updated_at' => now(),
+                ]);
+        } else {
+            DB::table('features')->insert([
+                'name' => $featureRef,
+                'scope' => '__laravel_null',
+                'value' => json_encode($active, JSON_THROW_ON_ERROR),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        // Use Pennant's API to update existing per-user rows AND clear the cache
+        if ($active) {
+            Feature::activateForEveryone($featureRef);
+        } else {
+            Feature::deactivateForEveryone($featureRef);
+        }
     }
 }

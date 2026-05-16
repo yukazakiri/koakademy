@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use Illuminate\Foundation\Auth\User as AuthUser;
 use App\Models\ShsStudent;
 use Illuminate\Auth\Access\HandlesAuthorization;
+use Illuminate\Foundation\Auth\User as AuthUser;
 
-class ShsStudentPolicy
+final class ShsStudentPolicy
 {
     use HandlesAuthorization;
-    
+
     public function viewAny(AuthUser $authUser): bool
     {
         return $authUser->can('ViewAny:ShsStudent');
@@ -66,5 +66,4 @@ class ShsStudentPolicy
     {
         return $authUser->can('Reorder:ShsStudent');
     }
-
 }

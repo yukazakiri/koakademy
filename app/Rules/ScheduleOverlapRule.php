@@ -139,7 +139,7 @@ final class ScheduleOverlapRule implements DataAwareRule, ValidationRule
 
     public function message(): string
     {
-        if ($this->conflictingSchedule) {
+        if ($this->conflictingSchedule instanceof Schedule) {
             $className = $this->conflictingSchedule->class
                 ? $this->conflictingSchedule->class->subject_code
                 : 'Unknown Class';

@@ -1813,7 +1813,7 @@ final class FacultyClassController extends Controller
     private function normalizeRubric(array $rubric): array
     {
         return collect($rubric)
-            ->map(function ($criterion): array {
+            ->map(function (array $criterion): array {
                 $levels = collect($criterion['levels'] ?? [])
                     ->map(fn ($level): array => [
                         'title' => (string) ($level['title'] ?? ''),

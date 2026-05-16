@@ -301,7 +301,7 @@ final class Transaction extends Model
      */
     protected function scopeForAcademicPeriod($query, string $schoolYear, int $semester)
     {
-        $parsedSchoolYear = self::parseSchoolYearRange($schoolYear);
+        $parsedSchoolYear = $this->parseSchoolYearRange($schoolYear);
 
         if ($parsedSchoolYear === null || ! in_array($semester, [1, 2], true)) {
             return $query->whereNull('transactions.id');
@@ -339,7 +339,7 @@ final class Transaction extends Model
      *
      * @return array{0: int, 1: int}|null
      */
-    private static function parseSchoolYearRange(string $schoolYear): ?array
+    private function parseSchoolYearRange(string $schoolYear): ?array
     {
         $normalizedSchoolYear = str_replace(' ', '', $schoolYear);
 

@@ -1042,7 +1042,7 @@ final class EnrollmentRegistrationController extends Controller
                 $query->whereJsonContains('subject_ids', (int) $subject->id)
                     ->orWhereJsonContains('subject_ids', (string) $subject->id)
                     ->orWhereRaw('LOWER(TRIM(subject_code)) = LOWER(TRIM(?))', [(string) $subject->code])
-                    ->orWhereRaw('LOWER(subject_code) LIKE LOWER(?)', ['%'.(string) $subject->code.'%']);
+                    ->orWhereRaw('LOWER(subject_code) LIKE LOWER(?)', ['%'.$subject->code.'%']);
             })
             ->orderBy('id');
 
@@ -1064,7 +1064,7 @@ final class EnrollmentRegistrationController extends Controller
                     $query->whereJsonContains('subject_ids', (int) $subject->id)
                         ->orWhereJsonContains('subject_ids', (string) $subject->id)
                         ->orWhereRaw('LOWER(TRIM(subject_code)) = LOWER(TRIM(?))', [(string) $subject->code])
-                        ->orWhereRaw('LOWER(subject_code) LIKE LOWER(?)', ['%'.(string) $subject->code.'%']);
+                        ->orWhereRaw('LOWER(subject_code) LIKE LOWER(?)', ['%'.$subject->code.'%']);
                 })
                 ->orderBy('id')
                 ->get();

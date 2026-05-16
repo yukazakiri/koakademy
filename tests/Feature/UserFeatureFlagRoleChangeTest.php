@@ -3,30 +3,35 @@
 declare(strict_types=1);
 
 use App\Enums\UserRole;
-use App\Features\Onboarding\FacultyToolkit;
-use App\Features\Onboarding\StudentClasses;
-use App\Features\Onboarding\StudentSchedule;
-use App\Features\Onboarding\StudentTuition;
-use App\Models\OnboardingFeature;
+use App\Features\Toggles\FacultyToolkit;
+use App\Features\Toggles\StudentClasses;
+use App\Features\Toggles\StudentSchedule;
+use App\Features\Toggles\StudentTuition;
 use App\Models\User;
+use App\Services\FeatureToggleRegistry;
 use App\Services\UserFeatureFlagService;
 use Laravel\Pennant\Feature;
 
 beforeEach(function (): void {
     config([
         'onboarding.experimental_feature_keys' => [
-            'onboarding-faculty-toolkit',
-            'onboarding-student-classes',
-            'onboarding-student-schedule',
-            'onboarding-student-tuition',
+            'faculty-toolkit',
+            'student-classes',
+            'student-schedule',
+            'student-tuition',
         ],
         'onboarding.experimental_features_roles' => [
-            'onboarding-faculty-toolkit' => ['faculty'],
-            'onboarding-student-classes' => ['student', 'shs_student', 'graduate_student'],
-            'onboarding-student-schedule' => ['student', 'shs_student', 'graduate_student'],
-            'onboarding-student-tuition' => ['student', 'shs_student', 'graduate_student'],
+            'faculty-toolkit' => ['faculty'],
+            'student-classes' => ['student', 'shs_student', 'graduate_student'],
+            'student-schedule' => ['student', 'shs_student', 'graduate_student'],
+            'student-tuition' => ['student', 'shs_student', 'graduate_student'],
         ],
     ]);
+
+    Feature::purge(FacultyToolkit::class);
+    Feature::purge(StudentClasses::class);
+    Feature::purge(StudentSchedule::class);
+    Feature::purge(StudentTuition::class);
 });
 
 it('returns only experimental features allowed for the selected role', function (): void {
@@ -34,32 +39,14 @@ it('returns only experimental features allowed for the selected role', function 
 
     expect(array_keys($options))
         ->toBe([
-            'onboarding-student-classes',
-            'onboarding-student-schedule',
-            'onboarding-student-tuition',
+            'student-classes',
+            'student-schedule',
+            'student-tuition',
         ])
-        ->not->toContain('onboarding-faculty-toolkit');
+        ->not->toContain('faculty-toolkit');
 });
 
 it('resets stale feature overrides when a user role changes', function (): void {
-    foreach ([
-        'onboarding-student-classes',
-        'onboarding-student-schedule',
-        'onboarding-student-tuition',
-    ] as $featureKey) {
-        OnboardingFeature::factory()->create([
-            'feature_key' => $featureKey,
-            'audience' => 'student',
-            'is_active' => true,
-        ]);
-    }
-
-    OnboardingFeature::factory()->create([
-        'feature_key' => 'onboarding-faculty-toolkit',
-        'audience' => 'faculty',
-        'is_active' => true,
-    ]);
-
     $user = User::factory()->create([
         'role' => UserRole::Instructor,
     ]);
@@ -89,12 +76,6 @@ it('resets stale feature overrides when a user role changes', function (): void 
 });
 
 it('restores role defaults before applying selected overrides', function (): void {
-    OnboardingFeature::factory()->create([
-        'feature_key' => 'onboarding-student-schedule',
-        'audience' => 'student',
-        'is_active' => true,
-    ]);
-
     $user = User::factory()->create([
         'role' => UserRole::Student,
     ]);
@@ -107,4 +88,15 @@ it('restores role defaults before applying selected overrides', function (): voi
     );
 
     expect(Feature::for($user)->active(StudentSchedule::class))->toBeTrue();
+});
+
+it('FeatureToggleRegistry resolves toggle classes correctly', function (): void {
+    expect(FeatureToggleRegistry::classForKey('faculty-toolkit'))->toBe(FacultyToolkit::class);
+    expect(FeatureToggleRegistry::classForKey('student-classes'))->toBe(StudentClasses::class);
+    expect(FeatureToggleRegistry::classForKey('student-schedule'))->toBe(StudentSchedule::class);
+    expect(FeatureToggleRegistry::classForKey('student-tuition'))->toBe(StudentTuition::class);
+});
+
+it('FeatureToggleRegistry returns null for unknown keys', function (): void {
+    expect(FeatureToggleRegistry::classForKey('nonexistent-feature'))->toBeNull();
 });

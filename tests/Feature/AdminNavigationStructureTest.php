@@ -13,7 +13,6 @@ use App\Filament\Resources\Courses\CourseResource;
 use App\Filament\Resources\Departments\DepartmentResource;
 use App\Filament\Resources\Events\EventResource;
 use App\Filament\Resources\Faculties\FacultyResource;
-use App\Filament\Resources\OnboardingFeatures\OnboardingFeatureResource;
 use App\Filament\Resources\Rooms\RoomResource;
 use App\Filament\Resources\Schools\SchoolResource;
 use App\Filament\Resources\StudentEnrollments\StudentEnrollmentResource;
@@ -70,7 +69,6 @@ it('keeps admin navigation groups, labels, and plugin config aligned', function 
         BorrowRecordResource::class => 'Library',
         EventResource::class => 'Operations',
         AnnouncementResource::class => 'Communications',
-        OnboardingFeatureResource::class => 'Content',
         SettingsCluster::class => 'Administration',
         AccountResource::class => 'Administration',
         Backups::class => 'System Tools',
@@ -87,7 +85,6 @@ it('keeps admin navigation groups, labels, and plugin config aligned', function 
         ManageStudentClearances::class => 'Clearances',
         FacultyResource::class => 'Faculty',
         AccountResource::class => 'Portal Accounts',
-        OnboardingFeatureResource::class => 'Onboarding',
         InventoryStockMovementResource::class => 'Stock Movements',
         InventoryAmendmentResource::class => 'Stock Adjustments',
         CategoryResource::class => 'Book Categories',

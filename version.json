@@ -1,14 +1,14 @@
 {
-  "version": "1.2.0-dev.0.9",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.2.0-dev.0.9",
-  "commit": "e9d1d63619f87e6b7372dd38d50aac6efd9027a4",
+  "version": "1.2.0-dev.1.0",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.2.0-dev.1.0",
+  "commit": "e115023f96bb6f97fcdbccb6aa9fb63f3c3c6b7c",
   "branch": "master",
-  "timestamp": "2026-05-16T01:04:17Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25948593125",
-  "release_type": "patch",
+  "timestamp": "2026-05-16T01:17:45Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25948911358",
+  "release_type": "feature",
   "changelog": {
-    "current": "Version 1.2.0-dev.0.9 - Merge pull request #72 from koamishin/master",
-    "previous": "1.2.0-dev.0.8"
+    "current": "Version 1.2.0-dev.1.0 - feat: add Fish shell support for Laravel Sail alias configuration",
+    "previous": "1.2.0-dev.0.9"
   },
   "metadata": {
     "author": "yukazakiri",

@@ -21,7 +21,7 @@ final class FacultyAttendance implements FeatureToggle
         return 'Attendance';
     }
 
-    public function summary(): ?string
+    public function summary(): string
     {
         return 'Attendance tracking for each class session.';
     }
@@ -31,12 +31,12 @@ final class FacultyAttendance implements FeatureToggle
         return 'faculty';
     }
 
-    public function badge(): ?string
+    public function badge(): string
     {
         return 'Academic Tools';
     }
 
-    public function accent(): ?string
+    public function accent(): string
     {
         return 'text-sky-500';
     }

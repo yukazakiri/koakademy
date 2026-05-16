@@ -23,7 +23,7 @@ final class StudentSignaturePad implements FeatureToggle
         return 'Student Signature Pad';
     }
 
-    public function summary(): ?string
+    public function summary(): string
     {
         return 'Digital signature capture for student documents.';
     }

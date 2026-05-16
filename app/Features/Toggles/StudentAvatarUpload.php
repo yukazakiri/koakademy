@@ -23,7 +23,7 @@ final class StudentAvatarUpload implements FeatureToggle
         return 'Student Avatar Upload';
     }
 
-    public function summary(): ?string
+    public function summary(): string
     {
         return 'Drag-and-drop avatar uploads with preview.';
     }

@@ -21,7 +21,7 @@ final class FacultyInsights implements FeatureToggle
         return 'Insights';
     }
 
-    public function summary(): ?string
+    public function summary(): string
     {
         return 'Class analytics and trends at a glance.';
     }
@@ -31,12 +31,12 @@ final class FacultyInsights implements FeatureToggle
         return 'faculty';
     }
 
-    public function badge(): ?string
+    public function badge(): string
     {
         return 'Toolkit';
     }
 
-    public function accent(): ?string
+    public function accent(): string
     {
         return 'text-indigo-500';
     }

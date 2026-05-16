@@ -21,7 +21,7 @@ final class StudentAttendanceTracker implements FeatureToggle
         return 'Attendance Tracker';
     }
 
-    public function summary(): ?string
+    public function summary(): string
     {
         return 'Track your class attendance and participation records.';
     }
@@ -31,22 +31,22 @@ final class StudentAttendanceTracker implements FeatureToggle
         return 'student';
     }
 
-    public function badge(): ?string
+    public function badge(): string
     {
         return 'Attendance';
     }
 
-    public function accent(): ?string
+    public function accent(): string
     {
         return 'text-sky-500';
     }
 
-    public function ctaLabel(): ?string
+    public function ctaLabel(): string
     {
         return 'Open Attendance';
     }
 
-    public function ctaUrl(): ?string
+    public function ctaUrl(): string
     {
         return '/student/attendance';
     }

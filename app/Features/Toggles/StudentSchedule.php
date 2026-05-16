@@ -21,7 +21,7 @@ final class StudentSchedule implements FeatureToggle
         return 'Class Schedule';
     }
 
-    public function summary(): ?string
+    public function summary(): string
     {
         return 'View weekly schedules and daily timing.';
     }
@@ -31,22 +31,22 @@ final class StudentSchedule implements FeatureToggle
         return 'student';
     }
 
-    public function badge(): ?string
+    public function badge(): string
     {
         return 'Schedule';
     }
 
-    public function accent(): ?string
+    public function accent(): string
     {
         return 'text-indigo-500';
     }
 
-    public function ctaLabel(): ?string
+    public function ctaLabel(): string
     {
         return 'Open Schedule';
     }
 
-    public function ctaUrl(): ?string
+    public function ctaUrl(): string
     {
         return '/student/schedule';
     }

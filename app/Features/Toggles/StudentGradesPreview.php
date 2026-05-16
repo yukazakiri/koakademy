@@ -21,7 +21,7 @@ final class StudentGradesPreview implements FeatureToggle
         return 'Grades Preview';
     }
 
-    public function summary(): ?string
+    public function summary(): string
     {
         return 'Preview your current grades and academic performance.';
     }
@@ -31,22 +31,22 @@ final class StudentGradesPreview implements FeatureToggle
         return 'student';
     }
 
-    public function badge(): ?string
+    public function badge(): string
     {
         return 'Academics';
     }
 
-    public function accent(): ?string
+    public function accent(): string
     {
         return 'text-emerald-500';
     }
 
-    public function ctaLabel(): ?string
+    public function ctaLabel(): string
     {
         return 'Open Grades';
     }
 
-    public function ctaUrl(): ?string
+    public function ctaUrl(): string
     {
         return '/student/grades';
     }

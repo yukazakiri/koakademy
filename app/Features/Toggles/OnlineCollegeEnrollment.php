@@ -22,7 +22,7 @@ final class OnlineCollegeEnrollment implements FeatureToggle
         return 'Online College Enrollment';
     }
 
-    public function summary(): ?string
+    public function summary(): string
     {
         return 'Enable or disable online enrollment for college degree programs.';
     }
@@ -67,6 +67,10 @@ final class OnlineCollegeEnrollment implements FeatureToggle
      */
     public function resolve(User $scope): bool
     {
-        return $this->audience() === 'all' || $scope->isStudentRole();
+        if ($this->audience() === 'all') {
+            return true;
+        }
+
+        return $scope->isStudentRole();
     }
 }

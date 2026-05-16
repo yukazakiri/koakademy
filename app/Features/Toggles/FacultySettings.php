@@ -21,7 +21,7 @@ final class FacultySettings implements FeatureToggle
         return 'Settings';
     }
 
-    public function summary(): ?string
+    public function summary(): string
     {
         return 'Update your profile and preferences.';
     }
@@ -31,22 +31,22 @@ final class FacultySettings implements FeatureToggle
         return 'faculty';
     }
 
-    public function badge(): ?string
+    public function badge(): string
     {
         return 'Settings';
     }
 
-    public function accent(): ?string
+    public function accent(): string
     {
         return 'text-indigo-500';
     }
 
-    public function ctaLabel(): ?string
+    public function ctaLabel(): string
     {
         return 'Open Settings';
     }
 
-    public function ctaUrl(): ?string
+    public function ctaUrl(): string
     {
         return '/faculty/profile';
     }

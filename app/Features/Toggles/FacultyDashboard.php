@@ -21,7 +21,7 @@ final class FacultyDashboard implements FeatureToggle
         return 'Faculty Dashboard';
     }
 
-    public function summary(): ?string
+    public function summary(): string
     {
         return 'Your command center for day-to-day teaching updates.';
     }
@@ -31,22 +31,22 @@ final class FacultyDashboard implements FeatureToggle
         return 'faculty';
     }
 
-    public function badge(): ?string
+    public function badge(): string
     {
         return 'Dashboard';
     }
 
-    public function accent(): ?string
+    public function accent(): string
     {
         return 'text-primary';
     }
 
-    public function ctaLabel(): ?string
+    public function ctaLabel(): string
     {
         return 'Open Dashboard';
     }
 
-    public function ctaUrl(): ?string
+    public function ctaUrl(): string
     {
         return '/faculty/dashboard';
     }

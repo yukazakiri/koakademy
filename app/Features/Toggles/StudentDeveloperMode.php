@@ -21,7 +21,7 @@ final class StudentDeveloperMode implements FeatureToggle
         return 'Developer Mode';
     }
 
-    public function summary(): ?string
+    public function summary(): string
     {
         return 'Access developer tools and debugging features.';
     }
@@ -31,12 +31,12 @@ final class StudentDeveloperMode implements FeatureToggle
         return 'student';
     }
 
-    public function badge(): ?string
+    public function badge(): string
     {
         return 'Developer';
     }
 
-    public function accent(): ?string
+    public function accent(): string
     {
         return 'text-rose-500';
     }

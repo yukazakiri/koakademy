@@ -1,18 +1,18 @@
 {
-  "version": "1.2.0-dev.2.1",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.2.0-dev.2.1",
-  "commit": "2bcc38b009d7a16ff9bddd1a9dee7a7874b95581",
+  "version": "1.5.0",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.5.0",
+  "commit": "0fda68c6f7526b82853b509a6e7c7748cfcddb6c",
   "branch": "master",
-  "timestamp": "2026-05-16T05:58:56Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25954357572",
-  "release_type": "patch",
+  "timestamp": "2026-05-16T08:36:59Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25957417055",
+  "release_type": "official",
   "changelog": {
-    "current": "Version 1.2.0-dev.2.1 - Merge pull request #75 from yukazakiri/feat/migrate-feature-classes-to-toggles",
-    "previous": "1.2.0-dev.2.0"
+    "current": "Version 1.5.0 - manual release",
+    "previous": "1.2.0-dev.2.1"
   },
   "metadata": {
     "author": "yukazakiri",
-    "workflow": "Auto Pre-release and Docker Tag",
+    "workflow": "Manual Official Release",
     "repository": "yukazakiri/koakademy"
   }
 }

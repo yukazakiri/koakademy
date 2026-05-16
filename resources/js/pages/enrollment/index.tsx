@@ -252,26 +252,47 @@ const personalSchema = z.object({
         .string()
         .min(1, "Last name is required")
         .regex(/^[a-zA-Z\s.-]+$/, "Name must contain only letters"),
+    middle_name: z
+        .string()
+        .min(1, "Middle name is required")
+        .regex(/^[a-zA-Z\s.-]+$/, "Name must contain only letters"),
     birth_date: z.string().min(1, "Birth date is required"),
     gender: z.string().min(1, "Gender is required"),
+    civil_status: z.string().min(1, "Civil status is required"),
+    religion: z.string().min(1, "Religion is required"),
     nationality: z
         .string()
         .min(1, "Nationality is required")
         .regex(/^[a-zA-Z\s.-]+$/, "Nationality must contain only letters"),
-    address: z.string().min(5, "Complete address is required"),
-    email: z.string().email("Invalid email address").optional().or(z.literal("")),
+    city_of_origin: z.string().min(1, "City of origin is required"),
+    province_of_origin: z.string().min(1, "Province of origin is required"),
+    region_of_origin: z.string().min(1, "Region of origin is required"),
+    email: z.string().min(1, "Email address is required").email("Invalid email address"),
     phone: z.string().min(10, "Phone number is required").regex(/^\d+$/, "Phone number must contain only numbers"),
+    personal_info: z.object({
+        birthplace: z.string().min(1, "Birthplace is required"),
+        current_address: z.string().min(5, "Complete Current Address is required"),
+    }),
 });
 
 const contactsSchema = z.object({
     contacts: z.object({
+        facebook: z.string(),
+        twitter: z.string(),
+        instagram: z.string(),
+        linkedin: z.string(),
         emergency_contact_name: z
             .string()
             .min(1, "Emergency contact name is required")
             .regex(/^[a-zA-Z\s.-]+$/, "Name must contain only letters"),
         emergency_contact_phone: z.string().min(1, "Emergency contact phone is required").regex(/^\d+$/, "Phone number must contain only numbers"),
+    }).refine((value) => [value.facebook, value.twitter, value.instagram, value.linkedin].some((v) => v.trim().length > 0), {
+        message: "At least one social media link is required",
+        path: ["facebook"],
     }),
     parents: z.object({
+        father_contact: z.string().min(10, "Father contact number is required").regex(/^\d+$/, "Phone number must contain only numbers"),
+        mother_contact: z.string().min(10, "Mother contact number is required").regex(/^\d+$/, "Phone number must contain only numbers"),
         guardian_name: z
             .string()
             .min(1, "Guardian name is required")
@@ -282,6 +303,31 @@ const contactsSchema = z.object({
             .regex(/^[a-zA-Z\s.-]+$/, "Relationship must contain only letters"),
         guardian_contact: z.string().min(1, "Guardian contact is required").regex(/^\d+$/, "Phone number must contain only numbers"),
     }),
+    is_pwd: z.boolean(),
+    pwd_type: z.string(),
+    education: z.object({
+        elementary_school: z.string().min(1, "Elementary school is required"),
+        elementary_year_graduated: z.string().min(4, "Elementary graduation year is required"),
+        high_school: z.string().min(1, "High school is required"),
+        high_school_year_graduated: z.string().min(4, "High school graduation year is required"),
+        senior_high_school: z.string().min(1, "Senior high school is required"),
+        senior_high_year_graduated: z.string().min(4, "Senior high graduation year is required"),
+        college_school: z.string().optional(),
+        college_course: z.string().optional(),
+        college_year_graduated: z.string().optional(),
+        vocational_school: z.string().optional(),
+        vocational_course: z.string().optional(),
+        vocational_year_graduated: z.string().optional(),
+    }),
+}).superRefine((value, ctx) => {
+    if (value.is_pwd && value.pwd_type.trim().length === 0) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["pwd_type"],
+            message: "Type of disability is required when PWD is selected",
+        });
+    }
+
 });
 
 // Success state data
@@ -638,7 +684,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
             } else if (step === 1) {
                 personalSchema.parse(data);
             } else if (step === 2) {
-                contactsSchema.parse({ contacts: data.contacts, parents: data.parents });
+                contactsSchema.parse(data);
             }
             return true;
         } catch (error) {
@@ -2454,8 +2500,8 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                                 {errorsBag.last_name && <p className="text-destructive text-xs">{errorsBag.last_name}</p>}
                                             </div>
                                             <div className="space-y-1.5">
-                                                <Label className="text-sm">Middle Name</Label>
-                                                <Input value={data.middle_name} onChange={(e) => setData("middle_name", sanitizeNameInput(e.target.value))} placeholder="(Optional)" />
+                                                <Label className="text-sm">Middle Name <span className="text-destructive">*</span></Label>
+                                                <Input value={data.middle_name} onChange={(e) => setData("middle_name", sanitizeNameInput(e.target.value))} placeholder="e.g. Santos" />
                                             </div>
                                             <div className="space-y-1.5">
                                                 <Label className="text-sm">Suffix</Label>
@@ -2477,7 +2523,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                                 <Input type="date" value={data.birth_date} onChange={(e) => setData("birth_date", e.target.value)} className="block w-full" />
                                             </div>
                                             <div className="space-y-1.5">
-                                                <Label className="text-sm">Birthplace</Label>
+                                                <Label className="text-sm">Birthplace <span className="text-destructive">*</span></Label>
                                                 <Input value={data.personal_info.birthplace} onChange={(e) => setData("personal_info", { ...data.personal_info, birthplace: e.target.value })} placeholder="City, Province" />
                                             </div>
                                             <div className="space-y-1.5">
@@ -2489,7 +2535,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                                 </select>
                                             </div>
                                             <div className="space-y-1.5">
-                                                <Label className="text-sm">Civil Status</Label>
+                                                <Label className="text-sm">Civil Status <span className="text-destructive">*</span></Label>
                                                 <select className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none" value={data.civil_status} onChange={(e) => setData("civil_status", e.target.value)}>
                                                     <option value="">Select Status</option>
                                                     <option value="Single">Single</option>
@@ -2507,7 +2553,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                                 <Input value={data.personal_info.citizenship} onChange={(e) => setData("personal_info", { ...data.personal_info, citizenship: e.target.value })} placeholder="e.g. Filipino" />
                                             </div>
                                             <div className="space-y-1.5">
-                                                <Label className="text-sm">Religion</Label>
+                                                <Label className="text-sm">Religion <span className="text-destructive">*</span></Label>
                                                 <Input value={data.religion} onChange={(e) => setData("religion", e.target.value)} placeholder="e.g. Roman Catholic" />
                                             </div>
                                             <div className="space-y-1.5">
@@ -2526,15 +2572,15 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                         </div>
                                         <div className="grid gap-3 sm:grid-cols-3">
                                             <div className="space-y-1.5">
-                                                <Label className="text-sm">City</Label>
+                                                <Label className="text-sm">City <span className="text-destructive">*</span></Label>
                                                 <Input value={data.city_of_origin} onChange={(e) => setData("city_of_origin", e.target.value)} placeholder="City of origin" />
                                             </div>
                                             <div className="space-y-1.5">
-                                                <Label className="text-sm">Province</Label>
+                                                <Label className="text-sm">Province <span className="text-destructive">*</span></Label>
                                                 <Input value={data.province_of_origin} onChange={(e) => setData("province_of_origin", e.target.value)} placeholder="Province" />
                                             </div>
                                             <div className="space-y-1.5">
-                                                <Label className="text-sm">Region</Label>
+                                                <Label className="text-sm">Region <span className="text-destructive">*</span></Label>
                                                 <Input value={data.region_of_origin} onChange={(e) => setData("region_of_origin", e.target.value)} placeholder="Region" />
                                             </div>
                                         </div>
@@ -2717,7 +2763,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                         </div>
                                         <div className="grid gap-3 sm:grid-cols-2">
                                             <div className="space-y-1.5">
-                                                <Label className="text-sm">Email Address</Label>
+                                                <Label className="text-sm">Email Address <span className="text-destructive">*</span></Label>
                                                 <Input type="email" value={data.email} onChange={(e) => setData("email", e.target.value)} placeholder="juan@example.com" />
                                             </div>
                                             <div className="space-y-1.5">
@@ -2726,15 +2772,11 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                             </div>
                                         </div>
                                         <div className="space-y-1.5">
-                                            <Label className="text-sm">Complete Address <span className="text-destructive">*</span></Label>
-                                            <Textarea value={data.address} onChange={(e) => setData("address", e.target.value)} placeholder="House No., Street, Barangay, City, Province" className="min-h-[72px]" />
+                                            <Label className="text-sm">Complete Current Address <span className="text-destructive">*</span></Label>
+                                            <Input value={data.personal_info.current_address} onChange={(e) => { setData("personal_info", { ...data.personal_info, current_address: e.target.value }); setData("address", e.target.value); }} placeholder="House No., Street, Barangay, City, Province" />
                                         </div>
                                         <div className="grid gap-3 sm:grid-cols-2">
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Current Address</Label>
-                                                <Input value={data.personal_info.current_address} onChange={(e) => setData("personal_info", { ...data.personal_info, current_address: e.target.value })} placeholder="If different from above" />
-                                            </div>
-                                            <div className="space-y-1.5">
+                                            <div className="space-y-1.5 sm:col-span-2">
                                                 <Label className="text-sm">Permanent Address</Label>
                                                 <Input value={data.personal_info.permanent_address} onChange={(e) => setData("personal_info", { ...data.personal_info, permanent_address: e.target.value })} placeholder="Home province address" />
                                             </div>
@@ -2746,23 +2788,23 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                     <CardContent className="space-y-4 p-4 sm:p-6">
                                         <div className="mb-1 flex items-center gap-2">
                                             <User className="text-primary h-5 w-5" />
-                                            <h3 className="text-base font-semibold">Social Media (Optional)</h3>
+                                            <h3 className="text-base font-semibold">Social Media</h3>
                                         </div>
                                         <div className="grid gap-3 sm:grid-cols-2">
                                             <div className="space-y-1.5">
-                                                <Label className="text-sm">Facebook</Label>
+                                                <Label className="text-sm">Facebook <span className="text-destructive">*</span></Label>
                                                 <Input value={data.contacts.facebook} onChange={(e) => setData("contacts", { ...data.contacts, facebook: e.target.value })} placeholder="facebook.com/username" />
                                             </div>
                                             <div className="space-y-1.5">
-                                                <Label className="text-sm">Instagram</Label>
+                                                <Label className="text-sm">Instagram <span className="text-destructive">*</span></Label>
                                                 <Input value={data.contacts.instagram} onChange={(e) => setData("contacts", { ...data.contacts, instagram: e.target.value })} placeholder="@username" />
                                             </div>
                                             <div className="space-y-1.5">
-                                                <Label className="text-sm">Twitter / X</Label>
+                                                <Label className="text-sm">Twitter / X <span className="text-destructive">*</span></Label>
                                                 <Input value={data.contacts.twitter} onChange={(e) => setData("contacts", { ...data.contacts, twitter: e.target.value })} placeholder="@username" />
                                             </div>
                                             <div className="space-y-1.5">
-                                                <Label className="text-sm">LinkedIn</Label>
+                                                <Label className="text-sm">LinkedIn <span className="text-destructive">*</span></Label>
                                                 <Input value={data.contacts.linkedin} onChange={(e) => setData("contacts", { ...data.contacts, linkedin: e.target.value })} placeholder="linkedin.com/in/username" />
                                             </div>
                                         </div>
@@ -2816,7 +2858,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                                 <Input value={data.parents.father_occupation} onChange={(e) => setData("parents", { ...data.parents, father_occupation: e.target.value })} placeholder="e.g. Engineer" />
                                             </div>
                                             <div className="space-y-1.5">
-                                                <Label className="text-sm">Contact Number</Label>
+                                                <Label className="text-sm">Contact Number <span className="text-destructive">*</span></Label>
                                                 <Input value={data.parents.father_contact} onChange={(e) => setData("parents", { ...data.parents, father_contact: sanitizeNumberInput(e.target.value) })} type="tel" inputMode="numeric" />
                                             </div>
                                             <div className="space-y-1.5">
@@ -2843,7 +2885,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                                 <Input value={data.parents.mother_occupation} onChange={(e) => setData("parents", { ...data.parents, mother_occupation: e.target.value })} placeholder="e.g. Teacher" />
                                             </div>
                                             <div className="space-y-1.5">
-                                                <Label className="text-sm">Contact Number</Label>
+                                                <Label className="text-sm">Contact Number <span className="text-destructive">*</span></Label>
                                                 <Input value={data.parents.mother_contact} onChange={(e) => setData("parents", { ...data.parents, mother_contact: sanitizeNumberInput(e.target.value) })} type="tel" inputMode="numeric" />
                                             </div>
                                             <div className="space-y-1.5">
@@ -2894,31 +2936,31 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                         <div className="space-y-4">
                                             <div className="grid gap-3 sm:grid-cols-2">
                                                 <div className="space-y-1.5">
-                                                    <Label className="text-sm">Elementary School</Label>
+                                                    <Label className="text-sm">Elementary School <span className="text-destructive">*</span></Label>
                                                     <Input value={data.education.elementary_school} onChange={(e) => setData("education", { ...data.education, elementary_school: e.target.value })} placeholder="School name" />
                                                 </div>
                                                 <div className="space-y-1.5">
-                                                    <Label className="text-sm">Year Graduated</Label>
+                                                    <Label className="text-sm">Year Graduated <span className="text-destructive">*</span></Label>
                                                     <Input value={data.education.elementary_year_graduated} onChange={(e) => setData("education", { ...data.education, elementary_year_graduated: e.target.value })} placeholder="YYYY" />
                                                 </div>
                                             </div>
                                             <div className="grid gap-3 sm:grid-cols-2">
                                                 <div className="space-y-1.5">
-                                                    <Label className="text-sm">High School</Label>
+                                                    <Label className="text-sm">High School <span className="text-destructive">*</span></Label>
                                                     <Input value={data.education.high_school} onChange={(e) => setData("education", { ...data.education, high_school: e.target.value })} placeholder="School name" />
                                                 </div>
                                                 <div className="space-y-1.5">
-                                                    <Label className="text-sm">Year Graduated</Label>
+                                                    <Label className="text-sm">Year Graduated <span className="text-destructive">*</span></Label>
                                                     <Input value={data.education.high_school_year_graduated} onChange={(e) => setData("education", { ...data.education, high_school_year_graduated: e.target.value })} placeholder="YYYY" />
                                                 </div>
                                             </div>
                                             <div className="grid gap-3 sm:grid-cols-2">
                                                 <div className="space-y-1.5">
-                                                    <Label className="text-sm">Senior High School</Label>
+                                                    <Label className="text-sm">Senior High School <span className="text-destructive">*</span></Label>
                                                     <Input value={data.education.senior_high_school} onChange={(e) => setData("education", { ...data.education, senior_high_school: e.target.value })} placeholder="School name" />
                                                 </div>
                                                 <div className="space-y-1.5">
-                                                    <Label className="text-sm">Year Graduated</Label>
+                                                    <Label className="text-sm">Year Graduated <span className="text-destructive">*</span></Label>
                                                     <Input value={data.education.senior_high_year_graduated} onChange={(e) => setData("education", { ...data.education, senior_high_year_graduated: e.target.value })} placeholder="YYYY" />
                                                 </div>
                                             </div>

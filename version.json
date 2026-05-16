@@ -1,14 +1,14 @@
 {
-  "version": "1.2.0-dev.0.6",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.2.0-dev.0.6",
-  "commit": "c902f21071a8c66141d1613cd2c08d13378504db",
+  "version": "1.2.0-dev.0.8",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.2.0-dev.0.8",
+  "commit": "fe29ab8e3446869b9276a3e7dd62b28bac9e2e95",
   "branch": "master",
-  "timestamp": "2026-05-12T12:28:02Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25734022438",
+  "timestamp": "2026-05-15T13:44:11Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25920951170",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.2.0-dev.0.6 - Merge pull request #67 from yukazakiri/codex/increase-search-input-delay-and-make-persistent-5uruur",
-    "previous": "1.2.0-dev.0.5"
+    "current": "Version 1.2.0-dev.0.8 - Merge pull request #71 from yukazakiri/codex/update-enrollment-form-fields-requirements",
+    "previous": "1.2.0-dev.0.7"
   },
   "metadata": {
     "author": "yukazakiri",

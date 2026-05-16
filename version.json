@@ -1,14 +1,14 @@
 {
-  "version": "1.2.0-dev.1.1",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.2.0-dev.1.1",
-  "commit": "010b04584d836191b98d4cb8a975745646c26059",
+  "version": "1.2.0-dev.1.2",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.2.0-dev.1.2",
+  "commit": "d1645b67d4ef72d8a7514a404c1e8f522f96dead",
   "branch": "master",
-  "timestamp": "2026-05-16T01:58:58Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25949781769",
+  "timestamp": "2026-05-16T05:43:43Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25954088143",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.2.0-dev.1.1 - updated logo",
-    "previous": "1.2.0-dev.1.0"
+    "current": "Version 1.2.0-dev.1.2 - refactored files (#73)",
+    "previous": "1.2.0-dev.1.1"
   },
   "metadata": {
     "author": "yukazakiri",

@@ -581,7 +581,7 @@ export const ADMIN_ROUTES: AdminRoute[] = [
         id: "admin-onboarding-features",
         title: "Modules & Feature Flags",
         icon: <IconSparkles className="size-4" />,
-        link: "/administrators/onboarding-features",
+        link: "/administrators/feature-toggles",
         section: "system",
         requiredPermission: "View:ModuleManager",
         allowedRoles: SYSTEM_ADMIN_ROLES,

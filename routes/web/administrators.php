@@ -307,19 +307,13 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/permissions', [AdministratorRolesController::class, 'createPermission'])->name('permissions.store');
         Route::delete('/permissions/{permission}', [AdministratorRolesController::class, 'destroyPermission'])->name('permissions.destroy');
 
-        // Onboarding Features Management
-        Route::get('/onboarding-features', [App\Http\Controllers\AdministratorOnboardingFeatureController::class, 'index'])->name('onboarding-features.index');
-        Route::get('/onboarding-features/create', [App\Http\Controllers\AdministratorOnboardingFeatureController::class, 'create'])->name('onboarding-features.create');
-        Route::post('/onboarding-features', [App\Http\Controllers\AdministratorOnboardingFeatureController::class, 'store'])->name('onboarding-features.store');
-        Route::get('/onboarding-features/{onboardingFeature}/edit', [App\Http\Controllers\AdministratorOnboardingFeatureController::class, 'edit'])->name('onboarding-features.edit');
-        Route::put('/onboarding-features/{onboardingFeature}', [App\Http\Controllers\AdministratorOnboardingFeatureController::class, 'update'])->name('onboarding-features.update');
-        Route::post('/onboarding-features/{onboardingFeature}/toggle', [App\Http\Controllers\AdministratorOnboardingFeatureController::class, 'toggle'])->name('onboarding-features.toggle');
-        Route::delete('/onboarding-features/{onboardingFeature}', [App\Http\Controllers\AdministratorOnboardingFeatureController::class, 'destroy'])->name('onboarding-features.destroy');
-        Route::post('/onboarding-features/upload-image', [App\Http\Controllers\AdministratorOnboardingFeatureController::class, 'uploadImage'])->name('onboarding-features.upload-image');
-        Route::post('/onboarding-features/{onboardingFeature}/activate-for-user', [App\Http\Controllers\AdministratorOnboardingFeatureController::class, 'activateForUser'])->name('onboarding-features.activate-for-user');
-        Route::post('/onboarding-features/{onboardingFeature}/deactivate-for-user', [App\Http\Controllers\AdministratorOnboardingFeatureController::class, 'deactivateForUser'])->name('onboarding-features.deactivate-for-user');
-        Route::post('/onboarding-features/{onboardingFeature}/purge-overrides', [App\Http\Controllers\AdministratorOnboardingFeatureController::class, 'purgeOverrides'])->name('onboarding-features.purge-overrides');
-        Route::get('/onboarding-features/{onboardingFeature}/overridden-users', [App\Http\Controllers\AdministratorOnboardingFeatureController::class, 'overriddenUsers'])->name('onboarding-features.overridden-users');
+        // Feature Toggles Management
+        Route::get('/feature-toggles', [App\Http\Controllers\AdministratorFeatureToggleController::class, 'index'])->name('feature-toggles.index');
+        Route::post('/feature-toggles/{featureKey}/toggle', [App\Http\Controllers\AdministratorFeatureToggleController::class, 'toggle'])->name('feature-toggles.toggle');
+        Route::post('/feature-toggles/{featureKey}/activate-for-user', [App\Http\Controllers\AdministratorFeatureToggleController::class, 'activateForUser'])->name('feature-toggles.activate-for-user');
+        Route::post('/feature-toggles/{featureKey}/deactivate-for-user', [App\Http\Controllers\AdministratorFeatureToggleController::class, 'deactivateForUser'])->name('feature-toggles.deactivate-for-user');
+        Route::post('/feature-toggles/{featureKey}/purge-overrides', [App\Http\Controllers\AdministratorFeatureToggleController::class, 'purgeOverrides'])->name('feature-toggles.purge-overrides');
+        Route::get('/feature-toggles/{featureKey}/overridden-users', [App\Http\Controllers\AdministratorFeatureToggleController::class, 'overriddenUsers'])->name('feature-toggles.overridden-users');
 
         // System Management
         Route::get('/system-management', [App\Http\Controllers\AdministratorSystemManagementController::class, 'index'])->name('system-management.index');

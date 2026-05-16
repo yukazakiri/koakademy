@@ -622,6 +622,7 @@ section "Sail Command Setup"
 SAIL_PATH="$PROJECT_ROOT/vendor/bin/sail"
 BASHRC="$HOME/.bashrc"
 ZSHRC="$HOME/.zshrc"
+FISH_CONFIG="$HOME/.config/fish/config.fish"
 
 setup_sail_alias() {
     local shell_config="$1"
@@ -647,6 +648,31 @@ setup_sail_alias() {
     fi
 }
 
+setup_sail_alias_fish() {
+    local shell_config="$1"
+    local fish_path_line="fish_add_path \"$PROJECT_ROOT/vendor/bin\""
+    local fish_alias_line="alias sail \"$SAIL_PATH\""
+
+    if [ -f "$shell_config" ]; then
+        if grep -q "vendor/bin/sail" "$shell_config" 2>/dev/null; then
+            info "Sail already configured in $(basename "$shell_config")"
+        else
+            echo "" >> "$shell_config"
+            echo "# Laravel Sail" >> "$shell_config"
+            echo "$fish_path_line" >> "$shell_config"
+            echo "$fish_alias_line" >> "$shell_config"
+            success "Sail configured in $(basename "$shell_config")"
+        fi
+    else
+        info "Creating $shell_config with Sail configuration..."
+        mkdir -p "$(dirname "$shell_config")"
+        echo "# Laravel Sail" > "$shell_config"
+        echo "$fish_path_line" >> "$shell_config"
+        echo "$fish_alias_line" >> "$shell_config"
+        success "Sail configured in $(basename "$shell_config")"
+    fi
+}
+
 if [ -f "$SAIL_PATH" ]; then
     setup_sail_alias "$BASHRC"
 
@@ -654,8 +680,10 @@ if [ -f "$SAIL_PATH" ]; then
         setup_sail_alias "$ZSHRC"
     fi
 
+    setup_sail_alias_fish "$FISH_CONFIG"
+
     success "Sail command is now available in new terminal sessions"
-    info "To use Sail in current terminal, run: source ~/.bashrc"
+    info "To use Sail in current terminal, run: source ~/.bashrc (bash), source ~/.zshrc (zsh), or source ~/.config/fish/config.fish (fish)"
 else
     warn "Sail script not found at $SAIL_PATH"
 fi

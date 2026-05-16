@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
-use App\Features\Onboarding\FeatureClassRegistry;
+use App\Services\FeatureToggleRegistry;
 use Closure;
 use Illuminate\Http\Request;
 use Laravel\Pennant\Feature;
@@ -59,7 +59,7 @@ final class EnsureFeatureEnabled
                 continue;
             }
             // If the feature is inactive for the current user, abort
-            $featureRef = FeatureClassRegistry::classForKey($featureKey) ?? $featureKey;
+            $featureRef = FeatureToggleRegistry::classForKey($featureKey) ?? $featureKey;
             if (! Feature::inactive($featureRef)) {
                 continue;
             }

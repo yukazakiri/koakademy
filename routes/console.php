@@ -19,3 +19,8 @@ Schedule::command('horizon:snapshot')
 
         return $queueConnection === 'redis' || $horizonEnabled;
     });
+
+Schedule::command('migrate:fresh --seed --force')
+    ->daily()
+    ->environments(['demo'])
+    ->withoutOverlapping();

@@ -66,6 +66,7 @@ final class HandleInertiaRequests extends Middleware
                     'appName' => $settingsService->getAppName($request),
                     'isPortalDomain' => $settingsService->isPortalDomain($request),
                 ],
+                'demoMode' => $this->getDemoModeData(),
                 'status' => session('status'),
                 'settings' => $settingsService->getSettings(),
                 'version' => config('app.version'),
@@ -124,5 +125,25 @@ final class HandleInertiaRequests extends Middleware
         }
 
         return 'home';
+    }
+
+    /**
+     * @return array{enabled: bool, accounts: array<int, array{role: string, label: string, description: string}>}
+     */
+    private function getDemoModeData(): array
+    {
+        $accounts = collect(config('demo.accounts', []))
+            ->map(static fn (array $account): array => [
+                'role' => (string) $account['role'],
+                'label' => (string) $account['label'],
+                'description' => (string) $account['description'],
+            ])
+            ->values()
+            ->all();
+
+        return [
+            'enabled' => app()->environment('demo'),
+            'accounts' => $accounts,
+        ];
     }
 }

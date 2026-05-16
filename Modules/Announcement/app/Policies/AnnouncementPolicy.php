@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace Modules\Announcement\Policies;
 
+use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
 use Modules\Announcement\Models\Announcement;
-use Illuminate\Auth\Access\HandlesAuthorization;
 
-class AnnouncementPolicy
+final class AnnouncementPolicy
 {
     use HandlesAuthorization;
-    
+
     public function viewAny(AuthUser $authUser): bool
     {
         return $authUser->can('ViewAny:Announcement');
@@ -66,5 +66,4 @@ class AnnouncementPolicy
     {
         return $authUser->can('Reorder:Announcement');
     }
-
 }

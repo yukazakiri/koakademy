@@ -2,9 +2,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { Link, useForm } from "@inertiajs/react";
+import { Link, router, useForm } from "@inertiajs/react";
 import axios from "axios";
-import { Eye, EyeOff, Key, Loader2, Lock, Mail } from "lucide-react";
+import { Eye, EyeOff, GraduationCap, Key, Loader2, Lock, Mail, ShieldCheck, UserRoundCog } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -13,12 +13,31 @@ const isWebAuthnSupported = () => {
     return !!(window.PublicKeyCredential && navigator.credentials);
 };
 
+type DemoAccount = {
+    role: string;
+    label: string;
+    description: string;
+};
+
+type DemoMode = {
+    enabled: boolean;
+    accounts: DemoAccount[];
+};
+
+const demoAccountIcons = {
+    student: GraduationCap,
+    faculty: UserRoundCog,
+    admin: ShieldCheck,
+};
+
 export function LoginForm({
     className,
+    demoMode,
     errors,
     status,
     ...props
 }: React.ComponentPropsWithoutRef<"div"> & {
+    demoMode?: DemoMode;
     errors?: Record<string, string>;
     status?: string;
 }) {
@@ -182,6 +201,13 @@ export function LoginForm({
         }
     }, [loggingInWithPasskey]);
 
+    const handleDemoLogin = (role: string) => {
+        router.post(route("demo.login", { role }), {}, {
+            onStart: () => toast.info(`Opening ${role} demo workspace...`),
+            onError: () => toast.error("Demo login is unavailable. Please try again."),
+        });
+    };
+
     return (
         <div className={cn("flex flex-col gap-6", className)} {...props}>
             <form onSubmit={submit}>
@@ -277,6 +303,40 @@ export function LoginForm({
                                     "Sign in"
                                 )}
                             </Button>
+
+                            {demoMode?.enabled && demoMode.accounts.length > 0 ? (
+                                <div className="border-primary/20 bg-primary/5 grid gap-3 rounded-2xl border p-3">
+                                    <div className="space-y-1 text-center">
+                                        <p className="text-foreground text-sm font-semibold">Try the demo instantly</p>
+                                        <p className="text-muted-foreground text-xs">Choose a role to enter with a sample account.</p>
+                                    </div>
+
+                                    <div className="grid gap-2">
+                                        {demoMode.accounts.map((account) => {
+                                            const Icon = demoAccountIcons[account.role as keyof typeof demoAccountIcons] ?? Key;
+
+                                            return (
+                                                <Button
+                                                    key={account.role}
+                                                    type="button"
+                                                    variant="outline"
+                                                    className="border-primary/20 bg-background/70 hover:bg-primary/10 h-auto justify-start gap-3 px-3 py-3 text-left transition-all duration-300"
+                                                    onClick={() => handleDemoLogin(account.role)}
+                                                    disabled={processing || loggingInWithPasskey}
+                                                >
+                                                    <span className="bg-primary/10 text-primary flex h-9 w-9 shrink-0 items-center justify-center rounded-xl">
+                                                        <Icon className="h-4 w-4" />
+                                                    </span>
+                                                    <span className="grid gap-0.5">
+                                                        <span className="text-foreground text-sm font-semibold">Continue as {account.label}</span>
+                                                        <span className="text-muted-foreground text-xs leading-snug">{account.description}</span>
+                                                    </span>
+                                                </Button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ) : null}
 
                             {passkeyAvailable && (
                                 <>

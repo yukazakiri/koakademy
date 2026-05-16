@@ -25,9 +25,7 @@ use Modules\Inventory\Services\InventoryLedgerService;
 
 final class AdministratorInventoryProductController extends Controller
 {
-    public function __construct(private readonly InventoryLedgerService $ledger)
-    {
-    }
+    public function __construct(private readonly InventoryLedgerService $ledger) {}
 
     public function index(Request $request): Response
     {

@@ -8,11 +8,19 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { TransitionWrapper } from "@/components/transition-wrapper";
 
 export default function LoginPage() {
-    const { errors, status, branding, announcements } = usePage<{
+    const { errors, status, branding, announcements, demoMode } = usePage<{
         errors?: Record<string, string>;
         status?: string | null;
         branding?: Partial<Branding> | null;
         announcements?: unknown[];
+        demoMode?: {
+            enabled: boolean;
+            accounts: Array<{
+                role: string;
+                label: string;
+                description: string;
+            }>;
+        };
     }>().props;
 
     const resolvedBranding = resolveBranding(branding);
@@ -64,7 +72,7 @@ export default function LoginPage() {
                         </div>
 
                         <TransitionWrapper>
-                            <LoginForm errors={errors} status={status} />
+                            <LoginForm errors={errors} status={status} demoMode={demoMode} />
                         </TransitionWrapper>
                     </div>
                 </div>

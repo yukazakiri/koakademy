@@ -209,7 +209,7 @@ final class StudentClassController extends Controller
             ->orWhere('user_id', $user->id)
             ->firstOrFail();
 
-        $enrollment = ClassEnrollment::where('class_id', $class->id)
+        ClassEnrollment::where('class_id', $class->id)
             ->where('student_id', $student->id)
             ->firstOrFail();
 

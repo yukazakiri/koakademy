@@ -63,6 +63,7 @@ Route::middleware('auth')->get('/dashboard', function () {
 // Login/Logout
 Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login');
 Route::post('/login', [AuthController::class, 'login']);
+Route::post('/demo-login/{role}', [AuthController::class, 'demoLogin'])->name('demo.login');
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 Route::post('/onboarding/dismiss', [App\Http\Controllers\OnboardingDismissalController::class, 'store'])
     ->middleware('auth')

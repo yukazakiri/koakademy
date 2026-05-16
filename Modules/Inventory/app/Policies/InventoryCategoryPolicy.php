@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace Modules\Inventory\Policies;
 
+use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
 use Modules\Inventory\Models\InventoryCategory;
-use Illuminate\Auth\Access\HandlesAuthorization;
 
-class InventoryCategoryPolicy
+final class InventoryCategoryPolicy
 {
     use HandlesAuthorization;
-    
+
     public function viewAny(AuthUser $authUser): bool
     {
         return $authUser->can('ViewAny:InventoryCategory');
@@ -66,5 +66,4 @@ class InventoryCategoryPolicy
     {
         return $authUser->can('Reorder:InventoryCategory');
     }
-
 }

@@ -1,6 +1,7 @@
 import { AdminMobileBottomNav } from "@/components/administrators/admin-mobile-bottom-nav";
 import { AnnouncementBanner } from "@/components/announcement-banner";
 import { AnalyticsScripts } from "@/components/analytics-scripts";
+import { DemoModeBanner } from "@/components/demo-mode-banner";
 import { FacultyBottomNav } from "@/components/faculty/faculty-bottom-nav";
 import { SeoHead } from "@/components/seo-head";
 import { StudentBottomNav } from "@/components/student/student-bottom-nav";
@@ -24,6 +25,7 @@ export default function AppRootLayout({ children }: { children: React.ReactNode 
         <>
             <SeoHead />
             <AnalyticsScripts />
+            <DemoModeBanner />
             {!isAuthPage ? <AnnouncementBanner announcements={announcements} /> : null}
             {children}
             {user && isFacultyPortalRole(user.role) ? <FacultyBottomNav /> : null}

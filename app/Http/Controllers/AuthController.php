@@ -8,6 +8,7 @@ use App\Enums\UserRole;
 use App\Models\Faculty;
 use App\Models\Student;
 use App\Models\User;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
@@ -22,7 +23,9 @@ final class AuthController extends Controller
 {
     public function showLoginForm(): Response
     {
-        return Inertia::render('login');
+        return Inertia::render('login', [
+            'demoMode' => $this->getDemoModeData(),
+        ]);
     }
 
     public function login(Request $request)
@@ -76,7 +79,32 @@ final class AuthController extends Controller
         ]);
     }
 
-    public function logout(Request $request): \Illuminate\Routing\Redirector|\Illuminate\Http\RedirectResponse
+    public function demoLogin(Request $request, string $role): RedirectResponse
+    {
+        abort_unless(app()->environment('demo'), 404);
+
+        $account = config("demo.accounts.{$role}");
+
+        abort_unless(is_array($account), 404);
+
+        $email = $account['email'] ?? null;
+
+        abort_unless(is_string($email) && $email !== '', 404);
+
+        /** @var User|null $user */
+        $user = User::query()
+            ->where('email', $email)
+            ->first();
+
+        abort_unless($user instanceof User, 404);
+
+        Auth::login($user);
+        $request->session()->regenerate();
+
+        return redirect()->intended($this->getRedirectForUser($user));
+    }
+
+    public function logout(Request $request): \Illuminate\Routing\Redirector|RedirectResponse
     {
         Auth::logout();
         $request->session()->invalidate();
@@ -300,5 +328,25 @@ final class AuthController extends Controller
         }
 
         return '/faculty/dashboard';
+    }
+
+    /**
+     * @return array{enabled: bool, accounts: array<int, array{role: string, label: string, description: string}>}
+     */
+    private function getDemoModeData(): array
+    {
+        $accounts = collect(config('demo.accounts', []))
+            ->map(static fn (array $account): array => [
+                'role' => (string) $account['role'],
+                'label' => (string) $account['label'],
+                'description' => (string) $account['description'],
+            ])
+            ->values()
+            ->all();
+
+        return [
+            'enabled' => app()->environment('demo'),
+            'accounts' => $accounts,
+        ];
     }
 }

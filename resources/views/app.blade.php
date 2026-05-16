@@ -126,7 +126,25 @@
         window.appName = "{{ $siteSettings->getAppName() }}";
     </script>
 
-    @PwaHead
+    @if(app()->environment('demo'))
+        <script>
+            if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                    navigator.serviceWorker.getRegistrations().then((registrations) => {
+                        registrations.forEach((registration) => registration.unregister());
+                    });
+
+                    if ('caches' in window) {
+                        caches.keys().then((keys) => {
+                            keys.forEach((key) => caches.delete(key));
+                        });
+                    }
+                });
+            }
+        </script>
+    @else
+        @PwaHead
+    @endif
 
     @viteReactRefresh
     @vite(['resources/js/App.tsx', 'resources/css/app.css'])
@@ -136,7 +154,9 @@
 <body class="text-white font-sans">
     @routes
     @inertia
-    @RegisterServiceWorkerScript
+    @unless(app()->environment('demo'))
+        @RegisterServiceWorkerScript
+    @endunless
 </body>
 
 </html>

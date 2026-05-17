@@ -4,8 +4,8 @@ import { getFacultyPortalNavigation, type FacultyPortalClass } from "@/component
 import { NavMain, type NavItem } from "@/components/nav-main";
 import { NavSecondary } from "@/components/nav-secondary";
 import { NavUser } from "@/components/nav-user";
-import { NotificationsPopover } from "@/components/sidebar-03/nav-notifications";
 import type { SemesterSelectorProps } from "@/components/semester-selector";
+import { NotificationsPopover } from "@/components/sidebar-03/nav-notifications";
 import { getStudentPortalNavigation, type StudentPortalClass } from "@/components/student/student-navigation";
 import {
     Sidebar,
@@ -180,25 +180,16 @@ function getSecondaryRoutes(isStudent: boolean, isStaff: boolean): NavItem[] {
 function SidebarSemesterSelector({ settings }: { settings: SemesterSelectorProps }) {
     const [open, setOpen] = useState(false);
 
-    const {
-        currentSemester,
-        currentSchoolYear,
-        systemSemester,
-        systemSchoolYear,
-        availableSemesters,
-        availableSchoolYears,
-    } = settings;
+    const { currentSemester, currentSchoolYear, systemSemester, systemSchoolYear, availableSemesters, availableSchoolYears } = settings;
 
     const safeAvailableSemesters: Record<number, string> = availableSemesters ?? {};
     const safeAvailableSchoolYears: Record<number, string> = availableSchoolYears ?? {};
 
-    const currentSemesterLabel = currentSemester != null ? safeAvailableSemesters[currentSemester] ?? "\u2014" : "\u2014";
-    const currentSchoolYearLabel = currentSchoolYear != null ? safeAvailableSchoolYears[currentSchoolYear] ?? "\u2014" : "\u2014";
+    const currentSemesterLabel = currentSemester != null ? (safeAvailableSemesters[currentSemester] ?? "\u2014") : "\u2014";
+    const currentSchoolYearLabel = currentSchoolYear != null ? (safeAvailableSchoolYears[currentSchoolYear] ?? "\u2014") : "\u2014";
 
-    const hasSemesterOverride =
-        systemSemester != null && currentSemester != null && systemSemester !== currentSemester;
-    const hasSchoolYearOverride =
-        systemSchoolYear != null && currentSchoolYear != null && systemSchoolYear !== currentSchoolYear;
+    const hasSemesterOverride = systemSemester != null && currentSemester != null && systemSemester !== currentSemester;
+    const hasSchoolYearOverride = systemSchoolYear != null && currentSchoolYear != null && systemSchoolYear !== currentSchoolYear;
     const hasAnyOverride = hasSemesterOverride || hasSchoolYearOverride;
 
     function resolveSettingsEndpoint(path: "semester" | "school-year"): string {
@@ -211,39 +202,22 @@ function SidebarSemesterSelector({ settings }: { settings: SemesterSelectorProps
     }
 
     const handleSemesterChange = (value: string) => {
-        router.put(
-            resolveSettingsEndpoint("semester"),
-            { semester: parseInt(value) },
-            { preserveScroll: true },
-        );
+        router.put(resolveSettingsEndpoint("semester"), { semester: parseInt(value) }, { preserveScroll: true });
     };
 
     const handleSchoolYearChange = (value: string) => {
-        router.put(
-            resolveSettingsEndpoint("school-year"),
-            { school_year_start: parseInt(value) },
-            { preserveScroll: true },
-        );
+        router.put(resolveSettingsEndpoint("school-year"), { school_year_start: parseInt(value) }, { preserveScroll: true });
     };
 
     return (
         <SidebarGroup>
             <SidebarGroupLabel asChild>
-                <button
-                    type="button"
-                    onClick={() => setOpen((v) => !v)}
-                    className="flex w-full items-center justify-between"
-                >
+                <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between">
                     <span className="flex items-center gap-1.5">
                         <IconCalendar className="size-3.5" />
                         Academic Period
                     </span>
-                    <IconChevronDown
-                        className={cn(
-                            "size-3.5 transition-transform duration-200",
-                            open && "rotate-180",
-                        )}
-                    />
+                    <IconChevronDown className={cn("size-3.5 transition-transform duration-200", open && "rotate-180")} />
                 </button>
             </SidebarGroupLabel>
 
@@ -252,13 +226,13 @@ function SidebarSemesterSelector({ settings }: { settings: SemesterSelectorProps
                     <button
                         type="button"
                         onClick={() => setOpen(true)}
-                        className="text-muted-foreground hover:text-foreground hover:bg-accent mx-2 mb-1 flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors"
+                        className="text-muted-foreground hover:text-foreground hover:bg-accent mx-2 mb-1 flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs transition-colors"
                     >
                         <span className="truncate">
                             {currentSemesterLabel} &middot; {currentSchoolYearLabel}
                         </span>
                         {hasAnyOverride && (
-                            <span className="bg-primary/15 text-primary shrink-0 rounded px-1 py-0.5 text-[9px] font-semibold leading-none">
+                            <span className="bg-primary/15 text-primary shrink-0 rounded px-1 py-0.5 text-[9px] leading-none font-semibold">
                                 Custom
                             </span>
                         )}
@@ -271,13 +245,11 @@ function SidebarSemesterSelector({ settings }: { settings: SemesterSelectorProps
                     <div className="flex flex-col gap-2 px-2 pb-2">
                         {/* Semester select */}
                         <div className="flex flex-col gap-1">
-                            <label className="text-muted-foreground px-0.5 text-[10px] font-medium uppercase tracking-wider">
-                                Semester
-                            </label>
+                            <label className="text-muted-foreground px-0.5 text-[10px] font-medium tracking-wider uppercase">Semester</label>
                             <select
                                 value={currentSemester?.toString() ?? ""}
                                 onChange={(e) => handleSemesterChange(e.target.value)}
-                                className="bg-muted/50 text-foreground border-border hover:bg-muted focus:ring-primary h-8 w-full rounded-md border px-2.5 text-xs transition-colors focus:ring-1 focus:outline-none"
+                                className="bg-muted/50 text-foreground border-border hover:bg-muted focus:ring-primary h-8 w-full rounded-lg border px-2.5 text-xs transition-colors focus:ring-1 focus:outline-none"
                             >
                                 {Object.entries(safeAvailableSemesters).map(([key, label]) => (
                                     <option key={key} value={key}>
@@ -287,20 +259,18 @@ function SidebarSemesterSelector({ settings }: { settings: SemesterSelectorProps
                             </select>
                             {hasSemesterOverride && (
                                 <span className="text-muted-foreground/70 px-0.5 text-[10px]">
-                                    System: {systemSemester != null ? safeAvailableSemesters[systemSemester] ?? "Default" : "Default"}
+                                    System: {systemSemester != null ? (safeAvailableSemesters[systemSemester] ?? "Default") : "Default"}
                                 </span>
                             )}
                         </div>
 
                         {/* School Year select */}
                         <div className="flex flex-col gap-1">
-                            <label className="text-muted-foreground px-0.5 text-[10px] font-medium uppercase tracking-wider">
-                                School Year
-                            </label>
+                            <label className="text-muted-foreground px-0.5 text-[10px] font-medium tracking-wider uppercase">School Year</label>
                             <select
                                 value={currentSchoolYear?.toString() ?? ""}
                                 onChange={(e) => handleSchoolYearChange(e.target.value)}
-                                className="bg-muted/50 text-foreground border-border hover:bg-muted focus:ring-primary h-8 w-full rounded-md border px-2.5 text-xs transition-colors focus:ring-1 focus:outline-none"
+                                className="bg-muted/50 text-foreground border-border hover:bg-muted focus:ring-primary h-8 w-full rounded-lg border px-2.5 text-xs transition-colors focus:ring-1 focus:outline-none"
                             >
                                 {Object.entries(safeAvailableSchoolYears).map(([key, label]) => (
                                     <option key={key} value={key}>
@@ -310,7 +280,7 @@ function SidebarSemesterSelector({ settings }: { settings: SemesterSelectorProps
                             </select>
                             {hasSchoolYearOverride && (
                                 <span className="text-muted-foreground/70 px-0.5 text-[10px]">
-                                    System: {systemSchoolYear != null ? safeAvailableSchoolYears[systemSchoolYear] ?? "Default" : "Default"}
+                                    System: {systemSchoolYear != null ? (safeAvailableSchoolYears[systemSchoolYear] ?? "Default") : "Default"}
                                 </span>
                             )}
                         </div>
@@ -359,12 +329,17 @@ export function PortalSidebar({ user, ...props }: React.ComponentProps<typeof Si
 
     return (
         <Sidebar collapsible="offcanvas" {...props}>
-            <SidebarHeader className={cn("flex items-center justify-between gap-2 px-3 py-2", state === "collapsed" ? "flex-col" : "flex-row")}>
+            <SidebarHeader
+                className={cn(
+                    "border-sidebar-border/60 flex items-center justify-between gap-2 border-b px-3 py-3",
+                    state === "collapsed" ? "flex-col" : "flex-row",
+                )}
+            >
                 <SidebarMenu>
                     <SidebarMenuItem>
-                        <SidebarMenuButton size="lg" asChild>
+                        <SidebarMenuButton size="lg" asChild className="rounded-xl">
                             <Link href={getDashboardUrl()}>
-                                <div className="flex aspect-square size-8 items-center justify-center overflow-hidden rounded-lg bg-white">
+                                <div className="border-border/50 flex aspect-square size-9 items-center justify-center overflow-hidden rounded-lg border bg-white shadow-sm">
                                     <img src={branding.logo} alt={`${organizationShortName} Logo`} className="size-5 object-contain" />
                                 </div>
                                 <div className="grid flex-1 text-left text-sm leading-tight">
@@ -379,9 +354,7 @@ export function PortalSidebar({ user, ...props }: React.ComponentProps<typeof Si
             </SidebarHeader>
             <SidebarContent>
                 <NavMain items={mainRoutes} showQuickActions={isFaculty} />
-                {(isStudent || isFaculty) && pageProps.settings ? (
-                    <SidebarSemesterSelector settings={pageProps.settings} />
-                ) : null}
+                {(isStudent || isFaculty) && pageProps.settings ? <SidebarSemesterSelector settings={pageProps.settings} /> : null}
                 <NavSecondary items={secondaryRoutes} className="mt-auto" />
             </SidebarContent>
             <SidebarFooter>

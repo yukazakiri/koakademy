@@ -31,8 +31,8 @@ export function StudentEducationForm({ studentForm, onSubmit }: StudentEducation
     };
 
     return (
-        <Card className="mt-6">
-            <CardHeader>
+        <Card className="border-border/60 bg-card/75 rounded-lg shadow-sm">
+            <CardHeader className="pb-4">
                 <CardTitle className="flex items-center gap-2">
                     <BookOpen className="h-5 w-5" />
                     Education History
@@ -40,8 +40,8 @@ export function StudentEducationForm({ studentForm, onSubmit }: StudentEducation
                 <CardDescription>Your educational background</CardDescription>
             </CardHeader>
             <CardContent>
-                <form onSubmit={onSubmit} className="space-y-6">
-                    <div className="grid gap-6 md:grid-cols-2">
+                <form onSubmit={onSubmit} className="space-y-5">
+                    <div className="grid gap-4 md:grid-cols-2">
                         <div className="md:col-span-2">
                             <h3 className="mb-2 font-semibold">Elementary</h3>
                         </div>
@@ -104,7 +104,7 @@ export function StudentEducationForm({ studentForm, onSubmit }: StudentEducation
                     </div>
 
                     <div className="flex justify-end">
-                        <Button type="submit" disabled={studentForm.processing}>
+                        <Button type="submit" disabled={studentForm.processing} className="rounded-lg">
                             <Save className="mr-2 h-4 w-4" />
                             {studentForm.processing ? "Saving..." : "Save Education Info"}
                         </Button>

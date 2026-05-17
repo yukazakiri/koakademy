@@ -5,6 +5,7 @@ import { StudentPeopleTab } from "@/components/class/tabs/student-people-tab";
 import { StudentStreamTab } from "@/components/class/tabs/student-stream-tab";
 import StudentLayout from "@/components/student/student-layout";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
+import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ClassPostEntry, ClassSettings, ScheduleEntry, TeacherEntry } from "@/types/class-detail-types";
@@ -63,6 +64,8 @@ interface StudentClassShowProps {
     }>;
 }
 
+const dashboardPanelClass = "border-border/60 bg-card/75 rounded-lg shadow-sm";
+
 export default function StudentClassShow({
     user,
     classData,
@@ -89,29 +92,31 @@ export default function StudentClassShow({
         >
             <Head title={`${classData.subject_code} - ${classData.section}`} />
 
-            <div className="container mx-auto max-w-7xl space-y-8 px-4 py-6 md:px-8">
+            <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 p-4 pb-16 md:gap-6 md:p-6">
                 {/* Breadcrumb Navigation */}
-                <div className="flex items-center justify-between">
-                    <Breadcrumb>
-                        <BreadcrumbList>
-                            <BreadcrumbItem>
-                                <BreadcrumbLink asChild>
-                                    <Link href="/student/dashboard">Dashboard</Link>
-                                </BreadcrumbLink>
-                            </BreadcrumbItem>
-                            <BreadcrumbSeparator />
-                            <BreadcrumbItem>
-                                <BreadcrumbLink asChild>
-                                    <Link href="/student/classes">My Classes</Link>
-                                </BreadcrumbLink>
-                            </BreadcrumbItem>
-                            <BreadcrumbSeparator />
-                            <BreadcrumbItem>
-                                <BreadcrumbPage>{classData.subject_code}</BreadcrumbPage>
-                            </BreadcrumbItem>
-                        </BreadcrumbList>
-                    </Breadcrumb>
-                </div>
+                <Card className={dashboardPanelClass}>
+                    <CardContent className="p-4 md:p-5">
+                        <Breadcrumb>
+                            <BreadcrumbList className="gap-1 text-xs sm:text-sm">
+                                <BreadcrumbItem>
+                                    <BreadcrumbLink asChild>
+                                        <Link href="/student/dashboard">Dashboard</Link>
+                                    </BreadcrumbLink>
+                                </BreadcrumbItem>
+                                <BreadcrumbSeparator />
+                                <BreadcrumbItem>
+                                    <BreadcrumbLink asChild>
+                                        <Link href="/student/classes">My Academics</Link>
+                                    </BreadcrumbLink>
+                                </BreadcrumbItem>
+                                <BreadcrumbSeparator />
+                                <BreadcrumbItem>
+                                    <BreadcrumbPage className="max-w-[10rem] truncate sm:max-w-none">{classData.subject_code}</BreadcrumbPage>
+                                </BreadcrumbItem>
+                            </BreadcrumbList>
+                        </Breadcrumb>
+                    </CardContent>
+                </Card>
 
                 {/* Enhanced Class Header - Read Only mostly */}
                 <EnhancedClassHeader
@@ -127,32 +132,36 @@ export default function StudentClassShow({
                 />
 
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                    <TabsList className="no-scrollbar h-auto w-full justify-start gap-2 overflow-x-auto bg-transparent p-0">
-                        <TabsTrigger
-                            value="stream"
-                            className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary mb-1 rounded-full px-4 py-1 capitalize"
-                        >
-                            Stream
-                        </TabsTrigger>
-                        <TabsTrigger
-                            value="classwork"
-                            className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary mb-1 rounded-full px-4 py-1 capitalize"
-                        >
-                            Classwork
-                        </TabsTrigger>
-                        <TabsTrigger
-                            value="attendance"
-                            className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary mb-1 rounded-full px-4 py-1 capitalize"
-                        >
-                            My Attendance
-                        </TabsTrigger>
-                        <TabsTrigger
-                            value="people"
-                            className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary mb-1 rounded-full px-4 py-1 capitalize"
-                        >
-                            Classmates
-                        </TabsTrigger>
-                    </TabsList>
+                    <Card className={dashboardPanelClass}>
+                        <CardContent className="p-2">
+                            <TabsList className="no-scrollbar bg-muted/25 h-auto w-full justify-start gap-1 overflow-x-auto rounded-lg p-1">
+                                <TabsTrigger
+                                    value="stream"
+                                    className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg px-4 py-2 capitalize"
+                                >
+                                    Stream
+                                </TabsTrigger>
+                                <TabsTrigger
+                                    value="classwork"
+                                    className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg px-4 py-2 capitalize"
+                                >
+                                    Classwork
+                                </TabsTrigger>
+                                <TabsTrigger
+                                    value="attendance"
+                                    className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg px-4 py-2 capitalize"
+                                >
+                                    My Attendance
+                                </TabsTrigger>
+                                <TabsTrigger
+                                    value="people"
+                                    className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg px-4 py-2 capitalize"
+                                >
+                                    Classmates
+                                </TabsTrigger>
+                            </TabsList>
+                        </CardContent>
+                    </Card>
 
                     <Separator className="bg-border/40 my-4" />
 

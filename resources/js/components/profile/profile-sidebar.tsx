@@ -15,49 +15,49 @@ interface ProfileSidebarProps {
 
 export function ProfileSidebar({ user, avatarPreview, position, biographyPreview, isFaculty }: ProfileSidebarProps) {
     return (
-        <div className="space-y-6">
-            <Card className="border-accent bg-accent/20 dark:border-accent/50 dark:bg-accent/10">
-                <CardHeader>
+        <div className="space-y-4 xl:sticky xl:top-24">
+            <Card className="border-border/60 bg-card/75 rounded-lg shadow-sm">
+                <CardHeader className="pb-3">
                     <CardTitle className="text-base">Profile Tips</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm">
                     {isFaculty ? (
                         <>
                             <div className="flex items-start gap-2">
-                                <CheckCircle2 className="text-accent-foreground mt-0.5 h-4 w-4" />
-                                <p className="text-accent-foreground">Keep your office hours current for student meetings</p>
+                                <CheckCircle2 className="text-primary mt-0.5 h-4 w-4" />
+                                <p className="text-muted-foreground">Keep your office hours current for student meetings</p>
                             </div>
                             <div className="flex items-start gap-2">
-                                <CheckCircle2 className="text-accent-foreground mt-0.5 h-4 w-4" />
-                                <p className="text-accent-foreground">List active courses to help students find you</p>
+                                <CheckCircle2 className="text-primary mt-0.5 h-4 w-4" />
+                                <p className="text-muted-foreground">List active courses to help students find you</p>
                             </div>
                             <div className="flex items-start gap-2">
-                                <CheckCircle2 className="text-accent-foreground mt-0.5 h-4 w-4" />
-                                <p className="text-accent-foreground">Add your education and research interests</p>
+                                <CheckCircle2 className="text-primary mt-0.5 h-4 w-4" />
+                                <p className="text-muted-foreground">Add your education and research interests</p>
                             </div>
                         </>
                     ) : (
                         <>
                             <div className="flex items-start gap-2">
-                                <CheckCircle2 className="text-accent-foreground mt-0.5 h-4 w-4" />
-                                <p className="text-accent-foreground">Complete your profile to help professors know you better</p>
+                                <CheckCircle2 className="text-primary mt-0.5 h-4 w-4" />
+                                <p className="text-muted-foreground">Complete your profile to help professors know you better</p>
                             </div>
                             <div className="flex items-start gap-2">
-                                <CheckCircle2 className="text-accent-foreground mt-0.5 h-4 w-4" />
-                                <p className="text-accent-foreground">Add emergency contacts for safety</p>
+                                <CheckCircle2 className="text-primary mt-0.5 h-4 w-4" />
+                                <p className="text-muted-foreground">Add emergency contacts for safety</p>
                             </div>
                             <div className="flex items-start gap-2">
-                                <CheckCircle2 className="text-accent-foreground mt-0.5 h-4 w-4" />
-                                <p className="text-accent-foreground">Keep your education history updated</p>
+                                <CheckCircle2 className="text-primary mt-0.5 h-4 w-4" />
+                                <p className="text-muted-foreground">Keep your education history updated</p>
                             </div>
                         </>
                     )}
                 </CardContent>
             </Card>
 
-            <Card>
-                <CardHeader>
-                    <CardTitle className="text-lg">Public View</CardTitle>
+            <Card className="border-border/60 bg-card/75 rounded-lg shadow-sm">
+                <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Public View</CardTitle>
                     <CardDescription>How {isFaculty ? "students" : "others"} see you</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">

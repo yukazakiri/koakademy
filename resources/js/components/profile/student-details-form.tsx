@@ -30,8 +30,8 @@ interface StudentDetailsFormProps {
 
 export function StudentDetailsForm({ studentForm, onSubmit }: StudentDetailsFormProps) {
     return (
-        <Card>
-            <CardHeader>
+        <Card className="border-border/60 bg-card/75 rounded-lg shadow-sm">
+            <CardHeader className="pb-4">
                 <CardTitle className="flex items-center gap-2">
                     <GraduationCap className="h-5 w-5" />
                     Student Details
@@ -39,8 +39,8 @@ export function StudentDetailsForm({ studentForm, onSubmit }: StudentDetailsForm
                 <CardDescription>Additional information for student records</CardDescription>
             </CardHeader>
             <CardContent>
-                <form id="student-form" onSubmit={onSubmit} className="space-y-6">
-                    <div className="grid gap-6 md:grid-cols-2">
+                <form id="student-form" onSubmit={onSubmit} className="space-y-5">
+                    <div className="grid gap-4 md:grid-cols-2">
                         <div className="space-y-2">
                             <Label htmlFor="student_first_name">First Name *</Label>
                             <Input
@@ -187,7 +187,7 @@ export function StudentDetailsForm({ studentForm, onSubmit }: StudentDetailsForm
                     </div>
 
                     <div className="flex justify-end">
-                        <Button type="submit" disabled={studentForm.processing}>
+                        <Button type="submit" disabled={studentForm.processing} className="rounded-lg">
                             <Save className="mr-2 h-4 w-4" />
                             {studentForm.processing ? "Saving..." : "Save Student Details"}
                         </Button>

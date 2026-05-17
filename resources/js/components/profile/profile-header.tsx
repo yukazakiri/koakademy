@@ -51,20 +51,15 @@ export function ProfileHeader({
     onSaveClick,
 }: ProfileHeaderProps) {
     return (
-        <Card
-            className={`relative overflow-hidden border shadow-lg ${
-                isStudent
-                    ? "from-primary/30 via-secondary/30 to-accent/30 border-primary/20 dark:border-primary/30 bg-gradient-to-r"
-                    : "from-primary/20 via-secondary/15 to-accent/20 bg-gradient-to-r"
-            }`}
-        >
-            <CardContent className="relative p-8">
-                <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-                    <div className="flex flex-col gap-6 md:flex-row md:items-center">
+        <Card className="border-border/60 bg-card/75 relative overflow-hidden rounded-lg shadow-sm">
+            <User className="text-primary pointer-events-none absolute top-5 right-6 h-24 w-24 opacity-10" />
+            <CardContent className="relative p-4 md:p-5">
+                <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
                         <div className="relative">
-                            <Avatar className="border-background h-28 w-28 border-4 shadow-xl">
+                            <Avatar className="border-background h-20 w-20 border-4 shadow-lg md:h-24 md:w-24">
                                 <AvatarImage src={avatarPreview} alt={user.name} />
-                                <AvatarFallback className="bg-primary/10 text-primary text-3xl font-bold">
+                                <AvatarFallback className="bg-primary/10 text-primary text-2xl font-semibold">
                                     {(user.name || "").slice(0, 2).toUpperCase()}
                                 </AvatarFallback>
                             </Avatar>
@@ -72,34 +67,34 @@ export function ProfileHeader({
                                 type="button"
                                 size="icon"
                                 variant="secondary"
-                                className="absolute -right-2 -bottom-2 h-10 w-10 rounded-full shadow-lg"
+                                className="absolute -right-2 -bottom-2 h-9 w-9 rounded-lg shadow-lg"
                                 onClick={onTriggerAvatarPicker}
                             >
-                                <Camera className="h-5 w-5" />
+                                <Camera className="h-4 w-4" />
                             </Button>
                             <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={onAvatarSelect} />
                         </div>
-                        <div className="space-y-2">
+                        <div className="min-w-0 space-y-2">
                             <div className="flex items-center gap-2">
-                                <Badge variant="outline" className="bg-background/80">
+                                <Badge variant="outline" className="bg-background/80 rounded-md">
                                     {user.role}
                                 </Badge>
                                 {profileCompletion === 100 && (
-                                    <Badge className="bg-primary/15 text-primary">
+                                    <Badge className="bg-primary/15 text-primary rounded-md">
                                         <CheckCircle2 className="mr-1 h-3 w-3" />
                                         Complete
                                     </Badge>
                                 )}
                             </div>
-                            <h2 className="text-4xl font-bold tracking-tight">{user.name}</h2>
-                            <p className="text-muted-foreground text-lg">
+                            <h2 className="text-foreground truncate text-2xl font-semibold tracking-tight md:text-3xl">{user.name}</h2>
+                            <p className="text-muted-foreground text-sm md:text-base">
                                 {isStudent
                                     ? student?.course?.title
                                         ? `${student.course.title}${student.formatted_academic_year ? ` - ${student.formatted_academic_year}` : ""}`
                                         : "Student"
                                     : facultyName || position || (isFaculty ? "Faculty Member" : "")}
                             </p>
-                            <div className="text-muted-foreground flex flex-wrap items-center gap-3 text-sm">
+                            <div className="text-muted-foreground flex flex-wrap items-center gap-3 text-xs">
                                 {isStudent && student?.course?.code && (
                                     <span className="flex items-center gap-1">
                                         <GraduationCap className="h-4 w-4" />
@@ -127,13 +122,13 @@ export function ProfileHeader({
                             </div>
                         </div>
                     </div>
-                    <div className="flex gap-3">
-                        <Button variant="secondary" onClick={onTriggerAvatarPicker}>
+                    <div className="flex flex-wrap gap-3">
+                        <Button variant="secondary" onClick={onTriggerAvatarPicker} className="rounded-lg">
                             <UploadCloud className="mr-2 h-4 w-4" />
                             Change Photo
                         </Button>
                         {hasChanges && (
-                            <Button onClick={onSaveClick}>
+                            <Button onClick={onSaveClick} className="rounded-lg">
                                 <Save className="mr-2 h-4 w-4" />
                                 Save All
                             </Button>

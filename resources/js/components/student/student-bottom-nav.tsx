@@ -5,13 +5,7 @@ import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/compone
 import { cn } from "@/lib/utils";
 import type { User } from "@/types/user";
 import { Link, usePage } from "@inertiajs/react";
-import {
-    IconCalendar,
-    IconDashboard,
-    IconReceipt,
-    IconSchool,
-    IconSpeakerphone,
-} from "@tabler/icons-react";
+import { IconCalendar, IconDashboard, IconReceipt, IconSchool, IconSpeakerphone } from "@tabler/icons-react";
 import { motion } from "framer-motion";
 import { useCallback, useMemo, useRef, useState } from "react";
 
@@ -45,10 +39,7 @@ export function StudentBottomNav() {
     const studentClasses = props.studentClasses ?? [];
 
     // We still call the canonical navigation to read disabled / feature-flag state
-    const canonicalNav = useMemo(
-        () => getStudentPortalNavigation(enabledRoutes, studentClasses),
-        [enabledRoutes, studentClasses],
-    );
+    const canonicalNav = useMemo(() => getStudentPortalNavigation(enabledRoutes, studentClasses), [enabledRoutes, studentClasses]);
     const disabledMap = useMemo(() => {
         const m: Record<string, { disabled: boolean; tooltip?: string }> = {};
         canonicalNav.forEach((item) => {
@@ -107,18 +98,18 @@ export function StudentBottomNav() {
 
                 {/* ── Bottom bar ── */}
                 <div
-                    className="safe-area-inset-bottom border-border/40 bg-background/90 border-t backdrop-blur-2xl"
+                    className="safe-area-inset-bottom border-border/60 bg-background/92 border-t shadow-[0_-16px_40px_rgba(0,0,0,0.18)] backdrop-blur-2xl"
                     onTouchStart={handleTouchStart}
                     onTouchEnd={handleTouchEnd}
                 >
                     {/* Swipe-up grab handle */}
                     {resolvedUser ? (
-                        <div className="pointer-events-none flex select-none items-center justify-center pt-1.5">
+                        <div className="pointer-events-none flex items-center justify-center pt-1.5 select-none">
                             <span className="bg-muted-foreground/20 block h-[3px] w-8 rounded-full" />
                         </div>
                     ) : null}
 
-                    <div className="mx-auto flex max-w-md items-end justify-around px-2 pb-1.5">
+                    <div className="mx-auto flex max-w-md items-end justify-around px-2 pb-2">
                         {MOBILE_NAV_ORDER.map((item) => {
                             const active = isActive(item.url);
                             const info = disabledMap[item.id];
@@ -128,19 +119,12 @@ export function StudentBottomNav() {
 
                             if (isCenter) {
                                 return (
-                                    <Link
-                                        key={item.id}
-                                        href={item.url}
-                                        className="group relative -mt-5 flex flex-col items-center"
-                                        aria-label="Home"
-                                    >
+                                    <Link key={item.id} href={item.url} className="group relative -mt-5 flex flex-col items-center" aria-label="Home">
                                         {/* Outer glow ring */}
                                         <span
                                             className={cn(
                                                 "absolute top-0.5 h-12 w-12 rounded-full transition-all duration-300",
-                                                active
-                                                    ? "bg-primary/20 scale-110 blur-sm"
-                                                    : "bg-transparent scale-100",
+                                                active ? "bg-primary/20 scale-110 blur-sm" : "scale-100 bg-transparent",
                                             )}
                                         />
                                         {/* Elevated pill */}
@@ -171,7 +155,8 @@ export function StudentBottomNav() {
                                     key={item.id}
                                     href={disabled ? "#" : item.url}
                                     className={cn(
-                                        "relative flex w-14 flex-col items-center justify-end px-1 pt-1.5 pb-0.5 transition-colors",
+                                        "relative flex w-14 flex-col items-center justify-end rounded-lg px-1 pt-1.5 pb-0.5 transition-colors",
+                                        active && "bg-primary/10",
                                         disabled && "pointer-events-none opacity-40",
                                     )}
                                     aria-disabled={disabled}
@@ -187,7 +172,7 @@ export function StudentBottomNav() {
                                     </div>
                                     <span
                                         className={cn(
-                                            "mt-0.5 max-w-full truncate text-[10px] font-medium leading-tight transition-colors",
+                                            "mt-0.5 max-w-full truncate text-[10px] leading-tight font-medium transition-colors",
                                             active ? "text-primary" : "text-muted-foreground",
                                         )}
                                     >

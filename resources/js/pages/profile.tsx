@@ -3,12 +3,13 @@ import React, { useEffect, useRef, useState } from "react";
 import { useTheme } from "@/hooks/use-theme";
 import { Head, Link, router, useForm, usePage } from "@inertiajs/react";
 import { motion } from "framer-motion";
-import { ArrowLeft, Palette, Plug, QrCode, Share2, User } from "lucide-react";
+import { ArrowLeft, BookOpen, Contact, GraduationCap, Palette, Plug, QrCode, Share2, User } from "lucide-react";
 
 import { toast } from "sonner";
 
 import PortalLayout from "@/components/portal-layout";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { type IdCardData } from "@/components/digital-id-card";
@@ -51,6 +52,8 @@ const itemVariants = {
         },
     },
 };
+
+const dashboardPanelClass = "border-border/60 bg-card/75 rounded-lg shadow-sm";
 
 export default function ProfilePage() {
     useTheme();
@@ -454,16 +457,16 @@ export default function ProfilePage() {
                     role: user.role,
                 }}
             >
-                <div className="space-y-8">
+                <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 p-4 pb-16 md:gap-6 md:p-6">
                     <div className="flex items-center gap-4">
-                        <Link href="/dashboard">
-                            <Button variant="outline" size="icon">
+                        <Link href={isStudent ? "/student/dashboard" : isFaculty ? "/faculty/dashboard" : "/dashboard"}>
+                            <Button variant="outline" size="icon" className="rounded-lg">
                                 <ArrowLeft className="h-4 w-4" />
                             </Button>
                         </Link>
-                        <div>
-                            <h1 className="text-3xl font-bold tracking-tight">Profile Settings</h1>
-                            <p className="text-muted-foreground">Manage your account, faculty details, and preferences</p>
+                        <div className="min-w-0">
+                            <h1 className="text-foreground truncate text-2xl font-semibold tracking-tight md:text-3xl">Profile Settings</h1>
+                            <p className="text-muted-foreground mt-1 text-sm">Manage your account details, security, and preferences.</p>
                         </div>
                     </div>
 
@@ -494,96 +497,140 @@ export default function ProfilePage() {
                         educationItemsCount={educationItems.length}
                     />
 
-                    <Tabs defaultValue="profile" className="flex w-full flex-col gap-8 lg:flex-row">
-                        <aside className="shrink-0 lg:w-64">
-                            <TabsList className="flex h-auto w-full flex-col items-stretch justify-start gap-2 bg-transparent p-0">
-                                <TabsTrigger value="profile" className="data-[state=active]:bg-muted justify-start px-3 py-2">
-                                    <User className="mr-2 h-4 w-4" />
-                                    Profile
-                                </TabsTrigger>
-                                {id_card && (isFaculty || isStudent) && (
-                                    <TabsTrigger value="id-card" className="data-[state=active]:bg-muted justify-start px-3 py-2">
-                                        <QrCode className="mr-2 h-4 w-4" />
-                                        Digital ID Card
-                                    </TabsTrigger>
-                                )}
-                                <TabsTrigger value="accounts" className="data-[state=active]:bg-muted justify-start px-3 py-2">
-                                    <Plug className="mr-2 h-4 w-4" />
-                                    Accounts & Security
-                                </TabsTrigger>
-                                <TabsTrigger value="personalization" className="data-[state=active]:bg-muted justify-start px-3 py-2">
-                                    <Palette className="mr-2 h-4 w-4" />
-                                    Personalization
-                                </TabsTrigger>
-                                {experimentalAvailable.length > 0 && (
-                                    <TabsTrigger value="experimental" className="data-[state=active]:bg-muted justify-start px-3 py-2">
-                                        <Plug className="mr-2 h-4 w-4" />
-                                        Experimental
-                                    </TabsTrigger>
-                                )}
-                                <TabsTrigger value="connections" className="data-[state=active]:bg-muted justify-start px-3 py-2">
-                                    <Share2 className="mr-2 h-4 w-4" />
-                                    Connections
-                                </TabsTrigger>
-                                <TabsTrigger value="integrations" className="data-[state=active]:bg-muted justify-start px-3 py-2">
-                                    <Plug className="mr-2 h-4 w-4" />
-                                    Integrations
-                                </TabsTrigger>
-                            </TabsList>
+                    <Tabs defaultValue="profile" className="grid w-full gap-5 lg:grid-cols-[17rem_minmax(0,1fr)] lg:gap-6">
+                        <aside className="lg:sticky lg:top-24 lg:self-start">
+                            <Card className={dashboardPanelClass}>
+                                <CardContent className="p-2">
+                                    <TabsList className="no-scrollbar bg-muted/20 flex h-auto w-full justify-start gap-1 overflow-x-auto rounded-lg p-1 lg:flex-col lg:items-stretch">
+                                        <TabsTrigger value="profile" className="shrink-0 justify-start rounded-lg px-3 py-2 lg:w-full">
+                                            <User className="mr-2 h-4 w-4" />
+                                            Profile
+                                        </TabsTrigger>
+                                        {id_card && (isFaculty || isStudent) && (
+                                            <TabsTrigger value="id-card" className="shrink-0 justify-start rounded-lg px-3 py-2 lg:w-full">
+                                                <QrCode className="mr-2 h-4 w-4" />
+                                                Digital ID Card
+                                            </TabsTrigger>
+                                        )}
+                                        <TabsTrigger value="accounts" className="shrink-0 justify-start rounded-lg px-3 py-2 lg:w-full">
+                                            <Plug className="mr-2 h-4 w-4" />
+                                            Accounts & Security
+                                        </TabsTrigger>
+                                        <TabsTrigger value="personalization" className="shrink-0 justify-start rounded-lg px-3 py-2 lg:w-full">
+                                            <Palette className="mr-2 h-4 w-4" />
+                                            Personalization
+                                        </TabsTrigger>
+                                        {experimentalAvailable.length > 0 && (
+                                            <TabsTrigger value="experimental" className="shrink-0 justify-start rounded-lg px-3 py-2 lg:w-full">
+                                                <Plug className="mr-2 h-4 w-4" />
+                                                Experimental
+                                            </TabsTrigger>
+                                        )}
+                                        <TabsTrigger value="connections" className="shrink-0 justify-start rounded-lg px-3 py-2 lg:w-full">
+                                            <Share2 className="mr-2 h-4 w-4" />
+                                            Connections
+                                        </TabsTrigger>
+                                        <TabsTrigger value="integrations" className="shrink-0 justify-start rounded-lg px-3 py-2 lg:w-full">
+                                            <Plug className="mr-2 h-4 w-4" />
+                                            Integrations
+                                        </TabsTrigger>
+                                    </TabsList>
+                                </CardContent>
+                            </Card>
                         </aside>
 
-                        <div className="flex-1 lg:max-w-4xl">
+                        <div className="min-w-0">
                             <TabsContent value="profile" className="mt-0 outline-none">
-                                <motion.div variants={containerVariants} initial="hidden" animate="visible" className="grid gap-8 lg:grid-cols-3">
-                                    <motion.div variants={itemVariants} className="space-y-6 lg:col-span-2">
-                                        <ProfileForm
-                                            userForm={{
-                                                data: userForm.data,
-                                                setData: userForm.setData,
-                                                errors: userForm.errors,
-                                                processing: userForm.processing,
-                                            }}
-                                            facultyForm={
-                                                isFaculty
-                                                    ? {
-                                                          data: facultyForm.data,
-                                                          setData: facultyForm.setData,
-                                                          errors: facultyForm.errors,
-                                                      }
-                                                    : undefined
-                                            }
-                                            onSubmit={handleUserSubmit}
-                                        />
+                                <motion.div
+                                    variants={containerVariants}
+                                    initial="hidden"
+                                    animate="visible"
+                                    className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]"
+                                >
+                                    <motion.div variants={itemVariants} className="min-w-0">
+                                        <Tabs defaultValue="basic" className="flex flex-col gap-4">
+                                            {isStudent && (
+                                                <Card className={dashboardPanelClass}>
+                                                    <CardContent className="p-2">
+                                                        <TabsList className="no-scrollbar bg-muted/20 flex h-auto w-full justify-start gap-1 overflow-x-auto rounded-lg p-1">
+                                                            <TabsTrigger value="basic" className="shrink-0 rounded-lg px-3 py-2">
+                                                                <User className="mr-2 h-4 w-4" />
+                                                                Basic
+                                                            </TabsTrigger>
+                                                            <TabsTrigger value="student" className="shrink-0 rounded-lg px-3 py-2">
+                                                                <GraduationCap className="mr-2 h-4 w-4" />
+                                                                Student
+                                                            </TabsTrigger>
+                                                            <TabsTrigger value="contacts" className="shrink-0 rounded-lg px-3 py-2">
+                                                                <Contact className="mr-2 h-4 w-4" />
+                                                                Contacts
+                                                            </TabsTrigger>
+                                                            <TabsTrigger value="education" className="shrink-0 rounded-lg px-3 py-2">
+                                                                <BookOpen className="mr-2 h-4 w-4" />
+                                                                Education
+                                                            </TabsTrigger>
+                                                        </TabsList>
+                                                    </CardContent>
+                                                </Card>
+                                            )}
 
-                                        {isStudent && (
-                                            <>
-                                                <StudentDetailsForm
-                                                    studentForm={{
-                                                        data: studentForm.data,
-                                                        setData: studentForm.setData,
-                                                        errors: studentForm.errors,
-                                                        processing: studentForm.processing,
+                                            <TabsContent value="basic" className="mt-0 outline-none">
+                                                <ProfileForm
+                                                    userForm={{
+                                                        data: userForm.data,
+                                                        setData: userForm.setData,
+                                                        errors: userForm.errors,
+                                                        processing: userForm.processing,
                                                     }}
-                                                    onSubmit={handleStudentSubmit}
+                                                    facultyForm={
+                                                        isFaculty
+                                                            ? {
+                                                                  data: facultyForm.data,
+                                                                  setData: facultyForm.setData,
+                                                                  errors: facultyForm.errors,
+                                                              }
+                                                            : undefined
+                                                    }
+                                                    onSubmit={handleUserSubmit}
                                                 />
-                                                <StudentContactsForm
-                                                    studentForm={{
-                                                        data: studentForm.data,
-                                                        setData: studentForm.setData,
-                                                        processing: studentForm.processing,
-                                                    }}
-                                                    onSubmit={handleStudentSubmit}
-                                                />
-                                                <StudentEducationForm
-                                                    studentForm={{
-                                                        data: studentForm.data,
-                                                        setData: studentForm.setData,
-                                                        processing: studentForm.processing,
-                                                    }}
-                                                    onSubmit={handleStudentSubmit}
-                                                />
-                                            </>
-                                        )}
+                                            </TabsContent>
+
+                                            {isStudent && (
+                                                <>
+                                                    <TabsContent value="student" className="mt-0 outline-none">
+                                                        <StudentDetailsForm
+                                                            studentForm={{
+                                                                data: studentForm.data,
+                                                                setData: studentForm.setData,
+                                                                errors: studentForm.errors,
+                                                                processing: studentForm.processing,
+                                                            }}
+                                                            onSubmit={handleStudentSubmit}
+                                                        />
+                                                    </TabsContent>
+                                                    <TabsContent value="contacts" className="mt-0 outline-none">
+                                                        <StudentContactsForm
+                                                            studentForm={{
+                                                                data: studentForm.data,
+                                                                setData: studentForm.setData,
+                                                                processing: studentForm.processing,
+                                                            }}
+                                                            onSubmit={handleStudentSubmit}
+                                                        />
+                                                    </TabsContent>
+                                                    <TabsContent value="education" className="mt-0 outline-none">
+                                                        <StudentEducationForm
+                                                            studentForm={{
+                                                                data: studentForm.data,
+                                                                setData: studentForm.setData,
+                                                                processing: studentForm.processing,
+                                                            }}
+                                                            onSubmit={handleStudentSubmit}
+                                                        />
+                                                    </TabsContent>
+                                                </>
+                                            )}
+                                        </Tabs>
                                     </motion.div>
 
                                     <motion.div variants={itemVariants}>

@@ -34,7 +34,8 @@ interface SiteHeaderProps {
 }
 
 export function SiteHeader({ user }: SiteHeaderProps) {
-    const { settings } = usePage<{ settings: SemesterSelectorProps }>().props;
+    const { props, url } = usePage<{ settings: SemesterSelectorProps }>();
+    const { settings } = props;
     const [shortcutHint, setShortcutHint] = useState("Ctrl K");
     const [showLogoutDialog, setShowLogoutDialog] = useState(false);
     const isMobile = useIsMobile();
@@ -53,25 +54,50 @@ export function SiteHeader({ user }: SiteHeaderProps) {
     const isStudent = ["student", "graduate_student", "shs_student"].includes(role);
 
     const profileLink = isFaculty ? "/faculty/profile" : isStudent ? "/student/profile" : "/profile";
+    const headerTitle = (() => {
+        const path = url.split("?")[0];
+
+        if (path.includes("/classes/") && isStudent) {
+            return "Class Detail";
+        }
+
+        if (path.includes("/classes")) {
+            return isStudent ? "My Academics" : "Classes";
+        }
+
+        if (path.includes("/tuition")) {
+            return "Tuition & Fees";
+        }
+
+        if (path.includes("/schedule")) {
+            return "Class Schedule";
+        }
+
+        if (path.includes("/announcements")) {
+            return "Announcements";
+        }
+
+        return "Dashboard";
+    })();
 
     return (
-        <header className="mt-4 flex h-(--header-height) shrink-0 items-center gap-2 border-b pb-3 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
-            <div className="flex w-full items-center gap-1 px-4 lg:gap-2 lg:px-6">
+        <header className="border-border/60 bg-background/80 sticky top-0 z-30 flex h-(--header-height) shrink-0 items-center gap-2 border-b backdrop-blur-xl transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
+            <div className="flex w-full items-center gap-1 px-3 py-2 lg:gap-2 lg:px-6">
                 <SidebarTrigger className="-ml-1" />
                 <Separator orientation="vertical" className="mx-2 data-[orientation=vertical]:h-4" />
-                <h1 className="text-foreground text-base font-medium">Dashboard</h1>
+                <h1 className="text-foreground min-w-0 truncate text-sm font-semibold sm:text-base">{headerTitle}</h1>
 
                 <button
                     type="button"
                     onClick={() => triggerGlobalCommandPalette()}
-                    className="bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground hidden h-9 w-full max-w-sm items-center gap-2 rounded-md border px-3 text-left text-sm md:flex"
+                    className="border-border/60 bg-card/70 text-muted-foreground hover:bg-accent hover:text-accent-foreground ml-2 hidden h-9 w-full max-w-sm items-center gap-2 rounded-lg border px-3 text-left text-sm shadow-sm transition-colors md:flex"
                 >
                     <IconSearch className="h-4 w-4" />
                     <span className="flex-1 truncate">Search classes and students…</span>
                     <span className="text-muted-foreground text-xs">{shortcutHint}</span>
                 </button>
 
-                <div className="ml-auto flex items-center gap-2">
+                <div className="ml-auto flex min-w-0 items-center gap-2">
                     {settings && (
                         <div className="hidden md:flex">
                             <SemesterSelector {...settings} />

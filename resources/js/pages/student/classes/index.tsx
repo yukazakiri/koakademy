@@ -27,7 +27,7 @@ import {
     User as UserIcon,
     XCircle,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useReactToPrint } from "react-to-print";
 
 // --- Types ---
@@ -67,35 +67,27 @@ interface StudentClassesProps {
     rooms: { id: number; name: string }[];
 }
 
+const dashboardCardClass =
+    "border-border/60 bg-card/75 rounded-lg shadow-sm transition-all duration-200 hover:border-primary/30 hover:bg-card hover:shadow-md";
+const dashboardPanelClass = "border-border/60 bg-card/75 rounded-lg shadow-sm";
+
 // --- Components ---
 
-const GwaChip = ({
-    label,
-    result,
-    size = "md",
-    className,
-}: {
-    label: string;
-    result: GwaResult;
-    size?: "sm" | "md";
-    className?: string;
-}) => {
+const GwaChip = ({ label, result, size = "md", className }: { label: string; result: GwaResult; size?: "sm" | "md"; className?: string }) => {
     const gradingConfig = useGradingConfig();
     const scaleLabel = gradeScaleLabel(result.scale);
     const valueSize = size === "sm" ? "text-sm" : "text-base";
     return (
         <div
             className={cn(
-                "bg-muted/30 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-full border px-3 py-1.5 text-xs",
+                "border-border/60 bg-background/55 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-full border px-3 py-1.5 text-xs",
                 className,
             )}
         >
             <span className="font-semibold">{label}</span>
             <span className="flex items-baseline gap-1">
                 <span className="text-muted-foreground uppercase">GWA</span>
-                <span className={cn("font-mono font-bold", valueSize, gwaToneClass(result, gradingConfig))}>
-                    {formatGwa(result, gradingConfig)}
-                </span>
+                <span className={cn("font-mono font-bold", valueSize, gwaToneClass(result, gradingConfig))}>{formatGwa(result, gradingConfig)}</span>
                 {scaleLabel && <span className="text-muted-foreground">({scaleLabel})</span>}
             </span>
             <span className="text-muted-foreground">
@@ -113,7 +105,6 @@ const yearLabel = (year: number): string => {
     if (year === 4) return "4th Year";
     return `Year ${year}`;
 };
-
 
 const StatusBadge = ({ status, grade }: { status: CurriculumSubject["status"]; grade: number | null }) => {
     switch (status) {
@@ -162,17 +153,17 @@ const InteractiveSubjectRow = ({ subject, activeClass }: { subject: CurriculumSu
     return (
         <TableRow
             className={cn(
-                "group hover:bg-muted/50 data-[state=selected]:bg-muted transition-colors",
+                "group hover:bg-muted/35 data-[state=selected]:bg-muted transition-colors",
                 subject.status === "failed"
-                    ? "bg-red-50/50 hover:bg-red-50 dark:bg-red-950/10 dark:hover:bg-red-950/20"
+                    ? "bg-red-50/40 hover:bg-red-50/70 dark:bg-red-950/10 dark:hover:bg-red-950/20"
                     : subject.status === "ongoing"
-                      ? "bg-blue-50/50 hover:bg-blue-50 dark:bg-blue-950/10 dark:hover:bg-blue-950/20"
+                      ? "bg-blue-50/40 hover:bg-blue-50/70 dark:bg-blue-950/10 dark:hover:bg-blue-950/20"
                       : subject.status === "completed"
-                        ? "bg-emerald-50/30 hover:bg-emerald-50/50 dark:bg-emerald-950/5 dark:hover:bg-emerald-950/10"
+                        ? "bg-emerald-50/25 hover:bg-emerald-50/50 dark:bg-emerald-950/5 dark:hover:bg-emerald-950/10"
                         : "",
             )}
         >
-            <TableCell className="text-muted-foreground w-[100px] font-mono text-xs font-medium">{subject.code}</TableCell>
+            <TableCell className="text-muted-foreground w-[100px] py-3 font-mono text-xs font-medium">{subject.code}</TableCell>
             <TableCell>
                 <div className="flex flex-col">
                     <span className="text-foreground group-hover:text-primary text-sm font-medium transition-colors">{subject.title}</span>
@@ -189,8 +180,8 @@ const InteractiveSubjectRow = ({ subject, activeClass }: { subject: CurriculumSu
                     )}
                 </div>
             </TableCell>
-            <TableCell className="w-[80px] text-center">{subject.units}.0</TableCell>
-            <TableCell className="w-[100px] text-center">
+            <TableCell className="w-[80px] py-3 text-center">{subject.units}.0</TableCell>
+            <TableCell className="w-[100px] py-3 text-center">
                 {subject.grade ? (
                     <span className={cn("font-bold", subject.grade <= 3.0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive")}>
                         {subject.grade}
@@ -199,10 +190,47 @@ const InteractiveSubjectRow = ({ subject, activeClass }: { subject: CurriculumSu
                     <span className="text-muted-foreground/30">—</span>
                 )}
             </TableCell>
-            <TableCell className="w-[140px] text-right">
+            <TableCell className="w-[140px] py-3 text-right">
                 <StatusBadge status={subject.status} grade={null} />
             </TableCell>
         </TableRow>
+    );
+};
+
+const AcademicStatCard = ({
+    icon: Icon,
+    label,
+    value,
+    detail,
+    tone,
+    children,
+    className,
+}: {
+    icon: typeof Trophy;
+    label: string;
+    value: string | number;
+    detail: string;
+    tone: string;
+    children?: ReactNode;
+    className?: string;
+}) => {
+    return (
+        <Card className={cn(dashboardCardClass, "group relative min-h-[132px] overflow-hidden hover:-translate-y-0.5", className)}>
+            <CardContent className="relative flex h-full flex-col justify-end p-5 pr-20 sm:min-h-[150px]">
+                <Icon
+                    className={cn(
+                        "pointer-events-none absolute top-4 right-5 h-14 w-14 opacity-15 transition-all duration-200 group-hover:scale-105 group-hover:opacity-25",
+                        tone,
+                    )}
+                />
+                <div className="relative z-10 min-w-0">
+                    <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">{label}</p>
+                    <p className="text-foreground mt-1 truncate text-2xl font-semibold tracking-tight md:text-3xl">{value}</p>
+                    <p className="text-muted-foreground mt-1 text-xs">{detail}</p>
+                    {children}
+                </div>
+            </CardContent>
+        </Card>
     );
 };
 
@@ -456,7 +484,7 @@ export default function StudentClasses({ user, student_name, course_name, progre
         };
     }, [curriculum, gradingConfig]);
 
-    const activeYearGwa = selectedYear === "all" ? null : yearGwaMap.get(selectedYear) ?? null;
+    const activeYearGwa = selectedYear === "all" ? null : (yearGwaMap.get(selectedYear) ?? null);
 
     useEffect(() => {
         const [, queryString = ""] = url.split("?");
@@ -503,94 +531,102 @@ export default function StudentClasses({ user, student_name, course_name, progre
         >
             <Head title="My Academics" />
 
-            <div className="bg-muted/5 min-h-screen pb-20">
+            <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 p-4 pb-16 md:gap-6 md:p-6">
                 {/* Hero Section */}
-                <div className="from-primary/5 to-background relative border-b bg-gradient-to-b px-4 pt-8 pb-12 md:px-6">
-                    <div className="mx-auto max-w-7xl space-y-6">
-                        <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
+                <Card className={dashboardPanelClass}>
+                    <CardContent className="space-y-5 p-4 md:p-5">
+                        <div className="flex flex-col items-start justify-between gap-5 md:flex-row md:items-end">
                             <div>
-                                <h1 className="text-3xl font-bold tracking-tight">Academic Journey</h1>
-                                <p className="text-muted-foreground mt-1 flex items-center gap-2">
+                                <p className="text-muted-foreground text-[10px] font-semibold tracking-wide uppercase">My Academics</p>
+                                <h1 className="text-foreground mt-1 text-2xl font-semibold tracking-tight md:text-3xl">Academic Journey</h1>
+                                <p className="text-muted-foreground mt-2 flex items-center gap-2 text-sm">
                                     <GraduationCap className="h-4 w-4" />
                                     {course_name}
                                 </p>
                             </div>
 
                             {/* View Switcher Controls */}
-                            <div className="bg-muted/50 flex items-center gap-2 rounded-lg border p-1">
+                            <div className="border-border/60 bg-muted/70 grid w-full grid-cols-2 gap-1 rounded-lg border p-1 sm:w-auto">
                                 <Button
                                     variant={viewMode === "interactive" ? "default" : "ghost"}
                                     size="sm"
                                     onClick={() => setViewMode("interactive")}
-                                    className="gap-2"
+                                    className="gap-2 rounded-md"
                                 >
                                     <LayoutGridIcon className="h-4 w-4" />
-                                    <span className="hidden sm:inline">Interactive</span>
+                                    <span>Interactive</span>
                                 </Button>
                                 <Button
                                     variant={viewMode === "document" ? "default" : "ghost"}
                                     size="sm"
                                     onClick={() => setViewMode("document")}
-                                    className="gap-2"
+                                    className="gap-2 rounded-md"
                                 >
                                     <FileText className="h-4 w-4" />
-                                    <span className="hidden sm:inline">Document</span>
+                                    <span>Document</span>
                                 </Button>
                             </div>
                         </div>
 
                         {/* Progress Stats (Only show in Interactive Mode) */}
                         {viewMode === "interactive" && (
-                            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-6 grid gap-4 md:grid-cols-3">
-                                <Card className="from-primary to-primary/80 text-primary-foreground relative overflow-hidden border-none bg-gradient-to-br shadow-lg md:col-span-2">
-                                    <div className="absolute top-0 right-0 p-12 opacity-10">
-                                        <Trophy className="h-40 w-40" />
+                            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="grid gap-3 md:grid-cols-2">
+                                <Card className={cn(dashboardCardClass, "group relative min-h-[132px] overflow-hidden hover:-translate-y-0.5")}>
+                                    <div className="absolute top-4 right-5 opacity-15 transition-all duration-200 group-hover:scale-105 group-hover:opacity-25">
+                                        <Trophy className="h-14 w-14 text-amber-500" />
                                     </div>
-                                    <CardContent className="relative z-10 flex h-full min-h-[160px] flex-col justify-between p-6">
+                                    <CardContent className="relative z-10 flex h-full min-h-[150px] flex-col justify-end p-5 pr-20">
                                         <div>
-                                            <h3 className="text-lg font-medium opacity-90">Course Completion</h3>
+                                            <h3 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">Course Completion</h3>
                                             <div className="mt-2 flex items-baseline gap-2">
-                                                <span className="text-5xl font-bold">{progress.percentage}%</span>
-                                                <span className="opacity-75">Complete</span>
+                                                <span className="text-foreground text-2xl font-semibold tracking-tight md:text-3xl">
+                                                    {progress.percentage}%
+                                                </span>
+                                                <span className="text-muted-foreground text-xs">Complete</span>
                                             </div>
                                         </div>
-                                        <div className="mt-6 space-y-2">
-                                            <div className="flex justify-between text-sm opacity-80">
+                                        <div className="mt-4 space-y-2">
+                                            <div className="text-muted-foreground flex justify-between text-xs">
                                                 <span>{progress.earned} Units Earned</span>
                                                 <span>{progress.total} Total Units</span>
                                             </div>
-                                            <Progress value={progress.percentage} className="bg-primary-foreground/20 h-2" />
+                                            <Progress value={progress.percentage} className="h-2" />
                                         </div>
                                     </CardContent>
                                 </Card>
 
-                                <Card className="bg-card flex flex-col justify-center border-none shadow-md">
-                                    <CardContent className="space-y-3 p-6 text-center">
-                                        <div className="bg-primary/10 text-primary mx-auto flex h-12 w-12 items-center justify-center rounded-full">
-                                            <Sparkles className="h-6 w-6" />
+                                <Card className={cn(dashboardCardClass, "group relative min-h-[132px] overflow-hidden hover:-translate-y-0.5")}>
+                                    <CardContent className="relative flex h-full min-h-[150px] flex-col justify-end p-5 pr-20">
+                                        <div className="absolute top-4 right-5 opacity-15 transition-all duration-200 group-hover:scale-105 group-hover:opacity-25">
+                                            <Sparkles className={cn("h-14 w-14", gwaToneClass(overallGwa, gradingConfig))} />
                                         </div>
-                                        <div>
-                                            <div className={cn("text-3xl font-bold font-mono", gwaToneClass(overallGwa, gradingConfig))}>
+                                        <div className="relative z-10">
+                                            <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">Overall GWA</p>
+                                            <div
+                                                className={cn(
+                                                    "mt-1 font-mono text-2xl font-semibold tracking-tight md:text-3xl",
+                                                    gwaToneClass(overallGwa, gradingConfig),
+                                                )}
+                                            >
                                                 {formatGwa(overallGwa, gradingConfig)}
                                             </div>
-                                            <p className="text-muted-foreground text-sm">
-                                                Overall GWA
+                                            <p className="text-muted-foreground mt-1 text-xs">
                                                 {gradeScaleLabel(overallGwa.scale) && ` • ${gradeScaleLabel(overallGwa.scale)}`}
                                             </p>
                                             <p className="text-muted-foreground/70 mt-1 text-xs">
-                                                {overallGwa.gradedCount}/{overallGwa.itemCount} subjects •{" "}
-                                                {overallGwa.gradedUnits}/{overallGwa.totalUnits} units
+                                                {overallGwa.gradedCount}/{overallGwa.itemCount} subjects • {overallGwa.gradedUnits}/
+                                                {overallGwa.totalUnits} units
                                             </p>
                                         </div>
                                     </CardContent>
                                 </Card>
                             </motion.div>
                         )}
-                    </div>
-                </div>
+                    </CardContent>
+                </Card>
 
                 {/* Main Content Area */}
-                <div className="relative z-20 mx-auto -mt-6 max-w-7xl px-4 md:px-6">
+                <div>
                     <AnimatePresence mode="wait">
                         {viewMode === "interactive" ? (
                             <motion.div
@@ -600,9 +636,9 @@ export default function StudentClasses({ user, student_name, course_name, progre
                                 exit={{ opacity: 0, y: -20 }}
                                 transition={{ duration: 0.3 }}
                             >
-                                <Card className="border shadow-sm">
-                                    <CardHeader className="px-6 pt-6 pb-0">
-                                        <div className="mb-6 flex flex-col items-center justify-between gap-4 md:flex-row">
+                                <Card className={dashboardPanelClass}>
+                                    <CardHeader className="px-4 pt-4 pb-0 md:px-5 md:pt-5">
+                                        <div className="mb-5 flex flex-col items-stretch justify-between gap-4 md:flex-row md:items-center">
                                             {/* Pill Navigation (Mobile: Select, Desktop: Pills) */}
                                             <div className="w-full md:w-auto">
                                                 {/* Mobile Select */}
@@ -611,7 +647,7 @@ export default function StudentClasses({ user, student_name, course_name, progre
                                                         value={String(selectedYear)}
                                                         onValueChange={(val) => setSelectedYear(val === "all" ? "all" : parseInt(val))}
                                                     >
-                                                        <SelectTrigger className="bg-background border-input w-full shadow-sm">
+                                                        <SelectTrigger className="border-border/60 bg-background/70 w-full rounded-lg shadow-sm">
                                                             <SelectValue placeholder="Select Year Level" />
                                                         </SelectTrigger>
                                                         <SelectContent>
@@ -634,18 +670,18 @@ export default function StudentClasses({ user, student_name, course_name, progre
                                                 </div>
 
                                                 {/* Desktop Pills */}
-                                                <div className="hidden items-center gap-2 md:flex">
+                                                <div className="border-border/60 bg-muted/70 hidden items-center gap-1 rounded-lg border p-1 md:flex">
                                                     <button
                                                         onClick={() => setSelectedYear("all")}
                                                         className={cn(
-                                                            "hover:bg-muted relative rounded-full px-4 py-2 text-sm font-medium transition-colors",
+                                                            "hover:bg-muted relative rounded-md px-4 py-2 text-sm font-medium transition-colors",
                                                             selectedYear === "all" ? "text-primary-foreground" : "text-muted-foreground",
                                                         )}
                                                     >
                                                         {selectedYear === "all" && (
                                                             <motion.div
                                                                 layoutId="activePill"
-                                                                className="bg-primary absolute inset-0 rounded-full shadow-sm"
+                                                                className="bg-primary absolute inset-0 rounded-md shadow-sm"
                                                                 transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                                                             />
                                                         )}
@@ -657,14 +693,14 @@ export default function StudentClasses({ user, student_name, course_name, progre
                                                             key={year}
                                                             onClick={() => setSelectedYear(year)}
                                                             className={cn(
-                                                                "hover:bg-muted relative rounded-full px-4 py-2 text-sm font-medium transition-colors",
+                                                                "hover:bg-muted relative rounded-md px-4 py-2 text-sm font-medium transition-colors",
                                                                 selectedYear === year ? "text-primary-foreground" : "text-muted-foreground",
                                                             )}
                                                         >
                                                             {selectedYear === year && (
                                                                 <motion.div
                                                                     layoutId="activePill"
-                                                                    className="bg-primary absolute inset-0 rounded-full shadow-sm"
+                                                                    className="bg-primary absolute inset-0 rounded-md shadow-sm"
                                                                     transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                                                                 />
                                                             )}
@@ -691,84 +727,80 @@ export default function StudentClasses({ user, student_name, course_name, progre
                                                     placeholder="Find subject..."
                                                     value={searchQuery}
                                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                                    className="bg-muted/30 border-none pl-9 focus-visible:ring-1"
+                                                    className="border-border/60 bg-background/65 rounded-lg pl-9 focus-visible:ring-1"
                                                 />
                                             </div>
                                         </div>
                                     </CardHeader>
 
-                                    <CardContent className="bg-muted/5 min-h-[500px] p-6">
-                                        <motion.div layout className="space-y-8">
+                                    <CardContent className="min-h-[460px] p-4 pt-1 md:p-5 md:pt-1">
+                                        <motion.div layout className="space-y-6">
                                             {activeYearGwa && (
                                                 <div className="flex justify-end">
-                                                    <GwaChip
-                                                        label={`${yearLabel(selectedYear as number)} GWA`}
-                                                        result={activeYearGwa}
-                                                    />
+                                                    <GwaChip label={`${yearLabel(selectedYear as number)} GWA`} result={activeYearGwa} />
                                                 </div>
                                             )}
                                             {filteredContent.length > 0 ? (
                                                 filteredContent.map((section, idx) => {
                                                     const semesterResult = semesterGwaMap.get(`${section.year}-${section.semester}`);
                                                     return (
-                                                    <motion.div
-                                                        key={`${section.year}-${section.semester}`}
-                                                        initial={{ opacity: 0, y: 20 }}
-                                                        animate={{ opacity: 1, y: 0 }}
-                                                        transition={{ delay: idx * 0.05 }}
-                                                        className="space-y-3"
-                                                    >
-                                                        <div className="flex flex-wrap items-center gap-3 px-2">
-                                                            <Badge
-                                                                variant="outline"
-                                                                className="bg-muted/50 text-sm font-bold tracking-wider uppercase"
-                                                            >
-                                                                Year {section.year} •{" "}
-                                                                {section.semester === 1
-                                                                    ? "1st Semester"
-                                                                    : section.semester === 2
-                                                                      ? "2nd Semester"
-                                                                      : "Summer"}
-                                                            </Badge>
-                                                            <div className="bg-border/50 h-px flex-1" />
-                                                            {semesterResult && (
-                                                                <GwaChip label="Sem GWA" result={semesterResult} size="sm" />
-                                                            )}
-                                                        </div>
+                                                        <motion.div
+                                                            key={`${section.year}-${section.semester}`}
+                                                            initial={{ opacity: 0, y: 20 }}
+                                                            animate={{ opacity: 1, y: 0 }}
+                                                            transition={{ delay: idx * 0.05 }}
+                                                            className="space-y-3"
+                                                        >
+                                                            <div className="flex flex-wrap items-center gap-3">
+                                                                <Badge
+                                                                    variant="outline"
+                                                                    className="border-border/60 bg-background/60 rounded-full text-xs font-semibold tracking-wide uppercase"
+                                                                >
+                                                                    Year {section.year} •{" "}
+                                                                    {section.semester === 1
+                                                                        ? "1st Semester"
+                                                                        : section.semester === 2
+                                                                          ? "2nd Semester"
+                                                                          : "Summer"}
+                                                                </Badge>
+                                                                <div className="bg-border/50 h-px flex-1" />
+                                                                {semesterResult && <GwaChip label="Sem GWA" result={semesterResult} size="sm" />}
+                                                            </div>
 
-                                                        <div className="overflow-x-auto rounded-md border">
-                                                            <Table>
-                                                                <TableHeader className="bg-muted/50">
-                                                                    <TableRow>
-                                                                        <TableHead className="w-[100px]">Code</TableHead>
-                                                                        <TableHead>Description</TableHead>
-                                                                        <TableHead className="w-[80px] text-center">Units</TableHead>
-                                                                        <TableHead className="w-[100px] text-center">Grade</TableHead>
-                                                                        <TableHead className="w-[140px] text-right">Status</TableHead>
-                                                                    </TableRow>
-                                                                </TableHeader>
-                                                                <TableBody>
-                                                                    {section.subjects.map((subject) => {
-                                                                        const activeClass = faculty_data.classes.find(
-                                                                            (c) => c.subject_code === subject.code && subject.status === "ongoing",
-                                                                        );
+                                                            <div className="border-border/60 overflow-x-auto rounded-lg border">
+                                                                <Table>
+                                                                    <TableHeader className="bg-muted/55">
+                                                                        <TableRow>
+                                                                            <TableHead className="w-[100px]">Code</TableHead>
+                                                                            <TableHead>Description</TableHead>
+                                                                            <TableHead className="w-[80px] text-center">Units</TableHead>
+                                                                            <TableHead className="w-[100px] text-center">Grade</TableHead>
+                                                                            <TableHead className="w-[140px] text-right">Status</TableHead>
+                                                                        </TableRow>
+                                                                    </TableHeader>
+                                                                    <TableBody>
+                                                                        {section.subjects.map((subject) => {
+                                                                            const activeClass = faculty_data.classes.find(
+                                                                                (c) =>
+                                                                                    c.subject_code === subject.code && subject.status === "ongoing",
+                                                                            );
 
-                                                                        return (
-                                                                            <InteractiveSubjectRow
-                                                                                key={subject.id}
-                                                                                subject={subject}
-                                                                                activeClass={activeClass}
-                                                                            />
-                                                                        );
-                                                                    })}
-                                                                </TableBody>
-                                                            </Table>
-                                                        </div>
-                                                    </motion.div>
+                                                                            return (
+                                                                                <InteractiveSubjectRow
+                                                                                    key={subject.id}
+                                                                                    subject={subject}
+                                                                                    activeClass={activeClass}
+                                                                                />
+                                                                            );
+                                                                        })}
+                                                                    </TableBody>
+                                                                </Table>
+                                                            </div>
+                                                        </motion.div>
                                                     );
                                                 })
                                             ) : (
-                                                <div className="text-muted-foreground flex flex-col items-center justify-center py-20">
+                                                <div className="text-muted-foreground flex min-h-[360px] flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center">
                                                     <Search className="mb-4 h-12 w-12 opacity-20" />
                                                     <p>No subjects found matching your search.</p>
                                                 </div>
@@ -785,8 +817,8 @@ export default function StudentClasses({ user, student_name, course_name, progre
                                 exit={{ opacity: 0, scale: 0.95 }}
                                 transition={{ duration: 0.3 }}
                             >
-                                <Card className="overflow-hidden border shadow-lg">
-                                    <div className="bg-muted/30 flex items-center justify-between border-b p-4 print:hidden">
+                                <Card className={`${dashboardPanelClass} overflow-hidden`}>
+                                    <div className="bg-muted/35 flex flex-col justify-between gap-3 border-b p-4 sm:flex-row sm:items-center print:hidden">
                                         <div className="text-muted-foreground text-sm">
                                             <span className="text-foreground font-semibold">Print Preview</span> • Scaled to fit A4/Letter size
                                         </div>
@@ -795,7 +827,7 @@ export default function StudentClasses({ user, student_name, course_name, progre
                                             Print / Save as PDF
                                         </Button>
                                     </div>
-                                    <div className="flex justify-center overflow-auto bg-gray-50/50 p-8">
+                                    <div className="bg-background/40 flex justify-center overflow-auto p-4 md:p-8">
                                         <div
                                             className="h-[210mm] w-[297mm] max-w-none bg-white shadow-xl print:h-auto print:w-auto print:shadow-none"
                                             ref={componentRef}

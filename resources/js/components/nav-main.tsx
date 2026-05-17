@@ -175,11 +175,14 @@ export function NavMain({ items, showQuickActions = true }: { items: NavItem[]; 
                                                         isActive={isOpen || hasActiveChild || isActive}
                                                         tooltip={item.title}
                                                         className={cn(
-                                                            "relative z-10 flex-1 transition-all duration-200",
-                                                            hasActiveChild && !isOpen && "bg-sidebar-accent/30",
+                                                            "hover:bg-sidebar-accent/70 relative z-10 flex-1 rounded-lg transition-all duration-200",
+                                                            (isOpen || hasActiveChild || isActive) && "bg-sidebar-accent/70 shadow-sm",
                                                         )}
                                                     >
                                                         <Link href={item.url}>
+                                                            {(isOpen || hasActiveChild || isActive) && (
+                                                                <span className="bg-primary absolute top-2 bottom-2 left-0 w-1 rounded-r-full" />
+                                                            )}
                                                             {item.icon && (
                                                                 <div
                                                                     className={cn(
@@ -233,7 +236,7 @@ export function NavMain({ items, showQuickActions = true }: { items: NavItem[]; 
                                                                     transition={{ duration: 0.2, ease: "easeInOut" }}
                                                                     className="overflow-hidden"
                                                                 >
-                                                                    <SidebarMenuSub className="border-primary/20 relative my-1 ml-2 border-l-2 pl-3">
+                                                                    <SidebarMenuSub className="border-primary/20 relative my-1 ml-2 border-l pl-3">
                                                                         {item.items?.map((subItem, subIndex) => {
                                                                             const isSubDisabled = subItem.disabled;
                                                                             const isSubActive = isRouteActive(subItem.url);
@@ -284,8 +287,9 @@ export function NavMain({ items, showQuickActions = true }: { items: NavItem[]; 
                                                                                                     <SidebarMenuSubButton
                                                                                                         asChild
                                                                                                         className={cn(
-                                                                                                            "relative z-10 rounded-md transition-all duration-150",
-                                                                                                            isSubActive && "font-medium",
+                                                                                                            "hover:bg-sidebar-accent/60 relative z-10 rounded-lg transition-all duration-150",
+                                                                                                            isSubActive &&
+                                                                                                                "bg-sidebar-accent/70 font-medium",
                                                                                                         )}
                                                                                                         isActive={isSubActive}
                                                                                                         style={gradientStyle}
@@ -310,8 +314,8 @@ export function NavMain({ items, showQuickActions = true }: { items: NavItem[]; 
                                                                                         <SidebarMenuSubButton
                                                                                             asChild
                                                                                             className={cn(
-                                                                                                "relative z-10 rounded-md transition-all duration-150",
-                                                                                                isSubActive && "font-medium",
+                                                                                                "hover:bg-sidebar-accent/60 relative z-10 rounded-lg transition-all duration-150",
+                                                                                                isSubActive && "bg-sidebar-accent/70 font-medium",
                                                                                             )}
                                                                                             isActive={isSubActive}
                                                                                             style={gradientStyle}
@@ -358,6 +362,9 @@ export function NavMain({ items, showQuickActions = true }: { items: NavItem[]; 
                                                     className={cn("relative z-10 transition-all duration-200", isActive && "bg-sidebar-accent")}
                                                 >
                                                     <Link href={item.url}>
+                                                        {isActive && (
+                                                            <span className="bg-primary absolute top-2 bottom-2 left-0 w-1 rounded-r-full" />
+                                                        )}
                                                         {item.icon && (
                                                             <div
                                                                 className={cn(
@@ -382,7 +389,7 @@ export function NavMain({ items, showQuickActions = true }: { items: NavItem[]; 
                                                 {isActive && (
                                                     <motion.div
                                                         layoutId="active-sidebar-item"
-                                                        className="bg-sidebar-accent border-sidebar-border/50 absolute inset-0 z-0 rounded-lg border"
+                                                        className="bg-sidebar-accent/80 border-sidebar-border/50 absolute inset-0 z-0 rounded-lg border shadow-sm"
                                                         transition={{
                                                             type: "spring",
                                                             stiffness: 300,

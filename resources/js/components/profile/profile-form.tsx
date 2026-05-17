@@ -34,8 +34,8 @@ interface ProfileFormProps {
 
 export function ProfileForm({ userForm, facultyForm, onSubmit }: ProfileFormProps) {
     return (
-        <Card id="profile-form">
-            <CardHeader>
+        <Card id="profile-form" className="border-border/60 bg-card/75 rounded-lg shadow-sm">
+            <CardHeader className="pb-4">
                 <CardTitle className="flex items-center gap-2">
                     <Edit3 className="h-5 w-5" />
                     Profile Information
@@ -43,8 +43,8 @@ export function ProfileForm({ userForm, facultyForm, onSubmit }: ProfileFormProp
                 <CardDescription>Update your basic account details</CardDescription>
             </CardHeader>
             <CardContent>
-                <form id="profile-form" onSubmit={onSubmit} className="space-y-6">
-                    <div className="grid gap-6 md:grid-cols-2">
+                <form id="profile-form" onSubmit={onSubmit} className="space-y-5">
+                    <div className="grid gap-4 md:grid-cols-2">
                         <div className="space-y-2">
                             <Label htmlFor="name">Full Name *</Label>
                             <Input id="name" value={userForm.data.name} onChange={(e) => userForm.setData("name", e.target.value)} required />
@@ -154,7 +154,7 @@ export function ProfileForm({ userForm, facultyForm, onSubmit }: ProfileFormProp
                     </div>
 
                     <div className="flex justify-end">
-                        <Button type="submit" disabled={userForm.processing}>
+                        <Button type="submit" disabled={userForm.processing} className="rounded-lg">
                             <Save className="mr-2 h-4 w-4" />
                             {userForm.processing ? "Saving..." : "Save Changes"}
                         </Button>

@@ -126,7 +126,6 @@ export function AdminHeader({ title, user }: AdminHeaderProps) {
 
                 <div className="flex flex-col">
                     <h1 className="text-foreground text-base font-medium">{title}</h1>
-                    <p className="text-muted-foreground hidden text-xs sm:block">Beginner-friendly admin workspace</p>
                 </div>
 
                 <button

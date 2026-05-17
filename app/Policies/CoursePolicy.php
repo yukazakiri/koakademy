@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use App\Models\Course;
 use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
 
@@ -17,7 +16,7 @@ final class CoursePolicy
         return $authUser->can('ViewAny:Course');
     }
 
-    public function view(AuthUser $authUser, Course $course): bool
+    public function view(AuthUser $authUser): bool
     {
         return $authUser->can('View:Course');
     }
@@ -27,22 +26,22 @@ final class CoursePolicy
         return $authUser->can('Create:Course');
     }
 
-    public function update(AuthUser $authUser, Course $course): bool
+    public function update(AuthUser $authUser): bool
     {
         return $authUser->can('Update:Course');
     }
 
-    public function delete(AuthUser $authUser, Course $course): bool
+    public function delete(AuthUser $authUser): bool
     {
         return $authUser->can('Delete:Course');
     }
 
-    public function restore(AuthUser $authUser, Course $course): bool
+    public function restore(AuthUser $authUser): bool
     {
         return $authUser->can('Restore:Course');
     }
 
-    public function forceDelete(AuthUser $authUser, Course $course): bool
+    public function forceDelete(AuthUser $authUser): bool
     {
         return $authUser->can('ForceDelete:Course');
     }
@@ -57,7 +56,7 @@ final class CoursePolicy
         return $authUser->can('RestoreAny:Course');
     }
 
-    public function replicate(AuthUser $authUser, Course $course): bool
+    public function replicate(AuthUser $authUser): bool
     {
         return $authUser->can('Replicate:Course');
     }

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Enums\UserRole;
-use App\Features\Onboarding\FeatureClassRegistry;
 use App\Models\User;
 use Laravel\Pennant\Feature;
 
@@ -73,7 +72,7 @@ final class UserFeatureFlagService
     {
         return collect($this->featureKeysForRole($role))
             ->filter(function (string $featureKey) use ($user): bool {
-                $featureClass = FeatureClassRegistry::classForKey($featureKey);
+                $featureClass = FeatureToggleRegistry::classForKey($featureKey);
 
                 return Feature::for($user)->active($featureClass ?? $featureKey);
             })
@@ -103,7 +102,7 @@ final class UserFeatureFlagService
 
         if ($staleFeatureKeys !== []) {
             $staleClasses = collect($staleFeatureKeys)
-                ->map(fn (string $key): string => FeatureClassRegistry::classForKey($key) ?? $key)
+                ->map(fn (string $key): string => FeatureToggleRegistry::classForKey($key) ?? $key)
                 ->all();
             $scopedFeatures->forget($staleClasses);
         }
@@ -111,14 +110,14 @@ final class UserFeatureFlagService
         if ($resetToRoleDefaults) {
             if ($applicableFeatureKeys !== []) {
                 $applicableClasses = collect($applicableFeatureKeys)
-                    ->map(fn (string $key): string => FeatureClassRegistry::classForKey($key) ?? $key)
+                    ->map(fn (string $key): string => FeatureToggleRegistry::classForKey($key) ?? $key)
                     ->all();
                 $scopedFeatures->forget($applicableClasses);
             }
 
             if ($selected !== []) {
                 $selectedClasses = collect($selected)
-                    ->map(fn (string $key): string => FeatureClassRegistry::classForKey($key) ?? $key)
+                    ->map(fn (string $key): string => FeatureToggleRegistry::classForKey($key) ?? $key)
                     ->all();
                 $scopedFeatures->activate($selectedClasses);
             }
@@ -127,7 +126,7 @@ final class UserFeatureFlagService
         }
 
         foreach ($applicableFeatureKeys as $featureKey) {
-            $featureRef = FeatureClassRegistry::classForKey($featureKey) ?? $featureKey;
+            $featureRef = FeatureToggleRegistry::classForKey($featureKey) ?? $featureKey;
 
             if (in_array($featureKey, $selected, true)) {
                 $scopedFeatures->activate($featureRef);

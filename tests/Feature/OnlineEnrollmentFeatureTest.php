@@ -2,88 +2,60 @@
 
 declare(strict_types=1);
 
-use App\Features\Onboarding\FeatureClassRegistry;
-use App\Features\OnlineCollegeEnrollment;
-use App\Features\OnlineTesdaEnrollment;
-use App\Models\OnboardingFeature;
+use App\Features\Toggles\OnlineCollegeEnrollment;
+use App\Features\Toggles\OnlineTesdaEnrollment;
 use App\Models\User;
-use Filament\Facades\Filament;
+use App\Services\FeatureToggleRegistry;
 use Laravel\Pennant\Feature;
 
 beforeEach(function (): void {
-    $user = User::factory()->create();
-    $this->actingAs($user);
-    Filament::setCurrentPanel('admin');
+    Feature::purge(OnlineCollegeEnrollment::class);
+    Feature::purge(OnlineTesdaEnrollment::class);
+});
+
+afterEach(function (): void {
+    Feature::purge(OnlineCollegeEnrollment::class);
+    Feature::purge(OnlineTesdaEnrollment::class);
 });
 
 it('resolves college enrollment feature class from registry', function (): void {
-    $class = FeatureClassRegistry::classForKey('online-college-enrollment');
+    $class = FeatureToggleRegistry::classForKey('online-college-enrollment');
 
     expect($class)->toBe(OnlineCollegeEnrollment::class);
 });
 
 it('resolves TESDA enrollment feature class from registry', function (): void {
-    $class = FeatureClassRegistry::classForKey('online-tesda-enrollment');
+    $class = FeatureToggleRegistry::classForKey('online-tesda-enrollment');
 
     expect($class)->toBe(OnlineTesdaEnrollment::class);
 });
 
-it('college enrollment feature resolves true when active', function (): void {
-    OnboardingFeature::firstOrCreate(
-        ['feature_key' => 'online-college-enrollment'],
-        ['name' => 'Online College Enrollment', 'audience' => 'all', 'steps' => [], 'is_active' => true],
-    )->update(['is_active' => true]);
-
-    $feature = new OnlineCollegeEnrollment;
+it('college enrollment feature resolves true by default for all users', function (): void {
     $user = User::factory()->create();
 
-    expect($feature->resolve($user))->toBeTrue();
+    expect(Feature::for($user)->active(OnlineCollegeEnrollment::class))->toBeTrue();
 });
 
-it('college enrollment feature returns false when inactive', function (): void {
-    OnboardingFeature::firstOrCreate(
-        ['feature_key' => 'online-college-enrollment'],
-        ['name' => 'Online College Enrollment', 'audience' => 'all', 'steps' => [], 'is_active' => false],
-    )->update(['is_active' => false]);
-
-    $feature = new OnlineCollegeEnrollment;
+it('college enrollment feature can be deactivated for a specific user', function (): void {
     $user = User::factory()->create();
 
-    expect($feature->resolve($user))->toBeFalse();
+    Feature::for($user)->deactivate(OnlineCollegeEnrollment::class);
+
+    expect(Feature::for($user)->active(OnlineCollegeEnrollment::class))->toBeFalse();
 });
 
-it('college enrollment feature returns false when no record exists', function (): void {
-    // Delete if exists from migration
-    OnboardingFeature::where('feature_key', 'online-college-enrollment')->delete();
-
-    $feature = new OnlineCollegeEnrollment;
+it('college enrollment feature can be activated for a specific user', function (): void {
     $user = User::factory()->create();
 
-    expect($feature->resolve($user))->toBeFalse();
+    Feature::for($user)->activate(OnlineCollegeEnrollment::class);
+
+    expect(Feature::for($user)->active(OnlineCollegeEnrollment::class))->toBeTrue();
 });
 
-it('TESDA enrollment feature resolves true when active', function (): void {
-    OnboardingFeature::firstOrCreate(
-        ['feature_key' => 'online-tesda-enrollment'],
-        ['name' => 'Online TESDA Enrollment', 'audience' => 'all', 'steps' => [], 'is_active' => true],
-    )->update(['is_active' => true]);
-
-    $feature = new OnlineTesdaEnrollment;
+it('TESDA enrollment feature resolves true by default for all users', function (): void {
     $user = User::factory()->create();
 
-    expect($feature->resolve($user))->toBeTrue();
-});
-
-it('TESDA enrollment feature returns false when inactive', function (): void {
-    OnboardingFeature::firstOrCreate(
-        ['feature_key' => 'online-tesda-enrollment'],
-        ['name' => 'Online TESDA Enrollment', 'audience' => 'all', 'steps' => [], 'is_active' => false],
-    )->update(['is_active' => false]);
-
-    $feature = new OnlineTesdaEnrollment;
-    $user = User::factory()->create();
-
-    expect($feature->resolve($user))->toBeFalse();
+    expect(Feature::for($user)->active(OnlineTesdaEnrollment::class))->toBeTrue();
 });
 
 it('feature keys are accessible via key method', function (): void {
@@ -94,30 +66,31 @@ it('feature keys are accessible via key method', function (): void {
     expect($tesda->key())->toBe('online-tesda-enrollment');
 });
 
-it('can activate college enrollment via Pennant', function (): void {
+it('can activate college enrollment globally via Pennant', function (): void {
     Feature::activateForEveryone(OnlineCollegeEnrollment::class);
 
-    // Cleanup
-    Feature::forget(OnlineCollegeEnrollment::class);
+    $user = User::factory()->create();
+    expect(Feature::for($user)->active(OnlineCollegeEnrollment::class))->toBeTrue();
 });
 
-it('can deactivate college enrollment via Pennant', function (): void {
-    Feature::deactivateForEveryone(OnlineCollegeEnrollment::class);
+it('can deactivate college enrollment for a specific user', function (): void {
+    $user = User::factory()->create();
 
-    // Cleanup
-    Feature::forget(OnlineCollegeEnrollment::class);
+    Feature::for($user)->deactivate(OnlineCollegeEnrollment::class);
+
+    expect(Feature::for($user)->active(OnlineCollegeEnrollment::class))->toBeFalse();
+
+    // Other users should still be active
+    $otherUser = User::factory()->create();
+    expect(Feature::for($otherUser)->active(OnlineCollegeEnrollment::class))->toBeTrue();
 });
 
-it('enrollment features can be toggled from Filament resource', function (): void {
-    $feature = OnboardingFeature::firstOrCreate(
-        ['feature_key' => 'online-college-enrollment'],
-        ['name' => 'Online College Enrollment', 'audience' => 'all', 'steps' => [], 'is_active' => true],
-    );
-    $feature->update(['is_active' => true]);
+it('per-user activation overrides global state', function (): void {
+    $user = User::factory()->create();
 
-    expect($feature->fresh()->is_active)->toBeTrue();
+    Feature::for($user)->activate(OnlineCollegeEnrollment::class);
+    expect(Feature::for($user)->active(OnlineCollegeEnrollment::class))->toBeTrue();
 
-    $feature->update(['is_active' => false]);
-
-    expect($feature->fresh()->is_active)->toBeFalse();
+    Feature::for($user)->deactivate(OnlineCollegeEnrollment::class);
+    expect(Feature::for($user)->active(OnlineCollegeEnrollment::class))->toBeFalse();
 });

@@ -6,7 +6,6 @@ namespace App\Policies;
 
 use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
-use Spatie\Activitylog\Models\Activity;
 
 final class ActivityPolicy
 {
@@ -17,7 +16,7 @@ final class ActivityPolicy
         return $authUser->can('ViewAny:Activity');
     }
 
-    public function view(AuthUser $authUser, Activity $activity): bool
+    public function view(AuthUser $authUser): bool
     {
         return $authUser->can('View:Activity');
     }
@@ -27,22 +26,22 @@ final class ActivityPolicy
         return $authUser->can('Create:Activity');
     }
 
-    public function update(AuthUser $authUser, Activity $activity): bool
+    public function update(AuthUser $authUser): bool
     {
         return $authUser->can('Update:Activity');
     }
 
-    public function delete(AuthUser $authUser, Activity $activity): bool
+    public function delete(AuthUser $authUser): bool
     {
         return $authUser->can('Delete:Activity');
     }
 
-    public function restore(AuthUser $authUser, Activity $activity): bool
+    public function restore(AuthUser $authUser): bool
     {
         return $authUser->can('Restore:Activity');
     }
 
-    public function forceDelete(AuthUser $authUser, Activity $activity): bool
+    public function forceDelete(AuthUser $authUser): bool
     {
         return $authUser->can('ForceDelete:Activity');
     }
@@ -57,7 +56,7 @@ final class ActivityPolicy
         return $authUser->can('RestoreAny:Activity');
     }
 
-    public function replicate(AuthUser $authUser, Activity $activity): bool
+    public function replicate(AuthUser $authUser): bool
     {
         return $authUser->can('Replicate:Activity');
     }

@@ -21,7 +21,7 @@ final class StudentDashboard implements FeatureToggle
         return 'Student Dashboard';
     }
 
-    public function summary(): ?string
+    public function summary(): string
     {
         return 'Your quick view of classes and account status.';
     }
@@ -31,22 +31,22 @@ final class StudentDashboard implements FeatureToggle
         return 'student';
     }
 
-    public function badge(): ?string
+    public function badge(): string
     {
         return 'Dashboard';
     }
 
-    public function accent(): ?string
+    public function accent(): string
     {
         return 'text-primary';
     }
 
-    public function ctaLabel(): ?string
+    public function ctaLabel(): string
     {
         return 'Open Dashboard';
     }
 
-    public function ctaUrl(): ?string
+    public function ctaUrl(): string
     {
         return '/student/dashboard';
     }

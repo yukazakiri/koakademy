@@ -21,7 +21,7 @@ final class FacultyToolkit implements FeatureToggle
         return 'Faculty Toolkit';
     }
 
-    public function summary(): ?string
+    public function summary(): string
     {
         return 'Upcoming faculty tools are grouped here as they roll out.';
     }
@@ -31,12 +31,12 @@ final class FacultyToolkit implements FeatureToggle
         return 'faculty';
     }
 
-    public function badge(): ?string
+    public function badge(): string
     {
         return 'Toolkit';
     }
 
-    public function accent(): ?string
+    public function accent(): string
     {
         return 'text-amber-500';
     }

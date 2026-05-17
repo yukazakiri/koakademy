@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use App\Models\Room;
 use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
 
@@ -17,7 +16,7 @@ final class RoomPolicy
         return $authUser->can('ViewAny:Room');
     }
 
-    public function view(AuthUser $authUser, Room $room): bool
+    public function view(AuthUser $authUser): bool
     {
         return $authUser->can('View:Room');
     }
@@ -27,22 +26,22 @@ final class RoomPolicy
         return $authUser->can('Create:Room');
     }
 
-    public function update(AuthUser $authUser, Room $room): bool
+    public function update(AuthUser $authUser): bool
     {
         return $authUser->can('Update:Room');
     }
 
-    public function delete(AuthUser $authUser, Room $room): bool
+    public function delete(AuthUser $authUser): bool
     {
         return $authUser->can('Delete:Room');
     }
 
-    public function restore(AuthUser $authUser, Room $room): bool
+    public function restore(AuthUser $authUser): bool
     {
         return $authUser->can('Restore:Room');
     }
 
-    public function forceDelete(AuthUser $authUser, Room $room): bool
+    public function forceDelete(AuthUser $authUser): bool
     {
         return $authUser->can('ForceDelete:Room');
     }
@@ -57,7 +56,7 @@ final class RoomPolicy
         return $authUser->can('RestoreAny:Room');
     }
 
-    public function replicate(AuthUser $authUser, Room $room): bool
+    public function replicate(AuthUser $authUser): bool
     {
         return $authUser->can('Replicate:Room');
     }

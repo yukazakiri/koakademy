@@ -21,7 +21,7 @@ final class FacultyResources implements FeatureToggle
         return 'Resources';
     }
 
-    public function summary(): ?string
+    public function summary(): string
     {
         return 'Library and teaching resources.';
     }
@@ -31,12 +31,12 @@ final class FacultyResources implements FeatureToggle
         return 'faculty';
     }
 
-    public function badge(): ?string
+    public function badge(): string
     {
         return 'Resources';
     }
 
-    public function accent(): ?string
+    public function accent(): string
     {
         return 'text-primary';
     }

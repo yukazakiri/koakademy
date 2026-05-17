@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
-use App\Features\Onboarding\FeatureClassRegistry;
+use App\Services\FeatureToggleRegistry;
 use Closure;
 use Illuminate\Http\Request;
 use Laravel\Pennant\Feature;
@@ -18,27 +18,27 @@ final class EnsureFeatureEnabled
      */
     private const array ROUTE_MAP = [
         // Faculty Action Center
-        'faculty.action-center*' => 'onboarding-faculty-action-center',
+        'faculty.action-center*' => 'faculty-action-center',
 
         // Faculty Academic Tools
-        'faculty.classes.grades*' => 'onboarding-faculty-grades',
-        'faculty.grades*' => 'onboarding-faculty-grades',
-        'faculty.attendance*' => 'onboarding-faculty-attendance',
-        'faculty.resources*' => 'onboarding-faculty-resources',
-        'faculty.forms*' => 'onboarding-faculty-forms',
+        'faculty.classes.grades*' => 'faculty-grades',
+        'faculty.grades*' => 'faculty-grades',
+        'faculty.attendance*' => 'faculty-attendance',
+        'faculty.resources*' => 'faculty-resources',
+        'faculty.forms*' => 'faculty-forms',
 
         // Faculty Toolkit
-        'faculty.at-risk-alerts*' => 'onboarding-faculty-at-risk-alerts',
-        'faculty.assessments*' => 'onboarding-faculty-assessments',
-        'faculty.inbox*' => 'onboarding-faculty-inbox',
-        'faculty.office-hours*' => 'onboarding-faculty-office-hours',
-        'faculty.requests*' => 'onboarding-faculty-requests-approvals',
-        'faculty.insights*' => 'onboarding-faculty-insights',
+        'faculty.at-risk-alerts*' => 'faculty-at-risk-alerts',
+        'faculty.assessments*' => 'faculty-assessments',
+        'faculty.inbox*' => 'faculty-inbox',
+        'faculty.office-hours*' => 'faculty-office-hours',
+        'faculty.requests*' => 'faculty-requests-approvals',
+        'faculty.insights*' => 'faculty-insights',
 
         // Student Features
-        'student.classes*' => 'onboarding-student-classes',
-        'student.tuition*' => 'onboarding-student-tuition',
-        'student.schedule*' => 'onboarding-student-schedule',
+        'student.classes*' => 'student-classes',
+        'student.tuition*' => 'student-tuition',
+        'student.schedule*' => 'student-schedule',
     ];
 
     /**
@@ -59,7 +59,7 @@ final class EnsureFeatureEnabled
                 continue;
             }
             // If the feature is inactive for the current user, abort
-            $featureRef = FeatureClassRegistry::classForKey($featureKey) ?? $featureKey;
+            $featureRef = FeatureToggleRegistry::classForKey($featureKey) ?? $featureKey;
             if (! Feature::inactive($featureRef)) {
                 continue;
             }

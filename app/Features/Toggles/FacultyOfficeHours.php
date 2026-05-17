@@ -21,7 +21,7 @@ final class FacultyOfficeHours implements FeatureToggle
         return 'Office Hours';
     }
 
-    public function summary(): ?string
+    public function summary(): string
     {
         return 'Student appointment booking tools.';
     }
@@ -31,12 +31,12 @@ final class FacultyOfficeHours implements FeatureToggle
         return 'faculty';
     }
 
-    public function badge(): ?string
+    public function badge(): string
     {
         return 'Toolkit';
     }
 
-    public function accent(): ?string
+    public function accent(): string
     {
         return 'text-indigo-500';
     }

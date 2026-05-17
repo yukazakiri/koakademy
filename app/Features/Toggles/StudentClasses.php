@@ -21,7 +21,7 @@ final class StudentClasses implements FeatureToggle
         return 'My Academics';
     }
 
-    public function summary(): ?string
+    public function summary(): string
     {
         return 'Review your enrolled subjects and academics.';
     }
@@ -31,22 +31,22 @@ final class StudentClasses implements FeatureToggle
         return 'student';
     }
 
-    public function badge(): ?string
+    public function badge(): string
     {
         return 'Academics';
     }
 
-    public function accent(): ?string
+    public function accent(): string
     {
         return 'text-emerald-500';
     }
 
-    public function ctaLabel(): ?string
+    public function ctaLabel(): string
     {
         return 'Open My Academics';
     }
 
-    public function ctaUrl(): ?string
+    public function ctaUrl(): string
     {
         return '/student/classes';
     }

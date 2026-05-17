@@ -6,7 +6,6 @@ namespace App\Policies;
 
 use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
-use Rupadana\ApiService\Models\Token;
 
 final class TokenPolicy
 {
@@ -17,7 +16,7 @@ final class TokenPolicy
         return $authUser->can('ViewAny:Token');
     }
 
-    public function view(AuthUser $authUser, Token $token): bool
+    public function view(AuthUser $authUser): bool
     {
         return $authUser->can('View:Token');
     }
@@ -27,22 +26,22 @@ final class TokenPolicy
         return $authUser->can('Create:Token');
     }
 
-    public function update(AuthUser $authUser, Token $token): bool
+    public function update(AuthUser $authUser): bool
     {
         return $authUser->can('Update:Token');
     }
 
-    public function delete(AuthUser $authUser, Token $token): bool
+    public function delete(AuthUser $authUser): bool
     {
         return $authUser->can('Delete:Token');
     }
 
-    public function restore(AuthUser $authUser, Token $token): bool
+    public function restore(AuthUser $authUser): bool
     {
         return $authUser->can('Restore:Token');
     }
 
-    public function forceDelete(AuthUser $authUser, Token $token): bool
+    public function forceDelete(AuthUser $authUser): bool
     {
         return $authUser->can('ForceDelete:Token');
     }
@@ -57,7 +56,7 @@ final class TokenPolicy
         return $authUser->can('RestoreAny:Token');
     }
 
-    public function replicate(AuthUser $authUser, Token $token): bool
+    public function replicate(AuthUser $authUser): bool
     {
         return $authUser->can('Replicate:Token');
     }

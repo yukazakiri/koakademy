@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
-use App\Features\StudentAvatarUpload;
-use App\Features\StudentSignaturePad;
+use App\Features\Toggles\StudentAvatarUpload;
+use App\Features\Toggles\StudentSignaturePad;
 use App\Services\AnalyticsSettingsService;
 use App\Services\FacultyClassShareService;
 use App\Services\ModuleAdminNavigationService;

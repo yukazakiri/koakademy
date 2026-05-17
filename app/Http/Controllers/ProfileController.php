@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Features\Onboarding\FacultyDeveloperMode;
-use App\Features\Onboarding\FeatureClassRegistry;
 use App\Features\Onboarding\StudentDeveloperMode;
 use App\Http\Requests\ToggleExperimentalFeaturesRequest;
 use App\Models\ConnectedAccount;
@@ -13,6 +12,7 @@ use App\Models\Faculty;
 use App\Models\Student;
 use App\Models\User;
 use App\Services\DigitalIdCardService;
+use App\Services\FeatureToggleRegistry;
 use Endroid\QrCode\Builder\Builder;
 use Endroid\QrCode\Encoding\Encoding;
 use Endroid\QrCode\ErrorCorrectionLevel;
@@ -131,7 +131,7 @@ final class ProfileController extends Controller
             'feature_flags' => [
                 'experimental' => collect($availableForRole)
                     ->filter(function (string $featureKey) use ($user): bool {
-                        $featureClass = FeatureClassRegistry::classForKey($featureKey);
+                        $featureClass = FeatureToggleRegistry::classForKey($featureKey);
 
                         return (bool) Feature::for($user)->active($featureClass ?? $featureKey);
                     })
@@ -315,7 +315,7 @@ final class ProfileController extends Controller
         $requestedFeatures = array_values(array_intersect($request->input('features', []), $allowedFeatures));
 
         foreach ($allowedFeatures as $featureKey) {
-            $featureRef = FeatureClassRegistry::classForKey($featureKey) ?? $featureKey;
+            $featureRef = FeatureToggleRegistry::classForKey($featureKey) ?? $featureKey;
 
             if (in_array($featureKey, $requestedFeatures, true)) {
                 Feature::for($user)->activate($featureRef);

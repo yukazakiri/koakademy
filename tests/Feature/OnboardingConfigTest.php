@@ -2,12 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Features\Toggles\StudentDashboard;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\OnboardingDismissal;
-use App\Models\OnboardingFeature;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Inertia\Testing\AssertableInertia as Assert;
+use Laravel\Pennant\Feature;
 
 use function Pest\Laravel\get;
 
@@ -29,22 +30,20 @@ it('shares active onboarding features for a student', function (): void {
 
     $user = User::factory()->create(['role' => 'student']);
 
-    $feature = OnboardingFeature::factory()->create([
-        'feature_key' => 'onboarding-student',
-        'audience' => 'student',
-        'is_active' => true,
-    ]);
-
-    config(['pennant.features' => [$feature->feature_key => true]]);
+    Feature::activateForEveryone(StudentDashboard::class);
 
     $request = Request::create('/student/dashboard');
     $request->setUserResolver(static fn (): User => $user);
 
     $shared = app(HandleInertiaRequests::class)->share($request);
 
-    expect($shared['onboarding']['features'])
-        ->toHaveCount(1)
-        ->and($shared['onboarding']['features'][0]['featureKey'])->toBe($feature->feature_key);
+    $featureKeys = collect($shared['onboarding']['features'] ?? [])
+        ->pluck('featureKey')
+        ->toArray();
+
+    expect($featureKeys)->toContain('student-dashboard');
+
+    Feature::forget(StudentDashboard::class);
 });
 
 it('omits dismissed onboarding features', function (): void {
@@ -52,17 +51,11 @@ it('omits dismissed onboarding features', function (): void {
 
     $user = User::factory()->create(['role' => 'student']);
 
-    $feature = OnboardingFeature::factory()->create([
-        'feature_key' => 'onboarding-student',
-        'audience' => 'student',
-        'is_active' => true,
-    ]);
-
-    config(['pennant.features' => [$feature->feature_key => true]]);
+    Feature::activateForEveryone(StudentDashboard::class);
 
     OnboardingDismissal::factory()->create([
         'user_id' => $user->id,
-        'feature_key' => $feature->feature_key,
+        'feature_key' => 'student-dashboard',
     ]);
 
     $request = Request::create('/student/dashboard');
@@ -70,5 +63,12 @@ it('omits dismissed onboarding features', function (): void {
 
     $shared = app(HandleInertiaRequests::class)->share($request);
 
-    expect($shared['onboarding']['features'])->toBe([]);
+    $featureKeys = collect($shared['onboarding']['features'] ?? [])
+        ->pluck('featureKey')
+        ->toArray();
+
+    // student-dashboard should be omitted because it was dismissed
+    expect($featureKeys)->not->toContain('student-dashboard');
+
+    Feature::forget(StudentDashboard::class);
 });

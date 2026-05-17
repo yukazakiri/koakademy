@@ -21,7 +21,7 @@ final class FacultyGrades implements FeatureToggle
         return 'Grades & Reports';
     }
 
-    public function summary(): ?string
+    public function summary(): string
     {
         return 'Grade management and report exports.';
     }
@@ -31,12 +31,12 @@ final class FacultyGrades implements FeatureToggle
         return 'faculty';
     }
 
-    public function badge(): ?string
+    public function badge(): string
     {
         return 'Academic Tools';
     }
 
-    public function accent(): ?string
+    public function accent(): string
     {
         return 'text-emerald-500';
     }

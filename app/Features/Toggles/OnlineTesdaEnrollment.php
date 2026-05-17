@@ -22,7 +22,7 @@ final class OnlineTesdaEnrollment implements FeatureToggle
         return 'Online TESDA Enrollment';
     }
 
-    public function summary(): ?string
+    public function summary(): string
     {
         return 'Enable or disable online enrollment for TESDA scholarship programs.';
     }
@@ -67,6 +67,10 @@ final class OnlineTesdaEnrollment implements FeatureToggle
      */
     public function resolve(User $scope): bool
     {
-        return $this->audience() === 'all' || $scope->isStudentRole();
+        if ($this->audience() === 'all') {
+            return true;
+        }
+
+        return $scope->isStudentRole();
     }
 }

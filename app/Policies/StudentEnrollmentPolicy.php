@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use App\Models\StudentEnrollment;
 use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
 
@@ -17,7 +16,7 @@ final class StudentEnrollmentPolicy
         return $authUser->can('ViewAny:StudentEnrollment');
     }
 
-    public function view(AuthUser $authUser, StudentEnrollment $studentEnrollment): bool
+    public function view(AuthUser $authUser): bool
     {
         return $authUser->can('View:StudentEnrollment');
     }
@@ -27,22 +26,22 @@ final class StudentEnrollmentPolicy
         return $authUser->can('Create:StudentEnrollment');
     }
 
-    public function update(AuthUser $authUser, StudentEnrollment $studentEnrollment): bool
+    public function update(AuthUser $authUser): bool
     {
         return $authUser->can('Update:StudentEnrollment');
     }
 
-    public function delete(AuthUser $authUser, StudentEnrollment $studentEnrollment): bool
+    public function delete(AuthUser $authUser): bool
     {
         return $authUser->can('Delete:StudentEnrollment');
     }
 
-    public function restore(AuthUser $authUser, StudentEnrollment $studentEnrollment): bool
+    public function restore(AuthUser $authUser): bool
     {
         return $authUser->can('Restore:StudentEnrollment');
     }
 
-    public function forceDelete(AuthUser $authUser, StudentEnrollment $studentEnrollment): bool
+    public function forceDelete(AuthUser $authUser): bool
     {
         return $authUser->can('ForceDelete:StudentEnrollment');
     }
@@ -57,7 +56,7 @@ final class StudentEnrollmentPolicy
         return $authUser->can('RestoreAny:StudentEnrollment');
     }
 
-    public function replicate(AuthUser $authUser, StudentEnrollment $studentEnrollment): bool
+    public function replicate(AuthUser $authUser): bool
     {
         return $authUser->can('Replicate:StudentEnrollment');
     }

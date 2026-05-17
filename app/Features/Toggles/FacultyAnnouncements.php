@@ -21,7 +21,7 @@ final class FacultyAnnouncements implements FeatureToggle
         return 'Announcements';
     }
 
-    public function summary(): ?string
+    public function summary(): string
     {
         return 'Post and read announcements quickly.';
     }
@@ -31,22 +31,22 @@ final class FacultyAnnouncements implements FeatureToggle
         return 'faculty';
     }
 
-    public function badge(): ?string
+    public function badge(): string
     {
         return 'Announcements';
     }
 
-    public function accent(): ?string
+    public function accent(): string
     {
         return 'text-amber-500';
     }
 
-    public function ctaLabel(): ?string
+    public function ctaLabel(): string
     {
         return 'Open Announcements';
     }
 
-    public function ctaUrl(): ?string
+    public function ctaUrl(): string
     {
         return '/faculty/announcements';
     }

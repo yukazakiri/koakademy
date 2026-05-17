@@ -1,14 +1,14 @@
 {
-  "version": "1.2.0-dev.2.1",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.2.0-dev.2.1",
-  "commit": "2bcc38b009d7a16ff9bddd1a9dee7a7874b95581",
+  "version": "1.5.0-dev.0.2",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.5.0-dev.0.2",
+  "commit": "3e9bb141f8b897919e1853f9edc60e362aa965ac",
   "branch": "master",
-  "timestamp": "2026-05-16T05:58:56Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25954357572",
+  "timestamp": "2026-05-16T11:53:29Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/25961176319",
   "release_type": "patch",
   "changelog": {
-    "current": "Version 1.2.0-dev.2.1 - Merge pull request #75 from yukazakiri/feat/migrate-feature-classes-to-toggles",
-    "previous": "1.2.0-dev.2.0"
+    "current": "Version 1.5.0-dev.0.2 - Remove Redis check for Pulse ingest",
+    "previous": "1.5.0-dev.0.1"
   },
   "metadata": {
     "author": "yukazakiri",

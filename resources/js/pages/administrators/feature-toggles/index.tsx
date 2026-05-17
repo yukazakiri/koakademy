@@ -17,59 +17,53 @@ import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { User } from "@/types/user";
-import { Head, Link, router } from "@inertiajs/react";
+import { Head, router } from "@inertiajs/react";
 import {
     Calendar,
-    Edit3,
-    Eraser,
     Eye,
     Filter,
     FlaskConical,
     Globe,
     GraduationCap,
     Layers,
-    MoreHorizontal,
-    Plus,
-    Search,
     Sparkles,
-    Trash2,
     UserCog,
     Users,
-    X,
     Zap,
 } from "lucide-react";
 import { useCallback, useState } from "react";
-import { toast } from "sonner";
 import { useDebouncedCallback } from "use-debounce";
+import { toast } from "sonner";
 
-declare let route: any;
-
-interface OnboardingStep {
+interface OnboardingStepData {
     title: string;
     summary: string;
     badge?: string;
     accent?: string;
     icon?: string;
-    image?: string | null;
+    image?: string;
     highlights?: string[];
     stats?: { label: string; value: string }[];
 }
 
-interface OnboardingFeature {
-    id: number;
-    feature_key: string;
+interface OnboardingStep {
+    type: string;
+    data: OnboardingStepData;
+}
+
+interface FeatureToggle {
+    key: string;
     name: string;
     audience: "student" | "faculty" | "all";
-    summary: string | null;
-    badge: string | null;
-    accent: string | null;
-    cta_label: string | null;
-    cta_url: string | null;
+    summary: string;
+    badge: string;
+    accent: string;
+    cta_label: string;
+    cta_url: string;
     steps: OnboardingStep[];
     steps_count: number;
+    category: string;
     is_active: boolean;
-    created_at: string;
-    updated_at: string;
     pennant_class: string | null;
     pennant_type: "class" | "string";
     pennant_global_state: boolean;
@@ -86,8 +80,7 @@ interface OverriddenUser {
 
 interface Props {
     auth: { user: User };
-    features: OnboardingFeature[];
-    experimental_keys: string[];
+    features: FeatureToggle[];
     filters: {
         search?: string | null;
         audience?: string | null;
@@ -116,42 +109,41 @@ const audienceConfig = {
     },
 };
 
-export default function OnboardingFeaturesIndex({ auth, features: initialFeatures, experimental_keys, filters }: Props) {
+export default function FeatureTogglesIndex({ auth, features: initialFeatures, filters }: Props) {
     const [search, setSearch] = useState(filters.search || "");
-    const [deleteTarget, setDeleteTarget] = useState<OnboardingFeature | null>(null);
-    const [previewFeature, setPreviewFeature] = useState<OnboardingFeature | null>(null);
-    const [overridesFeature, setOverridesFeature] = useState<OnboardingFeature | null>(null);
+    const [previewFeature, setPreviewFeature] = useState<FeatureToggle | null>(null);
+    const [overridesFeature, setOverridesFeature] = useState<FeatureToggle | null>(null);
     const [overriddenUsers, setOverriddenUsers] = useState<OverriddenUser[]>([]);
     const [loadingOverrides, setLoadingOverrides] = useState(false);
     const [userIdInput, setUserIdInput] = useState("");
-    const [localFeatures, setLocalFeatures] = useState<OnboardingFeature[]>(initialFeatures);
+    const [localFeatures, setLocalFeatures] = useState<FeatureToggle[]>(initialFeatures);
 
     const handleSearch = useDebouncedCallback((term: string) => {
-        router.get(route("administrators.onboarding-features.index"), { ...filters, search: term || null }, { preserveState: true, replace: true });
+        router.get(route("administrators.feature-toggles.index"), { ...filters, search: term || null }, { preserveState: true, replace: true });
     }, 300);
 
     const handleFilterChange = (key: string, value: string | null) => {
-        router.get(route("administrators.onboarding-features.index"), { ...filters, [key]: value }, { preserveState: true, replace: true });
+        router.get(route("administrators.feature-toggles.index"), { ...filters, [key]: value }, { preserveState: true, replace: true });
     };
 
     const clearFilters = () => {
-        router.get(route("administrators.onboarding-features.index"), {}, { preserveState: true, replace: true });
+        router.get(route("administrators.feature-toggles.index"), {}, { preserveState: true, replace: true });
         setSearch("");
     };
 
-    const handleToggle = useCallback((feature: OnboardingFeature) => {
+    const handleToggle = useCallback((feature: FeatureToggle) => {
         const newActive = !feature.is_active;
         // Optimistic: instantly flip the switch locally
         setLocalFeatures((prev) =>
             prev.map((f) =>
-                f.id === feature.id
+                f.key === feature.key
                     ? { ...f, is_active: newActive, pennant_global_state: newActive }
                     : f,
             ),
         );
 
         router.post(
-            route("administrators.onboarding-features.toggle", feature.id),
+            route("administrators.feature-toggles.toggle", feature.key),
             {},
             {
                 preserveState: true,
@@ -162,7 +154,7 @@ export default function OnboardingFeaturesIndex({ auth, features: initialFeature
                     // Roll back on error
                     setLocalFeatures((prev) =>
                         prev.map((f) =>
-                            f.id === feature.id ? { ...f, is_active: !newActive, pennant_global_state: !newActive } : f,
+                            f.key === feature.key ? { ...f, is_active: !newActive, pennant_global_state: !newActive } : f,
                         ),
                     );
                     toast.error("Failed to toggle feature");
@@ -171,28 +163,7 @@ export default function OnboardingFeaturesIndex({ auth, features: initialFeature
         );
     }, []);
 
-    const handleDelete = useCallback(() => {
-        if (!deleteTarget) return;
-        const target = deleteTarget;
-
-        // Optimistic: instantly remove the row
-        setLocalFeatures((prev) => prev.filter((f) => f.id !== target.id));
-
-        router.delete(route("administrators.onboarding-features.destroy", target.id), {
-            preserveState: true,
-            onSuccess: () => {
-                toast.success(`"${target.name}" deleted`);
-                setDeleteTarget(null);
-            },
-            onError: () => {
-                // Roll back: re-add the feature
-                setLocalFeatures((prev) => [...prev, target]);
-                toast.error("Failed to delete feature");
-            },
-        });
-    }, [deleteTarget]);
-
-    const loadOverrides = useCallback(async (feature: OnboardingFeature) => {
+    const loadOverrides = useCallback(async (feature: FeatureToggle) => {
         if (!feature.pennant_class) {
             toast.error("No class-based feature registered for this key");
             return;
@@ -200,7 +171,7 @@ export default function OnboardingFeaturesIndex({ auth, features: initialFeature
         setOverridesFeature(feature);
         setLoadingOverrides(true);
         try {
-            const response = await fetch(route("administrators.onboarding-features.overridden-users", feature.id));
+            const response = await fetch(route("administrators.feature-toggles.overridden-users", feature.key));
             const data = await response.json();
             setOverriddenUsers(data.users || []);
         } catch {
@@ -210,7 +181,7 @@ export default function OnboardingFeaturesIndex({ auth, features: initialFeature
         }
     }, []);
 
-    const handleActivateForUser = useCallback((feature: OnboardingFeature, userId: number) => {
+    const handleActivateForUser = useCallback((feature: FeatureToggle, userId: number) => {
         // Optimistic: instantly show user in override list
         setOverriddenUsers((prev) => {
             const existing = prev.find((u) => u.id === userId);
@@ -222,12 +193,12 @@ export default function OnboardingFeaturesIndex({ auth, features: initialFeature
         // Update override count
         setLocalFeatures((prev) =>
             prev.map((f) =>
-                f.id === feature.id ? { ...f, pennant_user_overrides_count: f.pennant_user_overrides_count + 1 } : f,
+                f.key === feature.key ? { ...f, pennant_user_overrides_count: f.pennant_user_overrides_count + 1 } : f,
             ),
         );
 
         router.post(
-            route("administrators.onboarding-features.activate-for-user", feature.id),
+            route("administrators.feature-toggles.activate-for-user", feature.key),
             { user_id: userId },
             {
                 preserveState: true,
@@ -240,7 +211,7 @@ export default function OnboardingFeaturesIndex({ auth, features: initialFeature
                     setOverriddenUsers((prev) => prev.filter((u) => u.id !== userId));
                     setLocalFeatures((prev) =>
                         prev.map((f) =>
-                            f.id === feature.id ? { ...f, pennant_user_overrides_count: Math.max(0, f.pennant_user_overrides_count - 1) } : f,
+                            f.key === feature.key ? { ...f, pennant_user_overrides_count: Math.max(0, f.pennant_user_overrides_count - 1) } : f,
                         ),
                     );
                     toast.error("Failed to activate for user");
@@ -249,14 +220,14 @@ export default function OnboardingFeaturesIndex({ auth, features: initialFeature
         );
     }, [overridesFeature, loadOverrides]);
 
-    const handleDeactivateForUser = useCallback((feature: OnboardingFeature, userId: number) => {
+    const handleDeactivateForUser = useCallback((feature: FeatureToggle, userId: number) => {
         // Optimistic: instantly flip user's state
         setOverriddenUsers((prev) =>
             prev.map((u) => (u.id === userId ? { ...u, is_active: false } : u)),
         );
 
         router.post(
-            route("administrators.onboarding-features.deactivate-for-user", feature.id),
+            route("administrators.feature-toggles.deactivate-for-user", feature.key),
             { user_id: userId },
             {
                 preserveState: true,
@@ -275,15 +246,15 @@ export default function OnboardingFeaturesIndex({ auth, features: initialFeature
         );
     }, [overridesFeature, loadOverrides]);
 
-    const handlePurgeOverrides = useCallback((feature: OnboardingFeature) => {
+    const handlePurgeOverrides = useCallback((feature: FeatureToggle) => {
         // Optimistic: instantly clear overrides
         setOverriddenUsers([]);
         setLocalFeatures((prev) =>
-            prev.map((f) => (f.id === feature.id ? { ...f, pennant_user_overrides_count: 0 } : f)),
+            prev.map((f) => (f.key === feature.key ? { ...f, pennant_user_overrides_count: 0 } : f)),
         );
 
         router.post(
-            route("administrators.onboarding-features.purge-overrides", feature.id),
+            route("administrators.feature-toggles.purge-overrides", feature.key),
             {},
             {
                 preserveState: true,
@@ -307,8 +278,8 @@ export default function OnboardingFeaturesIndex({ auth, features: initialFeature
     const overridesTotal = features.reduce((sum, f) => sum + f.pennant_user_overrides_count, 0);
 
     return (
-        <AdminLayout user={auth.user} title="Onboarding Features">
-            <Head title="Administrators • Onboarding Features" />
+        <AdminLayout user={auth.user} title="Feature Toggles">
+            <Head title="Administrators • Feature Toggles" />
 
             <div className="flex flex-col">
                 {/* Header */}
@@ -316,19 +287,13 @@ export default function OnboardingFeaturesIndex({ auth, features: initialFeature
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
                             <div className="bg-primary/10 text-primary flex h-9 w-9 items-center justify-center rounded-lg">
-                                <Sparkles className="h-4.5 w-4.5" />
+                                <FlaskConical className="h-4.5 w-4.5" />
                             </div>
                             <div>
-                                <h1 className="text-lg font-semibold tracking-tight">Feature Flags</h1>
+                                <h1 className="text-lg font-semibold tracking-tight">Feature Toggles</h1>
                                 <p className="text-muted-foreground text-xs">Pennant class-based features with per-user scoping, lottery rollouts, and A/B testing</p>
                             </div>
                         </div>
-                        <Button asChild size="sm" className="gap-1.5">
-                            <Link href={route("administrators.onboarding-features.create")}>
-                                <Plus className="h-3.5 w-3.5" />
-                                New Feature
-                            </Link>
-                        </Button>
                     </div>
                 </div>
 
@@ -386,8 +351,8 @@ export default function OnboardingFeaturesIndex({ auth, features: initialFeature
                 {/* Toolbar */}
                 <div className="border-b px-6 py-2.5">
                     <div className="flex items-center gap-2">
-                        <div className="relative flex-1 max-w-sm">
-                            <Search className="text-muted-foreground absolute top-2 left-2.5 h-3.5 w-3.5" />
+                        <div className="relative max-w-sm flex-1">
+                            <Filter className="text-muted-foreground absolute top-2 left-2.5 h-3.5 w-3.5" />
                             <Input
                                 placeholder="Search by name or key..."
                                 className="bg-muted/50 h-8 rounded-md border-0 pl-8 text-xs shadow-none focus-visible:bg-background focus-visible:ring-1"
@@ -452,7 +417,6 @@ export default function OnboardingFeaturesIndex({ auth, features: initialFeature
 
                         {activeFilterCount > 0 && (
                             <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground h-8 gap-1 text-xs">
-                                <X className="h-3 w-3" />
                                 Clear
                             </Button>
                         )}
@@ -464,28 +428,21 @@ export default function OnboardingFeaturesIndex({ auth, features: initialFeature
                     {features.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-20 text-center">
                             <div className="bg-muted/40 mb-4 flex h-14 w-14 items-center justify-center rounded-xl">
-                                <Sparkles className="text-muted-foreground/40 h-6 w-6" />
+                                <FlaskConical className="text-muted-foreground/40 h-6 w-6" />
                             </div>
                             <h3 className="text-sm font-semibold">No features found</h3>
                             <p className="text-muted-foreground mt-1 max-w-xs text-xs">
                                 {filters.search || activeFilterCount > 0
                                     ? "Try adjusting your filters or search terms."
-                                    : "Create your first feature flag to control feature visibility."}
+                                    : "Feature toggles are defined in code. Register new toggles in app/Features/Toggles/."}
                             </p>
-                            <div className="mt-4 flex gap-2">
-                                {filters.search || activeFilterCount > 0 ? (
+                            {filters.search || activeFilterCount > 0 ? (
+                                <div className="mt-4 flex gap-2">
                                     <Button variant="outline" size="sm" onClick={clearFilters}>
                                         Clear filters
                                     </Button>
-                                ) : (
-                                    <Button asChild size="sm">
-                                        <Link href={route("administrators.onboarding-features.create")}>
-                                            <Plus className="mr-1.5 h-3.5 w-3.5" />
-                                            Create Feature
-                                        </Link>
-                                    </Button>
-                                )}
-                            </div>
+                                </div>
+                            ) : null}
                         </div>
                     ) : (
                         <div className="divide-y overflow-hidden rounded-lg border">
@@ -496,7 +453,7 @@ export default function OnboardingFeaturesIndex({ auth, features: initialFeature
 
                                 return (
                                     <div
-                                        key={feature.id}
+                                        key={feature.key}
                                         className={cn(
                                             "group relative flex items-center gap-4 bg-background px-4 py-3 transition-colors hover:bg-muted/30",
                                             !feature.is_active && "opacity-50 hover:opacity-100",
@@ -542,12 +499,12 @@ export default function OnboardingFeaturesIndex({ auth, features: initialFeature
                                                 )}
                                             </div>
                                             <div className="mt-0.5 flex items-center gap-3">
-                                                <code className="text-muted-foreground text-[11px] font-mono">{feature.feature_key}</code>
+                                                <code className="text-muted-foreground text-[11px] font-mono">{feature.key}</code>
                                                 {isClassBased && feature.pennant_class && (
                                                     <>
                                                         <span className="text-muted-foreground/30">→</span>
                                                         <code className="text-muted-foreground/60 max-w-[200px] truncate text-[10px] font-mono">
-                                                            {feature.pennant_class.replace("App\\Features\\Onboarding\\", "…\\")}
+                                                            {feature.pennant_class.replace("App\\Features\\Toggles\\", "…\\")}
                                                         </code>
                                                     </>
                                                 )}
@@ -589,10 +546,6 @@ export default function OnboardingFeaturesIndex({ auth, features: initialFeature
                                             <span className="flex items-center gap-1 tabular-nums">
                                                 {feature.steps_count} step{feature.steps_count !== 1 ? "s" : ""}
                                             </span>
-                                            <span className="flex items-center gap-1">
-                                                <Calendar className="h-3 w-3" />
-                                                {new Date(feature.updated_at).toLocaleDateString()}
-                                            </span>
                                         </div>
 
                                         {/* Actions */}
@@ -612,27 +565,16 @@ export default function OnboardingFeaturesIndex({ auth, features: initialFeature
                                             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setPreviewFeature(feature)}>
                                                 <Eye className="h-3.5 w-3.5" />
                                             </Button>
-                                            <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
-                                                <Link href={route("administrators.onboarding-features.edit", feature.id)}>
-                                                    <Edit3 className="h-3.5 w-3.5" />
-                                                </Link>
-                                            </Button>
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
                                                     <Button variant="ghost" size="icon" className="h-7 w-7">
-                                                        <MoreHorizontal className="h-3.5 w-3.5" />
+                                                        <Calendar className="h-3.5 w-3.5" />
                                                     </Button>
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end" className="w-[160px]">
                                                     <DropdownMenuItem onClick={() => setPreviewFeature(feature)} className="text-xs">
                                                         <Eye className="mr-2 h-3.5 w-3.5" />
                                                         Preview
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuItem asChild className="text-xs">
-                                                        <Link href={route("administrators.onboarding-features.edit", feature.id)}>
-                                                            <Edit3 className="mr-2 h-3.5 w-3.5" />
-                                                            Edit
-                                                        </Link>
                                                     </DropdownMenuItem>
                                                     {isClassBased && (
                                                         <>
@@ -643,20 +585,11 @@ export default function OnboardingFeaturesIndex({ auth, features: initialFeature
                                                             </DropdownMenuItem>
                                                             {hasOverrides && (
                                                                 <DropdownMenuItem onClick={() => handlePurgeOverrides(feature)} className="text-xs text-orange-600 focus:text-orange-600">
-                                                                    <Eraser className="mr-2 h-3.5 w-3.5" />
                                                                     Purge overrides
                                                                 </DropdownMenuItem>
                                                             )}
                                                         </>
                                                     )}
-                                                    <DropdownMenuSeparator />
-                                                    <DropdownMenuItem
-                                                        onClick={() => setDeleteTarget(feature)}
-                                                        className="text-xs text-destructive focus:text-destructive"
-                                                    >
-                                                        <Trash2 className="mr-2 h-3.5 w-3.5" />
-                                                        Delete
-                                                    </DropdownMenuItem>
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
                                         </div>
@@ -667,26 +600,6 @@ export default function OnboardingFeaturesIndex({ auth, features: initialFeature
                     )}
                 </div>
             </div>
-
-            {/* Delete Confirmation */}
-            <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-                <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                        <DialogTitle className="text-base">Delete feature flag?</DialogTitle>
-                        <DialogDescription className="text-xs">
-                            This will permanently delete <strong>{deleteTarget?.name}</strong> and deactivate its flag. This cannot be undone.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter className="gap-2">
-                        <Button variant="outline" size="sm" onClick={() => setDeleteTarget(null)}>
-                            Cancel
-                        </Button>
-                        <Button variant="destructive" size="sm" onClick={handleDelete}>
-                            Delete
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
 
             {/* Preview Dialog */}
             <Dialog open={!!previewFeature} onOpenChange={(open) => !open && setPreviewFeature(null)}>
@@ -728,7 +641,7 @@ export default function OnboardingFeaturesIndex({ auth, features: initialFeature
                                 <div className="grid grid-cols-2 gap-3">
                                     <div>
                                         <p className="text-muted-foreground mb-1 text-[10px] font-medium uppercase">Feature Key</p>
-                                        <code className="bg-muted rounded px-2 py-1 font-mono text-xs">{previewFeature.feature_key}</code>
+                                        <code className="bg-muted rounded px-2 py-1 font-mono text-xs">{previewFeature.key}</code>
                                     </div>
                                     {previewFeature.pennant_class && (
                                         <div>
@@ -761,11 +674,11 @@ export default function OnboardingFeaturesIndex({ auth, features: initialFeature
                                                         {index + 1}
                                                     </div>
                                                     <div className="min-w-0 flex-1">
-                                                        <p className="text-xs font-medium leading-tight">{step.title}</p>
-                                                        <p className="text-muted-foreground mt-0.5 line-clamp-2 text-[11px]">{step.summary}</p>
-                                                        {step.highlights && step.highlights.length > 0 && (
+                                                        <p className="text-xs font-medium leading-tight">{step.data.title}</p>
+                                                        <p className="text-muted-foreground mt-0.5 line-clamp-2 text-[11px]">{step.data.summary}</p>
+                                                        {step.data.highlights && step.data.highlights.length > 0 && (
                                                             <div className="mt-1.5 flex flex-wrap gap-1">
-                                                                {step.highlights.filter(Boolean).map((h, i) => (
+                                                                {step.data.highlights.filter(Boolean).map((h, i) => (
                                                                     <Badge key={i} variant="secondary" className="text-[9px]">
                                                                         {h}
                                                                     </Badge>
@@ -783,12 +696,6 @@ export default function OnboardingFeaturesIndex({ auth, features: initialFeature
                             <DialogFooter className="mt-4 gap-2">
                                 <Button variant="outline" size="sm" onClick={() => setPreviewFeature(null)}>
                                     Close
-                                </Button>
-                                <Button asChild size="sm">
-                                    <Link href={route("administrators.onboarding-features.edit", previewFeature.id)}>
-                                        <Edit3 className="mr-1.5 h-3.5 w-3.5" />
-                                        Edit
-                                    </Link>
                                 </Button>
                             </DialogFooter>
                         </>
@@ -898,7 +805,6 @@ export default function OnboardingFeaturesIndex({ auth, features: initialFeature
                                         className="gap-1.5 text-xs text-orange-600 hover:text-orange-700"
                                         onClick={() => handlePurgeOverrides(overridesFeature)}
                                     >
-                                        <Eraser className="h-3.5 w-3.5" />
                                         Purge All Overrides
                                     </Button>
                                 )}

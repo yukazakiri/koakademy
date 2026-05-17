@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use App\Models\ShsStrand;
 use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
 
@@ -17,7 +16,7 @@ final class ShsStrandPolicy
         return $authUser->can('ViewAny:ShsStrand');
     }
 
-    public function view(AuthUser $authUser, ShsStrand $shsStrand): bool
+    public function view(AuthUser $authUser): bool
     {
         return $authUser->can('View:ShsStrand');
     }
@@ -27,22 +26,22 @@ final class ShsStrandPolicy
         return $authUser->can('Create:ShsStrand');
     }
 
-    public function update(AuthUser $authUser, ShsStrand $shsStrand): bool
+    public function update(AuthUser $authUser): bool
     {
         return $authUser->can('Update:ShsStrand');
     }
 
-    public function delete(AuthUser $authUser, ShsStrand $shsStrand): bool
+    public function delete(AuthUser $authUser): bool
     {
         return $authUser->can('Delete:ShsStrand');
     }
 
-    public function restore(AuthUser $authUser, ShsStrand $shsStrand): bool
+    public function restore(AuthUser $authUser): bool
     {
         return $authUser->can('Restore:ShsStrand');
     }
 
-    public function forceDelete(AuthUser $authUser, ShsStrand $shsStrand): bool
+    public function forceDelete(AuthUser $authUser): bool
     {
         return $authUser->can('ForceDelete:ShsStrand');
     }
@@ -57,7 +56,7 @@ final class ShsStrandPolicy
         return $authUser->can('RestoreAny:ShsStrand');
     }
 
-    public function replicate(AuthUser $authUser, ShsStrand $shsStrand): bool
+    public function replicate(AuthUser $authUser): bool
     {
         return $authUser->can('Replicate:ShsStrand');
     }

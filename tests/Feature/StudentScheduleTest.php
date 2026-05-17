@@ -3,15 +3,16 @@
 declare(strict_types=1);
 
 use App\Enums\UserRole;
+use App\Features\Toggles\StudentSchedule as StudentScheduleFeature;
 use App\Models\Classes;
 use App\Models\Course;
 use App\Models\Faculty;
-use App\Models\OnboardingFeature;
 use App\Models\Room;
 use App\Models\Student;
 use App\Models\Subject;
 use App\Models\User;
 use Inertia\Testing\AssertableInertia as Assert;
+use Laravel\Pennant\Feature;
 
 test('student can view schedule page', function () {
     // Create student user
@@ -57,11 +58,7 @@ test('student can view schedule page', function () {
         'semester' => 1,
     ]);
 
-    OnboardingFeature::factory()->create([
-        'feature_key' => 'onboarding-student-schedule',
-        'audience' => 'student',
-        'is_active' => true,
-    ]);
+    Feature::activateForEveryone(StudentScheduleFeature::class);
 
     // Enroll student in term
     $enrollment = App\Models\StudentEnrollment::create([

@@ -21,7 +21,7 @@ final class FacultyDeveloperMode implements FeatureToggle
         return 'Developer Mode';
     }
 
-    public function summary(): ?string
+    public function summary(): string
     {
         return 'Advanced tools and debugging features for faculty developers.';
     }
@@ -31,12 +31,12 @@ final class FacultyDeveloperMode implements FeatureToggle
         return 'faculty';
     }
 
-    public function badge(): ?string
+    public function badge(): string
     {
         return 'Developer';
     }
 
-    public function accent(): ?string
+    public function accent(): string
     {
         return 'text-gray-500';
     }

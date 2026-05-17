@@ -2,6 +2,8 @@
 set -e
 
 container_mode=${CONTAINER_MODE:-"http"}
+app_env=$(printf '%s' "${APP_ENV:-production}" | tr '[:upper:]' '[:lower:]')
+database_connection=$(printf '%s' "${DB_CONNECTION:-}" | tr '[:upper:]' '[:lower:]')
 
 horizon_enabled=true
 
@@ -91,14 +93,6 @@ connection_max_tries=${CONNECTION_MAX_TRIES:-"30"}
 connection_retry_sleep=${CONNECTION_RETRY_SLEEP:-"1"}
 service_connect_timeout=${SERVICE_CONNECT_TIMEOUT:-"2"}
 
-# Provide sane defaults for service env vars so health checks don't fail when
-# project .env hasn't been loaded into the container environment yet.
-REDIS_HOST="${REDIS_HOST:-redis}"
-REDIS_PORT="${REDIS_PORT:-6379}"
-DB_HOST="${DB_HOST:-pgsql}"
-DB_PORT="${DB_PORT:-5432}"
-export REDIS_HOST REDIS_PORT DB_HOST DB_PORT
-
 log_section() {
     echo ""
     echo "==> $1"
@@ -162,7 +156,6 @@ is_redis_required() {
     queue_connection=$(printf '%s' "${QUEUE_CONNECTION:-database}" | tr '[:upper:]' '[:lower:]')
     cache_store=$(printf '%s' "${CACHE_STORE:-database}" | tr '[:upper:]' '[:lower:]')
     session_driver=$(printf '%s' "${SESSION_DRIVER:-database}" | tr '[:upper:]' '[:lower:]')
-    pulse_ingest=$(printf '%s' "${PULSE_INGEST_DRIVER:-redis}" | tr '[:upper:]' '[:lower:]')
 
     if [ "${queue_connection}" = "redis" ] || [ "${queue_connection}" = "redis-pdf" ]; then
         return 0
@@ -172,11 +165,62 @@ is_redis_required() {
         return 0
     fi
 
-    if [ "${pulse_ingest}" = "redis" ] && [ "${PULSE_ENABLED:-true}" != "false" ]; then
+    return 1
+}
+
+resolve_database_connection() {
+    if [ -n "${database_connection}" ]; then
         return 0
     fi
 
+    derived_connection=$(php -r '
+        $app = require "bootstrap/app.php";
+        $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
+        $kernel->bootstrap();
+        $driver = (string) config("database.default", "");
+        echo strtolower($driver);
+    ' 2>/dev/null || true)
+
+    if [ -n "${derived_connection}" ]; then
+        database_connection=$(printf '%s' "${derived_connection}" | tr '[:upper:]' '[:lower:]')
+        export DB_CONNECTION="${database_connection}"
+        return 0
+    fi
+
+    database_connection="sqlite"
+    export DB_CONNECTION="${database_connection}"
+}
+
+is_database_connection_networked() {
+    case "${database_connection}" in
+        mysql|mariadb|pgsql|sqlsrv)
+            return 0
+            ;;
+        sqlite)
+            return 1
+            ;;
+    esac
+
     return 1
+}
+
+configure_database_connection_defaults() {
+    case "${database_connection}" in
+        mysql|mariadb)
+            DB_HOST="${DB_HOST:-mysql}"
+            DB_PORT="${DB_PORT:-3306}"
+            ;;
+        pgsql)
+            DB_HOST="${DB_HOST:-pgsql}"
+            DB_PORT="${DB_PORT:-5432}"
+            ;;
+        sqlsrv)
+            DB_HOST="${DB_HOST:-sqlsrv}"
+            DB_PORT="${DB_PORT:-1433}"
+            ;;
+    esac
+
+    export DB_HOST DB_PORT DB_CONNECTION="${database_connection}"
 }
 
 is_http_url_reachable() {
@@ -249,6 +293,10 @@ configure_scout_driver() {
 }
 
 check_redis_connection() {
+    REDIS_HOST="${REDIS_HOST:-redis}"
+    REDIS_PORT="${REDIS_PORT:-6379}"
+    export REDIS_HOST REDIS_PORT
+
     echo "Testing Redis connection to ${REDIS_HOST}:${REDIS_PORT}..."
 
     php -r "
@@ -277,6 +325,8 @@ check_redis_connection() {
 }
 
 check_database_connection() {
+    configure_database_connection_defaults
+
     echo "Testing Database connection to ${DB_HOST}:${DB_PORT}..."
 
     if [ -z "${DB_DATABASE:-}" ] || [ -z "${DB_USERNAME:-}" ]; then
@@ -291,15 +341,37 @@ check_database_connection() {
 
         for (\$i = 0; \$i < \$maxTries; \$i++) {
             try {
-                \$dsn = sprintf(
-                    'pgsql:host=%s;port=%s;dbname=%s;connect_timeout=%d',
-                    getenv('DB_HOST'),
-                    getenv('DB_PORT'),
-                    getenv('DB_DATABASE'),
-                    max(1, (int) ceil(\$timeout))
-                );
+                \$driver = getenv('DB_CONNECTION') ?: 'pgsql';
+                \$connectTimeout = max(1, (int) ceil(\$timeout));
+                \$options = [];
 
-                new PDO(\$dsn, getenv('DB_USERNAME'), getenv('DB_PASSWORD'));
+                if (\$driver === 'mysql' || \$driver === 'mariadb') {
+                    \$dsn = sprintf(
+                        'mysql:host=%s;port=%s;dbname=%s',
+                        getenv('DB_HOST'),
+                        getenv('DB_PORT'),
+                        getenv('DB_DATABASE')
+                    );
+                    \$options = [PDO::ATTR_TIMEOUT => \$connectTimeout];
+                } elseif (\$driver === 'sqlsrv') {
+                    \$dsn = sprintf(
+                        'sqlsrv:Server=%s,%s;Database=%s;LoginTimeout=%d',
+                        getenv('DB_HOST'),
+                        getenv('DB_PORT'),
+                        getenv('DB_DATABASE'),
+                        \$connectTimeout
+                    );
+                } else {
+                    \$dsn = sprintf(
+                        'pgsql:host=%s;port=%s;dbname=%s;connect_timeout=%d',
+                        getenv('DB_HOST'),
+                        getenv('DB_PORT'),
+                        getenv('DB_DATABASE'),
+                        \$connectTimeout
+                    );
+                }
+
+                new PDO(\$dsn, getenv('DB_USERNAME'), getenv('DB_PASSWORD'), \$options);
                 echo 'Database connection successful.' . PHP_EOL;
                 exit(0);
             } catch (Throwable \$exception) {
@@ -379,7 +451,13 @@ check_connections() {
     else
         echo "Skipping Redis check (no Redis-backed services configured)."
     fi
-    check_database_connection
+
+    if is_database_connection_networked; then
+        check_database_connection
+    else
+        echo "Skipping Database network check (DB_CONNECTION=${database_connection})."
+    fi
+
     check_storage_permissions
     check_opcache_directory
 }
@@ -425,7 +503,13 @@ run_migrations_if_enabled() {
     fi
 
     echo "Running database migrations..."
-    php artisan migrate --force --no-interaction
+
+    if [ "${app_env}" = "demo" ]; then
+        php artisan migrate --seed --force --no-interaction
+    else
+        php artisan migrate --force --no-interaction
+    fi
+
     echo "Migrations completed successfully."
 
     run_production_seeders
@@ -609,6 +693,8 @@ bootstrap_container() {
 
     fix_storage_permissions
     purge_laravel_provider_caches
+    resolve_database_connection
+    echo "Database connection driver: ${database_connection}"
     check_connections
     configure_scout_driver
 

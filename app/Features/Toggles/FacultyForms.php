@@ -21,7 +21,7 @@ final class FacultyForms implements FeatureToggle
         return 'Faculty Forms';
     }
 
-    public function summary(): ?string
+    public function summary(): string
     {
         return 'Request forms and approvals in one place.';
     }
@@ -31,12 +31,12 @@ final class FacultyForms implements FeatureToggle
         return 'faculty';
     }
 
-    public function badge(): ?string
+    public function badge(): string
     {
         return 'Forms';
     }
 
-    public function accent(): ?string
+    public function accent(): string
     {
         return 'text-rose-500';
     }

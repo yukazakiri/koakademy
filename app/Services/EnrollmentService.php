@@ -1088,6 +1088,18 @@ final class EnrollmentService
         return $options;
     }
 
+    public function syncStudentEnrolledStatusForPipeline(StudentEnrollment $studentEnrollment): void
+    {
+        $this->syncStudentEnrolledStatus($studentEnrollment);
+    }
+
+    public function autoEnrollStudentInClassesForPipeline(StudentEnrollment $studentEnrollment): void
+    {
+        if (method_exists($studentEnrollment->student, 'autoEnrollInClasses')) {
+            $studentEnrollment->student->autoEnrollInClasses($studentEnrollment->id);
+        }
+    }
+
     private function syncStudentEnrolledStatus(StudentEnrollment $studentEnrollment): void
     {
         if (! $studentEnrollment->student) {

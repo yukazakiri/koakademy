@@ -23,10 +23,24 @@ final class UpdateEnrollmentPipelineRequest extends FormRequest
     {
         $stepActions = ['advance_status', 'department_verification', 'cashier_verification'];
         $stepTypes = ['standard', 'department_verification', 'cashier_verification'];
+        $nodeActionTypes = [
+            'change_status',
+            'send_email',
+            'send_notification',
+            'department_verification',
+            'cashier_verification',
+            'sync_student_enrolled_status',
+            'auto_enroll_classes',
+            'calculate_tuition',
+            'update_tuition',
+            'create_payment_transactions',
+        ];
+        $nodeConditionTypes = ['complete_student_profile'];
         $statMetrics = ['total_records', 'active_records', 'trashed_records', 'status_count', 'paid_count'];
 
         return [
             'submitted_label' => ['required', 'string', 'max:100'],
+            'schema_version' => ['nullable', 'integer', 'min:2'],
             'enrollment_courses' => ['nullable', 'array'],
             'enrollment_courses.*' => ['integer'],
             'steps' => ['nullable', 'array', 'min:1'],
@@ -39,6 +53,14 @@ final class UpdateEnrollmentPipelineRequest extends FormRequest
             'steps.*.action_type' => ['nullable', 'string', Rule::in($stepTypes)],
             'steps.*.actions' => ['nullable', 'array'],
             'steps.*.actions.*' => ['string', Rule::in($stepActions)],
+            'steps.*.node_actions' => ['nullable', 'array'],
+            'steps.*.node_actions.*.type' => ['required_with:steps.*.node_actions', 'string', Rule::in($nodeActionTypes)],
+            'steps.*.node_actions.*.order' => ['nullable', 'integer', 'min:1'],
+            'steps.*.node_actions.*.config' => ['nullable', 'array'],
+            'steps.*.node_conditions' => ['nullable', 'array'],
+            'steps.*.node_conditions.*.type' => ['required_with:steps.*.node_conditions', 'string', Rule::in($nodeConditionTypes)],
+            'steps.*.node_conditions.*.order' => ['nullable', 'integer', 'min:1'],
+            'steps.*.node_conditions.*.config' => ['nullable', 'array'],
             'steps.*.next_step_key' => ['nullable', 'string', 'max:100'],
             'entry_step_key' => ['nullable', 'string', 'max:100'],
             'completion_step_key' => ['nullable', 'string', 'max:100'],

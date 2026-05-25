@@ -94,6 +94,7 @@ final class EnrollmentPipelineService
     public function sanitizeForStorage(array $input): array
     {
         $defaults = $this->defaults();
+        $schemaVersion = $this->sanitizeSchemaVersion($input['schema_version'] ?? 2);
 
         $steps = $this->sanitizeSteps($input['steps'] ?? null);
 
@@ -123,6 +124,7 @@ final class EnrollmentPipelineService
         }
 
         $config = [
+            'schema_version' => $schemaVersion,
             'submitted_label' => $this->sanitizeString($input['submitted_label'] ?? null, $defaults['submitted_label']),
             'steps' => $steps,
             'entry_step_key' => $entryStepKey,
@@ -205,6 +207,8 @@ final class EnrollmentPipelineService
                 'key' => $step['key'],
                 'action_type' => $step['action_type'],
                 'actions' => $step['actions'] ?? $this->actionsForActionType($step['action_type']),
+                'node_actions' => $step['node_actions'] ?? $this->legacyActionsToNodeActions($step['actions'] ?? $this->actionsForActionType($step['action_type'])),
+                'node_conditions' => $step['node_conditions'] ?? [],
                 'next_step_key' => $step['next_step_key'] ?? null,
                 'is_completion' => $completionStepKey === $step['key'],
             ])
@@ -446,6 +450,7 @@ final class EnrollmentPipelineService
     private function defaults(): array
     {
         return [
+            'schema_version' => 2,
             'submitted_label' => 'Submitted',
             'steps' => [
                 [
@@ -456,6 +461,8 @@ final class EnrollmentPipelineService
                     'allowed_roles' => [],
                     'action_type' => 'standard',
                     'actions' => ['advance_status'],
+                    'node_actions' => [['type' => 'change_status', 'order' => 1, 'config' => []]],
+                    'node_conditions' => [],
                 ],
                 [
                     'key' => 'department_verification',
@@ -465,6 +472,8 @@ final class EnrollmentPipelineService
                     'allowed_roles' => [],
                     'action_type' => 'department_verification',
                     'actions' => ['department_verification'],
+                    'node_actions' => [['type' => 'department_verification', 'order' => 1, 'config' => []]],
+                    'node_conditions' => [],
                 ],
                 [
                     'key' => 'payment_verification',
@@ -474,6 +483,8 @@ final class EnrollmentPipelineService
                     'allowed_roles' => [],
                     'action_type' => 'cashier_verification',
                     'actions' => ['cashier_verification'],
+                    'node_actions' => [['type' => 'cashier_verification', 'order' => 1, 'config' => []]],
+                    'node_conditions' => [],
                 ],
             ],
             'entry_step_key' => 'pending',
@@ -674,6 +685,181 @@ final class EnrollmentPipelineService
         return $normalized === [] ? $this->actionsForActionType($fallbackActionType) : $normalized;
     }
 
+    private function sanitizeSchemaVersion(mixed $value): int
+    {
+        if (is_int($value) && $value >= 2) {
+            return $value;
+        }
+
+        if (is_numeric($value) && (int) $value >= 2) {
+            return (int) $value;
+        }
+
+        return 2;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function sanitizeNodeActions(mixed $actionsRaw, array $legacyActions): array
+    {
+        if (! is_array($actionsRaw)) {
+            return $this->legacyActionsToNodeActions($legacyActions);
+        }
+
+        $actions = [];
+        foreach ($actionsRaw as $index => $actionRaw) {
+            if (! is_array($actionRaw)) {
+                continue;
+            }
+
+            $type = $this->sanitizeNodeActionType($actionRaw['type'] ?? null);
+            if ($type === null) {
+                continue;
+            }
+
+            $actions[] = [
+                'key' => $this->sanitizeStepKey($actionRaw['key'] ?? $type, $type),
+                'type' => $type,
+                'enabled' => (bool) ($actionRaw['enabled'] ?? true),
+                'order' => $this->sanitizeNodeOrder($actionRaw['order'] ?? ($index + 1)),
+                'config' => $this->sanitizeNodeConfig($actionRaw['config'] ?? []),
+                'halt_on_failure' => (bool) ($actionRaw['halt_on_failure'] ?? true),
+            ];
+        }
+
+        if ($actions === []) {
+            return $this->legacyActionsToNodeActions($legacyActions);
+        }
+
+        usort($actions, fn (array $left, array $right): int => $left['order'] <=> $right['order']);
+
+        return array_values($actions);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function sanitizeNodeConditions(mixed $conditionsRaw): array
+    {
+        if (! is_array($conditionsRaw)) {
+            return [];
+        }
+
+        $conditions = [];
+        foreach ($conditionsRaw as $index => $conditionRaw) {
+            if (! is_array($conditionRaw)) {
+                continue;
+            }
+
+            $type = $this->sanitizeNodeConditionType($conditionRaw['type'] ?? null);
+            if ($type === null) {
+                continue;
+            }
+
+            $conditions[] = [
+                'key' => $this->sanitizeStepKey($conditionRaw['key'] ?? $type, $type),
+                'type' => $type,
+                'enabled' => (bool) ($conditionRaw['enabled'] ?? true),
+                'order' => $this->sanitizeNodeOrder($conditionRaw['order'] ?? ($index + 1)),
+                'config' => $this->sanitizeNodeConfig($conditionRaw['config'] ?? []),
+                'message' => $this->sanitizeString($conditionRaw['message'] ?? null, 'Complete the student profile before continuing.'),
+            ];
+        }
+
+        usort($conditions, fn (array $left, array $right): int => $left['order'] <=> $right['order']);
+
+        return array_values($conditions);
+    }
+
+    private function sanitizeNodeActionType(mixed $type): ?string
+    {
+        if (! is_string($type)) {
+            return null;
+        }
+
+        $normalized = mb_trim(mb_strtolower($type));
+        $allowed = [
+            'change_status',
+            'send_email',
+            'send_notification',
+            'department_verification',
+            'cashier_verification',
+            'sync_student_enrolled_status',
+            'auto_enroll_classes',
+            'calculate_tuition',
+            'update_tuition',
+            'create_payment_transactions',
+        ];
+
+        return in_array($normalized, $allowed, true) ? $normalized : null;
+    }
+
+    private function sanitizeNodeConditionType(mixed $type): ?string
+    {
+        if (! is_string($type)) {
+            return null;
+        }
+
+        $normalized = mb_trim(mb_strtolower($type));
+
+        return $normalized === 'complete_student_profile' ? $normalized : null;
+    }
+
+    private function sanitizeNodeOrder(mixed $order): int
+    {
+        if (is_int($order) && $order > 0) {
+            return $order;
+        }
+
+        if (is_numeric($order) && (int) $order > 0) {
+            return (int) $order;
+        }
+
+        return 1;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function sanitizeNodeConfig(mixed $config): array
+    {
+        return is_array($config) ? $config : [];
+    }
+
+    /**
+     * @param  array<int, string>  $legacyActions
+     * @return array<int, array<string, mixed>>
+     */
+    private function legacyActionsToNodeActions(array $legacyActions): array
+    {
+        $mapped = [];
+
+        foreach ($legacyActions as $index => $legacyAction) {
+            $nodeType = match ($legacyAction) {
+                'advance_status' => 'change_status',
+                'department_verification' => 'department_verification',
+                'cashier_verification' => 'cashier_verification',
+                default => null,
+            };
+
+            if ($nodeType === null) {
+                continue;
+            }
+
+            $mapped[] = [
+                'key' => $legacyAction,
+                'type' => $nodeType,
+                'enabled' => true,
+                'order' => $index + 1,
+                'config' => [],
+                'halt_on_failure' => true,
+            ];
+        }
+
+        return $mapped === [] ? [['key' => 'advance_status', 'type' => 'change_status', 'enabled' => true, 'order' => 1, 'config' => [], 'halt_on_failure' => true]] : $mapped;
+    }
+
     /**
      * @return array<int, string>
      */
@@ -724,6 +910,8 @@ final class EnrollmentPipelineService
                 'allowed_roles' => $this->sanitizeRoles($stepRaw['allowed_roles'] ?? []),
                 'action_type' => $this->sanitizeActionType($stepRaw['action_type'] ?? 'standard', $actions),
                 'actions' => $actions,
+                'node_actions' => $this->sanitizeNodeActions($stepRaw['node_actions'] ?? null, $actions),
+                'node_conditions' => $this->sanitizeNodeConditions($stepRaw['node_conditions'] ?? []),
                 'next_step_key' => array_key_exists('next_step_key', $stepRaw)
                     ? $this->sanitizeNullableStepKey($stepRaw['next_step_key'] ?? null)
                     : '__next_by_order__',
@@ -793,6 +981,8 @@ final class EnrollmentPipelineService
                 'allowed_roles' => $this->sanitizeRoles($input['pending_roles'] ?? []),
                 'action_type' => 'standard',
                 'actions' => ['advance_status'],
+                'node_actions' => [['type' => 'change_status', 'order' => 1, 'config' => []]],
+                'node_conditions' => [],
             ],
             [
                 'key' => 'department_verification',
@@ -802,6 +992,8 @@ final class EnrollmentPipelineService
                 'allowed_roles' => $this->sanitizeRoles($input['department_verified_roles'] ?? []),
                 'action_type' => 'department_verification',
                 'actions' => ['department_verification'],
+                'node_actions' => [['type' => 'department_verification', 'order' => 1, 'config' => []]],
+                'node_conditions' => [],
             ],
         ];
 
@@ -829,6 +1021,8 @@ final class EnrollmentPipelineService
                     'allowed_roles' => $this->sanitizeRoles($stepRaw['allowed_roles'] ?? []),
                     'action_type' => 'standard',
                     'actions' => ['advance_status'],
+                    'node_actions' => [['type' => 'change_status', 'order' => 1, 'config' => []]],
+                    'node_conditions' => [],
                 ];
             }
         }
@@ -841,6 +1035,8 @@ final class EnrollmentPipelineService
             'allowed_roles' => $this->sanitizeRoles($input['cashier_verified_roles'] ?? []),
             'action_type' => 'cashier_verification',
             'actions' => ['cashier_verification'],
+            'node_actions' => [['type' => 'cashier_verification', 'order' => 1, 'config' => []]],
+            'node_conditions' => [],
         ];
 
         return $steps;
@@ -940,6 +1136,7 @@ final class EnrollmentPipelineService
 
         return [
             ...$config,
+            'schema_version' => $config['schema_version'] ?? 2,
             'automation' => $config['automation'] ?? $this->defaults()['automation'],
             'pending_status' => $entryStep['status'],
             'pending_label' => $entryStep['label'],

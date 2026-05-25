@@ -122,6 +122,38 @@ export interface MailConfig {
 
 export type EnrollmentPipelineActionType = "standard" | "department_verification" | "cashier_verification";
 export type EnrollmentPipelineStepAction = "advance_status" | "department_verification" | "cashier_verification";
+export type EnrollmentPipelineNodeActionType =
+    | "change_status"
+    | "send_email"
+    | "send_notification"
+    | "department_verification"
+    | "cashier_verification"
+    | "sync_student_enrolled_status"
+    | "auto_enroll_classes"
+    | "calculate_tuition"
+    | "update_tuition"
+    | "create_payment_transactions";
+export type EnrollmentPipelineNodeConditionType = "complete_student_profile";
+
+export interface EnrollmentPipelineNodeAction {
+    key?: string;
+    type: EnrollmentPipelineNodeActionType;
+    enabled?: boolean;
+    order: number;
+    config: Record<string, unknown>;
+    halt_on_failure?: boolean;
+}
+
+export interface EnrollmentPipelineNodeCondition {
+    key?: string;
+    type: EnrollmentPipelineNodeConditionType;
+    enabled?: boolean;
+    order: number;
+    config: {
+        required_fields?: string[];
+    };
+    message?: string;
+}
 
 export interface EnrollmentPipelineStep {
     key: string;
@@ -131,10 +163,13 @@ export interface EnrollmentPipelineStep {
     allowed_roles: string[];
     action_type: EnrollmentPipelineActionType;
     actions?: EnrollmentPipelineStepAction[];
+    node_actions?: EnrollmentPipelineNodeAction[];
+    node_conditions?: EnrollmentPipelineNodeCondition[];
     next_step_key?: string | null;
 }
 
 export interface EnrollmentPipelineSettings {
+    schema_version?: number;
     submitted_label: string;
     entry_step_key?: string;
     completion_step_key?: string;

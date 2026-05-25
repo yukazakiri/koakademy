@@ -50,6 +50,9 @@ import { submitSystemForm } from "./form-submit";
 import SystemManagementLayout from "./layout";
 import type {
     EnrollmentPipelineActionType,
+    EnrollmentPipelineNodeAction,
+    EnrollmentPipelineNodeActionType,
+    EnrollmentPipelineNodeCondition,
     EnrollmentPipelineStep,
     EnrollmentPipelineStepAction,
     EnrollmentStatMetric,
@@ -58,6 +61,7 @@ import type {
 } from "./types";
 
 interface EnrollmentPipelineFormData {
+    schema_version: number;
     submitted_label: string;
     enrollment_courses: number[];
     entry_step_key: string;
@@ -114,6 +118,30 @@ const actionOptions: Array<{
     },
 ];
 
+const nodeActionOptions: Array<{ value: EnrollmentPipelineNodeActionType; label: string; description: string }> = [
+    { value: "change_status", label: "Change status", description: "Move the enrollment into this node status." },
+    { value: "send_email", label: "Send email", description: "Send a simple email to the student." },
+    { value: "send_notification", label: "Send notification", description: "Notify super admins and optionally the student." },
+    { value: "department_verification", label: "Department verification", description: "Run the existing department verification flow." },
+    { value: "cashier_verification", label: "Cashier verification", description: "Run the existing cashier payment verification flow." },
+    { value: "sync_student_enrolled_status", label: "Sync enrolled status", description: "Mark the student status as enrolled." },
+    { value: "auto_enroll_classes", label: "Auto-enroll classes", description: "Enroll the student in available classes." },
+    { value: "calculate_tuition", label: "Calculate tuition", description: "Create tuition from configured or submitted tuition data." },
+    { value: "update_tuition", label: "Update tuition", description: "Update existing tuition attributes from action config." },
+    { value: "create_payment_transactions", label: "Create transactions", description: "Reserved for cashier verification payment details." },
+];
+
+const profileFieldOptions = [
+    { value: "first_name", label: "First name" },
+    { value: "last_name", label: "Last name" },
+    { value: "email", label: "Email" },
+    { value: "phone", label: "Phone" },
+    { value: "birth_date", label: "Birth date" },
+    { value: "gender", label: "Gender" },
+    { value: "address", label: "Address" },
+    { value: "course_id", label: "Course" },
+];
+
 const statsMetricOptions: Array<{ value: EnrollmentStatMetric; label: string }> = [
     { value: "total_records", label: "Total Records" },
     { value: "active_records", label: "Active Records" },
@@ -144,6 +172,32 @@ const actionsForActionType = (actionType: EnrollmentPipelineActionType): Enrollm
     return ["advance_status"];
 };
 
+const nodeActionsForActionType = (actionType: EnrollmentPipelineActionType): EnrollmentPipelineNodeAction[] => {
+    const type = actionType === "department_verification" || actionType === "cashier_verification" ? actionType : "change_status";
+
+    return [
+        {
+            key: type === "change_status" ? "advance_status" : type,
+            type,
+            enabled: true,
+            order: 1,
+            config: {},
+            halt_on_failure: true,
+        },
+    ];
+};
+
+const normalizeNodeActions = (step: EnrollmentPipelineStep, actionType: EnrollmentPipelineActionType): EnrollmentPipelineNodeAction[] => {
+    if (step.node_actions?.length) {
+        return [...step.node_actions].sort((left, right) => left.order - right.order);
+    }
+
+    return nodeActionsForActionType(actionType);
+};
+
+const normalizeNodeConditions = (step: EnrollmentPipelineStep): EnrollmentPipelineNodeCondition[] =>
+    step.node_conditions?.length ? [...step.node_conditions].sort((left, right) => left.order - right.order) : [];
+
 const normalizeActionType = (step: EnrollmentPipelineStep): EnrollmentPipelineActionType => {
     if (step.actions?.includes("cashier_verification")) {
         return "cashier_verification";
@@ -164,6 +218,8 @@ const createDefaultStep = (index: number): EnrollmentPipelineStep => ({
     allowed_roles: [],
     action_type: "standard",
     actions: ["advance_status"],
+    node_actions: nodeActionsForActionType("standard"),
+    node_conditions: [],
     next_step_key: null,
 });
 
@@ -195,6 +251,7 @@ export default function SystemManagementEnrollmentPipelinePage({
     const availableEnrollmentCourseIds = new Set((available_enrollment_courses ?? []).map((course) => course.id));
 
     const pipelineForm = useForm<EnrollmentPipelineFormData>({
+        schema_version: enrollment_pipeline?.schema_version || 2,
         submitted_label: enrollment_pipeline?.submitted_label || "Submitted",
         enrollment_courses: (general_settings.enrollment_courses ?? [])
             .map((courseId) => Number(courseId))
@@ -213,6 +270,8 @@ export default function SystemManagementEnrollmentPipelinePage({
                 allowed_roles: step.allowed_roles || [],
                 action_type: actionType,
                 actions: step.actions?.length ? step.actions : actionsForActionType(actionType),
+                node_actions: normalizeNodeActions(step, actionType),
+                node_conditions: normalizeNodeConditions(step),
                 next_step_key: step.next_step_key ?? initialSteps[index + 1]?.key ?? null,
             };
         }),
@@ -340,6 +399,92 @@ export default function SystemManagementEnrollmentPipelinePage({
             ...step,
             action_type: actionType,
             actions: actionsForActionType(actionType),
+            node_actions: nodeActionsForActionType(actionType),
+        }));
+    };
+
+    const updateNodeAction = (stepIndex: number, actionIndex: number, updater: (action: EnrollmentPipelineNodeAction) => EnrollmentPipelineNodeAction) => {
+        updatePipelineStep(stepIndex, (step) => ({
+            ...step,
+            node_actions: (step.node_actions || []).map((action, index) => (index === actionIndex ? updater(action) : action)),
+        }));
+    };
+
+    const addNodeAction = (stepIndex: number) => {
+        updatePipelineStep(stepIndex, (step) => ({
+            ...step,
+            node_actions: [
+                ...(step.node_actions || []),
+                {
+                    key: `action_${(step.node_actions || []).length + 1}`,
+                    type: "change_status",
+                    enabled: true,
+                    order: (step.node_actions || []).length + 1,
+                    config: {},
+                    halt_on_failure: true,
+                },
+            ],
+        }));
+    };
+
+    const removeNodeAction = (stepIndex: number, actionIndex: number) => {
+        updatePipelineStep(stepIndex, (step) => ({
+            ...step,
+            node_actions: (step.node_actions || []).filter((_, index) => index !== actionIndex),
+        }));
+    };
+
+    const toggleCompleteProfileCondition = (stepIndex: number, enabled: boolean) => {
+        updatePipelineStep(stepIndex, (step) => {
+            const conditions = step.node_conditions || [];
+
+            if (!enabled) {
+                return {
+                    ...step,
+                    node_conditions: conditions.filter((condition) => condition.type !== "complete_student_profile"),
+                };
+            }
+
+            if (conditions.some((condition) => condition.type === "complete_student_profile")) {
+                return step;
+            }
+
+            return {
+                ...step,
+                node_conditions: [
+                    ...conditions,
+                    {
+                        key: "complete_student_profile",
+                        type: "complete_student_profile",
+                        enabled: true,
+                        order: conditions.length + 1,
+                        config: { required_fields: profileFieldOptions.map((field) => field.value) },
+                        message: "Complete the student profile before continuing.",
+                    },
+                ],
+            };
+        });
+    };
+
+    const toggleProfileRequiredField = (stepIndex: number, field: string, checked: boolean) => {
+        updatePipelineStep(stepIndex, (step) => ({
+            ...step,
+            node_conditions: (step.node_conditions || []).map((condition) => {
+                if (condition.type !== "complete_student_profile") {
+                    return condition;
+                }
+
+                const fields = condition.config.required_fields || [];
+                const required_fields = checked ? [...new Set([...fields, field])] : fields.filter((currentField) => currentField !== field);
+
+                return {
+                    ...condition,
+                    config: {
+                        ...condition.config,
+                        required_fields,
+                    },
+                };
+            }),
         }));
     };
 
@@ -566,6 +711,11 @@ export default function SystemManagementEnrollmentPipelinePage({
             key: `${step.key}_copy_${nextIndex}`,
             status: `${step.status}_copy_${nextIndex}`,
             label: `${step.label} Copy`,
+            node_actions: (step.node_actions || []).map((action) => ({ ...action, config: { ...action.config } })),
+            node_conditions: (step.node_conditions || []).map((condition) => ({
+                ...condition,
+                config: { ...condition.config, required_fields: [...(condition.config.required_fields || [])] },
+            })),
             next_step_key: null,
         };
         const nextSteps = [...pipelineForm.data.steps, duplicatedStep];
@@ -1023,9 +1173,9 @@ export default function SystemManagementEnrollmentPipelinePage({
 
                                             <div className="space-y-3">
                                                 <div>
-                                                    <Label className="text-base font-semibold">Action executed on approval</Label>
+                                                    <Label className="text-base font-semibold">Legacy action shortcut</Label>
                                                     <p className="text-muted-foreground mt-1 text-sm">
-                                                        Pick the backend flow this step should run when it becomes the next approval step.
+                                                        Pick a preset to quickly replace this node's structured actions.
                                                     </p>
                                                 </div>
                                                 <div className="grid gap-3">
@@ -1061,6 +1211,177 @@ export default function SystemManagementEnrollmentPipelinePage({
                                                         );
                                                     })}
                                                 </div>
+                                            </div>
+
+                                            <div className="bg-muted/20 space-y-4 rounded-xl border p-4">
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div>
+                                                        <Label className="text-base font-semibold">Node actions</Label>
+                                                        <p className="text-muted-foreground mt-1 text-sm">
+                                                            These run in order after this node's conditions pass.
+                                                        </p>
+                                                    </div>
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={() => selectedStepIndex !== null && addNodeAction(selectedStepIndex)}
+                                                    >
+                                                        <Plus className="mr-2 h-4 w-4" /> Add
+                                                    </Button>
+                                                </div>
+
+                                                {(selectedStep.node_actions || []).length > 0 ? (
+                                                    <div className="space-y-3">
+                                                        {(selectedStep.node_actions || []).map((action, actionIndex) => (
+                                                            <div key={`${action.type}-${actionIndex}`} className="bg-background space-y-3 rounded-lg border p-3">
+                                                                <div className="flex items-start justify-between gap-3">
+                                                                    <div className="grid flex-1 gap-3 sm:grid-cols-[1fr_90px]">
+                                                                        <div className="space-y-2">
+                                                                            <Label>Action</Label>
+                                                                            <Select
+                                                                                value={action.type}
+                                                                                onValueChange={(value) =>
+                                                                                    selectedStepIndex !== null &&
+                                                                                    updateNodeAction(selectedStepIndex, actionIndex, (currentAction) => ({
+                                                                                        ...currentAction,
+                                                                                        key: value,
+                                                                                        type: value as EnrollmentPipelineNodeActionType,
+                                                                                    }))
+                                                                                }
+                                                                            >
+                                                                                <SelectTrigger>
+                                                                                    <SelectValue />
+                                                                                </SelectTrigger>
+                                                                                <SelectContent>
+                                                                                    {nodeActionOptions.map((option) => (
+                                                                                        <SelectItem key={option.value} value={option.value}>
+                                                                                            {option.label}
+                                                                                        </SelectItem>
+                                                                                    ))}
+                                                                                </SelectContent>
+                                                                            </Select>
+                                                                        </div>
+                                                                        <div className="space-y-2">
+                                                                            <Label>Order</Label>
+                                                                            <Input
+                                                                                type="number"
+                                                                                min={1}
+                                                                                value={action.order}
+                                                                                onChange={(event) =>
+                                                                                    selectedStepIndex !== null &&
+                                                                                    updateNodeAction(selectedStepIndex, actionIndex, (currentAction) => ({
+                                                                                        ...currentAction,
+                                                                                        order: Number(event.target.value) || 1,
+                                                                                    }))
+                                                                                }
+                                                                            />
+                                                                        </div>
+                                                                    </div>
+                                                                    <Button
+                                                                        type="button"
+                                                                        variant="ghost"
+                                                                        size="icon"
+                                                                        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                                                        onClick={() => selectedStepIndex !== null && removeNodeAction(selectedStepIndex, actionIndex)}
+                                                                    >
+                                                                        <Trash2 className="h-4 w-4" />
+                                                                    </Button>
+                                                                </div>
+                                                                <p className="text-muted-foreground text-xs">
+                                                                    {nodeActionOptions.find((option) => option.value === action.type)?.description}
+                                                                </p>
+                                                                <div className="grid gap-3 sm:grid-cols-2">
+                                                                    <label className="flex items-center gap-2 text-sm">
+                                                                        <Switch
+                                                                            checked={action.enabled ?? true}
+                                                                            onCheckedChange={(enabled) =>
+                                                                                selectedStepIndex !== null &&
+                                                                                updateNodeAction(selectedStepIndex, actionIndex, (currentAction) => ({
+                                                                                    ...currentAction,
+                                                                                    enabled,
+                                                                                }))
+                                                                            }
+                                                                        />
+                                                                        Enabled
+                                                                    </label>
+                                                                    <label className="flex items-center gap-2 text-sm">
+                                                                        <Switch
+                                                                            checked={action.halt_on_failure ?? true}
+                                                                            onCheckedChange={(halt_on_failure) =>
+                                                                                selectedStepIndex !== null &&
+                                                                                updateNodeAction(selectedStepIndex, actionIndex, (currentAction) => ({
+                                                                                    ...currentAction,
+                                                                                    halt_on_failure,
+                                                                                }))
+                                                                            }
+                                                                        />
+                                                                        Stop if this fails
+                                                                    </label>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-muted-foreground bg-background rounded-md border border-dashed p-3 text-sm">
+                                                        No node actions configured. Add one before saving this workflow.
+                                                    </p>
+                                                )}
+                                            </div>
+
+                                            <div className="bg-muted/20 space-y-4 rounded-xl border p-4">
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div>
+                                                        <Label className="text-base font-semibold">Built-in conditions</Label>
+                                                        <p className="text-muted-foreground mt-1 text-sm">
+                                                            Conditions must pass before the node actions run.
+                                                        </p>
+                                                    </div>
+                                                    <Switch
+                                                        checked={(selectedStep.node_conditions || []).some(
+                                                            (condition) => condition.type === "complete_student_profile",
+                                                        )}
+                                                        onCheckedChange={(enabled) =>
+                                                            selectedStepIndex !== null && toggleCompleteProfileCondition(selectedStepIndex, enabled)
+                                                        }
+                                                    />
+                                                </div>
+
+                                                {(selectedStep.node_conditions || []).some((condition) => condition.type === "complete_student_profile") ? (
+                                                    <div className="bg-background space-y-3 rounded-lg border p-3">
+                                                        <div>
+                                                            <p className="font-medium">Require complete student profile</p>
+                                                            <p className="text-muted-foreground mt-1 text-xs">
+                                                                The next node will not proceed until these student fields are filled.
+                                                            </p>
+                                                        </div>
+                                                        <div className="grid gap-2 sm:grid-cols-2">
+                                                            {profileFieldOptions.map((field) => {
+                                                                const condition = (selectedStep.node_conditions || []).find(
+                                                                    (currentCondition) => currentCondition.type === "complete_student_profile",
+                                                                );
+                                                                const checked = condition?.config.required_fields?.includes(field.value) ?? false;
+
+                                                                return (
+                                                                    <label key={field.value} className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+                                                                        <Checkbox
+                                                                            checked={checked}
+                                                                            onCheckedChange={(value) =>
+                                                                                selectedStepIndex !== null &&
+                                                                                toggleProfileRequiredField(selectedStepIndex, field.value, value === true)
+                                                                            }
+                                                                        />
+                                                                        {field.label}
+                                                                    </label>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-muted-foreground bg-background rounded-md border border-dashed p-3 text-sm">
+                                                        No blocking conditions configured for this node.
+                                                    </p>
+                                                )}
                                             </div>
 
                                             <div className="bg-muted/20 space-y-3 rounded-xl border p-4">

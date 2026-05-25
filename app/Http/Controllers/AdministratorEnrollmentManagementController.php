@@ -19,6 +19,7 @@ use App\Models\Subject;
 use App\Models\SubjectEnrollment;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Services\EnrollmentPipelineExecutionService;
 use App\Services\EnrollmentPipelineService;
 use App\Services\EnrollmentService;
 use App\Services\GeneralSettingsService;
@@ -44,7 +45,8 @@ final class AdministratorEnrollmentManagementController extends Controller
 {
     public function __construct(
         private readonly EnrollmentService $enrollmentService,
-        private readonly EnrollmentPipelineService $enrollmentPipelineService
+        private readonly EnrollmentPipelineService $enrollmentPipelineService,
+        private readonly EnrollmentPipelineExecutionService $enrollmentPipelineExecutionService
     ) {}
 
     public function index(GeneralSettingsService $settingsService): Response|RedirectResponse
@@ -638,24 +640,13 @@ final class AdministratorEnrollmentManagementController extends Controller
             abort(403);
         }
 
-        $actionType = $nextStep['action_type'] ?? 'standard';
-
-        if ($actionType === 'cashier_verification') {
+        if (($nextStep['action_type'] ?? 'standard') === 'cashier_verification') {
             return back()->with('flash', ['error' => 'This step requires payment verification flow.']);
         }
 
-        if ($actionType === 'department_verification') {
-            if ($this->enrollmentService->verifyByHeadDept($enrollment)) {
-                return back()->with('flash', ['success' => 'Advanced to the next pipeline step.']);
-            }
+        $result = $this->enrollmentPipelineExecutionService->execute($enrollment, $nextStep, [], $user);
 
-            return back()->with('flash', ['error' => 'Failed to advance pipeline step.']);
-        }
-
-        $enrollment->status = $nextStep['status'];
-        $enrollment->save();
-
-        return back()->with('flash', ['success' => 'Advanced to the next pipeline step.']);
+        return back()->with('flash', [$result['success'] ? 'success' : 'error' => $result['message']]);
     }
 
     public function verifyHeadDept(StudentEnrollment $enrollment): RedirectResponse
@@ -675,11 +666,9 @@ final class AdministratorEnrollmentManagementController extends Controller
             return back()->with('flash', ['error' => 'Enrollment is not ready for department verification.']);
         }
 
-        if ($this->enrollmentService->verifyByHeadDept($enrollment)) {
-            return back()->with('flash', ['success' => 'Successfully verified as Head Dept.']);
-        }
+        $result = $this->enrollmentPipelineExecutionService->execute($enrollment, $nextStep, [], $user);
 
-        return back()->with('flash', ['error' => 'Verification failed.']);
+        return back()->with('flash', [$result['success'] ? 'success' : 'error' => $result['success'] ? 'Successfully verified as Head Dept.' : $result['message']]);
     }
 
     public function verifyCashier(Request $request, StudentEnrollment $enrollment): RedirectResponse
@@ -708,11 +697,9 @@ final class AdministratorEnrollmentManagementController extends Controller
         // Merge extra dynamic fields for separate transaction fees if present in request
         $allData = $request->all();
 
-        if ($this->enrollmentService->verifyByCashier($enrollment, $allData)) {
-            return back()->with('flash', ['success' => 'Successfully enrolled student.']);
-        }
+        $result = $this->enrollmentPipelineExecutionService->execute($enrollment, $nextStep, $allData, $user);
 
-        return back()->with('flash', ['error' => 'Enrollment failed.']);
+        return back()->with('flash', [$result['success'] ? 'success' : 'error' => $result['success'] ? 'Successfully enrolled student.' : $result['message']]);
     }
 
     public function verifyCashierNoReceipt(Request $request, StudentEnrollment $enrollment): RedirectResponse

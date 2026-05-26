@@ -640,11 +640,11 @@ final class AdministratorEnrollmentManagementController extends Controller
             abort(403);
         }
 
-        if (($nextStep['action_type'] ?? 'standard') === 'cashier_verification') {
+        if ($this->stepHasNodeAction($nextStep, 'cashier_verification')) {
             return back()->with('flash', ['error' => 'This step requires payment verification flow.']);
         }
 
-        $result = $this->enrollmentPipelineExecutionService->execute($enrollment, $nextStep, [], $user);
+        $result = $this->enrollmentPipelineExecutionService->execute($enrollment, $nextStep);
 
         return back()->with('flash', [$result['success'] ? 'success' : 'error' => $result['message']]);
     }
@@ -662,11 +662,15 @@ final class AdministratorEnrollmentManagementController extends Controller
         }
 
         $nextStep = $this->enrollmentPipelineService->getNextStep($enrollment->status);
-        if (($nextStep['action_type'] ?? null) !== 'department_verification') {
+        if (! $this->stepHasNodeAction($nextStep, 'department_verification')) {
             return back()->with('flash', ['error' => 'Enrollment is not ready for department verification.']);
         }
 
-        $result = $this->enrollmentPipelineExecutionService->execute($enrollment, $nextStep, [], $user);
+        if (! $this->enrollmentPipelineService->canUserPerformStep($user, $nextStep)) {
+            abort(403);
+        }
+
+        $result = $this->enrollmentPipelineExecutionService->execute($enrollment, $nextStep);
 
         return back()->with('flash', [$result['success'] ? 'success' : 'error' => $result['success'] ? 'Successfully verified as Head Dept.' : $result['message']]);
     }
@@ -684,20 +688,27 @@ final class AdministratorEnrollmentManagementController extends Controller
         }
 
         $nextStep = $this->enrollmentPipelineService->getNextStep($enrollment->status);
-        if (($nextStep['action_type'] ?? null) !== 'cashier_verification') {
+        if (! $this->stepHasNodeAction($nextStep, 'cashier_verification')) {
             return back()->with('flash', ['error' => 'Enrollment is not ready for cashier verification.']);
         }
 
-        $request->validate([
-            'invoicenumber' => 'required|string',
-            'settlements' => 'required|array',
-            'payment_method' => 'required|string',
+        if (! $this->enrollmentPipelineService->canUserPerformStep($user, $nextStep)) {
+            abort(403);
+        }
+
+        $validated = $request->validate([
+            'invoicenumber' => ['required', 'string', 'max:255'],
+            'settlements' => ['required', 'array'],
+            'payment_method' => ['required', 'string', 'max:255'],
+            'signature' => ['nullable', 'string'],
         ]);
 
-        // Merge extra dynamic fields for separate transaction fees if present in request
-        $allData = $request->all();
+        $allData = [
+            ...$validated,
+            ...$this->validatedSeparateTransactionFields($request),
+        ];
 
-        $result = $this->enrollmentPipelineExecutionService->execute($enrollment, $nextStep, $allData, $user);
+        $result = $this->enrollmentPipelineExecutionService->execute($enrollment, $nextStep, $allData);
 
         return back()->with('flash', [$result['success'] ? 'success' : 'error' => $result['success'] ? 'Successfully enrolled student.' : $result['message']]);
     }
@@ -2542,6 +2553,52 @@ final class AdministratorEnrollmentManagementController extends Controller
                 ];
             })
             ->toArray();
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $step
+     */
+    private function stepHasNodeAction(?array $step, string $actionType): bool
+    {
+        if ($step === null) {
+            return false;
+        }
+
+        $nodeActions = $step['node_actions'] ?? [];
+        if (is_array($nodeActions) && $nodeActions !== []) {
+            foreach ($nodeActions as $nodeAction) {
+                if (! is_array($nodeAction)) {
+                    continue;
+                }
+
+                if (($nodeAction['enabled'] ?? true) === false) {
+                    continue;
+                }
+
+                if (($nodeAction['type'] ?? null) === $actionType) {
+                    return true;
+                }
+            }
+        }
+
+        $legacyActions = $step['actions'] ?? [];
+        if (is_array($legacyActions) && in_array($actionType, $legacyActions, true)) {
+            return true;
+        }
+
+        return ($step['action_type'] ?? null) === $actionType;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function validatedSeparateTransactionFields(Request $request): array
+    {
+        return collect($request->all())
+            ->filter(fn (mixed $value, string $key): bool => str($key)->is('separate_fee_*_transaction') && is_string($value))
+            ->map(fn (mixed $value): string => mb_trim((string) $value))
+            ->filter(fn (string $value): bool => $value !== '')
+            ->all();
     }
 
     /**

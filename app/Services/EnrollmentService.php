@@ -224,7 +224,8 @@ final class EnrollmentService
      * @return bool True on success, false on failure.
      */
     public function verifyByHeadDept(
-        StudentEnrollment $studentEnrollment
+        StudentEnrollment $studentEnrollment,
+        ?string $statusToApply = null
     ): bool {
         try {
             DB::beginTransaction();
@@ -234,7 +235,7 @@ final class EnrollmentService
             $verificationLabel = $verificationStep['label'] ?? 'Verification';
 
             // Update enrollment status
-            $studentEnrollment->status = $pipeline->getDepartmentVerifiedStatus();
+            $studentEnrollment->status = $statusToApply ?? $pipeline->getDepartmentVerifiedStatus();
             $studentEnrollment->save();
 
             // Send notifications
@@ -293,7 +294,8 @@ final class EnrollmentService
      */
     public function verifyByCashier(
         StudentEnrollment $studentEnrollment,
-        array $actionData
+        array $actionData,
+        ?string $statusToApply = null
     ): bool {
         DB::beginTransaction();
         try {
@@ -525,7 +527,7 @@ final class EnrollmentService
             $pipeline = app(EnrollmentPipelineService::class);
 
             // Mark enrollment/student as fully enrolled once paid
-            $studentEnrollment->status = $pipeline->getCompletionStep()['status'];
+            $studentEnrollment->status = $statusToApply ?? $pipeline->getCompletionStep()['status'];
             $studentEnrollment->save(); // Save status without soft deleting
             // $studentEnrollment->delete(); // Soft delete disabled - keeping enrollment records
 
@@ -871,7 +873,8 @@ final class EnrollmentService
      */
     public function verifyByCashierWithoutReceipt(
         StudentEnrollment $studentEnrollment,
-        array $actionData
+        array $actionData,
+        ?string $statusToApply = null
     ): bool {
         DB::beginTransaction();
         try {
@@ -963,7 +966,7 @@ final class EnrollmentService
             $pipeline = app(EnrollmentPipelineService::class);
 
             // Mark enrollment/student as fully enrolled once payment is verified
-            $studentEnrollment->status = $pipeline->getCompletionStep()['status'];
+            $studentEnrollment->status = $statusToApply ?? $pipeline->getCompletionStep()['status'];
             $studentEnrollment->remarks = $remarks; // Store the remarks
             $studentEnrollment->save(); // Save without soft deleting
 
@@ -1098,6 +1101,120 @@ final class EnrollmentService
         if (method_exists($studentEnrollment->student, 'autoEnrollInClasses')) {
             $studentEnrollment->student->autoEnrollInClasses($studentEnrollment->id);
         }
+    }
+
+    public function runDepartmentVerification(StudentEnrollment $studentEnrollment, ?string $statusToApply = null): bool
+    {
+        return $this->verifyByHeadDept($studentEnrollment, $statusToApply);
+    }
+
+    public function runCashierVerification(
+        StudentEnrollment $studentEnrollment,
+        array $actionData,
+        ?string $statusToApply = null
+    ): bool {
+        return $this->verifyByCashier($studentEnrollment, $actionData, $statusToApply);
+    }
+
+    public function syncStudentEnrolledStatusPublic(StudentEnrollment $studentEnrollment): void
+    {
+        $this->syncStudentEnrolledStatus($studentEnrollment);
+    }
+
+    public function autoEnrollClassesForStudent(StudentEnrollment $studentEnrollment): bool
+    {
+        try {
+            if (! method_exists($studentEnrollment->student, 'autoEnrollInClasses')) {
+                return false;
+            }
+
+            $studentEnrollment->student->autoEnrollInClasses($studentEnrollment->id);
+
+            return true;
+        } catch (Exception $exception) {
+            Log::error('Error auto-enrolling student in classes: '.$exception->getMessage(), [
+                'enrollment_id' => $studentEnrollment->id,
+                'exception' => $exception,
+            ]);
+
+            return false;
+        }
+    }
+
+    public function calculateTuitionForEnrollment(
+        StudentEnrollment $studentEnrollment,
+        array $tuitionData
+    ): ?StudentTuition {
+        if ($studentEnrollment->studentTuition) {
+            return $this->updateTuitionForEnrollment($studentEnrollment, $tuitionData)
+                ? $studentEnrollment->studentTuition()->first()
+                : null;
+        }
+
+        return $this->createStudentTuition($studentEnrollment, $tuitionData);
+    }
+
+    public function updateTuitionForEnrollment(StudentEnrollment $studentEnrollment, array $payload): bool
+    {
+        $tuitionData = $payload['tuition_data'] ?? $payload;
+        if (! is_array($tuitionData)) {
+            return false;
+        }
+
+        $studentTuition = $studentEnrollment->studentTuition;
+        if (! $studentTuition) {
+            return false;
+        }
+
+        $allowedFields = [
+            'status',
+            'total_tuition',
+            'total_balance',
+            'total_lectures',
+            'total_laboratory',
+            'total_miscelaneous_fees',
+            'discount',
+            'downpayment',
+            'overall_tuition',
+            'semester',
+            'school_year',
+            'academic_year',
+        ];
+
+        $updates = [];
+        foreach ($allowedFields as $field) {
+            if (array_key_exists($field, $tuitionData)) {
+                $updates[$field] = $tuitionData[$field];
+            }
+        }
+
+        if ($updates === []) {
+            return true;
+        }
+
+        $studentTuition->update($updates);
+
+        return true;
+    }
+
+    public function createPaymentTransactionsForEnrollment(StudentEnrollment $studentEnrollment, array $payload): bool
+    {
+        $invoiceNumber = is_string($payload['invoicenumber'] ?? null)
+            ? mb_trim((string) $payload['invoicenumber'])
+            : '';
+
+        if ($invoiceNumber !== '') {
+            $transactionAlreadyLinked = StudentTransaction::query()
+                ->where('student_id', $studentEnrollment->student_id)
+                ->whereHas('transaction', fn ($query) => $query->where('invoicenumber', $invoiceNumber))
+                ->exists();
+
+            if ($transactionAlreadyLinked) {
+                return true;
+            }
+        }
+
+        return $this->verifyByCashier($studentEnrollment, $payload);
     }
 
     private function syncStudentEnrolledStatus(StudentEnrollment $studentEnrollment): void

@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { Activity, ArrowUpRight, ShieldCheck, Signal, UserPlus, Users, Zap } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 export interface AnalyticsData {
@@ -33,7 +33,7 @@ export function UserAnalytics({ stats }: { stats: AnalyticsData }) {
 
         const channel = window.Echo.private("administrators");
 
-        channel.listen(".UserCreated", (e: any) => {
+        channel.listen(".UserCreated", () => {
             const today = new Date().toISOString().split("T")[0];
 
             setData((prev) => {
@@ -96,7 +96,7 @@ export function UserAnalytics({ stats }: { stats: AnalyticsData }) {
                     </CardHeader>
                     <CardContent className="pl-2">
                         <div className="h-[240px] w-full">
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                                 <AreaChart data={data.registrations_chart} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                                     <defs>
                                         <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
@@ -212,7 +212,7 @@ function StatsCard({
     title: string;
     value: string | number;
     description: string;
-    icon: any;
+    icon: ComponentType<{ className?: string }>;
     className?: string;
     iconClassName?: string;
     trend?: string;

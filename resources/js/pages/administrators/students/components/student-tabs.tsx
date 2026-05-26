@@ -355,7 +355,7 @@ export function StudentTabs({ student, options }: StudentTabsProps) {
                                                         <div className="bg-card h-full rounded-xl border p-4">
                                                             <h4 className="mb-4 text-sm font-semibold">Fee Distribution</h4>
                                                             <div className="relative h-[250px] w-full">
-                                                                <ResponsiveContainer width="100%" height="100%">
+                                                                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                                                                     <PieChart>
                                                                         <Pie
                                                                             data={[

@@ -207,7 +207,7 @@ final class EnrollmentPipelineService
                 'key' => $step['key'],
                 'action_type' => $step['action_type'],
                 'actions' => $step['actions'] ?? $this->actionsForActionType($step['action_type']),
-                'node_actions' => $step['node_actions'] ?? $this->legacyActionsToNodeActions($step['actions'] ?? $this->actionsForActionType($step['action_type'])),
+                'node_actions' => $step['node_actions'] ?? $this->legacyActionsToNodeActions($step['actions'] ?? $this->actionsForActionType($step['action_type']), $step['status']),
                 'node_conditions' => $step['node_conditions'] ?? [],
                 'next_step_key' => $step['next_step_key'] ?? null,
                 'is_completion' => $completionStepKey === $step['key'],
@@ -461,7 +461,7 @@ final class EnrollmentPipelineService
                     'allowed_roles' => [],
                     'action_type' => 'standard',
                     'actions' => ['advance_status'],
-                    'node_actions' => [['type' => 'change_status', 'order' => 1, 'config' => []]],
+                    'node_actions' => [['type' => 'change_status', 'order' => 1, 'config' => ['status' => EnrollStat::Pending->value]]],
                     'node_conditions' => [],
                 ],
                 [
@@ -701,10 +701,10 @@ final class EnrollmentPipelineService
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function sanitizeNodeActions(mixed $actionsRaw, array $legacyActions): array
+    private function sanitizeNodeActions(mixed $actionsRaw, array $legacyActions, ?string $stepStatus = null): array
     {
         if (! is_array($actionsRaw)) {
-            return $this->legacyActionsToNodeActions($legacyActions);
+            return $this->legacyActionsToNodeActions($legacyActions, $stepStatus);
         }
 
         $actions = [];
@@ -723,13 +723,13 @@ final class EnrollmentPipelineService
                 'type' => $type,
                 'enabled' => (bool) ($actionRaw['enabled'] ?? true),
                 'order' => $this->sanitizeNodeOrder($actionRaw['order'] ?? ($index + 1)),
-                'config' => $this->sanitizeNodeConfig($actionRaw['config'] ?? []),
+                'config' => $this->sanitizeNodeConfig($actionRaw['config'] ?? [], $type, $stepStatus),
                 'halt_on_failure' => (bool) ($actionRaw['halt_on_failure'] ?? true),
             ];
         }
 
         if ($actions === []) {
-            return $this->legacyActionsToNodeActions($legacyActions);
+            return $this->legacyActionsToNodeActions($legacyActions, $stepStatus);
         }
 
         usort($actions, fn (array $left, array $right): int => $left['order'] <=> $right['order']);
@@ -822,16 +822,24 @@ final class EnrollmentPipelineService
     /**
      * @return array<string, mixed>
      */
-    private function sanitizeNodeConfig(mixed $config): array
+    private function sanitizeNodeConfig(mixed $config, ?string $actionType = null, ?string $stepStatus = null): array
     {
-        return is_array($config) ? $config : [];
+        $config = is_array($config) ? $config : [];
+
+        if ($actionType !== 'change_status') {
+            return $config;
+        }
+
+        $status = $this->sanitizeString($config['status'] ?? null, $stepStatus ?? '');
+
+        return $status === '' ? [] : [...$config, 'status' => $status];
     }
 
     /**
      * @param  array<int, string>  $legacyActions
      * @return array<int, array<string, mixed>>
      */
-    private function legacyActionsToNodeActions(array $legacyActions): array
+    private function legacyActionsToNodeActions(array $legacyActions, ?string $stepStatus = null): array
     {
         $mapped = [];
 
@@ -852,12 +860,12 @@ final class EnrollmentPipelineService
                 'type' => $nodeType,
                 'enabled' => true,
                 'order' => $index + 1,
-                'config' => [],
+                'config' => $this->sanitizeNodeConfig([], $nodeType, $stepStatus),
                 'halt_on_failure' => true,
             ];
         }
 
-        return $mapped === [] ? [['key' => 'advance_status', 'type' => 'change_status', 'enabled' => true, 'order' => 1, 'config' => [], 'halt_on_failure' => true]] : $mapped;
+        return $mapped === [] ? [['key' => 'advance_status', 'type' => 'change_status', 'enabled' => true, 'order' => 1, 'config' => $this->sanitizeNodeConfig([], 'change_status', $stepStatus), 'halt_on_failure' => true]] : $mapped;
     }
 
     /**
@@ -870,6 +878,27 @@ final class EnrollmentPipelineService
             'cashier_verification' => ['cashier_verification'],
             default => ['advance_status'],
         };
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $nodeActions
+     */
+    private function actionTypeFromNodeActions(array $nodeActions, string $fallback): string
+    {
+        $types = collect($nodeActions)
+            ->filter(fn (array $action): bool => ($action['enabled'] ?? true) !== false)
+            ->pluck('type')
+            ->all();
+
+        if (in_array('cashier_verification', $types, true)) {
+            return 'cashier_verification';
+        }
+
+        if (in_array('department_verification', $types, true)) {
+            return 'department_verification';
+        }
+
+        return $fallback;
     }
 
     /**
@@ -901,6 +930,11 @@ final class EnrollmentPipelineService
 
             $fallbackActionType = $this->sanitizeActionType($stepRaw['action_type'] ?? 'standard');
             $actions = $this->sanitizeStepActions($stepRaw['actions'] ?? null, $fallbackActionType);
+            $nodeActions = $this->sanitizeNodeActions($stepRaw['node_actions'] ?? null, $actions, $status);
+            $actionType = $this->actionTypeFromNodeActions(
+                $nodeActions,
+                $this->sanitizeActionType($stepRaw['action_type'] ?? 'standard', $actions)
+            );
 
             $steps[] = [
                 'key' => $key,
@@ -908,9 +942,9 @@ final class EnrollmentPipelineService
                 'label' => $label,
                 'color' => $this->sanitizeColor($stepRaw['color'] ?? null, 'gray'),
                 'allowed_roles' => $this->sanitizeRoles($stepRaw['allowed_roles'] ?? []),
-                'action_type' => $this->sanitizeActionType($stepRaw['action_type'] ?? 'standard', $actions),
+                'action_type' => $actionType,
                 'actions' => $actions,
-                'node_actions' => $this->sanitizeNodeActions($stepRaw['node_actions'] ?? null, $actions),
+                'node_actions' => $nodeActions,
                 'node_conditions' => $this->sanitizeNodeConditions($stepRaw['node_conditions'] ?? []),
                 'next_step_key' => array_key_exists('next_step_key', $stepRaw)
                     ? $this->sanitizeNullableStepKey($stepRaw['next_step_key'] ?? null)
@@ -981,7 +1015,7 @@ final class EnrollmentPipelineService
                 'allowed_roles' => $this->sanitizeRoles($input['pending_roles'] ?? []),
                 'action_type' => 'standard',
                 'actions' => ['advance_status'],
-                'node_actions' => [['type' => 'change_status', 'order' => 1, 'config' => []]],
+                'node_actions' => [['type' => 'change_status', 'order' => 1, 'config' => ['status' => $pendingStatus]]],
                 'node_conditions' => [],
             ],
             [
@@ -1021,7 +1055,7 @@ final class EnrollmentPipelineService
                     'allowed_roles' => $this->sanitizeRoles($stepRaw['allowed_roles'] ?? []),
                     'action_type' => 'standard',
                     'actions' => ['advance_status'],
-                    'node_actions' => [['type' => 'change_status', 'order' => 1, 'config' => []]],
+                    'node_actions' => [['type' => 'change_status', 'order' => 1, 'config' => ['status' => $status]]],
                     'node_conditions' => [],
                 ];
             }

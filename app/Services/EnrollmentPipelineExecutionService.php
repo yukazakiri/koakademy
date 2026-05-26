@@ -36,10 +36,14 @@ final class EnrollmentPipelineExecutionService
 
         $actionResults = [];
         foreach ($actions as $action) {
+            if (($action['enabled'] ?? true) === false) {
+                continue;
+            }
+
             $result = $this->executeAction($studentEnrollment, $action, $step, $payload);
             $actionResults[] = $result;
 
-            if (! $result['success']) {
+            if (! $result['success'] && ($action['halt_on_failure'] ?? true)) {
                 return [
                     'success' => false,
                     'message' => $result['message'],
@@ -184,8 +188,15 @@ final class EnrollmentPipelineExecutionService
 
         return match ($type) {
             'change_status' => $this->executeChangeStatus($studentEnrollment, $step, $config),
-            'department_verification' => $this->boolResult($type, $this->enrollmentService->runDepartmentVerification($studentEnrollment)),
-            'cashier_verification' => $this->boolResult($type, $this->enrollmentService->runCashierVerification($studentEnrollment, $payload)),
+            'department_verification' => $this->boolResult($type, $this->enrollmentService->runDepartmentVerification(
+                $studentEnrollment,
+                $this->resolveStatus($step, $config)
+            )),
+            'cashier_verification' => $this->boolResult($type, $this->enrollmentService->runCashierVerification(
+                $studentEnrollment,
+                $payload,
+                $this->resolveStatus($step, $config)
+            )),
             'sync_student_enrolled_status' => $this->executeSyncEnrolledStatus($studentEnrollment, $type),
             'auto_enroll_classes' => $this->boolResult($type, $this->enrollmentService->autoEnrollClassesForStudent($studentEnrollment)),
             'calculate_tuition' => $this->executeCalculateTuition($studentEnrollment, $type, $payload),
@@ -199,9 +210,7 @@ final class EnrollmentPipelineExecutionService
 
     private function executeChangeStatus(StudentEnrollment $studentEnrollment, array $step, array $config): array
     {
-        $status = is_string($config['status'] ?? null) && mb_trim((string) $config['status']) !== ''
-            ? mb_trim((string) $config['status'])
-            : (is_string($step['status'] ?? null) ? (string) $step['status'] : null);
+        $status = $this->resolveStatus($step, $config);
 
         if ($status === null || $status === '') {
             $nextStep = $this->pipelineService->getNextStep($studentEnrollment->status);
@@ -218,6 +227,19 @@ final class EnrollmentPipelineExecutionService
         return ['type' => 'change_status', 'success' => true, 'message' => 'Enrollment status updated.', 'status' => $status];
     }
 
+    private function resolveStatus(array $step, array $config): ?string
+    {
+        if (is_string($config['status'] ?? null) && mb_trim((string) $config['status']) !== '') {
+            return mb_trim((string) $config['status']);
+        }
+
+        if (is_string($step['status'] ?? null) && mb_trim((string) $step['status']) !== '') {
+            return mb_trim((string) $step['status']);
+        }
+
+        return null;
+    }
+
     private function executeSyncEnrolledStatus(StudentEnrollment $studentEnrollment, string $type): array
     {
         $this->enrollmentService->syncStudentEnrolledStatusPublic($studentEnrollment);
@@ -229,6 +251,10 @@ final class EnrollmentPipelineExecutionService
     {
         $tuitionInput = $payload['tuition_data'] ?? $payload;
         if (! is_array($tuitionInput) || $tuitionInput === []) {
+            if ($studentEnrollment->studentTuition !== null) {
+                return ['type' => $type, 'success' => true, 'message' => 'Tuition already available.'];
+            }
+
             return ['type' => $type, 'success' => false, 'message' => 'Missing tuition_data payload.'];
         }
 

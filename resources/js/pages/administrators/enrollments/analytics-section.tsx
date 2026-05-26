@@ -402,7 +402,7 @@ export function EnrollmentAnalyticsSection({
                                         { name: "Deleted", value: analytics?.trashed_count ?? 0, fill: CHART_COLORS_OBJ.danger },
                                     ];
                                     return (
-                                        <ResponsiveContainer width="100%" height="100%">
+                                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                                             <PieChart>
                                                 <Pie
                                                     data={statusData}
@@ -463,7 +463,7 @@ export function EnrollmentAnalyticsSection({
                                         .slice(0, 5);
 
                                     return courseData.length > 0 ? (
-                                        <ResponsiveContainer width="100%" height="100%">
+                                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                                             <PieChart>
                                                 <Pie
                                                     data={courseData}

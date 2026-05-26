@@ -61,6 +61,53 @@ it('returns 404 when enrollments path receives a non-numeric identifier', functi
         ->assertNotFound();
 });
 
+it('advances an old enrollment using the configured node status action', function (): void {
+    config(['activitylog.enabled' => false]);
+
+    GeneralSetting::factory()->create([
+        'more_configs' => [
+            'enrollment_pipeline' => [
+                'steps' => [
+                    [
+                        'key' => 'pending',
+                        'status' => 'Pending',
+                        'label' => 'Pending',
+                        'color' => 'amber',
+                        'allowed_roles' => [],
+                        'action_type' => 'standard',
+                    ],
+                    [
+                        'key' => 'registrar_review',
+                        'status' => 'Registrar Review',
+                        'label' => 'Registrar Review',
+                        'color' => 'blue',
+                        'allowed_roles' => [],
+                        'action_type' => 'standard',
+                        'node_actions' => [
+                            [
+                                'type' => 'change_status',
+                                'order' => 1,
+                                'config' => ['status' => 'Legacy Registrar Cleared'],
+                            ],
+                        ],
+                    ],
+                ],
+                'entry_step_key' => 'pending',
+                'completion_step_key' => 'registrar_review',
+            ],
+        ],
+    ]);
+
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $enrollment = StudentEnrollment::factory()->create(['status' => 'Pending']);
+
+    $this->actingAs($user)
+        ->post(portalUrlForAdministrators("/administrators/enrollments/{$enrollment->id}/advance-pipeline-step"))
+        ->assertRedirect();
+
+    expect($enrollment->refresh()->status)->toBe('Legacy Registrar Cleared');
+});
+
 it('shares an absolute avatar URL for authenticated admin data', function (): void {
     $user = User::factory()->create([
         'role' => UserRole::Admin,

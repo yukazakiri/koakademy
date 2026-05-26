@@ -1,5 +1,4 @@
 import { Progress } from "@/components/ui/progress";
-import { cn } from "@/lib/utils";
 import { Download, FileText } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
@@ -50,13 +49,13 @@ function getJobStateKey(job: ActiveJob): string {
     return `${job.status}|${job.percentage}|${job.message}`;
 }
 
-function JobProgressContent({ job, isExpanded }: { job: ActiveJob; isExpanded: boolean }) {
+function JobProgressContent({ job }: { job: ActiveJob }) {
     const processedCount = job.metadata?.processed_count ?? 0;
     const totalCount = job.metadata?.total_count ?? 0;
     const hasStudentCounts = totalCount > 0;
 
     return (
-        <div className={cn("flex w-full flex-col gap-2 transition-all duration-200", isExpanded ? "min-w-[320px]" : "min-w-[260px]")}>
+        <div className="group flex w-full min-w-[260px] flex-col gap-2 transition-all duration-200 hover:min-w-[320px]">
             <div className="flex items-center gap-2">
                 <FileText className="text-primary size-4 shrink-0" />
                 <span className="text-sm font-medium">{job.title}</span>
@@ -72,24 +71,20 @@ function JobProgressContent({ job, isExpanded }: { job: ActiveJob; isExpanded: b
                     <span>
                         {processedCount} of {totalCount} students
                     </span>
-                    {isExpanded && totalCount > 0 && (
-                        <span className="tabular-nums">~{Math.ceil(((totalCount - processedCount) * 2) / 60)} min remaining</span>
-                    )}
+                    <span className="hidden tabular-nums group-hover:inline">~{Math.ceil(((totalCount - processedCount) * 2) / 60)} min remaining</span>
                 </div>
             )}
 
             <p className="text-muted-foreground text-xs">{job.message}</p>
 
-            {isExpanded && (
-                <div className="border-border/50 bg-muted/30 text-muted-foreground mt-1 rounded-md border p-2 text-xs">
-                    <div className="font-medium">Details:</div>
-                    <div className="mt-1 space-y-0.5">
-                        <div>Job ID: {job.id.substring(0, 20)}...</div>
-                        <div>Started: {new Date(job.created_at).toLocaleTimeString()}</div>
-                        {job.type && <div>Type: {job.type.replace(/_/g, " ")}</div>}
-                    </div>
+            <div className="border-border/50 bg-muted/30 text-muted-foreground mt-1 hidden rounded-md border p-2 text-xs group-hover:block">
+                <div className="font-medium">Details:</div>
+                <div className="mt-1 space-y-0.5">
+                    <div>Job ID: {job.id.substring(0, 20)}...</div>
+                    <div>Started: {new Date(job.created_at).toLocaleTimeString()}</div>
+                    {job.type && <div>Type: {job.type.replace(/_/g, " ")}</div>}
                 </div>
-            )}
+            </div>
         </div>
     );
 }
@@ -146,15 +141,8 @@ function JobFailedContent({ job }: { job: ActiveJob }) {
     );
 }
 
-// Wrapper component that handles hover state
 function ExpandableJobContent({ job }: { job: ActiveJob }) {
-    const [isExpanded, setIsExpanded] = React.useState(false);
-
-    return (
-        <div onMouseEnter={() => setIsExpanded(true)} onMouseLeave={() => setIsExpanded(false)}>
-            <JobProgressContent job={job} isExpanded={isExpanded} />
-        </div>
-    );
+    return <JobProgressContent job={job} />;
 }
 
 export function ActiveJobsNotification() {

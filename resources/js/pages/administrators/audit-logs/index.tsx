@@ -22,7 +22,7 @@ interface AuditLogEntry {
     log_name: string | null;
     subject_type: string | null;
     subject_id: number | null;
-    properties: Record<string, any> | null;
+    properties: Record<string, unknown> | null;
     causer: {
         id: number;
         name: string;
@@ -216,7 +216,7 @@ export default function AdministratorAuditLogsIndex({ user, logs, filters, optio
                             <CardDescription>Events recorded over the selected timeframe</CardDescription>
                         </CardHeader>
                         <CardContent className="h-[240px]">
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                                 <AreaChart data={analytics.trend} margin={{ left: 0, right: 12, top: 10, bottom: 0 }}>
                                     <defs>
                                         <linearGradient id="auditTrend" x1="0" y1="0" x2="0" y2="1">

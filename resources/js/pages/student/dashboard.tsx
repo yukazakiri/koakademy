@@ -213,7 +213,7 @@ function parseSchedule(schedule: string): ScheduleSegment[] {
     while ((match = regex.exec(schedule)) !== null) {
         const days = match[1]
             .trim()
-            .split(/[\/\s,]+/)
+            .split(/[/\s,]+/)
             .map((day) => dayMap[day.toUpperCase()])
             .filter(Boolean);
 
@@ -762,7 +762,7 @@ export default function StudentDashboard({ user, student_data, id_card }: Studen
                                     </CardHeader>
                                     <CardContent>
                                         <div className="h-[260px] md:h-[280px]">
-                                            <ResponsiveContainer width="100%" height="100%">
+                                            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                                                 <BarChart data={chartData} margin={{ top: 10, right: 8, left: -20, bottom: 0 }}>
                                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
                                                     <XAxis

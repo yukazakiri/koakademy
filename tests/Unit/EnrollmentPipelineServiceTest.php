@@ -131,6 +131,7 @@ it('maps legacy actions to node actions when node actions are missing', function
     ]);
 
     expect($sanitized['steps'][0]['node_actions'][0]['type'])->toBe('change_status')
+        ->and($sanitized['steps'][0]['node_actions'][0]['config']['status'])->toBe('Pending')
         ->and($sanitized['steps'][1]['node_actions'][0]['type'])->toBe('department_verification')
         ->and($sanitized['steps'][0]['node_conditions'])->toBe([]);
 });
@@ -261,6 +262,28 @@ it('keeps ordered structured node actions and conditions', function () {
         ->and($sanitized['steps'][0]['node_conditions'][0]['message'])->toBe('Complete profile first.');
 });
 
+it('derives the legacy action type from structured verification actions', function () {
+    $sanitized = app(EnrollmentPipelineService::class)->sanitizeForStorage([
+        'submitted_label' => 'Submitted',
+        'steps' => [
+            [
+                'key' => 'review',
+                'status' => 'Department Cleared',
+                'label' => 'Department Review',
+                'color' => 'blue',
+                'allowed_roles' => [],
+                'action_type' => 'standard',
+                'actions' => ['advance_status'],
+                'node_actions' => [
+                    ['type' => 'department_verification', 'order' => 1, 'config' => []],
+                ],
+            ],
+        ],
+    ]);
+
+    expect($sanitized['steps'][0]['action_type'])->toBe('department_verification');
+});
+
 it('blocks node execution when required student profile fields are missing', function () {
     $student = Student::factory()->create(['email' => null]);
     $enrollment = StudentEnrollment::factory()->create([
@@ -307,4 +330,30 @@ it('executes a change status node action after conditions pass', function () {
 
     expect($result['success'])->toBeTrue()
         ->and($enrollment->refresh()->status)->toBe('Profile Reviewed');
+});
+
+it('executes a configured change status value for legacy status compatibility', function () {
+    $student = Student::factory()->create();
+    $enrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'status' => 'Pending',
+    ]);
+
+    $result = app(EnrollmentPipelineExecutionService::class)->execute($enrollment, [
+        'status' => 'Profile Reviewed',
+        'label' => 'Profile Review',
+        'actions' => ['advance_status'],
+        'node_actions' => [
+            [
+                'type' => 'change_status',
+                'order' => 1,
+                'config' => ['status' => 'Waiting For Cashier'],
+            ],
+        ],
+        'node_conditions' => [],
+    ]);
+
+    expect($result['success'])->toBeTrue()
+        ->and($result['action_results'][0]['status'])->toBe('Waiting For Cashier')
+        ->and($enrollment->refresh()->status)->toBe('Waiting For Cashier');
 });

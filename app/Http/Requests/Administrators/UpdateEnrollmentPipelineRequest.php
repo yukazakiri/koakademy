@@ -57,6 +57,7 @@ final class UpdateEnrollmentPipelineRequest extends FormRequest
             'steps.*.node_actions.*.type' => ['required_with:steps.*.node_actions', 'string', Rule::in($nodeActionTypes)],
             'steps.*.node_actions.*.order' => ['nullable', 'integer', 'min:1'],
             'steps.*.node_actions.*.config' => ['nullable', 'array'],
+            'steps.*.node_actions.*.config.status' => ['nullable', 'string', 'max:100'],
             'steps.*.node_conditions' => ['nullable', 'array'],
             'steps.*.node_conditions.*.type' => ['required_with:steps.*.node_conditions', 'string', Rule::in($nodeConditionTypes)],
             'steps.*.node_conditions.*.order' => ['nullable', 'integer', 'min:1'],

@@ -715,7 +715,8 @@ final class AdministratorEnrollmentManagementController extends Controller
 
     public function verifyCashierNoReceipt(Request $request, StudentEnrollment $enrollment): RedirectResponse
     {
-        if (! Auth::user()->hasRole('super_admin')) {
+        $user = Auth::user();
+        if (! $user instanceof User || ! $user->hasRole('super_admin')) {
             abort(403);
         }
 
@@ -724,11 +725,28 @@ final class AdministratorEnrollmentManagementController extends Controller
             'confirm_payment' => 'required|accepted',
         ]);
 
-        if ($this->enrollmentService->verifyByCashierWithoutReceipt($enrollment, $data)) {
-            return back()->with('flash', ['success' => 'Student enrolled without receipt.']);
+        $nextStep = $this->enrollmentPipelineService->getNextStep($enrollment->status);
+        if (! $this->stepHasNodeAction($nextStep, 'cashier_verification')) {
+            return back()->with('flash', ['error' => 'Enrollment is not ready for cashier verification.']);
         }
 
-        return back()->with('flash', ['error' => 'Enrollment failed.']);
+        $manualStep = [
+            ...$nextStep,
+            'node_actions' => [
+                ['type' => 'manual_cashier_verification', 'order' => 1, 'config' => [], 'enabled' => true, 'halt_on_failure' => true],
+                ['type' => 'update_student_academic_year', 'order' => 2, 'config' => [], 'enabled' => true, 'halt_on_failure' => true],
+                ['type' => 'auto_enroll_classes', 'order' => 3, 'config' => [], 'enabled' => true, 'halt_on_failure' => true],
+                ['type' => 'link_first_year_student_account', 'order' => 4, 'config' => [], 'enabled' => true, 'halt_on_failure' => true],
+                ['type' => 'send_student_migrated_notification', 'order' => 5, 'config' => [], 'enabled' => true, 'halt_on_failure' => true],
+                ['type' => 'change_status', 'order' => 6, 'config' => ['status' => $nextStep['status'] ?? null], 'enabled' => true, 'halt_on_failure' => true],
+                ['type' => 'sync_student_enrolled_status', 'order' => 7, 'config' => [], 'enabled' => true, 'halt_on_failure' => true],
+                ['type' => 'send_super_admin_enrollment_notification', 'order' => 8, 'config' => [], 'enabled' => true, 'halt_on_failure' => true],
+            ],
+        ];
+
+        $result = $this->enrollmentPipelineExecutionService->execute($enrollment, $manualStep, $data);
+
+        return back()->with('flash', [$result['success'] ? 'success' : 'error' => $result['success'] ? 'Student enrolled without receipt.' : $result['message']]);
     }
 
     public function undoCashierVerification(StudentEnrollment $enrollment): RedirectResponse
@@ -2564,6 +2582,21 @@ final class AdministratorEnrollmentManagementController extends Controller
             return false;
         }
 
+        $equivalentActionTypes = match ($actionType) {
+            'cashier_verification' => [
+                'cashier_verification',
+                'manual_cashier_verification',
+                'create_payment_transactions',
+                'apply_cashier_payment',
+                'send_super_admin_enrollment_notification',
+            ],
+            'department_verification' => [
+                'department_verification',
+                'send_department_verification_notification',
+            ],
+            default => [$actionType],
+        };
+
         $nodeActions = $step['node_actions'] ?? [];
         if (is_array($nodeActions) && $nodeActions !== []) {
             foreach ($nodeActions as $nodeAction) {
@@ -2575,18 +2608,18 @@ final class AdministratorEnrollmentManagementController extends Controller
                     continue;
                 }
 
-                if (($nodeAction['type'] ?? null) === $actionType) {
+                if (in_array($nodeAction['type'] ?? null, $equivalentActionTypes, true)) {
                     return true;
                 }
             }
         }
 
         $legacyActions = $step['actions'] ?? [];
-        if (is_array($legacyActions) && in_array($actionType, $legacyActions, true)) {
+        if (is_array($legacyActions) && array_intersect($equivalentActionTypes, $legacyActions) !== []) {
             return true;
         }
 
-        return ($step['action_type'] ?? null) === $actionType;
+        return in_array($step['action_type'] ?? null, $equivalentActionTypes, true);
     }
 
     /**

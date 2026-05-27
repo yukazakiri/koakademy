@@ -1124,8 +1124,8 @@ final class EnrollmentService
     public function autoEnrollClassesForStudent(StudentEnrollment $studentEnrollment): bool
     {
         try {
-            if (! method_exists($studentEnrollment->student, 'autoEnrollInClasses')) {
-                return false;
+            if (! $studentEnrollment->student || ! method_exists($studentEnrollment->student, 'autoEnrollInClasses')) {
+                return true;
             }
 
             $studentEnrollment->student->autoEnrollInClasses($studentEnrollment->id);
@@ -1145,6 +1145,8 @@ final class EnrollmentService
         StudentEnrollment $studentEnrollment,
         array $tuitionData
     ): ?StudentTuition {
+        $tuitionData = $this->normalizeEnrollmentPayload($tuitionData);
+
         if ($studentEnrollment->studentTuition) {
             return $this->updateTuitionForEnrollment($studentEnrollment, $tuitionData)
                 ? $studentEnrollment->studentTuition()->first()
@@ -1199,22 +1201,474 @@ final class EnrollmentService
 
     public function createPaymentTransactionsForEnrollment(StudentEnrollment $studentEnrollment, array $payload): bool
     {
-        $invoiceNumber = is_string($payload['invoicenumber'] ?? null)
-            ? mb_trim((string) $payload['invoicenumber'])
-            : '';
+        try {
+            $this->createPaymentTransactionsForEnrollmentOrFail($studentEnrollment, $payload);
 
-        if ($invoiceNumber !== '') {
-            $transactionAlreadyLinked = StudentTransaction::query()
-                ->where('student_id', $studentEnrollment->student_id)
-                ->whereHas('transaction', fn ($query) => $query->where('invoicenumber', $invoiceNumber))
-                ->exists();
+            return true;
+        } catch (Exception $exception) {
+            Log::error('Error creating payment transactions from enrollment pipeline: '.$exception->getMessage(), [
+                'enrollment_id' => $studentEnrollment->id,
+                'exception' => $exception,
+            ]);
 
-            if ($transactionAlreadyLinked) {
-                return true;
-            }
+            return false;
+        }
+    }
+
+    public function createSubjectEnrollmentsForEnrollment(StudentEnrollment $studentEnrollment, array $payload): bool
+    {
+        $payload = $this->normalizeEnrollmentPayload($payload);
+        $subjectsEnrolled = $payload['subjectsEnrolled'] ?? [];
+
+        if (! is_array($subjectsEnrolled) || $subjectsEnrolled === []) {
+            return true;
         }
 
-        return $this->verifyByCashier($studentEnrollment, $payload);
+        try {
+            $subjectIds = collect($subjectsEnrolled)
+                ->pluck('subject_id')
+                ->filter()
+                ->unique()
+                ->values();
+
+            $subjects = Subject::query()
+                ->with('course')
+                ->whereIn('id', $subjectIds)
+                ->get()
+                ->keyBy('id');
+
+            $schoolYear = $studentEnrollment->school_year ?: GeneralSetting::query()->first()?->getSchoolYearString();
+
+            foreach ($subjectsEnrolled as $subjectData) {
+                if (! is_array($subjectData) || empty($subjectData['subject_id'])) {
+                    continue;
+                }
+
+                $subject = $subjects->get($subjectData['subject_id']);
+                if (! $subject) {
+                    continue;
+                }
+
+                [$lectureFee, $laboratoryFee] = $this->resolveSubjectFees($subject, $subjectData);
+
+                $studentEnrollment->subjectsEnrolled()->updateOrCreate(
+                    [
+                        'subject_id' => $subject->id,
+                        'class_id' => $subjectData['class_id'] ?? null,
+                    ],
+                    [
+                        'student_id' => $studentEnrollment->student_id,
+                        'is_modular' => (bool) ($subjectData['is_modular'] ?? false),
+                        'enrolled_lecture_units' => $subjectData['enrolled_lecture_units'] ?? $subject->lecture,
+                        'enrolled_laboratory_units' => $subjectData['enrolled_laboratory_units'] ?? $subject->laboratory,
+                        'lecture_fee' => $lectureFee,
+                        'laboratory_fee' => $laboratoryFee,
+                        'school_year' => $schoolYear,
+                        'semester' => $studentEnrollment->semester,
+                        'academic_year' => $studentEnrollment->academic_year,
+                    ]
+                );
+            }
+
+            $studentEnrollment->unsetRelation('subjectsEnrolled');
+
+            return true;
+        } catch (Exception $exception) {
+            Log::error('Error creating subject enrollments from enrollment pipeline: '.$exception->getMessage(), [
+                'enrollment_id' => $studentEnrollment->id,
+                'exception' => $exception,
+            ]);
+
+            return false;
+        }
+    }
+
+    public function createAdditionalFeesForEnrollment(StudentEnrollment $studentEnrollment, array $payload): bool
+    {
+        $payload = $this->normalizeEnrollmentPayload($payload);
+        $additionalFees = $payload['additionalFees'] ?? [];
+
+        if (! is_array($additionalFees) || $additionalFees === []) {
+            return true;
+        }
+
+        try {
+            foreach ($additionalFees as $feeData) {
+                if (! is_array($feeData) || empty($feeData['fee_name'])) {
+                    continue;
+                }
+
+                $studentEnrollment->additionalFees()->updateOrCreate(
+                    ['fee_name' => (string) $feeData['fee_name']],
+                    [
+                        'amount' => (float) ($feeData['amount'] ?? 0),
+                        'is_separate_transaction' => (bool) ($feeData['is_separate_transaction'] ?? false),
+                    ]
+                );
+            }
+
+            $studentEnrollment->unsetRelation('additionalFees');
+
+            return true;
+        } catch (Exception $exception) {
+            Log::error('Error creating additional fees from enrollment pipeline: '.$exception->getMessage(), [
+                'enrollment_id' => $studentEnrollment->id,
+                'exception' => $exception,
+            ]);
+
+            return false;
+        }
+    }
+
+    public function applyCashierPaymentToTuition(StudentEnrollment $studentEnrollment, array $payload): bool
+    {
+        try {
+            $generalSettings = GeneralSetting::query()->first();
+            $settlements = is_array($payload['settlements'] ?? null) ? $payload['settlements'] : [];
+            $mainTransactionAmount = collect($settlements)
+                ->filter(fn (mixed $amount): bool => is_numeric($amount))
+                ->sum(fn (mixed $amount): float => (float) $amount);
+
+            $totalSeparateFeesAmount = (float) $studentEnrollment->additionalFees()
+                ->where('is_separate_transaction', true)
+                ->sum('amount');
+
+            $totalDownpayment = $mainTransactionAmount + $totalSeparateFeesAmount;
+            $studentTuition = $studentEnrollment->studentTuition;
+
+            if (! $studentTuition) {
+                throw new Exception('Student tuition record not found.');
+            }
+
+            $overallTuition = (float) ($studentTuition->overall_tuition ?? 0);
+            $newBalance = $overallTuition > 0
+                ? max(0, $overallTuition - $totalDownpayment)
+                : max(0, (float) ($studentTuition->total_balance ?? 0) - $totalDownpayment);
+
+            $studentTuition->update([
+                'status' => 'Downpayment',
+                'total_balance' => $newBalance,
+                'downpayment' => $totalDownpayment,
+                'semester' => $generalSettings?->semester,
+                'school_year' => $generalSettings?->getSchoolYearString(),
+                'academic_year' => $studentEnrollment->academic_year,
+            ]);
+
+            return true;
+        } catch (Exception $exception) {
+            Log::error('Error applying cashier payment from enrollment pipeline: '.$exception->getMessage(), [
+                'enrollment_id' => $studentEnrollment->id,
+                'exception' => $exception,
+            ]);
+
+            return false;
+        }
+    }
+
+    public function applyManualCashierVerification(StudentEnrollment $studentEnrollment, array $payload): bool
+    {
+        try {
+            $generalSettings = GeneralSetting::query()->first();
+            $remarks = is_string($payload['remarks'] ?? null) && mb_trim((string) $payload['remarks']) !== ''
+                ? mb_trim((string) $payload['remarks'])
+                : 'Verified without receipt - payment confirmed verbally/manually';
+
+            $studentTuition = $studentEnrollment->studentTuition;
+            if (! $studentTuition) {
+                throw new Exception('Student tuition record not found.');
+            }
+
+            $studentTuition->update([
+                'status' => 'Downpayment',
+                'semester' => $generalSettings?->semester,
+                'school_year' => $generalSettings?->getSchoolYearString(),
+                'academic_year' => $studentEnrollment->academic_year,
+            ]);
+
+            $studentEnrollment->remarks = $remarks;
+            $studentEnrollment->save();
+
+            return true;
+        } catch (Exception $exception) {
+            Log::error('Error applying manual cashier verification from enrollment pipeline: '.$exception->getMessage(), [
+                'enrollment_id' => $studentEnrollment->id,
+                'exception' => $exception,
+            ]);
+
+            return false;
+        }
+    }
+
+    public function updateStudentAcademicYearFromEnrollment(StudentEnrollment $studentEnrollment): bool
+    {
+        if (! $studentEnrollment->student) {
+            return true;
+        }
+
+        $studentEnrollment->student->update([
+            'academic_year' => $studentEnrollment->academic_year,
+        ]);
+
+        return true;
+    }
+
+    public function linkFirstYearStudentAccount(StudentEnrollment $studentEnrollment): bool
+    {
+        if ($studentEnrollment->academic_year !== 1 || ! $studentEnrollment->student) {
+            return true;
+        }
+
+        $student = $studentEnrollment->student;
+        if (! $student->email) {
+            Log::warning('First-year student has no email to link to account.', [
+                'student_id' => $student->id,
+            ]);
+
+            return true;
+        }
+
+        $account = Account::query()->where('email', $student->email)->first();
+        if (! $account) {
+            Log::warning('No account found for first-year student.', [
+                'student_id' => $student->id,
+                'email' => $student->email,
+            ]);
+
+            return true;
+        }
+
+        $account->update([
+            'role' => 'student',
+            'person_id' => $student->id,
+            'person_type' => Student::class,
+        ]);
+
+        return true;
+    }
+
+    public function sendStudentMigratedNotification(StudentEnrollment $studentEnrollment): bool
+    {
+        if (! $studentEnrollment->student?->email) {
+            Log::warning('Student email not found for MigrateToStudent notification.', [
+                'enrollment_id' => $studentEnrollment->id,
+            ]);
+
+            return true;
+        }
+
+        NotificationFacade::route('mail', $studentEnrollment->student->email)
+            ->notify(new MigrateToStudent($studentEnrollment));
+
+        return true;
+    }
+
+    public function sendDepartmentVerificationNotification(StudentEnrollment $studentEnrollment): bool
+    {
+        $pipeline = app(EnrollmentPipelineService::class);
+        $verificationStep = $pipeline->getStepByActionType('department_verification');
+        $verificationLabel = $verificationStep['label'] ?? 'Verification';
+
+        Notification::make()
+            ->title('Verification Completed')
+            ->success()
+            ->body(sprintf('Successfully verified the student for step "%s" and notified the student.', $verificationLabel))
+            ->sendToDatabase(User::role('super_admin')->get())
+            ->send();
+
+        if ($studentEnrollment->student?->email) {
+            NotificationFacade::route('mail', $studentEnrollment->student->email)
+                ->notify(new StudentEnrolledVerified($studentEnrollment));
+        } else {
+            Log::warning('Student email not found for notification.', [
+                'enrollment_id' => $studentEnrollment->id,
+            ]);
+        }
+
+        return true;
+    }
+
+    public function sendSuperAdminEnrollmentNotification(StudentEnrollment $studentEnrollment, array $payload = []): bool
+    {
+        $assessmentUrl = route('assessment.download', [
+            'record' => $studentEnrollment->id,
+        ], false);
+
+        $invoiceNumber = is_string($payload['invoicenumber'] ?? null)
+            ? mb_trim((string) $payload['invoicenumber'])
+            : null;
+
+        $separateTransactionNumbers = $studentEnrollment->additionalFees()
+            ->whereNotNull('transaction_number')
+            ->pluck('transaction_number')
+            ->filter()
+            ->join(', ');
+
+        $isManual = isset($payload['confirm_payment']) || isset($payload['remarks']);
+        $notificationBody = $isManual
+            ? 'Successfully Enrolled '.$studentEnrollment->student?->last_name.' (NO RECEIPT - Manual Verification). Remarks: '.($studentEnrollment->remarks ?? 'N/A')
+            : 'Successfully Enrolled '.$studentEnrollment->student?->last_name.'. Main Transaction: '.($invoiceNumber ?: 'Recorded');
+
+        if ($separateTransactionNumbers !== '') {
+            $notificationBody .= '. Separate Transactions: '.$separateTransactionNumbers;
+        }
+
+        $notificationBody .= '. Assessment URL: '.$assessmentUrl;
+
+        $notification = Notification::make()
+            ->title($isManual ? 'Student Enrolled (No Receipt): '.$studentEnrollment->student?->last_name : 'Student Enrolled: '.$studentEnrollment->student?->last_name);
+
+        $notification = $isManual ? $notification->warning() : $notification->success();
+
+        $notification
+            ->body($notificationBody)
+            ->actions([
+                Action::make('download')
+                    ->label('View Assessment')
+                    ->button()
+                    ->url($assessmentUrl, shouldOpenInNewTab: true),
+            ])
+            ->sendToDatabase(User::role('super_admin')->get())
+            ->send();
+
+        return true;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function normalizeEnrollmentPayload(array $payload): array
+    {
+        if (! isset($payload['subjectsEnrolled']) && isset($payload['subjects'])) {
+            $payload['subjectsEnrolled'] = $payload['subjects'];
+        }
+
+        if (! isset($payload['additionalFees']) && isset($payload['additional_fees'])) {
+            $payload['additionalFees'] = $payload['additional_fees'];
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @return array{0: float, 1: float}
+     */
+    private function resolveSubjectFees(Subject $subject, array $subjectData): array
+    {
+        $lectureFee = (float) ($subjectData['lecture'] ?? $subjectData['lecture_fee'] ?? 0);
+        $laboratoryFee = (float) ($subjectData['laboratory'] ?? $subjectData['laboratory_fee'] ?? 0);
+
+        if ($lectureFee <= 0 && $laboratoryFee <= 0) {
+            $totalUnits = (float) $subject->lecture + (float) $subject->laboratory;
+            $lectureFee = (float) $subject->lecture > 0
+                ? $totalUnits * (float) ($subject->course?->lec_per_unit ?? 0)
+                : 0;
+
+            if (str_contains(mb_strtoupper((string) $subject->code), 'NSTP')) {
+                $lectureFee *= 0.5;
+            }
+
+            $laboratoryFee = (float) $subject->laboratory > 0
+                ? (float) ($subject->course?->lab_per_unit ?? 0)
+                : 0;
+        }
+
+        if ((bool) ($subjectData['is_modular'] ?? false)) {
+            return [2400.0, 0.0];
+        }
+
+        return [$lectureFee, $laboratoryFee];
+    }
+
+    /**
+     * @return array{main_transaction: Transaction|null, separate_transactions: array<int, Transaction>}
+     */
+    private function createPaymentTransactionsForEnrollmentOrFail(StudentEnrollment $studentEnrollment, array $payload): array
+    {
+        $generalSettings = GeneralSetting::query()->first();
+        $signatureData = $payload['signature'] ?? null;
+        $settlements = is_array($payload['settlements'] ?? null) ? $payload['settlements'] : [];
+        $invoiceNumber = is_string($payload['invoicenumber'] ?? null) ? mb_trim((string) $payload['invoicenumber']) : '';
+
+        if ($invoiceNumber === '') {
+            throw new Exception('Invoice number is required.');
+        }
+
+        $separateTransactions = [];
+        $separateTransactionFees = $studentEnrollment->additionalFees()
+            ->where('is_separate_transaction', true)
+            ->get();
+
+        foreach ($separateTransactionFees as $separateTransactionFee) {
+            $transactionNumberKey = sprintf('separate_fee_%s_transaction', $separateTransactionFee->id);
+            $transactionNumber = is_string($payload[$transactionNumberKey] ?? null)
+                ? mb_trim((string) $payload[$transactionNumberKey])
+                : '';
+
+            if ($transactionNumber === '') {
+                throw new Exception('Transaction number is required for '.$separateTransactionFee->fee_name);
+            }
+
+            if ($this->studentTransactionExists($studentEnrollment, $transactionNumber)) {
+                $separateTransactionFee->update(['transaction_number' => $transactionNumber]);
+
+                continue;
+            }
+
+            $separateTransaction = Transaction::query()->create([
+                'description' => 'Payment for '.$separateTransactionFee->fee_name,
+                'payment_method' => 'Cash',
+                'settlements' => ['others' => $separateTransactionFee->amount],
+                'status' => 'Paid',
+                'invoicenumber' => $transactionNumber,
+                'signature' => $generalSettings?->enable_signatures && $signatureData ? $signatureData : null,
+                'user_id' => Auth::id(),
+            ]);
+
+            $this->linkTransactionToStudentAndAdmin($studentEnrollment, $separateTransaction);
+            $separateTransactionFee->update(['transaction_number' => $transactionNumber]);
+            $separateTransactions[] = $separateTransaction;
+        }
+
+        if ($this->studentTransactionExists($studentEnrollment, $invoiceNumber)) {
+            return ['main_transaction' => null, 'separate_transactions' => $separateTransactions];
+        }
+
+        $mainTransaction = Transaction::query()->create([
+            'description' => 'Downpayment for student Tuition',
+            'payment_method' => 'Cash',
+            'settlements' => $settlements,
+            'status' => 'Paid',
+            'invoicenumber' => $invoiceNumber,
+            'signature' => $generalSettings?->enable_signatures && $signatureData ? $signatureData : null,
+            'user_id' => Auth::id(),
+        ]);
+
+        $this->linkTransactionToStudentAndAdmin($studentEnrollment, $mainTransaction);
+
+        return ['main_transaction' => $mainTransaction, 'separate_transactions' => $separateTransactions];
+    }
+
+    private function studentTransactionExists(StudentEnrollment $studentEnrollment, string $invoiceNumber): bool
+    {
+        return StudentTransaction::query()
+            ->where('student_id', $studentEnrollment->student_id)
+            ->whereHas('transaction', fn ($query) => $query->where('invoicenumber', $invoiceNumber))
+            ->exists();
+    }
+
+    private function linkTransactionToStudentAndAdmin(StudentEnrollment $studentEnrollment, Transaction $transaction): void
+    {
+        StudentTransaction::query()->create([
+            'student_id' => $studentEnrollment->student_id,
+            'transaction_id' => $transaction->id,
+            'status' => $transaction->status,
+        ]);
+
+        AdminTransaction::query()->create([
+            'admin_id' => Auth::id(),
+            'transaction_id' => $transaction->id,
+            'status' => $transaction->status,
+        ]);
     }
 
     private function syncStudentEnrolledStatus(StudentEnrollment $studentEnrollment): void

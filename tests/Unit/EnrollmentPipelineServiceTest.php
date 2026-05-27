@@ -41,6 +41,7 @@ it('returns configured enrollment pipeline from general settings', function () {
                         'color' => 'amber',
                         'allowed_roles' => ['registrar'],
                         'action_type' => 'standard',
+                        'next_step_keys' => ['finance_review', 'final_release'],
                         'node_conditions' => [
                             [
                                 'type' => 'complete_student_profile',
@@ -85,6 +86,8 @@ it('returns configured enrollment pipeline from general settings', function () {
         ->and($pipeline['steps'])->toHaveCount(3)
         ->and($pipeline['steps'][0]['node_actions'][0]['type'])->toBe('send_email')
         ->and($pipeline['steps'][0]['node_actions'][1]['type'])->toBe('change_status')
+        ->and($pipeline['steps'][0]['next_step_key'])->toBe('finance_review')
+        ->and($pipeline['steps'][0]['next_step_keys'])->toBe(['finance_review', 'final_release'])
         ->and($pipeline['steps'][0]['node_conditions'][0]['type'])->toBe('complete_student_profile');
 });
 
@@ -132,7 +135,8 @@ it('maps legacy actions to node actions when node actions are missing', function
 
     expect($sanitized['steps'][0]['node_actions'][0]['type'])->toBe('change_status')
         ->and($sanitized['steps'][0]['node_actions'][0]['config']['status'])->toBe('Pending')
-        ->and($sanitized['steps'][1]['node_actions'][0]['type'])->toBe('department_verification')
+        ->and($sanitized['steps'][1]['node_actions'][0]['type'])->toBe('change_status')
+        ->and($sanitized['steps'][1]['node_actions'][1]['type'])->toBe('send_department_verification_notification')
         ->and($sanitized['steps'][0]['node_conditions'])->toBe([]);
 });
 
@@ -223,7 +227,9 @@ it('normalizes legacy pipeline actions into structured node actions', function (
     expect($sanitized['schema_version'])->toBe(2)
         ->and($sanitized['steps'][0]['actions'])->toBe(['advance_status'])
         ->and($sanitized['steps'][0]['node_actions'][0]['type'])->toBe('change_status')
-        ->and($sanitized['steps'][1]['node_actions'][0]['type'])->toBe('cashier_verification')
+        ->and($sanitized['steps'][1]['node_actions'][0]['type'])->toBe('create_payment_transactions')
+        ->and($sanitized['steps'][1]['node_actions'][1]['type'])->toBe('apply_cashier_payment')
+        ->and($sanitized['steps'][1]['node_actions'])->toHaveCount(9)
         ->and($sanitized['steps'][0]['node_conditions'])->toBe([]);
 });
 
@@ -240,7 +246,16 @@ it('keeps ordered structured node actions and conditions', function () {
                 'action_type' => 'standard',
                 'actions' => ['advance_status'],
                 'node_actions' => [
-                    ['type' => 'send_notification', 'order' => 20, 'config' => ['title' => 'Reviewed']],
+                    [
+                        'type' => 'send_notification',
+                        'order' => 20,
+                        'config' => ['title' => 'Reviewed'],
+                        'condition_logic' => 'any',
+                        'conditions' => [
+                            ['type' => 'has_balance', 'operator' => 'eq', 'value' => true],
+                            ['type' => 'course', 'operator' => 'eq', 'value' => 'BSIT'],
+                        ],
+                    ],
                     ['type' => 'change_status', 'order' => 10, 'config' => []],
                 ],
                 'node_conditions' => [
@@ -258,6 +273,9 @@ it('keeps ordered structured node actions and conditions', function () {
     expect($sanitized['steps'][0]['node_actions'])->toHaveCount(2)
         ->and($sanitized['steps'][0]['node_actions'][0]['type'])->toBe('change_status')
         ->and($sanitized['steps'][0]['node_actions'][1]['type'])->toBe('send_notification')
+        ->and($sanitized['steps'][0]['node_actions'][1]['condition_logic'])->toBe('any')
+        ->and($sanitized['steps'][0]['node_actions'][1]['conditions'])->toHaveCount(2)
+        ->and($sanitized['steps'][0]['node_actions'][1]['conditions'][0]['value'])->toBeTrue()
         ->and($sanitized['steps'][0]['node_conditions'][0]['type'])->toBe('complete_student_profile')
         ->and($sanitized['steps'][0]['node_conditions'][0]['message'])->toBe('Complete profile first.');
 });
@@ -356,4 +374,65 @@ it('executes a configured change status value for legacy status compatibility', 
     expect($result['success'])->toBeTrue()
         ->and($result['action_results'][0]['status'])->toBe('Waiting For Cashier')
         ->and($enrollment->refresh()->status)->toBe('Waiting For Cashier');
+});
+
+it('skips a node action when action conditions do not match', function () {
+    $student = Student::factory()->create();
+    $enrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'status' => 'Pending',
+        'semester' => 1,
+    ]);
+
+    $result = app(EnrollmentPipelineExecutionService::class)->execute($enrollment, [
+        'status' => 'Profile Reviewed',
+        'label' => 'Profile Review',
+        'node_actions' => [
+            [
+                'type' => 'change_status',
+                'order' => 1,
+                'condition_logic' => 'all',
+                'conditions' => [
+                    ['type' => 'semester', 'operator' => 'eq', 'value' => 2],
+                ],
+                'config' => ['status' => 'Skipped Should Not Save'],
+            ],
+        ],
+        'node_conditions' => [],
+    ]);
+
+    expect($result['success'])->toBeTrue()
+        ->and($result['action_results'][0]['skipped'])->toBeTrue()
+        ->and($enrollment->refresh()->status)->toBe('Pending');
+});
+
+it('executes a node action when any action condition matches', function () {
+    $student = Student::factory()->create();
+    $enrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'status' => 'Pending',
+        'semester' => 1,
+    ]);
+
+    $result = app(EnrollmentPipelineExecutionService::class)->execute($enrollment, [
+        'status' => 'Profile Reviewed',
+        'label' => 'Profile Review',
+        'node_actions' => [
+            [
+                'type' => 'change_status',
+                'order' => 1,
+                'condition_logic' => 'any',
+                'conditions' => [
+                    ['type' => 'semester', 'operator' => 'eq', 'value' => 2],
+                    ['type' => 'semester', 'operator' => 'eq', 'value' => 1],
+                ],
+                'config' => ['status' => 'Matched Condition'],
+            ],
+        ],
+        'node_conditions' => [],
+    ]);
+
+    expect($result['success'])->toBeTrue()
+        ->and($result['action_results'][0]['status'])->toBe('Matched Condition')
+        ->and($enrollment->refresh()->status)->toBe('Matched Condition');
 });

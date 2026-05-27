@@ -1,0 +1,96 @@
+<h2>3 Redesign Approaches</h2>
+<p class="subtitle">Each approach hides the inspector differently. All include the full right-click menu you requested.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Full Canvas + Modal Edit</h3>
+      <p>Inspector is completely removed. Canvas takes full width. Right-click shows all actions. "Edit" opens a modal with sidebar tabs.</p>
+      <div class="pros-cons">
+        <div class="pros">
+          <h4>Pros</h4>
+          <ul>
+            <li>Maximum canvas space for workflow visualization</li>
+            <li>Cleanest, most focused interface</li>
+            <li>Modal organizes complex config into digestible tabs</li>
+            <li>No accidental inspector clutter</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <h4>Cons</h4>
+          <ul>
+            <li>Modal blocks canvas view while editing</li>
+            <li>More clicks to see node details</li>
+            <li>Context switching between canvas and modal</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Collapsible Side Panel</h3>
+      <p>Inspector becomes a collapsible panel on the right. Default state is collapsed (full canvas). Click a node or "Edit" from context menu to expand it.</p>
+      <div class="pros-cons">
+        <div class="pros">
+          <h4>Pros</h4>
+          <ul>
+            <li>Canvas is primary view by default</li>
+            <li>Inspector still accessible without modal</li>
+            <li>Can see canvas and config simultaneously</li>
+            <li>Familiar pattern for power users</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <h4>Cons</h4>
+          <ul>
+            <li>Panel can feel cramped when open</li>
+            <li>Two different ways to access config (click node vs right-click Edit)</li>
+            <li>Less clean than full canvas</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Floating Inspector Overlay</h3>
+      <p>Inspector appears as a floating card near the selected node. Can be dragged, minimized, or dismissed. Canvas remains fully visible behind it.</p>
+      <div class="pros-cons">
+        <div class="pros">
+          <h4>Pros</h4>
+          <ul>
+            <li>Canvas always fully visible</li>
+            <li>Inspector contextually placed near active node</li>
+            <li>Can drag overlay to avoid blocking important nodes</li>
+            <li>Modern, dashboard-like feel</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <h4>Cons</h4>
+          <ul>
+            <li>More complex to implement (dragging, positioning)</li>
+            <li>Can accidentally block other nodes</li>
+            <li>May feel cluttered with multiple overlays</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>My Recommendation: Approach A</h3>
+  <p>Given your feedback that the current inspector is "too complicated and not organized," <strong>Approach A (Full Canvas + Modal Edit)</strong> best solves the problem by:</p>
+  <ul>
+    <li>Completely removing the cramped inspector</li>
+    <li>Giving the canvas the full attention it deserves</li>
+    <li>Organizing node configuration into clean, navigable modal tabs</li>
+    <li>Keeping the workflow simple: see canvas → right-click → act or edit</li>
+  </ul>
+</div>

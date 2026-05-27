@@ -7,6 +7,8 @@ namespace App\Filament\Resources\StudentEnrollments\Api;
 use App\Filament\Resources\StudentEnrollments\Api\Transformers\StudentEnrollmentTransformer;
 use App\Http\Controllers\Controller;
 use App\Models\StudentEnrollment;
+use App\Services\EnrollmentPipelineExecutionService;
+use App\Services\EnrollmentPipelineService;
 use App\Services\GeneralSettingsService;
 use Exception;
 use Illuminate\Http\JsonResponse;
@@ -19,7 +21,9 @@ use Illuminate\Validation\ValidationException;
 final class StudentEnrollmentController extends Controller
 {
     public function __construct(
-        private readonly GeneralSettingsService $settingsService
+        private readonly GeneralSettingsService $settingsService,
+        private readonly EnrollmentPipelineService $enrollmentPipelineService,
+        private readonly EnrollmentPipelineExecutionService $enrollmentPipelineExecutionService,
     ) {}
 
     /**
@@ -118,6 +122,12 @@ final class StudentEnrollmentController extends Controller
             'subjects.*.subject_id' => 'required|exists:subjects,id',
             'subjects.*.class_id' => 'required|exists:classes,id',
             'subjects.*.is_modular' => 'boolean',
+            'discount' => 'nullable|numeric|min:0|max:100',
+            'downpayment' => 'nullable|numeric|min:0',
+            'additionalFees' => 'nullable|array',
+            'additionalFees.*.fee_name' => 'required_with:additionalFees|string|max:255',
+            'additionalFees.*.amount' => 'required_with:additionalFees|numeric|min:0',
+            'additionalFees.*.is_separate_transaction' => 'nullable|boolean',
         ]);
 
         if ($validator->fails()) {
@@ -130,19 +140,44 @@ final class StudentEnrollmentController extends Controller
         DB::beginTransaction();
 
         try {
+            $validated = $validator->validated();
+
             $enrollment = StudentEnrollment::create([
-                'student_id' => $request->input('student_id'),
-                'course_id' => $request->input('course_id'),
-                'semester' => $request->input('semester'),
-                'academic_year' => $request->input('academic_year'),
+                'student_id' => $validated['student_id'],
+                'course_id' => $validated['course_id'],
+                'semester' => $validated['semester'],
+                'academic_year' => $validated['academic_year'],
                 'school_year' => $this->settingsService->getCurrentSchoolYearString(),
-                'remarks' => $request->input('remarks'),
+                'remarks' => $validated['remarks'] ?? null,
             ]);
 
-            // Create subject enrollments if provided
-            if ($request->filled('subjects')) {
-                foreach ($request->input('subjects', []) as $subject) {
+            $entryStep = $this->entryCreationStep();
+            $payload = [
+                ...$validated,
+                'subjectsEnrolled' => $validated['subjects'] ?? [],
+            ];
+
+            if (($entryStep['node_actions'] ?? []) !== []) {
+                $result = $this->enrollmentPipelineExecutionService->execute($enrollment, $entryStep, $payload);
+
+                if (! $result['success']) {
+                    throw new Exception($result['message']);
+                }
+            }
+
+            if (! $this->stepHasNodeAction($entryStep, 'create_subject_enrollments')) {
+                foreach ($validated['subjects'] ?? [] as $subject) {
                     $enrollment->subjectsEnrolled()->create($subject);
+                }
+            }
+
+            if (! $this->stepHasNodeAction($entryStep, 'create_additional_fees')) {
+                foreach ($validated['additionalFees'] ?? [] as $fee) {
+                    $enrollment->additionalFees()->create([
+                        'fee_name' => $fee['fee_name'],
+                        'amount' => $fee['amount'],
+                        'is_separate_transaction' => $fee['is_separate_transaction'] ?? false,
+                    ]);
                 }
             }
 
@@ -449,5 +484,39 @@ final class StudentEnrollmentController extends Controller
         ];
 
         return response()->json($assessment);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function entryCreationStep(): array
+    {
+        $entryStep = $this->enrollmentPipelineService->getEntryStep();
+        $entryStep['node_actions'] = collect($entryStep['node_actions'] ?? [])
+            ->filter(fn (mixed $action): bool => is_array($action) && in_array($action['type'] ?? null, [
+                'change_status',
+                'create_subject_enrollments',
+                'create_additional_fees',
+                'calculate_tuition',
+                'update_tuition',
+            ], true))
+            ->values()
+            ->all();
+
+        return $entryStep;
+    }
+
+    /**
+     * @param  array<string, mixed>  $step
+     */
+    private function stepHasNodeAction(array $step, string $actionType): bool
+    {
+        foreach ($step['node_actions'] ?? [] as $nodeAction) {
+            if (is_array($nodeAction) && ($nodeAction['type'] ?? null) === $actionType) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

@@ -1,0 +1,14 @@
+{
+  "subtask_id": "02",
+  "title": "Simplify WorkflowCanvasNode context menu",
+  "description": "Update the WorkflowCanvasNode component to show only essential right-click actions: Edit, Duplicate, Set as entry, Set as completion, Connect, Disconnect, Delete.",
+  "depends_on": [],
+  "parallel": false,
+  "context_files": [],
+  "reference_files": [
+    "resources/js/pages/administrators/system-management/enrollment-pipeline.tsx",
+    "resources/js/components/ui/context-menu.tsx"
+  ],
+  "instructions": "In the WorkflowCanvasNode component (around line 1823), update the ContextMenu to show only these actions: Edit (opens modal), Duplicate, Set as entry, Set as completion, Connect, Disconnect, Delete. Remove any less essential menu items. Keep all existing handlers but only expose the essential ones in the menu. The Edit action should trigger opening the node edit modal.",
+  "verification": "Right-click menu shows only: Edit, Duplicate, Set as entry, Set as completion, Connect, Disconnect, Delete"
+}

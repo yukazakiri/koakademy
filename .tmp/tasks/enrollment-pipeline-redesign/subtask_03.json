@@ -1,0 +1,15 @@
+{
+  "subtask_id": "03",
+  "title": "Create NodeEditModal component with sidebar tabs",
+  "description": "Create a new NodeEditModal component that renders as a Dialog with a sidebar containing tabs for different configuration sections.",
+  "depends_on": ["01"],
+  "parallel": false,
+  "context_files": [],
+  "reference_files": [
+    "resources/js/components/ui/dialog.tsx",
+    "resources/js/components/ui/tabs.tsx",
+    "resources/js/pages/administrators/system-management/types.ts"
+  ],
+  "instructions": "Create a new NodeEditModal component (can be in the same file or a new file) that accepts: isOpen, onClose, step, stepIndex, and all necessary handler props. The modal should use the Dialog component from @/components/ui/dialog and the Tabs component from @/components/ui/tabs. Layout: DialogContent with max-width xl or 2xl. Inside: left sidebar with tab triggers (Basic Info, Actions, Conditions, Connections, Permissions) and right panel with tab content. Use vertical orientation for tabs. Each tab panel will later contain the corresponding form fields.",
+  "verification": "Modal renders with sidebar tabs, can open/close, has correct layout structure"
+}

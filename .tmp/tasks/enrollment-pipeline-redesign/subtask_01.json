@@ -1,0 +1,13 @@
+{
+  "subtask_id": "01",
+  "title": "Remove inspector and make canvas full-width",
+  "description": "Remove the visual inspector Card from the workflow tab and make the canvas container take full width. Update grid layouts to single column.",
+  "depends_on": [],
+  "parallel": false,
+  "context_files": [],
+  "reference_files": [
+    "resources/js/pages/administrators/system-management/enrollment-pipeline.tsx"
+  ],
+  "instructions": "In the workflow tab (TabsContent value=\"workflow\"), remove the second Card that contains the visual inspector (lines ~1049-1538). The canvas Card should take full width. Change the grid layout from xl:grid-cols-[minmax(0,1.35fr)_minmax(380px,0.65fr)] to just a single full-width container. Keep all canvas functionality (DndContext, svg connections, WorkflowCanvasNode components). Do NOT remove any state or helper functions - only the JSX layout.",
+  "verification": "Canvas takes full width, no inspector visible, all existing canvas functionality preserved"
+}

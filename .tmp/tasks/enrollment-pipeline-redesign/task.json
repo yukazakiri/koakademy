@@ -1,0 +1,26 @@
+{
+  "task_id": "enrollment-pipeline-redesign",
+  "title": "Enrollment Pipeline UI Redesign",
+  "description": "Redesign enrollment pipeline page to show full-width canvas with modal-based node editing",
+  "status": "planned",
+  "batches": [
+    {
+      "batch_number": 1,
+      "description": "Structural changes - remove inspector, full-width canvas, simplified context menu",
+      "subtasks": ["01", "02", "03"],
+      "parallel": false
+    },
+    {
+      "batch_number": 2,
+      "description": "Create modal component and move configuration UI",
+      "subtasks": ["04", "05"],
+      "parallel": false
+    },
+    {
+      "batch_number": 3,
+      "description": "Integration and testing",
+      "subtasks": ["06"],
+      "parallel": false
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "subtask_id": "06",
+  "title": "Integration testing and verification",
+  "description": "Run tests, verify all functionality works, and ensure code formatting is correct.",
+  "depends_on": ["05"],
+  "parallel": false,
+  "context_files": [],
+  "reference_files": [
+    "resources/js/pages/administrators/system-management/enrollment-pipeline.tsx",
+    "tests/Feature/Administrators/SystemManagement/SystemManagementPagesTest.php"
+  ],
+  "instructions": "Run the existing tests to ensure nothing is broken: vendor/bin/sail artisan test --compact --filter=SystemManagement. Run linting/formatting: vendor/bin/sail bin pint --dirty --format agent. Verify: canvas is full-width, inspector is hidden, right-click shows simplified menu, Edit opens modal with tabs, all form fields work, connections can be made/removed, nodes can be dragged/organized.",
+  "verification": "All tests pass, formatting is clean, all user-facing functionality works correctly"
+}

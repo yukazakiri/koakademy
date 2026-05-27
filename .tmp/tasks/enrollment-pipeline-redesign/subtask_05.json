@@ -1,0 +1,13 @@
+{
+  "subtask_id": "05",
+  "title": "Wire up modal state management",
+  "description": "Add state management for the modal (open/close, selected node for editing) and connect the context menu Edit action to open the modal.",
+  "depends_on": ["02", "04"],
+  "parallel": false,
+  "context_files": [],
+  "reference_files": [
+    "resources/js/pages/administrators/system-management/enrollment-pipeline.tsx"
+  ],
+  "instructions": "Add state variables: editingStepIndex (number | null) and isEditModalOpen (boolean). When a node is clicked or Edit is selected from context menu, set editingStepIndex and open the modal. Pass the selected step data and all necessary handlers to NodeEditModal. Ensure the modal can be closed with onClose. Remove the old selectedStepIndex-based inspector logic since the inspector is gone - but keep selectedStepIndex for canvas selection highlighting. The Edit context menu action should call a new openEditModal(index) function.",
+  "verification": "Clicking Edit opens modal with correct node data, modal closes properly, canvas selection still works"
+}

@@ -1,0 +1,112 @@
+<h2>Proposed Redesign: Canvas-Only + Modal Edit</h2>
+<p class="subtitle">The workflow tab becomes a full-width canvas. Right-click a node for quick actions. Click Edit to open a focused modal.</p>
+
+<div class="section">
+  <h3>Current Pain Points</h3>
+  <ul>
+    <li>Visual inspector is always visible and cramped</li>
+    <li>Too many configuration fields visible at once</li>
+    <li>Workflow is hard to understand at a glance</li>
+  </ul>
+</div>
+
+<div class="section">
+  <h3>Proposed Changes</h3>
+  <div class="mockup">
+    <div class="mockup-header">Workflow Tab — Canvas Only</div>
+    <div class="mockup-body">
+      <div style="display: flex; height: 300px; background: #f8fafc; border-radius: 8px; position: relative; overflow: hidden;">
+        <div style="position: absolute; inset: 0; background-image: linear-gradient(to right, #e2e8f0 1px, transparent 1px), linear-gradient(to bottom, #e2e8f0 1px, transparent 1px); background-size: 28px 28px; opacity: 0.6;"></div>
+        
+        <!-- Node 1 -->
+        <div style="position: absolute; left: 40px; top: 60px; width: 200px; background: white; border: 2px solid #6366f1; border-radius: 12px; padding: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="width: 32px; height: 32px; background: #6366f1; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 12px;">1</div>
+            <div>
+              <div style="font-weight: 600; font-size: 13px;">Submitted</div>
+              <div style="font-size: 11px; color: #64748b; font-family: monospace;">submitted</div>
+            </div>
+          </div>
+          <div style="margin-top: 8px; font-size: 11px; color: #22c55e;">Entry point</div>
+        </div>
+        
+        <!-- Connection arrow -->
+        <svg style="position: absolute; left: 240px; top: 90px; width: 80px; height: 40px;" xmlns="http://www.w3.org/2000/svg">
+          <path d="M 0 20 C 40 20, 40 20, 80 20" fill="none" stroke="#6366f1" stroke-width="3" stroke-dasharray="6 6" stroke-linecap="round" opacity="0.85"/>
+          <circle cx="80" cy="20" r="5" fill="#6366f1"/>
+        </svg>
+        
+        <!-- Node 2 -->
+        <div style="position: absolute; left: 320px; top: 60px; width: 200px; background: white; border: 2px solid #3b82f6; border-radius: 12px; padding: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="width: 32px; height: 32px; background: #3b82f6; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 12px;">2</div>
+            <div>
+              <div style="font-weight: 600; font-size: 13px;">Department Review</div>
+              <div style="font-size: 11px; color: #64748b; font-family: monospace;">dept_review</div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Right-click menu mockup -->
+        <div style="position: absolute; left: 360px; top: 140px; background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 0; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); width: 180px; z-index: 10;">
+          <div style="padding: 6px 12px; font-size: 12px; font-weight: 500; color: #64748b;">Actions</div>
+          <div style="height: 1px; background: #e2e8f0; margin: 4px 0;"></div>
+          <div style="padding: 8px 12px; font-size: 13px; cursor: pointer; hover: background: #f1f5f9;">✏️ Edit node</div>
+          <div style="padding: 8px 12px; font-size: 13px; cursor: pointer;">📋 Duplicate</div>
+          <div style="padding: 8px 12px; font-size: 13px; cursor: pointer;">🔗 Connect to...</div>
+          <div style="height: 1px; background: #e2e8f0; margin: 4px 0;"></div>
+          <div style="padding: 8px 12px; font-size: 13px; cursor: pointer; color: #ef4444;">🗑️ Delete</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Edit Modal Concept</h3>
+  <div class="mockup">
+    <div class="mockup-header">Node Configuration Modal</div>
+    <div class="mockup-body">
+      <div style="display: flex; gap: 16px; height: 280px;">
+        <!-- Sidebar tabs -->
+        <div style="width: 160px; background: #f8fafc; border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 4px;">
+          <div style="padding: 8px 12px; background: white; border-radius: 6px; font-size: 13px; font-weight: 500; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">📋 Basic Info</div>
+          <div style="padding: 8px 12px; border-radius: 6px; font-size: 13px; color: #64748b;">⚡ Actions</div>
+          <div style="padding: 8px 12px; border-radius: 6px; font-size: 13px; color: #64748b;">🔒 Conditions</div>
+          <div style="padding: 8px 12px; border-radius: 6px; font-size: 13px; color: #64748b;">🔗 Connections</div>
+          <div style="padding: 8px 12px; border-radius: 6px; font-size: 13px; color: #64748b;">👥 Permissions</div>
+        </div>
+        
+        <!-- Content area -->
+        <div style="flex: 1; background: white; border-radius: 8px; padding: 16px; border: 1px solid #e2e8f0;">
+          <div style="font-weight: 600; margin-bottom: 12px;">Basic Information</div>
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <div>
+              <div style="font-size: 12px; color: #64748b; margin-bottom: 4px;">Step name</div>
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px; font-size: 13px;">Department Review</div>
+            </div>
+            <div>
+              <div style="font-size: 12px; color: #64748b; margin-bottom: 4px;">Status code</div>
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px; font-size: 13px; font-family: monospace;">dept_review</div>
+            </div>
+            <div>
+              <div style="font-size: 12px; color: #64748b; margin-bottom: 4px;">Color</div>
+              <div style="display: flex; gap: 8px;">
+                <div style="width: 24px; height: 24px; background: #3b82f6; border-radius: 50%;"></div>
+                <div style="width: 24px; height: 24px; background: #22c55e; border-radius: 50%;"></div>
+                <div style="width: 24px; height: 24px; background: #f59e0b; border-radius: 50%;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Key Questions</h3>
+  <p>1. Which right-click actions should remain? (Edit, Duplicate, Connect, Delete, Set as entry/completion?)</p>
+  <p>2. How should the modal be organized? Tabs? Sections?</p>
+  <p>3. Should the canvas take the full width of the page?</p>
+</div>

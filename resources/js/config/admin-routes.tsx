@@ -325,7 +325,7 @@ export const ADMIN_ROUTES: AdminRoute[] = [
     },
     {
         id: "admin-enrollments",
-        title: "Enrollment Management",
+        title: "Enrollments",
         icon: <IconChecklist className="size-4" />,
         link: "/administrators/enrollments",
         section: "student_services",

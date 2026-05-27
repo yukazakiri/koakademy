@@ -126,14 +126,47 @@ export type EnrollmentPipelineNodeActionType =
     | "change_status"
     | "send_email"
     | "send_notification"
+    | "send_department_verification_notification"
+    | "create_subject_enrollments"
+    | "create_additional_fees"
     | "department_verification"
     | "cashier_verification"
+    | "manual_cashier_verification"
     | "sync_student_enrolled_status"
     | "auto_enroll_classes"
     | "calculate_tuition"
+    | "apply_cashier_payment"
+    | "update_student_academic_year"
+    | "link_first_year_student_account"
+    | "send_student_migrated_notification"
+    | "send_super_admin_enrollment_notification"
     | "update_tuition"
     | "create_payment_transactions";
 export type EnrollmentPipelineNodeConditionType = "complete_student_profile";
+
+export type ActionConditionType =
+    // Academic
+    | "total_units" | "subject_count" | "year_level" | "semester"
+    | "gpa" | "failed_subjects"
+    // Financial
+    | "has_balance" | "balance_amount" | "has_paid_full" | "has_paid_partial"
+    | "amount_paid" | "has_scholarship"
+    // Student status
+    | "is_first_year" | "is_transferee" | "is_regular" | "is_new_student"
+    | "has_incomplete_grades" | "has_prerequisites"
+    // Demographics
+    | "age" | "gender" | "course";
+
+export type ActionConditionOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
+
+export type ActionConditionValue = boolean | number | string;
+
+export interface ActionCondition {
+    type: ActionConditionType;
+    operator: ActionConditionOperator;
+    value: ActionConditionValue;
+    enabled?: boolean;
+}
 
 export interface EnrollmentPipelineNodeAction {
     key?: string;
@@ -142,6 +175,8 @@ export interface EnrollmentPipelineNodeAction {
     order: number;
     config: Record<string, unknown>;
     halt_on_failure?: boolean;
+    conditions?: ActionCondition[];
+    condition_logic?: "all" | "any";
 }
 
 export interface EnrollmentPipelineNodeCondition {
@@ -166,6 +201,7 @@ export interface EnrollmentPipelineStep {
     node_actions?: EnrollmentPipelineNodeAction[];
     node_conditions?: EnrollmentPipelineNodeCondition[];
     next_step_key?: string | null;
+    next_step_keys?: string[];
 }
 
 export interface EnrollmentPipelineSettings {

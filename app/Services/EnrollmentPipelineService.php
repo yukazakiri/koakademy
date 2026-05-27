@@ -210,6 +210,7 @@ final class EnrollmentPipelineService
                 'node_actions' => $step['node_actions'] ?? $this->legacyActionsToNodeActions($step['actions'] ?? $this->actionsForActionType($step['action_type']), $step['status']),
                 'node_conditions' => $step['node_conditions'] ?? [],
                 'next_step_key' => $step['next_step_key'] ?? null,
+                'next_step_keys' => $step['next_step_keys'] ?? array_values(array_filter([$step['next_step_key'] ?? null])),
                 'is_completion' => $completionStepKey === $step['key'],
             ])
             ->values()
@@ -360,7 +361,14 @@ final class EnrollmentPipelineService
 
             $currentKey = $step['key'];
 
-            return collect($steps)->first(fn (array $candidate): bool => ($candidate['next_step_key'] ?? null) === $currentKey);
+            return collect($steps)->first(function (array $candidate) use ($currentKey): bool {
+                $nextStepKeys = is_array($candidate['next_step_keys'] ?? null) ? $candidate['next_step_keys'] : [];
+                if (($candidate['next_step_key'] ?? null) !== null) {
+                    $nextStepKeys[] = $candidate['next_step_key'];
+                }
+
+                return in_array($currentKey, $nextStepKeys, true);
+            });
         }
 
         return null;
@@ -461,7 +469,12 @@ final class EnrollmentPipelineService
                     'allowed_roles' => [],
                     'action_type' => 'standard',
                     'actions' => ['advance_status'],
-                    'node_actions' => [['type' => 'change_status', 'order' => 1, 'config' => ['status' => EnrollStat::Pending->value]]],
+                    'node_actions' => [
+                        ['type' => 'change_status', 'order' => 1, 'config' => ['status' => EnrollStat::Pending->value]],
+                        ['type' => 'create_subject_enrollments', 'order' => 2, 'config' => []],
+                        ['type' => 'create_additional_fees', 'order' => 3, 'config' => []],
+                        ['type' => 'calculate_tuition', 'order' => 4, 'config' => []],
+                    ],
                     'node_conditions' => [],
                 ],
                 [
@@ -472,7 +485,10 @@ final class EnrollmentPipelineService
                     'allowed_roles' => [],
                     'action_type' => 'department_verification',
                     'actions' => ['department_verification'],
-                    'node_actions' => [['type' => 'department_verification', 'order' => 1, 'config' => []]],
+                    'node_actions' => [
+                        ['type' => 'change_status', 'order' => 1, 'config' => ['status' => EnrollStat::VerifiedByDeptHead->value]],
+                        ['type' => 'send_department_verification_notification', 'order' => 2, 'config' => []],
+                    ],
                     'node_conditions' => [],
                 ],
                 [
@@ -483,7 +499,17 @@ final class EnrollmentPipelineService
                     'allowed_roles' => [],
                     'action_type' => 'cashier_verification',
                     'actions' => ['cashier_verification'],
-                    'node_actions' => [['type' => 'cashier_verification', 'order' => 1, 'config' => []]],
+                    'node_actions' => [
+                        ['type' => 'create_payment_transactions', 'order' => 1, 'config' => []],
+                        ['type' => 'apply_cashier_payment', 'order' => 2, 'config' => []],
+                        ['type' => 'update_student_academic_year', 'order' => 3, 'config' => []],
+                        ['type' => 'auto_enroll_classes', 'order' => 4, 'config' => []],
+                        ['type' => 'link_first_year_student_account', 'order' => 5, 'config' => []],
+                        ['type' => 'send_student_migrated_notification', 'order' => 6, 'config' => []],
+                        ['type' => 'change_status', 'order' => 7, 'config' => ['status' => EnrollStat::VerifiedByCashier->value]],
+                        ['type' => 'sync_student_enrolled_status', 'order' => 8, 'config' => []],
+                        ['type' => 'send_super_admin_enrollment_notification', 'order' => 9, 'config' => []],
+                    ],
                     'node_conditions' => [],
                 ],
             ],
@@ -725,6 +751,8 @@ final class EnrollmentPipelineService
                 'order' => $this->sanitizeNodeOrder($actionRaw['order'] ?? ($index + 1)),
                 'config' => $this->sanitizeNodeConfig($actionRaw['config'] ?? [], $type, $stepStatus),
                 'halt_on_failure' => (bool) ($actionRaw['halt_on_failure'] ?? true),
+                'condition_logic' => $this->sanitizeConditionLogic($actionRaw['condition_logic'] ?? null),
+                'conditions' => $this->sanitizeActionConditions($actionRaw['conditions'] ?? []),
             ];
         }
 
@@ -735,6 +763,120 @@ final class EnrollmentPipelineService
         usort($actions, fn (array $left, array $right): int => $left['order'] <=> $right['order']);
 
         return array_values($actions);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function sanitizeActionConditions(mixed $conditionsRaw): array
+    {
+        if (! is_array($conditionsRaw)) {
+            return [];
+        }
+
+        $conditions = [];
+        foreach ($conditionsRaw as $conditionRaw) {
+            if (! is_array($conditionRaw)) {
+                continue;
+            }
+
+            $type = $this->sanitizeActionConditionType($conditionRaw['type'] ?? null);
+            $operator = $this->sanitizeActionConditionOperator($conditionRaw['operator'] ?? null);
+
+            if ($type === null || $operator === null) {
+                continue;
+            }
+
+            $conditions[] = [
+                'type' => $type,
+                'operator' => $operator,
+                'value' => $this->sanitizeActionConditionValue($conditionRaw['value'] ?? null, $type),
+                'enabled' => (bool) ($conditionRaw['enabled'] ?? true),
+            ];
+        }
+
+        return array_values($conditions);
+    }
+
+    private function sanitizeConditionLogic(mixed $logic): string
+    {
+        if (! is_string($logic)) {
+            return 'all';
+        }
+
+        $normalized = mb_trim(mb_strtolower($logic));
+
+        return $normalized === 'any' ? 'any' : 'all';
+    }
+
+    private function sanitizeActionConditionType(mixed $type): ?string
+    {
+        if (! is_string($type)) {
+            return null;
+        }
+
+        $normalized = mb_trim(mb_strtolower($type));
+        $allowed = [
+            'total_units',
+            'subject_count',
+            'year_level',
+            'semester',
+            'gpa',
+            'failed_subjects',
+            'has_balance',
+            'balance_amount',
+            'has_paid_full',
+            'has_paid_partial',
+            'amount_paid',
+            'has_scholarship',
+            'is_first_year',
+            'is_transferee',
+            'is_regular',
+            'is_new_student',
+            'has_incomplete_grades',
+            'has_prerequisites',
+            'age',
+            'gender',
+            'course',
+        ];
+
+        return in_array($normalized, $allowed, true) ? $normalized : null;
+    }
+
+    private function sanitizeActionConditionOperator(mixed $operator): ?string
+    {
+        if (! is_string($operator)) {
+            return null;
+        }
+
+        $normalized = mb_trim(mb_strtolower($operator));
+        $allowed = ['eq', 'neq', 'gt', 'gte', 'lt', 'lte'];
+
+        return in_array($normalized, $allowed, true) ? $normalized : null;
+    }
+
+    private function sanitizeActionConditionValue(mixed $value, string $type): bool|float|string
+    {
+        if (in_array($type, [
+            'has_balance',
+            'has_paid_full',
+            'has_paid_partial',
+            'has_scholarship',
+            'is_first_year',
+            'is_transferee',
+            'is_regular',
+            'is_new_student',
+            'has_incomplete_grades',
+            'has_prerequisites',
+        ], true)) {
+            return filter_var($value, FILTER_VALIDATE_BOOLEAN);
+        }
+
+        if (in_array($type, ['gender', 'course'], true)) {
+            return $this->sanitizeString($value, '');
+        }
+
+        return is_numeric($value) ? (float) $value : 0.0;
     }
 
     /**
@@ -783,11 +925,20 @@ final class EnrollmentPipelineService
             'change_status',
             'send_email',
             'send_notification',
+            'send_department_verification_notification',
+            'create_subject_enrollments',
+            'create_additional_fees',
             'department_verification',
             'cashier_verification',
+            'manual_cashier_verification',
             'sync_student_enrolled_status',
             'auto_enroll_classes',
             'calculate_tuition',
+            'apply_cashier_payment',
+            'update_student_academic_year',
+            'link_first_year_student_account',
+            'send_student_migrated_notification',
+            'send_super_admin_enrollment_notification',
             'update_tuition',
             'create_payment_transactions',
         ];
@@ -844,10 +995,45 @@ final class EnrollmentPipelineService
         $mapped = [];
 
         foreach ($legacyActions as $index => $legacyAction) {
+            if ($legacyAction === 'department_verification') {
+                $mapped = [
+                    ...$mapped,
+                    ['key' => 'change_status', 'type' => 'change_status', 'enabled' => true, 'order' => count($mapped) + 1, 'config' => $this->sanitizeNodeConfig([], 'change_status', $stepStatus), 'halt_on_failure' => true, 'condition_logic' => 'all', 'conditions' => []],
+                    ['key' => 'send_department_verification_notification', 'type' => 'send_department_verification_notification', 'enabled' => true, 'order' => count($mapped) + 2, 'config' => [], 'halt_on_failure' => true, 'condition_logic' => 'all', 'conditions' => []],
+                ];
+
+                continue;
+            }
+
+            if ($legacyAction === 'cashier_verification') {
+                foreach ([
+                    'create_payment_transactions',
+                    'apply_cashier_payment',
+                    'update_student_academic_year',
+                    'auto_enroll_classes',
+                    'link_first_year_student_account',
+                    'send_student_migrated_notification',
+                    'change_status',
+                    'sync_student_enrolled_status',
+                    'send_super_admin_enrollment_notification',
+                ] as $nodeType) {
+                    $mapped[] = [
+                        'key' => $nodeType,
+                        'type' => $nodeType,
+                        'enabled' => true,
+                        'order' => count($mapped) + 1,
+                        'config' => $this->sanitizeNodeConfig([], $nodeType, $stepStatus),
+                        'halt_on_failure' => true,
+                        'condition_logic' => 'all',
+                        'conditions' => [],
+                    ];
+                }
+
+                continue;
+            }
+
             $nodeType = match ($legacyAction) {
                 'advance_status' => 'change_status',
-                'department_verification' => 'department_verification',
-                'cashier_verification' => 'cashier_verification',
                 default => null,
             };
 
@@ -862,10 +1048,12 @@ final class EnrollmentPipelineService
                 'order' => $index + 1,
                 'config' => $this->sanitizeNodeConfig([], $nodeType, $stepStatus),
                 'halt_on_failure' => true,
+                'condition_logic' => 'all',
+                'conditions' => [],
             ];
         }
 
-        return $mapped === [] ? [['key' => 'advance_status', 'type' => 'change_status', 'enabled' => true, 'order' => 1, 'config' => $this->sanitizeNodeConfig([], 'change_status', $stepStatus), 'halt_on_failure' => true]] : $mapped;
+        return $mapped === [] ? [['key' => 'advance_status', 'type' => 'change_status', 'enabled' => true, 'order' => 1, 'config' => $this->sanitizeNodeConfig([], 'change_status', $stepStatus), 'halt_on_failure' => true, 'condition_logic' => 'all', 'conditions' => []]] : $mapped;
     }
 
     /**
@@ -890,11 +1078,20 @@ final class EnrollmentPipelineService
             ->pluck('type')
             ->all();
 
-        if (in_array('cashier_verification', $types, true)) {
+        if (array_intersect($types, [
+            'cashier_verification',
+            'manual_cashier_verification',
+            'create_payment_transactions',
+            'apply_cashier_payment',
+            'send_super_admin_enrollment_notification',
+        ]) !== []) {
             return 'cashier_verification';
         }
 
-        if (in_array('department_verification', $types, true)) {
+        if (array_intersect($types, [
+            'department_verification',
+            'send_department_verification_notification',
+        ]) !== []) {
             return 'department_verification';
         }
 
@@ -936,6 +1133,15 @@ final class EnrollmentPipelineService
                 $this->sanitizeActionType($stepRaw['action_type'] ?? 'standard', $actions)
             );
 
+            $nextStepKeys = $this->sanitizeNullableStepKeys($stepRaw['next_step_keys'] ?? []);
+            $nextStepKey = array_key_exists('next_step_key', $stepRaw)
+                ? $this->sanitizeNullableStepKey($stepRaw['next_step_key'] ?? null)
+                : null;
+
+            if ($nextStepKey !== null && ! in_array($nextStepKey, $nextStepKeys, true)) {
+                array_unshift($nextStepKeys, $nextStepKey);
+            }
+
             $steps[] = [
                 'key' => $key,
                 'status' => $status,
@@ -946,9 +1152,10 @@ final class EnrollmentPipelineService
                 'actions' => $actions,
                 'node_actions' => $nodeActions,
                 'node_conditions' => $this->sanitizeNodeConditions($stepRaw['node_conditions'] ?? []),
-                'next_step_key' => array_key_exists('next_step_key', $stepRaw)
-                    ? $this->sanitizeNullableStepKey($stepRaw['next_step_key'] ?? null)
+                'next_step_key' => array_key_exists('next_step_key', $stepRaw) || $nextStepKeys !== []
+                    ? ($nextStepKeys[0] ?? null)
                     : '__next_by_order__',
+                'next_step_keys' => $nextStepKeys,
             ];
         }
 
@@ -967,6 +1174,28 @@ final class EnrollmentPipelineService
     }
 
     /**
+     * @return array<int, string>
+     */
+    private function sanitizeNullableStepKeys(mixed $values): array
+    {
+        if (! is_array($values)) {
+            return [];
+        }
+
+        $stepKeys = [];
+        foreach ($values as $value) {
+            $stepKey = $this->sanitizeNullableStepKey($value);
+            if ($stepKey === null || in_array($stepKey, $stepKeys, true)) {
+                continue;
+            }
+
+            $stepKeys[] = $stepKey;
+        }
+
+        return $stepKeys;
+    }
+
+    /**
      * @param  array<int, array<string, mixed>>  $steps
      * @return array<int, array<string, mixed>>
      */
@@ -977,13 +1206,24 @@ final class EnrollmentPipelineService
         foreach ($steps as $index => $step) {
             if (! array_key_exists('next_step_key', $step) || ($step['next_step_key'] ?? null) === '__next_by_order__') {
                 $steps[$index]['next_step_key'] = $steps[$index + 1]['key'] ?? null;
+                $steps[$index]['next_step_keys'] = array_values(array_filter([$steps[$index]['next_step_key']]));
 
                 continue;
             }
 
+            $nextStepKeys = is_array($step['next_step_keys'] ?? null) ? $step['next_step_keys'] : [];
+            if (($step['next_step_key'] ?? null) !== null && ! in_array($step['next_step_key'], $nextStepKeys, true)) {
+                array_unshift($nextStepKeys, $step['next_step_key']);
+            }
+
+            $nextStepKeys = array_values(array_filter(array_unique($nextStepKeys), fn (string $nextStepKey): bool => in_array($nextStepKey, $stepKeys, true)));
+
             if (($step['next_step_key'] ?? null) !== null && ! in_array($step['next_step_key'], $stepKeys, true)) {
                 $steps[$index]['next_step_key'] = null;
             }
+
+            $steps[$index]['next_step_keys'] = $nextStepKeys;
+            $steps[$index]['next_step_key'] = $steps[$index]['next_step_key'] ?? ($nextStepKeys[0] ?? null);
         }
 
         return $steps;

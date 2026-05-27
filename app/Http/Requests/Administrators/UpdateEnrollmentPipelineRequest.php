@@ -27,15 +27,48 @@ final class UpdateEnrollmentPipelineRequest extends FormRequest
             'change_status',
             'send_email',
             'send_notification',
+            'send_department_verification_notification',
+            'create_subject_enrollments',
+            'create_additional_fees',
             'department_verification',
             'cashier_verification',
+            'manual_cashier_verification',
             'sync_student_enrolled_status',
             'auto_enroll_classes',
             'calculate_tuition',
+            'apply_cashier_payment',
+            'update_student_academic_year',
+            'link_first_year_student_account',
+            'send_student_migrated_notification',
+            'send_super_admin_enrollment_notification',
             'update_tuition',
             'create_payment_transactions',
         ];
         $nodeConditionTypes = ['complete_student_profile'];
+        $actionConditionTypes = [
+            'total_units',
+            'subject_count',
+            'year_level',
+            'semester',
+            'gpa',
+            'failed_subjects',
+            'has_balance',
+            'balance_amount',
+            'has_paid_full',
+            'has_paid_partial',
+            'amount_paid',
+            'has_scholarship',
+            'is_first_year',
+            'is_transferee',
+            'is_regular',
+            'is_new_student',
+            'has_incomplete_grades',
+            'has_prerequisites',
+            'age',
+            'gender',
+            'course',
+        ];
+        $actionConditionOperators = ['eq', 'neq', 'gt', 'gte', 'lt', 'lte'];
         $statMetrics = ['total_records', 'active_records', 'trashed_records', 'status_count', 'paid_count'];
 
         return [
@@ -58,11 +91,21 @@ final class UpdateEnrollmentPipelineRequest extends FormRequest
             'steps.*.node_actions.*.order' => ['nullable', 'integer', 'min:1'],
             'steps.*.node_actions.*.config' => ['nullable', 'array'],
             'steps.*.node_actions.*.config.status' => ['nullable', 'string', 'max:100'],
+            'steps.*.node_actions.*.halt_on_failure' => ['nullable', 'boolean'],
+            'steps.*.node_actions.*.enabled' => ['nullable', 'boolean'],
+            'steps.*.node_actions.*.condition_logic' => ['nullable', 'string', Rule::in(['all', 'any'])],
+            'steps.*.node_actions.*.conditions' => ['nullable', 'array'],
+            'steps.*.node_actions.*.conditions.*.type' => ['required_with:steps.*.node_actions.*.conditions', 'string', Rule::in($actionConditionTypes)],
+            'steps.*.node_actions.*.conditions.*.operator' => ['required_with:steps.*.node_actions.*.conditions', 'string', Rule::in($actionConditionOperators)],
+            'steps.*.node_actions.*.conditions.*.value' => ['nullable'],
+            'steps.*.node_actions.*.conditions.*.enabled' => ['nullable', 'boolean'],
             'steps.*.node_conditions' => ['nullable', 'array'],
             'steps.*.node_conditions.*.type' => ['required_with:steps.*.node_conditions', 'string', Rule::in($nodeConditionTypes)],
             'steps.*.node_conditions.*.order' => ['nullable', 'integer', 'min:1'],
             'steps.*.node_conditions.*.config' => ['nullable', 'array'],
             'steps.*.next_step_key' => ['nullable', 'string', 'max:100'],
+            'steps.*.next_step_keys' => ['nullable', 'array'],
+            'steps.*.next_step_keys.*' => ['string', 'max:100'],
             'entry_step_key' => ['nullable', 'string', 'max:100'],
             'completion_step_key' => ['nullable', 'string', 'max:100'],
             'automation' => ['nullable', 'array'],
@@ -214,14 +257,21 @@ final class UpdateEnrollmentPipelineRequest extends FormRequest
                 continue;
             }
 
-            $nextStepKey = $step['next_step_key'] ?? null;
-            if (! is_string($nextStepKey) || mb_trim($nextStepKey) === '') {
-                continue;
+            $nextStepKeys = [];
+            if (is_array($step['next_step_keys'] ?? null)) {
+                $nextStepKeys = array_filter($step['next_step_keys'], is_string(...));
             }
 
-            $normalizedNextStepKey = str($nextStepKey)->slug('_')->toString();
-            if (! in_array($normalizedNextStepKey, $stepKeys, true)) {
-                $validator->errors()->add("steps.{$index}.next_step_key", 'The connected next step does not exist in this workflow.');
+            $nextStepKey = $step['next_step_key'] ?? null;
+            if (is_string($nextStepKey) && mb_trim($nextStepKey) !== '') {
+                $nextStepKeys[] = $nextStepKey;
+            }
+
+            foreach (array_unique($nextStepKeys) as $connectionIndex => $nextStepKey) {
+                $normalizedNextStepKey = str($nextStepKey)->slug('_')->toString();
+                if (! in_array($normalizedNextStepKey, $stepKeys, true)) {
+                    $validator->errors()->add("steps.{$index}.next_step_keys.{$connectionIndex}", 'The connected next step does not exist in this workflow.');
+                }
             }
         }
     }

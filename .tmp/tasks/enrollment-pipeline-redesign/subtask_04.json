@@ -1,0 +1,13 @@
+{
+  "subtask_id": "04",
+  "title": "Move inspector form fields into modal tabs",
+  "description": "Extract all the form fields from the visual inspector and move them into the appropriate tabs of the NodeEditModal component.",
+  "depends_on": ["03"],
+  "parallel": false,
+  "context_files": [],
+  "reference_files": [
+    "resources/js/pages/administrators/system-management/enrollment-pipeline.tsx"
+  ],
+  "instructions": "Move all the inspector form fields (lines ~1078-1536) into the NodeEditModal tabs: Basic Info tab (step name, status code, color, step ID), Actions tab (legacy action shortcut, node actions list), Conditions tab (complete student profile toggle and fields), Connections tab (next step connection, draw connection button, disconnect button), Permissions tab (approver roles combobox and badges, set as entry/completion buttons). Preserve all existing handlers and form logic. Use the same components (Input, Select, Switch, Checkbox, Combobox, Badge, Button, Label).",
+  "verification": "All inspector fields are accessible in the modal tabs, form values update correctly"
+}

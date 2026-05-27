@@ -1,0 +1,112 @@
+<h2>Redesign Complete!</h2>
+<p class="subtitle">The enrollment pipeline has been redesigned with a canvas-focused workflow and modal-based node editing.</p>
+
+<div class="section">
+  <h3>What Changed</h3>
+  <div class="mockup">
+    <div class="mockup-header">Workflow Tab — Canvas Only</div>
+    <div class="mockup-body">
+      <div style="display: flex; height: 250px; background: #f8fafc; border-radius: 8px; position: relative; overflow: hidden;">
+        <div style="position: absolute; inset: 0; background-image: linear-gradient(to right, #e2e8f0 1px, transparent 1px), linear-gradient(to bottom, #e2e8f0 1px, transparent 1px); background-size: 28px 28px; opacity: 0.6;"></div>
+        
+        <!-- Node 1 -->
+        <div style="position: absolute; left: 40px; top: 50px; width: 200px; background: white; border: 2px solid #6366f1; border-radius: 12px; padding: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="width: 32px; height: 32px; background: #6366f1; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 12px;">1</div>
+            <div>
+              <div style="font-weight: 600; font-size: 13px;">Submitted</div>
+              <div style="font-size: 11px; color: #64748b; font-family: monospace;">submitted</div>
+            </div>
+          </div>
+          <div style="margin-top: 8px; font-size: 11px; color: #22c55e;">Entry point</div>
+        </div>
+        
+        <!-- Connection arrow -->
+        <svg style="position: absolute; left: 240px; top: 80px; width: 80px; height: 40px;" xmlns="http://www.w3.org/2000/svg">
+          <path d="M 0 20 C 40 20, 40 20, 80 20" fill="none" stroke="#6366f1" stroke-width="3" stroke-dasharray="6 6" stroke-linecap="round" opacity="0.85"/>
+          <circle cx="80" cy="20" r="5" fill="#6366f1"/>
+        </svg>
+        
+        <!-- Node 2 -->
+        <div style="position: absolute; left: 320px; top: 50px; width: 200px; background: white; border: 2px solid #3b82f6; border-radius: 12px; padding: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="width: 32px; height: 32px; background: #3b82f6; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 12px;">2</div>
+            <div>
+              <div style="font-weight: 600; font-size: 13px;">Department Review</div>
+              <div style="font-size: 11px; color: #64748b; font-family: monospace;">dept_review</div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Right-click menu mockup -->
+        <div style="position: absolute; left: 360px; top: 130px; background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 0; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); width: 180px; z-index: 10;">
+          <div style="padding: 6px 12px; font-size: 12px; font-weight: 500; color: #64748b;">Actions</div>
+          <div style="height: 1px; background: #e2e8f0; margin: 4px 0;"></div>
+          <div style="padding: 8px 12px; font-size: 13px; cursor: pointer; hover: background: #f1f5f9;">✏️ Edit node</div>
+          <div style="padding: 8px 12px; font-size: 13px; cursor: pointer;">📋 Duplicate</div>
+          <div style="padding: 8px 12px; font-size: 13px; cursor: pointer;">🔗 Connect to...</div>
+          <div style="padding: 8px 12px; font-size: 13px; cursor: pointer;">✂️ Disconnect</div>
+          <div style="height: 1px; background: #e2e8f0; margin: 4px 0;"></div>
+          <div style="padding: 8px 12px; font-size: 13px; cursor: pointer;">🚪 Set as entry</div>
+          <div style="padding: 8px 12px; font-size: 13px; cursor: pointer;">🏁 Set as completion</div>
+          <div style="height: 1px; background: #e2e8f0; margin: 4px 0;"></div>
+          <div style="padding: 8px 12px; font-size: 13px; cursor: pointer; color: #ef4444;">🗑️ Delete</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Edit Modal with Sidebar Navigation</h3>
+  <div class="mockup">
+    <div class="mockup-header">Node Configuration Modal</div>
+    <div class="mockup-body">
+      <div style="display: flex; gap: 0; height: 280px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+        <!-- Sidebar -->
+        <div style="width: 160px; background: #f8fafc; border-right: 1px solid #e2e8f0; padding: 12px; display: flex; flex-direction: column; gap: 4px;">
+          <div style="padding: 8px 12px; background: white; border-radius: 6px; font-size: 13px; font-weight: 500; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">📋 Basic Info</div>
+          <div style="padding: 8px 12px; border-radius: 6px; font-size: 13px; color: #64748b;">⚡ Actions</div>
+          <div style="padding: 8px 12px; border-radius: 6px; font-size: 13px; color: #64748b;">🔒 Conditions</div>
+          <div style="padding: 8px 12px; border-radius: 6px; font-size: 13px; color: #64748b;">🔗 Connections</div>
+          <div style="padding: 8px 12px; border-radius: 6px; font-size: 13px; color: #64748b;">👥 Permissions</div>
+          <div style="padding: 8px 12px; border-radius: 6px; font-size: 13px; color: #64748b;">⚙️ Advanced</div>
+        </div>
+        
+        <!-- Content area -->
+        <div style="flex: 1; background: white; padding: 16px;">
+          <div style="font-weight: 600; margin-bottom: 12px;">Basic Information</div>
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <div>
+              <div style="font-size: 12px; color: #64748b; margin-bottom: 4px;">Step name</div>
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px; font-size: 13px;">Department Review</div>
+            </div>
+            <div>
+              <div style="font-size: 12px; color: #64748b; margin-bottom: 4px;">Status code</div>
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px; font-size: 13px; font-family: monospace;">dept_review</div>
+            </div>
+            <div>
+              <div style="font-size: 12px; color: #64748b; margin-bottom: 4px;">Color</div>
+              <div style="display: flex; gap: 8px;">
+                <div style="width: 24px; height: 24px; background: #3b82f6; border-radius: 50%;"></div>
+                <div style="width: 24px; height: 24px; background: #22c55e; border-radius: 50%;"></div>
+                <div style="width: 24px; height: 24px; background: #f59e0b; border-radius: 50%;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Key Improvements</h3>
+  <ul>
+    <li><strong>Canvas-focused:</strong> Workflow tab now shows only the canvas with nodes</li>
+    <li><strong>Click to select:</strong> Clicking a node highlights it without opening the modal</li>
+    <li><strong>Right-click actions:</strong> Context menu shows all essential actions (Edit, Duplicate, Connect, Disconnect, Set as entry, Set as completion, Delete)</li>
+    <li><strong>Sidebar navigation:</strong> Modal uses vertical sidebar tabs for better organization</li>
+    <li><strong>Clearer sections:</strong> Basic Info, Actions, Conditions, Connections, Permissions, Advanced</li>
+  </ul>
+</div>

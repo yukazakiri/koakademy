@@ -22,6 +22,7 @@ it('runs one fork-safe CI workflow for master, pull requests, merge queues, and 
         ->toContain('push: false')
         ->toContain('linux/amd64')
         ->toContain('linux/arm64')
+        ->toContain('ubuntu-24.04-arm')
         ->toContain('actionlint')
         ->toContain('zizmor')
         ->not->toContain('pull_request_target');

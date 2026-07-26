@@ -34,7 +34,7 @@ Never paste `.env`, access tokens, student data, database dumps, or unredacted p
 
 ## The installer cannot resolve the latest tag
 
-The installer intentionally reads immutable release tags from GitHub and never falls back to `latest`. Anonymous tag discovery works after the repository is public. Until then, authenticated maintainers can run a local script with an explicit stable tag:
+The installer intentionally reads immutable tags from published GitHub Releases and never falls back to draft tags or `latest`. Anonymous release discovery works after the repository is public. Until then, authenticated maintainers can run a local script with an explicit stable tag:
 
 ```sh
 KOAKADEMY_VERSION=<stable-tag> bash scripts/install.sh

@@ -129,3 +129,11 @@ it('rejects malformed versions and source commits', function (array $override): 
     'short commit' => [['commit' => '0123456']],
     'unknown channel' => [['channel' => 'nightly']],
 ]);
+
+it('renders stable and edge delivery metadata as explicit changelog channels', function (): void {
+    $changelog = file_get_contents(base_path('resources/js/pages/changelog.tsx')) ?: '';
+
+    expect($changelog)
+        ->toContain('stable: { label: "Stable release"')
+        ->toContain('edge: { label: "Edge build"');
+});

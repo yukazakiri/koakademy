@@ -17,7 +17,7 @@ Only the latest stable, non-prerelease release is supported. Development and pre
 
 It validates an existing Linux Docker engine, initializes Swarm only when inactive, and deploys manager-pinned KoAkademy, PostgreSQL, Redis, Gotenberg, and optional RustFS services. If Swarm is already active, the installer preserves it and requires the current node to be a manager. It does not install Docker, configure TLS, leave a Swarm, or remove unrelated services.
 
-The Bash and PowerShell commands resolve the latest stable KoAkademy GitHub tag at runtime. Local RustFS resolves the newest stable tag with a published Docker image, or the newest published non-preview beta when no stable tag exists. Resolution fails instead of silently using a mutable `latest` image.
+The Bash and PowerShell commands resolve the tag from the latest published, non-draft, non-prerelease KoAkademy GitHub Release at runtime. Local RustFS resolves the newest stable tag with a published Docker image, or the newest published non-preview beta when no stable tag exists. Resolution fails instead of silently using a mutable `latest` image.
 
 ## Can I use MySQL or SQLite in production?
 

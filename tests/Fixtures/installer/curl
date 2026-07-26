@@ -1,3 +1,18 @@
 #!/usr/bin/env sh
 
-exit 0
+set -eu
+
+case "$*" in
+    *api.github.com/repos/yukazakiri/koakademy/releases/latest*)
+        if test -n "${KOAKADEMY_INSTALLER_TEST_RELEASE_TAG:-}"; then
+            printf '{"tag_name":"%s","draft":false,"prerelease":false}\n' \
+                "${KOAKADEMY_INSTALLER_TEST_RELEASE_TAG}"
+        fi
+        ;;
+    *github.com/yukazakiri/koakademy/releases/latest*)
+        if test -n "${KOAKADEMY_INSTALLER_TEST_RELEASE_TAG:-}"; then
+            printf 'https://github.com/yukazakiri/koakademy/releases/tag/%s' \
+                "${KOAKADEMY_INSTALLER_TEST_RELEASE_TAG}"
+        fi
+        ;;
+esac

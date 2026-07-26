@@ -83,6 +83,8 @@ const releaseTypeConfig: Record<string, { label: string; className: string }> = 
     feature: { label: "Feature release", className: "border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" },
     bugfix: { label: "Bug fix", className: "border-rose-300 bg-rose-50 text-rose-800 dark:bg-rose-950 dark:text-rose-300" },
     chore: { label: "Maintenance", className: "border-border bg-muted text-muted-foreground" },
+    stable: { label: "Stable release", className: "border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" },
+    edge: { label: "Edge build", className: "border-violet-300 bg-violet-50 text-violet-800 dark:bg-violet-950 dark:text-violet-300" },
 };
 
 function formatDate(dateString: string): string {

@@ -236,8 +236,52 @@ github_tags() {
     fi
 }
 
-resolve_latest_koakademy_version() {
+github_latest_published_release() {
+    local repository="$1"
+    local response=""
+    local candidate=""
     local redirected=""
+    local authorization_config=""
+
+    if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+        [[ "${GITHUB_TOKEN}" =~ ^[A-Za-z0-9_]+$ ]] \
+            || fail "GITHUB_TOKEN contains unsupported characters."
+        authorization_config="header = \"Authorization: Bearer ${GITHUB_TOKEN}\""
+    fi
+
+    if [[ -n "${authorization_config}" ]]; then
+        response="$(printf '%s\n' "${authorization_config}" |
+            curl --config - -fsSL --connect-timeout 10 \
+                -H 'Accept: application/vnd.github+json' \
+                "https://api.github.com/repos/${repository}/releases/latest" 2>/dev/null)" \
+            || response=""
+    else
+        response="$(curl -fsSL --connect-timeout 10 \
+            -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/${repository}/releases/latest" 2>/dev/null)" \
+            || response=""
+    fi
+
+    candidate="$(printf '%s' "${response}" |
+        sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' |
+        head -n 1)"
+    if [[ "${candidate}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] &&
+       grep -q '"draft":[[:space:]]*false' <<<"${response}" &&
+       grep -q '"prerelease":[[:space:]]*false' <<<"${response}"; then
+        printf '%s' "${candidate}"
+        return
+    fi
+
+    redirected="$(curl -fsSL --connect-timeout 10 -o /dev/null -w '%{url_effective}' \
+        "https://github.com/${repository}/releases/latest" 2>/dev/null || true)"
+    candidate="${redirected##*/tag/}"
+    if [[ "${redirected}" == *"/releases/tag/"* ]] &&
+       [[ "${candidate}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        printf '%s' "${candidate}"
+    fi
+}
+
+resolve_latest_koakademy_version() {
     local candidate=""
 
     if [[ -n "${KOAKADEMY_VERSION}" ]]; then
@@ -252,20 +296,11 @@ resolve_latest_koakademy_version() {
         return
     fi
 
-    info "Detecting the latest stable KoAkademy tag from GitHub..." >&2
-    redirected="$(curl -fsSL --connect-timeout 10 -o /dev/null -w '%{url_effective}' \
-        "https://github.com/${KOAKADEMY_REPOSITORY}/releases/latest" 2>/dev/null || true)"
-    candidate="${redirected##*/tag/}"
-
-    if [[ ! "${candidate}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        candidate="$(github_tags "${KOAKADEMY_REPOSITORY}" \
-            | sed -nE '/^v?[0-9]+\.[0-9]+\.[0-9]+$/p' \
-            | sort -V \
-            | tail -n 1)"
-    fi
+    info "Detecting the latest published stable KoAkademy release from GitHub..." >&2
+    candidate="$(github_latest_published_release "${KOAKADEMY_REPOSITORY}")"
 
     [[ -n "${candidate}" ]] || fail \
-        "No stable KoAkademy tag could be resolved. The repository must be public, or set KOAKADEMY_VERSION explicitly."
+        "No published stable KoAkademy release could be resolved. The repository must be public, or set KOAKADEMY_VERSION explicitly."
     validate_tag "${candidate}" "Resolved KoAkademy version"
     printf '%s' "${candidate}"
 }
@@ -551,8 +586,9 @@ ensure_swarm_manager() {
     os_type="$(docker info --format '{{.OSType}}')"
     architecture="$(docker info --format '{{.Architecture}}')"
     [[ "${os_type}" == "linux" ]] || fail "KoAkademy requires Docker's Linux container engine."
-    [[ "${architecture}" == "x86_64" || "${architecture}" == "amd64" ]] \
-        || fail "The published KoAkademy image currently supports linux/amd64 only."
+    [[ "${architecture}" == "x86_64" || "${architecture}" == "amd64" ||
+       "${architecture}" == "aarch64" || "${architecture}" == "arm64" ]] \
+        || fail "The published KoAkademy image supports linux/amd64 and linux/arm64."
 
     swarm_state="$(docker info --format '{{.Swarm.LocalNodeState}}')"
     if [[ "${swarm_state}" == "inactive" ]]; then

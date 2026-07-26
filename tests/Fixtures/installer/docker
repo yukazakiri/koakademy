@@ -31,7 +31,7 @@ case "${command_name}" in
     info)
         case "$*" in
             *'{{.OSType}}'*) printf 'linux\n' ;;
-            *'{{.Architecture}}'*) printf 'amd64\n' ;;
+            *'{{.Architecture}}'*) printf '%s\n' "${KOAKADEMY_INSTALLER_TEST_ARCHITECTURE:-amd64}" ;;
             *'{{.Swarm.LocalNodeState}}'*) printf 'active\n' ;;
             *'{{.Swarm.ControlAvailable}}'*) printf 'true\n' ;;
             *'{{.Name}}'*) printf 'installer-test-manager\n' ;;

@@ -342,6 +342,30 @@ function Get-GitHubTags {
     return $tags
 }
 
+function Get-LatestPublishedGitHubReleaseTag {
+    param([Parameter(Mandatory)][string]$RepositoryName)
+
+    $headers = @{ Accept = 'application/vnd.github+json' }
+    if ($env:GITHUB_TOKEN) {
+        $headers.Authorization = "Bearer $($env:GITHUB_TOKEN)"
+    }
+
+    try {
+        $release = Invoke-RestMethod `
+            -Headers $headers `
+            -Uri "https://api.github.com/repos/$RepositoryName/releases/latest" `
+            -TimeoutSec 15
+    } catch {
+        return ''
+    }
+
+    if (-not $release -or $release.draft -or $release.prerelease) {
+        return ''
+    }
+
+    return [string]$release.tag_name
+}
+
 function Resolve-KoAkademyVersion {
     if ($KoAkademyVersion) {
         if ($KoAkademyVersion -ceq 'edge') {
@@ -353,14 +377,11 @@ function Resolve-KoAkademyVersion {
         return $KoAkademyVersion
     }
 
-    Write-Info 'Detecting the latest stable KoAkademy tag from GitHub...'
-    $candidate = Get-GitHubTags -RepositoryName $Repository |
-        Where-Object { $_ -match '^v?[0-9]+\.[0-9]+\.[0-9]+$' } |
-        Sort-Object { [Version]($_ -replace '^v', '') } |
-        Select-Object -Last 1
+    Write-Info 'Detecting the latest published stable KoAkademy release from GitHub...'
+    $candidate = Get-LatestPublishedGitHubReleaseTag -RepositoryName $Repository
 
-    if (-not $candidate) {
-        Stop-Installer 'No stable KoAkademy tag could be resolved. The repository must be public, or set KOAKADEMY_VERSION explicitly.'
+    if (-not $candidate -or $candidate -notmatch '^v?[0-9]+\.[0-9]+\.[0-9]+$') {
+        Stop-Installer 'No published stable KoAkademy release could be resolved. The repository must be public, or set KOAKADEMY_VERSION explicitly.'
     }
 
     Assert-Tag -Tag $candidate -Name 'Resolved KoAkademy version'
@@ -435,8 +456,8 @@ function Initialize-SwarmManager {
     if ($osType -ne 'linux') {
         Stop-Installer "KoAkademy requires Docker Desktop's Linux container engine."
     }
-    if ($architecture -notin @('x86_64', 'amd64')) {
-        Stop-Installer 'The published KoAkademy image currently supports linux/amd64 only.'
+    if ($architecture -notin @('x86_64', 'amd64', 'aarch64', 'arm64')) {
+        Stop-Installer 'The published KoAkademy image supports linux/amd64 and linux/arm64.'
     }
 
     $swarmState = Get-DockerOutput -Arguments @('info', '--format', '{{.Swarm.LocalNodeState}}')

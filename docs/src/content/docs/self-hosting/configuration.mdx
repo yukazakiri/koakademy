@@ -13,7 +13,7 @@ The installer is interactive by default. Set these process environment variables
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `KOAKADEMY_VERSION` | Latest stable GitHub tag | Pin an exact stable KoAkademy image tag. Explicit `edge` is accepted only for unsupported rolling evaluation. |
+| `KOAKADEMY_VERSION` | Latest published stable GitHub Release | Pin an exact stable KoAkademy image tag. Explicit `edge` is accepted only for unsupported rolling evaluation. |
 | `KOAKADEMY_APP_URL` | `http://<detected-ip>:8000` | Public origin without a path. |
 | `KOAKADEMY_APP_PORT` | `8000` | Host port published for KoAkademy. |
 | `KOAKADEMY_STORAGE` | Interactive, local RustFS first | Choose `rustfs` or `external`. |
@@ -33,7 +33,7 @@ On Bash, prefix the installer command with non-secret values such as `KOAKADEMY_
 
 Generated application, database, Redis, and storage credentials live in Swarm's encrypted state and are reused on subsequent runs. Back up the Swarm manager state as well as application data; the installer does not write a plaintext recovery file.
 
-The one-line installers automatically discover only exact stable GitHub tags. To evaluate the rolling channel explicitly, set `KOAKADEMY_VERSION=edge`; both installers print a prominent unsupported-channel warning. Never use `edge` for production or assume its current digest can be recovered later—use an exact `vX.Y.Z` or `sha-<commit>` reference instead.
+The one-line installers automatically discover only exact stable tags from published, non-draft, non-prerelease GitHub Releases. To evaluate the rolling channel explicitly, set `KOAKADEMY_VERSION=edge`; both installers print a prominent unsupported-channel warning. Never use `edge` for production or assume its current digest can be recovered later—use an exact `vX.Y.Z` or `sha-<commit>` reference instead.
 
 ## Application and routing
 

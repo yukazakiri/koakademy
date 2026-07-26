@@ -63,6 +63,24 @@ it('publishes immutable SHA images to both registries before moving channel alia
         ->and($promotion)->toBeGreaterThan($verification);
 });
 
+it('keeps recovery tooling and provenance bound to the workflow that built the image', function (): void {
+    $delivery = workflowContents('delivery.yml');
+    $conditionalAttestations = mb_substr_count(
+        $delivery,
+        "if: steps.existing.outputs.build_required == 'true'\n        uses: actions/attest@",
+    );
+
+    expect($delivery)
+        ->toContain('name: Load metadata generator from workflow revision')
+        ->toContain('WORKFLOW_SHA: ${{ github.workflow_sha }}')
+        ->toContain('"${RUNNER_TEMP}/generate-version-metadata.sh"')
+        ->toContain('name: Restore metadata from reused immutable image')
+        ->toContain('"${RUNNER_TEMP}/crane" export')
+        ->toContain('--platform linux/amd64')
+        ->toContain('.metadata.channel == $channel')
+        ->and($conditionalAttestations)->toBe(2);
+});
+
 it('keeps latest stable-only and recovery unable to invent or move versions', function (): void {
     $delivery = workflowContents('delivery.yml');
 

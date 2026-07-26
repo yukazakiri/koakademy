@@ -332,23 +332,29 @@ jobs:
           dockerhub_digest="$(remote_digest "${DOCKERHUB_REF}")"
 
           if [[ -z "${ghcr_digest}" && -z "${dockerhub_digest}" ]]; then
-            printf 'build_required=true\n' >> "${GITHUB_OUTPUT}"
-            printf 'replication_required=true\n' >> "${GITHUB_OUTPUT}"
-            printf 'digest=\n' >> "${GITHUB_OUTPUT}"
+            build_required=true
+            replication_required=true
+            digest=
           elif [[ -n "${ghcr_digest}" && "${ghcr_digest}" == "${dockerhub_digest}" ]]; then
             printf 'Reusing immutable image %s.\n' "${ghcr_digest}"
-            printf 'build_required=false\n' >> "${GITHUB_OUTPUT}"
-            printf 'replication_required=false\n' >> "${GITHUB_OUTPUT}"
-            printf 'digest=%s\n' "${ghcr_digest}" >> "${GITHUB_OUTPUT}"
+            build_required=false
+            replication_required=false
+            digest="${ghcr_digest}"
           elif [[ -n "${ghcr_digest}" && -z "${dockerhub_digest}" ]]; then
             printf 'Repairing the missing Docker Hub copy from immutable GHCR image %s.\n' "${ghcr_digest}"
-            printf 'build_required=false\n' >> "${GITHUB_OUTPUT}"
-            printf 'replication_required=true\n' >> "${GITHUB_OUTPUT}"
-            printf 'digest=%s\n' "${ghcr_digest}" >> "${GITHUB_OUTPUT}"
+            build_required=false
+            replication_required=true
+            digest="${ghcr_digest}"
           else
             printf 'Immutable SHA tags are missing from one registry or have different digests.\n' >&2
             exit 1
           fi
+
+          {
+            printf 'build_required=%s\n' "${build_required}"
+            printf 'replication_required=%s\n' "${replication_required}"
+            printf 'digest=%s\n' "${digest}"
+          } >> "${GITHUB_OUTPUT}"
 
       - name: Build and push immutable multi-platform images
         id: build
@@ -375,7 +381,7 @@ jobs:
         env:
           GHCR_REF: ${{ steps.metadata.outputs.ghcr_ref }}
           DOCKERHUB_REF: ${{ steps.metadata.outputs.dockerhub_ref }}
-        run: "${RUNNER_TEMP}/crane copy \"${GHCR_REF}\" \"${DOCKERHUB_REF}\""
+        run: '"${RUNNER_TEMP}/crane" copy "${GHCR_REF}" "${DOCKERHUB_REF}"'
 
       - name: Resolve immutable digest
         id: digest

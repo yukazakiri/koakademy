@@ -52,7 +52,7 @@ it('publishes immutable SHA images to both registries before moving channel alia
         ->toContain('provenance: mode=max')
         ->toContain('sbom: true')
         ->toContain('actions/attest@')
-        ->toContain('crane copy')
+        ->toContain('"${RUNNER_TEMP}/crane" copy')
         ->toContain('promote_mutable_pair edge')
         ->toContain('promote_mutable_pair latest')
         ->toContain('promote_mutable_pair "${major}.${minor}"')

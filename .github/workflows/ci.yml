@@ -197,7 +197,7 @@ jobs:
           "${RUNNER_TEMP}/actionlint" -version
 
       - name: Validate workflows with actionlint
-        run: "${RUNNER_TEMP}/actionlint"
+        run: '"${RUNNER_TEMP}/actionlint"'
 
       - name: Install zizmor
         env:
@@ -215,7 +215,7 @@ jobs:
       - name: Audit workflows with zizmor
         env:
           GH_TOKEN: ${{ github.token }}
-        run: "${RUNNER_TEMP}/zizmor --persona auditor --min-severity medium --format github .github/workflows"
+        run: '"${RUNNER_TEMP}/zizmor" --persona auditor --min-severity medium --format github .github/workflows'
 
   pr-title:
     name: Conventional PR title

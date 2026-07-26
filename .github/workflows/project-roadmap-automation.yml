@@ -18,21 +18,85 @@ env:
   STATUS_DONE_OPTION_ID: 98236657
 
 jobs:
+  credentials:
+    name: Validate roadmap credentials
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: roadmap-automation
+    permissions: {}
+    outputs:
+      available: ${{ steps.preflight.outputs.available }}
+
+    steps:
+      - name: Check project token access
+        id: preflight
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          TOKEN_PRESENT: ${{ secrets.PROJECT_AUTOMATION_TOKEN != '' }}
+        with:
+          github-token: ${{ secrets.PROJECT_AUTOMATION_TOKEN || github.token }}
+          script: |
+            const projectId = process.env.PROJECT_ID;
+            core.setOutput('available', 'false');
+
+            if (process.env.TOKEN_PRESENT !== 'true') {
+              core.warning(
+                'Roadmap automation is skipped because PROJECT_AUTOMATION_TOKEN is missing. ' +
+                'Add a token with read/write access to the user project to restore synchronization.',
+              );
+              return;
+            }
+
+            try {
+              const result = await github.graphql(
+                `query($projectId: ID!) {
+                  node(id: $projectId) {
+                    ... on ProjectV2 { id }
+                  }
+                }`,
+                { projectId },
+              );
+
+              if (result.node?.id !== projectId) {
+                core.warning(
+                  'Roadmap automation is skipped because PROJECT_AUTOMATION_TOKEN cannot access the configured project.',
+                );
+                return;
+              }
+
+              core.setOutput('available', 'true');
+            } catch (error) {
+              const status = Number(error.status ?? error.response?.status ?? 0);
+              if ([401, 403, 404].includes(status)) {
+                core.warning(
+                  `Roadmap automation is skipped because PROJECT_AUTOMATION_TOKEN cannot access the configured project (HTTP ${status}). ` +
+                  'Replace the token to restore synchronization.',
+                );
+                return;
+              }
+
+              throw error;
+            }
+
   add-issue-to-project:
-    if: github.event_name == 'issues'
-    runs-on: ubuntu-latest
+    needs:
+      - credentials
+    if: >-
+      needs.credentials.outputs.available == 'true' &&
+      github.event_name == 'issues'
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: roadmap-automation
     permissions: {}
     steps:
       - name: Add issue to roadmap project
-        uses: actions/add-to-project@244f685bbc3b7adfa8466e08b698b5577571133e # v1.0.2
+        uses: actions/add-to-project@5afcf98fcd03f1c2f92c3c83f58ae24323cc57fd # v2.0.0
         with:
           project-url: ${{ env.PROJECT_URL }}
           github-token: ${{ secrets.PROJECT_AUTOMATION_TOKEN }}
 
       - name: Set issue status to Todo
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           github-token: ${{ secrets.PROJECT_AUTOMATION_TOKEN }}
           script: |
@@ -97,28 +161,38 @@ jobs:
             );
 
   add-pr-to-project:
-    if: github.event_name == 'pull_request' && github.event.action != 'closed'
-    runs-on: ubuntu-latest
+    needs:
+      - credentials
+    if: >-
+      needs.credentials.outputs.available == 'true' &&
+      github.event_name == 'pull_request' &&
+      github.event.action != 'closed'
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: roadmap-automation
     permissions: {}
     steps:
       - name: Add PR to roadmap project
-        uses: actions/add-to-project@244f685bbc3b7adfa8466e08b698b5577571133e # v1.0.2
+        uses: actions/add-to-project@5afcf98fcd03f1c2f92c3c83f58ae24323cc57fd # v2.0.0
         with:
           project-url: ${{ env.PROJECT_URL }}
           github-token: ${{ secrets.PROJECT_AUTOMATION_TOKEN }}
 
   update-pr-status:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: roadmap-automation
     permissions: {}
-    needs: [add-pr-to-project]
-    if: ${{ always() && github.event_name == 'pull_request' }}
+    needs:
+      - credentials
+      - add-pr-to-project
+    if: >-
+      always() &&
+      needs.credentials.outputs.available == 'true' &&
+      github.event_name == 'pull_request'
     steps:
       - name: Set PR status in roadmap project
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           github-token: ${{ secrets.PROJECT_AUTOMATION_TOKEN }}
           script: |

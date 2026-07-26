@@ -134,3 +134,16 @@ it('groups Dependabot updates for GitHub Actions and Docker base images', functi
         ->toContain('package-ecosystem: docker')
         ->toContain('docker-base-images:');
 });
+
+it('keeps optional roadmap automation green when its dedicated token is unavailable', function (): void {
+    $roadmap = workflowContents('project-roadmap-automation.yml');
+
+    expect($roadmap)
+        ->toContain('name: Validate roadmap credentials')
+        ->toContain("core.setOutput('available', 'false')")
+        ->toContain('[401, 403, 404].includes(status)')
+        ->toContain("needs.credentials.outputs.available == 'true'")
+        ->toContain('Roadmap automation is skipped')
+        ->toContain('actions/add-to-project@5afcf98fcd03f1c2f92c3c83f58ae24323cc57fd # v2.0.0')
+        ->toContain('actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0');
+});

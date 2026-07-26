@@ -1,0 +1,8 @@
+# These metadata-only privileged triggers never execute or check out untrusted code.
+# Delivery additionally verifies the successful CI run is a same-repository master push.
+rules:
+  dangerous-triggers:
+    ignore:
+      - auto-label.yml
+      - delivery.yml
+      - pr-maintainer-access.yml

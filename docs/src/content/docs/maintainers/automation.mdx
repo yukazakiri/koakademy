@@ -15,7 +15,7 @@ Triggers on issues and PRs (opened/edited; `pull_request_target` for PRs).
 - **PRs additionally:** maps changed file paths to area labels (`frontend`, `backend`, `ci/cd`, `docker`, `tests`, `database`, `ui/ux`).
 - It **only adds** labels that aren't present — it never removes a maintainer's manual label.
 
-These labels feed the [official release notes](./releases/) categorization, so correcting a wrong auto-label is worth the two seconds.
+Release Please derives stable notes and SemVer changes from the squash-merged Conventional Commit PR title. Labels remain useful for issue and pull request triage but do not decide the release version.
 
 ## Issue Quality Check (`issue-quality.yml`)
 
@@ -55,4 +55,4 @@ Blank issues are disabled (`.github/ISSUE_TEMPLATE/config.yml`); two templates a
 ## Maintainer guidance
 
 - The automation is intentionally conservative (adds labels, closes only non-compliant issues). If a rule misfires, fix by hand — no cleanup is required beyond removing a label or reopening.
-- Changing label names? Update `auto-label.yml`, the quality-check label (`needs more info`), and the release-notes categorization together.
+- Changing label names? Update `auto-label.yml` and the quality-check label (`needs more info`) together.

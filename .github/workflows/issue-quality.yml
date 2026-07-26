@@ -4,14 +4,16 @@ on:
   issues:
     types: [opened, edited]
 
-permissions:
-  issues: write
+permissions: {}
 
 jobs:
   check-issue-quality:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      issues: write
     steps:
-      - uses: actions/github-script@v7
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           script: |
             const REPRO_URL_REGEXP = /### Reproduction repository[\r\n]+([^#]+)###/m;

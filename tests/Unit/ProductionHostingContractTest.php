@@ -63,6 +63,30 @@ it('keeps KoAkademy package and image metadata AGPL consistent', function (): vo
     }
 });
 
+it('builds production assets from the canonical npm lockfile on Node 22', function (): void {
+    $dockerfile = file_get_contents(base_path('docker/Dockerfile')) ?: '';
+
+    expect($dockerfile)
+        ->toContain('FROM node:22-bookworm-slim@sha256:')
+        ->toContain('COPY package.json package-lock.json ./')
+        ->toContain('RUN npm ci')
+        ->toContain('WAYFINDER_GENERATE=false npm run build')
+        ->not->toContain('oven/bun')
+        ->not->toContain('bun install');
+});
+
+it('installs a checksummed Supercronic binary for AMD64 and ARM64', function (): void {
+    $dockerfile = file_get_contents(base_path('docker/Dockerfile')) ?: '';
+
+    expect($dockerfile)
+        ->toContain('ARG TARGETARCH')
+        ->toContain('amd64) supercronic_sha256=')
+        ->toContain('arm64) supercronic_sha256=')
+        ->toContain('supercronic-linux-${TARGETARCH}')
+        ->toContain('sha256sum --check')
+        ->not->toContain('supercronic-linux-amd64" \\');
+});
+
 it('documents setup wizard onboarding instead of a CLI-created first admin', function (): void {
     $gettingStarted = file_get_contents(base_path('GETTING_STARTED.md')) ?: '';
 

@@ -1,18 +1,19 @@
 {
-  "version": "1.11.0-dev.1.0",
-  "image": "ghcr.io/yukazakiri/koakademy:v1.11.0-dev.1.0",
-  "commit": "62e72963c95d35319d8eb0e582007426e271337e",
+  "version": "1.11.0",
+  "image": "ghcr.io/yukazakiri/koakademy:v1.11.0",
+  "commit": "2e607f00dd3459b868e1d771b6a17a62dcd78d30",
   "branch": "master",
-  "timestamp": "2026-07-26T02:55:13Z",
-  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/30185223404",
-  "release_type": "feature",
+  "timestamp": "2026-07-24T04:46:23Z",
+  "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/30067473219",
+  "release_type": "stable",
   "changelog": {
-    "current": "Version 1.11.0-dev.1.0 - feat(enrollments): add fee overrides and discount presets",
-    "previous": "1.11.0"
+    "current": "KoAkademy 1.11.0 (stable)",
+    "previous": "1.10.0"
   },
   "metadata": {
-    "author": "yukazakiri",
-    "workflow": "Auto Pre-release and Docker Tag",
-    "repository": "yukazakiri/koakademy"
+    "author": "github-actions[bot]",
+    "workflow": "Manual Official Release",
+    "repository": "yukazakiri/koakademy",
+    "channel": "stable"
   }
 }

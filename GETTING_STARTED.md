@@ -45,6 +45,8 @@ The default application URL is `http://<detected-ip>:8000`. HTTP is suitable onl
 
 The scripts accept environment overrides for automation, including `KOAKADEMY_VERSION`, `RUSTFS_VERSION`, `KOAKADEMY_APP_URL`, `KOAKADEMY_APP_PORT`, `KOAKADEMY_STORAGE=rustfs|external`, and the `KOAKADEMY_S3_*` values. Without `KOAKADEMY_VERSION`, version discovery fails closed if GitHub cannot return a stable tag; it never silently falls back to a mutable image.
 
+An explicit `KOAKADEMY_VERSION=edge` selects the unsupported rolling channel and prints a warning. Use it only for disposable evaluation or pre-release compatibility testing. Automatic discovery never selects `edge`, and production installations should pin an exact `vX.Y.Z` stable tag.
+
 Running remote code is a privileged operation. To inspect the Linux installer first:
 
 ```sh
@@ -76,7 +78,7 @@ git fetch --tags
 git checkout <latest-stable-tag>
 ```
 
-Replace `<latest-stable-tag>` with the latest non-prerelease tag shown on the GitHub Releases page. KoAkademy supports only the latest stable release; do not deploy `-dev`, prerelease, or arbitrary branch images as production releases.
+Replace `<latest-stable-tag>` with the latest non-prerelease tag shown on the GitHub Releases page. KoAkademy supports only the latest stable release; do not deploy `edge`, `-dev`, prerelease, or arbitrary branch images as production releases.
 
 ### 2. Configure the environment
 

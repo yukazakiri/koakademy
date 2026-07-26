@@ -15,6 +15,12 @@ The manual `compose.production.yaml` topology remains supported. It runs the app
 
 Both topologies require an operator-managed Caddy, Nginx, Traefik, or tunnel for HTTPS. Swarm host-mode ports listen on the manager's host interfaces, so restrict `8000` and `9000` with the host firewall until the HTTPS edge is ready.
 
+## Image channels
+
+Stable releases are published identically to GHCR (`ghcr.io/yukazakiri/koakademy`) and Docker Hub (`yukazaki/koakademy`) for AMD64 and ARM64. Production deployments should use an exact `vX.Y.Z` tag. `latest` follows only the newest verified stable release; it is not the production recommendation because its target changes.
+
+The `edge` tag follows the newest green container-relevant `master` commit. It receives no GitHub Release and is unsupported rolling software. Immutable `sha-<40-character-commit>` tags are available for audit, canary pinning, and exact rollback. Historical `dev-latest` and `v*-dev.*` images are frozen and receive no new publications.
+
 The default is one hostname:
 
 ```text
@@ -129,6 +135,8 @@ When an upgrade includes the Digital Library migrations, run the migration comma
 ## Rollback
 
 Application-image rollback is safe only when the previous code supports the migrated database schema. If release notes do not explicitly allow a code-only rollback, restore the pre-upgrade database backup and matching image together in a maintenance window. Never run `migrate:rollback` blindly on production data.
+
+Record the exact current and previous `vX.Y.Z` image references before every upgrade. Roll back by restoring the previous exact tag, not by selecting `latest` or `edge`; those aliases do not preserve historical state. For incident forensics, compare the release tag with its `sha-<commit>` image and the checksummed `version.json` attached to the GitHub Release.
 
 ## Production checklist
 

@@ -5,7 +5,15 @@ export interface VersionData {
     branch: string;
     timestamp: string;
     build_url: string;
-    release_type: "major" | "minor" | "patch" | "feature" | "bugfix" | "chore";
+    release_type:
+        | "major"
+        | "minor"
+        | "patch"
+        | "feature"
+        | "bugfix"
+        | "chore"
+        | "stable"
+        | "edge";
     changelog: {
         current: string;
         previous: string;
@@ -19,7 +27,15 @@ export interface VersionData {
 
 export interface VersionInfo {
     version: string;
-    release_type: "major" | "minor" | "patch" | "feature" | "bugfix" | "chore";
+    release_type:
+        | "major"
+        | "minor"
+        | "patch"
+        | "feature"
+        | "bugfix"
+        | "chore"
+        | "stable"
+        | "edge";
     commit: string | null;
     build_url: string | null;
     timestamp: string | null;

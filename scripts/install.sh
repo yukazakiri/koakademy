@@ -241,6 +241,12 @@ resolve_latest_koakademy_version() {
     local candidate=""
 
     if [[ -n "${KOAKADEMY_VERSION}" ]]; then
+        if [[ "${KOAKADEMY_VERSION}" == "edge" ]]; then
+            warn "KOAKADEMY_VERSION=edge selects the unsupported rolling channel."
+            warn "The edge image can change after every green master build; pin an exact vX.Y.Z tag for production."
+            printf '%s' "${KOAKADEMY_VERSION}"
+            return
+        fi
         validate_tag "${KOAKADEMY_VERSION}" "KOAKADEMY_VERSION"
         printf '%s' "${KOAKADEMY_VERSION}"
         return

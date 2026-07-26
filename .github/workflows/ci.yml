@@ -2,19 +2,29 @@ name: CI
 
 on:
   push:
+    branches:
+      - master
   pull_request:
+    branches:
+      - master
+  merge_group:
+    types:
+      - checks_requested
+  workflow_dispatch:
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   validate:
+    name: Application and documentation
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    permissions:
+      contents: read
     env:
       APP_ENV: testing
       APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
@@ -33,13 +43,16 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       - name: Set up PHP 8.5
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with:
           php-version: "8.5"
           extensions: mbstring, bcmath, pcntl, intl, gd, zip, sqlite3
+          ini-values: memory_limit=1G
           coverage: none
           tools: composer:v2
 
@@ -49,14 +62,14 @@ jobs:
           sudo apt-get install -y --no-install-recommends librsvg2-bin shellcheck
 
       - name: Cache Composer downloads
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/composer/files
           key: composer-${{ runner.os }}-php85-${{ hashFiles('composer.lock') }}
           restore-keys: composer-${{ runner.os }}-php85-
 
       - name: Set up Node.js 22
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "22"
           cache: npm
@@ -99,8 +112,9 @@ jobs:
         run: |
           sh -n docker/start-container docker/healthcheck docker/pulse-process \
             docker/run-scripts.sh docker/run.sh docker/docker-scripts/*.sh
-          bash -n scripts/install.sh
-          shellcheck scripts/install.sh tests/Fixtures/installer/docker tests/Fixtures/installer/curl
+          bash -n scripts/install.sh scripts/generate-version-metadata.sh
+          shellcheck scripts/install.sh scripts/generate-version-metadata.sh \
+            tests/Fixtures/installer/docker tests/Fixtures/installer/curl
 
       - name: Check PowerShell installer syntax
         shell: pwsh
@@ -116,3 +130,130 @@ jobs:
             $errors | ForEach-Object { Write-Error $_.Message }
             exit 1
           }
+
+  container:
+    name: Container (${{ matrix.arch }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+          - arch: arm64
+            platform: linux/arm64
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Validate platform build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: ${{ matrix.platform }}
+          push: false
+          provenance: false
+          sbom: false
+          cache-from: type=gha,scope=ci-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=ci-${{ matrix.arch }}
+
+  workflow-security:
+    name: Workflow security
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Install actionlint
+        env:
+          ACTIONLINT_VERSION: "1.7.12"
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}" \
+            --output "${RUNNER_TEMP}/${archive}"
+          printf '%s  %s\n' "${ACTIONLINT_SHA256}" "${RUNNER_TEMP}/${archive}" | sha256sum --check
+          tar -xzf "${RUNNER_TEMP}/${archive}" -C "${RUNNER_TEMP}" actionlint
+          "${RUNNER_TEMP}/actionlint" -version
+
+      - name: Validate workflows with actionlint
+        run: "${RUNNER_TEMP}/actionlint"
+
+      - name: Install zizmor
+        env:
+          ZIZMOR_VERSION: "1.28.0"
+          ZIZMOR_SHA256: e87b67160194884e375a46a12c57ccc904f762b53845f254fab7f17d98809c09
+        run: |
+          archive="zizmor-x86_64-unknown-linux-gnu.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/${archive}" \
+            --output "${RUNNER_TEMP}/${archive}"
+          printf '%s  %s\n' "${ZIZMOR_SHA256}" "${RUNNER_TEMP}/${archive}" | sha256sum --check
+          tar -xzf "${RUNNER_TEMP}/${archive}" -C "${RUNNER_TEMP}" zizmor
+          "${RUNNER_TEMP}/zizmor" --version
+
+      - name: Audit workflows with zizmor
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: "${RUNNER_TEMP}/zizmor --persona auditor --min-severity medium --format github .github/workflows"
+
+  pr-title:
+    name: Conventional PR title
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      PR_TITLE: ${{ github.event.pull_request.title }}
+
+    steps:
+      - name: Validate title
+        run: |
+          pattern='^(feat|fix|perf|refactor|docs|test|build|ci|chore|revert|style)(\([A-Za-z0-9._/-]+\))?!?: .+'
+          if [[ ! "${PR_TITLE}" =~ ${pattern} ]]; then
+            printf 'PR title must use Conventional Commits, for example: feat(enrollments): add fee overrides\n' >&2
+            exit 1
+          fi
+
+  required:
+    name: required
+    if: always()
+    needs:
+      - validate
+      - container
+      - workflow-security
+      - pr-title
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    env:
+      JOB_RESULTS: ${{ toJSON(needs) }}
+
+    steps:
+      - name: Confirm all required jobs passed
+        run: |
+          if ! jq --exit-status 'all(.[]; .result == "success" or .result == "skipped")' <<<"${JOB_RESULTS}"; then
+            printf 'One or more required CI jobs did not succeed.\n' >&2
+            exit 1
+          fi

@@ -73,6 +73,8 @@ The installer preserves an existing Swarm, generates Docker secrets, prompts for
 
 Verify the default host port again at any time with `curl --fail http://127.0.0.1:8000/up`.
 
+Stable multi-architecture images are published to `ghcr.io/yukazakiri/koakademy:vX.Y.Z` and `yukazaki/koakademy:vX.Y.Z`. Exact stable tags are the production contract. `latest` tracks the newest stable release, while the explicitly selected `edge` tag is unsupported rolling software for evaluation only.
+
 See [Getting Started](GETTING_STARTED.md) for installer overrides and the manual Compose path, and [Deployment](DEPLOYMENT.md) before exposing the service.
 
 ## Documentation

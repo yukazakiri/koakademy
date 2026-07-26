@@ -36,12 +36,14 @@ KOAKADEMY_ENV_FILE=.env.production.example \
 - Keep API examples limited to tested routes and real response shapes.
 - Avoid new services, dependencies, network calls, or telemetry without explaining the tradeoff.
 - Confirm no credentials, personal data, production logs, or generated `.env` files are included.
+- Use a Conventional Commit pull request title such as `fix(installer): preserve swarm state` or `feat(enrollments): add fee overrides`.
+- Keep the branch current with `master` so the merge queue can validate the exact candidate.
 
 ## Code style
 
 PHP follows Laravel conventions and Laravel Pint. New PHP files use `declare(strict_types=1);`. Tests use Pest. React code should be typed, accessible, and use established components and generated route helpers where practical.
 
-Prefer small commits with imperative messages. Pull request descriptions should explain the problem, solution, validation performed, user-visible impact, migration or rollback concerns, and screenshots for interface changes.
+Prefer small commits with imperative messages. KoAkademy squash-merges pull requests, so the reviewed Conventional Commit PR title becomes the `master` commit and the Release Please changelog/version input. Pull request descriptions should explain the problem, solution, validation performed, user-visible impact, migration or rollback concerns, and screenshots for interface changes.
 
 ## Documentation ownership
 

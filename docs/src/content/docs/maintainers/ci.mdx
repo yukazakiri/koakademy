@@ -1,28 +1,26 @@
 ---
 title: CI Pipeline
-description: What the CI workflow validates on every push and pull request, and how to reproduce it locally.
+description: Required pull request, merge queue, workflow security, application, documentation, and container checks.
 ---
 
 # CI Pipeline
 
-`.github/workflows/ci.yml` ("CI") runs on **every push and pull request** — no branch or path filters. It is intentionally secret-free: forks get the same validation as maintainer branches. One job, `validate`, on `ubuntu-24.04` with a 30-minute timeout and fixed toolchains (no matrix): **PHP 8.5** and **Node 22**.
+`.github/workflows/ci.yml` runs for pull requests into `master`, pushes to `master`, merge-queue checks, and manual dispatches. It does not run a duplicate feature-branch push workflow after a pull request is opened.
 
-## What CI checks, in order
+CI is intentionally secret-free and fork-safe. Actions are commit-SHA pinned, checkout credentials are not persisted, permissions are scoped per job, event values are passed to shells through environment variables, and every job has a timeout.
 
-| Step | Command | Fails when |
-| ---- | ------- | ---------- |
-| PHP setup | `shivammathur/setup-php` (mbstring, bcmath, pcntl, intl, gd, zip, sqlite3) + `librsvg2-bin` | Toolchain unavailable |
-| Dependencies | `composer install`, `npm ci`, `npm --prefix docs ci` | Lockfile drift |
-| Security audit | `composer audit --locked` | Known-vulnerable locked PHP dependency |
-| PHP formatting | `vendor/bin/pint --test` | Code style violations |
-| Frontend build | `npm run build` | Vite/TypeScript build errors |
-| Test suite | `php artisan test --parallel --compact` | Any Pest failure |
-| Docs drift | `npm run docs:check` | Generated MDX mirrors out of sync, broken local doc links, undocumented tested API endpoints |
-| Docs build | `npm --prefix docs run build` | Astro/Starlight build errors |
-| Production Compose | `KOAKADEMY_ENV_FILE=.env.production.example docker compose --env-file .env.production.example -f compose.production.yaml config --quiet` | Invalid production topology or env contract |
-| Shell syntax | `sh -n` over `docker/` runtime scripts | Broken container scripts |
+## Required jobs
 
-The test environment is hermetic: SQLite in-memory, array cache/session/mail, sync queue, null broadcasting, Scout `collection` driver, and Pulse/Telescope/Nightwatch disabled.
+| Job | Contract |
+| --- | --- |
+| Application and documentation | PHP 8.5, Node 22, Composer install/audit, Pint, npm builds, Pest, docs sync/link/build checks, Compose validation, and installer syntax |
+| Container (amd64) | Build `docker/Dockerfile` for `linux/amd64` with `push: false` |
+| Container (arm64) | Build `docker/Dockerfile` for `linux/arm64` with `push: false` under QEMU |
+| Workflow security | Check every workflow with checksum-pinned `actionlint` and `zizmor` |
+| Conventional PR title | Require a title such as `fix(installer): preserve swarm state` |
+| required | Stable `CI / required` branch-protection aggregator |
+
+The test environment is hermetic: SQLite in memory, array cache/session/mail, sync queues, null broadcasting, Scout's collection driver, and optional observability disabled. Composer downloads, npm dependencies, and per-architecture BuildKit layers are cached.
 
 ## Reproduce locally
 
@@ -32,23 +30,29 @@ npm ci && npm --prefix docs ci
 composer audit --locked
 vendor/bin/pint --test
 npm run build
-php artisan test --parallel --compact   # or: composer test
+php artisan test --parallel --compact
 npm run docs:check
 npm --prefix docs run build
 KOAKADEMY_ENV_FILE=.env.production.example \
   docker compose --env-file .env.production.example -f compose.production.yaml config --quiet
+bash -n scripts/install.sh scripts/generate-version-metadata.sh
+shellcheck scripts/install.sh scripts/generate-version-metadata.sh \
+  tests/Fixtures/installer/docker tests/Fixtures/installer/curl
+docker buildx build --platform linux/amd64 --file docker/Dockerfile .
+docker buildx build --platform linux/arm64 --file docker/Dockerfile .
 ```
 
 Run a focused test while iterating:
 
 ```sh
-php artisan test --compact tests/Feature/SetupAvailabilityTest.php
+php artisan test --compact tests/Unit/GitHubActionsContractTest.php
 php artisan test --compact --filter="shows the setup screen"
 ```
 
 ## Maintainer notes
 
-- **Concurrency:** runs are grouped per ref with `cancel-in-progress: true` — pushing again supersedes the previous run.
-- **No secrets by design:** nothing in CI requires credentials; do not add steps that need them. Publish jobs live in the release workflows (see [Releases & versioning](./releases/)).
-- **Single toolchain:** CI pins exactly one PHP/Node pair. If you need a new PHP extension, add it to both `ci.yml` and the Docker image.
-- **`composer audit` is blocking:** a newly disclosed vulnerability in a locked dependency will fail CI even on unrelated PRs — bump the dependency promptly.
+- **Branch protection:** require only `CI / required`; individual job names can evolve without changing repository settings.
+- **No secrets:** do not add registry credentials or deployment side effects to CI. Privileged publication stays in [Delivery](./releases/).
+- **Forks:** pull requests build containers but never push them.
+- **Release ordering:** Delivery accepts only a successful same-repository `push` CI run from `master`.
+- **Existing quality debt:** repository-wide Prettier, PHPStan, strict Composer validation, and npm audit are not blocking until their independent findings are resolved.

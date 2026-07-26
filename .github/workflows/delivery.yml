@@ -1,0 +1,586 @@
+name: Delivery
+
+run-name: >-
+  Delivery / ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.workflow_run.head_sha }}
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing stable tag to rebuild and finalize (strict vX.Y.Z)
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: delivery-${{ github.event.workflow_run.head_sha || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  trust:
+    name: Validate trusted source
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'master' &&
+        github.event.workflow_run.head_repository.full_name == github.repository
+      )
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      mode: ${{ steps.source.outputs.mode }}
+      source_sha: ${{ steps.source.outputs.source_sha }}
+      recovery_tag: ${{ steps.source.outputs.recovery_tag }}
+
+    steps:
+      - name: Accept successful CI push source
+        id: automatic
+        if: github.event_name == 'workflow_run'
+        env:
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          {
+            printf 'mode=automatic\n'
+            printf 'source_sha=%s\n' "${SOURCE_SHA}"
+            printf 'recovery_tag=\n'
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Validate recovery tag
+        id: recovery
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          RECOVERY_TAG: ${{ inputs.tag }}
+        run: |
+          if [[ ! "${RECOVERY_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            printf 'Recovery requires an existing strict vX.Y.Z tag.\n' >&2
+            exit 1
+          fi
+
+          remote="https://github.com/${GITHUB_REPOSITORY}.git"
+          tag_refs="$(git ls-remote "${remote}" \
+            "refs/tags/${RECOVERY_TAG}" "refs/tags/${RECOVERY_TAG}^{}")"
+          source_sha="$(awk '{print $1}' <<<"${tag_refs}" | tail -n 1)"
+
+          if [[ ! "${source_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+            printf 'Tag %s does not exist in %s.\n' "${RECOVERY_TAG}" "${GITHUB_REPOSITORY}" >&2
+            exit 1
+          fi
+
+          {
+            printf 'mode=recovery\n'
+            printf 'source_sha=%s\n' "${source_sha}"
+            printf 'recovery_tag=%s\n' "${RECOVERY_TAG}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Export trusted source
+        id: source
+        env:
+          AUTOMATIC_MODE: ${{ steps.automatic.outputs.mode }}
+          AUTOMATIC_SHA: ${{ steps.automatic.outputs.source_sha }}
+          RECOVERY_MODE: ${{ steps.recovery.outputs.mode }}
+          RECOVERY_SHA: ${{ steps.recovery.outputs.source_sha }}
+          RECOVERY_TAG: ${{ steps.recovery.outputs.recovery_tag }}
+        run: |
+          if [[ -n "${AUTOMATIC_MODE}" ]]; then
+            {
+              printf 'mode=%s\n' "${AUTOMATIC_MODE}"
+              printf 'source_sha=%s\n' "${AUTOMATIC_SHA}"
+              printf 'recovery_tag=\n'
+            } >> "${GITHUB_OUTPUT}"
+          else
+            {
+              printf 'mode=%s\n' "${RECOVERY_MODE}"
+              printf 'source_sha=%s\n' "${RECOVERY_SHA}"
+              printf 'recovery_tag=%s\n' "${RECOVERY_TAG}"
+            } >> "${GITHUB_OUTPUT}"
+          fi
+
+  release-please:
+    name: Maintain release PR
+    if: needs.trust.outputs.mode == 'automatic'
+    needs:
+      - trust
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: release-automation
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+      sha: ${{ steps.release.outputs.sha }}
+
+    steps:
+      - name: Create or update the reviewed release PR
+        id: release
+        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          target-branch: master
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  prepare:
+    name: Select delivery channel
+    if: >-
+      always() &&
+      needs.trust.result == 'success' &&
+      (needs.release-please.result == 'success' || needs.release-please.result == 'skipped')
+    needs:
+      - trust
+      - release-please
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      publish: ${{ steps.plan.outputs.publish }}
+      channel: ${{ steps.plan.outputs.channel }}
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      source_sha: ${{ steps.plan.outputs.source_sha }}
+
+    steps:
+      - name: Check out trusted source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ needs.trust.outputs.source_sha }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Determine delivery plan
+        id: plan
+        env:
+          MODE: ${{ needs.trust.outputs.mode }}
+          SOURCE_SHA: ${{ needs.trust.outputs.source_sha }}
+          RECOVERY_TAG: ${{ needs.trust.outputs.recovery_tag }}
+          RELEASE_CREATED: ${{ needs.release-please.outputs.release_created }}
+          RELEASE_TAG: ${{ needs.release-please.outputs.tag_name }}
+          RELEASE_VERSION: ${{ needs.release-please.outputs.version }}
+          RELEASE_SHA: ${{ needs.release-please.outputs.sha }}
+        run: |
+          publish=false
+          channel=""
+          version=""
+          tag=""
+
+          if [[ "${MODE}" == "recovery" ]]; then
+            tag="${RECOVERY_TAG}"
+            version="${tag#v}"
+            channel=stable
+            publish=true
+          elif [[ "${RELEASE_CREATED}" == "true" ]]; then
+            if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
+               [[ ! "${RELEASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
+               [[ "${RELEASE_SHA}" != "${SOURCE_SHA}" ]]; then
+              printf 'Release Please returned an invalid or unexpected release target.\n' >&2
+              exit 1
+            fi
+            tag="${RELEASE_TAG}"
+            version="${RELEASE_VERSION}"
+            channel=stable
+            publish=true
+          else
+            version="$(jq --raw-output '.version' version.json)"
+            if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              printf 'Tracked version.json must contain a stable X.Y.Z baseline.\n' >&2
+              exit 1
+            fi
+
+            mapfile -t changed_files < <(
+              git diff-tree --root --no-commit-id --name-only -r "${SOURCE_SHA}"
+            )
+            relevant_pattern='^(app|bootstrap|config|database|docker|lang|Modules|public|resources|routes)/|^(artisan|composer\.json|composer\.lock|package\.json|package-lock\.json|php\.ini|version\.json)$'
+
+            for changed_file in "${changed_files[@]}"; do
+              if [[ "${changed_file}" =~ ${relevant_pattern} ]]; then
+                channel=edge
+                publish=true
+                break
+              fi
+            done
+          fi
+
+          {
+            printf 'publish=%s\n' "${publish}"
+            printf 'channel=%s\n' "${channel}"
+            printf 'version=%s\n' "${version}"
+            printf 'tag=%s\n' "${tag}"
+            printf 'source_sha=%s\n' "${SOURCE_SHA}"
+          } >> "${GITHUB_OUTPUT}"
+
+  publish:
+    name: Publish ${{ needs.prepare.outputs.channel }} containers
+    if: needs.prepare.outputs.publish == 'true'
+    needs:
+      - prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    environment: container-publishing
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+      packages: write
+    outputs:
+      digest: ${{ steps.digest.outputs.digest }}
+
+    steps:
+      - name: Check out immutable source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate registry contract
+        env:
+          DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          [[ "${DOCKERHUB_IMAGE}" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || {
+            printf 'DOCKERHUB_IMAGE must be configured as namespace/repository.\n' >&2
+            exit 1
+          }
+          [[ -n "${DOCKERHUB_USERNAME}" && -n "${DOCKERHUB_TOKEN}" ]] || {
+            printf 'Docker Hub credentials are required for every delivery.\n' >&2
+            exit 1
+          }
+
+      - name: Generate image version metadata
+        id: metadata
+        env:
+          CHANNEL: ${{ needs.prepare.outputs.channel }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+          BUILD_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          immutable_ref="ghcr.io/${GITHUB_REPOSITORY}:sha-${SOURCE_SHA}"
+          scripts/generate-version-metadata.sh \
+            --channel "${CHANNEL}" \
+            --version "${VERSION}" \
+            --commit "${SOURCE_SHA}" \
+            --image "${immutable_ref}" \
+            --build-url "${BUILD_URL}" \
+            --repository "${GITHUB_REPOSITORY}"
+
+          {
+            printf 'created=%s\n' "$(jq --raw-output '.timestamp' version.json)"
+            printf 'display_version=%s\n' "$(jq --raw-output '.version' version.json)"
+            printf 'ghcr_ref=%s\n' "${immutable_ref}"
+            printf 'dockerhub_ref=%s\n' "${{ vars.DOCKERHUB_IMAGE }}:sha-${SOURCE_SHA}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Sign in to GitHub Container Registry
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Sign in to Docker Hub
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Install crane
+        env:
+          CRANE_VERSION: "0.21.7"
+          CRANE_SHA256: 1a57bc98207fa1c0d04bf760699099e26f8383499bfd55b99c1b919a928a7230
+        run: |
+          archive="go-containerregistry_Linux_x86_64.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/google/go-containerregistry/releases/download/v${CRANE_VERSION}/${archive}" \
+            --output "${RUNNER_TEMP}/${archive}"
+          printf '%s  %s\n' "${CRANE_SHA256}" "${RUNNER_TEMP}/${archive}" | sha256sum --check
+          tar -xzf "${RUNNER_TEMP}/${archive}" -C "${RUNNER_TEMP}" crane
+          "${RUNNER_TEMP}/crane" version
+
+      - name: Protect immutable SHA tags
+        id: existing
+        env:
+          GHCR_REF: ${{ steps.metadata.outputs.ghcr_ref }}
+          DOCKERHUB_REF: ${{ steps.metadata.outputs.dockerhub_ref }}
+        run: |
+          remote_digest() {
+            "${RUNNER_TEMP}/crane" digest "$1" 2>/dev/null || true
+          }
+
+          ghcr_digest="$(remote_digest "${GHCR_REF}")"
+          dockerhub_digest="$(remote_digest "${DOCKERHUB_REF}")"
+
+          if [[ -z "${ghcr_digest}" && -z "${dockerhub_digest}" ]]; then
+            printf 'build_required=true\n' >> "${GITHUB_OUTPUT}"
+            printf 'replication_required=true\n' >> "${GITHUB_OUTPUT}"
+            printf 'digest=\n' >> "${GITHUB_OUTPUT}"
+          elif [[ -n "${ghcr_digest}" && "${ghcr_digest}" == "${dockerhub_digest}" ]]; then
+            printf 'Reusing immutable image %s.\n' "${ghcr_digest}"
+            printf 'build_required=false\n' >> "${GITHUB_OUTPUT}"
+            printf 'replication_required=false\n' >> "${GITHUB_OUTPUT}"
+            printf 'digest=%s\n' "${ghcr_digest}" >> "${GITHUB_OUTPUT}"
+          elif [[ -n "${ghcr_digest}" && -z "${dockerhub_digest}" ]]; then
+            printf 'Repairing the missing Docker Hub copy from immutable GHCR image %s.\n' "${ghcr_digest}"
+            printf 'build_required=false\n' >> "${GITHUB_OUTPUT}"
+            printf 'replication_required=true\n' >> "${GITHUB_OUTPUT}"
+            printf 'digest=%s\n' "${ghcr_digest}" >> "${GITHUB_OUTPUT}"
+          else
+            printf 'Immutable SHA tags are missing from one registry or have different digests.\n' >&2
+            exit 1
+          fi
+
+      - name: Build and push immutable multi-platform images
+        id: build
+        if: steps.existing.outputs.build_required == 'true'
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.metadata.outputs.ghcr_ref }}
+          labels: |
+            org.opencontainers.image.created=${{ steps.metadata.outputs.created }}
+            org.opencontainers.image.revision=${{ needs.prepare.outputs.source_sha }}
+            org.opencontainers.image.version=${{ steps.metadata.outputs.display_version }}
+            org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=delivery
+          cache-to: type=gha,mode=max,scope=delivery
+
+      - name: Replicate immutable image to Docker Hub
+        if: steps.existing.outputs.replication_required == 'true'
+        env:
+          GHCR_REF: ${{ steps.metadata.outputs.ghcr_ref }}
+          DOCKERHUB_REF: ${{ steps.metadata.outputs.dockerhub_ref }}
+        run: "${RUNNER_TEMP}/crane copy \"${GHCR_REF}\" \"${DOCKERHUB_REF}\""
+
+      - name: Resolve immutable digest
+        id: digest
+        env:
+          BUILT_DIGEST: ${{ steps.build.outputs.digest }}
+          EXISTING_DIGEST: ${{ steps.existing.outputs.digest }}
+        run: |
+          digest="${BUILT_DIGEST:-${EXISTING_DIGEST}}"
+          [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+            printf 'The immutable image digest is invalid.\n' >&2
+            exit 1
+          }
+          printf 'digest=%s\n' "${digest}" >> "${GITHUB_OUTPUT}"
+
+      - name: Attest GHCR build provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest Docker Hub build provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-name: index.docker.io/${{ vars.DOCKERHUB_IMAGE }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
+          push-to-registry: true
+
+      - name: Verify registries, architectures, SBOM, and provenance
+        env:
+          EXPECTED_DIGEST: ${{ steps.digest.outputs.digest }}
+          GHCR_REF: ${{ steps.metadata.outputs.ghcr_ref }}
+          DOCKERHUB_REF: ${{ steps.metadata.outputs.dockerhub_ref }}
+        run: |
+          verify_manifest() {
+            local reference="$1"
+            local inspection=""
+            local digest=""
+
+            inspection="$(docker buildx imagetools inspect "${reference}")"
+            digest="$(sed -n 's/^Digest:[[:space:]]*//p' <<<"${inspection}" | head -n 1)"
+            [[ "${digest}" == "${EXPECTED_DIGEST}" ]]
+            grep -q 'Platform:[[:space:]]*linux/amd64' <<<"${inspection}"
+            grep -q 'Platform:[[:space:]]*linux/arm64' <<<"${inspection}"
+
+            raw_manifest="$(docker buildx imagetools inspect "${reference}" --raw)"
+            jq --exit-status '
+              [.manifests[].platform.architecture] | index("amd64") != null and index("arm64") != null
+            ' <<<"${raw_manifest}" >/dev/null
+            jq --exit-status '
+              [.manifests[] | select(.platform.os == "unknown")] | length >= 2
+            ' <<<"${raw_manifest}" >/dev/null
+          }
+
+          verify_manifest "${GHCR_REF}"
+          verify_manifest "${DOCKERHUB_REF}"
+
+      - name: Promote verified channel aliases
+        id: promote
+        env:
+          CHANNEL: ${{ needs.prepare.outputs.channel }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+          EXPECTED_DIGEST: ${{ steps.digest.outputs.digest }}
+          GHCR_REF: ${{ steps.metadata.outputs.ghcr_ref }}
+          DOCKERHUB_REF: ${{ steps.metadata.outputs.dockerhub_ref }}
+          GHCR_IMAGE: ghcr.io/${{ github.repository }}
+          DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
+        run: |
+          remote_digest() {
+            "${RUNNER_TEMP}/crane" digest "$1" 2>/dev/null || true
+          }
+
+          verify_alias() {
+            local reference="$1"
+            local digest=""
+
+            digest="$(remote_digest "${reference}")"
+            [[ "${digest}" == "${EXPECTED_DIGEST}" ]] || {
+              printf 'Alias %s resolved to %s instead of %s.\n' \
+                "${reference}" "${digest:-missing}" "${EXPECTED_DIGEST}" >&2
+              exit 1
+            }
+          }
+
+          promote_immutable() {
+            local source="$1"
+            local target="$2"
+            local existing=""
+
+            existing="$(remote_digest "${target}")"
+            if [[ -n "${existing}" && "${existing}" != "${EXPECTED_DIGEST}" ]]; then
+              printf 'Refusing to move immutable tag %s from %s.\n' "${target}" "${existing}" >&2
+              exit 1
+            fi
+            if [[ -z "${existing}" ]]; then
+              "${RUNNER_TEMP}/crane" tag "${source}" "${target##*:}"
+            fi
+            verify_alias "${target}"
+          }
+
+          promote_mutable_pair() {
+            local tag="$1"
+
+            "${RUNNER_TEMP}/crane" tag "${GHCR_REF}" "${tag}"
+            "${RUNNER_TEMP}/crane" tag "${DOCKERHUB_REF}" "${tag}"
+            verify_alias "${GHCR_IMAGE}:${tag}"
+            verify_alias "${DOCKERHUB_IMAGE}:${tag}"
+          }
+
+          release_latest=false
+
+          if [[ "${CHANNEL}" == "edge" ]]; then
+            master_sha="$(git ls-remote "https://github.com/${GITHUB_REPOSITORY}.git" refs/heads/master | awk '{print $1}')"
+            if [[ "${master_sha}" != "${SOURCE_SHA}" ]]; then
+              printf 'A newer master commit exists; immutable images remain available but edge will not move.\n'
+            else
+              promote_mutable_pair edge
+            fi
+          else
+            major="${VERSION%%.*}"
+            remainder="${VERSION#*.}"
+            minor="${remainder%%.*}"
+
+            promote_immutable "${GHCR_REF}" "${GHCR_IMAGE}:${RELEASE_TAG}"
+            promote_immutable "${DOCKERHUB_REF}" "${DOCKERHUB_IMAGE}:${RELEASE_TAG}"
+            promote_immutable "${GHCR_REF}" "${GHCR_IMAGE}:${VERSION}"
+            promote_immutable "${DOCKERHUB_REF}" "${DOCKERHUB_IMAGE}:${VERSION}"
+
+            mapfile -t stable_versions < <(
+              git tag --list |
+                sed -nE 's/^v([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' |
+                sort -V
+            )
+            newest_global="${stable_versions[-1]}"
+            newest_minor="$(printf '%s\n' "${stable_versions[@]}" |
+              sed -nE "/^${major}\\.${minor}\\.[0-9]+$/p" | tail -n 1)"
+            newest_major="$(printf '%s\n' "${stable_versions[@]}" |
+              sed -nE "/^${major}\\.[0-9]+\\.[0-9]+$/p" | tail -n 1)"
+
+            if [[ "${VERSION}" == "${newest_minor}" ]]; then
+              promote_mutable_pair "${major}.${minor}"
+            fi
+            if [[ "${VERSION}" == "${newest_major}" ]]; then
+              promote_mutable_pair "${major}"
+            fi
+            if [[ "${VERSION}" == "${newest_global}" ]]; then
+              promote_mutable_pair latest
+              release_latest=true
+            fi
+          fi
+
+          printf 'release_latest=%s\n' "${release_latest}" >> "${GITHUB_OUTPUT}"
+
+      - name: Assemble stable release assets
+        if: needs.prepare.outputs.channel == 'stable'
+        run: |
+          mkdir -p release-assets
+          cp version.json compose.production.yaml .env.production.example \
+            scripts/install.sh scripts/install.ps1 release-assets/
+          (
+            cd release-assets
+            LC_ALL=C sha256sum .env.production.example compose.production.yaml \
+              install.ps1 install.sh version.json > SHA256SUMS
+          )
+
+      - name: Create missing recovery draft
+        if: needs.prepare.outputs.channel == 'stable'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          if ! gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release create "${RELEASE_TAG}" \
+              --verify-tag \
+              --draft \
+              --title "KoAkademy ${RELEASE_TAG}" \
+              --notes "Recovery publication for existing tag ${RELEASE_TAG}."
+          fi
+
+      - name: Upload checksummed release assets
+        if: needs.prepare.outputs.channel == 'stable'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          gh release upload "${RELEASE_TAG}" \
+            release-assets/version.json \
+            release-assets/compose.production.yaml \
+            release-assets/.env.production.example \
+            release-assets/install.sh \
+            release-assets/install.ps1 \
+            release-assets/SHA256SUMS \
+            --clobber
+
+      - name: Publish verified GitHub release
+        if: needs.prepare.outputs.channel == 'stable'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_LATEST: ${{ steps.promote.outputs.release_latest }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          arguments=("${RELEASE_TAG}" "--draft=false" "--prerelease=false")
+          if [[ "${RELEASE_LATEST}" == "true" ]]; then
+            arguments+=("--latest")
+          fi
+          gh release edit "${arguments[@]}"

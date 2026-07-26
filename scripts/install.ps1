@@ -344,6 +344,11 @@ function Get-GitHubTags {
 
 function Resolve-KoAkademyVersion {
     if ($KoAkademyVersion) {
+        if ($KoAkademyVersion -ceq 'edge') {
+            Write-Warning 'KOAKADEMY_VERSION=edge selects the unsupported rolling channel.'
+            Write-Warning 'The edge image can change after every green master build; pin an exact vX.Y.Z tag for production.'
+            return $KoAkademyVersion
+        }
         Assert-Tag -Tag $KoAkademyVersion -Name 'KOAKADEMY_VERSION'
         return $KoAkademyVersion
     }

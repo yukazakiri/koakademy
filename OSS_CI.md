@@ -1,24 +1,19 @@
 # Open-Source CI Contract
 
-The primary workflow is [`.github/workflows/ci.yml`](.github/workflows/ci.yml). It runs for every push and pull request, cancels superseded runs on the same ref, and requires no repository secrets or live application services.
+The primary workflow is [`.github/workflows/ci.yml`](.github/workflows/ci.yml). It runs for pull requests into `master`, pushes to `master`, merge-queue checks, and manual dispatches. Feature-branch pushes do not create a second run when a pull request already exists.
 
-## Blocking job
+CI is secret-free and fork-safe. Every third-party action is pinned to a full commit SHA, checkout credentials are not persisted, jobs have explicit timeouts and least-privilege permissions, and untrusted event values enter shell steps only through environment variables.
 
-The single `validate` job uses Ubuntu 24.04, PHP 8.5, Node.js 22, SQLite in memory, and safe local drivers for cache, sessions, queues, mail, broadcasting, search, and optional observability.
+## Required check
 
-It blocks on:
+Branch protection requires the single stable check name `CI / required`. It aggregates these jobs:
 
-1. Composer install and locked dependency audit
-2. `npm ci` for the application and documentation site
-3. PHP formatting with Pint
-4. Application frontend build
-5. Parallel Pest suite
-6. Generated-document and local-link validation
-7. Astro documentation build
-8. Production Compose validation
-9. POSIX shell, Bash, ShellCheck, and PowerShell installer validation
+1. **Application and documentation** — PHP 8.5, Node.js 22, locked Composer audit, Pint, frontend build, parallel Pest, generated-doc and local-link checks, Astro build, production Compose validation, and Bash/ShellCheck/PowerShell syntax checks.
+2. **Container (amd64/arm64)** — parallel Buildx validation of `docker/Dockerfile` for both supported Linux architectures with `push: false`.
+3. **Workflow security** — checks every workflow with checksum-pinned `actionlint` and `zizmor`.
+4. **Conventional PR title** — requires a Conventional Commit title such as `feat(enrollments): add fee overrides`. It is skipped for trusted push, merge-queue, and manual runs.
 
-Composer downloads and both npm lockfiles participate in dependency caching. Any failed command fails the job; checks are not allowed to continue silently.
+Composer downloads, both npm lockfiles, and architecture-specific BuildKit layers participate in dependency caching. The aggregator fails if any applicable job fails or is cancelled.
 
 ## Local reproduction
 
@@ -28,6 +23,7 @@ Install the toolchain from [DEVELOPMENT.md](DEVELOPMENT.md), then run:
 composer install
 npm ci
 npm --prefix docs ci
+composer audit --locked
 vendor/bin/pint --test
 npm run build
 php artisan test --parallel --compact
@@ -35,14 +31,17 @@ npm run docs:check
 npm --prefix docs run build
 KOAKADEMY_ENV_FILE=.env.production.example \
   docker compose --env-file .env.production.example -f compose.production.yaml config --quiet
-bash -n scripts/install.sh
-shellcheck scripts/install.sh tests/Fixtures/installer/docker tests/Fixtures/installer/curl
+bash -n scripts/install.sh scripts/generate-version-metadata.sh
+shellcheck scripts/install.sh scripts/generate-version-metadata.sh \
+  tests/Fixtures/installer/docker tests/Fixtures/installer/curl
+docker buildx build --platform linux/amd64 --file docker/Dockerfile .
+docker buildx build --platform linux/arm64 --file docker/Dockerfile .
 ```
 
-The workflow also parses `scripts/install.ps1` with PowerShell's AST parser. The installer contract test uses a fake Docker CLI, so CI never creates or mutates a real Swarm.
+The workflow also parses `scripts/install.ps1` with PowerShell's AST parser. Installer tests use a fake Docker CLI, so CI never creates or mutates a real Swarm.
 
-## Known follow-ups
+Repository-wide Prettier, PHPStan, strict Composer validation, and npm audit are tracked quality follow-ups but are not required checks until their existing independent findings are resolved.
 
-- Triage existing npm audit findings deliberately; do not apply an unreviewed forced upgrade.
-- The current icon package declares a Node 24 engine even though it installs with a warning on the supported Node 22 toolchain. Either move the full toolchain together or pin a verified compatible package version.
-- Release and deployment workflows are intentionally separate from the blocking, secret-free CI job.
+## Delivery boundary
+
+CI never publishes packages or accesses registry credentials. [`.github/workflows/delivery.yml`](.github/workflows/delivery.yml) runs only after a successful same-repository `push` CI run on `master`, or as a maintainer-requested recovery for an existing strict stable tag. See the [release runbook](docs/src/content/docs/maintainers/releases.mdx) for channels, credentials, promotion order, and rollback.

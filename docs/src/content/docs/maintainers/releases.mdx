@@ -1,82 +1,127 @@
 ---
 title: Releases & Versioning
-description: The dev pre-release and official release channels, the version scheme, version.json, and how to cut a release.
+description: Release Please, edge and stable container channels, version metadata, recovery, and rollback.
 ---
 
 # Releases & Versioning
 
-KoAkademy has **two release channels**: rolling `dev` pre-releases (automatic, on push) and **official stable releases** (tag push or manual dispatch). There is no beta channel. All channels build the same Docker image (`docker/Dockerfile`, `linux/amd64`) and publish to **GHCR** (`ghcr.io/yukazakiri/koakademy`); Docker Hub mirroring is optional.
+KoAkademy deliberately separates rolling delivery from stable releases:
 
-## Dev pre-releases (automatic)
+| Source event | GitHub Release | GHCR and Docker Hub tags |
+| --- | --- | --- |
+| Pull request | None | Build validation only; nothing is pushed |
+| Green, container-relevant `master` commit | None | Immutable `sha-<40-character-commit>` and mutable `edge` |
+| Merged Release Please PR | Draft until publication succeeds | `sha-<commit>`, `vX.Y.Z`, `X.Y.Z`, `X.Y`, `X`, and `latest` |
 
-`auto-release.yml` runs on pushes to `develop`, `main`, or `master` (skipped on forks and for its own bot commits).
+Both registries receive the same `linux/amd64` and `linux/arm64` manifest:
 
-1. **Change filter** — pushes touching only docs, Markdown, workflows, or lint configs are skipped entirely.
-2. **Version analysis** — the head commit's first line is matched against conventional-commit prefixes:
+- `ghcr.io/yukazakiri/koakademy`
+- `yukazaki/koakademy`
 
-   | Prefix | Release type | Bump |
-   | ------ | ------------ | ---- |
-   | `feat` / `feature` | feature | dev-minor (patch resets) |
-   | `fix` / `bugfix` | bugfix | dev-patch |
-   | `break` / `major` / `breaking` | major | dev-minor (patch resets) |
-   | `chore` / `docs` / `style` / `refactor` / `test` | chore | dev-patch |
-   | anything else | patch | dev-patch |
+Use an exact `vX.Y.Z` image in production. `latest` is a convenience alias for the newest verified stable release. `edge` is unsupported rolling software and may change after any green container-relevant `master` commit. The historical `dev-latest` and `v*-dev.*` tags and prereleases remain available but are frozen.
 
-   The base is the latest stable tag (`vX.Y.Z`, fallback `1.0.0`); the new tag is `v{BASE}-dev.{MINOR}.{PATCH}` (e.g. `v1.10.0-dev.14.3`), cross-checked against `version.json` and existing tags to avoid collisions.
-3. **Build & push** — image tags: the dev tag, `dev-latest`, `{release_type}-{sha}`, and the branch name. OCI labels include title and `AGPL-3.0-or-later` license.
-4. **Pre-release** — a GitHub **pre-release** with generated notes and `version.json` attached.
-5. **Version commit** — `version.json` is committed back as `chore: update version to X [skip ci]` (with stale-write guards and rebase-retry).
-6. **Notify** — optional Discord embed via `secrets.DISCORD_WEBHOOK_URL`.
+## Pull requests and version selection
 
-## Official releases
+Pull request titles must use Conventional Commits because squash merging makes that title the commit Release Please evaluates:
 
-Two ways to cut a stable release — both validate strict semver (`X.Y.Z`, optional leading `v`):
+| PR title prefix | Proposed SemVer change |
+| --- | --- |
+| `fix:` | Patch |
+| `feat:` | Minor |
+| `feat!:`, `fix!:`, or a `BREAKING CHANGE:` footer | Major |
+| `docs:`, `chore:`, `ci:`, `test:`, and similar | Changelog entry without an automatic version bump unless paired with a releasable change |
 
-- **Push a tag** matching `v*.*.*` → `official-release-on-tag.yml` builds, tags the image with the release tag + `latest` + `stable-{sha}`, and creates a full GitHub release whose notes group merged PRs by label (Breaking / Features / Fixes / Refactors / Docs / Chores). It does **not** commit `version.json` back.
-- **Actions → "Manual Official Release"** (`workflow_dispatch`) — inputs: `version`, `publish_latest`, `draft`, `prerelease`, `update_version_file`, `extra_notes`, `fail_if_tag_exists`. Must run from the default branch; can commit `version.json` back and notify Discord.
+Examples:
 
-Before announcing public self-hosting, confirm that the linked GHCR package is also public; repository visibility does not substitute for package visibility. From a logged-out shell, both the stable image and the raw installer must resolve:
+```text
+fix(installer): preserve an existing Swarm
+feat(enrollments): add fee overrides
+feat(api)!: replace the student verification response
+chore(release): release 1.12.0
+```
+
+The repository uses squash merge only, linear history, and the stable `CI / required` check. Release Please is initialized from `v1.11.0`; later historical `-dev` tags are not release boundaries. The first generated release PR is expected to propose `1.12.0` from the feature commits after that stable boundary, and remains subject to maintainer review.
+
+## Trusted delivery
+
+`delivery.yml` is triggered by completion of `CI`, but its privileged path runs only when all of these are true:
+
+- the upstream event was `push`;
+- CI succeeded;
+- the branch was `master`;
+- the workflow-run head repository exactly matches this repository.
+
+No checkout or secret access occurs before that trust decision. On ordinary green commits, Release Please creates or updates one reviewed release PR. If the commit changes container-relevant application inputs, delivery also builds the rolling image; documentation-only and workflow-only commits do not move `edge`.
+
+When the release PR is merged, Release Please:
+
+1. updates `CHANGELOG.md`, `.release-please-manifest.json`, and only the `version` field in tracked `version.json`;
+2. force-creates the strict `vX.Y.Z` tag;
+3. creates a draft GitHub Release.
+
+Delivery then generates runtime build metadata without committing it, builds and pushes immutable SHA tags to both registries, verifies identical digests and both architectures, generates BuildKit SBOM/provenance records plus GitHub provenance attestations, and only then promotes release aliases. Exact SemVer aliases are immutable. Major, minor, and `latest` aliases move only when the recovered or newly released version is the newest applicable stable tag.
+
+The draft is published and marked latest only after container verification, alias promotion, release asset upload, and checksums all succeed. Immutable SHA references remain the audit and rollback source of truth.
+
+## Version metadata
+
+The tracked `version.json` records the latest stable source version. Release Please changes only its `version` field. During delivery, `scripts/generate-version-metadata.sh` creates the image-specific file in the runner, including:
+
+- stable version or edge SemVer build identity;
+- immutable image reference;
+- full commit;
+- UTC build timestamp;
+- Actions run URL;
+- `stable` or `edge` channel.
+
+That generated file is copied into the image but never committed back to `master`. A stable copy is also attached to the GitHub Release. This prevents delivery reruns from creating bot metadata commits.
+
+## Stable release assets
+
+Every stable GitHub Release contains:
+
+- `version.json`
+- `compose.production.yaml`
+- `.env.production.example`
+- `install.sh`
+- `install.ps1`
+- `SHA256SUMS`
+
+Verify an asset after download with:
 
 ```sh
-docker manifest inspect ghcr.io/yukazakiri/koakademy:<stable-tag>
-curl --fail --silent --show-error --output /dev/null \
-  https://raw.githubusercontent.com/yukazakiri/koakademy/master/scripts/install.sh
+sha256sum --check SHA256SUMS
 ```
 
-For release notes to categorize well, keep PR labels accurate — the [auto-labeler](./automation/) does the first pass.
+## Required configuration
 
-## The `version.json` contract
+| Setting | Location and purpose |
+| --- | --- |
+| `RELEASE_PLEASE_TOKEN` | `release-automation` environment secret containing a dedicated fine-grained repository token with Contents, Pull requests, and Issues read/write; do not reuse `PROJECT_AUTOMATION_TOKEN` |
+| `DOCKERHUB_IMAGE` | Repository variable, currently `yukazaki/koakademy` |
+| `DOCKERHUB_USERNAME` | Repository or `container-publishing` environment secret |
+| `DOCKERHUB_TOKEN` | Repository or `container-publishing` environment secret |
+| `release-automation` | GitHub environment used by the Release Please job |
+| `container-publishing` | GitHub environment used by registry publication |
 
-Machine-written, embedded into images, attached to releases, and read back by the auto-release analysis. Shape:
+Docker Hub is mandatory, not an optional mirror. The built-in GitHub token publishes GHCR packages and GitHub attestations. `RELEASE_PLEASE_TOKEN` must be fine-grained and restricted to this repository.
+Both privileged environments accept deployments from protected branches only, so a manual run cannot select an unreviewed workflow ref.
 
-```json
-{
-    "version": "1.10.0-dev.14.3",
-    "image": "ghcr.io/yukazakiri/koakademy:v1.10.0-dev.14.3",
-    "commit": "<sha>",
-    "branch": "master",
-    "timestamp": "2026-07-21T06:24:30Z",
-    "build_url": "https://github.com/yukazakiri/koakademy/actions/runs/…",
-    "release_type": "chore",
-    "changelog": { "current": "…", "previous": "1.10.0-dev.14.2" },
-    "metadata": { "author": "…", "workflow": "…", "repository": "yukazakiri/koakademy" }
-}
+## Recovery dispatch
+
+Use **Actions → Delivery → Run workflow** only to recover an existing strict `vX.Y.Z` tag. The workflow rejects prerelease, missing, malformed, or invented tags and never creates or moves a Git tag. It may rebuild a missing immutable SHA image, recreate a missing draft for the existing tag, re-upload assets, and finalize publication.
+
+Recovery of an older stable version never rolls back `latest`, a major alias, or a minor alias past a newer matching stable version. If an immutable SemVer tag already points to another digest, recovery fails instead of moving it.
+
+## Verification and rollback
+
+Before announcing a release, check both registries anonymously:
+
+```sh
+docker buildx imagetools inspect ghcr.io/yukazakiri/koakademy:vX.Y.Z
+docker buildx imagetools inspect yukazaki/koakademy:vX.Y.Z
 ```
 
-Do not hand-edit `version.json`; the workflows own it.
+Confirm `linux/amd64` and `linux/arm64` are present and the top-level digests match. Smoke-test the production Compose contract and `/up`, then exercise login, queues, uploads, and one PDF render.
 
-## Optional publishing knobs
-
-| Repository variable / secret | Effect |
-| ---------------------------- | ------ |
-| `PUBLISH_DOCKERHUB=true` + `DOCKERHUB_IMAGE` | Mirror image pushes to Docker Hub (auto-release and manual release only) |
-| `DISCORD_WEBHOOK_URL` | Release notifications to Discord |
-| `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` | Docker Hub credentials |
-
-## Known quirks (read before changing these workflows)
-
-- **`APP_URL` build-arg divergence:** `auto-release.yml` and `docker-latest.yml` bake `https://koacademy.yukazaki.com`; the two official-release workflows bake `https://koakademy.yukazaki.com` (note the missing `k`). Align deliberately if you touch them.
-- **Naming drift:** release titles say "KoAcademy" and the Discord bot is "Koamishin Release Bot", while OCI labels and Composer metadata say "KoAkademy".
-- The auto-release comment claims it "runs on develop only", but triggers include `main`/`master`, and `is_main` is hard-coded `false`.
-- Dev tags anchor to the latest **stable** tag, so dev numbers can exceed the base (e.g. `1.10.0-dev.14.3` derives from stable `v1.10.0`).
-- `docker-latest.yml` (manual dispatch) pushes only `ghcr.io/…:latest` — no tag, no release, no `version.json` write.
+Rollback by selecting the previous reviewed exact `vX.Y.Z` tag, never by guessing the former value of `latest` or `edge`. Read that release's migration notes first; if the earlier application cannot read the migrated schema, restore the matching database backup and image together.

@@ -14,6 +14,8 @@ Notable project changes are recorded here. KoAkademy follows semantic versioning
 - Deterministic root-Markdown-to-MDX synchronization with CI drift checks
 - Secret-free CI covering PHP formatting, Pest, frontend and Astro builds, docs checks, Compose validation, and shell syntax
 - Production contract tests for host validation, safe environment values, service exposure, setup onboarding, PDF rendering, metadata, and API documentation
+- Release Please configuration and contract tests for reviewed stable release pull requests
+- AMD64 and ARM64 container build validation, SBOM/provenance generation, and GitHub attestations
 
 ### Changed
 
@@ -27,12 +29,17 @@ Notable project changes are recorded here. KoAkademy follows semantic versioning
 - Updated the locked Guzzle, passkey, and WebAuthn dependency chain to clear known security advisories
 - Package and container metadata consistently identify KoAkademy and AGPL-3.0-or-later
 - Public API documentation is limited to the tested settings and student-verification subset
+- Delivery now publishes immutable SHA images to GHCR and Docker Hub before promoting `edge` or stable aliases
+- Stable GitHub Releases remain draft until containers, manifests, attestations, assets, and checksums succeed
+- Production Docker builds use Node.js 22 with `npm ci` and select a checksummed Supercronic binary by target architecture
+- Pull requests use Conventional Commit titles as the squash-merge and release-version input
 
 ### Removed
 
 - Devcontainer instructions for a `.devcontainer/` implementation that does not exist
 - Fictional student CRUD API documentation
 - Project-specific credentials and unsafe development values from the production environment example
+- Commit-per-prerelease automation, mutable `dev-latest` updates, and bot-authored build-metadata commits
 
 ## Released versions
 

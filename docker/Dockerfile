@@ -1,6 +1,3 @@
-ARG PHP_VERSION=8.5
-ARG FRANKENPHP_VERSION=1.9
-ARG COMPOSER_VERSION=2.8
 ARG APP_NAME=KoAkademy
 ARG APP_ENV=production
 ARG APP_DEBUG=false
@@ -9,7 +6,7 @@ ARG APP_URL=https://koakademy.yukazaki.com
 # -----------------------------------------------------------------------------
 # Stage 1: Install PHP Dependencies
 # -----------------------------------------------------------------------------
-FROM composer:${COMPOSER_VERSION} AS vendor
+FROM composer:2.8@sha256:5248900ab8b5f7f880c2d62180e40960cd87f60149ec9a1abfd62ac72a02577c AS vendor
 WORKDIR /app
 COPY composer.json composer.lock ./
 COPY patches ./patches
@@ -35,7 +32,7 @@ RUN composer dump-autoload --optimize --classmap-authoritative --no-dev --no-scr
 # -----------------------------------------------------------------------------
 # Stage 2: Generate Wayfinder Files (requires the application's PHP version)
 # -----------------------------------------------------------------------------
-FROM dunglas/frankenphp:${FRANKENPHP_VERSION}-php${PHP_VERSION} AS wayfinder
+FROM dunglas/frankenphp:1.9-php8.5@sha256:dc25821b94ad251b9cf31beb0814d821509fe050273ba8f1c92d744ca79e74d1 AS wayfinder
 RUN install-php-extensions zip
 WORKDIR /app
 COPY . .
@@ -45,33 +42,37 @@ RUN APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= php artisan wayf
 # -----------------------------------------------------------------------------
 # Stage 3: Build Frontend Assets
 # -----------------------------------------------------------------------------
-FROM oven/bun:1 AS build-assets
+FROM node:22-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3 AS build-assets
 WORKDIR /app
-COPY package.json bun.lock ./
-RUN bun install --no-save
+COPY package.json package-lock.json ./
+RUN npm ci
 COPY . .
 # Copy PHP dependencies and generated Wayfinder files.
 COPY --from=vendor /app/vendor ./vendor
 COPY --from=wayfinder /app/resources/js/actions ./resources/js/actions
 COPY --from=wayfinder /app/resources/js/routes ./resources/js/routes
 COPY --from=wayfinder /app/resources/js/wayfinder ./resources/js/wayfinder
-RUN WAYFINDER_GENERATE=false bun run build
+RUN WAYFINDER_GENERATE=false npm run build
 
 # -----------------------------------------------------------------------------
 # Stage 4: Final Runtime Image
 # -----------------------------------------------------------------------------
-FROM dunglas/frankenphp:${FRANKENPHP_VERSION}-php${PHP_VERSION}
+FROM dunglas/frankenphp:1.9-php8.5@sha256:dc25821b94ad251b9cf31beb0814d821509fe050273ba8f1c92d744ca79e74d1
 
 LABEL maintainer="Yuka <128908897+yukazakiri@users.noreply.github.com>"
 LABEL org.opencontainers.image.title="KoAkademy"
-LABEL org.opencontainers.image.description="Production-capable beta image for the self-hosted KoAkademy platform"
+LABEL org.opencontainers.image.description="Self-hosted school administration and learning platform"
 LABEL org.opencontainers.image.source=https://github.com/yukazakiri/koakademy
 LABEL org.opencontainers.image.licenses=AGPL-3.0-or-later
 
+ARG TARGETARCH
 ARG USER_ID=1000
 ARG GROUP_ID=1000
 ARG ROOT=/app
 ARG TZ=UTC
+ARG SUPERCRONIC_VERSION=0.2.33
+ARG SUPERCRONIC_SHA256_AMD64=feefa310da569c81b99e1027b86b27b51e6ee9ab647747b49099645120cfc671
+ARG SUPERCRONIC_SHA256_ARM64=f1f8585c66de020fef494dd636058f99949d108f569fef00016a1c8b9eb145b3
 
 ENV TERM=xterm-color
 ENV OCTANE_SERVER=frankenphp
@@ -121,9 +122,18 @@ RUN install-php-extensions \
     soap
 
 # Install Supercronic
-RUN curl -fsSLO "https://github.com/aptible/supercronic/releases/download/v0.2.33/supercronic-linux-amd64" \
-    && chmod +x supercronic-linux-amd64 \
-    && mv supercronic-linux-amd64 /usr/local/bin/supercronic \
+RUN case "${TARGETARCH}" in \
+        amd64) supercronic_sha256="${SUPERCRONIC_SHA256_AMD64}" ;; \
+        arm64) supercronic_sha256="${SUPERCRONIC_SHA256_ARM64}" ;; \
+        *) printf 'Unsupported TARGETARCH: %s\n' "${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && supercronic="supercronic-linux-${TARGETARCH}" \
+    && curl --fail --location --silent --show-error \
+        "https://github.com/aptible/supercronic/releases/download/v${SUPERCRONIC_VERSION}/${supercronic}" \
+        --output "/tmp/${supercronic}" \
+    && printf '%s  %s\n' "${supercronic_sha256}" "/tmp/${supercronic}" | sha256sum --check \
+    && install -m 0755 "/tmp/${supercronic}" /usr/local/bin/supercronic \
+    && rm -f "/tmp/${supercronic}" \
     && mkdir -p /etc/supercronic \
     && echo "*/1 * * * * php ${ROOT}/artisan schedule:run --no-interaction" > /etc/supercronic/laravel
 

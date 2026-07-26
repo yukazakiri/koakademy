@@ -6,7 +6,7 @@ ARG APP_URL=https://koakademy.yukazaki.com
 # -----------------------------------------------------------------------------
 # Stage 1: Install PHP Dependencies
 # -----------------------------------------------------------------------------
-FROM composer:2.8@sha256:5248900ab8b5f7f880c2d62180e40960cd87f60149ec9a1abfd62ac72a02577c AS vendor
+FROM composer:2.10@sha256:5946476338742b200bb9ff88f8be56275ddae4b3949c72305cb0dbf10cfcb760 AS vendor
 WORKDIR /app
 COPY composer.json composer.lock ./
 COPY patches ./patches
@@ -32,7 +32,7 @@ RUN composer dump-autoload --optimize --classmap-authoritative --no-dev --no-scr
 # -----------------------------------------------------------------------------
 # Stage 2: Generate Wayfinder Files (requires the application's PHP version)
 # -----------------------------------------------------------------------------
-FROM dunglas/frankenphp:1.9-php8.5@sha256:dc25821b94ad251b9cf31beb0814d821509fe050273ba8f1c92d744ca79e74d1 AS wayfinder
+FROM dunglas/frankenphp:1.12-php8.5@sha256:da270879b95225345b2ee984f717aef5cba7336e1f206ec005074a79235af347 AS wayfinder
 RUN install-php-extensions zip
 WORKDIR /app
 COPY . .
@@ -42,7 +42,7 @@ RUN APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= php artisan wayf
 # -----------------------------------------------------------------------------
 # Stage 3: Build Frontend Assets
 # -----------------------------------------------------------------------------
-FROM node:22-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3 AS build-assets
+FROM node:26-bookworm-slim@sha256:2d49d876e96237d76de412761cf05dbfe5aee325cc4406a4d41d5824c5bb8beb AS build-assets
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -57,7 +57,7 @@ RUN WAYFINDER_GENERATE=false npm run build
 # -----------------------------------------------------------------------------
 # Stage 4: Final Runtime Image
 # -----------------------------------------------------------------------------
-FROM dunglas/frankenphp:1.9-php8.5@sha256:dc25821b94ad251b9cf31beb0814d821509fe050273ba8f1c92d744ca79e74d1
+FROM dunglas/frankenphp:1.12-php8.5@sha256:da270879b95225345b2ee984f717aef5cba7336e1f206ec005074a79235af347
 
 LABEL maintainer="Yuka <128908897+yukazakiri@users.noreply.github.com>"
 LABEL org.opencontainers.image.title="KoAkademy"

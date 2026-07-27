@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.12.1](https://github.com/yukazakiri/koakademy/compare/v1.12.0...v1.12.1) (2026-07-27)
+
+
+### Bug Fixes
+
+* **release:** allow recovery publication ([ee250e6](https://github.com/yukazakiri/koakademy/commit/ee250e6ddb964eb69252edb53e26bc09a39a5232))
+* **release:** tolerate cache export failures ([aef0679](https://github.com/yukazakiri/koakademy/commit/aef067959867558f834b4a1fda9a7f18127787f2))
+
+
+### Miscellaneous Chores
+
+* added Agent Skills ([7cd8041](https://github.com/yukazakiri/koakademy/commit/7cd804157095576c66569626e535bd76bb51d02e))
+* Codex/fix release version contract ([#109](https://github.com/yukazakiri/koakademy/issues/109)) ([2f9f0f9](https://github.com/yukazakiri/koakademy/commit/2f9f0f903a832820809f25b276acf7f54f28647a))
+* refactored by rector ([1a082e2](https://github.com/yukazakiri/koakademy/commit/1a082e2eab4bbc08d89493ebed3531451dcf176d))
+* update readme ([42e3f6a](https://github.com/yukazakiri/koakademy/commit/42e3f6af8137f8ffe89d0abaa3b67555b7297687))
+
 ## [1.12.0](https://github.com/yukazakiri/koakademy/compare/v1.11.0...v1.12.0) (2026-07-27)
 
 

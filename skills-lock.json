@@ -19,6 +19,12 @@
       "skillPath": "skills/bklit-ui/SKILL.md",
       "computedHash": "0c2c6c5cd9cfdfe74a087fcc43e6365fe7f9ca1c4c84c8067ab46317739a49b2"
     },
+    "ci-cd-pipeline-builder": {
+      "source": "alirezarezvani/claude-skills",
+      "sourceType": "github",
+      "skillPath": "engineering/skills/ci-cd-pipeline-builder/SKILL.md",
+      "computedHash": "1fd9c49745604b51b9af7d62bef9bf251d65db6cead560184231ef2b591bd333"
+    },
     "commit-work": {
       "source": "softaworks/agent-toolkit",
       "sourceType": "github",

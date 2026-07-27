@@ -4,7 +4,7 @@ on:
   issues:
     types: [opened, edited]
   pull_request_target:
-    types: [opened, edited]
+    types: [opened, edited, reopened, synchronize, ready_for_review]
 
 permissions: {}
 
@@ -163,3 +163,184 @@ jobs:
             } else {
               core.info('No new labels to add.');
             }
+
+      - name: Normalize pull request title
+        if: github.event_name == 'pull_request_target'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const pull = context.payload.pull_request;
+            const currentTitle = (pull.title || '').trim();
+            const conventionalPattern = /^(feat|fix|perf|refactor|docs|test|build|ci|chore|revert|style)(\([a-z0-9._/-]+\))?!?: .+/;
+
+            if (conventionalPattern.test(currentTitle)) {
+              core.info(`PR title is already conventional: ${currentTitle}`);
+              return;
+            }
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pull.number,
+              per_page: 100,
+            });
+            const labels = await github.paginate(github.rest.issues.listLabelsOnIssue, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pull.number,
+              per_page: 100,
+            });
+
+            const paths = files.map((file) => file.filename);
+            const labelNames = new Set(labels.map((label) => label.name.toLowerCase()));
+            const text = `${currentTitle}\n${pull.body || ''}`.toLowerCase();
+            const existing = currentTitle.match(
+              /^(feat(?:ure)?|enhancement|fix|bug(?:fix)?|hotfix|perf(?:ormance)?|refactor|docs?|documentation|tests?|build|ci|chore|revert|style)(?:\(([A-Za-z0-9._/-]+)\))?(!)?\s*[:\-]\s*/i,
+            );
+            const aliases = {
+              feat: 'feat',
+              feature: 'feat',
+              enhancement: 'feat',
+              fix: 'fix',
+              bug: 'fix',
+              bugfix: 'fix',
+              hotfix: 'fix',
+              perf: 'perf',
+              performance: 'perf',
+              refactor: 'refactor',
+              doc: 'docs',
+              docs: 'docs',
+              documentation: 'docs',
+              test: 'test',
+              tests: 'test',
+              build: 'build',
+              ci: 'ci',
+              chore: 'chore',
+              revert: 'revert',
+              style: 'style',
+            };
+
+            const allPathsMatch = (pattern) =>
+              paths.length > 0 && paths.every((path) => pattern.test(path));
+            const anyPathMatches = (pattern) => paths.some((path) => pattern.test(path));
+            const hasAnyLabel = (...names) => names.some((name) => labelNames.has(name));
+
+            let type = existing ? aliases[existing[1].toLowerCase()] : '';
+            if (!type) {
+              if (
+                hasAnyLabel('bug', 'security') ||
+                /\b(fix|bug|hotfix|regression|security|vulnerability|cve)\b/.test(text)
+              ) {
+                type = 'fix';
+              } else if (
+                hasAnyLabel('performance') ||
+                /\b(performance|optimi[sz]e|faster|speed|latency|memory)\b/.test(text)
+              ) {
+                type = 'perf';
+              } else if (
+                hasAnyLabel('refactor') ||
+                /\b(refactor|restructure|cleanup|clean up)\b/.test(text)
+              ) {
+                type = 'refactor';
+              } else if (
+                hasAnyLabel('documentation') ||
+                /\b(documentation|docs?|readme|guide|handbook)\b/.test(text) ||
+                allPathsMatch(/^(docs\/|[^/]*\.md$)/)
+              ) {
+                type = 'docs';
+              } else if (
+                hasAnyLabel('tests') ||
+                /\b(test|tests|testing|pest|phpunit|coverage)\b/.test(text) ||
+                allPathsMatch(/^tests\//)
+              ) {
+                type = 'test';
+              } else if (
+                hasAnyLabel('ci/cd') ||
+                /\b(ci\/cd|continuous integration|github actions?|workflow|release please|pr title|pull request title)\b/.test(text) ||
+                allPathsMatch(/^\.github\//)
+              ) {
+                type = 'ci';
+              } else if (
+                /\b(dependenc(?:y|ies)|dependabot|composer|npm|build|dockerfile|base image)\b/.test(text) ||
+                allPathsMatch(/(^|\/)(composer\.(json|lock)|package(-lock)?\.json|Dockerfile)$/)
+              ) {
+                type = 'build';
+              } else if (
+                hasAnyLabel('feature', 'enhancement') ||
+                /\b(add|create|enable|feature|implement|introduce|support|improve|revamp)\b/.test(text)
+              ) {
+                type = 'feat';
+              } else {
+                type = 'chore';
+              }
+            }
+
+            const scopeRules = [
+              ['release', /\b(release|version|semver|changelog)\b/i],
+              ['actions', /\b(github actions?|workflow|ci\/cd|continuous integration|pr title|pull request title)\b/i],
+              ['deps', /\b(dependenc(?:y|ies)|dependabot|composer|npm package)\b/i],
+              ['installer', /\b(installer|install script|setup script)\b/i],
+              ['docker', /\b(docker|container|compose|image registry)\b/i],
+              ['enrollments', /\b(enrollment|tuition|discount|fee)\b/i],
+              ['library', /\b(library|ebook|book|catalog)\b/i],
+              ['auth', /\b(auth|login|signup|password|passkey|oauth)\b/i],
+              ['api', /\b(api|endpoint|webhook)\b/i],
+              ['frontend', /\b(frontend|react|inertia|ui|ux|css|tailwind)\b/i],
+              ['docs', /\b(documentation|docs?|readme|guide|handbook)\b/i],
+            ];
+            let scope = existing?.[2]?.toLowerCase() || '';
+
+            if (!scope) {
+              scope = scopeRules.find(([, pattern]) => pattern.test(currentTitle))?.[0] || '';
+            }
+            if (!scope && allPathsMatch(/^\.github\//)) scope = 'actions';
+            if (!scope && allPathsMatch(/^(docs\/|[^/]*\.md$)/)) scope = 'docs';
+            if (!scope && anyPathMatches(/^scripts\/install\.(sh|ps1)$/)) scope = 'installer';
+            if (!scope && anyPathMatches(/^(docker\/|compose\.)/)) scope = 'docker';
+
+            let subject = currentTitle
+              .replace(/^\s*(draft|wip)\s*[:\-]\s*/i, '')
+              .replace(/^\[[^\]]+\]\s*/, '')
+              .replace(
+                /^(feat(?:ure)?|enhancement|fix|bug(?:fix)?|hotfix|perf(?:ormance)?|refactor|docs?|documentation|tests?|build|ci|chore|revert|style)(?:\([A-Za-z0-9._/-]+\))?!?\s*[:\-]\s*/i,
+                '',
+              )
+              .trim()
+              .replace(/[.\s]+$/, '');
+
+            const redundantVerbs = {
+              feat: /^(feat(?:ure)?|enhancement)\s+/i,
+              fix: /^(fix(?:ed|es)?|bugfix|hotfix)\s+/i,
+              docs: /^(docs?|documentation)\s+/i,
+              test: /^(tests?|testing)\s+/i,
+              ci: /^(ci\/cd|ci)\s+/i,
+            };
+            if (redundantVerbs[type]) {
+              subject = subject.replace(redundantVerbs[type], '');
+            }
+            if (/^[A-Z][a-z]/.test(subject)) {
+              subject = subject[0].toLowerCase() + subject.slice(1);
+            }
+            if (!subject) {
+              subject = `update pull request ${pull.number}`;
+            }
+
+            const breaking =
+              existing?.[3] === '!' ||
+              hasAnyLabel('breaking') ||
+              /\bbreaking change\b/i.test(`${currentTitle}\n${pull.body || ''}`);
+            const prefix = `${type}${scope ? `(${scope})` : ''}${breaking ? '!' : ''}: `;
+            const normalizedTitle = `${prefix}${subject.slice(0, 240 - prefix.length).trim()}`;
+
+            if (normalizedTitle === currentTitle) {
+              core.info('PR title is already normalized.');
+              return;
+            }
+
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pull.number,
+              title: normalizedTitle,
+            });
+            core.notice(`Updated PR title: ${currentTitle} -> ${normalizedTitle}`);

@@ -7,11 +7,11 @@ description: Release Please, edge and stable container channels, version metadat
 
 KoAkademy deliberately separates rolling delivery from stable releases:
 
-| Source event | GitHub Release | GHCR and Docker Hub tags |
-| --- | --- | --- |
-| Pull request | None | Build validation only; nothing is pushed |
-| Green, container-relevant `master` commit | None | Immutable `sha-<40-character-commit>` and mutable `edge` |
-| Merged Release Please PR | Draft until publication succeeds | `sha-<commit>`, `vX.Y.Z`, `X.Y.Z`, `X.Y`, `X`, and `latest` |
+| Source event                              | GitHub Release                   | GHCR and Docker Hub tags                                    |
+| ----------------------------------------- | -------------------------------- | ----------------------------------------------------------- |
+| Pull request                              | None                             | Build validation only; nothing is pushed                    |
+| Green, container-relevant `master` commit | None                             | Immutable `sha-<40-character-commit>` and mutable `edge`    |
+| Merged Release Please PR                  | Draft until publication succeeds | `sha-<commit>`, `vX.Y.Z`, `X.Y.Z`, `X.Y`, `X`, and `latest` |
 
 Both registries receive the same `linux/amd64` and `linux/arm64` manifest:
 
@@ -22,14 +22,14 @@ Use an exact `vX.Y.Z` image in production. `latest` is a convenience alias for t
 
 ## Pull requests and version selection
 
-Pull request titles must use Conventional Commits because squash merging makes that title the commit Release Please evaluates:
+Pull request titles use Conventional Commits because squash merging makes that title the commit Release Please evaluates. A metadata-only workflow automatically normalizes a plain-language title from its topic, description, labels, and changed-file names; maintainers must review the inferred type, scope, and breaking marker before merge:
 
-| PR title prefix | Proposed SemVer change |
-| --- | --- |
-| `fix:` | Patch |
-| `feat:` | Minor |
-| `feat!:`, `fix!:`, or a `BREAKING CHANGE:` footer | Major |
-| `docs:`, `chore:`, `ci:`, `test:`, and similar | Changelog entry without an automatic version bump unless paired with a releasable change |
+| PR title prefix                                   | Proposed SemVer change                                                                   |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `fix:`                                            | Patch                                                                                    |
+| `feat:`                                           | Minor                                                                                    |
+| `feat!:`, `fix!:`, or a `BREAKING CHANGE:` footer | Major                                                                                    |
+| `docs:`, `chore:`, `ci:`, `test:`, and similar    | Changelog entry without an automatic version bump unless paired with a releasable change |
 
 Examples:
 
@@ -95,17 +95,26 @@ sha256sum --check SHA256SUMS
 
 ## Required configuration
 
-| Setting | Location and purpose |
-| --- | --- |
+| Setting                | Location and purpose                                                                                                                                                                      |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `RELEASE_PLEASE_TOKEN` | `release-automation` environment secret containing a dedicated fine-grained repository token with Contents, Pull requests, and Issues read/write; do not reuse `PROJECT_AUTOMATION_TOKEN` |
-| `DOCKERHUB_IMAGE` | Repository variable, currently `yukazaki/koakademy` |
-| `DOCKERHUB_USERNAME` | Repository or `container-publishing` environment secret |
-| `DOCKERHUB_TOKEN` | Repository or `container-publishing` environment secret |
-| `release-automation` | GitHub environment used by the Release Please job |
-| `container-publishing` | GitHub environment used by registry publication |
+| `DOCKERHUB_IMAGE`      | Repository variable, currently `yukazaki/koakademy`                                                                                                                                       |
+| `DOCKERHUB_USERNAME`   | Repository or `container-publishing` environment secret                                                                                                                                   |
+| `DOCKERHUB_TOKEN`      | Repository or `container-publishing` environment secret                                                                                                                                   |
+| `release-automation`   | GitHub environment used by the Release Please job                                                                                                                                         |
+| `container-publishing` | GitHub environment used by registry publication                                                                                                                                           |
 
 Docker Hub is mandatory, not an optional mirror. The built-in GitHub token publishes GHCR packages and GitHub attestations. `RELEASE_PLEASE_TOKEN` must be fine-grained and restricted to this repository.
 Both privileged environments accept deployments from protected branches only, so a manual run cannot select an unreviewed workflow ref.
+
+Create `RELEASE_PLEASE_TOKEN` from **GitHub profile → Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**:
+
+1. Set the resource owner to `yukazakiri` and select only `koakademy`.
+2. Set repository permissions **Contents**, **Pull requests**, and **Issues** to **Read and write**. Leave every other permission at its default.
+3. Choose a finite expiration and generate the token. Copy it immediately; GitHub does not show it again.
+4. Open **koakademy → Settings → Environments → release-automation → Environment secrets**, create `RELEASE_PLEASE_TOKEN`, and paste the token value.
+
+Never paste the token into a workflow, issue, pull request, command history, or repository file. Rotate it before expiration and rerun the failed Delivery job after replacement.
 
 ## Recovery dispatch
 

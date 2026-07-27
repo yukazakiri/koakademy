@@ -11,14 +11,14 @@ CI is intentionally secret-free and fork-safe. Actions are commit-SHA pinned, ch
 
 ## Required jobs
 
-| Job | Contract |
-| --- | --- |
+| Job                           | Contract                                                                                                                                |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | Application and documentation | PHP 8.5, Node 22, Composer install/audit, Pint, npm builds, Pest, docs sync/link/build checks, Compose validation, and installer syntax |
-| Container (amd64) | Build `docker/Dockerfile` for `linux/amd64` with `push: false` |
-| Container (arm64) | Build `docker/Dockerfile` for `linux/arm64` with `push: false` under QEMU |
-| Workflow security | Check every workflow with checksum-pinned `actionlint` and `zizmor` |
-| Conventional PR title | Require a title such as `fix(installer): preserve swarm state` |
-| required | Stable `CI / required` branch-protection aggregator |
+| Container (amd64)             | Build `docker/Dockerfile` for `linux/amd64` with `push: false`                                                                          |
+| Container (arm64)             | Build `docker/Dockerfile` for `linux/arm64` with `push: false` under QEMU                                                               |
+| Workflow security             | Check every workflow with checksum-pinned `actionlint` and `zizmor`                                                                     |
+| Conventional PR title         | Automatically infer and apply a title such as `fix(installer): preserve swarm state`, then validate the current GitHub title            |
+| required                      | Stable `CI / required` branch-protection aggregator                                                                                     |
 
 The test environment is hermetic: SQLite in memory, array cache/session/mail, sync queues, null broadcasting, Scout's collection driver, and optional observability disabled. Composer downloads, npm dependencies, and per-architecture BuildKit layers are cached.
 
@@ -54,5 +54,6 @@ php artisan test --compact --filter="shows the setup screen"
 - **Branch protection:** require only `CI / required`; individual job names can evolve without changing repository settings.
 - **No secrets:** do not add registry credentials or deployment side effects to CI. Privileged publication stays in [Delivery](./releases/).
 - **Forks:** pull requests build containers but never push them.
+- **PR titles:** the metadata-only `pull_request_target` workflow may read the title, description, labels, and changed-file names to infer a Conventional Commit type and scope. It never checks out or executes contributor code. Maintainers should review the inferred title because it controls release notes and SemVer.
 - **Release ordering:** Delivery accepts only a successful same-repository `push` CI run from `master`.
 - **Existing quality debt:** repository-wide Prettier, PHPStan, strict Composer validation, and npm audit are not blocking until their independent findings are resolved.

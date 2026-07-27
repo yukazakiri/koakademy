@@ -17,6 +17,8 @@ it('runs one fork-safe CI workflow for master, pull requests, merge queues, and 
         ->toContain('workflow_dispatch:')
         ->toContain('permissions: {}')
         ->toContain('name: Conventional PR title')
+        ->toContain('name: Validate normalized title')
+        ->toContain('Waiting for title normalization')
         ->toContain('name: required')
         ->toContain('ini-values: memory_limit=1G')
         ->toContain('push: false')
@@ -26,6 +28,27 @@ it('runs one fork-safe CI workflow for master, pull requests, merge queues, and 
         ->toContain('actionlint')
         ->toContain('zizmor')
         ->not->toContain('pull_request_target');
+});
+
+it('normalizes pull request titles without executing contributor code', function (): void {
+    $metadata = workflowContents('auto-label.yml');
+
+    expect($metadata)
+        ->toContain('pull_request_target:')
+        ->toContain('types: [opened, edited, reopened, synchronize, ready_for_review]')
+        ->toContain('pull-requests: write')
+        ->toContain('name: Normalize pull request title')
+        ->toContain('github.rest.pulls.listFiles')
+        ->toContain('github.rest.pulls.update')
+        ->toContain("type = 'fix'")
+        ->toContain("type = 'feat'")
+        ->toContain("type = 'ci'")
+        ->toContain("type = 'docs'")
+        ->toContain("type = 'test'")
+        ->toContain("type = 'build'")
+        ->toContain("type = 'chore'")
+        ->not->toContain('actions/checkout@')
+        ->not->toContain('pull.head.sha');
 });
 
 it('gates privileged delivery on a successful trusted CI push from master', function (): void {

@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.12.0](https://github.com/yukazakiri/koakademy/compare/v1.11.0...v1.12.0) (2026-07-27)
+
+
+### Features
+
+* **enrollments:** add fee overrides and discount presets ([62e7296](https://github.com/yukazakiri/koakademy/commit/62e72963c95d35319d8eb0e582007426e271337e))
+
+
+### Miscellaneous Chores
+
+* update version to 1.11.0 [skip ci] ([1d92c4c](https://github.com/yukazakiri/koakademy/commit/1d92c4c9a639676c9c02600c0bc18a51e502c1b2))
+* update version to 1.11.0-dev.1.0 [skip ci] ([34d5f7e](https://github.com/yukazakiri/koakademy/commit/34d5f7eb00b060dc0b00f9ced67a27cf34cfbf9f))
+
+## Changelog
+
 Notable project changes are recorded here. KoAkademy follows semantic versioning for stable releases where practical; because the project is beta, documented APIs and operational contracts can still change between releases and will be called out.
 
 ## Unreleased

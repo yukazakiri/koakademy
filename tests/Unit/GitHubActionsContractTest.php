@@ -117,7 +117,7 @@ it('keeps latest stable-only and recovery unable to invent or move versions', fu
         ->not->toContain('-dev.');
 });
 
-it('bootstraps Release Please at stable 1.11.0 with reviewed draft releases', function (): void {
+it('keeps Release Please aligned with the tracked stable version and reviewed draft releases', function (): void {
     $config = json_decode(
         file_get_contents(base_path('release-please-config.json')) ?: '{}',
         true,
@@ -128,8 +128,15 @@ it('bootstraps Release Please at stable 1.11.0 with reviewed draft releases', fu
         true,
         flags: JSON_THROW_ON_ERROR,
     );
+    $tracked = json_decode(
+        file_get_contents(base_path('version.json')) ?: '{}',
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
 
-    expect($manifest['.'])->toBe('1.11.0')
+    expect($manifest['.'])
+        ->toBe($tracked['version'])
+        ->toMatch('/^[0-9]+\.[0-9]+\.[0-9]+$/')
         ->and($config['packages']['.']['release-type'])->toBe('php')
         ->and($config['include-v-in-tag'])->toBeTrue()
         ->and($config['include-component-in-tag'])->toBeFalse()

@@ -176,9 +176,12 @@ final class ViewStudentEnrollment extends ViewRecord
                 ->visible(function (StudentEnrollment $record): bool {
                     $pipeline = app(EnrollmentPipelineService::class);
 
-                    return $record->workflow_runtime === StudentEnrollment::WorkflowRuntimeLegacy
-                        && $pipeline->isPending($record->status)
-                        && Auth::user()->hasRole('super_admin');
+                    return Auth::user()->hasRole('super_admin')
+                        && (
+                            ($record->workflow_runtime === StudentEnrollment::WorkflowRuntimeLegacy
+                                && $pipeline->isPending($record->status))
+                            || $record->allowsConfiguredNoReceiptTransition()
+                        );
                 })
                 ->requiresConfirmation()
                 ->modalIcon('heroicon-o-bolt')
@@ -186,45 +189,37 @@ final class ViewStudentEnrollment extends ViewRecord
                 ->action(function (
                     StudentEnrollment $record,
                     array $data,
-                    EnrollmentService $enrollmentService
                 ): void {
                     try {
                         $actor = Auth::user();
-                        if ($actor instanceof \App\Models\User) {
-                            app(\App\Enrollment\EnrollmentWorkflowCoordinator::class)->verifyAcademic($record, $actor);
+                        if (! $actor instanceof \App\Models\User) {
+                            throw new Exception('An authenticated administrator is required.');
                         }
-
-                        // Then use the no-receipt verification
-                        $success = $enrollmentService->verifyByCashierWithoutReceipt(
+                        app(\App\Enrollment\EnrollmentWorkflowCoordinator::class)->quickEnroll(
                             $record,
-                            [
-                                'remarks' => '⚡ QUICK ENROLL (Emergency): '.$data['remarks'],
-                            ]
+                            $actor,
+                            '⚡ QUICK ENROLL (Emergency): '.$data['remarks'],
                         );
 
-                        if ($success) {
-                            Notification::make()
-                                ->success()
-                                ->title('⚡ Quick Enrollment Successful')
-                                ->body('Student has been enrolled via emergency quick enroll. All verification steps were bypassed. Record remains active for analytics.')
-                                ->persistent()
-                                ->send();
+                        Notification::make()
+                            ->success()
+                            ->title('⚡ Quick Enrollment Successful')
+                            ->body('Student has been enrolled via emergency quick enroll. All verification steps were bypassed. Record remains active for analytics.')
+                            ->persistent()
+                            ->send();
 
-                            // Log this action with more details
-                            Log::warning('Emergency Quick Enroll used', [
-                                'enrollment_id' => $record->id,
-                                'student_id' => $record->student_id,
-                                'student_name' => $record->student?->full_name,
-                                'admin_id' => Auth::id(),
-                                'admin_name' => Auth::user()->name,
-                                'remarks' => $data['remarks'],
-                                'timestamp' => now(),
-                            ]);
+                        // Log this action with more details
+                        Log::warning('Emergency Quick Enroll used', [
+                            'enrollment_id' => $record->id,
+                            'student_id' => $record->student_id,
+                            'student_name' => $record->student?->full_name,
+                            'admin_id' => Auth::id(),
+                            'admin_name' => Auth::user()->name,
+                            'remarks' => $data['remarks'],
+                            'timestamp' => now(),
+                        ]);
 
-                            $this->refreshFormData(['status', 'remarks']);
-                        } else {
-                            $this->halt();
-                        }
+                        $this->refreshFormData(['status', 'remarks']);
                     } catch (Exception $e) {
                         Notification::make()
                             ->danger()
@@ -242,10 +237,11 @@ final class ViewStudentEnrollment extends ViewRecord
                 ->visible(function (StudentEnrollment $record): bool {
                     $pipeline = app(EnrollmentPipelineService::class);
 
-                    return $pipeline->isPending($record->status) && (Auth::user()->can(
-                        'verify_by_head_dept_guest::enrollment'
-                    ) ||
-                        Auth::user()->hasRole('super_admin'));
+                    return (
+                        ($record->workflow_runtime === StudentEnrollment::WorkflowRuntimePolicyV1
+                            && $record->hasConfiguredTransitionAction('enrollment.verify_academic'))
+                        || $pipeline->isPending($record->status)
+                    ) && (Auth::user()->can('verify_by_head_dept_guest::enrollment') || Auth::user()->hasRole('super_admin'));
                 })
                 ->requiresConfirmation()
                 ->action(function (
@@ -346,10 +342,11 @@ final class ViewStudentEnrollment extends ViewRecord
                 ->visible(function (StudentEnrollment $record): bool {
                     $pipeline = app(EnrollmentPipelineService::class);
 
-                    return $pipeline->isDepartmentVerified($record->status) && (Auth::user()->can(
-                        'verify_by_cashier_guest::enrollment'
-                    ) ||
-                        Auth::user()->hasRole('super_admin'));
+                    return (
+                        ($record->workflow_runtime === StudentEnrollment::WorkflowRuntimePolicyV1
+                            && $record->hasConfiguredTransitionAction('enrollment.verify_payment'))
+                        || $pipeline->isDepartmentVerified($record->status)
+                    ) && (Auth::user()->can('verify_by_cashier_guest::enrollment') || Auth::user()->hasRole('super_admin'));
                 })
                 ->action(function (
                     StudentEnrollment $record,
@@ -399,9 +396,12 @@ final class ViewStudentEnrollment extends ViewRecord
                 ->visible(function (StudentEnrollment $record): bool {
                     $pipeline = app(EnrollmentPipelineService::class);
 
-                    return $record->workflow_runtime === StudentEnrollment::WorkflowRuntimeLegacy
-                        && $pipeline->isDepartmentVerified($record->status)
-                        && Auth::user()->hasRole('super_admin');
+                    return Auth::user()->hasRole('super_admin')
+                        && (
+                            ($record->workflow_runtime === StudentEnrollment::WorkflowRuntimeLegacy
+                                && $pipeline->isDepartmentVerified($record->status))
+                            || $record->allowsConfiguredNoReceiptTransition()
+                        );
                 })
                 ->requiresConfirmation()
                 ->modalIcon('heroicon-o-exclamation-triangle')
@@ -411,10 +411,15 @@ final class ViewStudentEnrollment extends ViewRecord
                     array $data,
                     EnrollmentService $enrollmentService
                 ): void {
-                    $success = $enrollmentService->verifyByCashierWithoutReceipt(
-                        $record,
-                        $data
-                    );
+                    $actor = Auth::user();
+                    $success = $record->workflow_runtime === StudentEnrollment::WorkflowRuntimePolicyV1
+                        && $actor instanceof \App\Models\User
+                        ? app(\App\Enrollment\EnrollmentWorkflowCoordinator::class)->verifyPayment($record, $actor, [
+                            'without_receipt' => true,
+                            'reason' => $data['remarks'],
+                            'remarks' => $data['remarks'],
+                        ])->successful
+                        : $enrollmentService->verifyByCashierWithoutReceipt($record, $data);
                     if ($success) {
                         Notification::make()
                             ->success()

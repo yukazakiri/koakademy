@@ -353,7 +353,7 @@ export function DocumentsSection({
                     const overridden = localRequirements.some((item) => item.key === requirement.key);
                     return (
                         <article key={requirement.key} className="bg-background rounded-2xl border p-4 shadow-sm">
-                            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_auto]">
+                            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1fr)_auto]">
                                 <div className="space-y-2">
                                     <div className="flex items-center gap-2">
                                         <Label htmlFor={`document-${requirement.key}`}>Document {index + 1}</Label>
@@ -367,6 +367,20 @@ export function DocumentsSection({
                                             setRequirement(requirement.key, (current) => ({ ...current, label: event.target.value }))
                                         }
                                         placeholder="Document name"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Enforce before step</Label>
+                                    <OptionSelect
+                                        value={requirement.enforcement_step ?? ""}
+                                        onChange={(enforcementStep) =>
+                                            setRequirement(requirement.key, (current) => ({
+                                                ...current,
+                                                enforcement_step: enforcementStep || null,
+                                            }))
+                                        }
+                                        options={effective.workflow.steps.map((step) => ({ value: step.key, label: step.label }))}
+                                        placeholder="Collect without blocking"
                                     />
                                 </div>
                                 <div className="space-y-2">
@@ -429,9 +443,13 @@ export function DocumentsSection({
                 className="h-11 border-dashed"
                 onClick={() => {
                     const key = `document_${Date.now()}`;
+                    const enforcementStep = effective.workflow.steps.find((step) => !step.entry)?.key ?? effective.workflow.steps[0]?.key ?? null;
                     onChange({
                         ...local,
-                        requirements: [...localRequirements, { key, label: "New document", description: "", required: true, enabled: true }],
+                        requirements: [
+                            ...localRequirements,
+                            { key, label: "New document", description: "", required: true, enabled: true, enforcement_step: enforcementStep },
+                        ],
                     });
                 }}
             >
@@ -501,6 +519,36 @@ export function BillingSection({ effective, local, registry, options, inheritanc
                             onChange({ ...local, billing: { ...ensureBilling(), allowed_payment_methods: allowedPaymentMethods } })
                         }
                         placeholder="Choose accepted payment methods"
+                    />
+                </CardContent>
+            </Card>
+            <Card>
+                <CardHeader>
+                    <CardTitle className="text-base">Receipt policy</CardTitle>
+                    <CardDescription>Choose the default receipt behavior. No-receipt transitions still require an audited reason.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <OptionSelect
+                        value={String(effective.billing.configuration.receipt_mode ?? "required")}
+                        onChange={(receiptMode) =>
+                            onChange({
+                                ...local,
+                                billing: {
+                                    ...ensureBilling(),
+                                    configuration: {
+                                        ...ensureBilling().configuration,
+                                        receipt_mode: receiptMode as "required" | "optional" | "none",
+                                    },
+                                },
+                            })
+                        }
+                        options={[
+                            { value: "required", label: "Receipt required" },
+                            { value: "optional", label: "Receipt optional" },
+                            { value: "none", label: "Authorized no-receipt path" },
+                        ]}
+                        placeholder="Choose receipt policy"
+                        allowEmpty={false}
                     />
                 </CardContent>
             </Card>

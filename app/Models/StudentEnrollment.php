@@ -85,6 +85,8 @@ final class StudentEnrollment extends Model
         'current_step_key',
         'terminal_outcome',
         'deduplication_key',
+        'submission_channel',
+        'submission_idempotency_key',
     ];
 
     #[Override]
@@ -181,19 +183,61 @@ final class StudentEnrollment extends Model
         return $this->hasMany(EnrollmentWorkflowEvent::class, 'student_enrollment_id');
     }
 
+    /** @return HasMany<EnrollmentRequirement, $this> */
+    public function requirements(): HasMany
+    {
+        return $this->hasMany(EnrollmentRequirement::class, 'student_enrollment_id');
+    }
+
+    public function allowsConfiguredNoReceiptTransition(): bool
+    {
+        return $this->hasConfiguredTransitionAction(
+            'enrollment.verify_payment',
+            function (array $action): bool {
+                if (($action['handler'] ?? null) !== 'enrollment.verify_payment') {
+                    return false;
+                }
+                $configuration = is_array($action['configuration'] ?? null) ? $action['configuration'] : [];
+
+                return ($configuration['receipt_mode'] ?? null) === 'none'
+                    || ($configuration['allow_no_receipt'] ?? false) === true;
+            },
+        );
+    }
+
+    public function hasConfiguredTransitionAction(string $handler, ?callable $filter = null): bool
+    {
+        if ($this->workflow_runtime !== self::WorkflowRuntimePolicyV1) {
+            return false;
+        }
+
+        $this->loadMissing('policySnapshot');
+        $steps = collect(data_get($this->policySnapshot?->configuration, 'workflow.steps', []))->keyBy('key');
+        $current = $steps->get($this->current_step_key);
+        if (! is_array($current)) {
+            return false;
+        }
+
+        return collect($current['transitions'] ?? [])->contains(function (array $transition) use ($steps, $handler, $filter): bool {
+            $target = $steps->get($transition['to'] ?? '');
+            if (! is_array($target)) {
+                return false;
+            }
+
+            return collect($target['actions'] ?? [])->contains(
+                fn (array $action): bool => ($action['handler'] ?? null) === $handler
+                    && ($filter === null || $filter($action)),
+            );
+        });
+    }
+
     /**
      * Get transactions for this specific enrollment period
      * Shows transactions from the current academic year based on school calendar
      */
     public function enrollmentTransactions()
     {
-        $schoolYear = str_replace(' ', '', (string) $this->school_year);
-        $semester = (int) $this->semester;
-
-        return $this->hasMany(StudentTransaction::class, 'student_id', 'student_id')
-            ->whereHas('transaction', function ($query) use ($schoolYear, $semester): void {
-                $query->forAcademicPeriod($schoolYear, $semester);
-            })
+        return $this->hasMany(StudentTransaction::class, 'student_enrollment_id')
             ->orderBy('created_at', 'desc');
     }
 

@@ -309,6 +309,7 @@ function SortableStep({
                                         label: `Conditional path ${branches.length + 1}`,
                                         to: fallback?.to ?? nextDestination(step, steps),
                                         fallback: false,
+                                        requires_reason: false,
                                         conditions: [
                                             {
                                                 key: `condition_${step.key}_${branches.length + 1}`,
@@ -335,6 +336,18 @@ function SortableStep({
                             <p className="text-muted-foreground mt-2 text-xs leading-5">
                                 Protected fallback: every student who does not match a custom path goes here.
                             </p>
+                            <label className="mt-3 flex items-center gap-2 text-sm">
+                                <Switch
+                                    checked={fallback?.requires_reason ?? false}
+                                    onCheckedChange={(requiresReason) =>
+                                        updateTransitions(branches, {
+                                            ...(fallback ?? fallbackTransition(step.key, nextDestination(step, steps))),
+                                            requires_reason: requiresReason,
+                                        })
+                                    }
+                                />
+                                Require an audited reason for this transition
+                            </label>
                         </div>
                     </div>
                 </details>
@@ -434,6 +447,13 @@ function BranchEditor({
                     onChange={(configuration) => onChange({ ...branch, conditions: [{ ...condition, configuration }] })}
                 />
             ) : null}
+            <label className="mt-3 flex items-center gap-2 text-sm">
+                <Switch
+                    checked={branch.requires_reason ?? false}
+                    onCheckedChange={(requiresReason) => onChange({ ...branch, requires_reason: requiresReason })}
+                />
+                Require an audited reason for this path
+            </label>
         </div>
     );
 }
@@ -448,7 +468,7 @@ function nextDestination(step: WorkflowStep, steps: WorkflowStep[]): string {
 }
 
 function fallbackTransition(stepKey: string, to: string): Transition {
-    return { key: `otherwise_${stepKey}`, label: "Otherwise", to, fallback: true, conditions: [] };
+    return { key: `otherwise_${stepKey}`, label: "Otherwise", to, fallback: true, requires_reason: false, conditions: [] };
 }
 
 function destinationOptions(steps: WorkflowStep[], currentKey: string): Option[] {

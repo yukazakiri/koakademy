@@ -8,7 +8,6 @@ use App\Filament\Exports\StudentEnrollmentExporter;
 use App\Models\Course;
 use App\Models\StudentEnrollment;
 use App\Services\EnrollmentPipelineService;
-use App\Services\EnrollmentService;
 use App\Services\GeneralSettingsService;
 use Exception;
 use Filament\Actions\Action;
@@ -164,40 +163,38 @@ final class StudentEnrollmentsTable
                     ->visible(function (StudentEnrollment $record): bool {
                         $pipeline = app(EnrollmentPipelineService::class);
 
-                        return $record->workflow_runtime === StudentEnrollment::WorkflowRuntimeLegacy
-                            && $pipeline->isPending($record->status)
-                            && Auth::user()->hasRole('super_admin');
+                        return Auth::user()->hasRole('super_admin')
+                            && (
+                                ($record->workflow_runtime === StudentEnrollment::WorkflowRuntimeLegacy
+                                    && $pipeline->isPending($record->status))
+                                || $record->allowsConfiguredNoReceiptTransition()
+                            );
                     })
                     ->requiresConfirmation()
-                    ->action(function (StudentEnrollment $record, array $data, EnrollmentService $enrollmentService): void {
+                    ->action(function (StudentEnrollment $record, array $data): void {
                         try {
-                            $pipeline = app(EnrollmentPipelineService::class);
-
                             $actor = Auth::user();
-                            if ($actor instanceof \App\Models\User) {
-                                app(\App\Enrollment\EnrollmentWorkflowCoordinator::class)->verifyAcademic($record, $actor);
+                            if (! $actor instanceof \App\Models\User) {
+                                throw new Exception('An authenticated administrator is required.');
                             }
-
-                            // Then use no-receipt verification
-                            $success = $enrollmentService->verifyByCashierWithoutReceipt(
+                            app(\App\Enrollment\EnrollmentWorkflowCoordinator::class)->quickEnroll(
                                 $record,
-                                ['remarks' => '⚡ QUICK ENROLL (Table Action): '.$data['remarks']]
+                                $actor,
+                                '⚡ QUICK ENROLL (Table Action): '.$data['remarks'],
                             );
 
-                            if ($success) {
-                                Notification::make()
-                                    ->success()
-                                    ->title('⚡ Quick Enrollment Successful')
-                                    ->body('Student enrolled via emergency quick enroll.')
-                                    ->send();
+                            Notification::make()
+                                ->success()
+                                ->title('⚡ Quick Enrollment Successful')
+                                ->body('Student enrolled via emergency quick enroll.')
+                                ->send();
 
-                                Log::warning('Emergency Quick Enroll used (Table Action)', [
-                                    'enrollment_id' => $record->id,
-                                    'student_id' => $record->student_id,
-                                    'admin_id' => Auth::id(),
-                                    'remarks' => $data['remarks'],
-                                ]);
-                            }
+                            Log::warning('Emergency Quick Enroll used (Table Action)', [
+                                'enrollment_id' => $record->id,
+                                'student_id' => $record->student_id,
+                                'admin_id' => Auth::id(),
+                                'remarks' => $data['remarks'],
+                            ]);
                         } catch (Exception $e) {
                             Notification::make()
                                 ->danger()
@@ -254,7 +251,6 @@ final class StudentEnrollmentsTable
                         ->requiresConfirmation()
                         ->deselectRecordsAfterCompletion()
                         ->action(function ($records, array $data): void {
-                            $enrollmentService = app(EnrollmentService::class);
                             $totalRecords = count($records);
                             $successCount = 0;
                             $failedCount = 0;
@@ -270,15 +266,17 @@ final class StudentEnrollmentsTable
                             foreach ($records as $record) {
                                 $pipeline = app(EnrollmentPipelineService::class);
 
-                                if ($record->workflow_runtime !== StudentEnrollment::WorkflowRuntimeLegacy) {
+                                if ($record->workflow_runtime === StudentEnrollment::WorkflowRuntimePolicyV1
+                                    && ! $record->allowsConfiguredNoReceiptTransition()) {
                                     $failedCount++;
-                                    $errors[] = "Student ID {$record->student_id}: Policy workflows cannot use bulk quick enroll";
+                                    $errors[] = "Student ID {$record->student_id}: No authorized no-receipt transition is configured";
 
                                     continue;
                                 }
 
                                 // Only process pending enrollments
-                                if (! $pipeline->isPending($record->status)) {
+                                if ($record->workflow_runtime === StudentEnrollment::WorkflowRuntimeLegacy
+                                    && ! $pipeline->isPending($record->status)) {
                                     $failedCount++;
                                     $errors[] = "Student ID {$record->student_id}: Not in pending status";
 
@@ -286,31 +284,20 @@ final class StudentEnrollmentsTable
                                 }
 
                                 try {
-                                    DB::beginTransaction();
-
                                     $actor = Auth::user();
-                                    if ($actor instanceof \App\Models\User) {
-                                        app(\App\Enrollment\EnrollmentWorkflowCoordinator::class)->verifyAcademic($record, $actor);
+                                    if (! $actor instanceof \App\Models\User) {
+                                        throw new Exception('An authenticated administrator is required.');
                                     }
-
-                                    // Then use no-receipt verification
-                                    $success = $enrollmentService->verifyByCashierWithoutReceipt(
+                                    app(\App\Enrollment\EnrollmentWorkflowCoordinator::class)->quickEnroll(
                                         $record,
-                                        ['remarks' => '⚡ BULK QUICK ENROLL: '.$data['remarks']]
+                                        $actor,
+                                        '⚡ BULK QUICK ENROLL: '.$data['remarks'],
                                     );
 
-                                    if ($success) {
-                                        $successCount++;
-                                        DB::commit();
-                                    } else {
-                                        $failedCount++;
-                                        $errors[] = "Student ID {$record->student_id}: Verification failed";
-                                        DB::rollBack();
-                                    }
+                                    $successCount++;
                                 } catch (Exception $e) {
                                     $failedCount++;
                                     $errors[] = "Student ID {$record->student_id}: {$e->getMessage()}";
-                                    DB::rollBack();
                                 }
                             }
 

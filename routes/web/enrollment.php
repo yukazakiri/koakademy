@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\EnrollmentPolicyContextController;
 use App\Http\Controllers\EnrollmentRegistrationController;
 use App\Settings\SiteSettings;
 use Illuminate\Support\Facades\File;
@@ -22,6 +23,10 @@ Route::post('/enrollment/lookup', [EnrollmentRegistrationController::class, 'loo
 
 Route::post('/enrollment/subjects', [EnrollmentRegistrationController::class, 'subjectsFor'])
     ->name('enrollment.subjects');
+
+Route::get('/enrollment/policy-context', EnrollmentPolicyContextController::class)
+    ->middleware('throttle:60,1')
+    ->name('enrollment.policy-context.show');
 
 Route::post('/enrollment/continuing', [EnrollmentRegistrationController::class, 'storeContinuing'])
     ->name('enrollment.continuing.store');

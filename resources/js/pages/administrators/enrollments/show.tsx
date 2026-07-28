@@ -1,3 +1,4 @@
+import { reviewRequirement, transition as transitionEnrollment } from "@/actions/App/Http/Controllers/AdministratorEnrollmentPolicyController";
 import AdminLayout from "@/components/administrators/admin-layout";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { User } from "@/types/user";
 import { Head, Link, router, useForm, usePage } from "@inertiajs/react";
+import axios from "axios";
 import {
     AlertTriangle,
     ArrowLeft,
@@ -56,6 +58,25 @@ interface EnrollmentData {
     id: number;
     student_id: string | number;
     status: string;
+    workflow_runtime: "legacy" | "policy_v1";
+    allows_no_receipt_transition: boolean;
+    workflow: {
+        current_step_key: string | null;
+        terminal_outcome: string | null;
+        allowed_payment_methods: string[];
+        steps: Array<{ key: string; label: string; terminal: boolean }>;
+        allowed_transitions: Array<{
+            key: string;
+            label: string;
+            to: string;
+            requires_reason: boolean;
+            target_actions: string[];
+            payment_configuration: {
+                receipt_mode?: "required" | "optional" | "none";
+                allow_no_receipt?: boolean;
+            } | null;
+        }>;
+    };
     school_year: string;
     semester: number;
     academic_year: number;
@@ -142,6 +163,19 @@ interface EnrollmentData {
         created_at: string;
         download_url: string;
     }>;
+    requirements: Array<{
+        id: number;
+        key: string;
+        label: string;
+        description: string | null;
+        status: "pending" | "verified" | "waived";
+        required: boolean;
+        enforcement_step: string | null;
+        evidence_path: string | null;
+        verified_at: string | null;
+        waived_at: string | null;
+        waiver_reason: string | null;
+    }>;
     pending_class_schedule_changes: Array<{
         id: number;
         class_id: number | null;
@@ -180,6 +214,7 @@ interface PageProps {
         can_verify_cashier: boolean;
         is_super_admin: boolean;
         can_advance_pipeline: boolean;
+        can_review_requirements: boolean;
     };
     recent_deletions?: RecentDeletion[];
     enrollment_pipeline: {
@@ -235,6 +270,9 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
     const [showScheduleChangesDialog, setShowScheduleChangesDialog] = useState(false);
     const [selectedDeletions, setSelectedDeletions] = useState<number[]>([]);
     const [restoringSubjects, setRestoringSubjects] = useState(false);
+    const [waivingRequirementId, setWaivingRequirementId] = useState<number | null>(null);
+    const [waiverReason, setWaiverReason] = useState("");
+    const [reviewingRequirementId, setReviewingRequirementId] = useState<number | null>(null);
     const pendingScheduleChanges = enrollment.pending_class_schedule_changes ?? [];
 
     const pendingStatus = enrollment_pipeline.pending_status;
@@ -250,6 +288,30 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
     const balanceDue = enrollment.tuition?.balance_due ?? enrollment.tuition?.total_balance ?? 0;
     const totalPaid = enrollment.tuition?.total_paid ?? 0;
     const requiredDownpayment = enrollment.tuition?.required_downpayment ?? enrollment.tuition?.downpayment ?? 0;
+    const requirementReviewKey = () => (typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `requirement-${Date.now()}-${Math.random()}`);
+
+    const reviewEnrollmentRequirement = (requirementId: number, action: "verify" | "waive", reason?: string) => {
+        setReviewingRequirementId(requirementId);
+        axios
+            .post(reviewRequirement.url({ enrollment: enrollment.id, requirement: requirementId }), {
+                action,
+                reason: reason || null,
+                idempotency_key: requirementReviewKey(),
+            })
+            .then(() => {
+                setWaivingRequirementId(null);
+                setWaiverReason("");
+                toast.success(action === "verify" ? "Requirement verified." : "Requirement waived with an audit reason.");
+                router.reload({ only: ["enrollment"] });
+            })
+            .catch((error: unknown) => {
+                const message = axios.isAxiosError(error)
+                    ? (Object.values(error.response?.data?.errors ?? {})[0] as string[] | undefined)?.[0]
+                    : null;
+                toast.error(message ?? "The requirement could not be reviewed.");
+            })
+            .finally(() => setReviewingRequirementId(null));
+    };
 
     const getStatusColor = (status: string) => {
         return statusClasses[status] ?? "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400 border-gray-200";
@@ -339,6 +401,26 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
         );
     };
 
+    const handlePolicyTransition = (workflowTransition: EnrollmentData["workflow"]["allowed_transitions"][number]) => {
+        const reason = workflowTransition.requires_reason ? window.prompt("This transition requires an audited reason. Enter it below:") : null;
+        if (workflowTransition.requires_reason && !reason?.trim()) return;
+
+        axios
+            .post(transitionEnrollment.url(enrollment.id), {
+                transition_key: workflowTransition.key,
+                idempotency_key: requirementReviewKey(),
+                payload: reason ? { reason: reason.trim() } : {},
+            })
+            .then(() => {
+                toast.success(`${workflowTransition.label} completed.`);
+                router.reload({ only: ["enrollment", "enrollment_pipeline"] });
+            })
+            .catch((error: unknown) => {
+                const message = axios.isAxiosError(error) ? error.response?.data?.message : null;
+                toast.error(message ?? "The enrollment transition could not be completed.");
+            });
+    };
+
     const handleRestoreSubjects = () => {
         if (selectedDeletions.length === 0) return;
         setRestoringSubjects(true);
@@ -372,13 +454,32 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
     // Enrollment Steps Calculation
     const pipelineSteps = enrollment_pipeline.steps ?? [];
     const currentStepIndex = pipelineSteps.findIndex((step) => step.status === enrollment.status);
-    const steps = [
-        { label: enrollment_pipeline.submitted_label, status: "completed" },
-        ...pipelineSteps.map((step, index) => ({
-            label: step.label,
-            status: currentStepIndex === -1 ? "pending" : index < currentStepIndex ? "completed" : index === currentStepIndex ? "current" : "pending",
-        })),
-    ];
+    const policyStepIndex = enrollment.workflow.steps.findIndex((step) => step.key === enrollment.workflow.current_step_key);
+    const steps =
+        enrollment.workflow_runtime === "policy_v1"
+            ? enrollment.workflow.steps.map((step, index) => ({
+                  label: step.label,
+                  status:
+                      enrollment.workflow.terminal_outcome || index < policyStepIndex
+                          ? "completed"
+                          : index === policyStepIndex
+                            ? "current"
+                            : "pending",
+              }))
+            : [
+                  { label: enrollment_pipeline.submitted_label, status: "completed" },
+                  ...pipelineSteps.map((step, index) => ({
+                      label: step.label,
+                      status:
+                          currentStepIndex === -1
+                              ? "pending"
+                              : index < currentStepIndex
+                                ? "completed"
+                                : index === currentStepIndex
+                                  ? "current"
+                                  : "pending",
+                  })),
+              ];
 
     return (
         <AdminLayout user={user} title="Enrollment Management">
@@ -587,22 +688,52 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
 
                                 {/* Primary Action Button */}
                                 <div className="pt-2">
-                                    {nextStep?.action_type === "department_verification" && auth.can_verify_head && (
-                                        <Button onClick={handleVerifyHeadDept} className="h-10 w-full bg-blue-600 shadow-sm hover:bg-blue-700">
-                                            <UserCheck className="mr-2 h-4 w-4" />
-                                            Verify Step
-                                        </Button>
-                                    )}
+                                    {enrollment.workflow_runtime === "policy_v1" &&
+                                        enrollment.workflow.allowed_transitions.map((workflowTransition) =>
+                                            workflowTransition.target_actions.includes("enrollment.verify_payment") ? (
+                                                <VerifyCashierDialog
+                                                    key={workflowTransition.key}
+                                                    enrollmentId={enrollment.id}
+                                                    tuition={enrollment.tuition}
+                                                    additionalFees={enrollment.additional_fees}
+                                                    label={workflowTransition.label}
+                                                    requiresReason={workflowTransition.requires_reason}
+                                                    receiptMode={workflowTransition.payment_configuration?.receipt_mode ?? "required"}
+                                                    allowedPaymentMethods={enrollment.workflow.allowed_payment_methods}
+                                                />
+                                            ) : (
+                                                <Button
+                                                    key={workflowTransition.key}
+                                                    onClick={() => handlePolicyTransition(workflowTransition)}
+                                                    className="mb-2 h-10 w-full"
+                                                >
+                                                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                                                    {workflowTransition.label}
+                                                </Button>
+                                            ),
+                                        )}
 
-                                    {nextStep?.action_type === "cashier_verification" && auth.can_verify_cashier && (
-                                        <VerifyCashierDialog
-                                            enrollmentId={enrollment.id}
-                                            tuition={enrollment.tuition}
-                                            additionalFees={enrollment.additional_fees}
-                                        />
-                                    )}
+                                    {enrollment.workflow_runtime === "legacy" &&
+                                        nextStep?.action_type === "department_verification" &&
+                                        auth.can_verify_head && (
+                                            <Button onClick={handleVerifyHeadDept} className="h-10 w-full bg-blue-600 shadow-sm hover:bg-blue-700">
+                                                <UserCheck className="mr-2 h-4 w-4" />
+                                                Verify Step
+                                            </Button>
+                                        )}
 
-                                    {auth.can_advance_pipeline &&
+                                    {enrollment.workflow_runtime === "legacy" &&
+                                        nextStep?.action_type === "cashier_verification" &&
+                                        auth.can_verify_cashier && (
+                                            <VerifyCashierDialog
+                                                enrollmentId={enrollment.id}
+                                                tuition={enrollment.tuition}
+                                                additionalFees={enrollment.additional_fees}
+                                            />
+                                        )}
+
+                                    {enrollment.workflow_runtime === "legacy" &&
+                                        auth.can_advance_pipeline &&
                                         nextStep &&
                                         nextStep.action_type !== "cashier_verification" &&
                                         enrollment.status !== pendingStatus && (
@@ -655,9 +786,11 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                                                         <Undo2 className="mr-2 h-4 w-4" /> Undo Payment Verification
                                                     </DropdownMenuItem>
                                                 )}
-                                                {auth.is_super_admin && enrollment.status === pendingStatus && (
-                                                    <QuickEnrollDialog enrollmentId={enrollment.id} />
-                                                )}
+                                                {auth.is_super_admin &&
+                                                    ((enrollment.workflow_runtime === "legacy" && enrollment.status === pendingStatus) ||
+                                                        enrollment.allows_no_receipt_transition) && (
+                                                        <QuickEnrollDialog enrollmentId={enrollment.id} />
+                                                    )}
                                                 <DropdownMenuSeparator />
                                                 <DropdownMenuItem onClick={handleRetryEnrollment}>
                                                     <RefreshCcw className="mr-2 h-4 w-4" /> Retry Class Enrollment
@@ -719,6 +852,11 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                                 <TabsTrigger value="resources" className="data-[state=active]:bg-background flex-1 py-2 md:flex-none">
                                     Documents
                                 </TabsTrigger>
+                                {enrollment.requirements.length > 0 && (
+                                    <TabsTrigger value="requirements" className="data-[state=active]:bg-background flex-1 py-2 md:flex-none">
+                                        Requirements
+                                    </TabsTrigger>
+                                )}
                             </TabsList>
 
                             {/* CLASSES TAB */}
@@ -1060,6 +1198,77 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                                     </CardContent>
                                 </Card>
                             </TabsContent>
+
+                            <TabsContent value="requirements" className="mt-6 space-y-6">
+                                <Card>
+                                    <CardHeader>
+                                        <CardTitle>Enrollment requirements</CardTitle>
+                                        <CardDescription>
+                                            Required items must be verified or waived with a reason before their configured workflow step.
+                                        </CardDescription>
+                                    </CardHeader>
+                                    <CardContent className="space-y-3">
+                                        {enrollment.requirements.map((requirement) => (
+                                            <div
+                                                key={requirement.id}
+                                                className="flex flex-col gap-4 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between"
+                                            >
+                                                <div className="min-w-0">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <p className="font-medium">{requirement.label}</p>
+                                                        <Badge
+                                                            variant={requirement.status === "pending" ? "secondary" : "outline"}
+                                                            className={cn(
+                                                                requirement.status === "verified" && "border-green-200 bg-green-50 text-green-700",
+                                                                requirement.status === "waived" && "border-amber-200 bg-amber-50 text-amber-700",
+                                                            )}
+                                                        >
+                                                            {requirement.status}
+                                                        </Badge>
+                                                        {requirement.required && <Badge variant="outline">Required</Badge>}
+                                                    </div>
+                                                    {requirement.description && (
+                                                        <p className="text-muted-foreground mt-1 text-sm">{requirement.description}</p>
+                                                    )}
+                                                    <p className="text-muted-foreground mt-1 text-xs">
+                                                        {requirement.enforcement_step
+                                                            ? `Enforced before ${requirement.enforcement_step.replaceAll("_", " ")}`
+                                                            : "Collected for review without a workflow gate"}
+                                                    </p>
+                                                    {requirement.waiver_reason && (
+                                                        <p className="mt-2 text-sm text-amber-700">Waiver reason: {requirement.waiver_reason}</p>
+                                                    )}
+                                                </div>
+                                                {requirement.status === "pending" && auth.can_review_requirements && (
+                                                    <div className="flex shrink-0 gap-2">
+                                                        <Button
+                                                            type="button"
+                                                            size="sm"
+                                                            disabled={reviewingRequirementId === requirement.id}
+                                                            onClick={() => reviewEnrollmentRequirement(requirement.id, "verify")}
+                                                        >
+                                                            <CheckCircle2 className="h-4 w-4" />
+                                                            Verify
+                                                        </Button>
+                                                        <Button
+                                                            type="button"
+                                                            size="sm"
+                                                            variant="outline"
+                                                            disabled={reviewingRequirementId === requirement.id}
+                                                            onClick={() => {
+                                                                setWaivingRequirementId(requirement.id);
+                                                                setWaiverReason("");
+                                                            }}
+                                                        >
+                                                            Waive
+                                                        </Button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </CardContent>
+                                </Card>
+                            </TabsContent>
                         </Tabs>
                     </div>
                 </div>
@@ -1076,6 +1285,49 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                 onRestore={handleRestoreSubjects}
                 restoring={restoringSubjects}
             />
+            <Dialog
+                open={waivingRequirementId !== null}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setWaivingRequirementId(null);
+                        setWaiverReason("");
+                    }
+                }}
+            >
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Waive enrollment requirement</DialogTitle>
+                        <DialogDescription>
+                            This is an audited exception. Record a specific reason that another administrator can review later.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-2">
+                        <Label htmlFor="requirement-waiver-reason">Reason</Label>
+                        <Textarea
+                            id="requirement-waiver-reason"
+                            value={waiverReason}
+                            onChange={(event) => setWaiverReason(event.target.value)}
+                            placeholder="Explain why this requirement may be waived"
+                        />
+                    </div>
+                    <DialogFooter>
+                        <Button type="button" variant="outline" onClick={() => setWaivingRequirementId(null)}>
+                            Cancel
+                        </Button>
+                        <Button
+                            type="button"
+                            disabled={!waiverReason.trim() || reviewingRequirementId !== null}
+                            onClick={() => {
+                                if (waivingRequirementId !== null) {
+                                    reviewEnrollmentRequirement(waivingRequirementId, "waive", waiverReason.trim());
+                                }
+                            }}
+                        >
+                            Confirm waiver
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </AdminLayout>
     );
 }
@@ -1257,7 +1509,23 @@ function EditTransactionDialog({ enrollmentId, transaction }: { enrollmentId: nu
     );
 }
 
-function VerifyCashierDialog({ enrollmentId, tuition, additionalFees }: { enrollmentId: number; tuition: any; additionalFees: any[] }) {
+function VerifyCashierDialog({
+    enrollmentId,
+    tuition,
+    additionalFees,
+    label = "Verify & Enroll",
+    requiresReason = false,
+    receiptMode = "required",
+    allowedPaymentMethods = [],
+}: {
+    enrollmentId: number;
+    tuition: any;
+    additionalFees: any[];
+    label?: string;
+    requiresReason?: boolean;
+    receiptMode?: "required" | "optional" | "none";
+    allowedPaymentMethods?: string[];
+}) {
     const { props } = usePage<{ branding?: Branding }>();
     const currency = props.branding?.currency || "PHP";
     const outstandingBalance = Number(tuition?.balance_due ?? tuition?.total_balance ?? 0);
@@ -1268,7 +1536,8 @@ function VerifyCashierDialog({ enrollmentId, tuition, additionalFees }: { enroll
     );
     const { data, setData, post, processing, errors, reset } = useForm({
         invoicenumber: "",
-        payment_method: "Cash",
+        payment_method: allowedPaymentMethods[0] ?? "Cash",
+        reason: "",
         settlements: {
             registration_fee: 0,
             tuition_fee: defaultTuitionPayment,
@@ -1295,7 +1564,7 @@ function VerifyCashierDialog({ enrollmentId, tuition, additionalFees }: { enroll
             <DialogTrigger asChild>
                 <Button className="h-10 w-full bg-emerald-600 shadow-sm hover:bg-emerald-700">
                     <CheckCircle2 className="mr-2 h-4 w-4" />
-                    Verify & Enroll
+                    {label}
                 </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[500px]">
@@ -1308,13 +1577,26 @@ function VerifyCashierDialog({ enrollmentId, tuition, additionalFees }: { enroll
                         <Label htmlFor="invoice">Invoice / OR Number</Label>
                         <Input
                             id="invoice"
-                            required
+                            required={receiptMode === "required"}
                             placeholder="Enter Invoice No."
                             value={data.invoicenumber}
                             onChange={(e) => setData("invoicenumber", e.target.value)}
                         />
                         {errors.invoicenumber && <p className="text-xs text-red-500">{errors.invoicenumber}</p>}
                     </div>
+
+                    {requiresReason && (
+                        <div className="grid gap-2">
+                            <Label htmlFor="payment-transition-reason">Audited reason</Label>
+                            <Textarea
+                                id="payment-transition-reason"
+                                required
+                                value={data.reason}
+                                onChange={(event) => setData("reason", event.target.value)}
+                                placeholder="Explain why this transition is being completed"
+                            />
+                        </div>
+                    )}
 
                     <div className="grid gap-2">
                         <Label htmlFor="payment_method">Payment Method</Label>
@@ -1323,9 +1605,14 @@ function VerifyCashierDialog({ enrollmentId, tuition, additionalFees }: { enroll
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="Cash">Cash</SelectItem>
-                                <SelectItem value="Check">Check</SelectItem>
-                                <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
+                                {(allowedPaymentMethods.length > 0
+                                    ? allowedPaymentMethods
+                                    : ["Cash", "Check", "Bank Transfer", "Credit Card", "Debit Card", "Online Payment"]
+                                ).map((method) => (
+                                    <SelectItem key={method} value={method}>
+                                        {method}
+                                    </SelectItem>
+                                ))}
                             </SelectContent>
                         </Select>
                     </div>

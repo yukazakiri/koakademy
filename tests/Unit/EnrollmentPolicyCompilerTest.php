@@ -34,7 +34,7 @@ it('merges keyed rules while replacing workflow atomically', function (): void {
     $override = [
         'schema_version' => 1,
         'rules' => [
-            ['key' => 'channels', 'enabled' => false],
+            ['key' => 'enrollment_channels', 'enabled' => false],
             ['key' => 'types', 'handler' => 'eligibility.student_type', 'configuration' => ['allowed' => ['college']]],
         ],
         'workflow' => $base['workflow'],
@@ -46,7 +46,7 @@ it('merges keyed rules while replacing workflow atomically', function (): void {
     ]);
 
     expect(collect($compiled->configuration['rules'])->pluck('key')->all())
-        ->toBe(['duplicates', 'types'])
+        ->toBe(['duplicate_period', 'types'])
         ->and($compiled->sourceVersionIds)->toBe([1, 2]);
 });
 
@@ -113,7 +113,7 @@ it('reports source provenance for inherited keyed and atomic settings', function
     ]);
 
     expect($compiled->sourceLayers)->toHaveCount(2)
-        ->and($compiled->sourceMap['rules.duplicates']['policy_name'])->toBe('Global foundation')
+        ->and($compiled->sourceMap['rules.duplicate_period']['policy_name'])->toBe('Global foundation')
         ->and($compiled->sourceMap['rules.student_types']['policy_name'])->toBe('College override')
         ->and($compiled->sourceMap['billing']['version_id'])->toBe(22);
 });

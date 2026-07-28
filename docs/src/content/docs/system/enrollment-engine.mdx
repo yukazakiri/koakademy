@@ -9,14 +9,14 @@ Enrollment is KoAkademy's deepest subsystem. It has two cooperating layers: an *
 
 ## The operational pipeline
 
-`EnrollmentService`, `EnrollmentPipelineService`, and `EnrollmentBillingService` run the day-to-day flow:
+`EnrollmentService` is the application façade. Every workflow mutation passes through `EnrollmentWorkflowCoordinator`, while `EnrollmentTransitionEngine` owns row locking, transactions, status and outcome projection, idempotency, and workflow events. A separate legacy adapter preserves enrollments created before policy activation.
 
 1. **Application** — created by staff or through public online enrollment (when enabled).
 2. **Academic verification** — registrar or department head verifies subjects, documents, and the computed assessment.
 3. **Cashier verification** — payment is confirmed or recorded; the enrollment becomes official.
 4. **Post-enrollment** — authorized transitions: undo, reopen, schedule-change notifications, class enrollment adjustments.
 
-Every status change goes through the **transition engine** rather than direct edits, so the history of an enrollment is reconstructable. Assessment PDFs are generated asynchronously (see [Queues & PDF](./queues-pdf/)).
+For policy enrollments, configured actions run in their listed order: entry-step actions during creation and target-step actions during transitions. An omitted action has no side effect. Every status change goes through the **transition engine** rather than direct edits, so the history of an enrollment is reconstructable. Assessment PDFs and notifications are queued only after the transaction commits (see [Queues & PDF](./queues-pdf/)).
 
 ## The policy engine (blueprints)
 
@@ -39,9 +39,10 @@ Key invariants:
 - **Publication is immutable.** A published version never changes; edits produce a new version.
 - **Snapshots isolate in-flight enrollments.** Activating a new version affects *future* enrollments only — active enrollments keep the snapshot they started with, and legacy enrollments stay legacy.
 - **Simulation precedes activation.** Operators are expected to resolve every simulated blocker before publishing.
+- **Legacy behavior is isolated.** Policy actions do not call legacy workflow methods, use ambient authentication, or open their own workflow transaction.
 
 :::note[About the DynamicEnrollmentPolicies flag]
-A `DynamicEnrollmentPolicies` Pennant flag exists but its resolver currently returns `false` — the engine runs from the database-backed policies described here. Treat the flag as reserved, not as the engine's on/off switch.
+`DynamicEnrollmentPolicies` defaults to `false`. While it is off, new enrollments remain on the legacy runtime. After an administrator explicitly activates it, future enrollments resolve a published blueprint and pin its compiled snapshot. Existing legacy and policy enrollments do not change runtime when the flag changes.
 :::
 
 ## For operators vs. for developers
@@ -53,5 +54,6 @@ A `DynamicEnrollmentPolicies` Pennant flag exists but its resolver currently ret
 
 - Never mutate a published `EnrollmentPolicyVersion`; create a new version.
 - Route status changes through the transition engine so workflow events stay complete.
+- Route creation through `EnrollmentSubmissionData` and the coordinator so administrator, public, continuing, API, and Filament submissions resolve policies consistently.
 - New rule/action types must be registered in the registry and covered by compiler and simulation tests.
 - Keep the React blueprint editors in sync with the operator schema manifests the engine exposes.

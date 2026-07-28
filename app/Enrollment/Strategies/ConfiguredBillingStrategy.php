@@ -4,13 +4,19 @@ declare(strict_types=1);
 
 namespace App\Enrollment\Strategies;
 
-use App\Contracts\Enrollment\EnrollmentBillingStrategy;
 use App\Contracts\Enrollment\EnrollmentOperatorSchemaProvider;
+use App\Contracts\Enrollment\RuntimeEnrollmentBillingStrategy;
+use App\Data\Enrollment\ActionResult;
 use App\Data\Enrollment\EnrollmentContext;
+use App\Enrollment\EnrollmentTuitionService;
 
-final readonly class ConfiguredBillingStrategy implements EnrollmentBillingStrategy, EnrollmentOperatorSchemaProvider
+final readonly class ConfiguredBillingStrategy implements EnrollmentOperatorSchemaProvider, RuntimeEnrollmentBillingStrategy
 {
-    public function __construct(private string $strategyKey, private string $label) {}
+    public function __construct(
+        private string $strategyKey,
+        private string $label,
+        private EnrollmentTuitionService $tuition,
+    ) {}
 
     public function key(): string
     {
@@ -27,6 +33,47 @@ final readonly class ConfiguredBillingStrategy implements EnrollmentBillingStrat
         return [
             'description' => 'Use the program lecture, laboratory, miscellaneous fee, and existing discount rules.',
             'fields' => [
+                [
+                    'key' => 'nstp_lecture_multiplier',
+                    'label' => 'NSTP lecture multiplier',
+                    'control' => 'number',
+                    'minimum' => 0,
+                    'maximum' => 1,
+                    'default' => 0.5,
+                ],
+                [
+                    'key' => 'modular_laboratory_multiplier',
+                    'label' => 'Modular laboratory multiplier',
+                    'control' => 'number',
+                    'minimum' => 0,
+                    'maximum' => 1,
+                    'default' => 0.5,
+                ],
+                [
+                    'key' => 'modular_fee',
+                    'label' => 'Fee per modular subject',
+                    'control' => 'money',
+                    'minimum' => 0,
+                    'default' => 2400,
+                ],
+                [
+                    'key' => 'miscellaneous_fee_fallback',
+                    'label' => 'Miscellaneous fee fallback',
+                    'control' => 'money',
+                    'minimum' => 0,
+                    'default' => 3500,
+                ],
+                [
+                    'key' => 'receipt_mode',
+                    'label' => 'Default receipt mode',
+                    'control' => 'select',
+                    'default' => 'required',
+                    'options' => [
+                        ['value' => 'required', 'label' => 'Receipt required'],
+                        ['value' => 'optional', 'label' => 'Receipt optional'],
+                        ['value' => 'none', 'label' => 'No receipt; audited reason required'],
+                    ],
+                ],
                 [
                     'key' => 'discount_percentage', 'label' => 'Default discount', 'control' => 'percentage',
                     'minimum' => 0, 'maximum' => 100,
@@ -53,6 +100,11 @@ final readonly class ConfiguredBillingStrategy implements EnrollmentBillingStrat
 
     public function calculate(EnrollmentContext $context, array $configuration): array
     {
-        return ['strategy' => $this->strategyKey, 'configuration' => $configuration, 'enrollment_id' => $context->enrollment?->id];
+        return $this->tuition->quote($context, $configuration);
+    }
+
+    public function execute(EnrollmentContext $context, array $configuration, string $idempotencyKey): ActionResult
+    {
+        return $this->tuition->persist($context, $configuration, $idempotencyKey);
     }
 }

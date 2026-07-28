@@ -17,6 +17,7 @@ use App\Http\Requests\Administrators\DeactivateEnrollmentPolicyEngineRequest;
 use App\Http\Requests\Administrators\ImportEnrollmentPolicyRequest;
 use App\Http\Requests\Administrators\PublishEnrollmentPolicyRequest;
 use App\Http\Requests\Administrators\ReopenEnrollmentRequest;
+use App\Http\Requests\Administrators\ReviewEnrollmentRequirementRequest;
 use App\Http\Requests\Administrators\RollbackEnrollmentPolicyRequest;
 use App\Http\Requests\Administrators\SimulateEnrollmentPolicyRequest;
 use App\Http\Requests\Administrators\StoreEnrollmentPolicyRequest;
@@ -24,6 +25,7 @@ use App\Http\Requests\Administrators\TransitionEnrollmentRequest;
 use App\Http\Requests\Administrators\UpdateEnrollmentPolicyDraftRequest;
 use App\Models\EnrollmentPolicy;
 use App\Models\EnrollmentPolicyVersion;
+use App\Models\EnrollmentRequirement;
 use App\Models\StudentEnrollment;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -253,6 +255,41 @@ final class AdministratorEnrollmentPolicyController extends Controller
             $validated['reason'],
             $validated['idempotency_key'],
         ));
+    }
+
+    public function reviewRequirement(
+        ReviewEnrollmentRequirementRequest $request,
+        StudentEnrollment $enrollment,
+        EnrollmentRequirement $requirement,
+        EnrollmentWorkflowCoordinator $coordinator,
+    ): JsonResponse {
+        abort_unless((int) $requirement->student_enrollment_id === (int) $enrollment->id, 404);
+        $user = $request->user();
+        abort_unless($user instanceof User, 403);
+        $validated = $request->validated();
+
+        $updated = $validated['action'] === 'waive'
+            ? $coordinator->waiveRequirement(
+                $requirement,
+                $user,
+                (string) $validated['reason'],
+                $validated['idempotency_key'],
+            )
+            : $coordinator->verifyRequirement(
+                $requirement,
+                $user,
+                $validated['evidence_path'] ?? null,
+                $validated['idempotency_key'],
+            );
+
+        return response()->json([
+            'id' => $updated->id,
+            'key' => $updated->requirement_key,
+            'status' => $updated->status,
+            'verified_at' => $updated->verified_at,
+            'waived_at' => $updated->waived_at,
+            'waiver_reason' => $updated->waiver_reason,
+        ]);
     }
 
     /** @param array<string, mixed> $validated */

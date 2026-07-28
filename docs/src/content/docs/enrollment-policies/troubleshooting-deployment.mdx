@@ -51,6 +51,8 @@ The handler is compatible but does not implement operator metadata. It can run a
 8. Monitor workflow failure and retry events after activation.
 9. Keep legacy route adapters and read-only settings for the compatibility release.
 
+The enrollment revamp migration creates an **unpublished compatibility draft** with the explicit default actions. It does not publish that draft, change the active version, or activate `DynamicEnrollmentPolicies`. Review and simulate it like any other draft.
+
 :::caution[Do not rewrite deployed migrations]
 Policy rollout uses additive forward migrations. Existing status data, duplicates, and active enrollment behavior are preserved and reported—not deleted or silently merged.
 :::
@@ -63,7 +65,8 @@ Policy rollout uses additive forward migrations. Existing status data, duplicate
 - Controllers and Filament actions advance through the coordinator; they do not directly mutate workflow state.
 - The legacy `status` value remains the API/reporting projection.
 - Legacy department and cashier routes adapt to semantic policy actions for one compatibility release.
-- No-receipt emergency and bulk quick-enroll controls remain legacy-only.
+- No-receipt and quick-enroll behavior on the policy runtime exists only when the current blueprint has an authorized payment transition configured for it; the transition requires an audited reason.
+- New payments link directly to one enrollment. Legacy payment backfill links only unambiguous matches, and destructive reversal fails closed when an exact enrollment payment cannot be established.
 
 ## Production operations
 

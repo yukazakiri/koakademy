@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Observers;
 
 use App\Data\Enrollment\EnrollmentContext;
+use App\Data\Enrollment\EnrollmentSubmissionData;
 use App\Enrollment\EnrollmentPolicyPreset;
 use App\Enrollment\EnrollmentPolicyRegistry;
 use App\Enrollment\EnrollmentPolicyResolver;
+use App\Enrollment\EnrollmentSubmissionContext;
 use App\Features\DynamicEnrollmentPolicies;
 use App\Models\StudentEnrollment;
 use Illuminate\Validation\ValidationException;
@@ -18,6 +20,7 @@ final readonly class StudentEnrollmentPolicyObserver
     public function __construct(
         private EnrollmentPolicyResolver $resolver,
         private EnrollmentPolicyRegistry $registry,
+        private EnrollmentSubmissionContext $submissionContext,
     ) {}
 
     public function creating(StudentEnrollment $enrollment): void
@@ -32,7 +35,17 @@ final readonly class StudentEnrollmentPolicyObserver
             return;
         }
 
-        $context = EnrollmentContext::fromEnrollment($enrollment, $this->channel());
+        $submission = $this->submissionContext->current();
+        $channel = $submission instanceof EnrollmentSubmissionData
+            ? $submission->channel
+            : $this->channel();
+        $enrollment->submission_channel = $channel;
+        $context = EnrollmentContext::fromEnrollment(
+            $enrollment,
+            $channel,
+            $submission instanceof EnrollmentSubmissionData ? $submission->actor : null,
+            $submission instanceof EnrollmentSubmissionData ? $submission->facts : [],
+        );
         $snapshot = $this->resolver->snapshot($context);
         $failures = [];
         foreach ($snapshot->configuration['rules'] ?? [] as $rule) {

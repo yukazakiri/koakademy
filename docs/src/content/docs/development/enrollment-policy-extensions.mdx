@@ -11,8 +11,8 @@ Implement one of the public contracts in `app/Contracts/Enrollment`:
 
 - `EnrollmentRuleHandler` evaluates an `EnrollmentContext` and returns a `RuleResult`.
 - `EnrollmentActionHandler` performs one atomic, idempotent action and returns an `ActionResult`.
-- `EnrollmentAssignmentStrategy` recommends or selects subjects/classes.
-- `EnrollmentBillingStrategy` calculates fees and payment gates.
+- `EnrollmentAssignmentStrategy` describes or simulates subject/class assignment. A strategy selected for live rollout must also implement `RuntimeEnrollmentAssignmentStrategy`.
+- `EnrollmentBillingStrategy` describes or simulates fees and payment gates. A strategy selected for live rollout must also implement `RuntimeEnrollmentBillingStrategy`.
 
 Keys are public compatibility identifiers. Prefix third-party keys, for example `acme.scholarship_eligibility`, and never rename a key while published policy versions still reference it.
 
@@ -41,6 +41,8 @@ Return a JSON-schema-like object from `configurationSchema()` or `payloadSchema(
 To make an extension editable by school operators, also implement the optional `EnrollmentOperatorSchemaProvider` contract. Its `operatorSchema()` manifest supplies help content and fields for the guided editor. Supported controls are boolean, text, number, money, percentage, date/date range, select, multi-select, role, permission, school, program, period, and notification channel. Dynamic choices must use one of the registry's whitelisted option-source keys.
 
 Extensions without this optional contract still execute and can be restored from a validated backup, but their configuration is shown read-only in the visual editor. This keeps existing community extensions compatible.
+
+The operator-schema contract is independent from runtime execution. Legacy assignment and billing extensions remain valid manifest and simulation providers, but compilation rejects them for a published live workflow unless they implement the corresponding runtime contract.
 
 ```php
 public function operatorSchema(): array
@@ -107,7 +109,7 @@ Supported conditional operators are `equals` and `in`. Conditions may reference 
 - Option sources are allowlisted by the application. Unknown source names are rejected during draft save, import, simulation, and publication.
 - The manifest must never contain a class name to execute, a script, a closure, an arbitrary URL, or a request-specific object.
 
-Rules should fail closed when required facts are unavailable. Actions run inside the enrollment transition database transaction and must use the supplied idempotency key for every externally visible side effect. Queue notifications only after commit.
+Rules should fail closed when required facts are unavailable. Actions run inside the enrollment transition database transaction and must use the supplied idempotency key for every externally visible side effect. They must not open nested transactions, change workflow status/outcome, use ambient `Auth`, or call the legacy workflow adapter. Queue notifications only after commit.
 
 ## Import format
 

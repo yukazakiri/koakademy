@@ -8,6 +8,9 @@ use App\Contracts\Enrollment\EnrollmentActionHandler;
 use App\Contracts\Enrollment\EnrollmentOperatorSchemaProvider;
 use App\Data\Enrollment\ActionResult;
 use App\Data\Enrollment\EnrollmentContext;
+use App\Models\Account;
+use App\Models\Student;
+use App\Models\StudentStatusRecord;
 
 final readonly class EnrollmentStateActionHandler implements EnrollmentActionHandler, EnrollmentOperatorSchemaProvider
 {
@@ -84,9 +87,7 @@ final readonly class EnrollmentStateActionHandler implements EnrollmentActionHan
             return ActionResult::failure('A compatibility status is required.');
         }
 
-        $context->enrollment?->setAttribute('status', $status);
-
-        return ActionResult::success(['status' => $status]);
+        return ActionResult::success(['compatibility_status' => $status, 'owned_by_engine' => true]);
     }
 
     /** @param array<string, mixed> $configuration */
@@ -97,9 +98,7 @@ final readonly class EnrollmentStateActionHandler implements EnrollmentActionHan
             return ActionResult::failure('Terminal outcome must be completed, rejected, or cancelled.');
         }
 
-        $context->enrollment?->setAttribute('terminal_outcome', $outcome);
-
-        return ActionResult::success(['terminal_outcome' => $outcome]);
+        return ActionResult::success(['terminal_outcome' => $outcome, 'owned_by_engine' => true]);
     }
 
     /** @param array<string, mixed> $configuration */
@@ -116,8 +115,35 @@ final readonly class EnrollmentStateActionHandler implements EnrollmentActionHan
             return ActionResult::failure('Student synchronization requires an attribute and value.');
         }
 
-        $context->enrollment->student->forceFill([$attribute => $value])->save();
+        $student = $context->enrollment->student;
+        $column = $attribute === 'student_status' ? 'status' : $attribute;
+        $student->forceFill([$column => $value])->save();
+        StudentStatusRecord::query()->updateOrCreate(
+            [
+                'student_id' => $context->enrollment->student_id,
+                'academic_year' => $context->enrollment->school_year,
+                'semester' => $context->enrollment->semester,
+            ],
+            ['status' => $value],
+        );
 
-        return ActionResult::success(['attribute' => $attribute, 'value' => $value]);
+        $accountId = null;
+        if (($configuration['sync_account'] ?? false) === true && $student->email) {
+            $account = Account::query()->where('email', $student->email)->first();
+            if ($account) {
+                $account->forceFill([
+                    'role' => 'student',
+                    'person_id' => $student->id,
+                    'person_type' => Student::class,
+                ])->save();
+                $accountId = $account->id;
+            }
+        }
+
+        return ActionResult::success([
+            'attribute' => $column,
+            'value' => $value,
+            'account_id' => $accountId,
+        ]);
     }
 }

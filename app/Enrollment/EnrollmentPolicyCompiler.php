@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Enrollment;
 
+use App\Contracts\Enrollment\RuntimeEnrollmentAssignmentStrategy;
+use App\Contracts\Enrollment\RuntimeEnrollmentBillingStrategy;
 use App\Data\Enrollment\CompiledEnrollmentPolicy;
 use Illuminate\Support\Arr;
 use Illuminate\Validation\ValidationException;
@@ -44,6 +46,7 @@ final readonly class EnrollmentPolicyCompiler
             throw ValidationException::withMessages(['schema_version' => "Unsupported policy schema version [{$schemaVersion}]."]);
         }
 
+        $resolved = $this->normalizeDefaults($resolved);
         $this->validateHandlers($resolved);
         $this->configurationValidator->validate($resolved);
         $this->rejectExecutableConfiguration($resolved);
@@ -192,11 +195,132 @@ final readonly class EnrollmentPolicyCompiler
         if (is_string($assignment) && ! $this->registry->hasAssignmentStrategy($assignment)) {
             throw ValidationException::withMessages(['assignment.strategy' => "Unknown enrollment assignment strategy [{$assignment}]."]);
         }
+        if (is_string($assignment) && ! ($this->registry->assignmentStrategy($assignment) instanceof RuntimeEnrollmentAssignmentStrategy)) {
+            throw ValidationException::withMessages(['assignment.strategy' => "Enrollment assignment strategy [{$assignment}] cannot execute at runtime."]);
+        }
 
         $billing = data_get($configuration, 'billing.strategy');
         if (is_string($billing) && ! $this->registry->hasBillingStrategy($billing)) {
             throw ValidationException::withMessages(['billing.strategy' => "Unknown enrollment billing strategy [{$billing}]."]);
         }
+        if (is_string($billing) && ! ($this->registry->billingStrategy($billing) instanceof RuntimeEnrollmentBillingStrategy)) {
+            throw ValidationException::withMessages(['billing.strategy' => "Enrollment billing strategy [{$billing}] cannot execute at runtime."]);
+        }
+    }
+
+    /** @param array<string, mixed> $configuration @return array<string, mixed> */
+    private function normalizeDefaults(array $configuration): array
+    {
+        $configuration['requirements'] = array_values(array_map(function (mixed $requirement): mixed {
+            if (! is_array($requirement)) {
+                return $requirement;
+            }
+
+            return [
+                'required' => true,
+                'enabled' => true,
+                'enforcement_step' => null,
+                ...$requirement,
+            ];
+        }, $configuration['requirements'] ?? []));
+
+        $configuration['assignment'] = [
+            'strategy' => 'assignment.manual',
+            'configuration' => [],
+            ...($configuration['assignment'] ?? []),
+        ];
+
+        $billing = is_array($configuration['billing'] ?? null) ? $configuration['billing'] : [];
+        $billingConfiguration = is_array($billing['configuration'] ?? null) ? $billing['configuration'] : [];
+        $minimum = array_key_exists('minimum_payment_type', $billingConfiguration)
+            ? [
+                'type' => $billingConfiguration['minimum_payment_type'] ?? 'none',
+                'value' => $billingConfiguration['minimum_payment_value'] ?? 0,
+            ]
+            : (is_array($billingConfiguration['minimum_payment'] ?? null)
+            ? $billingConfiguration['minimum_payment']
+            : [
+                'type' => $billingConfiguration['minimum_payment_type'] ?? 'none',
+                'value' => $billingConfiguration['minimum_payment_value'] ?? 0,
+            ]);
+        $configuration['billing'] = [
+            'strategy' => 'billing.course_rate',
+            ...$billing,
+            'configuration' => [
+                'nstp_lecture_multiplier' => 0.5,
+                'modular_laboratory_multiplier' => 0.5,
+                'modular_fee' => 2400,
+                'miscellaneous_fee_fallback' => 3500,
+                'course_lecture_rate_per_unit' => null,
+                'course_laboratory_rate_per_unit' => null,
+                'course_miscellaneous_fee' => null,
+                'discount_scope' => 'lecture_only',
+                'allow_overall_override' => true,
+                'receipt_mode' => 'required',
+                ...$billingConfiguration,
+                'minimum_payment' => [
+                    'type' => (string) ($minimum['type'] ?? 'none'),
+                    'value' => (float) ($minimum['value'] ?? 0),
+                ],
+            ],
+            'allowed_payment_methods' => is_array($billing['allowed_payment_methods'] ?? null)
+                ? array_values($billing['allowed_payment_methods'])
+                : $billing['allowed_payment_methods'] ?? [],
+        ];
+
+        $defaultReceiptMode = (string) data_get($configuration, 'billing.configuration.receipt_mode', 'required');
+        $configuration['workflow']['steps'] = array_values(array_map(function (mixed $step) use ($defaultReceiptMode): mixed {
+            if (! is_array($step)) {
+                return $step;
+            }
+            $step['actions'] = array_values(array_map(
+                function (mixed $action) use ($defaultReceiptMode): mixed {
+                    if (! is_array($action)) {
+                        return $action;
+                    }
+
+                    $handler = $action['handler'] ?? null;
+                    $actionConfiguration = is_array($action['configuration'] ?? null)
+                        ? $action['configuration']
+                        : [];
+                    $action['configuration'] = match ($handler) {
+                        'enrollment.verify_payment' => [
+                            'receipt_mode' => $defaultReceiptMode,
+                            'record_transaction' => true,
+                            'allow_no_receipt' => $defaultReceiptMode !== 'required',
+                            ...$actionConfiguration,
+                        ],
+                        'enrollment.assign_classes' => [
+                            'mode' => 'runtime_payload',
+                            ...$actionConfiguration,
+                        ],
+                        'enrollment.generate_assessment' => [
+                            'create_new_file' => false,
+                            ...$actionConfiguration,
+                        ],
+                        'enrollment.notify' => [
+                            'notification' => 'assessment',
+                            ...$actionConfiguration,
+                        ],
+                        default => $actionConfiguration,
+                    };
+
+                    return $action;
+                },
+                is_array($step['actions'] ?? null) ? $step['actions'] : [],
+            ));
+            $step['transitions'] = array_values(array_map(
+                fn (mixed $transition): mixed => is_array($transition)
+                    ? ['requires_reason' => false, ...$transition]
+                    : $transition,
+                $step['transitions'] ?? [],
+            ));
+
+            return $step;
+        }, data_get($configuration, 'workflow.steps', [])));
+        $configuration['notifications'] = array_values($configuration['notifications'] ?? []);
+
+        return $configuration;
     }
 
     private function validateWorkflow(mixed $workflow): void

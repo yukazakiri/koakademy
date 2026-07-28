@@ -28,7 +28,7 @@ Runtime flags use **Laravel Pennant** with the database store. Flags are **class
 
 - **`faculty-*` (19)** — dashboard, classes, grades, attendance, schedule, action center, at-risk alerts, assessments, inbox, office hours, requests/approvals, insights, resources, forms, toolkit, announcements, help, settings, developer mode.
 - **`student-*` (12)** — dashboard, classes, tuition, schedule, announcements, settings, information updates, help, grades preview, attendance tracker, developer mode — plus signature-pad and avatar-upload capabilities.
-- **Administrative/enrollment** — `admin-developer-mode`, `online-college-enrollment`, `online-tesda-enrollment`. A `DynamicEnrollmentPolicies` flag exists but its resolver returns `false` (the policy engine runs DB-backed regardless).
+- **Administrative/enrollment** — `admin-developer-mode`, `online-college-enrollment`, `online-tesda-enrollment`, and `DynamicEnrollmentPolicies`. The dynamic-policy flag defaults to `false`: while off, future enrollments use the legacy runtime; after deliberate activation, future enrollments resolve published database-backed blueprints.
 
 Operators manage flags from the **Feature Toggles** page in the admin workspace (daacreators/pennant-manager plus a custom plugin); portal middleware hides disabled areas without deleting data.
 

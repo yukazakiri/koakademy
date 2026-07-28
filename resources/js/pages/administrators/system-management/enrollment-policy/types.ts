@@ -58,10 +58,31 @@ export type Requirement = {
     description?: string;
     required?: boolean;
     enabled?: boolean;
+    enforcement_step?: string | null;
 };
 
-export type Action = { key: string; handler: string; configuration: JsonObject };
-export type Transition = { key: string; label: string; to: string; fallback: boolean; conditions: Rule[] };
+export type PaymentActionConfiguration = JsonObject & {
+    receipt_mode?: "required" | "optional" | "none";
+    record_transaction?: boolean;
+    allow_no_receipt?: boolean;
+};
+
+export type Action = { key: string; handler: string; configuration: JsonObject | PaymentActionConfiguration };
+export type Transition = { key: string; label: string; to: string; fallback: boolean; requires_reason?: boolean; conditions: Rule[] };
+
+export type BillingConfiguration = JsonObject & {
+    nstp_lecture_multiplier?: number;
+    modular_laboratory_multiplier?: number;
+    modular_fee?: number;
+    miscellaneous_fee_fallback?: number;
+    course_lecture_rate_per_unit?: number | null;
+    course_laboratory_rate_per_unit?: number | null;
+    course_miscellaneous_fee?: number | null;
+    discount_scope?: "lecture_only";
+    allow_overall_override?: boolean;
+    receipt_mode?: "required" | "optional" | "none";
+    minimum_payment?: { type: "none" | "fixed" | "percentage"; value: number };
+};
 
 export type WorkflowStep = {
     key: string;
@@ -88,7 +109,7 @@ export type Configuration = {
     rules?: Rule[];
     requirements?: Requirement[];
     assignment?: { strategy: string; configuration: JsonObject };
-    billing?: { strategy: string; configuration: JsonObject; allowed_payment_methods?: string[] };
+    billing?: { strategy: string; configuration: BillingConfiguration; allowed_payment_methods?: string[] };
     workflow?: { steps: WorkflowStep[] };
     notifications?: NotificationSetting[];
 };

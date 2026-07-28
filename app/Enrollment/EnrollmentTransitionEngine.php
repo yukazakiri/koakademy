@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Enrollment;
 
 use App\Data\Enrollment\EnrollmentContext;
+use App\Data\Enrollment\EnrollmentSubmissionData;
 use App\Data\Enrollment\TransitionResult;
 use App\Enrollment\Exceptions\EnrollmentTransitionException;
 use App\Models\EnrollmentWorkflowEvent;
@@ -19,7 +20,75 @@ final readonly class EnrollmentTransitionEngine
     public function __construct(
         private EnrollmentPolicyResolver $resolver,
         private EnrollmentPolicyRegistry $registry,
+        private EnrollmentRequirementService $requirements,
+        private EnrollmentPaymentService $payments,
+        private EnrollmentActionPayloadValidator $payloadValidator,
     ) {}
+
+    public function initialize(StudentEnrollment $enrollment, EnrollmentSubmissionData $submission): TransitionResult
+    {
+        $idempotencyKey = $this->scopedIdempotencyKey('initialize', $enrollment, $submission->idempotencyKey);
+        $this->ensurePolicyRuntime($enrollment);
+
+        return DB::transaction(function () use ($enrollment, $submission, $idempotencyKey): TransitionResult {
+            $locked = StudentEnrollment::query()->lockForUpdate()->findOrFail($enrollment->id);
+            $this->ensurePolicyRuntime($locked);
+
+            $existing = EnrollmentWorkflowEvent::query()->where('idempotency_key', $idempotencyKey)->first();
+            if ($existing) {
+                return new TransitionResult(
+                    true,
+                    null,
+                    $existing->to_step_key,
+                    $existing->terminal_outcome,
+                    $existing->result['actions'] ?? [],
+                    'This enrollment initialization was already processed.',
+                );
+            }
+
+            $snapshot = $locked->policySnapshot()->firstOrFail();
+            $entry = collect(data_get($snapshot->configuration, 'workflow.steps', []))->firstWhere('entry', true);
+            if (! is_array($entry)) {
+                throw new EnrollmentTransitionException('The pinned enrollment policy has no entry step.');
+            }
+
+            $this->requirements->materialize($locked, $snapshot, $submission->requirementEvidence);
+            $context = EnrollmentContext::fromEnrollment(
+                $locked,
+                $submission->channel,
+                $submission->actor,
+                $submission->facts,
+            );
+            $actionPayloads = [];
+            foreach ($entry['actions'] ?? [] as $index => $action) {
+                $actionPayloads[(string) ($action['key'] ?? $index)] = $submission->payloadForAction(
+                    (string) ($action['key'] ?? $index),
+                    (string) ($action['handler'] ?? ''),
+                );
+            }
+            $actionResults = $this->executeActions($entry['actions'] ?? [], $context, $actionPayloads, $idempotencyKey);
+
+            $locked->forceFill([
+                'current_step_key' => (string) $entry['key'],
+                'status' => (string) ($entry['status'] ?? $locked->status),
+                'terminal_outcome' => ($entry['terminal'] ?? false) ? ($entry['outcome'] ?? null) : null,
+            ])->save();
+
+            EnrollmentWorkflowEvent::query()->create([
+                'student_enrollment_id' => $locked->id,
+                'enrollment_policy_snapshot_id' => $snapshot->id,
+                'actor_id' => $submission->actor?->id,
+                'event_type' => 'initialized',
+                'to_step_key' => $entry['key'],
+                'status' => $locked->status,
+                'terminal_outcome' => $locked->terminal_outcome,
+                'idempotency_key' => $idempotencyKey,
+                'result' => ['channel' => $submission->channel, 'actions' => $actionResults],
+            ]);
+
+            return new TransitionResult(true, null, (string) $entry['key'], $locked->terminal_outcome, $actionResults);
+        }, 3);
+    }
 
     /** @param array<string, mixed> $payload */
     public function transition(StudentEnrollment $enrollment, User $actor, ?string $transitionKey, array $payload, string $idempotencyKey): TransitionResult
@@ -53,14 +122,14 @@ final readonly class EnrollmentTransitionEngine
                         'This transition attempt was already processed.',
                     );
                 }
-                $context = EnrollmentContext::fromEnrollment($locked);
-
                 if (! $locked->enrollment_policy_snapshot_id) {
+                    $context = EnrollmentContext::fromEnrollment($locked, actor: $actor);
                     $snapshot = $this->resolver->snapshot($context);
                     $locked->enrollment_policy_snapshot_id = $snapshot->id;
                 } else {
                     $snapshot = $locked->policySnapshot()->firstOrFail();
                 }
+                $context = EnrollmentContext::fromEnrollment($locked, actor: $actor);
 
                 $steps = collect(data_get($snapshot->configuration, 'workflow.steps', []))->keyBy('key');
                 $current = $locked->current_step_key
@@ -85,24 +154,21 @@ final readonly class EnrollmentTransitionEngine
                     throw new EnrollmentTransitionException('The selected transition target is unavailable.');
                 }
 
-                $actionResults = [];
-                foreach ($target['actions'] ?? [] as $index => $action) {
-                    $actionKey = (string) $action['handler'];
-                    $result = $this->registry->action($actionKey)->execute(
-                        $context,
-                        [
-                            ...($action['configuration'] ?? []),
-                            'runtime_payload' => $payload[$action['key'] ?? $index] ?? [],
-                        ],
-                        "{$idempotencyKey}:{$index}",
-                    );
-                    $actionResults[] = ['key' => $actionKey, 'successful' => $result->successful, 'message' => $result->message, 'metadata' => $result->metadata];
-                    if (! $result->successful) {
-                        throw new EnrollmentTransitionException($result->message);
-                    }
+                $reason = mb_trim((string) ($payload['reason'] ?? ''));
+                if (($selected['requires_reason'] ?? false) === true && $reason === '') {
+                    throw new EnrollmentTransitionException('A reason is required for this enrollment transition.');
                 }
 
-                foreach ($snapshot->configuration['notifications'] ?? [] as $index => $notification) {
+                $this->requirements->assertSatisfiedForStep($locked, (string) $target['key']);
+                $actionResults = $this->executeActions($target['actions'] ?? [], $context, $payload, $idempotencyKey);
+
+                $notifications = is_array($snapshot->configuration['notifications'] ?? null)
+                    ? $snapshot->configuration['notifications']
+                    : [];
+                foreach ($notifications as $index => $notification) {
+                    if (! is_array($notification)) {
+                        continue;
+                    }
                     if (($notification['enabled'] ?? true) === false) {
                         continue;
                     }
@@ -139,6 +205,7 @@ final readonly class EnrollmentTransitionEngine
                     'status' => $locked->status,
                     'terminal_outcome' => $locked->terminal_outcome,
                     'idempotency_key' => $idempotencyKey,
+                    'reason' => $reason === '' ? null : $reason,
                     'result' => ['transition_key' => $selected['key'] ?? null, 'actions' => $actionResults],
                 ]);
 
@@ -201,6 +268,7 @@ final readonly class EnrollmentTransitionEngine
             }
 
             $fromStepKey = $locked->current_step_key;
+            $reversal = $this->payments->reverseLinked($locked);
             $locked->update([
                 'current_step_key' => $target['key'],
                 'terminal_outcome' => null,
@@ -216,6 +284,7 @@ final readonly class EnrollmentTransitionEngine
                 'status' => $locked->status,
                 'idempotency_key' => $idempotencyKey,
                 'reason' => $reason,
+                'result' => ['payment_reversal' => $reversal],
             ]);
 
             return new TransitionResult(true, $fromStepKey, $target['key'], null, message: 'Enrollment reopened.');
@@ -250,6 +319,51 @@ final readonly class EnrollmentTransitionEngine
         }
 
         return true;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $actions
+     * @param  array<string, mixed>  $payload
+     * @return array<int, array<string, mixed>>
+     */
+    private function executeActions(
+        array $actions,
+        EnrollmentContext $context,
+        array $payload,
+        string $idempotencyKey,
+    ): array {
+        $results = [];
+
+        foreach ($actions as $index => $action) {
+            $actionKey = (string) ($action['handler'] ?? '');
+            $handler = $this->registry->action($actionKey);
+            $runtimePayload = $payload[$action['key'] ?? $index] ?? [];
+            $this->payloadValidator->validate(
+                $runtimePayload,
+                $handler->payloadSchema(),
+                (string) ($action['key'] ?? $index),
+            );
+            $result = $handler->execute(
+                $context,
+                [
+                    ...($action['configuration'] ?? []),
+                    'runtime_payload' => $runtimePayload,
+                ],
+                "{$idempotencyKey}:{$index}",
+            );
+            $results[] = [
+                'key' => $actionKey,
+                'successful' => $result->successful,
+                'message' => $result->message,
+                'metadata' => $result->metadata,
+            ];
+
+            if (! $result->successful) {
+                throw new EnrollmentTransitionException($result->message);
+            }
+        }
+
+        return $results;
     }
 
     private function ensurePolicyRuntime(StudentEnrollment $enrollment): void

@@ -98,6 +98,7 @@ final readonly class ConfiguredEnrollmentRuleHandler implements EnrollmentOperat
             'eligibility.period' => $this->period($context, $configuration),
             'eligibility.year_level' => $this->allowed($context->yearLevel, $configuration['allowed'] ?? [], 'Year level is not eligible.'),
             'eligibility.duplicate_enrollment' => $this->duplicateEnrollment($context),
+            'billing.minimum_payment' => $this->minimumPayment($context, $configuration),
             default => $this->fact($context, $configuration),
         };
     }
@@ -153,6 +154,36 @@ final readonly class ConfiguredEnrollmentRuleHandler implements EnrollmentOperat
         return $duplicateExists
             ? RuleResult::fail('A matching enrollment already exists for this academic period.')
             : RuleResult::pass();
+    }
+
+    /** @param array<string, mixed> $configuration */
+    private function minimumPayment(EnrollmentContext $context, array $configuration): RuleResult
+    {
+        $type = (string) ($configuration['type'] ?? 'none');
+        if ($type === 'none') {
+            return RuleResult::pass();
+        }
+
+        $enrollment = $context->enrollment;
+        if (! $enrollment) {
+            return RuleResult::fail('Enrollment payment data is unavailable.');
+        }
+        $paid = array_key_exists('payment_amount', $context->facts)
+            ? (float) $context->facts['payment_amount']
+            : (float) $enrollment->enrollmentTransactions()->sum('amount');
+        $required = match ($type) {
+            'fixed' => max(0.0, (float) ($configuration['value'] ?? 0)),
+            'percentage' => (float) $enrollment->studentTuition()->value('overall_tuition')
+                * min(100.0, max(0.0, (float) ($configuration['value'] ?? 0))) / 100,
+            default => -1,
+        };
+        if ($required < 0) {
+            return RuleResult::fail('Minimum payment configuration is invalid.');
+        }
+
+        return $paid >= $required
+            ? RuleResult::pass(['paid' => $paid, 'required' => $required])
+            : RuleResult::fail('The configured minimum payment has not been received.', ['paid' => $paid, 'required' => $required]);
     }
 
     /** @param array<string, mixed> $configuration */

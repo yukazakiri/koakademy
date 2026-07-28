@@ -198,3 +198,20 @@ it('keeps workflow state mutation behind the coordinator and compatibility servi
         expect($source)->not->toMatch('/\$(?:enrollment|record)->status\s*=/');
     }
 });
+
+it('creates an unpublished compatibility draft without changing activation state', function (): void {
+    $policy = App\Models\EnrollmentPolicy::query()
+        ->where('name', 'Global enrollment policy (migrated)')
+        ->firstOrFail();
+    $activeVersionId = $policy->active_version_id;
+    $draft = $policy->versions()
+        ->where('change_notes', 'Compatibility draft: explicit database-driven enrollment runtime actions.')
+        ->sole();
+
+    expect($draft->state)->toBe(EnrollmentPolicyVersion::Draft)
+        ->and($draft->id)->not->toBe($activeVersionId)
+        ->and($policy->refresh()->active_version_id)->toBe($activeVersionId)
+        ->and(data_get($draft->configuration, 'workflow.steps.0.actions.0.handler'))->toBe('enrollment.assign_subjects')
+        ->and(data_get($draft->configuration, 'billing.configuration.discount_scope'))->toBe('lecture_only')
+        ->and(Feature::active(DynamicEnrollmentPolicies::class))->toBeFalse();
+});

@@ -6,6 +6,7 @@ namespace App\Enrollment;
 
 use App\Data\Enrollment\CompiledEnrollmentPolicy;
 use App\Data\Enrollment\EnrollmentContext;
+use App\Models\Course;
 use App\Models\EnrollmentPolicy;
 use App\Models\EnrollmentPolicySnapshot;
 use App\Models\EnrollmentPolicyVersion;
@@ -15,6 +16,8 @@ use Illuminate\Validation\ValidationException;
 
 final readonly class EnrollmentPolicyResolver
 {
+    private const int CompilerRevision = 3;
+
     public function __construct(private EnrollmentPolicyCompiler $compiler) {}
 
     public function resolve(EnrollmentContext $context): CompiledEnrollmentPolicy
@@ -34,7 +37,7 @@ final readonly class EnrollmentPolicyResolver
 
         $layers = $policies->map(fn (EnrollmentPolicy $policy): array => $this->layer($policy))->all();
 
-        $sourceKey = hash('sha256', EnrollmentPolicyCompiler::CurrentSchemaVersion.'|'.implode(',', $policies->pluck('active_version_id')->all()));
+        $sourceKey = hash('sha256', EnrollmentPolicyCompiler::CurrentSchemaVersion.'|'.self::CompilerRevision.'|'.implode(',', $policies->pluck('active_version_id')->all()));
 
         return Cache::remember(
             "enrollment-policy:compiled:{$sourceKey}",
@@ -63,19 +66,40 @@ final readonly class EnrollmentPolicyResolver
     public function snapshot(EnrollmentContext $context): EnrollmentPolicySnapshot
     {
         $compiled = $this->resolve($context);
+        $configuration = $this->materializeContextDefaults($compiled->configuration, $context);
+        $snapshotChecksum = $this->compiler->checksumConfiguration($configuration);
 
         try {
             return EnrollmentPolicySnapshot::query()->firstOrCreate(
-                ['checksum' => $compiled->checksum],
+                ['checksum' => $snapshotChecksum],
                 [
                     'schema_version' => $compiled->schemaVersion,
-                    'configuration' => $compiled->configuration,
+                    'configuration' => $configuration,
                     'source_version_ids' => $compiled->sourceVersionIds,
                 ],
             );
         } catch (UniqueConstraintViolationException) {
-            return EnrollmentPolicySnapshot::query()->where('checksum', $compiled->checksum)->firstOrFail();
+            return EnrollmentPolicySnapshot::query()->where('checksum', $snapshotChecksum)->firstOrFail();
         }
+    }
+
+    /** @param array<string, mixed> $configuration @return array<string, mixed> */
+    private function materializeContextDefaults(array $configuration, EnrollmentContext $context): array
+    {
+        if ($context->courseId === null) {
+            return $configuration;
+        }
+
+        $course = Course::query()->find($context->courseId);
+        if (! $course instanceof Course) {
+            return $configuration;
+        }
+
+        data_set($configuration, 'billing.configuration.course_lecture_rate_per_unit', (float) ($course->lec_per_unit ?? 0));
+        data_set($configuration, 'billing.configuration.course_laboratory_rate_per_unit', (float) ($course->lab_per_unit ?? 0));
+        data_set($configuration, 'billing.configuration.course_miscellaneous_fee', (float) $course->getMiscellaneousFee());
+
+        return $configuration;
     }
 
     private function matchesContext(EnrollmentPolicy $policy, EnrollmentContext $context): bool

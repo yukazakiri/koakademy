@@ -11,6 +11,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use LogicException;
 use Override;
 
+/**
+ * @property array<string, mixed> $configuration
+ * @property array<int, int> $source_version_ids
+ */
 final class EnrollmentPolicySnapshot extends Model
 {
     /** @use HasFactory<EnrollmentPolicySnapshotFactory> */

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Data\Enrollment\EnrollmentContext;
+use App\Data\Enrollment\EnrollmentSubmissionData;
+use App\Enrollment\EnrollmentPolicyResolver;
 use App\Enrollment\EnrollmentWorkflowCoordinator;
 use App\Enums\StudentStatus;
 use App\Enums\StudentType;
@@ -33,6 +36,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Laravel\Pennant\Feature;
@@ -151,6 +155,31 @@ final class EnrollmentRegistrationController extends Controller
 
         $courseId = (int) $payload['course_id'];
         $course = Course::query()->findOrFail($courseId);
+        if (Feature::active(\App\Features\DynamicEnrollmentPolicies::class)) {
+            $compiled = app(EnrollmentPolicyResolver::class)->resolve(new EnrollmentContext(
+                schoolId: $course->school_id === null ? $this->resolveSiteSchoolId() : (int) $course->school_id,
+                studentType: (string) $payload['student_type'],
+                courseId: $courseId,
+                schoolYear: $settings->getCurrentSchoolYearString(),
+                semester: $settings->getCurrentSemester(),
+                yearLevel: isset($payload['academic_year']) ? (int) $payload['academic_year'] : null,
+                channel: 'public',
+            ));
+            $allowedRequirementKeys = collect($compiled->configuration['requirements'] ?? [])
+                ->filter(fn (mixed $requirement): bool => is_array($requirement) && ($requirement['enabled'] ?? true) !== false)
+                ->pluck('key')
+                ->map(fn (mixed $key): string => (string) $key)
+                ->merge(['profile_photo', 'signature']);
+            $unknownDocumentTypes = collect($payload['documents'] ?? [])
+                ->pluck('type')
+                ->map(fn (mixed $key): string => (string) $key)
+                ->diff($allowedRequirementKeys);
+            if ($unknownDocumentTypes->isNotEmpty()) {
+                throw ValidationException::withMessages([
+                    'documents' => 'One or more uploaded document types are not part of the resolved enrollment policy.',
+                ]);
+            }
+        }
 
         $configuredEnrollmentCourseIds = collect($settings->getGlobalSettingsModel()?->enrollment_courses ?? [])
             ->map(fn (mixed $configuredId): int => (int) $configuredId)
@@ -364,7 +393,7 @@ final class EnrollmentRegistrationController extends Controller
                 'scholarship_type' => null, // Explicitly not a scholar yet
             ]);
 
-            if ($this->shouldAutoCreateStudentEnrollment()) {
+            if (Feature::active(\App\Features\DynamicEnrollmentPolicies::class) || $this->shouldAutoCreateStudentEnrollment()) {
                 $this->createApplicantEnrollmentRecords(
                     student: $student,
                     academicYear: $academicYear,
@@ -372,6 +401,7 @@ final class EnrollmentRegistrationController extends Controller
                     preferFirstYearSubjects: $this->shouldDefaultApplicantToFirstYear(),
                     shouldAutoAssignSubjects: $this->shouldAutoAssignSubjects(),
                     workflowCoordinator: $workflowCoordinator,
+                    uploadedDocuments: $uploadedDocuments,
                 );
             }
 
@@ -714,38 +744,43 @@ final class EnrollmentRegistrationController extends Controller
                     'marketing_consent_at' => $marketingConsent ? now() : null,
                 ]);
 
-                $enrollment = $workflowCoordinator->create([
-                    'school_id' => $schoolId,
-                    'student_id' => $student->id,
-                    'course_id' => $student->course_id,
-                    'semester' => $semester,
-                    'academic_year' => (int) $validated['academic_year'],
-                    'school_year' => $schoolYear,
-                ]);
-
-                foreach ($validated['subjects'] as $subjectData) {
-                    $enrollment->subjectsEnrolled()->create([
+                $submission = new EnrollmentSubmissionData(
+                    enrollmentAttributes: [
                         'school_id' => $schoolId,
-                        'subject_id' => $subjectData['subject_id'],
-                        'class_id' => null,
                         'student_id' => $student->id,
-                        'is_modular' => $subjectData['is_modular'] ?? false,
-                        'lecture_fee' => $subjectData['lecture_fee'],
-                        'laboratory_fee' => $subjectData['laboratory_fee'],
-                        'enrolled_lecture_units' => $subjectData['enrolled_lecture_units'],
-                        'enrolled_laboratory_units' => $subjectData['enrolled_laboratory_units'],
+                        'course_id' => $student->course_id,
+                        'semester' => $semester,
                         'academic_year' => (int) $validated['academic_year'],
                         'school_year' => $schoolYear,
-                        'semester' => $semester,
-                    ]);
-                }
-
-                $tuition = $enrollmentService->createStudentTuition($enrollment, [
-                    'subjectsEnrolled' => $validated['subjects'],
-                    'discount' => 0,
-                    'downpayment' => 0,
-                    'additionalFees' => [],
-                ]);
+                    ],
+                    subjects: $validated['subjects'],
+                    billingOverrides: ['discount_percentage' => 0, 'downpayment' => 0],
+                    channel: 'continuing',
+                    idempotencyKey: 'continuing-'.$student->id.'-'.$schoolYear.'-'.$semester,
+                );
+                $enrollment = $workflowCoordinator->submit(
+                    $submission,
+                    function (StudentEnrollment $legacyEnrollment) use ($validated, $schoolId, $student, $schoolYear, $semester, $enrollmentService): void {
+                        foreach ($validated['subjects'] as $subjectData) {
+                            $legacyEnrollment->subjectsEnrolled()->create([
+                                ...$subjectData,
+                                'school_id' => $schoolId,
+                                'class_id' => null,
+                                'student_id' => $student->id,
+                                'academic_year' => (int) $validated['academic_year'],
+                                'school_year' => $schoolYear,
+                                'semester' => $semester,
+                            ]);
+                        }
+                        $enrollmentService->createStudentTuition($legacyEnrollment, [
+                            'subjectsEnrolled' => $validated['subjects'],
+                            'discount' => 0,
+                            'downpayment' => 0,
+                            'additionalFees' => [],
+                        ]);
+                    },
+                );
+                $tuition = $enrollment->studentTuition;
 
                 return [$enrollment, $tuition];
             });
@@ -937,6 +972,7 @@ final class EnrollmentRegistrationController extends Controller
         bool $preferFirstYearSubjects,
         bool $shouldAutoAssignSubjects,
         EnrollmentWorkflowCoordinator $workflowCoordinator,
+        array $uploadedDocuments = [],
     ): void {
         $schoolYearStart = $settings->getSystemDefaultSchoolYearStart();
         $schoolYear = $schoolYearStart.' - '.($schoolYearStart + 1);
@@ -950,98 +986,105 @@ final class EnrollmentRegistrationController extends Controller
             'school_year' => $schoolYear,
             'semester' => $semester,
         ])->first();
-        $enrollment ??= $workflowCoordinator->create([
-            'student_id' => $student->id,
-            'course_id' => $student->course_id,
-            'school_year' => $schoolYear,
-            'semester' => $semester,
-            'school_id' => $schoolId,
-            'academic_year' => $targetAcademicYear,
-        ]);
-
-        if (! $shouldAutoAssignSubjects || ! $student->course_id) {
+        if ($enrollment || ! $student->course_id) {
             return;
         }
 
-        $subjects = Subject::query()
-            ->where('course_id', $student->course_id)
-            ->where('academic_year', $targetAcademicYear)
-            ->where('semester', $semester)
-            ->orderBy('code')
-            ->get();
-
-        if ($subjects->isEmpty()) {
-            return;
-        }
+        $subjects = Feature::active(\App\Features\DynamicEnrollmentPolicies::class) || $shouldAutoAssignSubjects
+            ? Subject::query()
+                ->where('course_id', $student->course_id)
+                ->where('academic_year', $targetAcademicYear)
+                ->where('semester', $semester)
+                ->orderBy('code')
+                ->get()
+            : collect();
 
         $course = Course::query()->find($student->course_id);
         $lecturePerUnit = (float) ($course?->lec_per_unit ?? 0);
         $laboratoryPerUnit = (float) ($course?->lab_per_unit ?? 0);
 
+        $subjectPayloads = [];
+        $classAssignments = [];
         foreach ($subjects as $subject) {
-            $subjectEnrollment = $enrollment->subjectsEnrolled()->firstOrCreate(
-                [
-                    'subject_id' => $subject->id,
-                    'student_id' => $student->id,
-                    'enrollment_id' => $enrollment->id,
-                ],
-                [
-                    'school_id' => $schoolId,
-                    'academic_year' => $targetAcademicYear,
-                    'school_year' => $schoolYear,
-                    'semester' => $semester,
-                    'is_modular' => false,
-                    'lecture_fee' => ((int) $subject->lecture + (int) $subject->laboratory) * $lecturePerUnit,
-                    'laboratory_fee' => (int) $subject->laboratory * $laboratoryPerUnit,
-                    'enrolled_lecture_units' => (int) $subject->lecture,
-                    'enrolled_laboratory_units' => (int) $subject->laboratory,
-                ],
-            );
-
+            $subjectPayloads[] = [
+                'subject_id' => $subject->id,
+                'is_modular' => false,
+                'lecture_fee' => ((int) $subject->lecture + (int) $subject->laboratory) * $lecturePerUnit,
+                'laboratory_fee' => (int) $subject->laboratory > 0 ? $laboratoryPerUnit : 0,
+                'enrolled_lecture_units' => (int) $subject->lecture,
+                'enrolled_laboratory_units' => (int) $subject->laboratory,
+            ];
             $class = $this->findOpenClassForSubject(
                 subject: $subject,
                 schoolYear: $schoolYear,
                 semester: $semester,
             );
 
-            if (! $class instanceof Classes) {
-                continue;
+            if ($class instanceof Classes) {
+                $classAssignments[] = ['subject_id' => $subject->id, 'class_id' => $class->id];
             }
-
-            ClassEnrollment::query()->firstOrCreate(
-                [
-                    'student_id' => $student->id,
-                    'class_id' => $class->id,
-                ],
-                [
-                    'school_id' => $schoolId,
-                    'status' => true,
-                ],
-            );
-
-            $subjectEnrollment->update([
-                'class_id' => $class->id,
-                'section' => $class->section,
-            ]);
         }
 
-        if ($enrollment->studentTuition === null) {
-            app(EnrollmentService::class)->createStudentTuition($enrollment, [
-                'subjectsEnrolled' => $enrollment->subjectsEnrolled()
-                    ->get([
-                        'subject_id',
-                        'is_modular',
-                        'lecture_fee',
-                        'laboratory_fee',
-                        'enrolled_lecture_units',
-                        'enrolled_laboratory_units',
-                    ])
-                    ->toArray(),
+        $requirementEvidence = collect($uploadedDocuments)
+            ->filter(fn (mixed $document): bool => is_array($document) && is_string($document['type'] ?? null))
+            ->mapWithKeys(fn (array $document): array => [
+                $document['type'] => ['path' => $document['path'] ?? null, 'uploaded_at' => $document['uploaded_at'] ?? null],
+            ])
+            ->all();
+        $submission = new EnrollmentSubmissionData(
+            enrollmentAttributes: [
+                'student_id' => $student->id,
+                'course_id' => $student->course_id,
+                'school_year' => $schoolYear,
+                'semester' => $semester,
+                'school_id' => $schoolId,
+                'academic_year' => $targetAcademicYear,
+            ],
+            subjects: $subjectPayloads,
+            classAssignments: $classAssignments,
+            billingOverrides: ['discount_percentage' => 0, 'downpayment' => 0],
+            channel: 'public',
+            idempotencyKey: 'public-applicant-'.$student->id.'-'.$schoolYear.'-'.$semester,
+            requirementEvidence: $requirementEvidence,
+        );
+
+        $workflowCoordinator->submit($submission, function (StudentEnrollment $legacyEnrollment) use (
+            $subjectPayloads,
+            $classAssignments,
+            $schoolId,
+            $student,
+            $targetAcademicYear,
+            $schoolYear,
+            $semester,
+        ): void {
+            if ($subjectPayloads === []) {
+                return;
+            }
+            foreach ($subjectPayloads as $subject) {
+                $classId = data_get(collect($classAssignments)->firstWhere('subject_id', $subject['subject_id']), 'class_id');
+                $legacyEnrollment->subjectsEnrolled()->create([
+                    ...$subject,
+                    'class_id' => $classId,
+                    'student_id' => $student->id,
+                    'school_id' => $schoolId,
+                    'academic_year' => $targetAcademicYear,
+                    'school_year' => $schoolYear,
+                    'semester' => $semester,
+                ]);
+                if ($classId) {
+                    ClassEnrollment::query()->firstOrCreate(
+                        ['student_id' => $student->id, 'class_id' => $classId],
+                        ['school_id' => $schoolId, 'status' => true],
+                    );
+                }
+            }
+            app(EnrollmentService::class)->createStudentTuition($legacyEnrollment, [
+                'subjectsEnrolled' => $subjectPayloads,
                 'discount' => 0,
                 'downpayment' => 0,
                 'additionalFees' => [],
             ]);
-        }
+        });
     }
 
     private function findOpenClassForSubject(Subject $subject, string $schoolYear, int $semester): ?Classes

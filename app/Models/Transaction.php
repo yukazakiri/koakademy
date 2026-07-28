@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Override;
 
 /**
@@ -72,7 +73,8 @@ final class Transaction extends Model
         return $this->belongsToMany(Student::class, 'student_transactions', 'transaction_id', 'student_id');
     }
 
-    public function studentTransactions()
+    /** @return HasMany<StudentTransaction, $this> */
+    public function studentTransactions(): HasMany
     {
         return $this->hasMany(StudentTransaction::class, 'transaction_id');
     }

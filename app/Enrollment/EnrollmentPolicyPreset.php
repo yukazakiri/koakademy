@@ -38,21 +38,56 @@ final class EnrollmentPolicyPreset
         return [
             'schema_version' => 1,
             'rules' => [
-                ['key' => 'channels', 'handler' => 'availability.channel', 'configuration' => ['allowed' => ['public', 'administrator', 'continuing']]],
-                ['key' => 'duplicates', 'handler' => 'eligibility.duplicate_enrollment', 'configuration' => []],
+                ['key' => 'enrollment_channels', 'handler' => 'availability.channel', 'configuration' => ['allowed' => ['public', 'administrator', 'continuing', 'api']]],
+                ['key' => 'duplicate_period', 'handler' => 'eligibility.duplicate_enrollment', 'configuration' => []],
             ],
             'requirements' => [],
             'assignment' => ['strategy' => 'assignment.manual', 'configuration' => []],
             'billing' => [
                 'strategy' => 'billing.course_rate',
-                'configuration' => ['minimum_payment' => ['type' => 'none']],
+                'configuration' => [
+                    'nstp_lecture_multiplier' => 0.5,
+                    'modular_laboratory_multiplier' => 0.5,
+                    'modular_fee' => 2400,
+                    'miscellaneous_fee_fallback' => 3500,
+                    'course_lecture_rate_per_unit' => null,
+                    'course_laboratory_rate_per_unit' => null,
+                    'course_miscellaneous_fee' => null,
+                    'discount_scope' => 'lecture_only',
+                    'allow_overall_override' => true,
+                    'receipt_mode' => 'required',
+                    'minimum_payment' => ['type' => 'none', 'value' => 0],
+                ],
                 'allowed_payment_methods' => [],
             ],
             'workflow' => [
                 'steps' => [
                     [
                         'key' => 'submitted', 'label' => 'Submitted', 'entry' => true, 'terminal' => false,
-                        'status' => EnrollStat::Pending->value, 'permission' => 'Update:StudentEnrollment', 'actions' => [],
+                        'status' => EnrollStat::Pending->value,
+                        'permission' => 'Update:StudentEnrollment',
+                        'actions' => [
+                            [
+                                'key' => 'assign_subjects',
+                                'handler' => 'enrollment.assign_subjects',
+                                'configuration' => ['allow_cross_program_subjects' => false],
+                            ],
+                            [
+                                'key' => 'assign_additional_fees',
+                                'handler' => 'enrollment.assign_additional_fees',
+                                'configuration' => [],
+                            ],
+                            [
+                                'key' => 'reserve_selected_classes',
+                                'handler' => 'enrollment.assign_classes',
+                                'configuration' => ['mode' => 'runtime_payload', 'optional' => true],
+                            ],
+                            [
+                                'key' => 'calculate_tuition',
+                                'handler' => 'enrollment.calculate_tuition',
+                                'configuration' => [],
+                            ],
+                        ],
                         'transitions' => [['key' => 'academic_review', 'label' => 'Verify academics', 'to' => 'academic_verified', 'fallback' => true, 'conditions' => []]],
                     ],
                     [
@@ -65,8 +100,36 @@ final class EnrollmentPolicyPreset
                         'key' => 'completed', 'label' => 'Completed', 'entry' => false, 'terminal' => true,
                         'status' => EnrollStat::VerifiedByCashier->value, 'outcome' => 'completed', 'permission' => 'Update:StudentEnrollment',
                         'actions' => [
-                            ['key' => 'payment_status', 'handler' => 'enrollment.verify_payment', 'configuration' => ['status' => EnrollStat::VerifiedByCashier->value]],
+                            [
+                                'key' => 'payment_status',
+                                'handler' => 'enrollment.verify_payment',
+                                'configuration' => [
+                                    'receipt_mode' => 'required',
+                                    'record_transaction' => true,
+                                    'allow_no_receipt' => false,
+                                ],
+                            ],
+                            [
+                                'key' => 'assign_remaining_classes',
+                                'handler' => 'enrollment.assign_classes',
+                                'configuration' => ['mode' => 'first_available', 'optional' => true],
+                            ],
+                            [
+                                'key' => 'sync_student',
+                                'handler' => 'enrollment.sync_student',
+                                'configuration' => ['attribute' => 'status', 'value' => 'enrolled', 'sync_account' => true],
+                            ],
                             ['key' => 'complete_outcome', 'handler' => 'enrollment.set_outcome', 'configuration' => ['outcome' => 'completed']],
+                            [
+                                'key' => 'generate_assessment',
+                                'handler' => 'enrollment.generate_assessment',
+                                'configuration' => ['create_new_file' => false],
+                            ],
+                            [
+                                'key' => 'notify_student',
+                                'handler' => 'enrollment.notify',
+                                'configuration' => ['notification' => 'assessment'],
+                            ],
                         ],
                         'transitions' => [],
                     ],
@@ -104,11 +167,6 @@ final class EnrollmentPolicyPreset
             'strategy' => 'assignment.curriculum_automatic',
             'configuration' => ['include_irregular_subjects' => false],
         ];
-        $configuration['workflow']['steps'][0]['actions'][] = [
-            'key' => 'assign_curriculum',
-            'handler' => 'enrollment.assign_subjects',
-            'configuration' => ['source' => 'curriculum', 'allow_cross_program_subjects' => false],
-        ];
 
         return $configuration;
     }
@@ -117,17 +175,12 @@ final class EnrollmentPolicyPreset
     private static function noPayment(): array
     {
         $configuration = self::standard();
-        $configuration['billing']['configuration'] = [
-            'discount_percentage' => 0,
-            'minimum_payment_type' => 'none',
-            'minimum_payment_value' => 0,
-        ];
+        $configuration['billing']['configuration']['minimum_payment'] = ['type' => 'none', 'value' => 0];
         $configuration['workflow']['steps'][1]['transitions'][0]['label'] = 'Complete enrollment';
-        $configuration['workflow']['steps'][2]['actions'] = [[
-            'key' => 'complete_outcome',
-            'handler' => 'enrollment.set_outcome',
-            'configuration' => ['outcome' => 'completed'],
-        ]];
+        $configuration['workflow']['steps'][2]['actions'] = array_values(array_filter(
+            $configuration['workflow']['steps'][2]['actions'],
+            fn (array $action): bool => $action['handler'] !== 'enrollment.verify_payment',
+        ));
 
         return $configuration;
     }

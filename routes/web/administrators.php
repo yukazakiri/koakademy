@@ -149,6 +149,10 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/enrollments/{enrollment}/advance-pipeline-step', [AdministratorEnrollmentManagementController::class, 'advancePipelineStep'])->whereNumber('enrollment')->name('enrollments.advance-pipeline-step');
         Route::post('/enrollments/{enrollment}/transitions', [AdministratorEnrollmentPolicyController::class, 'transition'])->whereNumber('enrollment')->name('enrollments.transitions.store');
         Route::post('/enrollments/{enrollment}/reopen', [AdministratorEnrollmentPolicyController::class, 'reopen'])->whereNumber('enrollment')->name('enrollments.reopen');
+        Route::post('/enrollments/{enrollment}/requirements/{requirement}/review', [AdministratorEnrollmentPolicyController::class, 'reviewRequirement'])
+            ->whereNumber(['enrollment', 'requirement'])
+            ->scopeBindings()
+            ->name('enrollments.requirements.review');
         Route::post('/enrollments/{enrollment}/enroll-class', [AdministratorEnrollmentManagementController::class, 'enrollInClass'])->whereNumber('enrollment')->name('enrollments.enroll-class');
         Route::post('/enrollments/{enrollment}/retry-enrollment', [AdministratorEnrollmentManagementController::class, 'retryEnrollment'])->whereNumber('enrollment')->name('enrollments.retry-enrollment');
         Route::post('/enrollments/{enrollment}/resend-assessment', [AdministratorEnrollmentManagementController::class, 'resendAssessment'])->whereNumber('enrollment')->name('enrollments.resend-assessment');

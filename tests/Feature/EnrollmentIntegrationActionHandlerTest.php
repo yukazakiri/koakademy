@@ -159,3 +159,54 @@ it('reserves an available class without duplicating enrollment on retry', functi
         ->and($subjectEnrollment->refresh()->class_id)->toBe($class->id)
         ->and(ClassEnrollment::query()->where('student_id', $student->id)->where('class_id', $class->id)->count())->toBe(1);
 });
+
+it('materializes NSTP, modular, miscellaneous, and lecture-only discount defaults', function (): void {
+    $course = Course::factory()->create([
+        'lec_per_unit' => 100,
+        'lab_per_unit' => 200,
+        'miscellaneous' => 3500,
+        'miscelaneous' => 3500,
+    ]);
+    $student = Student::factory()->create(['course_id' => $course->id, 'academic_year' => 1]);
+    $enrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'academic_year' => 1,
+        'semester' => 1,
+        'school_year' => '2026 - 2027',
+    ]);
+    $subject = Subject::factory()->create([
+        'course_id' => $course->id,
+        'code' => 'NSTP-1',
+        'academic_year' => 1,
+        'semester' => 1,
+        'lecture' => 3,
+        'laboratory' => 1,
+    ]);
+    $registry = app(EnrollmentPolicyRegistry::class);
+    $context = EnrollmentContext::fromEnrollment($enrollment);
+
+    $assignment = $registry->action('enrollment.assign_subjects')->execute($context, [
+        'source' => 'runtime_payload',
+        'runtime_payload' => ['subjects' => [[
+            'subject_id' => $subject->id,
+            'is_modular' => true,
+        ]]],
+    ], 'pricing-subject-1');
+    $tuition = $registry->action('enrollment.calculate_tuition')->execute($context, [
+        'nstp_lecture_multiplier' => 0.5,
+        'modular_laboratory_multiplier' => 0.5,
+        'modular_fee' => 2400,
+        'discount_scope' => 'lecture_only',
+        'runtime_payload' => ['discount_percentage' => 10, 'miscellaneous_fee' => 3600],
+    ], 'pricing-tuition-1');
+    $record = $enrollment->studentTuition()->sole();
+
+    expect($assignment->successful)->toBeTrue()
+        ->and($tuition->successful)->toBeTrue()
+        ->and((float) $record->total_lectures)->toBe(180.0)
+        ->and((float) $record->total_laboratory)->toBe(100.0)
+        ->and((float) $record->total_tuition)->toBe(2680.0)
+        ->and((float) $record->total_miscelaneous_fees)->toBe(3600.0)
+        ->and((float) $record->overall_tuition)->toBe(6280.0);
+});

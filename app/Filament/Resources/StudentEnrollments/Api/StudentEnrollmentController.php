@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\StudentEnrollments\Api;
 
+use App\Data\Enrollment\EnrollmentSubmissionData;
 use App\Enrollment\EnrollmentWorkflowCoordinator;
 use App\Filament\Resources\StudentEnrollments\Api\Transformers\StudentEnrollmentTransformer;
 use App\Http\Controllers\Controller;
+use App\Models\Course;
+use App\Models\School;
+use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\User;
 use App\Services\GeneralSettingsService;
@@ -160,7 +164,7 @@ final class StudentEnrollmentController extends Controller
             'academic_year' => 'required|integer|min:1|max:4',
             'remarks' => 'nullable|string',
             'subjects' => 'nullable|array',
-            'subjects.*.subject_id' => 'required|exists:subjects,id',
+            'subjects.*.subject_id' => 'required|exists:subject,id',
             'subjects.*.class_id' => 'required|exists:classes,id',
             'subjects.*.is_modular' => 'boolean',
         ]);
@@ -172,24 +176,41 @@ final class StudentEnrollmentController extends Controller
             ], 422);
         }
 
-        DB::beginTransaction();
-
         try {
             $validated = $validator->validated();
-            $enrollment = $this->workflowCoordinator->create([
-                'student_id' => $validated['student_id'],
-                'course_id' => $validated['course_id'],
-                'semester' => $validated['semester'],
-                'academic_year' => $validated['academic_year'],
-                'school_year' => $this->settingsService->getCurrentSchoolYearString(),
-                'remarks' => $validated['remarks'] ?? null,
-            ], function (StudentEnrollment $enrollment) use ($validated): void {
-                foreach ($validated['subjects'] ?? [] as $subject) {
-                    $enrollment->subjectsEnrolled()->create($subject);
-                }
-            });
-
-            DB::commit();
+            $actor = $request->user();
+            $subjects = $validated['subjects'] ?? [];
+            $course = Course::query()->findOrFail((int) $validated['course_id']);
+            $schoolId = $course->school_id
+                ?? Student::query()->whereKey((int) $validated['student_id'])->value('school_id')
+                ?? School::query()->where('is_active', true)->value('id')
+                ?? School::query()->value('id');
+            $enrollment = $this->workflowCoordinator->submit(
+                new EnrollmentSubmissionData(
+                    enrollmentAttributes: [
+                        'school_id' => $schoolId,
+                        'student_id' => $validated['student_id'],
+                        'course_id' => $validated['course_id'],
+                        'semester' => $validated['semester'],
+                        'academic_year' => $validated['academic_year'],
+                        'school_year' => $this->settingsService->getCurrentSchoolYearString(),
+                        'remarks' => $validated['remarks'] ?? null,
+                    ],
+                    subjects: $subjects,
+                    classAssignments: collect($subjects)->map(fn (array $subject): array => [
+                        'subject_id' => (int) $subject['subject_id'],
+                        'class_id' => (int) $subject['class_id'],
+                    ])->all(),
+                    channel: 'api',
+                    idempotencyKey: (string) ($request->header('Idempotency-Key') ?: \Illuminate\Support\Str::uuid()),
+                    actor: $actor instanceof User ? $actor : null,
+                ),
+                function (StudentEnrollment $legacyEnrollment) use ($subjects): void {
+                    foreach ($subjects as $subject) {
+                        $legacyEnrollment->subjectsEnrolled()->create($subject);
+                    }
+                },
+            );
 
             return response()->json([
                 'message' => 'Enrollment created successfully',
@@ -204,9 +225,12 @@ final class StudentEnrollmentController extends Controller
                 ),
             ], 201);
 
+        } catch (ValidationException $exception) {
+            return response()->json([
+                'message' => 'Enrollment policy validation failed',
+                'errors' => $exception->errors(),
+            ], 422);
         } catch (Exception $e) {
-            DB::rollBack();
-
             return response()->json([
                 'message' => 'Failed to create enrollment',
                 'error' => $e->getMessage(),

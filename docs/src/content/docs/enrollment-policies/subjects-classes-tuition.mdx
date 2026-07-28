@@ -32,17 +32,27 @@ Before enabling automatic class assignment, confirm:
 
 ## Tuition calculation
 
-The core course-rate strategy uses the school’s existing rate configuration, supported discounts, and additional fees. Simulation reports the selected strategy and fee result without writing an assessment.
+The core course-rate strategy materializes its behavior into the enrollment snapshot. Its compatibility defaults include NSTP lecture pricing, modular laboratory and per-subject pricing, course miscellaneous fees, additional fees, and lecture-only discounts. Later PHP default changes therefore cannot reinterpret an enrollment already in progress.
+
+An authorized enrollment submission may carry a one-off miscellaneous override and a billing override. The assessment stores both the reusable `discount_id` and the applied percentage snapshot so later edits to a discount preset do not rewrite historical tuition.
 
 ## Payment methods
 
 Choose the methods accepted by this policy, such as cash, bank transfer, or supported online channels. A method must also be operational in the school’s finance configuration.
+
+Receipt behavior is also explicit:
+
+- **Required** — a receipt or invoice identifier must be supplied.
+- **Optional** — a configured transition may accept either form.
+- **None** — permitted only by an authorized no-receipt transition with an audited reason.
 
 ## Minimum-payment gates
 
 - **No minimum** — payment does not block the configured completion action.
 - **Fixed amount** — require a specific currency amount.
 - **Percentage** — require a portion of calculated tuition.
+
+A no-payment blueprint omits the payment action entirely; it does not synthesize a zero-value transaction.
 
 :::caution[Billing sections replace atomically]
 When a scoped blueprint overrides billing, it owns the complete billing strategy and payment-method section. This avoids mixing incompatible pieces from multiple strategies.

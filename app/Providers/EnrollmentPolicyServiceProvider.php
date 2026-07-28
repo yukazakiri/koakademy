@@ -6,20 +6,22 @@ namespace App\Providers;
 
 use App\Enrollment\Actions\EnrollmentIntegrationActionHandler;
 use App\Enrollment\Actions\EnrollmentStateActionHandler;
+use App\Enrollment\EnrollmentAssignmentService;
+use App\Enrollment\EnrollmentPaymentService;
 use App\Enrollment\EnrollmentPolicyInheritanceService;
 use App\Enrollment\EnrollmentPolicyManager;
 use App\Enrollment\EnrollmentPolicyRegistry;
 use App\Enrollment\EnrollmentPolicyResolver;
 use App\Enrollment\EnrollmentPolicySimulationService;
+use App\Enrollment\EnrollmentSubmissionContext;
 use App\Enrollment\EnrollmentTransitionEngine;
+use App\Enrollment\EnrollmentTuitionService;
 use App\Enrollment\EnrollmentWorkflowCoordinator;
 use App\Enrollment\Rules\ConfiguredEnrollmentRuleHandler;
 use App\Enrollment\Strategies\ConfiguredAssignmentStrategy;
 use App\Enrollment\Strategies\ConfiguredBillingStrategy;
 use App\Models\StudentEnrollment;
 use App\Observers\StudentEnrollmentPolicyObserver;
-use App\Services\ClassEnrollmentService;
-use App\Services\EnrollmentService;
 use Illuminate\Support\ServiceProvider;
 
 final class EnrollmentPolicyServiceProvider extends ServiceProvider
@@ -28,8 +30,9 @@ final class EnrollmentPolicyServiceProvider extends ServiceProvider
     {
         $this->app->singleton(EnrollmentPolicyRegistry::class, function (): EnrollmentPolicyRegistry {
             $registry = new EnrollmentPolicyRegistry;
-            $enrollmentService = $this->app->make(EnrollmentService::class);
-            $classEnrollmentService = $this->app->make(ClassEnrollmentService::class);
+            $assignmentService = $this->app->make(EnrollmentAssignmentService::class);
+            $tuitionService = $this->app->make(EnrollmentTuitionService::class);
+            $paymentService = $this->app->make(EnrollmentPaymentService::class);
 
             foreach ($this->ruleCatalog() as $key => [$label, $category]) {
                 $registry->registerRule(new ConfiguredEnrollmentRuleHandler($key, $label, $category));
@@ -41,15 +44,16 @@ final class EnrollmentPolicyServiceProvider extends ServiceProvider
                 $registry->registerAction(new EnrollmentIntegrationActionHandler(
                     $key,
                     $label,
-                    $enrollmentService,
-                    $classEnrollmentService,
+                    $assignmentService,
+                    $paymentService,
+                    $registry,
                 ));
             }
             foreach ($this->assignmentCatalog() as $key => $label) {
-                $registry->registerAssignmentStrategy(new ConfiguredAssignmentStrategy($key, $label));
+                $registry->registerAssignmentStrategy(new ConfiguredAssignmentStrategy($key, $label, $assignmentService));
             }
             foreach ($this->billingCatalog() as $key => $label) {
-                $registry->registerBillingStrategy(new ConfiguredBillingStrategy($key, $label));
+                $registry->registerBillingStrategy(new ConfiguredBillingStrategy($key, $label, $tuitionService));
             }
 
             return $registry;
@@ -61,6 +65,7 @@ final class EnrollmentPolicyServiceProvider extends ServiceProvider
         $this->app->scoped(EnrollmentPolicySimulationService::class);
         $this->app->scoped(EnrollmentTransitionEngine::class);
         $this->app->scoped(EnrollmentWorkflowCoordinator::class);
+        $this->app->scoped(EnrollmentSubmissionContext::class);
     }
 
     public function boot(): void
@@ -110,6 +115,7 @@ final class EnrollmentPolicyServiceProvider extends ServiceProvider
             'enrollment.verify_payment' => 'Record payment verification',
             'enrollment.assign_subjects' => 'Assign curriculum subjects',
             'enrollment.assign_classes' => 'Assign classes',
+            'enrollment.assign_additional_fees' => 'Assign additional fees',
             'enrollment.calculate_tuition' => 'Calculate tuition',
             'enrollment.generate_assessment' => 'Generate assessment',
             'enrollment.notify' => 'Dispatch notification after commit',

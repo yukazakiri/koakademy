@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Data\Enrollment\EnrollmentSubmissionData;
 use App\Enrollment\EnrollmentWorkflowCoordinator;
 use App\Enums\StudentStatus;
 use App\Exports\EnrollmentReportExport;
+use App\Features\DynamicEnrollmentPolicies;
 use App\Http\Requests\Administrators\SaveEnrollmentRequest;
 use App\Jobs\GenerateAssessmentPdfJob;
 use App\Jobs\GenerateBulkAssessmentsJob;
@@ -45,6 +47,7 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use Laravel\Pennant\Feature;
 use Maatwebsite\Excel\Facades\Excel;
 use Spatie\Activitylog\Models\Activity;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -429,6 +432,7 @@ final class AdministratorEnrollmentManagementController extends Controller
             'studentTuition',
             'additionalFees',
             'resources',
+            'requirements',
         ]);
 
         // Fetch enrollment transactions directly (eager loading doesn't work well with dynamic constraints)
@@ -520,6 +524,7 @@ final class AdministratorEnrollmentManagementController extends Controller
             : null;
         $pendingScheduleChangeNotifications = $this->classScheduleChangeNotificationService
             ->pendingNotificationsForEnrollment($enrollment);
+        $workflow = $this->workflowView($enrollment, Auth::user());
 
         return Inertia::render('administrators/enrollments/show', [
             'user' => Auth::user(),
@@ -527,6 +532,9 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'id' => $enrollment->id,
                 'student_id' => $enrollment->student_id,
                 'status' => $enrollment->status,
+                'workflow_runtime' => $enrollment->workflow_runtime,
+                'allows_no_receipt_transition' => $enrollment->allowsConfiguredNoReceiptTransition(),
+                'workflow' => $workflow,
                 'school_year' => $enrollment->school_year,
                 'semester' => $enrollment->semester,
                 'academic_year' => $enrollment->academic_year,
@@ -573,6 +581,19 @@ final class AdministratorEnrollmentManagementController extends Controller
                     'created_at' => $res->created_at->toDateTimeString(),
                     'download_url' => route('assessment.download', ['record' => $enrollment->id], false),
                 ]),
+                'requirements' => $enrollment->requirements->map(fn ($requirement): array => [
+                    'id' => $requirement->id,
+                    'key' => $requirement->requirement_key,
+                    'label' => $requirement->label,
+                    'description' => $requirement->description,
+                    'status' => $requirement->status,
+                    'required' => $requirement->is_required,
+                    'enforcement_step' => $requirement->enforcement_step_key,
+                    'evidence_path' => $requirement->evidence_path,
+                    'verified_at' => $requirement->verified_at?->toISOString(),
+                    'waived_at' => $requirement->waived_at?->toISOString(),
+                    'waiver_reason' => $requirement->waiver_reason,
+                ]),
                 'pending_class_schedule_changes' => $this->classScheduleChangeNotificationService
                     ->previewPendingNotifications($pendingScheduleChangeNotifications),
             ],
@@ -596,6 +617,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 ),
                 'is_super_admin' => Auth::user()->hasRole('super_admin'),
                 'can_advance_pipeline' => $this->enrollmentPipelineService->canUserAdvanceToNextStep(Auth::user(), $enrollment->status),
+                'can_review_requirements' => Auth::user()->can('Update:StudentEnrollment') || Auth::user()->hasRole('super_admin'),
             ],
             'recent_deletions' => $this->getRecentDeletionsForEnrollment($enrollment),
             'flash' => session('flash'),
@@ -687,13 +709,17 @@ final class AdministratorEnrollmentManagementController extends Controller
         }
 
         $validated = $request->validate([
-            'invoicenumber' => ['required', 'string'],
+            'invoicenumber' => [
+                $enrollment->workflow_runtime === StudentEnrollment::WorkflowRuntimePolicyV1 ? 'nullable' : 'required',
+                'string',
+            ],
             'settlements' => ['required', 'array'],
             'settlements.registration_fee' => ['nullable', 'numeric', 'min:0'],
             'settlements.tuition_fee' => ['nullable', 'numeric', 'min:0'],
             'settlements.miscelanous_fee' => ['nullable', 'numeric', 'min:0'],
             'settlements.others' => ['nullable', 'numeric', 'min:0'],
             'payment_method' => ['required', 'string'],
+            'reason' => ['nullable', 'string', 'max:2000'],
         ]);
 
         $separateFeeTransactionFields = collect($request->all())
@@ -721,7 +747,20 @@ final class AdministratorEnrollmentManagementController extends Controller
         ]);
 
         if ($enrollment->workflow_runtime === StudentEnrollment::WorkflowRuntimePolicyV1) {
-            return back()->with('flash', ['error' => 'No-receipt enrollment is unavailable for policy workflows. Use a configured transition.']);
+            $actor = Auth::user();
+            abort_unless($actor instanceof User, 403);
+
+            try {
+                $this->workflowCoordinator->verifyPayment($enrollment, $actor, [
+                    'without_receipt' => true,
+                    'reason' => $data['remarks'],
+                    'remarks' => $data['remarks'],
+                ]);
+
+                return back()->with('flash', ['success' => 'Student enrolled through the configured no-receipt transition.']);
+            } catch (Throwable $throwable) {
+                return back()->with('flash', ['error' => $throwable->getMessage()]);
+            }
         }
 
         if ($this->enrollmentService->verifyByCashierWithoutReceipt($enrollment, $data)) {
@@ -908,11 +947,7 @@ final class AdministratorEnrollmentManagementController extends Controller
         if (! Auth::user()->hasRole('super_admin')) {
             abort(403);
         }
-        if ($enrollment->workflow_runtime !== StudentEnrollment::WorkflowRuntimeLegacy) {
-            return back()->with('flash', ['error' => 'Quick enrollment is available only for legacy workflows.']);
-        }
-
-        $request->validate([
+        $validated = $request->validate([
             'remarks' => 'required|string',
             'confirm_emergency' => 'required|accepted',
             'confirm_payment' => 'required|accepted',
@@ -921,17 +956,23 @@ final class AdministratorEnrollmentManagementController extends Controller
         try {
             $actor = Auth::user();
             abort_unless($actor instanceof User, 403);
-            $this->workflowCoordinator->verifyAcademic($enrollment, $actor);
+            if ($enrollment->workflow_runtime === StudentEnrollment::WorkflowRuntimePolicyV1) {
+                $this->workflowCoordinator->quickEnroll(
+                    $enrollment,
+                    $actor,
+                    '⚡ QUICK ENROLL: '.$validated['remarks'],
+                );
 
-            $success = $this->enrollmentService->verifyByCashierWithoutReceipt($enrollment, [
-                'remarks' => '⚡ QUICK ENROLL: '.$request->input('remarks'),
-            ]);
-
-            if ($success) {
-                return back()->with('flash', ['success' => 'Quick enrollment successful.']);
+                return back()->with('flash', ['success' => 'Quick enrollment completed through the authorized blueprint transition.']);
             }
 
-            return back()->with('flash', ['error' => 'Quick enrollment failed.']);
+            $this->workflowCoordinator->quickEnroll(
+                $enrollment,
+                $actor,
+                '⚡ QUICK ENROLL: '.$validated['remarks'],
+            );
+
+            return back()->with('flash', ['success' => 'Quick enrollment successful.']);
         } catch (Exception $e) {
             return back()->with('flash', ['error' => $e->getMessage()]);
         }
@@ -1399,84 +1440,92 @@ final class AdministratorEnrollmentManagementController extends Controller
                     throw new Exception('Student already has an enrollment for this semester.');
                 }
 
-                $this->ensureClassCapacityForSubjects(
-                    $validated['subjects'],
-                    $student->id,
-                    (bool) ($validated['force_overload'] ?? false)
-                );
+                if (! Feature::active(DynamicEnrollmentPolicies::class)) {
+                    $this->ensureClassCapacityForSubjects(
+                        $validated['subjects'],
+                        $student->id,
+                        (bool) ($validated['force_overload'] ?? false)
+                    );
+                }
 
-                // Create the enrollment record
-                $enrollment = $this->workflowCoordinator->create([
-                    'student_id' => $student->id,
-                    'course_id' => $student->course_id,
-                    'status' => $this->enrollmentPipelineService->getPendingStatus(),
-                    'semester' => $validated['semester'],
-                    'academic_year' => $validated['academic_year'],
-                    'school_year' => $schoolYear,
-                    'downpayment' => $validated['downpayment'] ?? 0,
-                ]);
-
-                // Create subject enrollments
-                foreach ($validated['subjects'] as $subjectData) {
-                    $classId = isset($subjectData['class_id']) ? (int) $subjectData['class_id'] : null;
-
-                    $enrollment->subjectsEnrolled()->create([
-                        'subject_id' => $subjectData['subject_id'],
-                        'class_id' => $classId,
+                $classAssignments = collect($validated['subjects'])
+                    ->filter(fn (array $subject): bool => ! empty($subject['class_id']))
+                    ->map(fn (array $subject): array => [
+                        'subject_id' => (int) $subject['subject_id'],
+                        'class_id' => (int) $subject['class_id'],
+                    ])
+                    ->values()
+                    ->all();
+                $miscellaneousFee = isset($validated['miscellaneous_fee'])
+                    ? (float) $validated['miscellaneous_fee']
+                    : (float) ($student->Course?->getMiscellaneousFee() ?? 3500);
+                $submission = new EnrollmentSubmissionData(
+                    enrollmentAttributes: [
                         'student_id' => $student->id,
-                        'is_modular' => $subjectData['is_modular'] ?? false,
-                        'exclude_from_tuition' => $subjectData['exclude_from_tuition'] ?? false,
-                        'lecture_fee' => $subjectData['lecture_fee'],
-                        'laboratory_fee' => $subjectData['laboratory_fee'],
-                        'enrolled_lecture_units' => $subjectData['enrolled_lecture_units'],
-                        'enrolled_laboratory_units' => $subjectData['enrolled_laboratory_units'],
+                        'course_id' => $student->course_id,
+                        'status' => $this->enrollmentPipelineService->getPendingStatus(),
+                        'semester' => $validated['semester'],
                         'academic_year' => $validated['academic_year'],
                         'school_year' => $schoolYear,
-                        'semester' => $validated['semester'],
-                    ]);
-
-                    if ($classId) {
-                        $classEnrollment = ClassEnrollment::query()
-                            ->withTrashed()
-                            ->firstOrNew([
-                                'student_id' => $student->id,
+                        'downpayment' => $validated['downpayment'] ?? 0,
+                    ],
+                    subjects: $validated['subjects'],
+                    classAssignments: $classAssignments,
+                    additionalFees: $validated['additional_fees'] ?? [],
+                    billingOverrides: [
+                        'discount_percentage' => $validated['discount'] ?? 0,
+                        'discount_id' => $validated['discount_id'],
+                        'miscellaneous_fee' => $miscellaneousFee,
+                        'downpayment' => $validated['downpayment'] ?? 0,
+                    ],
+                    channel: 'administrator',
+                    idempotencyKey: (string) Str::uuid(),
+                    actor: Auth::user() instanceof User ? Auth::user() : null,
+                );
+                $enrollment = $this->workflowCoordinator->submit(
+                    $submission,
+                    function (StudentEnrollment $legacyEnrollment) use ($validated, $student, $schoolYear, $miscellaneousFee): void {
+                        foreach ($validated['subjects'] as $subjectData) {
+                            $classId = isset($subjectData['class_id']) ? (int) $subjectData['class_id'] : null;
+                            $legacyEnrollment->subjectsEnrolled()->create([
+                                ...$subjectData,
                                 'class_id' => $classId,
+                                'student_id' => $student->id,
+                                'academic_year' => $validated['academic_year'],
+                                'school_year' => $schoolYear,
+                                'semester' => $validated['semester'],
                             ]);
-
-                        if ($classEnrollment->trashed()) {
-                            $classEnrollment->restore();
+                            if ($classId) {
+                                $classEnrollment = ClassEnrollment::query()->withTrashed()->firstOrNew([
+                                    'student_id' => $student->id,
+                                    'class_id' => $classId,
+                                ]);
+                                if ($classEnrollment->trashed()) {
+                                    $classEnrollment->restore();
+                                }
+                                $classEnrollment->status = true;
+                                $classEnrollment->save();
+                            }
                         }
-
-                        $classEnrollment->status = true;
-                        $classEnrollment->save();
-                    }
-                }
-
-                // Create tuition record
-                $tuition = $this->enrollmentService->createStudentTuition($enrollment, [
-                    'subjectsEnrolled' => $validated['subjects'],
-                    'discount' => $validated['discount'] ?? 0,
-                    'discount_id' => $validated['discount_id'],
-                    'miscellaneous_fee' => isset($validated['miscellaneous_fee'])
-                        ? (float) $validated['miscellaneous_fee']
-                        : (float) ($student->Course?->getMiscellaneousFee() ?? 3500),
-                    'downpayment' => $validated['downpayment'] ?? 0,
-                    'additionalFees' => $validated['additional_fees'] ?? [],
-                ]);
-
-                if (! $tuition instanceof StudentTuition) {
-                    throw new Exception('Failed to create the tuition assessment.');
-                }
-
-                // Create additional fees if provided
-                if (! empty($validated['additional_fees'])) {
-                    foreach ($validated['additional_fees'] as $fee) {
-                        $enrollment->additionalFees()->create([
-                            'fee_name' => $fee['fee_name'],
-                            'amount' => $fee['amount'],
+                        foreach ($validated['additional_fees'] ?? [] as $fee) {
+                            $legacyEnrollment->additionalFees()->create([
+                                'fee_name' => $fee['fee_name'],
+                                'amount' => $fee['amount'],
+                            ]);
+                        }
+                        $tuition = $this->enrollmentService->createStudentTuition($legacyEnrollment, [
+                            'subjectsEnrolled' => $validated['subjects'],
+                            'discount' => $validated['discount'] ?? 0,
+                            'discount_id' => $validated['discount_id'],
+                            'miscellaneous_fee' => $miscellaneousFee,
+                            'downpayment' => $validated['downpayment'] ?? 0,
+                            'additionalFees' => $validated['additional_fees'] ?? [],
                         ]);
-                    }
-                }
+                        if (! $tuition instanceof StudentTuition) {
+                            throw new Exception('Failed to create the tuition assessment.');
+                        }
+                    },
+                );
 
                 return [
                     'enrollment' => $enrollment,
@@ -2184,6 +2233,63 @@ final class AdministratorEnrollmentManagementController extends Controller
             ->values();
 
         return response()->json(['courses' => $courses]);
+    }
+
+    /** @return array<string, mixed> */
+    private function workflowView(StudentEnrollment $enrollment, mixed $actor): array
+    {
+        if ($enrollment->workflow_runtime !== StudentEnrollment::WorkflowRuntimePolicyV1) {
+            return [
+                'current_step_key' => null,
+                'terminal_outcome' => null,
+                'steps' => [],
+                'allowed_transitions' => [],
+                'allowed_payment_methods' => [],
+            ];
+        }
+
+        $enrollment->loadMissing('policySnapshot');
+        $steps = collect(data_get($enrollment->policySnapshot?->configuration, 'workflow.steps', []));
+        $current = $steps->firstWhere('key', $enrollment->current_step_key);
+        $permission = is_array($current) ? ($current['permission'] ?? null) : null;
+        $canTransition = $actor instanceof User
+            && (! is_string($permission) || $permission === '' || $actor->can($permission));
+
+        return [
+            'current_step_key' => $enrollment->current_step_key,
+            'terminal_outcome' => $enrollment->terminal_outcome,
+            'allowed_payment_methods' => array_values(data_get(
+                $enrollment->policySnapshot?->configuration,
+                'billing.allowed_payment_methods',
+                [],
+            )),
+            'steps' => $steps->map(fn (array $step): array => [
+                'key' => $step['key'],
+                'label' => $step['label'] ?? $step['key'],
+                'terminal' => (bool) ($step['terminal'] ?? false),
+            ])->values()->all(),
+            'allowed_transitions' => $canTransition && is_array($current)
+                ? collect($current['transitions'] ?? [])->map(function (array $transition) use ($steps): array {
+                    $target = $steps->firstWhere('key', $transition['to'] ?? null);
+                    $paymentAction = is_array($target)
+                        ? collect($target['actions'] ?? [])->firstWhere('handler', 'enrollment.verify_payment')
+                        : null;
+
+                    return [
+                        'key' => $transition['key'],
+                        'label' => $transition['label'] ?? $transition['key'],
+                        'to' => $transition['to'],
+                        'requires_reason' => (bool) ($transition['requires_reason'] ?? false),
+                        'target_actions' => is_array($target)
+                            ? collect($target['actions'] ?? [])->pluck('handler')->filter()->values()->all()
+                            : [],
+                        'payment_configuration' => is_array($paymentAction)
+                            ? $paymentAction['configuration'] ?? []
+                            : null,
+                    ];
+                })->values()->all()
+                : [],
+        ];
     }
 
     /**

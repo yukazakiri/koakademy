@@ -33,6 +33,9 @@ final class AdminTransaction extends Model
     protected $fillable = [
         'admin_id',
         'transaction_id',
+        'amount',
+        'type',
+        'description',
         'status',
     ];
 

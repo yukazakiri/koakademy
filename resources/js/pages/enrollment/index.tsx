@@ -1,3 +1,5 @@
+import EnrollmentPolicyContextController from "@/actions/App/Http/Controllers/EnrollmentPolicyContextController";
+import { store as storeEnrollment } from "@/actions/App/Http/Controllers/EnrollmentRegistrationController";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -224,13 +226,22 @@ const steps = [
     { id: "review", label: "Review & Submit", icon: Sparkles, description: "Final check" },
 ] as const;
 
-// Document types for TESDA enrollment
-const DOCUMENT_TYPES = [
-    { id: "psa_birth_certificate", label: "PSA Birth Certificate", required: true },
-    { id: "high_school_diploma", label: "High School Diploma / Form 137", required: true },
-    { id: "2x2_photo", label: "2x2 ID Photo", required: true },
-    { id: "other", label: "Other Supporting Documents", required: false },
-] as const;
+type PolicyRequirement = {
+    key: string;
+    label: string;
+    description: string | null;
+    required: boolean;
+    enforcement_step: string | null;
+};
+
+type PolicyContextResponse = {
+    runtime: "legacy" | "policy_v1";
+    requirements: PolicyRequirement[];
+    eligibility: {
+        passed: boolean;
+        messages: string[];
+    };
+};
 
 type DocumentFile = {
     id: string;
@@ -238,8 +249,6 @@ type DocumentFile = {
     file: File;
     preview?: string;
 };
-
-
 
 // Validation Schemas
 const programSchema = z.object({
@@ -279,60 +288,66 @@ const personalSchema = z.object({
     }),
 });
 
-const contactsSchema = z.object({
-    contacts: z.object({
-        facebook: z.string(),
-        twitter: z.string(),
-        instagram: z.string(),
-        linkedin: z.string(),
-        emergency_contact_name: z
-            .string()
-            .min(1, "Emergency contact name is required")
-            .regex(/^[a-zA-Z\s.-]+$/, "Name must contain only letters"),
-        emergency_contact_phone: z.string().min(1, "Emergency contact phone is required").regex(/^\d+$/, "Phone number must contain only numbers"),
-    }).refine((value) => [value.facebook, value.twitter, value.instagram, value.linkedin].some((v) => v.trim().length > 0), {
-        message: "At least one social media link is required",
-        path: ["facebook"],
-    }),
-    parents: z.object({
-        father_contact: z.string().min(10, "Father contact number is required").regex(/^\d+$/, "Phone number must contain only numbers"),
-        mother_contact: z.string().min(10, "Mother contact number is required").regex(/^\d+$/, "Phone number must contain only numbers"),
-        guardian_name: z
-            .string()
-            .min(1, "Guardian name is required")
-            .regex(/^[a-zA-Z\s.-]+$/, "Name must contain only letters"),
-        guardian_relationship: z
-            .string()
-            .min(1, "Guardian relationship is required")
-            .regex(/^[a-zA-Z\s.-]+$/, "Relationship must contain only letters"),
-        guardian_contact: z.string().min(1, "Guardian contact is required").regex(/^\d+$/, "Phone number must contain only numbers"),
-    }),
-    is_pwd: z.boolean(),
-    pwd_type: z.string(),
-    education: z.object({
-        elementary_school: z.string().min(1, "Elementary school is required"),
-        elementary_year_graduated: z.string().min(4, "Elementary graduation year is required"),
-        high_school: z.string().min(1, "High school is required"),
-        high_school_year_graduated: z.string().min(4, "High school graduation year is required"),
-        senior_high_school: z.string().min(1, "Senior high school is required"),
-        senior_high_year_graduated: z.string().min(4, "Senior high graduation year is required"),
-        college_school: z.string().optional(),
-        college_course: z.string().optional(),
-        college_year_graduated: z.string().optional(),
-        vocational_school: z.string().optional(),
-        vocational_course: z.string().optional(),
-        vocational_year_graduated: z.string().optional(),
-    }),
-}).superRefine((value, ctx) => {
-    if (value.is_pwd && value.pwd_type.trim().length === 0) {
-        ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ["pwd_type"],
-            message: "Type of disability is required when PWD is selected",
-        });
-    }
-
-});
+const contactsSchema = z
+    .object({
+        contacts: z
+            .object({
+                facebook: z.string(),
+                twitter: z.string(),
+                instagram: z.string(),
+                linkedin: z.string(),
+                emergency_contact_name: z
+                    .string()
+                    .min(1, "Emergency contact name is required")
+                    .regex(/^[a-zA-Z\s.-]+$/, "Name must contain only letters"),
+                emergency_contact_phone: z
+                    .string()
+                    .min(1, "Emergency contact phone is required")
+                    .regex(/^\d+$/, "Phone number must contain only numbers"),
+            })
+            .refine((value) => [value.facebook, value.twitter, value.instagram, value.linkedin].some((v) => v.trim().length > 0), {
+                message: "At least one social media link is required",
+                path: ["facebook"],
+            }),
+        parents: z.object({
+            father_contact: z.string().min(10, "Father contact number is required").regex(/^\d+$/, "Phone number must contain only numbers"),
+            mother_contact: z.string().min(10, "Mother contact number is required").regex(/^\d+$/, "Phone number must contain only numbers"),
+            guardian_name: z
+                .string()
+                .min(1, "Guardian name is required")
+                .regex(/^[a-zA-Z\s.-]+$/, "Name must contain only letters"),
+            guardian_relationship: z
+                .string()
+                .min(1, "Guardian relationship is required")
+                .regex(/^[a-zA-Z\s.-]+$/, "Relationship must contain only letters"),
+            guardian_contact: z.string().min(1, "Guardian contact is required").regex(/^\d+$/, "Phone number must contain only numbers"),
+        }),
+        is_pwd: z.boolean(),
+        pwd_type: z.string(),
+        education: z.object({
+            elementary_school: z.string().min(1, "Elementary school is required"),
+            elementary_year_graduated: z.string().min(4, "Elementary graduation year is required"),
+            high_school: z.string().min(1, "High school is required"),
+            high_school_year_graduated: z.string().min(4, "High school graduation year is required"),
+            senior_high_school: z.string().min(1, "Senior high school is required"),
+            senior_high_year_graduated: z.string().min(4, "Senior high graduation year is required"),
+            college_school: z.string().optional(),
+            college_course: z.string().optional(),
+            college_year_graduated: z.string().optional(),
+            vocational_school: z.string().optional(),
+            vocational_course: z.string().optional(),
+            vocational_year_graduated: z.string().optional(),
+        }),
+    })
+    .superRefine((value, ctx) => {
+        if (value.is_pwd && value.pwd_type.trim().length === 0) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["pwd_type"],
+                message: "Type of disability is required when PWD is selected",
+            });
+        }
+    });
 
 // Success state data
 type SuccessData = {
@@ -358,7 +373,17 @@ interface Branding {
 const sanitizeNumberInput = (value: string) => value.replace(/\D/g, "");
 const sanitizeNameInput = (value: string) => value.replace(/[^a-zA-Z\s.-]/g, "");
 
-export default function EnrollmentCreate({ departments, courses, flash, college_enrollment_enabled = false, tesda_enrollment_enabled = true, income_modes = [], default_income_mode = 'annual', currency_symbol = '₱', school_name = "KoAkademy" }: EnrollmentCreateProps) {
+export default function EnrollmentCreate({
+    departments,
+    courses,
+    flash,
+    college_enrollment_enabled = false,
+    tesda_enrollment_enabled = true,
+    income_modes = [],
+    default_income_mode = "annual",
+    currency_symbol = "₱",
+    school_name = "KoAkademy",
+}: EnrollmentCreateProps) {
     const { props } = usePage<{ branding?: Branding }>();
     const appName = props.branding?.appName || "School Portal";
     const orgShortName = props.branding?.organizationShortName || "UNI";
@@ -445,17 +470,17 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
 
     const MODULAR_FEE_PER_SUBJECT = 2400;
 
-    // Track which documents the user has available as soft copies
-    const [availableDocuments, setAvailableDocuments] = useState<Record<string, boolean>>(
-        Object.fromEntries(DOCUMENT_TYPES.map((doc) => [doc.id, false])),
-    );
+    // Requirements are resolved server-side from the published, matched policy.
+    const [policyRequirements, setPolicyRequirements] = useState<PolicyRequirement[]>([]);
+    const [requirementsLoading, setRequirementsLoading] = useState(false);
+    const [availableDocuments, setAvailableDocuments] = useState<Record<string, boolean>>({});
 
     // Check if user has any documents to upload
     const hasAnyDocumentsToUpload = useMemo(() => {
         return Object.values(availableDocuments).some((v) => v);
     }, [availableDocuments]);
 
-    const { data, setData, post, processing, errors, reset } = useForm<EnrollmentFormData>({
+    const { data, setData, processing, errors, reset } = useForm<EnrollmentFormData>({
         student_type: tesda_enrollment_enabled ? "tesda" : "college",
         department: "TESDA",
         course_id: "",
@@ -551,6 +576,46 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
         marketing_consent: false,
     });
 
+    useEffect(() => {
+        if (!data.course_id) {
+            setPolicyRequirements([]);
+            setAvailableDocuments({});
+            return;
+        }
+
+        const controller = new AbortController();
+        setRequirementsLoading(true);
+        axios
+            .get<PolicyContextResponse>(
+                EnrollmentPolicyContextController.url({
+                    query: {
+                        student_type: data.student_type,
+                        course_id: data.course_id,
+                        academic_year: data.academic_year || undefined,
+                    },
+                }),
+                { signal: controller.signal },
+            )
+            .then(({ data: context }) => {
+                setPolicyRequirements(context.requirements);
+                setAvailableDocuments((current) =>
+                    Object.fromEntries(context.requirements.map((requirement) => [requirement.key, current[requirement.key] ?? false])),
+                );
+                if (!context.eligibility.passed && context.eligibility.messages[0]) {
+                    toast.error(context.eligibility.messages[0]);
+                }
+            })
+            .catch((error: unknown) => {
+                if (!axios.isCancel(error)) {
+                    setPolicyRequirements([]);
+                    setAvailableDocuments({});
+                }
+            })
+            .finally(() => setRequirementsLoading(false));
+
+        return () => controller.abort();
+    }, [data.academic_year, data.course_id, data.student_type]);
+
     const errorsBag = errors as Record<string, string>;
 
     useEffect(() => {
@@ -562,9 +627,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
 
             const formCourse = courses.find((c) => String(c.id) === data.course_id);
             const derivedName =
-                flash.studentName ||
-                (data.first_name || data.last_name ? `${data.first_name} ${data.last_name}`.trim() : "") ||
-                "Student";
+                flash.studentName || (data.first_name || data.last_name ? `${data.first_name} ${data.last_name}`.trim() : "") || "Student";
 
             setSuccessData({
                 name: derivedName,
@@ -580,9 +643,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                 tuition: flash.tuition,
             });
             setShowSuccess(true);
-            toast.success(
-                flash.continuing ? "Re-enrollment submitted successfully!" : "Registration submitted successfully!",
-            );
+            toast.success(flash.continuing ? "Re-enrollment submitted successfully!" : "Registration submitted successfully!");
         }
 
         if (flash?.error) {
@@ -634,7 +695,6 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
         });
     }, [courses, data.department, data.student_type]);
 
-
     const filteredCoursesForGrid = useMemo(() => {
         if (!programSearch.trim()) return availableCourses;
         const q = programSearch.toLowerCase();
@@ -648,7 +708,12 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
     }, [availableCourses, programSearch]);
 
     const departmentColorMap: Record<string, { bg: string; text: string; border: string; light: string }> = {
-        TESDA: { bg: "bg-orange-500", text: "text-orange-700 dark:text-orange-400", border: "border-orange-500", light: "bg-orange-50 dark:bg-orange-950/40" },
+        TESDA: {
+            bg: "bg-orange-500",
+            text: "text-orange-700 dark:text-orange-400",
+            border: "border-orange-500",
+            light: "bg-orange-50 dark:bg-orange-950/40",
+        },
         default: { bg: "bg-primary", text: "text-primary", border: "border-primary", light: "bg-primary/5" },
     };
 
@@ -795,7 +860,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
             formData.append(`documents[${index}][file]`, doc.file);
         });
 
-        router.post("/enrollment", formData, {
+        router.post(storeEnrollment.url(), formData, {
             preserveScroll: true,
             forceFormData: true,
             onError: (errors) => {
@@ -816,7 +881,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
         setPrivacyGateCompleted(false);
         setCurrentStep(0);
         setUploadedDocuments([]);
-        setAvailableDocuments(Object.fromEntries(DOCUMENT_TYPES.map((doc) => [doc.id, false])));
+        setAvailableDocuments(Object.fromEntries(policyRequirements.map((requirement) => [requirement.key, false])));
         setMode("identify");
         setMatchedStudent(null);
         setLookupAttempted(false);
@@ -1018,10 +1083,10 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
         }
         setLookupLoading(true);
         try {
-            const { data: payload } = await axios.post<{ matched: boolean; student?: MatchedStudent }>(
-                "/enrollment/lookup",
-                { email: lookupEmail.trim(), student_id: lookupStudentId.trim() },
-            );
+            const { data: payload } = await axios.post<{ matched: boolean; student?: MatchedStudent }>("/enrollment/lookup", {
+                email: lookupEmail.trim(),
+                student_id: lookupStudentId.trim(),
+            });
 
             setLookupAttempted(true);
 
@@ -1058,7 +1123,6 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
         setLookupAttempted(false);
         setContinuingYear("");
         setContinuingSemester("");
-        setContinuingConsent(false);
         setContinuingStep(0);
         setCourseInfo(null);
         setAvailableSubjects([]);
@@ -1069,10 +1133,10 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
     const fetchContinuingSubjects = async (email: string, studentId: string) => {
         setSubjectsLoading(true);
         try {
-            const { data: payload } = await axios.post<{ course: CourseInfo; subjects: SubjectOption[] }>(
-                "/enrollment/subjects",
-                { email, student_id: studentId },
-            );
+            const { data: payload } = await axios.post<{ course: CourseInfo; subjects: SubjectOption[] }>("/enrollment/subjects", {
+                email,
+                student_id: studentId,
+            });
             setCourseInfo(payload.course);
             setAvailableSubjects(payload.subjects ?? []);
         } catch (error) {
@@ -1261,11 +1325,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
             </header>
 
             <main className="container mx-auto flex w-full max-w-3xl flex-1 items-start px-4 py-6 sm:px-6 sm:py-10">
-                <motion.div
-                    initial={{ opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="w-full space-y-5"
-                >
+                <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="w-full space-y-5">
                     <div className="flex items-start gap-3">
                         <div className="bg-primary/10 text-primary flex h-11 w-11 shrink-0 items-center justify-center rounded-lg">
                             <ShieldCheck className="h-6 w-6" />
@@ -1276,8 +1336,8 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                             </Badge>
                             <h2 className="text-foreground text-2xl font-bold sm:text-3xl">Data Privacy Notice</h2>
                             <p className="text-muted-foreground mt-2 text-sm leading-relaxed sm:text-base">
-                                When you submit this form, it will not automatically collect your details like name and
-                                email address unless you provide them yourself.
+                                When you submit this form, it will not automatically collect your details like name and email address unless you
+                                provide them yourself.
                             </p>
                         </div>
                     </div>
@@ -1286,11 +1346,10 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                         <CardContent className="space-y-6 p-5 sm:p-7">
                             <div className="space-y-3">
                                 <p className="text-foreground text-sm leading-7 sm:text-base">
-                                    {school_name} believes in the sanctity of personal information and the rights of
-                                    individuals to Data Privacy per Republic Act 10173 - Data Privacy Act of 2012. Thus,
+                                    {school_name} believes in the sanctity of personal information and the rights of individuals to Data Privacy per
+                                    Republic Act 10173 - Data Privacy Act of 2012. Thus,
                                     {school_name} is committed to the protection and responsible usage of such information.
-                                    {school_name} will only collect, use, and disclose your personal information with your
-                                    knowledge and consent.
+                                    {school_name} will only collect, use, and disclose your personal information with your knowledge and consent.
                                 </p>
                                 <a
                                     href="https://privacy.gov.ph/data-privacy-act/"
@@ -1326,8 +1385,8 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                         </span>
                                     </span>
                                     <span className="text-muted-foreground mt-1 block text-xs leading-relaxed sm:text-sm">
-                                        I have read the Data Privacy Notice and consent to the collection and processing
-                                        of the information I provide for enrollment.
+                                        I have read the Data Privacy Notice and consent to the collection and processing of the information I provide
+                                        for enrollment.
                                     </span>
                                 </span>
                             </label>
@@ -1336,9 +1395,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                 htmlFor="marketing-consent"
                                 className={cn(
                                     "flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition-colors",
-                                    data.marketing_consent
-                                        ? "border-primary bg-primary/5"
-                                        : "hover:border-primary/50",
+                                    data.marketing_consent ? "border-primary bg-primary/5" : "hover:border-primary/50",
                                 )}
                             >
                                 <Checkbox
@@ -1353,8 +1410,8 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                         <Badge variant="outline">Optional</Badge>
                                     </span>
                                     <span className="text-muted-foreground mt-1 block text-xs leading-relaxed sm:text-sm">
-                                        I consent to receive marketing communications, updates, and newsletters from
-                                        {" "}{school_name}. I understand my data will be handled in accordance with the{" "}
+                                        I consent to receive marketing communications, updates, and newsletters from {school_name}. I understand my
+                                        data will be handled in accordance with the{" "}
                                         <a
                                             href="/privacy-policy"
                                             onClick={(event) => event.stopPropagation()}
@@ -1416,8 +1473,8 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                             </div>
                             <h2 className="text-foreground text-2xl font-bold sm:text-3xl">Welcome to {appName}</h2>
                             <p className="text-muted-foreground mx-auto mt-2 max-w-xl text-sm sm:text-base">
-                                Let&apos;s get you started. If you&apos;re a returning student, we&apos;ll pull up your
-                                record. If you&apos;re new, we&apos;ll guide you through a quick registration.
+                                Let&apos;s get you started. If you&apos;re a returning student, we&apos;ll pull up your record. If you&apos;re new,
+                                we&apos;ll guide you through a quick registration.
                             </p>
                         </div>
 
@@ -1431,8 +1488,8 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                     <div>
                                         <h3 className="text-foreground text-lg font-semibold">Continuing / Returning student?</h3>
                                         <p className="text-muted-foreground mt-1 text-sm">
-                                            Enter the email and Student ID on file to enroll for the current term without
-                                            re-entering your personal details.
+                                            Enter the email and Student ID on file to enroll for the current term without re-entering your personal
+                                            details.
                                         </p>
                                     </div>
                                 </div>
@@ -1483,8 +1540,8 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                     <div className="border-border/60 bg-muted/40 text-muted-foreground flex gap-2.5 rounded-lg border p-3 text-sm">
                                         <Sparkles className="text-primary/70 mt-0.5 h-4 w-4 shrink-0" />
                                         <span>
-                                            We couldn&apos;t find a student record matching that email + Student ID. If
-                                            you&apos;re new, continue as a new applicant below.
+                                            We couldn&apos;t find a student record matching that email + Student ID. If you&apos;re new, continue as a
+                                            new applicant below.
                                         </span>
                                     </div>
                                 )}
@@ -1497,9 +1554,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                 <Separator />
                             </div>
                             <div className="relative flex justify-center">
-                                <span className="bg-background text-muted-foreground px-3 text-xs font-medium tracking-wider uppercase">
-                                    or
-                                </span>
+                                <span className="bg-background text-muted-foreground px-3 text-xs font-medium tracking-wider uppercase">or</span>
                             </div>
                         </div>
 
@@ -1523,8 +1578,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                 <div className="flex-1">
                                     <h3 className="text-foreground text-lg font-semibold">I&apos;m a new applicant</h3>
                                     <p className="text-muted-foreground mt-1 text-sm">
-                                        First time applying? Register here &mdash; we&apos;ll walk you through a short
-                                        5-step form.
+                                        First time applying? Register here &mdash; we&apos;ll walk you through a short 5-step form.
                                     </p>
                                 </div>
                                 <ArrowRight className="text-muted-foreground h-5 w-5" />
@@ -1550,19 +1604,13 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                             <CheckCircle2 className="h-6 w-6" />
                                         </div>
                                         <div>
-                                            <p className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
-                                                Welcome back
-                                            </p>
-                                            <h3 className="text-foreground text-xl font-bold sm:text-2xl">
-                                                {matchedStudent.full_name}
-                                            </h3>
+                                            <p className="text-muted-foreground text-xs font-medium tracking-wider uppercase">Welcome back</p>
+                                            <h3 className="text-foreground text-xl font-bold sm:text-2xl">{matchedStudent.full_name}</h3>
                                             <div className="mt-2 flex flex-wrap gap-2">
                                                 <Badge variant="secondary" className="font-mono">
                                                     ID&nbsp;{matchedStudent.student_id}
                                                 </Badge>
-                                                <Badge variant="outline">
-                                                    {matchedStudent.student_type === "tesda" ? "TESDA" : "College"}
-                                                </Badge>
+                                                <Badge variant="outline">{matchedStudent.student_type === "tesda" ? "TESDA" : "College"}</Badge>
                                                 {matchedStudent.status && (
                                                     <Badge variant="outline" className="capitalize">
                                                         {matchedStudent.status.replace(/_/g, " ")}
@@ -1578,14 +1626,10 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
 
                                 {matchedStudent.course && (
                                     <div className="bg-muted/40 mt-5 rounded-lg border p-4 text-sm">
-                                        <p className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
-                                            Current program on file
-                                        </p>
+                                        <p className="text-muted-foreground text-xs font-medium tracking-wider uppercase">Current program on file</p>
                                         <p className="text-foreground mt-1 font-semibold">
                                             {matchedStudent.course.title}{" "}
-                                            <span className="text-muted-foreground font-normal">
-                                                ({matchedStudent.course.code})
-                                            </span>
+                                            <span className="text-muted-foreground font-normal">({matchedStudent.course.code})</span>
                                         </p>
                                     </div>
                                 )}
@@ -1629,8 +1673,8 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                     <div>
                                         <h3 className="text-foreground text-lg font-semibold">Confirm your program</h3>
                                         <p className="text-muted-foreground mt-1 text-sm">
-                                            Your course is locked to your student record. Review your year level and
-                                            semester, then continue to pick subjects.
+                                            Your course is locked to your student record. Review your year level and semester, then continue to pick
+                                            subjects.
                                         </p>
                                     </div>
 
@@ -1641,9 +1685,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                         </div>
                                         <div className="flex-1">
                                             <div className="flex flex-wrap items-center gap-2">
-                                                <p className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
-                                                    Course / Program
-                                                </p>
+                                                <p className="text-muted-foreground text-xs font-medium tracking-wider uppercase">Course / Program</p>
                                                 <span className="bg-primary/10 text-primary inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium">
                                                     <CheckCircle2 className="h-3 w-3" /> Locked
                                                 </span>
@@ -1668,8 +1710,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                             <div className="flex flex-wrap items-center justify-between gap-2">
                                                 <Label>Year Level</Label>
                                                 {matchedStudent.academic_year &&
-                                                    continuingYear ===
-                                                        String(Math.min(matchedStudent.academic_year + 1, 4)) && (
+                                                    continuingYear === String(Math.min(matchedStudent.academic_year + 1, 4)) && (
                                                         <span className="bg-primary/10 text-primary inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium">
                                                             <ArrowRight className="h-3 w-3" /> Advanced from{" "}
                                                             {matchedStudent.academic_year === 1
@@ -1725,11 +1766,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                                         continuingSemester === opt.value && "border-primary bg-primary/5",
                                                     )}
                                                 >
-                                                    <RadioGroupItem
-                                                        id={`cont-sem-${opt.value || "current"}`}
-                                                        value={opt.value}
-                                                        className="sr-only"
-                                                    />
+                                                    <RadioGroupItem id={`cont-sem-${opt.value || "current"}`} value={opt.value} className="sr-only" />
                                                     {opt.label}
                                                 </Label>
                                             ))}
@@ -1765,8 +1802,8 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                     <div>
                                         <h3 className="text-foreground text-lg font-semibold">Select your subjects</h3>
                                         <p className="text-muted-foreground mt-1 text-sm">
-                                            Tap a subject to add it. Toggle <strong>Modular</strong> for self-paced
-                                            subjects (flat&nbsp;{formatPhp(MODULAR_FEE_PER_SUBJECT)} each).
+                                            Tap a subject to add it. Toggle <strong>Modular</strong> for self-paced subjects (flat&nbsp;
+                                            {formatPhp(MODULAR_FEE_PER_SUBJECT)} each).
                                         </p>
                                     </div>
 
@@ -1801,9 +1838,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                                         key={subject.id}
                                                         className={cn(
                                                             "group flex flex-col gap-3 rounded-lg border p-3 transition-colors sm:flex-row sm:items-start",
-                                                            isSelected
-                                                                ? "border-primary bg-primary/5"
-                                                                : "hover:border-primary/40 hover:bg-muted/30",
+                                                            isSelected ? "border-primary bg-primary/5" : "hover:border-primary/40 hover:bg-muted/30",
                                                         )}
                                                     >
                                                         <button
@@ -1811,21 +1846,14 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                                             onClick={() => toggleContinuingSubject(subject)}
                                                             className="flex flex-1 items-start gap-3 text-left"
                                                         >
-                                                            <Checkbox
-                                                                checked={isSelected}
-                                                                className="mt-0.5 pointer-events-none"
-                                                                aria-hidden
-                                                            />
+                                                            <Checkbox checked={isSelected} className="pointer-events-none mt-0.5" aria-hidden />
                                                             <div className="flex-1">
                                                                 <div className="flex flex-wrap items-center gap-2">
                                                                     <span className="text-foreground font-mono text-xs font-semibold">
                                                                         {subject.code}
                                                                     </span>
                                                                     {subject.has_classes && (
-                                                                        <Badge
-                                                                            variant="secondary"
-                                                                            className="h-5 gap-1 px-1.5 text-[10px]"
-                                                                        >
+                                                                        <Badge variant="secondary" className="h-5 gap-1 px-1.5 text-[10px]">
                                                                             <CheckCircle2 className="h-3 w-3" /> Classes open
                                                                         </Badge>
                                                                     )}
@@ -1835,9 +1863,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                                                         </Badge>
                                                                     )}
                                                                 </div>
-                                                                <p className="text-foreground mt-1 text-sm font-medium">
-                                                                    {subject.title}
-                                                                </p>
+                                                                <p className="text-foreground mt-1 text-sm font-medium">{subject.title}</p>
                                                                 <div className="text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
                                                                     <span>Lec: {subject.lecture} unit(s)</span>
                                                                     <span>Lab: {subject.laboratory} unit(s)</span>
@@ -1850,10 +1876,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                                                     <Checkbox
                                                                         checked={selected.is_modular}
                                                                         onCheckedChange={(checked) =>
-                                                                            toggleContinuingModular(
-                                                                                subject.id,
-                                                                                checked === true,
-                                                                            )
+                                                                            toggleContinuingModular(subject.id, checked === true)
                                                                         }
                                                                     />
                                                                     <span className="text-muted-foreground">Modular</span>
@@ -1875,22 +1898,16 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                     {/* Selection summary */}
                                     <div className="bg-muted/40 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 text-sm">
                                         <div className="text-muted-foreground">
-                                            <strong className="text-foreground">{continuingTotals.subjectsCount}</strong>{" "}
-                                            subject{continuingTotals.subjectsCount === 1 ? "" : "s"} •{" "}
-                                            <strong className="text-foreground">{continuingTotals.totalUnits}</strong>{" "}
-                                            unit{continuingTotals.totalUnits === 1 ? "" : "s"}
+                                            <strong className="text-foreground">{continuingTotals.subjectsCount}</strong> subject
+                                            {continuingTotals.subjectsCount === 1 ? "" : "s"} •{" "}
+                                            <strong className="text-foreground">{continuingTotals.totalUnits}</strong> unit
+                                            {continuingTotals.totalUnits === 1 ? "" : "s"}
                                         </div>
-                                        <div className="text-foreground font-mono font-semibold">
-                                            {formatPhp(continuingTotals.totalTuition)}
-                                        </div>
+                                        <div className="text-foreground font-mono font-semibold">{formatPhp(continuingTotals.totalTuition)}</div>
                                     </div>
 
                                     <div className="flex flex-col gap-3 sm:flex-row">
-                                        <Button
-                                            variant="outline"
-                                            onClick={() => setContinuingStep(0)}
-                                            className="sm:flex-1"
-                                        >
+                                        <Button variant="outline" onClick={() => setContinuingStep(0)} className="sm:flex-1">
                                             Back
                                         </Button>
                                         <Button
@@ -1918,14 +1935,14 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                     <div>
                                         <h3 className="text-foreground text-lg font-semibold">Review &amp; submit</h3>
                                         <p className="text-muted-foreground mt-1 text-sm">
-                                            Here&apos;s your estimated tuition for this term. The registrar will finalize
-                                            sections and payment details.
+                                            Here&apos;s your estimated tuition for this term. The registrar will finalize sections and payment
+                                            details.
                                         </p>
                                     </div>
 
                                     {/* Selected subjects list */}
                                     <div className="overflow-hidden rounded-lg border">
-                                        <div className="bg-muted/50 border-b px-3 py-2 text-xs font-semibold tracking-wider uppercase text-muted-foreground">
+                                        <div className="bg-muted/50 text-muted-foreground border-b px-3 py-2 text-xs font-semibold tracking-wider uppercase">
                                             Selected subjects ({continuingTotals.subjectsCount})
                                         </div>
                                         <div className="divide-y">
@@ -1936,13 +1953,9 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                                 >
                                                     <div className="min-w-0">
                                                         <p className="text-foreground truncate font-medium">
-                                                            <span className="font-mono text-xs">{s.code}</span> &middot;{" "}
-                                                            {s.title}
+                                                            <span className="font-mono text-xs">{s.code}</span> &middot; {s.title}
                                                             {s.is_modular && (
-                                                                <Badge
-                                                                    variant="outline"
-                                                                    className="ml-2 h-5 px-1.5 text-[10px]"
-                                                                >
+                                                                <Badge variant="outline" className="ml-2 h-5 px-1.5 text-[10px]">
                                                                     Modular
                                                                 </Badge>
                                                             )}
@@ -1975,12 +1988,9 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                         {continuingTotals.modularCount > 0 && (
                                             <div className="flex justify-between">
                                                 <span className="text-muted-foreground">
-                                                    Modular ({continuingTotals.modularCount} ×{" "}
-                                                    {formatPhp(MODULAR_FEE_PER_SUBJECT)})
+                                                    Modular ({continuingTotals.modularCount} × {formatPhp(MODULAR_FEE_PER_SUBJECT)})
                                                 </span>
-                                                <span className="font-mono">
-                                                    {formatPhp(continuingTotals.totalModularFee)}
-                                                </span>
+                                                <span className="font-mono">{formatPhp(continuingTotals.totalModularFee)}</span>
                                             </div>
                                         )}
                                         <Separator className="my-1" />
@@ -1998,8 +2008,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                             <span className="font-mono">{formatPhp(continuingTotals.overallTotal)}</span>
                                         </div>
                                         <p className="text-muted-foreground mt-2 text-xs">
-                                            Final assessment (discounts, downpayment, additional fees) is handled by the
-                                            registrar.
+                                            Final assessment (discounts, downpayment, additional fees) is handled by the registrar.
                                         </p>
                                     </div>
 
@@ -2019,11 +2028,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                     </div>
 
                                     <div className="flex flex-col gap-3 sm:flex-row">
-                                        <Button
-                                            variant="outline"
-                                            onClick={() => setContinuingStep(1)}
-                                            className="sm:flex-1"
-                                        >
+                                        <Button variant="outline" onClick={() => setContinuingStep(1)} className="sm:flex-1">
                                             Back
                                         </Button>
                                         <Button
@@ -2057,17 +2062,13 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
             <Head title="Enrollment Registration" />
 
             {/* Decorative background — themed via shadcn tokens */}
-            <div
-                aria-hidden
-                className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"
-            >
+            <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
                 <div className="bg-primary/10 absolute -top-24 -left-24 h-72 w-72 rounded-full blur-3xl sm:h-96 sm:w-96" />
                 <div className="bg-primary/5 absolute top-1/3 -right-32 h-80 w-80 rounded-full blur-3xl sm:h-[28rem] sm:w-[28rem]" />
                 <div
                     className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05]"
                     style={{
-                        backgroundImage:
-                            "radial-gradient(circle at 1px 1px, currentColor 1px, transparent 0)",
+                        backgroundImage: "radial-gradient(circle at 1px 1px, currentColor 1px, transparent 0)",
                         backgroundSize: "24px 24px",
                     }}
                 />
@@ -2083,11 +2084,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                         className="bg-background/90 fixed inset-0 z-50 overflow-y-auto backdrop-blur-sm"
                     >
                         <div className="flex min-h-full items-start justify-center p-3 sm:items-center sm:p-6">
-                            <motion.div
-                                initial={{ scale: 0.95, y: 20 }}
-                                animate={{ scale: 1, y: 0 }}
-                                className="w-full max-w-2xl"
-                            >
+                            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} className="w-full max-w-2xl">
                                 <Card className="border-primary/20 overflow-hidden border-2 shadow-2xl">
                                     {/* Header */}
                                     <div className="from-primary/10 via-primary/5 to-background bg-gradient-to-br p-6 text-center sm:p-8">
@@ -2099,11 +2096,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                         >
                                             <CheckCircle2 className="text-primary h-8 w-8 sm:h-10 sm:w-10" />
                                         </motion.div>
-                                        <motion.div
-                                            initial={{ opacity: 0, y: 10 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                            transition={{ delay: 0.3 }}
-                                        >
+                                        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
                                             <h2 className="text-foreground text-xl font-bold sm:text-2xl">
                                                 {successData.continuing ? "Re-enrollment Submitted!" : "Registration Submitted!"}
                                             </h2>
@@ -2120,12 +2113,8 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                                             SY {successData.schoolYear}
                                                         </Badge>
                                                     )}
-                                                    {successData.semesterLabel && (
-                                                        <Badge variant="secondary">{successData.semesterLabel}</Badge>
-                                                    )}
-                                                    {successData.yearLevelLabel && (
-                                                        <Badge variant="outline">{successData.yearLevelLabel}</Badge>
-                                                    )}
+                                                    {successData.semesterLabel && <Badge variant="secondary">{successData.semesterLabel}</Badge>}
+                                                    {successData.yearLevelLabel && <Badge variant="outline">{successData.yearLevelLabel}</Badge>}
                                                 </div>
                                             )}
                                         </motion.div>
@@ -2138,9 +2127,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                                 <span className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
                                                     {successData.continuing ? "Student" : "Applicant"}
                                                 </span>
-                                                <span className="text-foreground font-semibold sm:text-right">
-                                                    {successData.name}
-                                                </span>
+                                                <span className="text-foreground font-semibold sm:text-right">{successData.name}</span>
                                             </div>
                                             <div className="flex flex-col gap-1.5 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
                                                 <span className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
@@ -2161,15 +2148,11 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                                 </div>
                                             </div>
                                             <div className="flex flex-col gap-1 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
-                                                <span className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
-                                                    Program
-                                                </span>
+                                                <span className="text-muted-foreground text-xs font-medium tracking-wider uppercase">Program</span>
                                                 <span className="text-foreground font-medium sm:text-right">
                                                     {successData.course}
                                                     {successData.courseCode && (
-                                                        <span className="text-muted-foreground ml-1 font-normal">
-                                                            ({successData.courseCode})
-                                                        </span>
+                                                        <span className="text-muted-foreground ml-1 font-normal">({successData.courseCode})</span>
                                                     )}
                                                 </span>
                                             </div>
@@ -2178,7 +2161,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                         {/* Subjects list (continuing students only) */}
                                         {successData.continuing && successData.subjects && successData.subjects.length > 0 && (
                                             <div className="overflow-hidden rounded-lg border">
-                                                <div className="bg-muted/50 flex items-center justify-between border-b px-3 py-2 text-xs font-semibold tracking-wider uppercase text-muted-foreground sm:px-4">
+                                                <div className="bg-muted/50 text-muted-foreground flex items-center justify-between border-b px-3 py-2 text-xs font-semibold tracking-wider uppercase sm:px-4">
                                                     <span className="flex items-center gap-1.5">
                                                         <BookOpen className="h-3.5 w-3.5" /> Enrolled subjects
                                                     </span>
@@ -2199,10 +2182,7 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                                                     <span className="text-muted-foreground"> · </span>
                                                                     {s.title}
                                                                     {s.is_modular && (
-                                                                        <Badge
-                                                                            variant="outline"
-                                                                            className="ml-2 h-5 px-1.5 text-[10px]"
-                                                                        >
+                                                                        <Badge variant="outline" className="ml-2 h-5 px-1.5 text-[10px]">
                                                                             Modular
                                                                         </Badge>
                                                                     )}
@@ -2290,22 +2270,20 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                                                     </span>
                                                 </div>
                                                 <p className="text-muted-foreground text-xs">
-                                                    Any discounts, downpayment, or additional fees will be applied by the
-                                                    registrar during final assessment.
+                                                    Any discounts, downpayment, or additional fees will be applied by the registrar during final
+                                                    assessment.
                                                 </p>
                                             </div>
                                         )}
 
                                         {/* Next steps */}
-                                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/20 sm:p-4">
+                                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 sm:p-4 dark:border-amber-900 dark:bg-amber-950/20">
                                             <h4 className="flex items-center gap-2 font-semibold text-amber-800 dark:text-amber-200">
                                                 <Sparkles className="h-4 w-4" /> What&apos;s next?
                                             </h4>
                                             <ul className="mt-2 ml-5 list-disc space-y-1 text-sm text-amber-700 dark:text-amber-300">
                                                 <li>
-                                                    Save your{" "}
-                                                    <strong>{successData.continuing ? "Student ID" : "Applicant ID"}</strong>{" "}
-                                                    for reference.
+                                                    Save your <strong>{successData.continuing ? "Student ID" : "Applicant ID"}</strong> for reference.
                                                 </li>
                                                 {successData.continuing ? (
                                                     <>
@@ -2344,1310 +2322,1961 @@ export default function EnrollmentCreate({ departments, courses, flash, college_
                 identifyView
             ) : (
                 <>
-            {/* Main Header - Sticky */}
-            <header className="bg-background/80 supports-[backdrop-filter]:bg-background/60 sticky top-0 z-40 w-full border-b backdrop-blur-md">
-                <div className="container mx-auto flex h-16 max-w-5xl items-center justify-between px-4">
-                    <div className="flex items-center gap-3">
-                        <div className="bg-primary text-primary-foreground flex h-9 w-9 items-center justify-center rounded-lg shadow-sm">
-                            <GraduationCap className="h-5 w-5" />
-                        </div>
-                        <div>
-                            <h1 className="text-sm leading-none font-bold sm:text-base">{orgShortName} Enrollment</h1>
-                            <p className="text-muted-foreground mt-0.5 text-[10px] sm:text-xs">Online Registration</p>
-                        </div>
-                    </div>
-
-                    {/* Desktop Steps */}
-                    <div className="hidden items-center gap-2 md:flex">
-                        {steps.map((step, index) => (
-                            <div key={step.id} className="flex items-center">
-                                <div
-                                    className={cn(
-                                        "flex h-8 w-8 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors",
-                                        currentStep === index
-                                            ? "border-primary bg-primary text-primary-foreground"
-                                            : currentStep > index
-                                              ? "border-primary bg-primary text-primary-foreground"
-                                              : "border-muted-foreground/30 text-muted-foreground",
-                                    )}
-                                >
-                                    {currentStep > index ? <Check className="h-4 w-4" /> : index + 1}
+                    {/* Main Header - Sticky */}
+                    <header className="bg-background/80 supports-[backdrop-filter]:bg-background/60 sticky top-0 z-40 w-full border-b backdrop-blur-md">
+                        <div className="container mx-auto flex h-16 max-w-5xl items-center justify-between px-4">
+                            <div className="flex items-center gap-3">
+                                <div className="bg-primary text-primary-foreground flex h-9 w-9 items-center justify-center rounded-lg shadow-sm">
+                                    <GraduationCap className="h-5 w-5" />
                                 </div>
-                                {index < steps.length - 1 && (
-                                    <div className={cn("mx-2 h-0.5 w-8", currentStep > index ? "bg-primary" : "bg-muted-foreground/30")} />
-                                )}
+                                <div>
+                                    <h1 className="text-sm leading-none font-bold sm:text-base">{orgShortName} Enrollment</h1>
+                                    <p className="text-muted-foreground mt-0.5 text-[10px] sm:text-xs">Online Registration</p>
+                                </div>
                             </div>
-                        ))}
-                    </div>
 
-                    {/* Mobile Step Indicator */}
-                    <div className="flex flex-col items-end md:hidden">
-                        <span className="text-muted-foreground text-xs font-medium">
-                            Step {currentStep + 1} of {steps.length}
-                        </span>
-                        <div className="bg-muted mt-1 h-1.5 w-24 overflow-hidden rounded-full">
-                            <motion.div
-                                className="bg-primary h-full"
-                                initial={{ width: 0 }}
-                                animate={{ width: `${((currentStep + 1) / steps.length) * 100}%` }}
-                            />
-                        </div>
-                    </div>
-                </div>
-            </header>
-
-            {/* Content Area */}
-            <main className="container mx-auto max-w-3xl flex-1 p-4 pb-32 sm:p-6 lg:p-8">
-                {/* Mobile Step Title */}
-                <div className="mb-6 md:hidden">
-                    <h2 className="text-2xl font-bold">{steps[currentStep].label}</h2>
-                    <p className="text-muted-foreground mt-1 text-sm">{steps[currentStep].description}</p>
-                </div>
-
-                <AnimatePresence mode="wait" custom={direction}>
-                    <motion.div
-                        key={currentStep}
-                        custom={direction}
-                        variants={variants}
-                        initial="enter"
-                        animate="center"
-                        exit="exit"
-                        transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                        className="space-y-6"
-                    >
-                        {/* Desktop Title (Hidden on mobile to avoid duplication) */}
-                        <div className="mb-8 hidden space-y-2 md:block">
-                            <h2 className="text-3xl font-bold tracking-tight">{steps[currentStep].label}</h2>
-                            <p className="text-muted-foreground text-lg">
-                                {currentStep === 0 && "Browse and choose the program that fits your goals."}
-                                {currentStep === 1 && "Fill in your personal information accurately."}
-                                {currentStep === 2 && "Provide contact details for emergencies."}
-                                {currentStep === 3 && "Check the documents you have ready to upload."}
-                                {currentStep === 4 && "Review all information before submitting."}
-                            </p>
-                            <Separator className="mt-6" />
-                        </div>
-
-                        {/* Step 1: Program Selection — High-Focus Progressive UI */}
-                        {currentStep === 0 && (
-                            <div className="flex flex-col gap-6 sm:gap-8">
-                                {/* ── 1. Enrollment Type (Segmented Control) ── */}
-                                <div className="space-y-3">
-                                    <div className="flex items-center justify-between">
-                                        <Label className="text-base font-bold sm:text-lg">1. Choose Enrollment Path</Label>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-muted/50 p-1.5 dark:bg-muted/20">
-                                        <button
-                                            type="button"
-                                            disabled={!college_enrollment_enabled}
-                                            onClick={() => { setData("student_type", "college"); setProgramSearch(""); setData("course_id", ""); }}
+                            {/* Desktop Steps */}
+                            <div className="hidden items-center gap-2 md:flex">
+                                {steps.map((step, index) => (
+                                    <div key={step.id} className="flex items-center">
+                                        <div
                                             className={cn(
-                                                "flex items-center justify-center gap-2.5 rounded-lg py-3 text-sm font-semibold transition-all",
-                                                data.student_type === "college"
-                                                    ? "bg-background text-foreground shadow-sm ring-1 ring-border/50"
-                                                    : "text-muted-foreground hover:bg-background/50 hover:text-foreground",
-                                                !college_enrollment_enabled && "cursor-not-allowed opacity-50"
+                                                "flex h-8 w-8 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors",
+                                                currentStep === index
+                                                    ? "border-primary bg-primary text-primary-foreground"
+                                                    : currentStep > index
+                                                      ? "border-primary bg-primary text-primary-foreground"
+                                                      : "border-muted-foreground/30 text-muted-foreground",
                                             )}
                                         >
-                                            <BookOpen className="h-4 w-4" />
-                                            College Degree
-                                        </button>
-                                        <button
-                                            type="button"
-                                            disabled={!tesda_enrollment_enabled}
-                                            onClick={() => { setData("student_type", "tesda"); setProgramSearch(""); setData("course_id", ""); }}
-                                            className={cn(
-                                                "flex items-center justify-center gap-2.5 rounded-lg py-3 text-sm font-semibold transition-all",
-                                                data.student_type === "tesda"
-                                                    ? "bg-background text-foreground shadow-sm ring-1 ring-border/50"
-                                                    : "text-muted-foreground hover:bg-background/50 hover:text-foreground",
-                                                !tesda_enrollment_enabled && "cursor-not-allowed opacity-50"
-                                            )}
-                                        >
-                                            <Sparkles className="h-4 w-4" />
-                                            TESDA Training
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* ── 2. Filters & Search ── */}
-                                <div className="space-y-4">
-                                    <Label className="text-base font-bold sm:text-lg">2. Find Your Program</Label>
-
-                                    {/* Department Pills */}
-                                    {data.student_type === "college" && availableDepartments.length > 1 && (
-                                        <div className="scrollbar-none -mx-2 flex gap-2 overflow-x-auto px-2 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
-                                            <button
-                                                type="button"
-                                                onClick={() => { setData("department", ""); setData("course_id", ""); }}
-                                                className={cn(
-                                                    "inline-flex shrink-0 items-center rounded-full px-4 py-1.5 text-xs font-semibold transition-all active:scale-95",
-                                                    data.department === ""
-                                                        ? "bg-primary text-primary-foreground shadow-sm"
-                                                        : "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground",
-                                                )}
-                                            >
-                                                All Departments
-                                            </button>
-                                            {availableDepartments.map((dept) => (
-                                                <button
-                                                    key={dept.code}
-                                                    type="button"
-                                                    onClick={() => { setData("department", dept.code); setData("course_id", ""); }}
-                                                    className={cn(
-                                                        "inline-flex shrink-0 items-center rounded-full px-4 py-1.5 text-xs font-semibold transition-all active:scale-95",
-                                                        data.department === dept.code
-                                                            ? "bg-primary text-primary-foreground shadow-sm"
-                                                            : "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground",
-                                                    )}
-                                                >
-                                                    {dept.label}
-                                                </button>
-                                            ))}
+                                            {currentStep > index ? <Check className="h-4 w-4" /> : index + 1}
                                         </div>
-                                    )}
-
-                                    {/* Global Search Bar */}
-                                    <div className="relative">
-                                        <Search className="text-muted-foreground/70 absolute top-1/2 left-4 h-5 w-5 -translate-y-1/2" />
-                                        <Input
-                                            value={programSearch}
-                                            onChange={(e) => setProgramSearch(e.target.value)}
-                                            placeholder="Fast search (e.g., BSIT, Culinary, Tourism)..."
-                                            className="h-12 rounded-xl bg-card pl-12 text-base shadow-sm border-border/50 focus-visible:ring-primary/30"
-                                        />
-                                        {programSearch && (
-                                            <button
-                                                type="button"
-                                                onClick={() => setProgramSearch("")}
-                                                className="text-muted-foreground hover:text-foreground absolute top-1/2 right-4 -translate-y-1/2 rounded-full p-1 transition-all active:scale-90"
-                                            >
-                                                <Eraser className="h-5 w-5" />
-                                            </button>
+                                        {index < steps.length - 1 && (
+                                            <div className={cn("mx-2 h-0.5 w-8", currentStep > index ? "bg-primary" : "bg-muted-foreground/30")} />
                                         )}
                                     </div>
+                                ))}
+                            </div>
+
+                            {/* Mobile Step Indicator */}
+                            <div className="flex flex-col items-end md:hidden">
+                                <span className="text-muted-foreground text-xs font-medium">
+                                    Step {currentStep + 1} of {steps.length}
+                                </span>
+                                <div className="bg-muted mt-1 h-1.5 w-24 overflow-hidden rounded-full">
+                                    <motion.div
+                                        className="bg-primary h-full"
+                                        initial={{ width: 0 }}
+                                        animate={{ width: `${((currentStep + 1) / steps.length) * 100}%` }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* Content Area */}
+                    <main className="container mx-auto max-w-3xl flex-1 p-4 pb-32 sm:p-6 lg:p-8">
+                        {/* Mobile Step Title */}
+                        <div className="mb-6 md:hidden">
+                            <h2 className="text-2xl font-bold">{steps[currentStep].label}</h2>
+                            <p className="text-muted-foreground mt-1 text-sm">{steps[currentStep].description}</p>
+                        </div>
+
+                        <AnimatePresence mode="wait" custom={direction}>
+                            <motion.div
+                                key={currentStep}
+                                custom={direction}
+                                variants={variants}
+                                initial="enter"
+                                animate="center"
+                                exit="exit"
+                                transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                                className="space-y-6"
+                            >
+                                {/* Desktop Title (Hidden on mobile to avoid duplication) */}
+                                <div className="mb-8 hidden space-y-2 md:block">
+                                    <h2 className="text-3xl font-bold tracking-tight">{steps[currentStep].label}</h2>
+                                    <p className="text-muted-foreground text-lg">
+                                        {currentStep === 0 && "Browse and choose the program that fits your goals."}
+                                        {currentStep === 1 && "Fill in your personal information accurately."}
+                                        {currentStep === 2 && "Provide contact details for emergencies."}
+                                        {currentStep === 3 && "Check the documents you have ready to upload."}
+                                        {currentStep === 4 && "Review all information before submitting."}
+                                    </p>
+                                    <Separator className="mt-6" />
                                 </div>
 
-                                {/* ── 3. Expandable Course List ── */}
-                                <div className="space-y-3">
-                                    <div className="flex items-center justify-between pb-1">
-                                        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                            {filteredCoursesForGrid.length} {filteredCoursesForGrid.length === 1 ? "Program" : "Programs"} Available
-                                        </span>
-                                    </div>
-
-                                    {filteredCoursesForGrid.length === 0 ? (
-                                        <div className="flex flex-col items-center rounded-2xl border-2 border-dashed py-16">
-                                            <div className="bg-muted mb-3 flex h-14 w-14 items-center justify-center rounded-full">
-                                                <Search className="text-muted-foreground h-6 w-6" />
+                                {/* Step 1: Program Selection — High-Focus Progressive UI */}
+                                {currentStep === 0 && (
+                                    <div className="flex flex-col gap-6 sm:gap-8">
+                                        {/* ── 1. Enrollment Type (Segmented Control) ── */}
+                                        <div className="space-y-3">
+                                            <div className="flex items-center justify-between">
+                                                <Label className="text-base font-bold sm:text-lg">1. Choose Enrollment Path</Label>
                                             </div>
-                                            <p className="text-foreground font-semibold">No programs matched your search</p>
-                                            <p className="text-muted-foreground mt-1 text-sm">Try clearing your filters or search term.</p>
-                                            {(programSearch || data.department) && (
-                                                <Button 
-                                                    variant="outline" 
-                                                    className="mt-4"
-                                                    onClick={() => { setProgramSearch(""); setData("department", ""); }}
+                                            <div className="bg-muted/50 dark:bg-muted/20 grid grid-cols-2 gap-1.5 rounded-xl p-1.5">
+                                                <button
+                                                    type="button"
+                                                    disabled={!college_enrollment_enabled}
+                                                    onClick={() => {
+                                                        setData("student_type", "college");
+                                                        setProgramSearch("");
+                                                        setData("course_id", "");
+                                                    }}
+                                                    className={cn(
+                                                        "flex items-center justify-center gap-2.5 rounded-lg py-3 text-sm font-semibold transition-all",
+                                                        data.student_type === "college"
+                                                            ? "bg-background text-foreground ring-border/50 shadow-sm ring-1"
+                                                            : "text-muted-foreground hover:bg-background/50 hover:text-foreground",
+                                                        !college_enrollment_enabled && "cursor-not-allowed opacity-50",
+                                                    )}
                                                 >
-                                                    Clear All Filters
-                                                </Button>
-                                            )}
+                                                    <BookOpen className="h-4 w-4" />
+                                                    College Degree
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    disabled={!tesda_enrollment_enabled}
+                                                    onClick={() => {
+                                                        setData("student_type", "tesda");
+                                                        setProgramSearch("");
+                                                        setData("course_id", "");
+                                                    }}
+                                                    className={cn(
+                                                        "flex items-center justify-center gap-2.5 rounded-lg py-3 text-sm font-semibold transition-all",
+                                                        data.student_type === "tesda"
+                                                            ? "bg-background text-foreground ring-border/50 shadow-sm ring-1"
+                                                            : "text-muted-foreground hover:bg-background/50 hover:text-foreground",
+                                                        !tesda_enrollment_enabled && "cursor-not-allowed opacity-50",
+                                                    )}
+                                                >
+                                                    <Sparkles className="h-4 w-4" />
+                                                    TESDA Training
+                                                </button>
+                                            </div>
                                         </div>
-                                    ) : (
-                                        <div className="space-y-2.5">
-                                            {filteredCoursesForGrid.map((course) => {
-                                                const isSelected = String(course.id) === data.course_id;
-                                                return (
-                                                    <div
-                                                        key={course.id}
+
+                                        {/* ── 2. Filters & Search ── */}
+                                        <div className="space-y-4">
+                                            <Label className="text-base font-bold sm:text-lg">2. Find Your Program</Label>
+
+                                            {/* Department Pills */}
+                                            {data.student_type === "college" && availableDepartments.length > 1 && (
+                                                <div className="-mx-2 flex scrollbar-none gap-2 overflow-x-auto px-2 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setData("department", "");
+                                                            setData("course_id", "");
+                                                        }}
                                                         className={cn(
-                                                            "group overflow-hidden rounded-xl border transition-all duration-300",
-                                                            isSelected 
-                                                                ? "border-primary bg-primary/[0.02] ring-1 ring-primary/20 shadow-md" 
-                                                                : "border-border/50 bg-card hover:border-primary/40 cursor-pointer"
+                                                            "inline-flex shrink-0 items-center rounded-full px-4 py-1.5 text-xs font-semibold transition-all active:scale-95",
+                                                            data.department === ""
+                                                                ? "bg-primary text-primary-foreground shadow-sm"
+                                                                : "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground",
                                                         )}
                                                     >
-                                                        {/* Compact Header Row */}
-                                                        <div 
-                                                            className="flex items-center gap-3 p-4 sm:px-5"
-                                                            onClick={() => setData("course_id", String(course.id))}
-                                                        >
-                                                            <div className={cn(
-                                                                "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-all duration-300",
-                                                                isSelected 
-                                                                    ? "border-primary bg-primary scale-110" 
-                                                                    : "border-muted-foreground/30 group-hover:border-primary/50"
-                                                            )}>
-                                                                {isSelected && <Check className="h-3.5 w-3.5 text-primary-foreground" />}
-                                                            </div>
-                                                            <div className="min-w-0 flex-1 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4">
-                                                                <span className={cn(
-                                                                    "font-mono text-xs font-bold sm:w-20 shrink-0",
-                                                                    isSelected ? "text-primary" : "text-muted-foreground group-hover:text-primary/80"
-                                                                )}>
-                                                                    {course.code}
-                                                                </span>
-                                                                <h4 className={cn(
-                                                                    "text-sm font-semibold truncate transition-colors", 
-                                                                    isSelected ? "text-primary" : "text-foreground group-hover:text-primary/90"
-                                                                )}>
-                                                                    {course.title}
-                                                                </h4>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Expanded Context Details (Only visible when selected) */}
-                                                        <AnimatePresence>
-                                                            {isSelected && (
-                                                                <motion.div
-                                                                    initial={{ height: 0, opacity: 0 }}
-                                                                    animate={{ height: "auto", opacity: 1 }}
-                                                                    exit={{ height: 0, opacity: 0 }}
-                                                                    transition={{ duration: 0.2 }}
-                                                                    className="border-t border-primary/10 bg-primary/[0.04] dark:bg-primary/[0.08]"
-                                                                >
-                                                                    <div className="p-4 sm:px-5 pl-[48px] sm:pl-[68px] space-y-3 pb-5">
-                                                                        {/* Context Tags */}
-                                                                        <div className="flex flex-wrap items-center gap-2">
-                                                                            <Badge className="bg-primary/10 text-primary hover:bg-primary/20 shadow-none border-0">
-                                                                                {data.student_type === "college" ? "4-Year Degree Program" : "Tech-Voc Training"}
-                                                                            </Badge>
-                                                                            {course.department_name && (
-                                                                                <Badge variant="outline" className="bg-background text-muted-foreground border-border/60">
-                                                                                    {course.department_name}
-                                                                                </Badge>
-                                                                            )}
-                                                                        </div>
-
-                                                                        {/* Description */}
-                                                                        {course.description ? (
-                                                                            <p className="text-sm text-muted-foreground leading-relaxed">
-                                                                                {course.description}
-                                                                            </p>
-                                                                        ) : (
-                                                                            <p className="text-sm text-muted-foreground italic">No specific description available for this program.</p>
-                                                                        )}
-
-                                                                        {/* Next Step Context Note */}
-                                                                        <div className="mt-4 flex items-center gap-2 text-sm font-medium text-emerald-600 dark:text-emerald-400">
-                                                                            <CheckCircle2 className="h-4 w-4" />
-                                                                            Selection confirmed. You can proceed to the next step.
-                                                                        </div>
-                                                                    </div>
-                                                                </motion.div>
+                                                        All Departments
+                                                    </button>
+                                                    {availableDepartments.map((dept) => (
+                                                        <button
+                                                            key={dept.code}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setData("department", dept.code);
+                                                                setData("course_id", "");
+                                                            }}
+                                                            className={cn(
+                                                                "inline-flex shrink-0 items-center rounded-full px-4 py-1.5 text-xs font-semibold transition-all active:scale-95",
+                                                                data.department === dept.code
+                                                                    ? "bg-primary text-primary-foreground shadow-sm"
+                                                                    : "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground",
                                                             )}
-                                                        </AnimatePresence>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-
-                        {currentStep === 1 && (
-                            <div className="space-y-5">
-                                <Card className="border shadow-sm">
-                                    <CardContent className="space-y-4 p-4 sm:p-6">
-                                        <div className="mb-1 flex items-center gap-2">
-                                            <User className="text-primary h-5 w-5" />
-                                            <h3 className="text-base font-semibold">Identity</h3>
-                                        </div>
-                                        <div className="grid gap-3 sm:grid-cols-2">
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">First Name <span className="text-destructive">*</span></Label>
-                                                <Input value={data.first_name} onChange={(e) => setData("first_name", sanitizeNameInput(e.target.value))} placeholder="e.g. Juan" />
-                                                {errorsBag.first_name && <p className="text-destructive text-xs">{errorsBag.first_name}</p>}
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Last Name <span className="text-destructive">*</span></Label>
-                                                <Input value={data.last_name} onChange={(e) => setData("last_name", sanitizeNameInput(e.target.value))} placeholder="e.g. Dela Cruz" />
-                                                {errorsBag.last_name && <p className="text-destructive text-xs">{errorsBag.last_name}</p>}
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Middle Name <span className="text-destructive">*</span></Label>
-                                                <Input value={data.middle_name} onChange={(e) => setData("middle_name", sanitizeNameInput(e.target.value))} placeholder="e.g. Santos" />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Suffix</Label>
-                                                <Input value={data.suffix} onChange={(e) => setData("suffix", sanitizeNameInput(e.target.value))} placeholder="e.g. Jr." />
-                                            </div>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-
-                                <Card className="border shadow-sm">
-                                    <CardContent className="space-y-4 p-4 sm:p-6">
-                                        <div className="mb-1 flex items-center gap-2">
-                                            <FileText className="text-primary h-5 w-5" />
-                                            <h3 className="text-base font-semibold">Birth & Demographics</h3>
-                                        </div>
-                                        <div className="grid gap-3 sm:grid-cols-2">
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Birth Date <span className="text-destructive">*</span></Label>
-                                                <Input type="date" value={data.birth_date} onChange={(e) => setData("birth_date", e.target.value)} className="block w-full" />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Birthplace <span className="text-destructive">*</span></Label>
-                                                <Input value={data.personal_info.birthplace} onChange={(e) => setData("personal_info", { ...data.personal_info, birthplace: e.target.value })} placeholder="City, Province" />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Gender <span className="text-destructive">*</span></Label>
-                                                <select className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none" value={data.gender} onChange={(e) => setData("gender", e.target.value)}>
-                                                    <option value="">Select Gender</option>
-                                                    <option value="male">Male</option>
-                                                    <option value="female">Female</option>
-                                                </select>
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Civil Status <span className="text-destructive">*</span></Label>
-                                                <select className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none" value={data.civil_status} onChange={(e) => setData("civil_status", e.target.value)}>
-                                                    <option value="">Select Status</option>
-                                                    <option value="Single">Single</option>
-                                                    <option value="Married">Married</option>
-                                                    <option value="Widowed">Widowed</option>
-                                                    <option value="Separated">Separated</option>
-                                                </select>
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Nationality <span className="text-destructive">*</span></Label>
-                                                <Input value={data.nationality} onChange={(e) => setData("nationality", sanitizeNameInput(e.target.value))} placeholder="e.g. Filipino" />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Citizenship</Label>
-                                                <Input value={data.personal_info.citizenship} onChange={(e) => setData("personal_info", { ...data.personal_info, citizenship: e.target.value })} placeholder="e.g. Filipino" />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Religion <span className="text-destructive">*</span></Label>
-                                                <Input value={data.religion} onChange={(e) => setData("religion", e.target.value)} placeholder="e.g. Roman Catholic" />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Ethnicity</Label>
-                                                <Input value={data.ethnicity} onChange={(e) => setData("ethnicity", e.target.value)} placeholder="e.g. Tagalog, Cebuano" />
-                                            </div>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-
-                                <Card className="border shadow-sm">
-                                    <CardContent className="space-y-4 p-4 sm:p-6">
-                                        <div className="mb-1 flex items-center gap-2">
-                                            <School className="text-primary h-5 w-5" />
-                                            <h3 className="text-base font-semibold">Origin</h3>
-                                        </div>
-                                        <div className="grid gap-3 sm:grid-cols-3">
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">City <span className="text-destructive">*</span></Label>
-                                                <Input value={data.city_of_origin} onChange={(e) => setData("city_of_origin", e.target.value)} placeholder="City of origin" />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Province <span className="text-destructive">*</span></Label>
-                                                <Input value={data.province_of_origin} onChange={(e) => setData("province_of_origin", e.target.value)} placeholder="Province" />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Region <span className="text-destructive">*</span></Label>
-                                                <Input value={data.region_of_origin} onChange={(e) => setData("region_of_origin", e.target.value)} placeholder="Region" />
-                                            </div>
-                                        </div>
-                                        <div className="space-y-3 rounded-lg border p-3">
-                                            <div className="flex items-center gap-2">
-                                                <Checkbox id="indigenous" checked={data.is_indigenous_person} onCheckedChange={(checked) => setData("is_indigenous_person", checked === true)} />
-                                                <Label htmlFor="indigenous" className="cursor-pointer text-sm font-medium">I am an Indigenous Person (IP)</Label>
-                                            </div>
-                                            {data.is_indigenous_person && (
-                                                <div className="space-y-1.5">
-                                                    <Label className="text-sm">Indigenous Group</Label>
-                                                    <Input value={data.indigenous_group} onChange={(e) => setData("indigenous_group", e.target.value)} placeholder="e.g. Manobo, Ifugao" />
+                                                        >
+                                                            {dept.label}
+                                                        </button>
+                                                    ))}
                                                 </div>
                                             )}
-                                        </div>
-                                    </CardContent>
-                                </Card>
 
-                                <Card className="border shadow-sm">
-                                    <CardContent className="space-y-4 p-4 sm:p-6">
-                                        <div className="mb-1 flex items-center gap-2">
-                                            <School className="text-primary h-5 w-5" />
-                                            <h3 className="text-base font-semibold">Special Equity Groups</h3>
-                                        </div>
-                                        <p className="text-muted-foreground text-sm">Select any categories that apply to you. This helps the institution provide appropriate support.</p>
-                                        <div className="space-y-3">
-                                            <div className="space-y-3 rounded-lg border p-3">
-                                                <div className="flex items-center gap-2">
-                                                    <Checkbox id="pwd" checked={data.is_pwd} onCheckedChange={(checked) => { setData("is_pwd", checked === true); if (!checked) setData("pwd_type", ""); }} />
-                                                    <Label htmlFor="pwd" className="cursor-pointer text-sm font-medium">Person with Disability (PWD)</Label>
-                                                </div>
-                                                {data.is_pwd && (
-                                                    <div className="space-y-1.5">
-                                                        <Label className="text-sm">Type of Disability</Label>
-                                                        <select
-                                                            value={data.pwd_type}
-                                                            onChange={(e) => setData("pwd_type", e.target.value)}
-                                                            className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-50"
-                                                        >
-                                                            <option value="">Select type...</option>
-                                                            <option value="Apparent Physical Disability">Apparent Physical Disability</option>
-                                                            <option value="Deaf/Hard of Hearing Disability">Deaf/Hard of Hearing Disability</option>
-                                                            <option value="Intellectual Disability">Intellectual Disability</option>
-                                                            <option value="Mental/Psychological Disability">Mental/Psychological Disability</option>
-                                                            <option value="Learning Disability">Learning Disability</option>
-                                                            <option value="Visual Disability">Visual Disability</option>
-                                                            <option value="Speech and Language Impairment">Speech and Language Impairment</option>
-                                                            <option value="Non-apparent Rare Disease">Non-apparent Rare Disease</option>
-                                                        </select>
-                                                    </div>
+                                            {/* Global Search Bar */}
+                                            <div className="relative">
+                                                <Search className="text-muted-foreground/70 absolute top-1/2 left-4 h-5 w-5 -translate-y-1/2" />
+                                                <Input
+                                                    value={programSearch}
+                                                    onChange={(e) => setProgramSearch(e.target.value)}
+                                                    placeholder="Fast search (e.g., BSIT, Culinary, Tourism)..."
+                                                    className="bg-card border-border/50 focus-visible:ring-primary/30 h-12 rounded-xl pl-12 text-base shadow-sm"
+                                                />
+                                                {programSearch && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setProgramSearch("")}
+                                                        className="text-muted-foreground hover:text-foreground absolute top-1/2 right-4 -translate-y-1/2 rounded-full p-1 transition-all active:scale-90"
+                                                    >
+                                                        <Eraser className="h-5 w-5" />
+                                                    </button>
                                                 )}
                                             </div>
-                                            <div className="grid gap-3 sm:grid-cols-2">
-                                                <div className="flex items-center gap-2 rounded-lg border p-3">
-                                                    <Checkbox id="solo_parent" checked={data.is_solo_parent} onCheckedChange={(checked) => setData("is_solo_parent", checked === true)} />
-                                                    <Label htmlFor="solo_parent" className="cursor-pointer text-sm font-medium">Solo Parent</Label>
-                                                </div>
-                                                <div className="flex items-center gap-2 rounded-lg border p-3">
-                                                    <Checkbox id="senior_citizen" checked={data.is_senior_citizen} onCheckedChange={(checked) => setData("is_senior_citizen", checked === true)} />
-                                                    <Label htmlFor="senior_citizen" className="cursor-pointer text-sm font-medium">Senior Citizen</Label>
-                                                </div>
-                                                <div className="flex items-center gap-2 rounded-lg border p-3">
-                                                    <Checkbox id="magna_carta" checked={data.is_magna_carta} onCheckedChange={(checked) => setData("is_magna_carta", checked === true)} />
-                                                    <Label htmlFor="magna_carta" className="cursor-pointer text-sm font-medium">Magna Carta of the Poor</Label>
-                                                </div>
-                                                <div className="flex items-center gap-2 rounded-lg border p-3">
-                                                    <Checkbox id="underprivileged" checked={data.is_underprivileged} onCheckedChange={(checked) => setData("is_underprivileged", checked === true)} />
-                                                    <Label htmlFor="underprivileged" className="cursor-pointer text-sm font-medium">Underprivileged / Homeless</Label>
-                                                </div>
-                                                <div className="flex items-center gap-2 rounded-lg border p-3 sm:col-span-2">
-                                                    <Checkbox id="first_generation" checked={data.is_first_generation} onCheckedChange={(checked) => setData("is_first_generation", checked === true)} />
-                                                    <Label htmlFor="first_generation" className="cursor-pointer text-sm font-medium">First Generation Student (first in family to attend college)</Label>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-
-                                <Card className="border shadow-sm">
-                                    <CardContent className="space-y-4 p-4 sm:p-6">
-                                        <div className="mb-1 flex items-center gap-2">
-                                            <School className="text-primary h-5 w-5" />
-                                            <h3 className="text-base font-semibold">Family Income</h3>
-                                        </div>
-                                        <p className="text-muted-foreground text-sm">Set income basis first (monthly or annual), then choose one shared family range or separate father and mother ranges.</p>
-                                        <div className="grid gap-3 sm:grid-cols-2">
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Income Basis</Label>
-                                                <select
-                                                    value={data.income_bracket_mode}
-                                                    onChange={(e) => setData("income_bracket_mode", e.target.value)}
-                                                    className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-50"
-                                                >
-                                                    {income_modes.map((mode) => (
-                                                        <option key={mode.value} value={mode.value}>{mode.label}</option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                            <div className="flex items-center gap-2 rounded-lg border p-3">
-                                                <Checkbox
-                                                    id="same_parent_income"
-                                                    checked={data.use_same_parent_income}
-                                                    onCheckedChange={(checked) => setData("use_same_parent_income", checked === true)}
-                                                />
-                                                <Label htmlFor="same_parent_income" className="cursor-pointer text-sm font-medium">Father and mother have the same income bracket</Label>
-                                            </div>
                                         </div>
 
-                                        {data.use_same_parent_income ? (
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Family Income Bracket</Label>
-                                                <select
-                                                    value={data.family_income_bracket}
-                                                    onChange={(e) => setData("family_income_bracket", e.target.value)}
-                                                    className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-50"
-                                                >
-                                                    <option value="">Select income range...</option>
-                                                    {activeIncomeBrackets.map((bracket) => (
-                                                        <option key={bracket.value} value={bracket.value}>{bracket.label}</option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                        ) : (
-                                            <div className="grid gap-3 sm:grid-cols-2">
-                                                <div className="space-y-1.5">
-                                                    <Label className="text-sm">Father's Income Bracket</Label>
-                                                    <select
-                                                        value={data.father_income_bracket}
-                                                        onChange={(e) => setData("father_income_bracket", e.target.value)}
-                                                        className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-50"
-                                                    >
-                                                        <option value="">Select income range...</option>
-                                                        {activeIncomeBrackets.map((bracket) => (
-                                                            <option key={bracket.value} value={bracket.value}>{bracket.label}</option>
-                                                        ))}
-                                                    </select>
-                                                </div>
-                                                <div className="space-y-1.5">
-                                                    <Label className="text-sm">Mother's Income Bracket</Label>
-                                                    <select
-                                                        value={data.mother_income_bracket}
-                                                        onChange={(e) => setData("mother_income_bracket", e.target.value)}
-                                                        className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-50"
-                                                    >
-                                                        <option value="">Select income range...</option>
-                                                        {activeIncomeBrackets.map((bracket) => (
-                                                            <option key={bracket.value} value={bracket.value}>{bracket.label}</option>
-                                                        ))}
-                                                    </select>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </CardContent>
-                                </Card>
-
-                                <Card className="border shadow-sm">
-                                    <CardContent className="space-y-4 p-4 sm:p-6">
-                                        <div className="mb-1 flex items-center gap-2">
-                                            <User className="text-primary h-5 w-5" />
-                                            <h3 className="text-base font-semibold">Physical Info</h3>
-                                        </div>
-                                        <div className="grid gap-3 sm:grid-cols-2">
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Weight (kg)</Label>
-                                                <Input value={data.personal_info.weight} onChange={(e) => setData("personal_info", { ...data.personal_info, weight: e.target.value })} placeholder="e.g. 60" />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Height (cm)</Label>
-                                                <Input value={data.personal_info.height} onChange={(e) => setData("personal_info", { ...data.personal_info, height: e.target.value })} placeholder="e.g. 170" />
-                                            </div>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-
-                                <Card className="border shadow-sm">
-                                    <CardContent className="space-y-4 p-4 sm:p-6">
-                                        <div className="mb-1 flex items-center gap-2">
-                                            <School className="text-primary h-5 w-5" />
-                                            <h3 className="text-base font-semibold">Contact Info</h3>
-                                        </div>
-                                        <div className="grid gap-3 sm:grid-cols-2">
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Email Address <span className="text-destructive">*</span></Label>
-                                                <Input type="email" value={data.email} onChange={(e) => setData("email", e.target.value)} placeholder="juan@example.com" />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Mobile Number <span className="text-destructive">*</span></Label>
-                                                <Input value={data.phone} onChange={(e) => setData("phone", sanitizeNumberInput(e.target.value))} placeholder="09123456789" type="tel" inputMode="numeric" />
-                                            </div>
-                                        </div>
-                                        <div className="space-y-1.5">
-                                            <Label className="text-sm">Complete Current Address <span className="text-destructive">*</span></Label>
-                                            <Input value={data.personal_info.current_address} onChange={(e) => { setData("personal_info", { ...data.personal_info, current_address: e.target.value }); setData("address", e.target.value); }} placeholder="House No., Street, Barangay, City, Province" />
-                                        </div>
-                                        <div className="grid gap-3 sm:grid-cols-2">
-                                            <div className="space-y-1.5 sm:col-span-2">
-                                                <Label className="text-sm">Permanent Address</Label>
-                                                <Input value={data.personal_info.permanent_address} onChange={(e) => setData("personal_info", { ...data.personal_info, permanent_address: e.target.value })} placeholder="Home province address" />
-                                            </div>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-
-                                <Card className="border shadow-sm">
-                                    <CardContent className="space-y-4 p-4 sm:p-6">
-                                        <div className="mb-1 flex items-center gap-2">
-                                            <User className="text-primary h-5 w-5" />
-                                            <h3 className="text-base font-semibold">Social Media</h3>
-                                        </div>
-                                        <div className="grid gap-3 sm:grid-cols-2">
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Facebook <span className="text-destructive">*</span></Label>
-                                                <Input value={data.contacts.facebook} onChange={(e) => setData("contacts", { ...data.contacts, facebook: e.target.value })} placeholder="facebook.com/username" />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Instagram <span className="text-destructive">*</span></Label>
-                                                <Input value={data.contacts.instagram} onChange={(e) => setData("contacts", { ...data.contacts, instagram: e.target.value })} placeholder="@username" />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Twitter / X <span className="text-destructive">*</span></Label>
-                                                <Input value={data.contacts.twitter} onChange={(e) => setData("contacts", { ...data.contacts, twitter: e.target.value })} placeholder="@username" />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">LinkedIn <span className="text-destructive">*</span></Label>
-                                                <Input value={data.contacts.linkedin} onChange={(e) => setData("contacts", { ...data.contacts, linkedin: e.target.value })} placeholder="linkedin.com/in/username" />
-                                            </div>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                            </div>
-                        )}
-
-                        {currentStep === 2 && (
-                            <div className="space-y-5">
-                                <Card className="border shadow-sm">
-                                    <CardContent className="space-y-4 p-4 sm:p-6">
-                                        <div className="mb-1 flex items-center gap-2">
-                                            <School className="text-primary h-5 w-5" />
-                                            <h3 className="text-base font-semibold">Emergency Contact</h3>
-                                        </div>
-                                        <div className="grid gap-3 sm:grid-cols-2">
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Contact Name <span className="text-destructive">*</span></Label>
-                                                <Input value={data.contacts.emergency_contact_name} onChange={(e) => setData("contacts", { ...data.contacts, emergency_contact_name: sanitizeNameInput(e.target.value) })} />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Phone Number <span className="text-destructive">*</span></Label>
-                                                <Input value={data.contacts.emergency_contact_phone} onChange={(e) => setData("contacts", { ...data.contacts, emergency_contact_phone: sanitizeNumberInput(e.target.value) })} type="tel" inputMode="numeric" />
-                                            </div>
-                                            <div className="space-y-1.5 sm:col-span-2">
-                                                <Label className="text-sm">Relationship</Label>
-                                                <Input value={data.contacts.emergency_contact_relationship} onChange={(e) => setData("contacts", { ...data.contacts, emergency_contact_relationship: sanitizeNameInput(e.target.value) })} placeholder="e.g. Mother, Father" />
-                                            </div>
-                                            <div className="space-y-1.5 sm:col-span-2">
-                                                <Label className="text-sm">Personal Contact (if different from mobile)</Label>
-                                                <Input value={data.contacts.personal_contact} onChange={(e) => setData("contacts", { ...data.contacts, personal_contact: sanitizeNumberInput(e.target.value) })} type="tel" inputMode="numeric" placeholder="Optional alternate number" />
-                                            </div>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-
-                                <Card className="border shadow-sm">
-                                    <CardContent className="space-y-4 p-4 sm:p-6">
-                                        <div className="mb-1 flex items-center gap-2">
-                                            <User className="text-primary h-5 w-5" />
-                                            <h3 className="text-base font-semibold">Father</h3>
-                                        </div>
-                                        <div className="grid gap-3 sm:grid-cols-2">
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Name</Label>
-                                                <Input value={data.parents.father_name} onChange={(e) => setData("parents", { ...data.parents, father_name: sanitizeNameInput(e.target.value) })} placeholder="Full name" />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Occupation</Label>
-                                                <Input value={data.parents.father_occupation} onChange={(e) => setData("parents", { ...data.parents, father_occupation: e.target.value })} placeholder="e.g. Engineer" />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Contact Number <span className="text-destructive">*</span></Label>
-                                                <Input value={data.parents.father_contact} onChange={(e) => setData("parents", { ...data.parents, father_contact: sanitizeNumberInput(e.target.value) })} type="tel" inputMode="numeric" />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Email</Label>
-                                                <Input type="email" value={data.parents.father_email} onChange={(e) => setData("parents", { ...data.parents, father_email: e.target.value })} placeholder="father@example.com" />
-                                            </div>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-
-                                <Card className="border shadow-sm">
-                                    <CardContent className="space-y-4 p-4 sm:p-6">
-                                        <div className="mb-1 flex items-center gap-2">
-                                            <User className="text-primary h-5 w-5" />
-                                            <h3 className="text-base font-semibold">Mother</h3>
-                                        </div>
-                                        <div className="grid gap-3 sm:grid-cols-2">
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Name</Label>
-                                                <Input value={data.parents.mother_name} onChange={(e) => setData("parents", { ...data.parents, mother_name: sanitizeNameInput(e.target.value) })} placeholder="Full name" />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Occupation</Label>
-                                                <Input value={data.parents.mother_occupation} onChange={(e) => setData("parents", { ...data.parents, mother_occupation: e.target.value })} placeholder="e.g. Teacher" />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Contact Number <span className="text-destructive">*</span></Label>
-                                                <Input value={data.parents.mother_contact} onChange={(e) => setData("parents", { ...data.parents, mother_contact: sanitizeNumberInput(e.target.value) })} type="tel" inputMode="numeric" />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Email</Label>
-                                                <Input type="email" value={data.parents.mother_email} onChange={(e) => setData("parents", { ...data.parents, mother_email: e.target.value })} placeholder="mother@example.com" />
-                                            </div>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-
-                                <Card className="border shadow-sm">
-                                    <CardContent className="space-y-4 p-4 sm:p-6">
-                                        <div className="mb-1 flex items-center gap-2">
-                                            <User className="text-primary h-5 w-5" />
-                                            <h3 className="text-base font-semibold">Guardian <span className="text-muted-foreground text-xs font-normal">(if different from parents)</span></h3>
-                                        </div>
-                                        <div className="grid gap-3 sm:grid-cols-2">
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Name <span className="text-destructive">*</span></Label>
-                                                <Input value={data.parents.guardian_name} onChange={(e) => setData("parents", { ...data.parents, guardian_name: sanitizeNameInput(e.target.value) })} />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Relationship <span className="text-destructive">*</span></Label>
-                                                <Input value={data.parents.guardian_relationship} onChange={(e) => setData("parents", { ...data.parents, guardian_relationship: sanitizeNameInput(e.target.value) })} />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Contact <span className="text-destructive">*</span></Label>
-                                                <Input value={data.parents.guardian_contact} onChange={(e) => setData("parents", { ...data.parents, guardian_contact: sanitizeNumberInput(e.target.value) })} type="tel" inputMode="numeric" />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label className="text-sm">Email</Label>
-                                                <Input type="email" value={data.parents.guardian_email} onChange={(e) => setData("parents", { ...data.parents, guardian_email: e.target.value })} placeholder="guardian@example.com" />
-                                            </div>
-                                            <div className="space-y-1.5 sm:col-span-2">
-                                                <Label className="text-sm">Family Address</Label>
-                                                <Textarea value={data.parents.family_address} onChange={(e) => setData("parents", { ...data.parents, family_address: e.target.value })} placeholder="If different from your address" className="min-h-[60px]" />
-                                            </div>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-
-                                <Card className="border shadow-sm">
-                                    <CardContent className="space-y-4 p-4 sm:p-6">
-                                        <div className="mb-1 flex items-center gap-2">
-                                            <FileText className="text-primary h-5 w-5" />
-                                            <h3 className="text-base font-semibold">Education Background</h3>
-                                        </div>
-                                        <div className="space-y-4">
-                                            <div className="grid gap-3 sm:grid-cols-2">
-                                                <div className="space-y-1.5">
-                                                    <Label className="text-sm">Elementary School <span className="text-destructive">*</span></Label>
-                                                    <Input value={data.education.elementary_school} onChange={(e) => setData("education", { ...data.education, elementary_school: e.target.value })} placeholder="School name" />
-                                                </div>
-                                                <div className="space-y-1.5">
-                                                    <Label className="text-sm">Year Graduated <span className="text-destructive">*</span></Label>
-                                                    <Input value={data.education.elementary_year_graduated} onChange={(e) => setData("education", { ...data.education, elementary_year_graduated: e.target.value })} placeholder="YYYY" />
-                                                </div>
-                                            </div>
-                                            <div className="grid gap-3 sm:grid-cols-2">
-                                                <div className="space-y-1.5">
-                                                    <Label className="text-sm">High School <span className="text-destructive">*</span></Label>
-                                                    <Input value={data.education.high_school} onChange={(e) => setData("education", { ...data.education, high_school: e.target.value })} placeholder="School name" />
-                                                </div>
-                                                <div className="space-y-1.5">
-                                                    <Label className="text-sm">Year Graduated <span className="text-destructive">*</span></Label>
-                                                    <Input value={data.education.high_school_year_graduated} onChange={(e) => setData("education", { ...data.education, high_school_year_graduated: e.target.value })} placeholder="YYYY" />
-                                                </div>
-                                            </div>
-                                            <div className="grid gap-3 sm:grid-cols-2">
-                                                <div className="space-y-1.5">
-                                                    <Label className="text-sm">Senior High School <span className="text-destructive">*</span></Label>
-                                                    <Input value={data.education.senior_high_school} onChange={(e) => setData("education", { ...data.education, senior_high_school: e.target.value })} placeholder="School name" />
-                                                </div>
-                                                <div className="space-y-1.5">
-                                                    <Label className="text-sm">Year Graduated <span className="text-destructive">*</span></Label>
-                                                    <Input value={data.education.senior_high_year_graduated} onChange={(e) => setData("education", { ...data.education, senior_high_year_graduated: e.target.value })} placeholder="YYYY" />
-                                                </div>
-                                            </div>
-                                            <div className="rounded-lg border p-3">
-                                                <p className="text-muted-foreground mb-2 text-xs font-medium uppercase tracking-wider">College / Transferee (if applicable)</p>
-                                                <div className="grid gap-3 sm:grid-cols-2">
-                                                    <div className="space-y-1.5">
-                                                        <Label className="text-sm">School</Label>
-                                                        <Input value={data.education.college_school} onChange={(e) => setData("education", { ...data.education, college_school: e.target.value })} placeholder="Previous college" />
-                                                    </div>
-                                                    <div className="space-y-1.5">
-                                                        <Label className="text-sm">Course</Label>
-                                                        <Input value={data.education.college_course} onChange={(e) => setData("education", { ...data.education, college_course: e.target.value })} placeholder="Previous course" />
-                                                    </div>
-                                                    <div className="space-y-1.5 sm:col-span-2">
-                                                        <Label className="text-sm">Year Graduated / Last Attended</Label>
-                                                        <Input value={data.education.college_year_graduated} onChange={(e) => setData("education", { ...data.education, college_year_graduated: e.target.value })} placeholder="YYYY" />
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div className="grid gap-3 sm:grid-cols-2">
-                                                <div className="space-y-1.5">
-                                                    <Label className="text-sm">Vocational School</Label>
-                                                    <Input value={data.education.vocational_school} onChange={(e) => setData("education", { ...data.education, vocational_school: e.target.value })} placeholder="School name" />
-                                                </div>
-                                                <div className="space-y-1.5">
-                                                    <Label className="text-sm">Course</Label>
-                                                    <Input value={data.education.vocational_course} onChange={(e) => setData("education", { ...data.education, vocational_course: e.target.value })} placeholder="Course taken" />
-                                                </div>
-                                                <div className="space-y-1.5 sm:col-span-2">
-                                                    <Label className="text-sm">Year Graduated</Label>
-                                                    <Input value={data.education.vocational_year_graduated} onChange={(e) => setData("education", { ...data.education, vocational_year_graduated: e.target.value })} placeholder="YYYY" />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                            </div>
-                        )}
-
-                        {currentStep === 3 && (
-                            <div className="space-y-5">
-                                <Card className="border shadow-sm">
-                                    <CardContent className="space-y-4 p-4 sm:p-6">
-                                        <div className="mb-1 flex items-center gap-2">
-                                            <Upload className="text-primary h-5 w-5" />
-                                            <h3 className="text-base font-semibold">Profile Photo</h3>
-                                            <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">Recommended</Badge>
-                                        </div>
-                                        <p className="text-muted-foreground text-sm">Upload a clear 2x2 or passport-size photo with a plain background. <span className="text-foreground font-medium">You can skip this and upload it later.</span></p>
+                                        {/* ── 3. Expandable Course List ── */}
                                         <div className="space-y-3">
-                                            {getDocumentsForType("profile_photo").length > 0 && (
-                                                <div className="grid grid-cols-1 gap-2">
-                                                    {getDocumentsForType("profile_photo").map((doc) => (
-                                                        <div key={doc.id} className="bg-background flex items-center gap-3 rounded-lg border p-2 pr-3 shadow-sm">
-                                                            {doc.preview ? (
-                                                                <img src={doc.preview} className="h-10 w-10 rounded border object-cover" alt="" />
-                                                            ) : (
-                                                                <div className="bg-muted flex h-10 w-10 items-center justify-center rounded">
-                                                                    <FileText className="text-muted-foreground h-5 w-5" />
+                                            <div className="flex items-center justify-between pb-1">
+                                                <span className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+                                                    {filteredCoursesForGrid.length} {filteredCoursesForGrid.length === 1 ? "Program" : "Programs"}{" "}
+                                                    Available
+                                                </span>
+                                            </div>
+
+                                            {filteredCoursesForGrid.length === 0 ? (
+                                                <div className="flex flex-col items-center rounded-2xl border-2 border-dashed py-16">
+                                                    <div className="bg-muted mb-3 flex h-14 w-14 items-center justify-center rounded-full">
+                                                        <Search className="text-muted-foreground h-6 w-6" />
+                                                    </div>
+                                                    <p className="text-foreground font-semibold">No programs matched your search</p>
+                                                    <p className="text-muted-foreground mt-1 text-sm">Try clearing your filters or search term.</p>
+                                                    {(programSearch || data.department) && (
+                                                        <Button
+                                                            variant="outline"
+                                                            className="mt-4"
+                                                            onClick={() => {
+                                                                setProgramSearch("");
+                                                                setData("department", "");
+                                                            }}
+                                                        >
+                                                            Clear All Filters
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-2.5">
+                                                    {filteredCoursesForGrid.map((course) => {
+                                                        const isSelected = String(course.id) === data.course_id;
+                                                        return (
+                                                            <div
+                                                                key={course.id}
+                                                                className={cn(
+                                                                    "group overflow-hidden rounded-xl border transition-all duration-300",
+                                                                    isSelected
+                                                                        ? "border-primary bg-primary/[0.02] ring-primary/20 shadow-md ring-1"
+                                                                        : "border-border/50 bg-card hover:border-primary/40 cursor-pointer",
+                                                                )}
+                                                            >
+                                                                {/* Compact Header Row */}
+                                                                <div
+                                                                    className="flex items-center gap-3 p-4 sm:px-5"
+                                                                    onClick={() => setData("course_id", String(course.id))}
+                                                                >
+                                                                    <div
+                                                                        className={cn(
+                                                                            "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-all duration-300",
+                                                                            isSelected
+                                                                                ? "border-primary bg-primary scale-110"
+                                                                                : "border-muted-foreground/30 group-hover:border-primary/50",
+                                                                        )}
+                                                                    >
+                                                                        {isSelected && <Check className="text-primary-foreground h-3.5 w-3.5" />}
+                                                                    </div>
+                                                                    <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:gap-4">
+                                                                        <span
+                                                                            className={cn(
+                                                                                "shrink-0 font-mono text-xs font-bold sm:w-20",
+                                                                                isSelected
+                                                                                    ? "text-primary"
+                                                                                    : "text-muted-foreground group-hover:text-primary/80",
+                                                                            )}
+                                                                        >
+                                                                            {course.code}
+                                                                        </span>
+                                                                        <h4
+                                                                            className={cn(
+                                                                                "truncate text-sm font-semibold transition-colors",
+                                                                                isSelected
+                                                                                    ? "text-primary"
+                                                                                    : "text-foreground group-hover:text-primary/90",
+                                                                            )}
+                                                                        >
+                                                                            {course.title}
+                                                                        </h4>
+                                                                    </div>
                                                                 </div>
-                                                            )}
-                                                            <div className="min-w-0 flex-1">
-                                                                <p className="truncate text-sm font-medium">{doc.file.name}</p>
-                                                                <p className="text-muted-foreground text-xs">{(doc.file.size / 1024).toFixed(0)} KB</p>
+
+                                                                {/* Expanded Context Details (Only visible when selected) */}
+                                                                <AnimatePresence>
+                                                                    {isSelected && (
+                                                                        <motion.div
+                                                                            initial={{ height: 0, opacity: 0 }}
+                                                                            animate={{ height: "auto", opacity: 1 }}
+                                                                            exit={{ height: 0, opacity: 0 }}
+                                                                            transition={{ duration: 0.2 }}
+                                                                            className="border-primary/10 bg-primary/[0.04] dark:bg-primary/[0.08] border-t"
+                                                                        >
+                                                                            <div className="space-y-3 p-4 pb-5 pl-[48px] sm:px-5 sm:pl-[68px]">
+                                                                                {/* Context Tags */}
+                                                                                <div className="flex flex-wrap items-center gap-2">
+                                                                                    <Badge className="bg-primary/10 text-primary hover:bg-primary/20 border-0 shadow-none">
+                                                                                        {data.student_type === "college"
+                                                                                            ? "4-Year Degree Program"
+                                                                                            : "Tech-Voc Training"}
+                                                                                    </Badge>
+                                                                                    {course.department_name && (
+                                                                                        <Badge
+                                                                                            variant="outline"
+                                                                                            className="bg-background text-muted-foreground border-border/60"
+                                                                                        >
+                                                                                            {course.department_name}
+                                                                                        </Badge>
+                                                                                    )}
+                                                                                </div>
+
+                                                                                {/* Description */}
+                                                                                {course.description ? (
+                                                                                    <p className="text-muted-foreground text-sm leading-relaxed">
+                                                                                        {course.description}
+                                                                                    </p>
+                                                                                ) : (
+                                                                                    <p className="text-muted-foreground text-sm italic">
+                                                                                        No specific description available for this program.
+                                                                                    </p>
+                                                                                )}
+
+                                                                                {/* Next Step Context Note */}
+                                                                                <div className="mt-4 flex items-center gap-2 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                                                                                    <CheckCircle2 className="h-4 w-4" />
+                                                                                    Selection confirmed. You can proceed to the next step.
+                                                                                </div>
+                                                                            </div>
+                                                                        </motion.div>
+                                                                    )}
+                                                                </AnimatePresence>
                                                             </div>
-                                                            <Button size="icon" variant="ghost" className="text-destructive h-8 w-8" onClick={() => handleRemoveDocument(doc.id)}>
-                                                                <Trash2 className="h-4 w-4" />
-                                                            </Button>
-                                                        </div>
-                                                    ))}
+                                                        );
+                                                    })}
                                                 </div>
                                             )}
-                                            <div
-                                                onClick={() => {
-                                                    if (fileInputRef.current) {
-                                                        fileInputRef.current.setAttribute("data-doc-type", "profile_photo");
-                                                        fileInputRef.current.click();
-                                                    }
-                                                }}
-                                                className="hover:bg-muted/30 active:bg-muted flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-6 text-center transition-colors"
-                                            >
-                                                <div className="bg-primary/10 text-primary flex h-10 w-10 items-center justify-center rounded-full">
-                                                    <Upload className="h-5 w-5" />
-                                                </div>
-                                                <div>
-                                                    <p className="text-foreground text-sm font-medium">Tap to upload photo</p>
-                                                    <p className="text-muted-foreground mt-0.5 text-xs">JPG, PNG, or WebP</p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-
-                                <Card className="border shadow-sm">
-                                    <CardContent className="space-y-4 p-4 sm:p-6">
-                                        <div className="mb-1 flex items-center gap-2">
-                                            <PencilLine className="text-primary h-5 w-5" />
-                                            <h3 className="text-base font-semibold">Signature</h3>
-                                            <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">Recommended</Badge>
-                                        </div>
-                                        <p className="text-muted-foreground text-sm">Draw your signature below using your mouse or finger. <span className="text-foreground font-medium">You can skip this and add it later.</span></p>
-                                        <div className="space-y-3">
-                                            {getDocumentsForType("signature").length > 0 && (
-                                                <div className="grid grid-cols-1 gap-2">
-                                                    {getDocumentsForType("signature").map((doc) => (
-                                                        <div key={doc.id} className="bg-background flex items-center gap-3 rounded-lg border p-2 pr-3 shadow-sm">
-                                                            {doc.preview ? (
-                                                                <img src={doc.preview} className="h-10 w-10 rounded border object-cover" alt="" />
-                                                            ) : (
-                                                                <div className="bg-muted flex h-10 w-10 items-center justify-center rounded">
-                                                                    <FileText className="text-muted-foreground h-5 w-5" />
-                                                                </div>
-                                                            )}
-                                                            <div className="min-w-0 flex-1">
-                                                                <p className="truncate text-sm font-medium">{doc.file.name}</p>
-                                                                <p className="text-muted-foreground text-xs">{(doc.file.size / 1024).toFixed(0)} KB</p>
-                                                            </div>
-                                                            <Button size="icon" variant="ghost" className="text-destructive h-8 w-8" onClick={() => { handleRemoveDocument(doc.id); clearSignature(); }}>
-                                                                <Trash2 className="h-4 w-4" />
-                                                            </Button>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                            <div
-                                                ref={signatureWrapperRef}
-                                                className="min-w-[300px] overflow-hidden rounded-lg border bg-white dark:bg-zinc-900"
-                                            >
-                                                <canvas
-                                                    ref={signatureCanvasRef}
-                                                    className="block w-full touch-none"
-                                                    style={{ height: 200 }}
-                                                />
-                                            </div>
-                                            <div className="flex items-center justify-between">
-                                                <Button
-                                                    type="button"
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={clearSignature}
-                                                >
-                                                    <Eraser className="mr-1.5 h-3.5 w-3.5" />
-                                                    Clear
-                                                </Button>
-                                                <Button
-                                                    type="button"
-                                                    size="sm"
-                                                    onClick={saveSignatureToDocuments}
-                                                    disabled={!signatureCaptured}
-                                                >
-                                                    <Check className="mr-1.5 h-3.5 w-3.5" />
-                                                    Save Signature
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-
-                                <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/20">
-                                    <div className="flex gap-3">
-                                        <div className="mt-0.5">
-                                            <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                                        </div>
-                                        <div>
-                                            <h4 className="font-semibold text-blue-800 dark:text-blue-200">Document Availability</h4>
-                                            <p className="mt-1 text-sm leading-relaxed text-blue-700 dark:text-blue-300">
-                                                Do you have soft copies (photos/scans) of your documents right now?
-                                            </p>
                                         </div>
                                     </div>
-                                </div>
+                                )}
 
-                                <Card className="border shadow-sm">
-                                    <CardContent className="space-y-4 p-4 sm:p-6">
-                                        <div className="flex items-center justify-between">
-                                            <h3 className="text-base font-semibold">Checklist</h3>
-                                            <span className="text-muted-foreground text-xs">Select what you have</span>
-                                        </div>
-                                        <div className="grid gap-3">
-                                            {DOCUMENT_TYPES.map((docType) => (
-                                                <label
-                                                    key={docType.id}
-                                                    htmlFor={`doc-check-${docType.id}`}
-                                                    className={cn(
-                                                        "relative flex cursor-pointer items-start gap-4 rounded-xl border p-4 transition-all active:scale-[0.99]",
-                                                        availableDocuments[docType.id]
-                                                            ? "border-primary bg-primary/5 shadow-sm"
-                                                            : "border-border hover:bg-muted/30",
+                                {currentStep === 1 && (
+                                    <div className="space-y-5">
+                                        <Card className="border shadow-sm">
+                                            <CardContent className="space-y-4 p-4 sm:p-6">
+                                                <div className="mb-1 flex items-center gap-2">
+                                                    <User className="text-primary h-5 w-5" />
+                                                    <h3 className="text-base font-semibold">Identity</h3>
+                                                </div>
+                                                <div className="grid gap-3 sm:grid-cols-2">
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">
+                                                            First Name <span className="text-destructive">*</span>
+                                                        </Label>
+                                                        <Input
+                                                            value={data.first_name}
+                                                            onChange={(e) => setData("first_name", sanitizeNameInput(e.target.value))}
+                                                            placeholder="e.g. Juan"
+                                                        />
+                                                        {errorsBag.first_name && <p className="text-destructive text-xs">{errorsBag.first_name}</p>}
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">
+                                                            Last Name <span className="text-destructive">*</span>
+                                                        </Label>
+                                                        <Input
+                                                            value={data.last_name}
+                                                            onChange={(e) => setData("last_name", sanitizeNameInput(e.target.value))}
+                                                            placeholder="e.g. Dela Cruz"
+                                                        />
+                                                        {errorsBag.last_name && <p className="text-destructive text-xs">{errorsBag.last_name}</p>}
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">
+                                                            Middle Name <span className="text-destructive">*</span>
+                                                        </Label>
+                                                        <Input
+                                                            value={data.middle_name}
+                                                            onChange={(e) => setData("middle_name", sanitizeNameInput(e.target.value))}
+                                                            placeholder="e.g. Santos"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">Suffix</Label>
+                                                        <Input
+                                                            value={data.suffix}
+                                                            onChange={(e) => setData("suffix", sanitizeNameInput(e.target.value))}
+                                                            placeholder="e.g. Jr."
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+
+                                        <Card className="border shadow-sm">
+                                            <CardContent className="space-y-4 p-4 sm:p-6">
+                                                <div className="mb-1 flex items-center gap-2">
+                                                    <FileText className="text-primary h-5 w-5" />
+                                                    <h3 className="text-base font-semibold">Birth & Demographics</h3>
+                                                </div>
+                                                <div className="grid gap-3 sm:grid-cols-2">
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">
+                                                            Birth Date <span className="text-destructive">*</span>
+                                                        </Label>
+                                                        <Input
+                                                            type="date"
+                                                            value={data.birth_date}
+                                                            onChange={(e) => setData("birth_date", e.target.value)}
+                                                            className="block w-full"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">
+                                                            Birthplace <span className="text-destructive">*</span>
+                                                        </Label>
+                                                        <Input
+                                                            value={data.personal_info.birthplace}
+                                                            onChange={(e) =>
+                                                                setData("personal_info", { ...data.personal_info, birthplace: e.target.value })
+                                                            }
+                                                            placeholder="City, Province"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">
+                                                            Gender <span className="text-destructive">*</span>
+                                                        </Label>
+                                                        <select
+                                                            className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+                                                            value={data.gender}
+                                                            onChange={(e) => setData("gender", e.target.value)}
+                                                        >
+                                                            <option value="">Select Gender</option>
+                                                            <option value="male">Male</option>
+                                                            <option value="female">Female</option>
+                                                        </select>
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">
+                                                            Civil Status <span className="text-destructive">*</span>
+                                                        </Label>
+                                                        <select
+                                                            className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+                                                            value={data.civil_status}
+                                                            onChange={(e) => setData("civil_status", e.target.value)}
+                                                        >
+                                                            <option value="">Select Status</option>
+                                                            <option value="Single">Single</option>
+                                                            <option value="Married">Married</option>
+                                                            <option value="Widowed">Widowed</option>
+                                                            <option value="Separated">Separated</option>
+                                                        </select>
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">
+                                                            Nationality <span className="text-destructive">*</span>
+                                                        </Label>
+                                                        <Input
+                                                            value={data.nationality}
+                                                            onChange={(e) => setData("nationality", sanitizeNameInput(e.target.value))}
+                                                            placeholder="e.g. Filipino"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">Citizenship</Label>
+                                                        <Input
+                                                            value={data.personal_info.citizenship}
+                                                            onChange={(e) =>
+                                                                setData("personal_info", { ...data.personal_info, citizenship: e.target.value })
+                                                            }
+                                                            placeholder="e.g. Filipino"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">
+                                                            Religion <span className="text-destructive">*</span>
+                                                        </Label>
+                                                        <Input
+                                                            value={data.religion}
+                                                            onChange={(e) => setData("religion", e.target.value)}
+                                                            placeholder="e.g. Roman Catholic"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">Ethnicity</Label>
+                                                        <Input
+                                                            value={data.ethnicity}
+                                                            onChange={(e) => setData("ethnicity", e.target.value)}
+                                                            placeholder="e.g. Tagalog, Cebuano"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+
+                                        <Card className="border shadow-sm">
+                                            <CardContent className="space-y-4 p-4 sm:p-6">
+                                                <div className="mb-1 flex items-center gap-2">
+                                                    <School className="text-primary h-5 w-5" />
+                                                    <h3 className="text-base font-semibold">Origin</h3>
+                                                </div>
+                                                <div className="grid gap-3 sm:grid-cols-3">
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">
+                                                            City <span className="text-destructive">*</span>
+                                                        </Label>
+                                                        <Input
+                                                            value={data.city_of_origin}
+                                                            onChange={(e) => setData("city_of_origin", e.target.value)}
+                                                            placeholder="City of origin"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">
+                                                            Province <span className="text-destructive">*</span>
+                                                        </Label>
+                                                        <Input
+                                                            value={data.province_of_origin}
+                                                            onChange={(e) => setData("province_of_origin", e.target.value)}
+                                                            placeholder="Province"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">
+                                                            Region <span className="text-destructive">*</span>
+                                                        </Label>
+                                                        <Input
+                                                            value={data.region_of_origin}
+                                                            onChange={(e) => setData("region_of_origin", e.target.value)}
+                                                            placeholder="Region"
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-3 rounded-lg border p-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <Checkbox
+                                                            id="indigenous"
+                                                            checked={data.is_indigenous_person}
+                                                            onCheckedChange={(checked) => setData("is_indigenous_person", checked === true)}
+                                                        />
+                                                        <Label htmlFor="indigenous" className="cursor-pointer text-sm font-medium">
+                                                            I am an Indigenous Person (IP)
+                                                        </Label>
+                                                    </div>
+                                                    {data.is_indigenous_person && (
+                                                        <div className="space-y-1.5">
+                                                            <Label className="text-sm">Indigenous Group</Label>
+                                                            <Input
+                                                                value={data.indigenous_group}
+                                                                onChange={(e) => setData("indigenous_group", e.target.value)}
+                                                                placeholder="e.g. Manobo, Ifugao"
+                                                            />
+                                                        </div>
                                                     )}
-                                                >
-                                                    <Checkbox
-                                                        id={`doc-check-${docType.id}`}
-                                                        checked={availableDocuments[docType.id]}
-                                                        onCheckedChange={(checked) => {
-                                                            setAvailableDocuments((prev) => ({ ...prev, [docType.id]: checked === true }));
-                                                            if (!checked)
-                                                                setUploadedDocuments((prev) => prev.filter((doc) => doc.type !== docType.id));
-                                                        }}
-                                                        className="mt-1"
-                                                    />
-                                                    <div className="flex-1">
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+
+                                        <Card className="border shadow-sm">
+                                            <CardContent className="space-y-4 p-4 sm:p-6">
+                                                <div className="mb-1 flex items-center gap-2">
+                                                    <School className="text-primary h-5 w-5" />
+                                                    <h3 className="text-base font-semibold">Special Equity Groups</h3>
+                                                </div>
+                                                <p className="text-muted-foreground text-sm">
+                                                    Select any categories that apply to you. This helps the institution provide appropriate support.
+                                                </p>
+                                                <div className="space-y-3">
+                                                    <div className="space-y-3 rounded-lg border p-3">
                                                         <div className="flex items-center gap-2">
-                                                            <span className="text-foreground font-medium">{docType.label}</span>
-                                                            {docType.required && (
-                                                                <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
-                                                                    Required
+                                                            <Checkbox
+                                                                id="pwd"
+                                                                checked={data.is_pwd}
+                                                                onCheckedChange={(checked) => {
+                                                                    setData("is_pwd", checked === true);
+                                                                    if (!checked) setData("pwd_type", "");
+                                                                }}
+                                                            />
+                                                            <Label htmlFor="pwd" className="cursor-pointer text-sm font-medium">
+                                                                Person with Disability (PWD)
+                                                            </Label>
+                                                        </div>
+                                                        {data.is_pwd && (
+                                                            <div className="space-y-1.5">
+                                                                <Label className="text-sm">Type of Disability</Label>
+                                                                <select
+                                                                    value={data.pwd_type}
+                                                                    onChange={(e) => setData("pwd_type", e.target.value)}
+                                                                    className="border-input bg-background ring-offset-background focus-visible:ring-ring placeholder:text-muted-foreground flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:ring-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                                                                >
+                                                                    <option value="">Select type...</option>
+                                                                    <option value="Apparent Physical Disability">Apparent Physical Disability</option>
+                                                                    <option value="Deaf/Hard of Hearing Disability">
+                                                                        Deaf/Hard of Hearing Disability
+                                                                    </option>
+                                                                    <option value="Intellectual Disability">Intellectual Disability</option>
+                                                                    <option value="Mental/Psychological Disability">
+                                                                        Mental/Psychological Disability
+                                                                    </option>
+                                                                    <option value="Learning Disability">Learning Disability</option>
+                                                                    <option value="Visual Disability">Visual Disability</option>
+                                                                    <option value="Speech and Language Impairment">
+                                                                        Speech and Language Impairment
+                                                                    </option>
+                                                                    <option value="Non-apparent Rare Disease">Non-apparent Rare Disease</option>
+                                                                </select>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div className="grid gap-3 sm:grid-cols-2">
+                                                        <div className="flex items-center gap-2 rounded-lg border p-3">
+                                                            <Checkbox
+                                                                id="solo_parent"
+                                                                checked={data.is_solo_parent}
+                                                                onCheckedChange={(checked) => setData("is_solo_parent", checked === true)}
+                                                            />
+                                                            <Label htmlFor="solo_parent" className="cursor-pointer text-sm font-medium">
+                                                                Solo Parent
+                                                            </Label>
+                                                        </div>
+                                                        <div className="flex items-center gap-2 rounded-lg border p-3">
+                                                            <Checkbox
+                                                                id="senior_citizen"
+                                                                checked={data.is_senior_citizen}
+                                                                onCheckedChange={(checked) => setData("is_senior_citizen", checked === true)}
+                                                            />
+                                                            <Label htmlFor="senior_citizen" className="cursor-pointer text-sm font-medium">
+                                                                Senior Citizen
+                                                            </Label>
+                                                        </div>
+                                                        <div className="flex items-center gap-2 rounded-lg border p-3">
+                                                            <Checkbox
+                                                                id="magna_carta"
+                                                                checked={data.is_magna_carta}
+                                                                onCheckedChange={(checked) => setData("is_magna_carta", checked === true)}
+                                                            />
+                                                            <Label htmlFor="magna_carta" className="cursor-pointer text-sm font-medium">
+                                                                Magna Carta of the Poor
+                                                            </Label>
+                                                        </div>
+                                                        <div className="flex items-center gap-2 rounded-lg border p-3">
+                                                            <Checkbox
+                                                                id="underprivileged"
+                                                                checked={data.is_underprivileged}
+                                                                onCheckedChange={(checked) => setData("is_underprivileged", checked === true)}
+                                                            />
+                                                            <Label htmlFor="underprivileged" className="cursor-pointer text-sm font-medium">
+                                                                Underprivileged / Homeless
+                                                            </Label>
+                                                        </div>
+                                                        <div className="flex items-center gap-2 rounded-lg border p-3 sm:col-span-2">
+                                                            <Checkbox
+                                                                id="first_generation"
+                                                                checked={data.is_first_generation}
+                                                                onCheckedChange={(checked) => setData("is_first_generation", checked === true)}
+                                                            />
+                                                            <Label htmlFor="first_generation" className="cursor-pointer text-sm font-medium">
+                                                                First Generation Student (first in family to attend college)
+                                                            </Label>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+
+                                        <Card className="border shadow-sm">
+                                            <CardContent className="space-y-4 p-4 sm:p-6">
+                                                <div className="mb-1 flex items-center gap-2">
+                                                    <School className="text-primary h-5 w-5" />
+                                                    <h3 className="text-base font-semibold">Family Income</h3>
+                                                </div>
+                                                <p className="text-muted-foreground text-sm">
+                                                    Set income basis first (monthly or annual), then choose one shared family range or separate father
+                                                    and mother ranges.
+                                                </p>
+                                                <div className="grid gap-3 sm:grid-cols-2">
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">Income Basis</Label>
+                                                        <select
+                                                            value={data.income_bracket_mode}
+                                                            onChange={(e) => setData("income_bracket_mode", e.target.value)}
+                                                            className="border-input bg-background ring-offset-background focus-visible:ring-ring placeholder:text-muted-foreground flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:ring-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                                                        >
+                                                            {income_modes.map((mode) => (
+                                                                <option key={mode.value} value={mode.value}>
+                                                                    {mode.label}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 rounded-lg border p-3">
+                                                        <Checkbox
+                                                            id="same_parent_income"
+                                                            checked={data.use_same_parent_income}
+                                                            onCheckedChange={(checked) => setData("use_same_parent_income", checked === true)}
+                                                        />
+                                                        <Label htmlFor="same_parent_income" className="cursor-pointer text-sm font-medium">
+                                                            Father and mother have the same income bracket
+                                                        </Label>
+                                                    </div>
+                                                </div>
+
+                                                {data.use_same_parent_income ? (
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">Family Income Bracket</Label>
+                                                        <select
+                                                            value={data.family_income_bracket}
+                                                            onChange={(e) => setData("family_income_bracket", e.target.value)}
+                                                            className="border-input bg-background ring-offset-background focus-visible:ring-ring placeholder:text-muted-foreground flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:ring-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                                                        >
+                                                            <option value="">Select income range...</option>
+                                                            {activeIncomeBrackets.map((bracket) => (
+                                                                <option key={bracket.value} value={bracket.value}>
+                                                                    {bracket.label}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                ) : (
+                                                    <div className="grid gap-3 sm:grid-cols-2">
+                                                        <div className="space-y-1.5">
+                                                            <Label className="text-sm">Father's Income Bracket</Label>
+                                                            <select
+                                                                value={data.father_income_bracket}
+                                                                onChange={(e) => setData("father_income_bracket", e.target.value)}
+                                                                className="border-input bg-background ring-offset-background focus-visible:ring-ring placeholder:text-muted-foreground flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:ring-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                                                            >
+                                                                <option value="">Select income range...</option>
+                                                                {activeIncomeBrackets.map((bracket) => (
+                                                                    <option key={bracket.value} value={bracket.value}>
+                                                                        {bracket.label}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                        <div className="space-y-1.5">
+                                                            <Label className="text-sm">Mother's Income Bracket</Label>
+                                                            <select
+                                                                value={data.mother_income_bracket}
+                                                                onChange={(e) => setData("mother_income_bracket", e.target.value)}
+                                                                className="border-input bg-background ring-offset-background focus-visible:ring-ring placeholder:text-muted-foreground flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:ring-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                                                            >
+                                                                <option value="">Select income range...</option>
+                                                                {activeIncomeBrackets.map((bracket) => (
+                                                                    <option key={bracket.value} value={bracket.value}>
+                                                                        {bracket.label}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </CardContent>
+                                        </Card>
+
+                                        <Card className="border shadow-sm">
+                                            <CardContent className="space-y-4 p-4 sm:p-6">
+                                                <div className="mb-1 flex items-center gap-2">
+                                                    <User className="text-primary h-5 w-5" />
+                                                    <h3 className="text-base font-semibold">Physical Info</h3>
+                                                </div>
+                                                <div className="grid gap-3 sm:grid-cols-2">
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">Weight (kg)</Label>
+                                                        <Input
+                                                            value={data.personal_info.weight}
+                                                            onChange={(e) =>
+                                                                setData("personal_info", { ...data.personal_info, weight: e.target.value })
+                                                            }
+                                                            placeholder="e.g. 60"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">Height (cm)</Label>
+                                                        <Input
+                                                            value={data.personal_info.height}
+                                                            onChange={(e) =>
+                                                                setData("personal_info", { ...data.personal_info, height: e.target.value })
+                                                            }
+                                                            placeholder="e.g. 170"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+
+                                        <Card className="border shadow-sm">
+                                            <CardContent className="space-y-4 p-4 sm:p-6">
+                                                <div className="mb-1 flex items-center gap-2">
+                                                    <School className="text-primary h-5 w-5" />
+                                                    <h3 className="text-base font-semibold">Contact Info</h3>
+                                                </div>
+                                                <div className="grid gap-3 sm:grid-cols-2">
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">
+                                                            Email Address <span className="text-destructive">*</span>
+                                                        </Label>
+                                                        <Input
+                                                            type="email"
+                                                            value={data.email}
+                                                            onChange={(e) => setData("email", e.target.value)}
+                                                            placeholder="juan@example.com"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">
+                                                            Mobile Number <span className="text-destructive">*</span>
+                                                        </Label>
+                                                        <Input
+                                                            value={data.phone}
+                                                            onChange={(e) => setData("phone", sanitizeNumberInput(e.target.value))}
+                                                            placeholder="09123456789"
+                                                            type="tel"
+                                                            inputMode="numeric"
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <Label className="text-sm">
+                                                        Complete Current Address <span className="text-destructive">*</span>
+                                                    </Label>
+                                                    <Input
+                                                        value={data.personal_info.current_address}
+                                                        onChange={(e) => {
+                                                            setData("personal_info", { ...data.personal_info, current_address: e.target.value });
+                                                            setData("address", e.target.value);
+                                                        }}
+                                                        placeholder="House No., Street, Barangay, City, Province"
+                                                    />
+                                                </div>
+                                                <div className="grid gap-3 sm:grid-cols-2">
+                                                    <div className="space-y-1.5 sm:col-span-2">
+                                                        <Label className="text-sm">Permanent Address</Label>
+                                                        <Input
+                                                            value={data.personal_info.permanent_address}
+                                                            onChange={(e) =>
+                                                                setData("personal_info", { ...data.personal_info, permanent_address: e.target.value })
+                                                            }
+                                                            placeholder="Home province address"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+
+                                        <Card className="border shadow-sm">
+                                            <CardContent className="space-y-4 p-4 sm:p-6">
+                                                <div className="mb-1 flex items-center gap-2">
+                                                    <User className="text-primary h-5 w-5" />
+                                                    <h3 className="text-base font-semibold">Social Media</h3>
+                                                </div>
+                                                <div className="grid gap-3 sm:grid-cols-2">
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">
+                                                            Facebook <span className="text-destructive">*</span>
+                                                        </Label>
+                                                        <Input
+                                                            value={data.contacts.facebook}
+                                                            onChange={(e) => setData("contacts", { ...data.contacts, facebook: e.target.value })}
+                                                            placeholder="facebook.com/username"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">
+                                                            Instagram <span className="text-destructive">*</span>
+                                                        </Label>
+                                                        <Input
+                                                            value={data.contacts.instagram}
+                                                            onChange={(e) => setData("contacts", { ...data.contacts, instagram: e.target.value })}
+                                                            placeholder="@username"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">
+                                                            Twitter / X <span className="text-destructive">*</span>
+                                                        </Label>
+                                                        <Input
+                                                            value={data.contacts.twitter}
+                                                            onChange={(e) => setData("contacts", { ...data.contacts, twitter: e.target.value })}
+                                                            placeholder="@username"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">
+                                                            LinkedIn <span className="text-destructive">*</span>
+                                                        </Label>
+                                                        <Input
+                                                            value={data.contacts.linkedin}
+                                                            onChange={(e) => setData("contacts", { ...data.contacts, linkedin: e.target.value })}
+                                                            placeholder="linkedin.com/in/username"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+                                    </div>
+                                )}
+
+                                {currentStep === 2 && (
+                                    <div className="space-y-5">
+                                        <Card className="border shadow-sm">
+                                            <CardContent className="space-y-4 p-4 sm:p-6">
+                                                <div className="mb-1 flex items-center gap-2">
+                                                    <School className="text-primary h-5 w-5" />
+                                                    <h3 className="text-base font-semibold">Emergency Contact</h3>
+                                                </div>
+                                                <div className="grid gap-3 sm:grid-cols-2">
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">
+                                                            Contact Name <span className="text-destructive">*</span>
+                                                        </Label>
+                                                        <Input
+                                                            value={data.contacts.emergency_contact_name}
+                                                            onChange={(e) =>
+                                                                setData("contacts", {
+                                                                    ...data.contacts,
+                                                                    emergency_contact_name: sanitizeNameInput(e.target.value),
+                                                                })
+                                                            }
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">
+                                                            Phone Number <span className="text-destructive">*</span>
+                                                        </Label>
+                                                        <Input
+                                                            value={data.contacts.emergency_contact_phone}
+                                                            onChange={(e) =>
+                                                                setData("contacts", {
+                                                                    ...data.contacts,
+                                                                    emergency_contact_phone: sanitizeNumberInput(e.target.value),
+                                                                })
+                                                            }
+                                                            type="tel"
+                                                            inputMode="numeric"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5 sm:col-span-2">
+                                                        <Label className="text-sm">Relationship</Label>
+                                                        <Input
+                                                            value={data.contacts.emergency_contact_relationship}
+                                                            onChange={(e) =>
+                                                                setData("contacts", {
+                                                                    ...data.contacts,
+                                                                    emergency_contact_relationship: sanitizeNameInput(e.target.value),
+                                                                })
+                                                            }
+                                                            placeholder="e.g. Mother, Father"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5 sm:col-span-2">
+                                                        <Label className="text-sm">Personal Contact (if different from mobile)</Label>
+                                                        <Input
+                                                            value={data.contacts.personal_contact}
+                                                            onChange={(e) =>
+                                                                setData("contacts", {
+                                                                    ...data.contacts,
+                                                                    personal_contact: sanitizeNumberInput(e.target.value),
+                                                                })
+                                                            }
+                                                            type="tel"
+                                                            inputMode="numeric"
+                                                            placeholder="Optional alternate number"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+
+                                        <Card className="border shadow-sm">
+                                            <CardContent className="space-y-4 p-4 sm:p-6">
+                                                <div className="mb-1 flex items-center gap-2">
+                                                    <User className="text-primary h-5 w-5" />
+                                                    <h3 className="text-base font-semibold">Father</h3>
+                                                </div>
+                                                <div className="grid gap-3 sm:grid-cols-2">
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">Name</Label>
+                                                        <Input
+                                                            value={data.parents.father_name}
+                                                            onChange={(e) =>
+                                                                setData("parents", {
+                                                                    ...data.parents,
+                                                                    father_name: sanitizeNameInput(e.target.value),
+                                                                })
+                                                            }
+                                                            placeholder="Full name"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">Occupation</Label>
+                                                        <Input
+                                                            value={data.parents.father_occupation}
+                                                            onChange={(e) =>
+                                                                setData("parents", { ...data.parents, father_occupation: e.target.value })
+                                                            }
+                                                            placeholder="e.g. Engineer"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">
+                                                            Contact Number <span className="text-destructive">*</span>
+                                                        </Label>
+                                                        <Input
+                                                            value={data.parents.father_contact}
+                                                            onChange={(e) =>
+                                                                setData("parents", {
+                                                                    ...data.parents,
+                                                                    father_contact: sanitizeNumberInput(e.target.value),
+                                                                })
+                                                            }
+                                                            type="tel"
+                                                            inputMode="numeric"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">Email</Label>
+                                                        <Input
+                                                            type="email"
+                                                            value={data.parents.father_email}
+                                                            onChange={(e) => setData("parents", { ...data.parents, father_email: e.target.value })}
+                                                            placeholder="father@example.com"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+
+                                        <Card className="border shadow-sm">
+                                            <CardContent className="space-y-4 p-4 sm:p-6">
+                                                <div className="mb-1 flex items-center gap-2">
+                                                    <User className="text-primary h-5 w-5" />
+                                                    <h3 className="text-base font-semibold">Mother</h3>
+                                                </div>
+                                                <div className="grid gap-3 sm:grid-cols-2">
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">Name</Label>
+                                                        <Input
+                                                            value={data.parents.mother_name}
+                                                            onChange={(e) =>
+                                                                setData("parents", {
+                                                                    ...data.parents,
+                                                                    mother_name: sanitizeNameInput(e.target.value),
+                                                                })
+                                                            }
+                                                            placeholder="Full name"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">Occupation</Label>
+                                                        <Input
+                                                            value={data.parents.mother_occupation}
+                                                            onChange={(e) =>
+                                                                setData("parents", { ...data.parents, mother_occupation: e.target.value })
+                                                            }
+                                                            placeholder="e.g. Teacher"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">
+                                                            Contact Number <span className="text-destructive">*</span>
+                                                        </Label>
+                                                        <Input
+                                                            value={data.parents.mother_contact}
+                                                            onChange={(e) =>
+                                                                setData("parents", {
+                                                                    ...data.parents,
+                                                                    mother_contact: sanitizeNumberInput(e.target.value),
+                                                                })
+                                                            }
+                                                            type="tel"
+                                                            inputMode="numeric"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">Email</Label>
+                                                        <Input
+                                                            type="email"
+                                                            value={data.parents.mother_email}
+                                                            onChange={(e) => setData("parents", { ...data.parents, mother_email: e.target.value })}
+                                                            placeholder="mother@example.com"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+
+                                        <Card className="border shadow-sm">
+                                            <CardContent className="space-y-4 p-4 sm:p-6">
+                                                <div className="mb-1 flex items-center gap-2">
+                                                    <User className="text-primary h-5 w-5" />
+                                                    <h3 className="text-base font-semibold">
+                                                        Guardian{" "}
+                                                        <span className="text-muted-foreground text-xs font-normal">(if different from parents)</span>
+                                                    </h3>
+                                                </div>
+                                                <div className="grid gap-3 sm:grid-cols-2">
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">
+                                                            Name <span className="text-destructive">*</span>
+                                                        </Label>
+                                                        <Input
+                                                            value={data.parents.guardian_name}
+                                                            onChange={(e) =>
+                                                                setData("parents", {
+                                                                    ...data.parents,
+                                                                    guardian_name: sanitizeNameInput(e.target.value),
+                                                                })
+                                                            }
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">
+                                                            Relationship <span className="text-destructive">*</span>
+                                                        </Label>
+                                                        <Input
+                                                            value={data.parents.guardian_relationship}
+                                                            onChange={(e) =>
+                                                                setData("parents", {
+                                                                    ...data.parents,
+                                                                    guardian_relationship: sanitizeNameInput(e.target.value),
+                                                                })
+                                                            }
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">
+                                                            Contact <span className="text-destructive">*</span>
+                                                        </Label>
+                                                        <Input
+                                                            value={data.parents.guardian_contact}
+                                                            onChange={(e) =>
+                                                                setData("parents", {
+                                                                    ...data.parents,
+                                                                    guardian_contact: sanitizeNumberInput(e.target.value),
+                                                                })
+                                                            }
+                                                            type="tel"
+                                                            inputMode="numeric"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <Label className="text-sm">Email</Label>
+                                                        <Input
+                                                            type="email"
+                                                            value={data.parents.guardian_email}
+                                                            onChange={(e) => setData("parents", { ...data.parents, guardian_email: e.target.value })}
+                                                            placeholder="guardian@example.com"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5 sm:col-span-2">
+                                                        <Label className="text-sm">Family Address</Label>
+                                                        <Textarea
+                                                            value={data.parents.family_address}
+                                                            onChange={(e) => setData("parents", { ...data.parents, family_address: e.target.value })}
+                                                            placeholder="If different from your address"
+                                                            className="min-h-[60px]"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+
+                                        <Card className="border shadow-sm">
+                                            <CardContent className="space-y-4 p-4 sm:p-6">
+                                                <div className="mb-1 flex items-center gap-2">
+                                                    <FileText className="text-primary h-5 w-5" />
+                                                    <h3 className="text-base font-semibold">Education Background</h3>
+                                                </div>
+                                                <div className="space-y-4">
+                                                    <div className="grid gap-3 sm:grid-cols-2">
+                                                        <div className="space-y-1.5">
+                                                            <Label className="text-sm">
+                                                                Elementary School <span className="text-destructive">*</span>
+                                                            </Label>
+                                                            <Input
+                                                                value={data.education.elementary_school}
+                                                                onChange={(e) =>
+                                                                    setData("education", { ...data.education, elementary_school: e.target.value })
+                                                                }
+                                                                placeholder="School name"
+                                                            />
+                                                        </div>
+                                                        <div className="space-y-1.5">
+                                                            <Label className="text-sm">
+                                                                Year Graduated <span className="text-destructive">*</span>
+                                                            </Label>
+                                                            <Input
+                                                                value={data.education.elementary_year_graduated}
+                                                                onChange={(e) =>
+                                                                    setData("education", {
+                                                                        ...data.education,
+                                                                        elementary_year_graduated: e.target.value,
+                                                                    })
+                                                                }
+                                                                placeholder="YYYY"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    <div className="grid gap-3 sm:grid-cols-2">
+                                                        <div className="space-y-1.5">
+                                                            <Label className="text-sm">
+                                                                High School <span className="text-destructive">*</span>
+                                                            </Label>
+                                                            <Input
+                                                                value={data.education.high_school}
+                                                                onChange={(e) =>
+                                                                    setData("education", { ...data.education, high_school: e.target.value })
+                                                                }
+                                                                placeholder="School name"
+                                                            />
+                                                        </div>
+                                                        <div className="space-y-1.5">
+                                                            <Label className="text-sm">
+                                                                Year Graduated <span className="text-destructive">*</span>
+                                                            </Label>
+                                                            <Input
+                                                                value={data.education.high_school_year_graduated}
+                                                                onChange={(e) =>
+                                                                    setData("education", {
+                                                                        ...data.education,
+                                                                        high_school_year_graduated: e.target.value,
+                                                                    })
+                                                                }
+                                                                placeholder="YYYY"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    <div className="grid gap-3 sm:grid-cols-2">
+                                                        <div className="space-y-1.5">
+                                                            <Label className="text-sm">
+                                                                Senior High School <span className="text-destructive">*</span>
+                                                            </Label>
+                                                            <Input
+                                                                value={data.education.senior_high_school}
+                                                                onChange={(e) =>
+                                                                    setData("education", { ...data.education, senior_high_school: e.target.value })
+                                                                }
+                                                                placeholder="School name"
+                                                            />
+                                                        </div>
+                                                        <div className="space-y-1.5">
+                                                            <Label className="text-sm">
+                                                                Year Graduated <span className="text-destructive">*</span>
+                                                            </Label>
+                                                            <Input
+                                                                value={data.education.senior_high_year_graduated}
+                                                                onChange={(e) =>
+                                                                    setData("education", {
+                                                                        ...data.education,
+                                                                        senior_high_year_graduated: e.target.value,
+                                                                    })
+                                                                }
+                                                                placeholder="YYYY"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    <div className="rounded-lg border p-3">
+                                                        <p className="text-muted-foreground mb-2 text-xs font-medium tracking-wider uppercase">
+                                                            College / Transferee (if applicable)
+                                                        </p>
+                                                        <div className="grid gap-3 sm:grid-cols-2">
+                                                            <div className="space-y-1.5">
+                                                                <Label className="text-sm">School</Label>
+                                                                <Input
+                                                                    value={data.education.college_school}
+                                                                    onChange={(e) =>
+                                                                        setData("education", { ...data.education, college_school: e.target.value })
+                                                                    }
+                                                                    placeholder="Previous college"
+                                                                />
+                                                            </div>
+                                                            <div className="space-y-1.5">
+                                                                <Label className="text-sm">Course</Label>
+                                                                <Input
+                                                                    value={data.education.college_course}
+                                                                    onChange={(e) =>
+                                                                        setData("education", { ...data.education, college_course: e.target.value })
+                                                                    }
+                                                                    placeholder="Previous course"
+                                                                />
+                                                            </div>
+                                                            <div className="space-y-1.5 sm:col-span-2">
+                                                                <Label className="text-sm">Year Graduated / Last Attended</Label>
+                                                                <Input
+                                                                    value={data.education.college_year_graduated}
+                                                                    onChange={(e) =>
+                                                                        setData("education", {
+                                                                            ...data.education,
+                                                                            college_year_graduated: e.target.value,
+                                                                        })
+                                                                    }
+                                                                    placeholder="YYYY"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="grid gap-3 sm:grid-cols-2">
+                                                        <div className="space-y-1.5">
+                                                            <Label className="text-sm">Vocational School</Label>
+                                                            <Input
+                                                                value={data.education.vocational_school}
+                                                                onChange={(e) =>
+                                                                    setData("education", { ...data.education, vocational_school: e.target.value })
+                                                                }
+                                                                placeholder="School name"
+                                                            />
+                                                        </div>
+                                                        <div className="space-y-1.5">
+                                                            <Label className="text-sm">Course</Label>
+                                                            <Input
+                                                                value={data.education.vocational_course}
+                                                                onChange={(e) =>
+                                                                    setData("education", { ...data.education, vocational_course: e.target.value })
+                                                                }
+                                                                placeholder="Course taken"
+                                                            />
+                                                        </div>
+                                                        <div className="space-y-1.5 sm:col-span-2">
+                                                            <Label className="text-sm">Year Graduated</Label>
+                                                            <Input
+                                                                value={data.education.vocational_year_graduated}
+                                                                onChange={(e) =>
+                                                                    setData("education", {
+                                                                        ...data.education,
+                                                                        vocational_year_graduated: e.target.value,
+                                                                    })
+                                                                }
+                                                                placeholder="YYYY"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+                                    </div>
+                                )}
+
+                                {currentStep === 3 && (
+                                    <div className="space-y-5">
+                                        <Card className="border shadow-sm">
+                                            <CardContent className="space-y-4 p-4 sm:p-6">
+                                                <div className="mb-1 flex items-center gap-2">
+                                                    <Upload className="text-primary h-5 w-5" />
+                                                    <h3 className="text-base font-semibold">Profile Photo</h3>
+                                                    <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                                                        Recommended
+                                                    </Badge>
+                                                </div>
+                                                <p className="text-muted-foreground text-sm">
+                                                    Upload a clear 2x2 or passport-size photo with a plain background.{" "}
+                                                    <span className="text-foreground font-medium">You can skip this and upload it later.</span>
+                                                </p>
+                                                <div className="space-y-3">
+                                                    {getDocumentsForType("profile_photo").length > 0 && (
+                                                        <div className="grid grid-cols-1 gap-2">
+                                                            {getDocumentsForType("profile_photo").map((doc) => (
+                                                                <div
+                                                                    key={doc.id}
+                                                                    className="bg-background flex items-center gap-3 rounded-lg border p-2 pr-3 shadow-sm"
+                                                                >
+                                                                    {doc.preview ? (
+                                                                        <img
+                                                                            src={doc.preview}
+                                                                            className="h-10 w-10 rounded border object-cover"
+                                                                            alt=""
+                                                                        />
+                                                                    ) : (
+                                                                        <div className="bg-muted flex h-10 w-10 items-center justify-center rounded">
+                                                                            <FileText className="text-muted-foreground h-5 w-5" />
+                                                                        </div>
+                                                                    )}
+                                                                    <div className="min-w-0 flex-1">
+                                                                        <p className="truncate text-sm font-medium">{doc.file.name}</p>
+                                                                        <p className="text-muted-foreground text-xs">
+                                                                            {(doc.file.size / 1024).toFixed(0)} KB
+                                                                        </p>
+                                                                    </div>
+                                                                    <Button
+                                                                        size="icon"
+                                                                        variant="ghost"
+                                                                        className="text-destructive h-8 w-8"
+                                                                        onClick={() => handleRemoveDocument(doc.id)}
+                                                                    >
+                                                                        <Trash2 className="h-4 w-4" />
+                                                                    </Button>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                    <div
+                                                        onClick={() => {
+                                                            if (fileInputRef.current) {
+                                                                fileInputRef.current.setAttribute("data-doc-type", "profile_photo");
+                                                                fileInputRef.current.click();
+                                                            }
+                                                        }}
+                                                        className="hover:bg-muted/30 active:bg-muted flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-6 text-center transition-colors"
+                                                    >
+                                                        <div className="bg-primary/10 text-primary flex h-10 w-10 items-center justify-center rounded-full">
+                                                            <Upload className="h-5 w-5" />
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-foreground text-sm font-medium">Tap to upload photo</p>
+                                                            <p className="text-muted-foreground mt-0.5 text-xs">JPG, PNG, or WebP</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+
+                                        <Card className="border shadow-sm">
+                                            <CardContent className="space-y-4 p-4 sm:p-6">
+                                                <div className="mb-1 flex items-center gap-2">
+                                                    <PencilLine className="text-primary h-5 w-5" />
+                                                    <h3 className="text-base font-semibold">Signature</h3>
+                                                    <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                                                        Recommended
+                                                    </Badge>
+                                                </div>
+                                                <p className="text-muted-foreground text-sm">
+                                                    Draw your signature below using your mouse or finger.{" "}
+                                                    <span className="text-foreground font-medium">You can skip this and add it later.</span>
+                                                </p>
+                                                <div className="space-y-3">
+                                                    {getDocumentsForType("signature").length > 0 && (
+                                                        <div className="grid grid-cols-1 gap-2">
+                                                            {getDocumentsForType("signature").map((doc) => (
+                                                                <div
+                                                                    key={doc.id}
+                                                                    className="bg-background flex items-center gap-3 rounded-lg border p-2 pr-3 shadow-sm"
+                                                                >
+                                                                    {doc.preview ? (
+                                                                        <img
+                                                                            src={doc.preview}
+                                                                            className="h-10 w-10 rounded border object-cover"
+                                                                            alt=""
+                                                                        />
+                                                                    ) : (
+                                                                        <div className="bg-muted flex h-10 w-10 items-center justify-center rounded">
+                                                                            <FileText className="text-muted-foreground h-5 w-5" />
+                                                                        </div>
+                                                                    )}
+                                                                    <div className="min-w-0 flex-1">
+                                                                        <p className="truncate text-sm font-medium">{doc.file.name}</p>
+                                                                        <p className="text-muted-foreground text-xs">
+                                                                            {(doc.file.size / 1024).toFixed(0)} KB
+                                                                        </p>
+                                                                    </div>
+                                                                    <Button
+                                                                        size="icon"
+                                                                        variant="ghost"
+                                                                        className="text-destructive h-8 w-8"
+                                                                        onClick={() => {
+                                                                            handleRemoveDocument(doc.id);
+                                                                            clearSignature();
+                                                                        }}
+                                                                    >
+                                                                        <Trash2 className="h-4 w-4" />
+                                                                    </Button>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                    <div
+                                                        ref={signatureWrapperRef}
+                                                        className="min-w-[300px] overflow-hidden rounded-lg border bg-white dark:bg-zinc-900"
+                                                    >
+                                                        <canvas
+                                                            ref={signatureCanvasRef}
+                                                            className="block w-full touch-none"
+                                                            style={{ height: 200 }}
+                                                        />
+                                                    </div>
+                                                    <div className="flex items-center justify-between">
+                                                        <Button type="button" variant="outline" size="sm" onClick={clearSignature}>
+                                                            <Eraser className="mr-1.5 h-3.5 w-3.5" />
+                                                            Clear
+                                                        </Button>
+                                                        <Button
+                                                            type="button"
+                                                            size="sm"
+                                                            onClick={saveSignatureToDocuments}
+                                                            disabled={!signatureCaptured}
+                                                        >
+                                                            <Check className="mr-1.5 h-3.5 w-3.5" />
+                                                            Save Signature
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+
+                                        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/20">
+                                            <div className="flex gap-3">
+                                                <div className="mt-0.5">
+                                                    <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                                                </div>
+                                                <div>
+                                                    <h4 className="font-semibold text-blue-800 dark:text-blue-200">Document Availability</h4>
+                                                    <p className="mt-1 text-sm leading-relaxed text-blue-700 dark:text-blue-300">
+                                                        Do you have soft copies (photos/scans) of your documents right now?
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <Card className="border shadow-sm">
+                                            <CardContent className="space-y-4 p-4 sm:p-6">
+                                                <div className="flex items-center justify-between">
+                                                    <h3 className="text-base font-semibold">Checklist</h3>
+                                                    <span className="text-muted-foreground text-xs">Select what you have</span>
+                                                </div>
+                                                <div className="grid gap-3">
+                                                    {requirementsLoading && (
+                                                        <div className="text-muted-foreground flex items-center gap-2 rounded-lg border p-4 text-sm">
+                                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                                            Loading configured requirements…
+                                                        </div>
+                                                    )}
+                                                    {!requirementsLoading &&
+                                                        policyRequirements.map((docType) => (
+                                                            <label
+                                                                key={docType.key}
+                                                                htmlFor={`doc-check-${docType.key}`}
+                                                                className={cn(
+                                                                    "relative flex cursor-pointer items-start gap-4 rounded-xl border p-4 transition-all active:scale-[0.99]",
+                                                                    availableDocuments[docType.key]
+                                                                        ? "border-primary bg-primary/5 shadow-sm"
+                                                                        : "border-border hover:bg-muted/30",
+                                                                )}
+                                                            >
+                                                                <Checkbox
+                                                                    id={`doc-check-${docType.key}`}
+                                                                    checked={availableDocuments[docType.key]}
+                                                                    onCheckedChange={(checked) => {
+                                                                        setAvailableDocuments((prev) => ({
+                                                                            ...prev,
+                                                                            [docType.key]: checked === true,
+                                                                        }));
+                                                                        if (!checked)
+                                                                            setUploadedDocuments((prev) =>
+                                                                                prev.filter((doc) => doc.type !== docType.key),
+                                                                            );
+                                                                    }}
+                                                                    className="mt-1"
+                                                                />
+                                                                <div className="flex-1">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-foreground font-medium">{docType.label}</span>
+                                                                        {docType.required && (
+                                                                            <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                                                                                Required
+                                                                            </Badge>
+                                                                        )}
+                                                                    </div>
+                                                                    <p className="text-muted-foreground mt-0.5 text-xs">
+                                                                        {docType.description ??
+                                                                            (availableDocuments[docType.key]
+                                                                                ? "I have this document ready"
+                                                                                : "I will bring this later")}
+                                                                    </p>
+                                                                </div>
+                                                            </label>
+                                                        ))}
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+
+                                        {hasAnyDocumentsToUpload && (
+                                            <div className="space-y-5">
+                                                <div className="flex items-center gap-2 px-2">
+                                                    <Upload className="text-primary h-5 w-5" />
+                                                    <h3 className="text-base font-semibold">Upload Selected Files</h3>
+                                                </div>
+
+                                                {policyRequirements
+                                                    .filter((d) => availableDocuments[d.key])
+                                                    .map((docType) => {
+                                                        const docsForType = getDocumentsForType(docType.key);
+                                                        return (
+                                                            <Card key={docType.key} className="overflow-hidden border shadow-sm">
+                                                                <div className="bg-muted/30 flex items-center justify-between border-b p-3">
+                                                                    <span className="text-sm font-medium">{docType.label}</span>
+                                                                    {docsForType.length > 0 && (
+                                                                        <Badge
+                                                                            variant="default"
+                                                                            className="bg-green-600 text-[10px] hover:bg-green-700"
+                                                                        >
+                                                                            {docsForType.length} Added
+                                                                        </Badge>
+                                                                    )}
+                                                                </div>
+                                                                <CardContent className="space-y-3 p-4">
+                                                                    {docsForType.length > 0 && (
+                                                                        <div className="grid grid-cols-1 gap-2">
+                                                                            {docsForType.map((doc) => (
+                                                                                <div
+                                                                                    key={doc.id}
+                                                                                    className="bg-background flex items-center gap-3 rounded-lg border p-2 pr-3 shadow-sm"
+                                                                                >
+                                                                                    {doc.preview ? (
+                                                                                        <img
+                                                                                            src={doc.preview}
+                                                                                            className="h-10 w-10 rounded border object-cover"
+                                                                                            alt=""
+                                                                                        />
+                                                                                    ) : (
+                                                                                        <div className="bg-muted flex h-10 w-10 items-center justify-center rounded">
+                                                                                            <FileText className="text-muted-foreground h-5 w-5" />
+                                                                                        </div>
+                                                                                    )}
+                                                                                    <div className="min-w-0 flex-1">
+                                                                                        <p className="truncate text-sm font-medium">
+                                                                                            {doc.file.name}
+                                                                                        </p>
+                                                                                        <p className="text-muted-foreground text-xs">
+                                                                                            {(doc.file.size / 1024).toFixed(0)} KB
+                                                                                        </p>
+                                                                                    </div>
+                                                                                    <Button
+                                                                                        size="icon"
+                                                                                        variant="ghost"
+                                                                                        className="text-destructive h-8 w-8"
+                                                                                        onClick={() => handleRemoveDocument(doc.id)}
+                                                                                    >
+                                                                                        <Trash2 className="h-4 w-4" />
+                                                                                    </Button>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    )}
+
+                                                                    <div
+                                                                        onClick={() => {
+                                                                            if (fileInputRef.current) {
+                                                                                fileInputRef.current.setAttribute("data-doc-type", docType.key);
+                                                                                fileInputRef.current.click();
+                                                                            }
+                                                                        }}
+                                                                        className="hover:bg-muted/30 active:bg-muted flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-6 text-center transition-colors"
+                                                                    >
+                                                                        <div className="bg-primary/10 text-primary flex h-10 w-10 items-center justify-center rounded-full">
+                                                                            <Upload className="h-5 w-5" />
+                                                                        </div>
+                                                                        <div>
+                                                                            <p className="text-foreground text-sm font-medium">Tap to upload</p>
+                                                                            <p className="text-muted-foreground mt-0.5 text-xs">or drag files here</p>
+                                                                        </div>
+                                                                    </div>
+                                                                </CardContent>
+                                                            </Card>
+                                                        );
+                                                    })}
+                                            </div>
+                                        )}
+
+                                        {!hasAnyDocumentsToUpload && (
+                                            <p className="text-muted-foreground px-4 text-center text-sm">
+                                                You can skip uploading for now. Please bring your original documents to the registrar.
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
+
+                                {currentStep === 4 && (
+                                    <div className="space-y-5">
+                                        <Card className="border-primary/20 shadow-md">
+                                            <div className="bg-primary/5 border-primary/10 border-b p-4 text-center sm:p-6">
+                                                <h3 className="text-primary text-lg font-bold sm:text-xl">Review Details</h3>
+                                                <p className="text-muted-foreground text-sm">Verify your information before submitting</p>
+                                            </div>
+                                            <CardContent className="p-0">
+                                                <div className="divide-y">
+                                                    <div className="grid gap-1 p-4 sm:p-6">
+                                                        <span className="text-muted-foreground text-xs font-medium uppercase">Program</span>
+                                                        <p className="text-foreground font-medium">{selectedCourse?.title || "Not Selected"}</p>
+                                                        <div className="mt-1 flex flex-wrap gap-2">
+                                                            <Badge variant="outline" className="w-fit">
+                                                                {data.student_type.toUpperCase()}
+                                                            </Badge>
+                                                            {data.academic_year && (
+                                                                <Badge variant="outline" className="w-fit">
+                                                                    {data.academic_year} Year
                                                                 </Badge>
                                                             )}
                                                         </div>
-                                                        <p className="text-muted-foreground mt-0.5 text-xs">
-                                                            {availableDocuments[docType.id]
-                                                                ? "I have this document ready"
-                                                                : "I will bring this later"}
+                                                    </div>
+
+                                                    <div className="grid gap-1 p-4 sm:p-6">
+                                                        <span className="text-muted-foreground text-xs font-medium uppercase">Identity</span>
+                                                        <p className="text-lg font-semibold">
+                                                            {data.last_name}, {data.first_name} {data.middle_name} {data.suffix}
                                                         </p>
-                                                    </div>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    </CardContent>
-                                </Card>
-
-                                {hasAnyDocumentsToUpload && (
-                                    <div className="space-y-5">
-                                        <div className="flex items-center gap-2 px-2">
-                                            <Upload className="text-primary h-5 w-5" />
-                                            <h3 className="text-base font-semibold">Upload Selected Files</h3>
-                                        </div>
-
-                                        {DOCUMENT_TYPES.filter((d) => availableDocuments[d.id]).map((docType) => {
-                                            const docsForType = getDocumentsForType(docType.id);
-                                            return (
-                                                <Card key={docType.id} className="overflow-hidden border shadow-sm">
-                                                    <div className="bg-muted/30 flex items-center justify-between border-b p-3">
-                                                        <span className="text-sm font-medium">{docType.label}</span>
-                                                        {docsForType.length > 0 && (
-                                                            <Badge variant="default" className="bg-green-600 text-[10px] hover:bg-green-700">
-                                                                {docsForType.length} Added
-                                                            </Badge>
-                                                        )}
-                                                    </div>
-                                                    <CardContent className="space-y-3 p-4">
-                                                        {docsForType.length > 0 && (
-                                                            <div className="grid grid-cols-1 gap-2">
-                                                                {docsForType.map((doc) => (
-                                                                    <div
-                                                                        key={doc.id}
-                                                                        className="bg-background flex items-center gap-3 rounded-lg border p-2 pr-3 shadow-sm"
-                                                                    >
-                                                                        {doc.preview ? (
-                                                                            <img
-                                                                                src={doc.preview}
-                                                                                className="h-10 w-10 rounded border object-cover"
-                                                                                alt=""
-                                                                            />
-                                                                        ) : (
-                                                                            <div className="bg-muted flex h-10 w-10 items-center justify-center rounded">
-                                                                                <FileText className="text-muted-foreground h-5 w-5" />
-                                                                            </div>
-                                                                        )}
-                                                                        <div className="min-w-0 flex-1">
-                                                                            <p className="truncate text-sm font-medium">{doc.file.name}</p>
-                                                                            <p className="text-muted-foreground text-xs">
-                                                                                {(doc.file.size / 1024).toFixed(0)} KB
-                                                                            </p>
-                                                                        </div>
-                                                                        <Button
-                                                                            size="icon"
-                                                                            variant="ghost"
-                                                                            className="text-destructive h-8 w-8"
-                                                                            onClick={() => handleRemoveDocument(doc.id)}
-                                                                        >
-                                                                            <Trash2 className="h-4 w-4" />
-                                                                        </Button>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-
-                                                        <div
-                                                            onClick={() => {
-                                                                if (fileInputRef.current) {
-                                                                    fileInputRef.current.setAttribute("data-doc-type", docType.id);
-                                                                    fileInputRef.current.click();
-                                                                }
-                                                            }}
-                                                            className="hover:bg-muted/30 active:bg-muted flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-6 text-center transition-colors"
-                                                        >
-                                                            <div className="bg-primary/10 text-primary flex h-10 w-10 items-center justify-center rounded-full">
-                                                                <Upload className="h-5 w-5" />
-                                                            </div>
-                                                            <div>
-                                                                <p className="text-foreground text-sm font-medium">Tap to upload</p>
-                                                                <p className="text-muted-foreground mt-0.5 text-xs">or drag files here</p>
-                                                            </div>
+                                                        <div className="text-muted-foreground mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                                                            <span>{data.gender}</span>
+                                                            <span>•</span>
+                                                            <span>{data.birth_date}</span>
                                                         </div>
-                                                    </CardContent>
-                                                </Card>
-                                            );
-                                        })}
-                                    </div>
-                                )}
-
-                                {!hasAnyDocumentsToUpload && (
-                                    <p className="text-muted-foreground px-4 text-center text-sm">
-                                        You can skip uploading for now. Please bring your original documents to the registrar.
-                                    </p>
-                                )}
-                            </div>
-                        )}
-
-                        {currentStep === 4 && (
-                            <div className="space-y-5">
-                                <Card className="border-primary/20 shadow-md">
-                                    <div className="bg-primary/5 border-primary/10 border-b p-4 text-center sm:p-6">
-                                        <h3 className="text-primary text-lg font-bold sm:text-xl">Review Details</h3>
-                                        <p className="text-muted-foreground text-sm">Verify your information before submitting</p>
-                                    </div>
-                                    <CardContent className="p-0">
-                                        <div className="divide-y">
-                                            <div className="grid gap-1 p-4 sm:p-6">
-                                                <span className="text-muted-foreground text-xs font-medium uppercase">Program</span>
-                                                <p className="text-foreground font-medium">{selectedCourse?.title || "Not Selected"}</p>
-                                                <div className="mt-1 flex flex-wrap gap-2">
-                                                    <Badge variant="outline" className="w-fit">{data.student_type.toUpperCase()}</Badge>
-                                                    {data.academic_year && <Badge variant="outline" className="w-fit">{data.academic_year} Year</Badge>}
-                                                </div>
-                                            </div>
-
-                                            <div className="grid gap-1 p-4 sm:p-6">
-                                                <span className="text-muted-foreground text-xs font-medium uppercase">Identity</span>
-                                                <p className="text-lg font-semibold">{data.last_name}, {data.first_name} {data.middle_name} {data.suffix}</p>
-                                                <div className="text-muted-foreground mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm">
-                                                    <span>{data.gender}</span>
-                                                    <span>•</span>
-                                                    <span>{data.birth_date}</span>
-                                                </div>
-                                            </div>
-
-                                            <div className="grid gap-1 p-4 sm:p-6">
-                                                <span className="text-muted-foreground text-xs font-medium uppercase">Demographics</span>
-                                                <div className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-sm">
-                                                    <span>{data.nationality}</span>
-                                                    {data.personal_info.citizenship && <span>• {data.personal_info.citizenship}</span>}
-                                                    {data.civil_status && <span>• {data.civil_status}</span>}
-                                                    {data.religion && <span>• {data.religion}</span>}
-                                                    {data.ethnicity && <span>• {data.ethnicity}</span>}
-                                                </div>
-                                                {(data.city_of_origin || data.province_of_origin || data.region_of_origin) && (
-                                                    <p className="text-muted-foreground mt-1 text-sm">
-                                                        Origin: {[data.city_of_origin, data.province_of_origin, data.region_of_origin].filter(Boolean).join(", ")}
-                                                    </p>
-                                                )}
-                                                {data.is_indigenous_person && (
-                                                    <Badge variant="outline" className="mt-2 w-fit">IP - {data.indigenous_group || "Indigenous Person"}</Badge>
-                                                )}
-                                                {(data.is_pwd || data.is_solo_parent || data.is_senior_citizen || data.is_magna_carta || data.is_underprivileged || data.is_first_generation) && (
-                                                    <div className="mt-2 flex flex-wrap gap-1.5">
-                                                        {data.is_pwd && <Badge variant="secondary" className="text-xs">PWD{data.pwd_type ? `: ${data.pwd_type}` : ""}</Badge>}
-                                                        {data.is_solo_parent && <Badge variant="secondary" className="text-xs">Solo Parent</Badge>}
-                                                        {data.is_senior_citizen && <Badge variant="secondary" className="text-xs">Senior Citizen</Badge>}
-                                                        {data.is_magna_carta && <Badge variant="secondary" className="text-xs">Magna Carta</Badge>}
-                                                        {data.is_underprivileged && <Badge variant="secondary" className="text-xs">Underprivileged</Badge>}
-                                                        {data.is_first_generation && <Badge variant="secondary" className="text-xs">First Gen</Badge>}
                                                     </div>
-                                                )}
-                                                {(data.family_income_bracket || data.father_income_bracket || data.mother_income_bracket) && (
-                                                    <div className="text-muted-foreground mt-2 space-y-1 text-sm">
-                                                        <p>Income Basis: {selectedIncomeMode?.label || data.income_bracket_mode}</p>
-                                                        {data.use_same_parent_income && data.family_income_bracket && (
-                                                            <p>
-                                                                Family Income: {activeIncomeBrackets.find((b) => b.value === data.family_income_bracket)?.label || data.family_income_bracket}
+
+                                                    <div className="grid gap-1 p-4 sm:p-6">
+                                                        <span className="text-muted-foreground text-xs font-medium uppercase">Demographics</span>
+                                                        <div className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                                                            <span>{data.nationality}</span>
+                                                            {data.personal_info.citizenship && <span>• {data.personal_info.citizenship}</span>}
+                                                            {data.civil_status && <span>• {data.civil_status}</span>}
+                                                            {data.religion && <span>• {data.religion}</span>}
+                                                            {data.ethnicity && <span>• {data.ethnicity}</span>}
+                                                        </div>
+                                                        {(data.city_of_origin || data.province_of_origin || data.region_of_origin) && (
+                                                            <p className="text-muted-foreground mt-1 text-sm">
+                                                                Origin:{" "}
+                                                                {[data.city_of_origin, data.province_of_origin, data.region_of_origin]
+                                                                    .filter(Boolean)
+                                                                    .join(", ")}
                                                             </p>
                                                         )}
-                                                        {!data.use_same_parent_income && (
-                                                            <>
-                                                                {data.father_income_bracket && (
+                                                        {data.is_indigenous_person && (
+                                                            <Badge variant="outline" className="mt-2 w-fit">
+                                                                IP - {data.indigenous_group || "Indigenous Person"}
+                                                            </Badge>
+                                                        )}
+                                                        {(data.is_pwd ||
+                                                            data.is_solo_parent ||
+                                                            data.is_senior_citizen ||
+                                                            data.is_magna_carta ||
+                                                            data.is_underprivileged ||
+                                                            data.is_first_generation) && (
+                                                            <div className="mt-2 flex flex-wrap gap-1.5">
+                                                                {data.is_pwd && (
+                                                                    <Badge variant="secondary" className="text-xs">
+                                                                        PWD{data.pwd_type ? `: ${data.pwd_type}` : ""}
+                                                                    </Badge>
+                                                                )}
+                                                                {data.is_solo_parent && (
+                                                                    <Badge variant="secondary" className="text-xs">
+                                                                        Solo Parent
+                                                                    </Badge>
+                                                                )}
+                                                                {data.is_senior_citizen && (
+                                                                    <Badge variant="secondary" className="text-xs">
+                                                                        Senior Citizen
+                                                                    </Badge>
+                                                                )}
+                                                                {data.is_magna_carta && (
+                                                                    <Badge variant="secondary" className="text-xs">
+                                                                        Magna Carta
+                                                                    </Badge>
+                                                                )}
+                                                                {data.is_underprivileged && (
+                                                                    <Badge variant="secondary" className="text-xs">
+                                                                        Underprivileged
+                                                                    </Badge>
+                                                                )}
+                                                                {data.is_first_generation && (
+                                                                    <Badge variant="secondary" className="text-xs">
+                                                                        First Gen
+                                                                    </Badge>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                        {(data.family_income_bracket || data.father_income_bracket || data.mother_income_bracket) && (
+                                                            <div className="text-muted-foreground mt-2 space-y-1 text-sm">
+                                                                <p>Income Basis: {selectedIncomeMode?.label || data.income_bracket_mode}</p>
+                                                                {data.use_same_parent_income && data.family_income_bracket && (
                                                                     <p>
-                                                                        Father: {activeIncomeBrackets.find((b) => b.value === data.father_income_bracket)?.label || data.father_income_bracket}
+                                                                        Family Income:{" "}
+                                                                        {activeIncomeBrackets.find((b) => b.value === data.family_income_bracket)
+                                                                            ?.label || data.family_income_bracket}
                                                                     </p>
                                                                 )}
-                                                                {data.mother_income_bracket && (
-                                                                    <p>
-                                                                        Mother: {activeIncomeBrackets.find((b) => b.value === data.mother_income_bracket)?.label || data.mother_income_bracket}
-                                                                    </p>
+                                                                {!data.use_same_parent_income && (
+                                                                    <>
+                                                                        {data.father_income_bracket && (
+                                                                            <p>
+                                                                                Father:{" "}
+                                                                                {activeIncomeBrackets.find(
+                                                                                    (b) => b.value === data.father_income_bracket,
+                                                                                )?.label || data.father_income_bracket}
+                                                                            </p>
+                                                                        )}
+                                                                        {data.mother_income_bracket && (
+                                                                            <p>
+                                                                                Mother:{" "}
+                                                                                {activeIncomeBrackets.find(
+                                                                                    (b) => b.value === data.mother_income_bracket,
+                                                                                )?.label || data.mother_income_bracket}
+                                                                            </p>
+                                                                        )}
+                                                                    </>
                                                                 )}
-                                                            </>
+                                                            </div>
                                                         )}
                                                     </div>
-                                                )}
-                                            </div>
 
-                                            <div className="grid gap-1 p-4 sm:p-6">
-                                                <span className="text-muted-foreground text-xs font-medium uppercase">Contact</span>
-                                                <p className="text-sm">{data.phone}</p>
-                                                {data.email && <p className="text-muted-foreground text-sm">{data.email}</p>}
-                                                <p className="text-muted-foreground mt-1 text-sm">{data.address}</p>
-                                            </div>
+                                                    <div className="grid gap-1 p-4 sm:p-6">
+                                                        <span className="text-muted-foreground text-xs font-medium uppercase">Contact</span>
+                                                        <p className="text-sm">{data.phone}</p>
+                                                        {data.email && <p className="text-muted-foreground text-sm">{data.email}</p>}
+                                                        <p className="text-muted-foreground mt-1 text-sm">{data.address}</p>
+                                                    </div>
 
-                                            <div className="grid gap-1 p-4 sm:p-6">
-                                                <span className="text-muted-foreground text-xs font-medium uppercase">Family</span>
-                                                <p className="font-medium">{data.parents.guardian_name}</p>
-                                                <p className="text-muted-foreground text-sm">{data.parents.guardian_relationship} • {data.parents.guardian_contact}</p>
-                                                {(data.parents.father_name || data.parents.mother_name) && (
-                                                    <p className="text-muted-foreground mt-1 text-sm">
-                                                        Parents: {[data.parents.father_name, data.parents.mother_name].filter(Boolean).join(" & ")}
+                                                    <div className="grid gap-1 p-4 sm:p-6">
+                                                        <span className="text-muted-foreground text-xs font-medium uppercase">Family</span>
+                                                        <p className="font-medium">{data.parents.guardian_name}</p>
+                                                        <p className="text-muted-foreground text-sm">
+                                                            {data.parents.guardian_relationship} • {data.parents.guardian_contact}
+                                                        </p>
+                                                        {(data.parents.father_name || data.parents.mother_name) && (
+                                                            <p className="text-muted-foreground mt-1 text-sm">
+                                                                Parents:{" "}
+                                                                {[data.parents.father_name, data.parents.mother_name].filter(Boolean).join(" & ")}
+                                                            </p>
+                                                        )}
+                                                    </div>
+
+                                                    <div className="grid gap-1 p-4 sm:p-6">
+                                                        <span className="text-muted-foreground text-xs font-medium uppercase">Education</span>
+                                                        <div className="text-muted-foreground space-y-0.5 text-sm">
+                                                            {data.education.elementary_school && (
+                                                                <p>
+                                                                    Elem: {data.education.elementary_school} (
+                                                                    {data.education.elementary_year_graduated})
+                                                                </p>
+                                                            )}
+                                                            {data.education.high_school && (
+                                                                <p>
+                                                                    HS: {data.education.high_school} ({data.education.high_school_year_graduated})
+                                                                </p>
+                                                            )}
+                                                            {data.education.senior_high_school && (
+                                                                <p>
+                                                                    SHS: {data.education.senior_high_school} (
+                                                                    {data.education.senior_high_year_graduated})
+                                                                </p>
+                                                            )}
+                                                            {data.education.college_school && (
+                                                                <p>
+                                                                    College: {data.education.college_school} - {data.education.college_course} (
+                                                                    {data.education.college_year_graduated})
+                                                                </p>
+                                                            )}
+                                                            {data.education.vocational_school && (
+                                                                <p>
+                                                                    Vocational: {data.education.vocational_school} -{" "}
+                                                                    {data.education.vocational_course} ({data.education.vocational_year_graduated})
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="p-4 sm:p-6">
+                                                        <span className="text-muted-foreground mb-3 block text-xs font-medium uppercase">
+                                                            Documents
+                                                        </span>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {getDocumentsForType("profile_photo").length > 0 && (
+                                                                <Badge variant="secondary" className="gap-1 py-1 pr-2 pl-1">
+                                                                    <Check className="h-3 w-3 text-green-600" /> Profile Photo
+                                                                </Badge>
+                                                            )}
+                                                            {getDocumentsForType("signature").length > 0 && (
+                                                                <Badge variant="secondary" className="gap-1 py-1 pr-2 pl-1">
+                                                                    <Check className="h-3 w-3 text-green-600" /> Signature
+                                                                </Badge>
+                                                            )}
+                                                            {policyRequirements
+                                                                .filter((d) => getDocumentsForType(d.key).length > 0)
+                                                                .map((doc) => (
+                                                                    <Badge key={doc.key} variant="secondary" className="gap-1 py-1 pr-2 pl-1">
+                                                                        <Check className="h-3 w-3 text-green-600" /> {doc.label}
+                                                                    </Badge>
+                                                                ))}
+                                                            {uploadedDocuments.length === 0 && (
+                                                                <p className="text-muted-foreground text-sm italic">
+                                                                    No documents uploaded (to follow)
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+
+                                        <div className="bg-card flex items-start justify-between gap-3 rounded-lg border p-4 shadow-sm">
+                                            <div className="flex items-start gap-3">
+                                                <ShieldCheck className="text-primary mt-0.5 h-5 w-5 shrink-0" />
+                                                <div className="space-y-1">
+                                                    <p className="text-sm font-semibold sm:text-base">Privacy consent recorded</p>
+                                                    <p className="text-muted-foreground text-xs leading-relaxed">
+                                                        Marketing communications: {data.marketing_consent ? "Accepted" : "Not accepted"}
                                                     </p>
-                                                )}
-                                            </div>
-
-                                            <div className="grid gap-1 p-4 sm:p-6">
-                                                <span className="text-muted-foreground text-xs font-medium uppercase">Education</span>
-                                                <div className="text-muted-foreground space-y-0.5 text-sm">
-                                                    {data.education.elementary_school && <p>Elem: {data.education.elementary_school} ({data.education.elementary_year_graduated})</p>}
-                                                    {data.education.high_school && <p>HS: {data.education.high_school} ({data.education.high_school_year_graduated})</p>}
-                                                    {data.education.senior_high_school && <p>SHS: {data.education.senior_high_school} ({data.education.senior_high_year_graduated})</p>}
-                                                    {data.education.college_school && <p>College: {data.education.college_school} - {data.education.college_course} ({data.education.college_year_graduated})</p>}
-                                                    {data.education.vocational_school && <p>Vocational: {data.education.vocational_school} - {data.education.vocational_course} ({data.education.vocational_year_graduated})</p>}
                                                 </div>
                                             </div>
-
-                                            <div className="p-4 sm:p-6">
-                                                <span className="text-muted-foreground mb-3 block text-xs font-medium uppercase">Documents</span>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {getDocumentsForType("profile_photo").length > 0 && (
-                                                        <Badge variant="secondary" className="gap-1 py-1 pr-2 pl-1">
-                                                            <Check className="h-3 w-3 text-green-600" /> Profile Photo
-                                                        </Badge>
-                                                    )}
-                                                    {getDocumentsForType("signature").length > 0 && (
-                                                        <Badge variant="secondary" className="gap-1 py-1 pr-2 pl-1">
-                                                            <Check className="h-3 w-3 text-green-600" /> Signature
-                                                        </Badge>
-                                                    )}
-                                                    {DOCUMENT_TYPES.filter((d) => getDocumentsForType(d.id).length > 0).map((doc) => (
-                                                        <Badge key={doc.id} variant="secondary" className="gap-1 py-1 pr-2 pl-1">
-                                                            <Check className="h-3 w-3 text-green-600" /> {doc.label}
-                                                        </Badge>
-                                                    ))}
-                                                    {uploadedDocuments.length === 0 && (
-                                                        <p className="text-muted-foreground text-sm italic">No documents uploaded (to follow)</p>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-
-                                <div className="bg-card flex items-start justify-between gap-3 rounded-lg border p-4 shadow-sm">
-                                    <div className="flex items-start gap-3">
-                                        <ShieldCheck className="text-primary mt-0.5 h-5 w-5 shrink-0" />
-                                        <div className="space-y-1">
-                                            <p className="text-sm font-semibold sm:text-base">Privacy consent recorded</p>
-                                            <p className="text-muted-foreground text-xs leading-relaxed">
-                                                Marketing communications: {data.marketing_consent ? "Accepted" : "Not accepted"}
-                                            </p>
+                                            <Button variant="ghost" size="sm" onClick={() => setPrivacyGateCompleted(false)}>
+                                                Review
+                                            </Button>
                                         </div>
                                     </div>
-                                    <Button variant="ghost" size="sm" onClick={() => setPrivacyGateCompleted(false)}>
-                                        Review
-                                    </Button>
-                                </div>
-                            </div>
-                        )}
-                    </motion.div>
-                </AnimatePresence>
-            </main>
+                                )}
+                            </motion.div>
+                        </AnimatePresence>
+                    </main>
 
-            {/* Sticky Bottom Navigation Bar */}
-            <div className="bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky bottom-0 z-30 w-full border-t p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] backdrop-blur">
-                <div className="container mx-auto flex max-w-3xl items-center gap-3">
-                    <Button
-                        variant="outline"
-                        size="lg"
-                        onClick={handlePrev}
-                        disabled={currentStep === 0}
-                        className="h-12 flex-1 border-2 text-base sm:w-32 sm:flex-none"
-                    >
-                        Back
-                    </Button>
+                    {/* Sticky Bottom Navigation Bar */}
+                    <div className="bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky bottom-0 z-30 w-full border-t p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] backdrop-blur">
+                        <div className="container mx-auto flex max-w-3xl items-center gap-3">
+                            <Button
+                                variant="outline"
+                                size="lg"
+                                onClick={handlePrev}
+                                disabled={currentStep === 0}
+                                className="h-12 flex-1 border-2 text-base sm:w-32 sm:flex-none"
+                            >
+                                Back
+                            </Button>
 
-                    <Button
-                        onClick={currentStep < steps.length - 1 ? handleNext : submit}
-                        disabled={processing}
-                        size="lg"
-                        className={cn(
-                            "shadow-primary/20 h-12 flex-[2] text-base font-semibold shadow-lg",
-                            currentStep === steps.length - 1 && "from-primary to-primary/90 bg-gradient-to-r",
-                        )}
-                    >
-                        {processing ? (
-                            <>
-                                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                                Processing...
-                            </>
-                        ) : currentStep < steps.length - 1 ? (
-                            <>
-                                Next Step <ChevronRight className="ml-2 h-5 w-5" />
-                            </>
-                        ) : (
-                            <>
-                                Submit Application <Sparkles className="ml-2 h-5 w-5" />
-                            </>
-                        )}
-                    </Button>
-                </div>
-            </div>
+                            <Button
+                                onClick={currentStep < steps.length - 1 ? handleNext : submit}
+                                disabled={processing}
+                                size="lg"
+                                className={cn(
+                                    "shadow-primary/20 h-12 flex-[2] text-base font-semibold shadow-lg",
+                                    currentStep === steps.length - 1 && "from-primary to-primary/90 bg-gradient-to-r",
+                                )}
+                            >
+                                {processing ? (
+                                    <>
+                                        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                                        Processing...
+                                    </>
+                                ) : currentStep < steps.length - 1 ? (
+                                    <>
+                                        Next Step <ChevronRight className="ml-2 h-5 w-5" />
+                                    </>
+                                ) : (
+                                    <>
+                                        Submit Application <Sparkles className="ml-2 h-5 w-5" />
+                                    </>
+                                )}
+                            </Button>
+                        </div>
+                    </div>
 
-            {/* Hidden Inputs (Required for functionality) */}
-            <input
-                ref={fileInputRef}
-                type="file"
-                className="hidden"
-                accept="image/jpeg,image/png,image/webp,application/pdf"
-                multiple
-                onChange={(e) => {
-                    const docType = e.target.getAttribute("data-doc-type") || "other";
-                    handleFileSelect(e.target.files, docType);
-                    e.target.value = "";
-                }}
-            />
+                    {/* Hidden Inputs (Required for functionality) */}
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        className="hidden"
+                        accept="image/jpeg,image/png,image/webp,application/pdf"
+                        multiple
+                        onChange={(e) => {
+                            const docType = e.target.getAttribute("data-doc-type") || "other";
+                            handleFileSelect(e.target.files, docType);
+                            e.target.value = "";
+                        }}
+                    />
                 </>
             )}
         </div>

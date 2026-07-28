@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Models\Student;
+use App\Models\StudentEnrollment;
+use App\Models\StudentTransaction;
 use App\Models\StudentTuition;
 use App\Models\Transaction;
 
@@ -36,6 +38,26 @@ final class EnrollmentBillingService
     public function totalPaid(StudentTuition $tuition): float
     {
         $manualPaid = (float) ($tuition->getRawOriginal('paid') ?? 0);
+        $enrollment = $tuition->relationLoaded('enrollment')
+            ? $tuition->enrollment
+            : $tuition->enrollment()->first();
+        if ($enrollment instanceof StudentEnrollment) {
+            $linkedPayments = StudentTransaction::query()
+                ->with('transaction')
+                ->where('student_enrollment_id', $enrollment->id)
+                ->whereIn('status', ['Paid', 'Completed', 'paid', 'completed'])
+                ->get();
+            if ($linkedPayments->isNotEmpty()) {
+                $linkedPaid = $linkedPayments->sum(
+                    fn (StudentTransaction $link): float => $this->tuitionPaymentFromSettlements($link->transaction),
+                );
+
+                return max($manualPaid, (float) $linkedPaid);
+            }
+            if ($enrollment->workflow_runtime === StudentEnrollment::WorkflowRuntimePolicyV1) {
+                return $manualPaid;
+            }
+        }
 
         $student = $this->resolveStudent($tuition);
         if (! $student instanceof Student) {

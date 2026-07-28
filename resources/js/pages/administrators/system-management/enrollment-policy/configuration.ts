@@ -55,7 +55,16 @@ export function normalizeConfiguration(configuration: Configuration | null | und
         billing: copy(
             configuration?.billing ?? {
                 strategy: "billing.course_rate",
-                configuration: { discount_percentage: 0, minimum_payment_type: "none", minimum_payment_value: 0 },
+                configuration: {
+                    nstp_lecture_multiplier: 0.5,
+                    modular_laboratory_multiplier: 0.5,
+                    modular_fee: 2400,
+                    miscellaneous_fee_fallback: 3500,
+                    discount_scope: "lecture_only",
+                    allow_overall_override: true,
+                    receipt_mode: "required",
+                    minimum_payment: { type: "none", value: 0 },
+                },
                 allowed_payment_methods: [],
             },
         ),

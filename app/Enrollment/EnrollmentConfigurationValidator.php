@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Enrollment;
 
+use App\Enums\PaymentMethod;
 use Illuminate\Validation\ValidationException;
 
 final readonly class EnrollmentConfigurationValidator
@@ -71,6 +72,57 @@ final readonly class EnrollmentConfigurationValidator
         );
 
         $stepKeys = collect(data_get($configuration, 'workflow.steps', []))->pluck('key')->filter()->all();
+        foreach ($configuration['requirements'] ?? [] as $index => $requirement) {
+            if (! is_array($requirement) || ! is_string($requirement['key'] ?? null) || ! is_string($requirement['label'] ?? null)) {
+                throw ValidationException::withMessages(["requirements.{$index}" => 'Every requirement needs a stable key and label.']);
+            }
+            $enforcementStep = $requirement['enforcement_step'] ?? null;
+            if ($enforcementStep !== null && (! is_string($enforcementStep) || ! in_array($enforcementStep, $stepKeys, true))) {
+                throw ValidationException::withMessages(["requirements.{$index}.enforcement_step" => 'The requirement enforcement step must exist in this workflow.']);
+            }
+        }
+        foreach (data_get($configuration, 'workflow.steps', []) as $stepIndex => $step) {
+            foreach ($step['transitions'] ?? [] as $transitionIndex => $transition) {
+                if (isset($transition['requires_reason']) && ! is_bool($transition['requires_reason'])) {
+                    throw ValidationException::withMessages([
+                        "workflow.steps.{$stepIndex}.transitions.{$transitionIndex}.requires_reason" => 'The audited-reason setting must be true or false.',
+                    ]);
+                }
+            }
+        }
+        $noReceiptTargets = collect(data_get($configuration, 'workflow.steps', []))
+            ->filter(fn (array $step): bool => collect($step['actions'] ?? [])->contains(function (array $action): bool {
+                if (($action['handler'] ?? null) !== 'enrollment.verify_payment') {
+                    return false;
+                }
+                $actionConfiguration = is_array($action['configuration'] ?? null) ? $action['configuration'] : [];
+
+                return ($actionConfiguration['receipt_mode'] ?? null) === 'none'
+                    || ($actionConfiguration['allow_no_receipt'] ?? false) === true;
+            }))
+            ->pluck('key')
+            ->all();
+        foreach (data_get($configuration, 'workflow.steps', []) as $stepIndex => $step) {
+            foreach ($step['transitions'] ?? [] as $transitionIndex => $transition) {
+                if (in_array($transition['to'] ?? null, $noReceiptTargets, true)
+                    && ($transition['requires_reason'] ?? false) !== true) {
+                    throw ValidationException::withMessages([
+                        "workflow.steps.{$stepIndex}.transitions.{$transitionIndex}.requires_reason" => 'No-receipt transitions must require an audited reason.',
+                    ]);
+                }
+            }
+        }
+
+        $allowedPaymentMethods = data_get($configuration, 'billing.allowed_payment_methods', []);
+        $supportedPaymentMethods = array_map(
+            fn (PaymentMethod $method): string => $method->value,
+            PaymentMethod::cases(),
+        );
+        if (! is_array($allowedPaymentMethods)
+            || collect($allowedPaymentMethods)->contains(fn (mixed $method): bool => ! is_string($method) || ! in_array($method, $supportedPaymentMethods, true))) {
+            throw ValidationException::withMessages(['billing.allowed_payment_methods' => 'One or more payment methods are not supported.']);
+        }
+
         foreach ($configuration['notifications'] ?? [] as $index => $notification) {
             if (! is_array($notification) || ($notification['channel'] ?? null) !== 'mail') {
                 throw ValidationException::withMessages(["notifications.{$index}.channel" => 'The core enrollment notification currently supports email only.']);

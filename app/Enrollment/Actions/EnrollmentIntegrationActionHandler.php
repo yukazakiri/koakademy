@@ -6,28 +6,26 @@ namespace App\Enrollment\Actions;
 
 use App\Contracts\Enrollment\EnrollmentActionHandler;
 use App\Contracts\Enrollment\EnrollmentOperatorSchemaProvider;
+use App\Contracts\Enrollment\RuntimeEnrollmentAssignmentStrategy;
+use App\Contracts\Enrollment\RuntimeEnrollmentBillingStrategy;
 use App\Data\Enrollment\ActionResult;
 use App\Data\Enrollment\EnrollmentContext;
+use App\Enrollment\EnrollmentAssignmentService;
+use App\Enrollment\EnrollmentPaymentService;
+use App\Enrollment\EnrollmentPolicyRegistry;
 use App\Jobs\GenerateAssessmentPdfJob;
 use App\Jobs\SendAssessmentNotificationJob;
-use App\Models\ClassEnrollment;
-use App\Models\Classes;
-use App\Models\Student;
 use App\Models\StudentEnrollment;
-use App\Models\Subject;
-use App\Models\SubjectEnrollment;
-use App\Services\ClassEnrollmentService;
-use App\Services\EnrollmentService;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 final readonly class EnrollmentIntegrationActionHandler implements EnrollmentActionHandler, EnrollmentOperatorSchemaProvider
 {
     public function __construct(
         private string $handlerKey,
         private string $label,
-        private EnrollmentService $enrollmentService,
-        private ClassEnrollmentService $classEnrollmentService,
+        private EnrollmentAssignmentService $assignment,
+        private EnrollmentPaymentService $payments,
+        private EnrollmentPolicyRegistry $registry,
     ) {}
 
     public function key(): string
@@ -51,11 +49,12 @@ final readonly class EnrollmentIntegrationActionHandler implements EnrollmentAct
             'enrollment.verify_academic' => ['type' => 'object'],
             'enrollment.verify_payment' => [
                 'type' => 'object',
-                'required' => ['invoicenumber', 'settlements', 'payment_method'],
                 'properties' => [
                     'invoicenumber' => ['type' => 'string'],
                     'settlements' => ['type' => 'object'],
                     'payment_method' => ['type' => 'string'],
+                    'without_receipt' => ['type' => 'boolean'],
+                    'reason' => ['type' => 'string'],
                 ],
             ],
             'enrollment.assign_subjects' => [
@@ -93,6 +92,23 @@ final readonly class EnrollmentIntegrationActionHandler implements EnrollmentAct
                     ],
                 ],
             ],
+            'enrollment.assign_additional_fees' => [
+                'type' => 'object',
+                'properties' => [
+                    'fees' => [
+                        'type' => 'array',
+                        'items' => [
+                            'type' => 'object',
+                            'required' => ['fee_name', 'amount'],
+                            'properties' => [
+                                'fee_name' => ['type' => 'string'],
+                                'amount' => ['type' => 'number', 'minimum' => 0],
+                                'is_separate_transaction' => ['type' => 'boolean'],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
             'enrollment.calculate_tuition' => [
                 'type' => 'object',
                 'properties' => [
@@ -116,11 +132,12 @@ final readonly class EnrollmentIntegrationActionHandler implements EnrollmentAct
     {
         return [
             'description' => match ($this->handlerKey) {
-                'enrollment.verify_academic' => 'Run the existing academic verification and synchronization behavior.',
-                'enrollment.verify_payment' => 'Run the existing cashier verification, billing, and account synchronization behavior.',
+                'enrollment.verify_academic' => 'Record the configured academic verification action inside the policy workflow.',
+                'enrollment.verify_payment' => 'Validate and record an idempotent payment linked directly to this enrollment.',
                 'enrollment.assign_subjects' => 'Create missing subject enrollments from the curriculum or transition payload.',
                 'enrollment.assign_classes' => 'Reserve explicitly selected classes or the first class with an available seat.',
-                'enrollment.calculate_tuition' => 'Create tuition from the enrollment subjects using the existing course-rate calculator.',
+                'enrollment.assign_additional_fees' => 'Attach submitted additional fees to the enrollment.',
+                'enrollment.calculate_tuition' => 'Create tuition from enrollment subjects using the billing behavior pinned in the policy snapshot.',
                 'enrollment.generate_assessment' => 'Queue assessment PDF generation after the workflow transaction commits.',
                 'enrollment.notify' => 'Queue an assessment notification after the workflow transaction commits.',
                 default => 'Run the registered enrollment integration.',
@@ -128,7 +145,7 @@ final readonly class EnrollmentIntegrationActionHandler implements EnrollmentAct
             'fields' => match ($this->handlerKey) {
                 'enrollment.assign_subjects' => [
                     [
-                        'key' => 'source', 'label' => 'Subject source', 'control' => 'select', 'required' => true,
+                        'key' => 'source', 'label' => 'Subject source override', 'control' => 'select',
                         'options' => [
                             ['value' => 'curriculum', 'label' => 'Matching curriculum'],
                             ['value' => 'runtime_payload', 'label' => 'Transition payload'],
@@ -146,6 +163,21 @@ final readonly class EnrollmentIntegrationActionHandler implements EnrollmentAct
                         ['value' => 'runtime_payload', 'label' => 'Transition payload'],
                     ],
                 ]],
+                'enrollment.verify_payment' => [
+                    [
+                        'key' => 'receipt_mode',
+                        'label' => 'Receipt mode',
+                        'control' => 'select',
+                        'required' => true,
+                        'options' => [
+                            ['value' => 'required', 'label' => 'Receipt required'],
+                            ['value' => 'optional', 'label' => 'Receipt optional'],
+                            ['value' => 'none', 'label' => 'No receipt; audited reason required'],
+                        ],
+                    ],
+                    ['key' => 'record_transaction', 'label' => 'Create a payment transaction', 'control' => 'boolean'],
+                    ['key' => 'allow_no_receipt', 'label' => 'Allow staff no-receipt override', 'control' => 'boolean'],
+                ],
                 'enrollment.calculate_tuition' => [[
                     'key' => 'discount_percentage', 'label' => 'Default discount', 'control' => 'percentage',
                     'minimum' => 0, 'maximum' => 100,
@@ -171,10 +203,11 @@ final readonly class EnrollmentIntegrationActionHandler implements EnrollmentAct
 
         return match ($this->handlerKey) {
             'enrollment.verify_academic' => $this->verifyAcademic($enrollment),
-            'enrollment.verify_payment' => $this->verifyPayment($enrollment, $configuration),
-            'enrollment.assign_subjects' => $this->assignSubjects($enrollment, $configuration),
-            'enrollment.assign_classes' => $this->assignClasses($enrollment, $configuration),
-            'enrollment.calculate_tuition' => $this->calculateTuition($enrollment, $configuration),
+            'enrollment.verify_payment' => $this->payments->record($context, $configuration, $idempotencyKey),
+            'enrollment.assign_subjects' => $this->assignSubjects($context, $configuration, $idempotencyKey),
+            'enrollment.assign_classes' => $this->assignClasses($context, $configuration, $idempotencyKey),
+            'enrollment.assign_additional_fees' => $this->assignment->assignAdditionalFees($context, $configuration),
+            'enrollment.calculate_tuition' => $this->calculateTuition($context, $configuration, $idempotencyKey),
             'enrollment.generate_assessment' => $this->generateAssessment($enrollment, $configuration, $idempotencyKey),
             'enrollment.notify' => $this->notify($enrollment, $configuration, $idempotencyKey),
             default => ActionResult::failure("No integration executor is configured for [{$this->handlerKey}]."),
@@ -183,181 +216,65 @@ final readonly class EnrollmentIntegrationActionHandler implements EnrollmentAct
 
     private function verifyAcademic(StudentEnrollment $enrollment): ActionResult
     {
-        if (! $enrollment->subjectsEnrolled()->exists()) {
-            return ActionResult::success(['verified' => 'academic', 'subjects' => 0]);
-        }
-
-        return $this->enrollmentService->verifyByHeadDept($enrollment)
-            ? ActionResult::success(['verified' => 'academic'])
-            : ActionResult::failure('Academic verification could not be completed.');
-    }
-
-    /** @param array<string, mixed> $configuration */
-    private function verifyPayment(StudentEnrollment $enrollment, array $configuration): ActionResult
-    {
-        $payload = $this->runtimePayload($configuration);
-
-        return $this->enrollmentService->verifyByCashier($enrollment, $payload)
-            ? ActionResult::success(['verified' => 'payment'])
-            : ActionResult::failure('Payment verification could not be completed.');
-    }
-
-    /** @param array<string, mixed> $configuration */
-    private function assignSubjects(StudentEnrollment $enrollment, array $configuration): ActionResult
-    {
-        $runtimePayload = $this->runtimePayload($configuration);
-        $source = (string) ($configuration['source'] ?? (isset($runtimePayload['subjects']) ? 'runtime_payload' : 'curriculum'));
-        if (! in_array($source, ['curriculum', 'runtime_payload'], true)) {
-            return ActionResult::failure("Subject source [{$source}] is not supported.");
-        }
-        $subjects = $source === 'runtime_payload'
-            ? $this->payloadSubjects($runtimePayload)
-            : $this->curriculumSubjects($enrollment);
-
-        if ($subjects->isEmpty()) {
-            return ActionResult::failure($source === 'runtime_payload'
-                ? 'The transition payload does not contain any subjects.'
-                : 'No curriculum subjects match this enrollment.');
-        }
-        if ($source === 'runtime_payload' && $subjects->count() !== collect($runtimePayload['subjects'] ?? [])->count()) {
-            return ActionResult::failure('One or more transition payload subjects do not exist.');
-        }
-
-        $allowCrossProgram = (bool) ($configuration['allow_cross_program_subjects'] ?? false);
-        $course = $enrollment->course()->first();
-        $created = [];
-
-        foreach ($subjects as $item) {
-            $subject = $item['subject'];
-            if (! $allowCrossProgram && $enrollment->course_id !== null && (int) $subject->course_id !== (int) $enrollment->course_id) {
-                return ActionResult::failure("Subject [{$subject->code}] does not belong to the enrollment program.");
-            }
-
-            $lectureFee = array_key_exists('lecture_fee', $item)
-                ? (float) $item['lecture_fee']
-                : ((int) $subject->lecture + (int) $subject->laboratory) * (float) ($course?->lec_per_unit ?? 0);
-            $laboratoryFee = array_key_exists('laboratory_fee', $item)
-                ? (float) $item['laboratory_fee']
-                : (int) $subject->laboratory * (float) ($course?->lab_per_unit ?? 0);
-
-            $subjectEnrollment = $enrollment->subjectsEnrolled()->firstOrCreate(
-                [
-                    'subject_id' => $subject->id,
-                    'student_id' => $enrollment->student_id,
-                    'enrollment_id' => $enrollment->id,
-                ],
-                [
-                    'school_id' => $enrollment->school_id,
-                    'academic_year' => $enrollment->academic_year,
-                    'school_year' => $enrollment->school_year,
-                    'semester' => $enrollment->semester,
-                    'is_modular' => (bool) ($item['is_modular'] ?? false),
-                    'exclude_from_tuition' => (bool) ($item['exclude_from_tuition'] ?? false),
-                    'lecture_fee' => $lectureFee,
-                    'laboratory_fee' => $laboratoryFee,
-                    'enrolled_lecture_units' => (int) $subject->lecture,
-                    'enrolled_laboratory_units' => (int) $subject->laboratory,
-                ],
-            );
-            $created[] = $subjectEnrollment->id;
-        }
-
-        return ActionResult::success(['subject_enrollment_ids' => $created, 'source' => $source]);
-    }
-
-    /** @param array<string, mixed> $configuration */
-    private function assignClasses(StudentEnrollment $enrollment, array $configuration): ActionResult
-    {
-        $runtimePayload = $this->runtimePayload($configuration);
-        $mode = (string) ($configuration['mode'] ?? (isset($runtimePayload['assignments']) ? 'runtime_payload' : 'first_available'));
-        if (! in_array($mode, ['first_available', 'runtime_payload'], true)) {
-            return ActionResult::failure("Class selection mode [{$mode}] is not supported.");
-        }
-        $assignments = collect($runtimePayload['assignments'] ?? [])->filter(fn (mixed $item): bool => is_array($item))
-            ->keyBy(fn (array $item): int => (int) ($item['subject_id'] ?? 0));
-        $subjectEnrollments = $enrollment->subjectsEnrolled()->with('subject')->orderBy('id')->get();
-
-        if ($subjectEnrollments->isEmpty()) {
-            return ActionResult::failure('Subjects must be assigned before classes can be assigned.');
-        }
-        if ($mode === 'runtime_payload' && $assignments->isEmpty()) {
-            return ActionResult::failure('The transition payload does not contain any class assignments.');
-        }
-
-        Student::query()->whereKey($enrollment->student_id)->lockForUpdate()->firstOrFail();
-
-        $assigned = [];
-        foreach ($subjectEnrollments as $subjectEnrollment) {
-            $requestedClassId = data_get($assignments->get((int) $subjectEnrollment->subject_id), 'class_id');
-            if ($mode === 'runtime_payload' && $requestedClassId === null) {
-                continue;
-            }
-
-            $class = $requestedClassId === null
-                ? $this->lockFirstAvailableClass($enrollment, $subjectEnrollment)
-                : Classes::query()->lockForUpdate()->find((int) $requestedClassId);
-
-            if (! $class instanceof Classes || ! $this->classMatchesEnrollment($class, $enrollment, $subjectEnrollment)) {
-                return ActionResult::failure("No eligible class is available for subject [{$subjectEnrollment->subject?->code}].");
-            }
-            if ($this->classIsFull($class, (int) $enrollment->student_id)) {
-                return ActionResult::failure("Class [{$class->section}] has no available seats.");
-            }
-
-            $this->classEnrollmentService->enrollOnce((int) $enrollment->student_id, (int) $class->id, [
-                'school_id' => $enrollment->school_id,
-                'status' => true,
-            ]);
-            $subjectEnrollment->update(['class_id' => $class->id]);
-            $assigned[] = ['subject_enrollment_id' => $subjectEnrollment->id, 'class_id' => $class->id];
-        }
-
-        if ($assigned === []) {
-            return ActionResult::failure('No classes were assigned.');
-        }
-        if ($mode === 'runtime_payload' && count($assigned) !== $assignments->count()) {
-            return ActionResult::failure('One or more transition payload class assignments do not match enrolled subjects.');
-        }
-
-        return ActionResult::success(['assignments' => $assigned, 'mode' => $mode]);
-    }
-
-    /** @param array<string, mixed> $configuration */
-    private function calculateTuition(StudentEnrollment $enrollment, array $configuration): ActionResult
-    {
-        $existing = $enrollment->studentTuition()->first();
-        if ($existing !== null) {
-            return ActionResult::success(['tuition_id' => $existing->id, 'already_exists' => true]);
-        }
-
-        $runtimePayload = $this->runtimePayload($configuration);
-        $subjects = $enrollment->subjectsEnrolled()->get()->map(fn (SubjectEnrollment $subjectEnrollment): array => [
-            'subject_id' => $subjectEnrollment->subject_id,
-            'is_modular' => $subjectEnrollment->is_modular,
-            'exclude_from_tuition' => $subjectEnrollment->exclude_from_tuition,
-            'lecture' => $subjectEnrollment->lecture_fee,
-            'laboratory' => $subjectEnrollment->laboratory_fee,
-        ])->all();
-
-        if ($subjects === []) {
-            return ActionResult::failure('Tuition cannot be calculated before subjects are assigned.');
-        }
-
-        $discount = (int) ($runtimePayload['discount_percentage'] ?? $configuration['discount_percentage'] ?? 0);
-        if ($discount < 0 || $discount > 100) {
-            return ActionResult::failure('Tuition discount must be between 0 and 100 percent.');
-        }
-
-        $tuition = $this->enrollmentService->createStudentTuition($enrollment, [
-            'subjectsEnrolled' => $subjects,
-            'discount' => $discount,
-            'downpayment' => (float) ($runtimePayload['downpayment'] ?? $enrollment->downpayment ?? 0),
-            'additionalFees' => $enrollment->additionalFees()->get(['fee_name', 'amount'])->toArray(),
+        return ActionResult::success([
+            'verified' => 'academic',
+            'subjects' => $enrollment->subjectsEnrolled()->count(),
         ]);
+    }
 
-        return $tuition instanceof \App\Models\StudentTuition
-            ? ActionResult::success(['tuition_id' => $tuition->id, 'overall_tuition' => $tuition->overall_tuition])
-            : ActionResult::failure('The existing tuition service could not calculate tuition for this enrollment.');
+    /** @param array<string, mixed> $configuration */
+    private function assignSubjects(EnrollmentContext $context, array $configuration, string $idempotencyKey): ActionResult
+    {
+        if (is_string($configuration['source'] ?? null) && $configuration['source'] !== '') {
+            return $this->assignment->assignSubjects($context, $configuration);
+        }
+
+        $strategyKey = (string) data_get($context->pinnedPolicyConfiguration, 'assignment.strategy', 'assignment.manual');
+        $strategy = $this->registry->assignmentStrategy($strategyKey);
+        if (! $strategy instanceof RuntimeEnrollmentAssignmentStrategy) {
+            return ActionResult::failure("Enrollment assignment strategy [{$strategyKey}] cannot execute at runtime.");
+        }
+
+        return $strategy->execute($context, [
+            ...data_get($context->pinnedPolicyConfiguration, 'assignment.configuration', []),
+            ...$configuration,
+            'operation' => 'subjects',
+        ], $idempotencyKey);
+    }
+
+    /** @param array<string, mixed> $configuration */
+    private function assignClasses(EnrollmentContext $context, array $configuration, string $idempotencyKey): ActionResult
+    {
+        if (is_string($configuration['mode'] ?? null) && $configuration['mode'] !== '') {
+            return $this->assignment->assignClasses($context, $configuration);
+        }
+
+        $strategyKey = (string) data_get($context->pinnedPolicyConfiguration, 'assignment.strategy', 'assignment.manual');
+        $strategy = $this->registry->assignmentStrategy($strategyKey);
+        if (! $strategy instanceof RuntimeEnrollmentAssignmentStrategy) {
+            return ActionResult::failure("Enrollment assignment strategy [{$strategyKey}] cannot execute at runtime.");
+        }
+
+        return $strategy->execute($context, [
+            ...data_get($context->pinnedPolicyConfiguration, 'assignment.configuration', []),
+            ...$configuration,
+            'operation' => 'classes',
+        ], $idempotencyKey);
+    }
+
+    /** @param array<string, mixed> $configuration */
+    private function calculateTuition(EnrollmentContext $context, array $configuration, string $idempotencyKey): ActionResult
+    {
+        $strategyKey = (string) data_get($context->pinnedPolicyConfiguration, 'billing.strategy', 'billing.course_rate');
+        $strategy = $this->registry->billingStrategy($strategyKey);
+        if (! $strategy instanceof RuntimeEnrollmentBillingStrategy) {
+            return ActionResult::failure("Enrollment billing strategy [{$strategyKey}] cannot execute at runtime.");
+        }
+
+        return $strategy->execute($context, [
+            ...data_get($context->pinnedPolicyConfiguration, 'billing.configuration', []),
+            ...$configuration,
+        ], $idempotencyKey);
     }
 
     /** @param array<string, mixed> $configuration */
@@ -367,7 +284,9 @@ final readonly class EnrollmentIntegrationActionHandler implements EnrollmentAct
         $createNewFile = (bool) ($runtimePayload['create_new_file'] ?? $configuration['create_new_file'] ?? false);
         $jobId = $this->jobId('policy_assessment', $idempotencyKey);
 
-        GenerateAssessmentPdfJob::dispatch($enrollment->id, $jobId, $createNewFile)->afterCommit();
+        DB::afterCommit(
+            fn () => GenerateAssessmentPdfJob::dispatch($enrollment->id, $jobId, $createNewFile),
+        );
 
         return ActionResult::success(['job_id' => $jobId, 'queued_after_commit' => true]);
     }
@@ -387,90 +306,11 @@ final readonly class EnrollmentIntegrationActionHandler implements EnrollmentAct
         }
 
         $jobId = $this->jobId('policy_notification', $idempotencyKey);
-        SendAssessmentNotificationJob::dispatch($enrollment->id, $jobId)->afterCommit();
+        DB::afterCommit(
+            fn () => SendAssessmentNotificationJob::dispatch($enrollment->id, $jobId),
+        );
 
         return ActionResult::success(['job_id' => $jobId, 'notification' => $notification, 'queued_after_commit' => true]);
-    }
-
-    /** @return Collection<int, array{subject: Subject, is_modular?: bool, exclude_from_tuition?: bool, lecture_fee?: float, laboratory_fee?: float}> */
-    private function curriculumSubjects(StudentEnrollment $enrollment): Collection
-    {
-        if ($enrollment->course_id === null) {
-            return collect();
-        }
-
-        return Subject::query()
-            ->where('course_id', $enrollment->course_id)
-            ->where('academic_year', $enrollment->academic_year)
-            ->where('semester', $enrollment->semester)
-            ->orderBy('code')
-            ->get()
-            ->map(fn (Subject $subject): array => ['subject' => $subject]);
-    }
-
-    /** @param array<string, mixed> $runtimePayload @return Collection<int, array<string, mixed>> */
-    private function payloadSubjects(array $runtimePayload): Collection
-    {
-        $items = collect($runtimePayload['subjects'] ?? [])->filter(fn (mixed $item): bool => is_array($item));
-        $subjects = Subject::query()->whereKey($items->pluck('subject_id')->map(fn (mixed $id): int => (int) $id)->filter())->get()->keyBy('id');
-
-        return $items->map(function (array $item) use ($subjects): ?array {
-            $subject = $subjects->get((int) ($item['subject_id'] ?? 0));
-
-            return $subject instanceof Subject ? [...$item, 'subject' => $subject] : null;
-        })->filter()->values();
-    }
-
-    private function lockFirstAvailableClass(StudentEnrollment $enrollment, SubjectEnrollment $subjectEnrollment): ?Classes
-    {
-        $candidateIds = Classes::query()
-            ->forAcademicPeriod((string) $enrollment->school_year, (int) $enrollment->semester)
-            ->when($enrollment->school_id !== null, fn (Builder $query): Builder => $query->where('school_id', $enrollment->school_id))
-            ->where(function (Builder $query) use ($subjectEnrollment): void {
-                $query->where('subject_id', $subjectEnrollment->subject_id)
-                    ->orWhereJsonContains('subject_ids', (int) $subjectEnrollment->subject_id)
-                    ->orWhereJsonContains('subject_ids', (string) $subjectEnrollment->subject_id);
-                $subjectCode = mb_trim((string) $subjectEnrollment->subject?->code);
-                if ($subjectCode !== '') {
-                    $query->orWhere('subject_code', $subjectCode);
-                }
-            })
-            ->orderBy('id')
-            ->pluck('id');
-
-        foreach ($candidateIds as $candidateId) {
-            $class = Classes::query()->lockForUpdate()->find($candidateId);
-            if ($class instanceof Classes && ! $this->classIsFull($class, (int) $enrollment->student_id)) {
-                return $class;
-            }
-        }
-
-        return null;
-    }
-
-    private function classMatchesEnrollment(Classes $class, StudentEnrollment $enrollment, SubjectEnrollment $subjectEnrollment): bool
-    {
-        $matchesPeriod = Classes::query()->whereKey($class->id)
-            ->forAcademicPeriod((string) $enrollment->school_year, (int) $enrollment->semester)
-            ->exists();
-        $matchesSchool = $enrollment->school_id === null || (int) $class->school_id === (int) $enrollment->school_id;
-        $classSubjectCode = mb_trim((string) $class->subject_code);
-        $enrollmentSubjectCode = mb_trim((string) $subjectEnrollment->subject?->code);
-        $matchesSubject = (int) $class->subject_id === (int) $subjectEnrollment->subject_id
-            || ($classSubjectCode !== '' && $enrollmentSubjectCode !== '' && $classSubjectCode === $enrollmentSubjectCode)
-            || in_array((int) $subjectEnrollment->subject_id, array_map(intval(...), $class->subject_ids ?? []), true);
-
-        return $matchesPeriod && $matchesSchool && $matchesSubject;
-    }
-
-    private function classIsFull(Classes $class, int $studentId): bool
-    {
-        if (ClassEnrollment::query()->where('class_id', $class->id)->where('student_id', $studentId)->exists()) {
-            return false;
-        }
-
-        return (int) $class->maximum_slots > 0
-            && $class->class_enrollments()->where('status', true)->count() >= (int) $class->maximum_slots;
     }
 
     /** @param array<string, mixed> $configuration @return array<string, mixed> */

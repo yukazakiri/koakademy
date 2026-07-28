@@ -44,7 +44,7 @@ final class CreateStudentEnrollmentRequest extends FormRequest
 
             // Subject enrollments
             'subjectsEnrolled' => 'nullable|array',
-            'subjectsEnrolled.*.subject_id' => 'required_with:subjectsEnrolled|exists:subjects,id',
+            'subjectsEnrolled.*.subject_id' => 'required_with:subjectsEnrolled|exists:subject,id',
             'subjectsEnrolled.*.class_id' => 'required_with:subjectsEnrolled|exists:classes,id',
             'subjectsEnrolled.*.is_modular' => 'nullable|boolean',
             'subjectsEnrolled.*.enrolled_lecture_units' => 'nullable|integer|min:0',

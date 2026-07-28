@@ -1,8 +1,12 @@
 # KoAkademy
 
-**Self-hosted school administration and learning platform** — enrollment workflows, student and faculty records, classes, schedules, grading, finance, and optional institutional modules in one application.
+<p align="center">
+  <em>Your school, your server, your rules.</em>
+</p>
 
-Built with **Laravel 12**, **Filament 5**, **Inertia**, and **React 19**. Ships as a single FrankenPHP (PHP 8.5) container image.
+The only school management platform that doesn't treat your students like a monetization opportunity. Enrollment, records, classes, schedules, grading, finance, and a whole suite of optional modules — all in one app, running quietly on a machine you actually own.
+
+Under the hood it's **Laravel 12**, **Filament 5**, **Inertia**, and **React 19**, bundled into a single FrankenPHP container. Drop it on a VPS, an old office server, or a Raspberry Pi that's been collecting dust — as long as it runs Docker, KoAkademy runs on it.
 
 > [!WARNING]
 > KoAkademy is currently in **Beta** and is **not recommended for production use**. Data loss, breaking changes, and incompatible upgrades are possible between pre-v2 releases. A stable, production-recommended release stream is planned starting at **v2.0.0**.
@@ -17,25 +21,36 @@ Built with **Laravel 12**, **Filament 5**, **Inertia**, and **React 19**. Ships 
 [![FrankenPHP](https://img.shields.io/badge/FrankenPHP-1.0-461B73.svg?logo=frankenphp)](https://frankenphp.com/)
 [![Docker](https://img.shields.io/docker/pulls/yukazakiri/koakademy?logo=docker)](https://hub.docker.com/r/yukazakiri/koakademy)
 [![GitHub stars](https://img.shields.io/github/stars/yukazakiri/koakademy?logo=github)](https://github.com/yukazakiri/koakademy/stars)
-[![GitHub forks](https://img.shields.io/github/forks/yukazakiri/koakademy?logo=github)](https://github.com/yukazakiri/koakademy/network)
-[![GitHub last commit](https://img.shields.io/github/last-commit/yukazakiri/koakademy)](https://github.com/yukazakiri/koakademy/commits)
-[![Maintenance](https://img.shields.io/badge/maintenance-✓-green.svg)](https://github.com/yukazakiri/koakademy)
 [![Status: Beta](https://img.shields.io/badge/status-beta-orange.svg)](https://github.com/yukazakiri/koakademy)
 
-> **Project status: production-capable beta.** KoAkademy has a documented production topology and automated tests, but operators should validate upgrades in staging, maintain backups, and review the security model for their institution. Only the latest stable release is supported.
+> **Production-capable beta.** KoAkademy has a documented production topology and automated tests, but you should validate upgrades in staging, keep backups, and review the security model for your institution. Only the latest stable release is supported.
 
-## Highlights
+---
 
-- **Guided first-run setup** — a `/setup` wizard creates the institution and the first super administrator; no CLI user seeding required.
-- **Full academic administration** — students, faculty, courses, classes, rooms, schedules/timetables with conflict detection, enrollment, and grading (point/percent scales, GWA rules) through a Filament admin panel.
-- **Enrollment engine** — a verification pipeline (registrar → cashier) plus versioned enrollment **blueprints**: scoped, inheritable policies with simulation, staged rollout, and rollback.
-- **Three React portals** — dedicated Inertia/React experiences for administrators, faculty (attendance, class posts, submissions, grading), and students (classes, schedule, tuition, digital ID).
-- **Finance** — tuition assessment, cashier workflows with payment posting, statements of account with signed public verification, and finance reports.
-- **Security built in** — role- and permission-aware access (30 roles via Filament Shield), TOTP and email-code MFA, WebAuthn passkeys, impersonation, and full activity logging.
-- **Optional modules** — Inventory, Library, Cashier, Student Medical Records, Announcements, and a template-based Notification Center, all toggleable per institution.
-- **Platform features** — Gotenberg-backed PDF generation (SOA, timetables, assessments), Excel exports, school-scoped multi-tenancy, 36 runtime feature flags (Laravel Pennant), PWA manifest, broadcasting, and a documented Sanctum API.
+## The pitch
 
-The API surface is beta. Only endpoints listed in the [API documentation](docs/src/content/docs/api/api-overview.mdx) are part of the documented public contract.
+Here's a fun thought experiment: right now, somewhere out there, is a cloud-hosted LMS holding thousands of student names, home addresses, medical records, and financial data. It's secured by whatever SOC 2 report the vendor's sales team waved around last quarter, maintained by an ops team you'll never meet, and governed by a privacy policy that's three clicks deep on a landing page nobody reads. One breach, one insolvency, one "strategic pivot" — and years of institutional records vanish, or worse, leak.
+
+That's not a dystopian hypothetical. That's literally how most schools operate today.
+
+KoAkademy is the "no thanks" button. It's a fully open-source, self-hosted school platform that puts every byte of student data on hardware you control. Not a neutered freemium tier. Not a "cloud-native" platform that gates exports behind a renewal invoice. An actual, feature-complete system — your PostgreSQL, your backups, your retention schedule, your conscience.
+
+---
+
+## What you get
+
+The whole package, no per-seat pricing and no feature flags behind a sales call:
+
+- **Guided setup** — a `/setup` wizard spins up your institution and first admin in minutes. No CLI archaeology required.
+- **Full academic admin** — students, faculty, courses, classes, rooms, timetables with conflict detection, enrollment pipelines, and grading (point/percent, GWA rules) through a clean Filament admin panel. No "upgrade to add more than 50 students" nonsense.
+- **Enrollment engine** — a registrar-to-cashier verification flow layered on top of versioned **blueprints**: scoped, inheritable policies with simulation, staged rollout, and instant rollback. Enrollment should feel like a workflow, not a CSV-email apocalypse.
+- **Three React portals** — one for admins, one for faculty (attendance, class posts, submissions, grading), one for students (classes, schedule, tuition, digital ID). No forcing everyone onto the same dashboard or a random mobile app nobody asked for.
+- **Finance** — tuition assessment, cashier workflows, payment posting, statements of account with cryptographically-signed public verification, and finance reports. Your money data stays in your database, not some SaaS vendor's analytics pipeline.
+- **Security that means something** — 30 role-based access levels via Filament Shield, TOTP + email-code MFA, WebAuthn passkeys, safe impersonation with full audit trails. No "trust us" marketing fluff needed.
+- **Optional modules** — Inventory, Library, Cashier, Student Medical Records, Announcements, template-driven Notification Center. Toggle them per institution. No "contact enterprise sales" gatekeeping.
+- **Platform extras** — Gotenberg-powered PDF generation (statements, timetables, assessments), Excel exports, school-scoped multi-tenancy, 36 runtime feature flags (Laravel Pennant), PWA manifest, broadcasting, and a documented Sanctum API.
+
+> The API surface is beta. Only endpoints in the [API docs](docs/src/content/docs/api/api-overview.mdx) are part of the public contract.
 
 ## Screenshots
 
@@ -44,58 +59,68 @@ The API surface is beta. Only endpoints listed in the [API documentation](docs/s
   <img src="docs/src/assets/enrollment-policies/approval-workflow.png" alt="Enrollment approval workflow editor" width="49%" />
 </p>
 
-## Supported production topology
-
-- KoAkademy application image (PHP 8.5 with FrankenPHP)
-- PostgreSQL
-- Redis for cache, sessions, and queues
-- Gotenberg for `spatie/laravel-pdf`
-- Local RustFS for single-node evaluation/small installations, or external S3-compatible object storage for redundant production uploads
-- An operator-managed HTTPS edge such as Caddy, Nginx, Traefik, or a tunnel
-
-The default installer uses Docker Swarm, publishes the application on host port `8000`, and keeps PostgreSQL, Redis, and Gotenberg on a private overlay. Local RustFS publishes only its S3 API on host port `9000`; its console remains private. The manual `compose.production.yaml` topology remains available and binds the application only to `127.0.0.1:8000`.
-
 ## Quick start
 
-Requirements: Docker Engine on Linux, or Docker Desktop using Linux containers on Windows.
+Docker is the only real requirement. Linux box, Windows with Docker Desktop — whatever you've got. No demo call, no "our team will reach out in 48 hours," no credit card form.
+
+**Linux:**
 
 ```sh
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/yukazakiri/koakademy/master/scripts/install.sh)"
 ```
 
-Windows PowerShell:
+**Windows (PowerShell):**
 
 ```powershell
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/yukazakiri/koakademy/master/scripts/install.ps1)))
 ```
 
-The installer preserves an existing Swarm, generates Docker secrets, prompts for local RustFS or external S3 credentials, runs migrations, and verifies the application before printing `/setup`. The raw commands become anonymously available when the repository is public; review the scripts before executing privileged remote code.
+One command. It initializes a Docker Swarm, spins up PostgreSQL, Redis, Gotenberg, and S3-compatible storage, generates secrets, runs migrations, and verifies `/up` before handing you the `/setup` URL. Your data, your server, zero middlemen.
 
-Verify the default host port again at any time with `curl --fail http://127.0.0.1:8000/up`.
+Poke it to make sure it's awake:
 
-Stable multi-architecture images are published to `ghcr.io/yukazakiri/koakademy:vX.Y.Z` and `yukazaki/koakademy:vX.Y.Z`. Exact stable tags are the production contract. `latest` tracks the newest stable release, while the explicitly selected `edge` tag is unsupported rolling software for evaluation only.
+```sh
+curl --fail http://127.0.0.1:8000/up
+```
 
-See [Getting Started](GETTING_STARTED.md) for installer overrides and the manual Compose path, and [Deployment](DEPLOYMENT.md) before exposing the service.
+Stable multi-arch images live at `ghcr.io/yukazakiri/koakademy:vX.Y.Z` and `yukazakiri/koakademy:vX.Y.Z`. Pin an exact tag for production. `latest` tracks the newest stable release; `edge` is a rolling preview — fun to kick the tires, not something to bet a semester on.
 
-## Documentation
+> The one-liner fetches and runs a remote script with elevated privileges. Worth a peek first:
+> ```sh
+> curl -fsSLO https://raw.githubusercontent.com/yukazakiri/koakademy/master/scripts/install.sh
+> less install.sh
+> bash install.sh
+> ```
 
-- [Getting started](GETTING_STARTED.md) — production installation
-- [Deployment](DEPLOYMENT.md) — topology, upgrades, backups, rollback
-- [Configuration](CONFIGURATION.md) — environment and service contract
+## How it runs
+
+The default installer puts everything in a Docker Swarm. The app listens on port `8000`. PostgreSQL, Redis, and Gotenberg hang out on a private overlay network. Local RustFS exposes its S3 API on port `9000` while keeping its console locked down. If you'd rather use plain Compose, `compose.production.yaml` binds the app to `127.0.0.1:8000` instead.
+
+Slap an HTTPS edge in front of port `8000` — Caddy, Nginx, Traefik, a Cloudflare tunnel, whatever you're comfortable with. HTTPS isn't a nice-to-have when you're handling student data.
+
+## Docs
+
+Hit the [docs site](https://yukazakiri.github.io/koakademy/) for the full deep dive, or grab what you need from the repo:
+
+**Running KoAkademy:**
+- [Getting Started](GETTING_STARTED.md) — installation, prereqs, the one-liner
+- [Deployment](DEPLOYMENT.md) — upgrades, backups, rollback, production checklist
+- [Configuration](CONFIGURATION.md) — env vars and service contracts
+- [Troubleshooting](TROUBLESHOOTING.md) — when something's not right
+- [FAQ](FAQ.md) — you know the drill
+
+**Building or contributing:**
+- [Development](DEVELOPMENT.md) — native setup, testing, conventions
+- [Contributing](CONTRIBUTING.md) — PR checklist, docs ownership
 - [Architecture](ARCHITECTURE.md) — runtime, layers, tenancy, queues
-- [Operations and troubleshooting](TROUBLESHOOTING.md)
-- [Native development](DEVELOPMENT.md)
-- [FAQ](FAQ.md)
-- [Changelog](CHANGELOG.md)
-- [Open-source readiness](OSS_DOCS.md)
-- [CI contract](OSS_CI.md)
+- [Security](SECURITY.md) — reporting vulns, operational baseline
 
+The docs site also covers system internals, enrollment blueprints, the API reference, and staff-facing user guides.
 
+## Contributing + security
 
-## Contributing and security
-
-Bug reports and pull requests are welcome; start with [CONTRIBUTING.md](CONTRIBUTING.md). Do not report suspected vulnerabilities in public issues — follow [SECURITY.md](SECURITY.md) and use GitHub Security Advisories.
+Bug reports and pull requests are more than welcome — jump in via [Contributing](CONTRIBUTING.md). Found something scary? Don't drop it in a public issue. Use [Security](SECURITY.md) and GitHub Security Advisories.
 
 ## License
 
-KoAkademy is licensed under [GNU AGPL-3.0-or-later](LICENSE.md). Network users must be offered the corresponding source code for the version they are using, including your modifications.
+KoAkademy is [GNU AGPL-3.0-or-later](LICENSE.md). If your users interact with a modified version over a network, they're entitled to the source. Unlike a certain category of LMS vendors we could name, the code that handles your students' data is right here for anyone to read, audit, and improve.

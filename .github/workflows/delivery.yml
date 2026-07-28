@@ -620,7 +620,7 @@ jobs:
               --verify-tag \
               --draft \
               --title "KoAkademy ${RELEASE_TAG}" \
-              --notes "Recovery publication for existing tag ${RELEASE_TAG}."
+              --generate-notes
           fi
 
       - name: Upload checksummed release assets

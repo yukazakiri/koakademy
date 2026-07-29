@@ -9,6 +9,7 @@ use App\Services\AssessmentFormDataService;
 use App\Services\PdfGenerationService;
 use App\Support\StreamedStorage;
 use Exception;
+use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -20,6 +21,7 @@ use Throwable;
 
 final class GenerateBulkAssessmentChunkJob implements ShouldQueue
 {
+    use Batchable;
     use Dispatchable;
     use InteractsWithQueue;
     use Queueable;
@@ -37,7 +39,8 @@ final class GenerateBulkAssessmentChunkJob implements ShouldQueue
         public int $chunkIndex,
         public array $enrollmentIds,
     ) {
-        $this->onQueue('pdf-generation');
+        $this->onConnection((string) config('queue.assessment_notification_connection', config('queue.default')));
+        $this->onQueue((string) config('queue.assessment_notification_queue', 'pdf-generation'));
     }
 
     public function handle(PdfGenerationService $pdfService, AssessmentFormDataService $assessmentFormDataService): void
@@ -110,7 +113,7 @@ final class GenerateBulkAssessmentChunkJob implements ShouldQueue
 
             $storagePath = sprintf('bulk_assessments/%s/chunks/chunk-%03d.pdf', $this->jobId, $this->chunkIndex);
 
-            StreamedStorage::putFileFromPath($storageDisk, $storagePath, $mergedChunkPath, ['visibility' => 'public']);
+            StreamedStorage::putFileFromPath($storageDisk, $storagePath, $mergedChunkPath, ['visibility' => 'private']);
 
             $this->writeChunkState($storageDisk, [
                 'job_id' => $this->jobId,
@@ -150,6 +153,26 @@ final class GenerateBulkAssessmentChunkJob implements ShouldQueue
                 unlink($mergedChunkPath);
             }
         }
+    }
+
+    public function failed(Throwable $throwable): void
+    {
+        Log::error('Bulk assessment chunk failed permanently', [
+            'job_id' => $this->jobId,
+            'chunk_index' => $this->chunkIndex,
+            'error' => $throwable->getMessage(),
+        ]);
+
+        $this->writeChunkState((string) config('filesystems.default'), [
+            'job_id' => $this->jobId,
+            'chunk_index' => $this->chunkIndex,
+            'status' => 'failed',
+            'error' => $throwable->getMessage(),
+            'enrollment_ids' => $this->enrollmentIds,
+            'generated_count' => 0,
+            'skipped' => [],
+            'updated_at' => format_timestamp_now(),
+        ]);
     }
 
     /**

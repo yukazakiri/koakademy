@@ -1,3 +1,5 @@
+import { generateBulkAssessments } from "@/actions/App/Http/Controllers/AdministratorEnrollmentManagementController";
+import { ACTIVE_JOBS_REFRESH_EVENT } from "@/components/active-jobs-notification";
 import AdminLayout from "@/components/administrators/admin-layout";
 import PTabs10 from "@/components/p-tabs-10";
 import { Filters, type FilterFieldConfig, type Filter as FilterType } from "@/components/reui/filters";
@@ -7,7 +9,8 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ComboboxOption } from "@/components/ui/combobox";
 import { Head, Link, router, usePage } from "@inertiajs/react";
-import { Building2, ChevronRight, CreditCard, Filter, GraduationCap, RotateCcw, Settings2, UserPlus, Users } from "lucide-react";
+import axios from "axios";
+import { BookOpen, Building2, ChevronRight, CreditCard, Filter, GraduationCap, RotateCcw, Settings2, UserPlus, Users } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { route } from "ziggy-js";
@@ -31,6 +34,10 @@ function createInitialEnrollmentFilters(filters: EnrollmentManagementProps["filt
 
     if (filters.year_level_filter && filters.year_level_filter !== "all") {
         initialFilters.push({ id: "year_level_filter", field: "year_level_filter", operator: "is", values: [filters.year_level_filter] });
+    }
+
+    if (filters.course_filter && filters.course_filter !== "all") {
+        initialFilters.push({ id: "course_filter", field: "course_filter", operator: "is", values: [filters.course_filter] });
     }
 
     return initialFilters;
@@ -97,6 +104,10 @@ function enrollmentMatchesFilters(enrollment: EnrollmentRow, activeFilters: Filt
             return String(enrollment.academic_year ?? "") === filterValue;
         }
 
+        if (filter.field === "course_filter") {
+            return String(enrollment.course_id ?? "") === filterValue;
+        }
+
         return true;
     });
 }
@@ -155,9 +166,9 @@ export default function AdministratorEnrollmentsIndex({
     // Bulk Reports dialog state
     const [isBulkReportsOpen, setIsBulkReportsOpen] = useState(false);
     const [bulkReportFilters, setBulkReportFilters] = useState<BulkReportFilters>({
-        course_filter: "all",
-        year_level_filter: "all",
-        student_limit: "all",
+        course_id: null,
+        year_level: null,
+        student_limit: null,
         include_deleted: false,
     });
     const [isGeneratingBulkReport, setIsGeneratingBulkReport] = useState(false);
@@ -182,7 +193,7 @@ export default function AdministratorEnrollmentsIndex({
     useEffect(() => {
         setEnrollmentSearch(filters.search || "");
         setActiveFilters(createInitialEnrollmentFilters(filters));
-    }, [filters.search, filters.status_filter, filters.department_filter, filters.year_level_filter]);
+    }, [filters.search, filters.status_filter, filters.department_filter, filters.year_level_filter, filters.course_filter]);
 
     const handleEnrollmentSearchChange = (value: string) => {
         setEnrollmentSearch(value);
@@ -203,6 +214,23 @@ export default function AdministratorEnrollmentsIndex({
 
     const enrollmentsData = Array.isArray(enrollments?.data) ? enrollments.data : [];
     const enrollmentsTotal = enrollments?.total ?? 0;
+    const enrollmentCourseOptions = useMemo(() => {
+        const courses = new Map<number, { id: number; code: string; title: string | null }>();
+
+        for (const enrollment of enrollmentsData) {
+            if (enrollment.course_id === null || !enrollment.course) {
+                continue;
+            }
+
+            courses.set(enrollment.course_id, {
+                id: enrollment.course_id,
+                code: enrollment.course,
+                title: enrollment.course_title,
+            });
+        }
+
+        return [...courses.values()].sort((left, right) => left.code.localeCompare(right.code));
+    }, [enrollmentsData]);
 
     const visibleEnrollments = useMemo(() => {
         const searchTerm = enrollmentSearch.trim().toLowerCase();
@@ -217,10 +245,13 @@ export default function AdministratorEnrollmentsIndex({
 
     const stats = useMemo(() => {
         const totalTuition = visibleEnrollments.reduce((sum, e) => sum + (e.tuition?.overall || 0), 0);
+        const activeEnrollments = visibleEnrollments.filter((enrollment) => !enrollment.is_trashed).length;
 
         return {
             applicants: applicantsCount,
             enrolled: visibleEnrollments.length,
+            active: activeEnrollments,
+            deleted: visibleEnrollments.length - activeEnrollments,
             tuition: totalTuition,
         };
     }, [applicantsCount, visibleEnrollments]);
@@ -288,26 +319,40 @@ export default function AdministratorEnrollmentsIndex({
     };
 
     // Handle bulk assessment generation
-    const handleGenerateBulkAssessments = () => {
+    const handleGenerateBulkAssessments = async () => {
         setIsGeneratingBulkReport(true);
-        router.post(route("administrators.enrollments.reports.bulk-assessments"), bulkReportFilters, {
-            onSuccess: () => {
-                toast.success("Bulk assessment generation has been queued. You will receive a notification when it's ready.");
-                setIsBulkReportsOpen(false);
-                setBulkReportFilters({
-                    course_filter: "all",
-                    year_level_filter: "all",
-                    student_limit: "all",
-                    include_deleted: false,
-                });
-            },
-            onError: () => {
-                toast.error("Failed to queue bulk assessment generation.");
-            },
-            onFinish: () => {
-                setIsGeneratingBulkReport(false);
-            },
-        });
+        const queueToastId = "bulk-assessment-queue";
+        toast.loading("Queueing bulk assessment export...", { id: queueToastId });
+
+        try {
+            const response = await axios.post<{ job_id: string; status: string; message: string }>(generateBulkAssessments.url(), bulkReportFilters);
+
+            toast.success(response.data.message, { id: queueToastId });
+            window.dispatchEvent(new Event(ACTIVE_JOBS_REFRESH_EVENT));
+            setIsBulkReportsOpen(false);
+            setBulkReportFilters({
+                course_id: null,
+                year_level: null,
+                student_limit: null,
+                include_deleted: false,
+            });
+        } catch (error) {
+            const message = axios.isAxiosError<{ message?: string }>(error) ? error.response?.data?.message : null;
+
+            toast.error(message || "Failed to queue bulk assessment generation.", { id: queueToastId });
+        } finally {
+            setIsGeneratingBulkReport(false);
+        }
+    };
+
+    const handleOpenBulkReports = () => {
+        const activeCourseId = getActiveFilterValue(activeFilters, "course_filter");
+
+        setBulkReportFilters((currentFilters) => ({
+            ...currentFilters,
+            course_id: activeCourseId === "all" ? null : Number(activeCourseId),
+        }));
+        setIsBulkReportsOpen(true);
     };
 
     // Fetch filter options for enrollment reports
@@ -481,6 +526,18 @@ export default function AdministratorEnrollmentsIndex({
                     })),
             },
             {
+                key: "course_filter",
+                label: "Course",
+                type: "select",
+                searchable: true,
+                icon: <BookOpen className="h-4 w-4" />,
+                options: enrollmentCourseOptions.map((course) => ({
+                    value: String(course.id),
+                    label: course.title ? `${course.code} — ${course.title}` : course.code,
+                    icon: <BookOpen className="text-muted-foreground h-4 w-4" />,
+                })),
+            },
+            {
                 key: "year_level_filter",
                 label: "Year Level",
                 type: "select",
@@ -492,7 +549,7 @@ export default function AdministratorEnrollmentsIndex({
                 })),
             },
         ],
-        [departmentTabs, enrollment_pipeline.status_options],
+        [departmentTabs, enrollmentCourseOptions, enrollment_pipeline.status_options],
     );
 
     return (
@@ -595,11 +652,11 @@ export default function AdministratorEnrollmentsIndex({
                                 </div>
                                 <div className="mt-4 flex items-center gap-3 text-xs">
                                     <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-                                        <span className="font-semibold">{analytics?.active_count ?? 0}</span> active
+                                        <span className="font-semibold">{stats.active}</span> active
                                     </span>
                                     <span className="text-muted-foreground">•</span>
                                     <span className="flex items-center gap-1 text-red-600 dark:text-red-400">
-                                        <span className="font-semibold">{analytics?.trashed_count ?? 0}</span> deleted
+                                        <span className="font-semibold">{stats.deleted}</span> deleted
                                     </span>
                                 </div>
                             </div>
@@ -692,7 +749,7 @@ export default function AdministratorEnrollmentsIndex({
                         subjectComboboxOptions={subjectComboboxOptions}
                         isLoadingFilterOptions={isLoadingFilterOptions}
                         isLoadingReport={isLoadingReport}
-                        onOpenBulkReports={() => setIsBulkReportsOpen(true)}
+                        onOpenBulkReports={handleOpenBulkReports}
                         onReportCardClick={handleReportCardClick}
                         onReportFiltersChange={setReportFilters}
                         onCancelInlineFilters={() => setActiveReportCard(null)}
@@ -708,6 +765,7 @@ export default function AdministratorEnrollmentsIndex({
                         onFiltersChange={setBulkReportFilters}
                         isGenerating={isGeneratingBulkReport}
                         onGenerate={handleGenerateBulkAssessments}
+                        courseOptions={enrollmentCourseOptions}
                     />
 
                     {/* Delete Enrollment Confirmation Dialog */}

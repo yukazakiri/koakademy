@@ -16,7 +16,7 @@ import { Activity, AlertTriangle, Download, FileText, Loader2, Printer, RotateCc
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { EnrollmentRow } from "./columns";
 import { ReportContent } from "./report-content";
-import type { ApplicantRow, BulkReportFilters } from "./types";
+import type { ApplicantRow, BulkReportFilters, EnrollmentCourseOption } from "./types";
 
 type BulkReportsDialogProps = {
     open: boolean;
@@ -25,9 +25,10 @@ type BulkReportsDialogProps = {
     onFiltersChange: Dispatch<SetStateAction<BulkReportFilters>>;
     isGenerating: boolean;
     onGenerate: () => void;
+    courseOptions: EnrollmentCourseOption[];
 };
 
-export function BulkReportsDialog({ open, onOpenChange, filters, onFiltersChange, isGenerating, onGenerate }: BulkReportsDialogProps) {
+export function BulkReportsDialog({ open, onOpenChange, filters, onFiltersChange, isGenerating, onGenerate, courseOptions }: BulkReportsDialogProps) {
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-lg">
@@ -47,22 +48,20 @@ export function BulkReportsDialog({ open, onOpenChange, filters, onFiltersChange
                     <div className="space-y-2">
                         <Label htmlFor="course-filter">Filter by Course</Label>
                         <Select
-                            value={filters.course_filter}
-                            onValueChange={(value) => onFiltersChange((prev) => ({ ...prev, course_filter: value }))}
+                            value={filters.course_id === null ? "all" : String(filters.course_id)}
+                            onValueChange={(value) => onFiltersChange((prev) => ({ ...prev, course_id: value === "all" ? null : Number(value) }))}
                         >
                             <SelectTrigger id="course-filter">
                                 <SelectValue placeholder="Select course" />
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">All Courses</SelectItem>
-                                <SelectItem value="BSIT">BSIT</SelectItem>
-                                <SelectItem value="BSCS">BSCS</SelectItem>
-                                <SelectItem value="BSIS">BSIS</SelectItem>
-                                <SelectItem value="BSHM">BSHM</SelectItem>
-                                <SelectItem value="BSTM">BSTM</SelectItem>
-                                <SelectItem value="BSBA">BSBA</SelectItem>
-                                <SelectItem value="BSED">BSED</SelectItem>
-                                <SelectItem value="BEED">BEED</SelectItem>
+                                {courseOptions.map((course) => (
+                                    <SelectItem key={course.id} value={String(course.id)}>
+                                        {course.code}
+                                        {course.title ? ` — ${course.title}` : ""}
+                                    </SelectItem>
+                                ))}
                             </SelectContent>
                         </Select>
                     </div>
@@ -71,8 +70,8 @@ export function BulkReportsDialog({ open, onOpenChange, filters, onFiltersChange
                     <div className="space-y-2">
                         <Label htmlFor="year-level-filter">Filter by Year Level</Label>
                         <Select
-                            value={filters.year_level_filter}
-                            onValueChange={(value) => onFiltersChange((prev) => ({ ...prev, year_level_filter: value }))}
+                            value={filters.year_level === null ? "all" : String(filters.year_level)}
+                            onValueChange={(value) => onFiltersChange((prev) => ({ ...prev, year_level: value === "all" ? null : Number(value) }))}
                         >
                             <SelectTrigger id="year-level-filter">
                                 <SelectValue placeholder="Select year level" />
@@ -92,8 +91,8 @@ export function BulkReportsDialog({ open, onOpenChange, filters, onFiltersChange
                     <div className="space-y-2">
                         <Label htmlFor="student-limit">Maximum Students</Label>
                         <Select
-                            value={filters.student_limit}
-                            onValueChange={(value) => onFiltersChange((prev) => ({ ...prev, student_limit: value }))}
+                            value={filters.student_limit === null ? "all" : String(filters.student_limit)}
+                            onValueChange={(value) => onFiltersChange((prev) => ({ ...prev, student_limit: value === "all" ? null : Number(value) }))}
                         >
                             <SelectTrigger id="student-limit">
                                 <SelectValue placeholder="Select limit" />
@@ -175,7 +174,10 @@ type ReportPreviewDialogProps = {
 export function ReportPreviewDialog({ open, onOpenChange, onClose, onPrint, reportData, reportPrintRef }: ReportPreviewDialogProps) {
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent showCloseButton={false} className="flex h-[95vh] w-[96vw] max-w-[96vw] flex-col overflow-hidden p-0 sm:max-w-[96vw] lg:max-w-[1280px]">
+            <DialogContent
+                showCloseButton={false}
+                className="flex h-[95vh] w-[96vw] max-w-[96vw] flex-col overflow-hidden p-0 sm:max-w-[96vw] lg:max-w-[1280px]"
+            >
                 <div className="flex items-start justify-between border-b border-slate-200 bg-white px-4 py-3 sm:px-6">
                     <div>
                         <DialogTitle className="flex items-center gap-2 text-base font-semibold tracking-tight text-slate-900">
@@ -200,7 +202,7 @@ export function ReportPreviewDialog({ open, onOpenChange, onClose, onPrint, repo
                 <div className="flex-1 overflow-auto bg-slate-100/70 px-3 py-4 sm:px-6 sm:py-6">
                     <div className="mx-auto w-full max-w-[1200px] overflow-x-auto">
                         <div
-                            className="mx-auto min-h-[210mm] min-w-[980px] max-w-[297mm] rounded-md border border-slate-200 bg-white p-6 shadow-sm sm:p-8 lg:p-10"
+                            className="mx-auto min-h-[210mm] max-w-[297mm] min-w-[980px] rounded-md border border-slate-200 bg-white p-6 shadow-sm sm:p-8 lg:p-10"
                             ref={reportPrintRef}
                         >
                             {reportData && <ReportContent data={reportData} />}

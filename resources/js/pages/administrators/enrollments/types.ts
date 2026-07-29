@@ -54,6 +54,7 @@ export interface EnrollmentManagementProps {
         status_filter?: string;
         department_filter?: string;
         year_level_filter?: string;
+        course_filter?: string;
     };
     enrollment_pipeline: EnrollmentPipeline;
     enrollment_stats?: {
@@ -143,14 +144,22 @@ export type ReportFilters = {
 };
 
 export type BulkReportFilters = {
-    course_filter: string;
-    year_level_filter: string;
-    student_limit: string;
+    course_id: number | null;
+    year_level: number | null;
+    student_limit: number | null;
     include_deleted: boolean;
+};
+
+export type EnrollmentCourseOption = {
+    id: number;
+    code: string;
+    title: string | null;
 };
 
 export type EnrollmentStats = {
     applicants: number;
     enrolled: number;
+    active: number;
+    deleted: number;
     tuition: number;
 };

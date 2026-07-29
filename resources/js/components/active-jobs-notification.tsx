@@ -13,8 +13,11 @@ interface ActiveJob {
     percentage: number;
     message: string;
     metadata: {
+        stage?: string;
         processed_count?: number;
         total_count?: number;
+        processed_chunks?: number;
+        total_chunks?: number;
         filters?: Record<string, unknown>;
         report_url?: string;
     };
@@ -36,6 +39,7 @@ interface ActiveJobsResponse {
 // threaded and will block every other request behind these polls).
 const ACTIVE_POLL_INTERVAL = 2000;
 const IDLE_POLL_INTERVAL = 30000;
+export const ACTIVE_JOBS_REFRESH_EVENT = "active-jobs:refresh";
 
 // Track which jobs have active toasts to prevent duplicates
 const activeToasts = new Map<string, string>();
@@ -54,6 +58,9 @@ function JobProgressContent({ job, isExpanded }: { job: ActiveJob; isExpanded: b
     const processedCount = job.metadata?.processed_count ?? 0;
     const totalCount = job.metadata?.total_count ?? 0;
     const hasStudentCounts = totalCount > 0;
+    const processedChunks = job.metadata?.processed_chunks ?? 0;
+    const totalChunks = job.metadata?.total_chunks ?? 0;
+    const hasChunkCounts = totalChunks > 0;
 
     return (
         <div className={cn("flex w-full flex-col gap-2 transition-all duration-200", isExpanded ? "min-w-[320px]" : "min-w-[260px]")}>
@@ -72,8 +79,10 @@ function JobProgressContent({ job, isExpanded }: { job: ActiveJob; isExpanded: b
                     <span>
                         {processedCount} of {totalCount} students
                     </span>
-                    {isExpanded && totalCount > 0 && (
-                        <span className="tabular-nums">~{Math.ceil(((totalCount - processedCount) * 2) / 60)} min remaining</span>
+                    {hasChunkCounts && (
+                        <span className="tabular-nums">
+                            {processedChunks} of {totalChunks} chunks
+                        </span>
                     )}
                 </div>
             )}
@@ -329,6 +338,7 @@ export function ActiveJobsNotification() {
         };
 
         document.addEventListener("visibilitychange", onVisibilityChange);
+        window.addEventListener(ACTIVE_JOBS_REFRESH_EVENT, onVisibilityChange);
         // Kick off the first poll
         schedule(0);
 
@@ -336,6 +346,7 @@ export function ActiveJobsNotification() {
             mountedRef.current = false;
             clearPending();
             document.removeEventListener("visibilitychange", onVisibilityChange);
+            window.removeEventListener(ACTIVE_JOBS_REFRESH_EVENT, onVisibilityChange);
         };
     }, [fetchAndUpdateJobs]);
 

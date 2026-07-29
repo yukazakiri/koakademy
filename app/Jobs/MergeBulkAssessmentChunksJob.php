@@ -38,7 +38,8 @@ final class MergeBulkAssessmentChunksJob implements ShouldQueue
         private string $batchId,
         private string $manifestPath,
     ) {
-        $this->onQueue('pdf-generation');
+        $this->onConnection((string) config('queue.assessment_notification_connection', config('queue.default')));
+        $this->onQueue((string) config('queue.assessment_notification_queue', 'pdf-generation'));
     }
 
     public function handle(JobTrackerService $jobTracker, PdfGenerationService $pdfService): void
@@ -76,7 +77,7 @@ final class MergeBulkAssessmentChunksJob implements ShouldQueue
 
                 $jobTracker->markFailed(
                     $this->jobId,
-                    sprintf('Bulk assessment generation failed for %d chunk(s). Retry failed jobs in batch %s.', $failedChunks->count(), $this->batchId)
+                    sprintf('Bulk assessment generation failed for %d chunk(s). Please retry the export.', $failedChunks->count())
                 );
 
                 $this->notifyFailure($failedChunks->count());
@@ -93,6 +94,7 @@ final class MergeBulkAssessmentChunksJob implements ShouldQueue
                 85,
                 sprintf('Merging %d chunk PDFs...', $completedChunks->count()),
                 metadata: [
+                    'stage' => 'merging',
                     'batch_id' => $this->batchId,
                     'manifest_path' => $this->manifestPath,
                 ]
@@ -102,7 +104,10 @@ final class MergeBulkAssessmentChunksJob implements ShouldQueue
                 $storagePath = (string) ($chunkState['storage_path'] ?? '');
 
                 if ($storagePath === '') {
-                    continue;
+                    throw new Exception(sprintf(
+                        'Completed chunk %d does not contain a PDF storage path.',
+                        (int) ($chunkState['chunk_index'] ?? 0)
+                    ));
                 }
 
                 $localChunkPaths[] = $this->downloadChunkToLocalPath($storageDisk, $storagePath);
@@ -124,15 +129,22 @@ final class MergeBulkAssessmentChunksJob implements ShouldQueue
             $pdfService->mergePdfsChunked($localChunkPaths, $mergedOutputPath, 20, true);
 
             $finalStoragePath = sprintf(
-                'bulk_assessments/%s/bulk_assessments_%s.pdf',
+                'exports/bulk-assessments/%d/%s/bulk-assessments-%s.pdf',
+                $this->userId,
                 $this->jobId,
-                now()->format('Y-m-d_H-i-s')
+                now()->format('Y-m-d-His')
             );
 
-            StreamedStorage::putFileFromPath($storageDisk, $finalStoragePath, $mergedOutputPath, ['visibility' => 'public']);
+            StreamedStorage::putFileFromPath($storageDisk, $finalStoragePath, $mergedOutputPath, ['visibility' => 'private']);
 
-            $downloadUrl = Storage::disk($storageDisk)->url($finalStoragePath);
-            $skippedStudents = $this->collectSkippedStudents($chunkStates);
+            $downloadUrl = route('download.bulk-assessment', [
+                'jobId' => $this->jobId,
+                'filename' => basename($finalStoragePath),
+            ], false);
+            $skippedStudents = [
+                ...$this->loadManifestSkippedEnrollments($storageDisk),
+                ...$this->collectSkippedStudents($chunkStates),
+            ];
             $reportUrl = $this->storeSkippedStudentsReport($storageDisk, $skippedStudents);
 
             $successCount = (int) $completedChunks->sum(fn (array $state): int => (int) ($state['generated_count'] ?? 0));
@@ -147,6 +159,9 @@ final class MergeBulkAssessmentChunksJob implements ShouldQueue
                 $message,
                 $downloadUrl,
                 [
+                    'stage' => 'completed',
+                    'processed_count' => $successCount,
+                    'total_count' => $successCount,
                     'batch_id' => $this->batchId,
                     'manifest_path' => $this->manifestPath,
                     'chunk_count' => $completedChunks->count(),
@@ -163,8 +178,15 @@ final class MergeBulkAssessmentChunksJob implements ShouldQueue
                 'error' => $throwable->getMessage(),
             ]);
 
-            $jobTracker->markFailed($this->jobId, $throwable->getMessage());
-            $this->notifyFailure(0);
+            $jobTracker->updateProgress(
+                $this->jobId,
+                85,
+                'The final PDF could not be merged. The queue will retry it automatically.',
+                metadata: [
+                    'stage' => 'merging',
+                    'batch_id' => $this->batchId,
+                ]
+            );
 
             throw $throwable;
         } finally {
@@ -178,6 +200,19 @@ final class MergeBulkAssessmentChunksJob implements ShouldQueue
                 unlink($mergedOutputPath);
             }
         }
+    }
+
+    public function failed(Throwable $throwable): void
+    {
+        $jobTracker = app(JobTrackerService::class);
+        $job = $jobTracker->getJobStatus($this->jobId);
+
+        if (($job['status'] ?? null) === 'failed') {
+            return;
+        }
+
+        $jobTracker->markFailed($this->jobId, $throwable->getMessage());
+        $this->notifyFailure(0);
     }
 
     /**
@@ -255,6 +290,27 @@ final class MergeBulkAssessmentChunksJob implements ShouldQueue
     }
 
     /**
+     * @return array<int, array{id: int, name: string, reason: string}>
+     */
+    private function loadManifestSkippedEnrollments(string $storageDisk): array
+    {
+        if (! Storage::disk($storageDisk)->exists($this->manifestPath)) {
+            return [];
+        }
+
+        $decoded = json_decode(
+            Storage::disk($storageDisk)->get($this->manifestPath),
+            true,
+            flags: JSON_THROW_ON_ERROR
+        );
+        $skipped = is_array($decoded) ? ($decoded['skipped_enrollments'] ?? []) : [];
+
+        return is_array($skipped)
+            ? array_values(array_filter($skipped, fn (mixed $entry): bool => is_array($entry)))
+            : [];
+    }
+
+    /**
      * @param  array<int, array{id: int, name: string, reason: string}>  $skippedStudents
      */
     private function storeSkippedStudentsReport(string $storageDisk, array $skippedStudents): ?string
@@ -263,7 +319,11 @@ final class MergeBulkAssessmentChunksJob implements ShouldQueue
             return null;
         }
 
-        $reportPath = sprintf('bulk_assessments/%s/skipped_students.txt', $this->jobId);
+        $reportPath = sprintf(
+            'exports/bulk-assessments/%d/%s/skipped-students.txt',
+            $this->userId,
+            $this->jobId
+        );
 
         $content = "Skipped Students Report\n";
         $content .= sprintf("Job ID: %s\n", $this->jobId);
@@ -278,9 +338,12 @@ final class MergeBulkAssessmentChunksJob implements ShouldQueue
             );
         }
 
-        Storage::disk($storageDisk)->put($reportPath, $content, ['visibility' => 'public']);
+        Storage::disk($storageDisk)->put($reportPath, $content, ['visibility' => 'private']);
 
-        return Storage::disk($storageDisk)->url($reportPath);
+        return route('download.bulk-assessment', [
+            'jobId' => $this->jobId,
+            'filename' => basename($reportPath),
+        ], false);
     }
 
     private function notifySuccess(string $downloadUrl, int $successCount, ?string $reportUrl): void
@@ -327,8 +390,8 @@ final class MergeBulkAssessmentChunksJob implements ShouldQueue
         }
 
         $message = $failedChunksCount > 0
-            ? sprintf('Failed chunks: %d. Retry failed jobs in batch %s to continue.', $failedChunksCount, $this->batchId)
-            : 'Chunk merge failed. Please retry the failed batch jobs.';
+            ? sprintf('Failed chunks: %d. Please retry the bulk export.', $failedChunksCount)
+            : 'The final assessment PDF could not be created. Please retry the bulk export.';
 
         Notification::make()
             ->title('Bulk Assessment Generation Failed')

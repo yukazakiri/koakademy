@@ -1,12 +1,13 @@
+import { ActiveJobsNotification } from "@/components/active-jobs-notification";
 import { AdminMobileBottomNav } from "@/components/administrators/admin-mobile-bottom-nav";
-import { AnnouncementBanner } from "@/components/announcement-banner";
 import { AnalyticsScripts } from "@/components/analytics-scripts";
+import { AnnouncementBanner } from "@/components/announcement-banner";
 import { DemoModeBanner } from "@/components/demo-mode-banner";
-import { OnlinePresenceProvider } from "@/contexts/online-presence-context";
 import { FacultyBottomNav } from "@/components/faculty/faculty-bottom-nav";
 import { SeoHead } from "@/components/seo-head";
 import { StudentBottomNav } from "@/components/student/student-bottom-nav";
 import { Toaster } from "@/components/ui/sonner";
+import { OnlinePresenceProvider } from "@/contexts/online-presence-context";
 import { isAdministratorPortalRole, isFacultyPortalRole, isStudentPortalRole } from "@/lib/portal-role";
 import { User } from "@/types/user";
 import { usePage } from "@inertiajs/react";
@@ -33,6 +34,7 @@ export default function AppRootLayout({ children }: { children: React.ReactNode 
             {user && isFacultyPortalRole(user.role) ? <FacultyBottomNav /> : null}
             {user && isStudentPortalRole(user.role) ? <StudentBottomNav /> : null}
             {user && isAdministratorPortalRole(user.role) ? <AdminMobileBottomNav /> : null}
+            {user ? <ActiveJobsNotification /> : null}
             <Toaster position="top-right" richColors />
         </OnlinePresenceProvider>
     );

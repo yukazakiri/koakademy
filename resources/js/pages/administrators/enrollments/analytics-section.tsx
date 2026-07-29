@@ -4,10 +4,9 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import { Activity, ArrowDownRight, ArrowUpRight, CreditCard, GraduationCap, Loader2, Minus, Trash2, TrendingDown, TrendingUp } from "lucide-react";
+import { Activity, ArrowDownRight, ArrowUpRight, CreditCard, GraduationCap, Minus, Trash2, TrendingDown, TrendingUp } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, Tooltip as RechartsTooltip, ResponsiveContainer, XAxis, YAxis } from "recharts";
-import { route } from "ziggy-js";
 import type { EnrollmentRow } from "./columns";
 import type { EnrollmentManagementProps, EnrollmentStats } from "./types";
 
@@ -48,80 +47,52 @@ export function EnrollmentAnalyticsSection({
     const [mounted, setMounted] = useState(false);
 
     const [yearLevelDepartmentFilter, setYearLevelDepartmentFilter] = useState<string>("all");
-    const [filteredYearLevelData, setFilteredYearLevelData] = useState<{ year_level: number; count: number }[]>([]);
-    const [isLoadingYearLevel, setIsLoadingYearLevel] = useState(false);
-
     const [departmentYearLevelFilter, setDepartmentYearLevelFilter] = useState<string>("all");
-    const [filteredDepartmentData, setFilteredDepartmentData] = useState<{ department: string; count: number }[]>([]);
-    const [isLoadingDepartment, setIsLoadingDepartment] = useState(false);
 
     useEffect(() => {
         setMounted(true);
     }, []);
 
-    useEffect(() => {
-        const fetchYearLevelData = async () => {
-            setIsLoadingYearLevel(true);
-            try {
-                const response = await fetch(
-                    route("administrators.enrollments.api.year-level-by-department") + `?department=${yearLevelDepartmentFilter}`,
-                );
-                if (response.ok) {
-                    const data = await response.json();
-                    setFilteredYearLevelData(data.by_year_level || []);
-                }
-            } catch (error) {
-                console.error("Failed to fetch year level data:", error);
-            } finally {
-                setIsLoadingYearLevel(false);
-            }
-        };
-        fetchYearLevelData();
-    }, [yearLevelDepartmentFilter]);
-
-    useEffect(() => {
-        const fetchDepartmentData = async () => {
-            setIsLoadingDepartment(true);
-            try {
-                const response = await fetch(
-                    route("administrators.enrollments.api.department-by-year-level") + `?year_level=${departmentYearLevelFilter}`,
-                );
-                if (response.ok) {
-                    const data = await response.json();
-                    setFilteredDepartmentData(data.by_department || []);
-                }
-            } catch (error) {
-                console.error("Failed to fetch department data:", error);
-            } finally {
-                setIsLoadingDepartment(false);
-            }
-        };
-        fetchDepartmentData();
-    }, [departmentYearLevelFilter]);
-
     const departmentData = useMemo(() => {
-        const raw = departmentYearLevelFilter === "all" ? (analytics?.by_department ?? []) : filteredDepartmentData;
-        const data = Array.isArray(raw) ? raw : [];
-        return data.map((item) => ({
-            name: item.department || "Unknown",
-            value: item.count,
-        }));
-    }, [analytics?.by_department, filteredDepartmentData, departmentYearLevelFilter]);
+        const counts = new Map<string, number>();
+
+        for (const enrollment of enrollmentsData) {
+            if (departmentYearLevelFilter !== "all" && String(enrollment.academic_year ?? "") !== departmentYearLevelFilter) {
+                continue;
+            }
+
+            const department = enrollment.department || "Unknown";
+            counts.set(department, (counts.get(department) ?? 0) + 1);
+        }
+
+        return [...counts.entries()].map(([name, value]) => ({ name, value })).sort((left, right) => left.name.localeCompare(right.name));
+    }, [departmentYearLevelFilter, enrollmentsData]);
 
     const yearLevelData = useMemo(() => {
-        const raw = yearLevelDepartmentFilter === "all" ? (analytics?.by_year_level ?? []) : filteredYearLevelData;
-        const data = Array.isArray(raw) ? raw : [];
+        const counts = new Map<number, number>();
+
+        for (const enrollment of enrollmentsData) {
+            if (yearLevelDepartmentFilter !== "all" && enrollment.department !== yearLevelDepartmentFilter) {
+                continue;
+            }
+
+            if (enrollment.academic_year !== null) {
+                counts.set(enrollment.academic_year, (counts.get(enrollment.academic_year) ?? 0) + 1);
+            }
+        }
+
         const colorArray = Object.values(CHART_COLORS_OBJ);
-        return data
-            .sort((a, b) => (a.year_level ?? 0) - (b.year_level ?? 0))
-            .map((item, index) => ({
-                name: `Year ${item.year_level}`,
-                year: `Year ${item.year_level}`,
-                value: item.count,
-                students: item.count,
+
+        return [...counts.entries()]
+            .sort(([left], [right]) => left - right)
+            .map(([yearLevel, count], index) => ({
+                name: `Year ${yearLevel}`,
+                year: `Year ${yearLevel}`,
+                value: count,
+                students: count,
                 fill: colorArray[index % colorArray.length],
             }));
-    }, [analytics?.by_year_level, filteredYearLevelData, yearLevelDepartmentFilter]);
+    }, [enrollmentsData, yearLevelDepartmentFilter]);
 
     const yearLevelTotal = useMemo(() => yearLevelData.reduce((sum, d) => sum + d.value, 0), [yearLevelData]);
     const mostPopulatedYear =
@@ -161,7 +132,7 @@ export function EnrollmentAnalyticsSection({
                         <Activity className="h-4 w-4 text-emerald-600" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-emerald-600">{analytics?.active_count ?? 0}</div>
+                        <div className="text-2xl font-bold text-emerald-600">{stats.active}</div>
                         <p className="text-muted-foreground text-xs">Currently enrolled</p>
                     </CardContent>
                 </Card>
@@ -173,7 +144,7 @@ export function EnrollmentAnalyticsSection({
                         <Trash2 className="h-4 w-4 text-red-600" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-red-600">{analytics?.trashed_count ?? 0}</div>
+                        <div className="text-2xl font-bold text-red-600">{stats.deleted}</div>
                         <p className="text-muted-foreground text-xs">Removed records</p>
                     </CardContent>
                 </Card>
@@ -265,11 +236,7 @@ export function EnrollmentAnalyticsSection({
                     </CardHeader>
                     <CardContent className="pt-4">
                         <div className="h-[300px]">
-                            {isLoadingDepartment ? (
-                                <div className="flex h-full items-center justify-center">
-                                    <Loader2 className="text-muted-foreground h-6 w-6 animate-spin" />
-                                </div>
-                            ) : mounted ? (
+                            {mounted ? (
                                 <ChartContainer config={departmentChartConfig}>
                                     <BarChart data={departmentData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
@@ -321,11 +288,7 @@ export function EnrollmentAnalyticsSection({
                         </div>
                     </CardHeader>
                     <CardContent className="pt-4">
-                        {isLoadingYearLevel ? (
-                            <div className="flex h-[200px] items-center justify-center">
-                                <Loader2 className="text-muted-foreground h-6 w-6 animate-spin" />
-                            </div>
-                        ) : mounted && yearLevelData.length > 0 ? (
+                        {mounted && yearLevelData.length > 0 ? (
                             <div className="space-y-4">
                                 <div className="space-y-3">
                                     {yearLevelData.map((item, index) => {
@@ -398,8 +361,8 @@ export function EnrollmentAnalyticsSection({
                             {mounted ? (
                                 (() => {
                                     const statusData = [
-                                        { name: "Active", value: analytics?.active_count ?? 0, fill: CHART_COLORS_OBJ.success },
-                                        { name: "Deleted", value: analytics?.trashed_count ?? 0, fill: CHART_COLORS_OBJ.danger },
+                                        { name: "Active", value: stats.active, fill: CHART_COLORS_OBJ.success },
+                                        { name: "Deleted", value: stats.deleted, fill: CHART_COLORS_OBJ.danger },
                                     ];
                                     return (
                                         <ResponsiveContainer width="100%" height="100%">

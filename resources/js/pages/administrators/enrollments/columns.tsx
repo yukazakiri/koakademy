@@ -14,15 +14,16 @@ import { cn } from "@/lib/utils";
 import { Link } from "@inertiajs/react";
 import { ColumnDef } from "@tanstack/react-table";
 import { AlertTriangle, ArrowUpDown, Copy, Eye, FileText, MoreHorizontal, Pencil, RotateCcw, Trash2 } from "lucide-react";
-
-declare let route: any;
+import { route } from "ziggy-js";
 
 // Define the shape of our data based on the controller output
 export type EnrollmentRow = {
     id: number;
     student_id: number | string | null;
     student_name: string | null;
+    course_id: number | null;
     course: string | null;
+    course_title: string | null;
     department: string | null;
     status: string | null;
     school_year: string | null;
@@ -65,11 +66,7 @@ const getInitials = (name: string | null) => {
         .slice(0, 2);
 };
 
-export const createColumns = (
-    actions?: EnrollmentActions,
-    currency: string = "PHP",
-    pipeline?: PipelineDisplay,
-): ColumnDef<EnrollmentRow>[] => [
+export const createColumns = (actions?: EnrollmentActions, currency: string = "PHP", pipeline?: PipelineDisplay): ColumnDef<EnrollmentRow>[] => [
     {
         id: "select",
         header: ({ table }) => (

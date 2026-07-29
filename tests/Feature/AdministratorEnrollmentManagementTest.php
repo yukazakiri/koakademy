@@ -75,6 +75,62 @@ it('allows administrative users to view the enrollments management page', functi
         );
 });
 
+it('provides exact course identifiers and titles for enrollment filtering', function (): void {
+    GeneralSetting::factory()->create([
+        'school_starting_date' => '2024-08-01',
+        'school_ending_date' => '2025-05-30',
+        'semester' => 1,
+        'more_configs' => [
+            'enrollment_pipeline' => [
+                'steps' => [
+                    [
+                        'key' => 'pending',
+                        'status' => 'Pending',
+                        'label' => 'Pending',
+                        'color' => 'amber',
+                        'allowed_roles' => ['student'],
+                        'action_type' => 'standard',
+                    ],
+                    [
+                        'key' => 'cashier_verification',
+                        'status' => 'Verified By Cashier',
+                        'label' => 'Verified By Cashier',
+                        'color' => 'green',
+                        'allowed_roles' => ['cashier'],
+                        'action_type' => 'cashier_verification',
+                    ],
+                ],
+                'entry_step_key' => 'pending',
+                'completion_step_key' => 'cashier_verification',
+            ],
+        ],
+    ]);
+
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $course = Course::factory()->create([
+        'code' => 'BSIT',
+        'title' => 'Bachelor of Science in Information Technology',
+    ]);
+    $student = Student::factory()->create(['course_id' => $course->id]);
+
+    StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'school_year' => '2024 - 2025',
+        'semester' => 1,
+    ]);
+
+    $this->actingAs($user)
+        ->get(portalUrlForAdministrators('/administrators/enrollments'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->where('enrollments.data.0.course_id', $course->id)
+            ->where('enrollments.data.0.course', 'BSIT')
+            ->where('enrollments.data.0.course_title', 'Bachelor of Science in Information Technology')
+            ->where('filters.course_filter', 'all')
+        );
+});
+
 it('returns 404 when enrollments path receives a non-numeric identifier', function (): void {
     $user = User::factory()->create([
         'role' => UserRole::Admin,

@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Jobs;
 
 use App\Models\StudentEnrollment;
+use App\Models\User;
 use App\Services\EnrollmentPipelineService;
 use App\Services\GeneralSettingsService;
 use App\Services\JobTrackerService;
+use Filament\Notifications\Notification;
 use Illuminate\Bus\Batch;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -16,7 +18,6 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Throwable;
@@ -47,24 +48,43 @@ final class GenerateBulkAssessmentsJob implements ShouldQueue
         ?string $jobId = null
     ) {
         $this->jobId = $jobId ?? uniqid('bulk_assessment_', true);
-        $this->onQueue('pdf-generation');
+        $this->onConnection((string) config('queue.assessment_notification_connection', config('queue.default')));
+        $this->onQueue((string) config('queue.assessment_notification_queue', 'pdf-generation'));
     }
 
     public function handle(JobTrackerService $jobTracker): void
     {
-        $jobTracker->registerJob(
+        if ($jobTracker->getJobStatus($this->jobId) === null) {
+            $jobTracker->registerJob(
+                $this->jobId,
+                $this->userId,
+                'bulk_assessment',
+                'Bulk Assessment Export',
+                ['filters' => $this->filters]
+            );
+        }
+
+        $jobTracker->updateProgress(
             $this->jobId,
-            $this->userId,
-            'bulk_assessment',
-            'Bulk Assessment Export',
-            ['filters' => $this->filters]
+            5,
+            'Preparing matching enrollment records...',
+            metadata: ['stage' => 'preparing']
         );
 
         try {
             $enrollments = $this->getFilteredAndSortedEnrollments();
 
             if ($enrollments->isEmpty()) {
-                $jobTracker->markCompleted($this->jobId, 'No enrollments found matching criteria.');
+                $jobTracker->markCompleted(
+                    $this->jobId,
+                    'No enrolled students matched the selected filters.',
+                    metadata: [
+                        'stage' => 'completed',
+                        'processed_count' => 0,
+                        'total_count' => 0,
+                    ]
+                );
+                $this->notifyNoMatches();
 
                 return;
             }
@@ -78,10 +98,14 @@ final class GenerateBulkAssessmentsJob implements ShouldQueue
                     $this->jobId,
                     'No valid enrollments were found after validation checks.',
                     metadata: [
+                        'stage' => 'completed',
+                        'processed_count' => 0,
+                        'total_count' => 0,
                         'manifest_path' => $manifestPath,
                         'skipped_count' => count($skippedEnrollments),
                     ]
                 );
+                $this->notifyNoMatches();
 
                 return;
             }
@@ -101,12 +125,16 @@ final class GenerateBulkAssessmentsJob implements ShouldQueue
             $jobId = $this->jobId;
             $userId = $this->userId;
             $totalChunks = count($chunkJobs);
+            $totalEnrollments = count($validEnrollmentIds);
 
             $jobTracker->updateProgress(
                 $jobId,
                 15,
                 sprintf('Queued %d chunk jobs for PDF generation...', $totalChunks),
                 metadata: [
+                    'stage' => 'queued_chunks',
+                    'processed_count' => 0,
+                    'total_count' => $totalEnrollments,
                     'total_chunks' => $totalChunks,
                     'skipped_count' => count($skippedEnrollments),
                     'manifest_path' => $manifestPath,
@@ -116,16 +144,21 @@ final class GenerateBulkAssessmentsJob implements ShouldQueue
             $batch = Bus::batch($chunkJobs)
                 ->name('bulk-assessment-'.$jobId)
                 ->allowFailures()
-                ->onQueue('pdf-generation')
-                ->progress(function (Batch $batch) use ($jobId, $totalChunks, $manifestPath): void {
+                ->onConnection((string) config('queue.assessment_notification_connection', config('queue.default')))
+                ->onQueue((string) config('queue.assessment_notification_queue', 'pdf-generation'))
+                ->progress(function (Batch $batch) use ($jobId, $totalChunks, $totalEnrollments, $manifestPath): void {
                     $processedChunks = $batch->processedJobs();
                     $percentage = 20 + (int) floor(($processedChunks / max(1, $totalChunks)) * 55);
+                    $processedCount = min($totalEnrollments, $processedChunks * self::CHUNK_SIZE);
 
                     app(JobTrackerService::class)->updateProgress(
                         $jobId,
                         $percentage,
                         sprintf('Generated %d of %d chunks...', $processedChunks, $totalChunks),
                         metadata: [
+                            'stage' => 'rendering',
+                            'processed_count' => $processedCount,
+                            'total_count' => $totalEnrollments,
                             'batch_id' => $batch->id,
                             'processed_chunks' => $processedChunks,
                             'total_chunks' => $totalChunks,
@@ -145,9 +178,11 @@ final class GenerateBulkAssessmentsJob implements ShouldQueue
                     $tracker = app(JobTrackerService::class);
 
                     if ($batch->failedJobs > 0) {
+                        $failureMessage = sprintf('Chunk generation failed for %d chunk(s). Please retry the export.', $batch->failedJobs);
+
                         $tracker->markFailed(
                             $jobId,
-                            sprintf('Chunk generation failed for %d chunk(s). Retry failed batch jobs only.', $batch->failedJobs)
+                            $failureMessage
                         );
 
                         $tracker->updateProgress(
@@ -156,11 +191,13 @@ final class GenerateBulkAssessmentsJob implements ShouldQueue
                             'Chunk generation finished with failures. Retry failed chunks to continue.',
                             'failed',
                             [
+                                'stage' => 'failed',
                                 'batch_id' => $batch->id,
                                 'failed_chunks' => $batch->failedJobs,
                                 'manifest_path' => $manifestPath,
                             ]
                         );
+                        self::notifyBatchFailure($userId, $failureMessage);
 
                         return;
                     }
@@ -170,6 +207,7 @@ final class GenerateBulkAssessmentsJob implements ShouldQueue
                         80,
                         'All chunks generated. Starting merge phase...',
                         metadata: [
+                            'stage' => 'merging',
                             'batch_id' => $batch->id,
                             'manifest_path' => $manifestPath,
                         ]
@@ -180,7 +218,9 @@ final class GenerateBulkAssessmentsJob implements ShouldQueue
                         userId: $userId,
                         batchId: $batch->id,
                         manifestPath: $manifestPath,
-                    )->onQueue('pdf-generation');
+                    )
+                        ->onConnection((string) config('queue.assessment_notification_connection', config('queue.default')))
+                        ->onQueue((string) config('queue.assessment_notification_queue', 'pdf-generation'));
                 })
                 ->dispatch();
 
@@ -191,6 +231,9 @@ final class GenerateBulkAssessmentsJob implements ShouldQueue
                 20,
                 'Chunk jobs dispatched successfully.',
                 metadata: [
+                    'stage' => 'rendering',
+                    'processed_count' => 0,
+                    'total_count' => $totalEnrollments,
                     'batch_id' => $batch->id,
                     'total_chunks' => $totalChunks,
                     'manifest_path' => $manifestPath,
@@ -203,10 +246,38 @@ final class GenerateBulkAssessmentsJob implements ShouldQueue
                 'error' => $throwable->getMessage(),
             ]);
 
-            $jobTracker->markFailed($this->jobId, $throwable->getMessage());
+            $jobTracker->updateProgress(
+                $this->jobId,
+                5,
+                'The export could not be prepared. The queue will retry it automatically.',
+                metadata: ['stage' => 'preparing']
+            );
 
             throw $throwable;
         }
+    }
+
+    public function failed(Throwable $throwable): void
+    {
+        $message = 'Bulk assessment export failed before PDF rendering could complete: '.$throwable->getMessage();
+
+        app(JobTrackerService::class)->markFailed($this->jobId, $message);
+        self::notifyBatchFailure($this->userId, $message);
+    }
+
+    private static function notifyBatchFailure(int $userId, string $message): void
+    {
+        $user = User::query()->find($userId);
+
+        if (! $user) {
+            return;
+        }
+
+        Notification::make()
+            ->title('Bulk Assessment Generation Failed')
+            ->body($message)
+            ->danger()
+            ->sendToDatabase($user);
     }
 
     /**
@@ -230,28 +301,26 @@ final class GenerateBulkAssessmentsJob implements ShouldQueue
             $query->withTrashed();
         }
 
-        if (isset($this->filters['course_filter']) && $this->filters['course_filter'] !== 'all') {
-            $query->whereExists(function ($subQuery): void {
-                $subQuery->select(DB::raw(1))
-                    ->from('courses')
-                    ->whereRaw('CAST(student_enrollment.course_id AS BIGINT) = courses.id')
-                    ->where('courses.code', 'LIKE', $this->filters['course_filter'].'%');
-            });
+        if (isset($this->filters['course_id']) && $this->filters['course_id'] !== null) {
+            $query->where('course_id', (int) $this->filters['course_id']);
         }
 
-        if (isset($this->filters['year_level_filter']) && $this->filters['year_level_filter'] !== 'all') {
-            $query->where('academic_year', (int) $this->filters['year_level_filter']);
+        if (isset($this->filters['year_level']) && $this->filters['year_level'] !== null) {
+            $query->where('academic_year', (int) $this->filters['year_level']);
         }
 
-        if (isset($this->filters['student_limit']) && $this->filters['student_limit'] !== 'all') {
-            $query->limit((int) $this->filters['student_limit']);
-        }
-
-        return $query->get()->sortBy([
+        $enrollments = $query->get()->sortBy([
             fn (StudentEnrollment $left, StudentEnrollment $right): int => ($left->course?->code ?? '') <=> ($right->course?->code ?? ''),
             fn (StudentEnrollment $left, StudentEnrollment $right): int => ($left->academic_year ?? 0) <=> ($right->academic_year ?? 0),
             fn (StudentEnrollment $left, StudentEnrollment $right): int => ($left->student?->last_name ?? '') <=> ($right->student?->last_name ?? ''),
+            fn (StudentEnrollment $left, StudentEnrollment $right): int => $left->id <=> $right->id,
         ])->values();
+
+        $studentLimit = $this->filters['student_limit'] ?? null;
+
+        return is_int($studentLimit) && $studentLimit > 0
+            ? $enrollments->take($studentLimit)->values()
+            : $enrollments;
     }
 
     /**
@@ -331,5 +400,20 @@ final class GenerateBulkAssessmentsJob implements ShouldQueue
         );
 
         return $manifestPath;
+    }
+
+    private function notifyNoMatches(): void
+    {
+        $user = User::query()->find($this->userId);
+
+        if (! $user) {
+            return;
+        }
+
+        Notification::make()
+            ->title('Bulk Assessment Export Finished')
+            ->body('No enrolled students matched the selected filters.')
+            ->warning()
+            ->sendToDatabase($user);
     }
 }

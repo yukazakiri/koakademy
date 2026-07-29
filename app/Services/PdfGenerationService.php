@@ -102,18 +102,15 @@ final class PdfGenerationService
         }
 
         $pdf = new Fpdi();
+        $importedPages = 0;
 
         foreach ($pdfPaths as $index => $pdfPath) {
             if (! file_exists($pdfPath)) {
-                Log::warning("PDF file not found during merge: {$pdfPath}");
-
-                continue;
+                throw new Exception("PDF file not found during merge: {$pdfPath}");
             }
 
             if (filesize($pdfPath) === 0) {
-                Log::warning("Empty PDF file skipped during merge: {$pdfPath}");
-
-                continue;
+                throw new Exception("Empty PDF file encountered during merge: {$pdfPath}");
             }
 
             try {
@@ -131,6 +128,7 @@ final class PdfGenerationService
                     }
 
                     $pdf->useTemplate($templateId, 0, 0, $size['width'], $size['height']);
+                    $importedPages++;
                 }
             } catch (Exception $e) {
                 Log::error("Failed to import PDF during merge: {$pdfPath}", [
@@ -138,9 +136,15 @@ final class PdfGenerationService
                     'index' => $index,
                 ]);
 
-                // Continue with other PDFs instead of failing completely
-                continue;
+                throw new Exception(
+                    sprintf('Failed to import PDF [%s]: %s', $pdfPath, $e->getMessage()),
+                    previous: $e
+                );
             }
+        }
+
+        if ($importedPages === 0) {
+            throw new Exception('No PDF pages were imported during merge');
         }
 
         // Save the merged PDF

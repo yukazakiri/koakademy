@@ -9,6 +9,7 @@ use App\Enrollment\EnrollmentWorkflowCoordinator;
 use App\Enums\StudentStatus;
 use App\Exports\EnrollmentReportExport;
 use App\Features\DynamicEnrollmentPolicies;
+use App\Http\Requests\Administrators\GenerateBulkAssessmentsRequest;
 use App\Http\Requests\Administrators\SaveEnrollmentRequest;
 use App\Jobs\GenerateAssessmentPdfJob;
 use App\Jobs\GenerateBulkAssessmentsJob;
@@ -32,6 +33,7 @@ use App\Services\EnrollmentBillingService;
 use App\Services\EnrollmentPipelineService;
 use App\Services\EnrollmentService;
 use App\Services\GeneralSettingsService;
+use App\Services\JobTrackerService;
 use App\Settings\SiteSettings;
 use Closure;
 use Exception;
@@ -119,6 +121,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                     'status_filter' => 'all',
                     'department_filter' => 'all',
                     'year_level_filter' => 'all',
+                    'course_filter' => 'all',
                     'currentSemester' => $settingsService->getCurrentSemester(),
                     'currentSchoolYear' => $settingsService->getCurrentSchoolYearStart(),
                     'systemSemester' => $settingsService->getSystemDefaultSemester(),
@@ -218,6 +221,7 @@ final class AdministratorEnrollmentManagementController extends Controller
         $statusFilter = request('status_filter', 'all');
         $departmentFilter = request('department_filter', 'all');
         $yearLevelFilter = request('year_level_filter', 'all');
+        $courseFilter = request('course_filter', 'all');
 
         $enrollments = fn () => StudentEnrollment::query()
             ->withTrashed()
@@ -233,7 +237,9 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'id' => $enrollment->id,
                 'student_id' => $enrollment->student_id,
                 'student_name' => $enrollment->student?->full_name,
+                'course_id' => $enrollment->course_id,
                 'course' => $enrollment->course?->code,
+                'course_title' => $enrollment->course?->title,
                 'department' => $enrollment->course?->department?->code,
                 'status' => $enrollment->status ?? 'N/A',
                 'school_year' => $enrollment->school_year,
@@ -285,6 +291,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'status_filter' => $statusFilter,
                 'department_filter' => $departmentFilter,
                 'year_level_filter' => $yearLevelFilter,
+                'course_filter' => $courseFilter,
                 'currentSemester' => $currentSemester,
                 'currentSchoolYear' => $currentSchoolYearStart,
                 'systemSemester' => $settingsService->getSystemDefaultSemester(),
@@ -894,43 +901,57 @@ final class AdministratorEnrollmentManagementController extends Controller
     /**
      * Generate bulk assessments PDF for current semester enrollments
      */
-    public function generateBulkAssessments(Request $request): RedirectResponse
-    {
-        $validated = $request->validate([
-            'course_filter' => ['nullable', 'string'],
-            'year_level_filter' => ['nullable', 'string'],
-            'student_limit' => ['nullable', 'string'],
-            'include_deleted' => ['nullable', 'boolean'],
-        ]);
-
-        $user = Auth::user();
+    public function generateBulkAssessments(
+        GenerateBulkAssessmentsRequest $request,
+        GeneralSettingsService $settingsService,
+        JobTrackerService $jobTracker,
+    ): JsonResponse {
+        $user = $request->user();
         if (! $user instanceof User) {
-            return back()->with('flash', ['error' => 'Unauthorized.']);
+            abort(403);
         }
+
+        $validated = $request->validated();
+        $jobId = (string) Str::uuid();
+        $message = 'Bulk assessment export queued and waiting for the PDF worker.';
+        $filters = [
+            'course_id' => $validated['course_id'] ?? null,
+            'year_level' => $validated['year_level'] ?? null,
+            'student_limit' => $validated['student_limit'] ?? null,
+            'include_deleted' => (bool) $validated['include_deleted'],
+            'semester' => $settingsService->getCurrentSemester(),
+            'school_year' => $settingsService->getCurrentSchoolYearString(),
+        ];
+
+        $jobTracker->registerJob(
+            $jobId,
+            $user->id,
+            'bulk_assessment',
+            'Bulk Assessment Export',
+            [
+                'filters' => $filters,
+                'stage' => 'queued',
+            ]
+        );
+        $jobTracker->updateProgress($jobId, 0, $message, 'pending');
 
         try {
-            // Get current settings explicitly for the job context
-            $settingsService = app(GeneralSettingsService::class);
-            $currentSemester = $settingsService->getCurrentSemester();
-            $currentSchoolYear = $settingsService->getCurrentSchoolYearString();
+            GenerateBulkAssessmentsJob::dispatch($filters, $user->id, $jobId);
+        } catch (Throwable $throwable) {
+            $jobTracker->markFailed($jobId, 'Failed to queue bulk assessment generation: '.$throwable->getMessage());
 
-            $filters = [
-                'course_filter' => $validated['course_filter'] ?? 'all',
-                'year_level_filter' => $validated['year_level_filter'] ?? 'all',
-                'student_limit' => $validated['student_limit'] ?? 'all',
-                'include_deleted' => $validated['include_deleted'] ?? false,
-                'semester' => $currentSemester,
-                'school_year' => $currentSchoolYear,
-            ];
-
-            GenerateBulkAssessmentsJob::dispatch($filters, $user->id);
-
-            return back()->with('flash', [
-                'success' => 'Bulk assessment generation has been queued. You will receive a notification when it\'s ready.',
-            ]);
-        } catch (Exception $e) {
-            return back()->with('flash', ['error' => 'Failed to queue bulk assessment generation: '.$e->getMessage()]);
+            return response()->json([
+                'job_id' => $jobId,
+                'status' => 'failed',
+                'message' => 'Failed to queue bulk assessment generation.',
+            ], 500);
         }
+
+        return response()->json([
+            'job_id' => $jobId,
+            'status' => 'pending',
+            'message' => $message,
+        ], 202);
     }
 
     /**

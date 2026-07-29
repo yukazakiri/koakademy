@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.16.2](https://github.com/yukazakiri/koakademy/compare/v1.16.1...v1.16.2) (2026-07-29)
+
+
+### Bug Fixes
+
+* **delivery:** publish edge and allow manual releases ([#127](https://github.com/yukazakiri/koakademy/issues/127)) ([88fc7b2](https://github.com/yukazakiri/koakademy/commit/88fc7b2922c3a5ec27a23dbdb5576f2469f6da37))
+
+
+### Continuous Integration
+
+* **actions:** streamline validation and edge delivery ([#126](https://github.com/yukazakiri/koakademy/issues/126)) ([1b12efb](https://github.com/yukazakiri/koakademy/commit/1b12efb9f937311500f45463194b42145024a5d1))
+
 ## [1.16.1](https://github.com/yukazakiri/koakademy/compare/v1.16.0...v1.16.1) (2026-07-29)
 
 

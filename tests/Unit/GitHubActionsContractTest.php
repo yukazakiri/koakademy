@@ -16,9 +16,9 @@ it('runs expensive validation once for pull requests and manual dispatches', fun
         ->toContain('permissions: {}')
         ->toContain('name: Classify pull request')
         ->toContain('name: Detect a trusted Release Please metadata update')
-        ->toContain("pull.head.repo?.full_name === expectedRepository")
+        ->toContain('pull.head.repo?.full_name === expectedRepository')
         ->toContain("pull.head.ref.startsWith('release-please--branches--master--components--')")
-        ->toContain("changedFiles.size === allowedFiles.size")
+        ->toContain('changedFiles.size === allowedFiles.size')
         ->toContain('name: Validate Release Please metadata')
         ->toContain('needs.scope.outputs.release_only')
         ->toContain('php artisan test --parallel --compact')
@@ -104,16 +104,19 @@ it('starts privileged delivery directly from a trusted master push', function ()
 
 it('publishes every automatic master commit to edge without a second build', function (): void {
     $delivery = workflowContents('delivery.yml');
+    $promotion = mb_strpos($delivery, 'Promote verified channel aliases');
+    $promotionWorkflow = mb_substr($delivery, $promotion);
 
     expect($delivery)
         ->toContain('mode: ${{ steps.plan.outputs.mode }}')
         ->toContain("channel=edge\n            publish=true")
-        ->toContain('MODE: ${{ needs.prepare.outputs.mode }}')
         ->toContain('if [[ "${MODE}" == "automatic" ]]')
         ->toContain('promote_mutable_pair edge')
         ->toContain('if [[ "${CHANNEL}" == "stable" ]]')
         ->not->toContain('git diff-tree')
-        ->not->toContain('relevant_pattern');
+        ->not->toContain('relevant_pattern')
+        ->and($promotion)->toBeInt()
+        ->and($promotionWorkflow)->toContain('MODE: ${{ needs.prepare.outputs.mode }}');
 });
 
 it('publishes immutable SHA images to both registries before moving channel aliases', function (): void {
@@ -170,6 +173,23 @@ it('keeps latest stable-only and recovery unable to invent or move versions', fu
         ->not->toContain('-dev.');
 });
 
+it('allows a reviewed manual version request while preserving existing tag recovery', function (): void {
+    $delivery = workflowContents('delivery.yml');
+
+    expect($delivery)
+        ->toContain('description: Existing stable tag to recover (strict vX.Y.Z; exclusive with version)')
+        ->toContain('description: New stable version to request (strict X.Y.Z; exclusive with tag)')
+        ->toContain('Provide exactly one of tag (recovery) or version (new release).')
+        ->toContain('Manual delivery must run from the master branch.')
+        ->toContain('Version v%s already exists; use tag recovery instead.')
+        ->toContain('must be newer than existing stable')
+        ->toContain('mode=manual-release')
+        ->toContain("needs.trust.outputs.mode == 'manual-release'")
+        ->toContain('release-as: ${{ needs.trust.outputs.manual_version }}')
+        ->toContain('Release Please processed the requested version; no container rebuild is needed.')
+        ->not->toContain('gh api --method POST repos/${GITHUB_REPOSITORY}/git/refs');
+});
+
 it('keeps Release Please aligned with the tracked stable version and reviewed draft releases', function (): void {
     $config = json_decode(
         file_get_contents(base_path('release-please-config.json')) ?: '{}',
@@ -186,6 +206,7 @@ it('keeps Release Please aligned with the tracked stable version and reviewed dr
         true,
         flags: JSON_THROW_ON_ERROR,
     );
+    $changelogSections = array_column($config['changelog-sections'], null, 'type');
 
     expect($manifest['.'])
         ->toBe($tracked['version'])
@@ -195,6 +216,18 @@ it('keeps Release Please aligned with the tracked stable version and reviewed dr
         ->and($config['include-component-in-tag'])->toBeFalse()
         ->and($config['draft'])->toBeTrue()
         ->and($config['force-tag-creation'])->toBeTrue()
+        ->and(array_keys($changelogSections))->toContain(
+            'feat',
+            'fix',
+            'build',
+            'ci',
+            'docs',
+            'refactor',
+            'test',
+            'style',
+            'chore',
+        )
+        ->and($changelogSections['ci']['hidden'])->toBeFalse()
         ->and($config['packages']['.']['extra-files'][0])
         ->toMatchArray([
             'type' => 'json',

@@ -7,11 +7,12 @@ description: Release Please, edge and stable container channels, version metadat
 
 KoAkademy deliberately separates rolling delivery from stable releases:
 
-| Source event                  | GitHub Release                   | GHCR and Docker Hub tags                                           |
-| ----------------------------- | -------------------------------- | ------------------------------------------------------------------ |
-| Pull request                  | None                             | Build validation only; nothing is pushed                           |
-| Merged `master` commit        | None                             | Immutable `sha-<40-character-commit>` and mutable `edge`           |
-| Merged Release Please PR      | Draft until publication succeeds | `sha-<commit>`, `edge`, `vX.Y.Z`, `X.Y.Z`, `X.Y`, `X`, and `latest` |
+| Source event             | Release activity                 | GHCR and Docker Hub tags                                            |
+| ------------------------ | -------------------------------- | ------------------------------------------------------------------- |
+| Pull request             | None                             | Build validation only; nothing is pushed                            |
+| Merged `master` commit   | None                             | Immutable `sha-<40-character-commit>` and mutable `edge`            |
+| Merged Release Please PR | Draft until publication succeeds | `sha-<commit>`, `edge`, `vX.Y.Z`, `X.Y.Z`, `X.Y`, `X`, and `latest` |
+| Manual version request   | Reviewed Release Please PR       | No rebuild until that release PR is merged                          |
 
 Both registries receive the same `linux/amd64` and `linux/arm64` manifest:
 
@@ -24,12 +25,12 @@ Use an exact `vX.Y.Z` image in production. `latest` is a convenience alias for t
 
 Pull request titles use Conventional Commits because squash merging makes that title the commit Release Please evaluates. A metadata-only workflow automatically normalizes a plain-language title from its topic, description, labels, and changed-file names; maintainers must review the inferred type, scope, and breaking marker before merge:
 
-| PR title prefix                                   | Proposed SemVer change                                                                   |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `fix:`                                            | Patch                                                                                    |
-| `feat:`                                           | Minor                                                                                    |
-| `feat!:`, `fix!:`, or a `BREAKING CHANGE:` footer | Major                                                                                    |
-| `docs:`, `chore:`, `ci:`, `test:`, and similar    | Changelog entry without an automatic version bump unless paired with a releasable change |
+| PR title prefix                                   | Proposed SemVer change |
+| ------------------------------------------------- | ---------------------- |
+| `fix:`                                            | Patch                  |
+| `feat:`                                           | Minor                  |
+| `feat!:`, `fix!:`, or a `BREAKING CHANGE:` footer | Major                  |
+| `docs:`, `chore:`, `ci:`, `test:`, and similar    | Patch                  |
 
 Examples:
 
@@ -53,7 +54,7 @@ An exact Release Please metadata-only pull request takes the fast CI path: it va
 - the event repository exactly matches this repository;
 - the immutable event `after` SHA matches the workflow SHA.
 
-No checkout or secret access occurs before that trust decision. Pull-request CI is not repeated after merge, and administrators remain able to use the repository's existing branch-protection bypass. On ordinary commits, Release Please creates or updates one reviewed release PR. Delivery performs the only multi-architecture build for every `master` commit, verifies it, and moves `edge` only if that commit is still the current branch head.
+No checkout or secret access occurs before that trust decision. Pull-request CI is not repeated after merge, and administrators remain able to use the repository's existing branch-protection bypass. Every supported Conventional Commit type creates or updates one reviewed Release Please PR: breaking commits propose a major version, features propose a minor version, and all other visible types—including `fix`, `ci`, `docs`, `test`, and `chore`—propose a patch. Delivery performs the only multi-architecture build for every `master` commit, verifies it, and moves `edge` only if that commit is still the current branch head.
 
 When the release PR is merged, Release Please:
 
@@ -118,9 +119,12 @@ Create `RELEASE_PLEASE_TOKEN` from **GitHub profile → Settings → Developer s
 
 Never paste the token into a workflow, issue, pull request, command history, or repository file. Rotate it before expiration and rerun the failed Delivery job after replacement.
 
-## Recovery dispatch
+## Manual release and recovery dispatch
 
-Use **Actions → Delivery → Run workflow** only to recover an existing strict `vX.Y.Z` tag. The workflow rejects prerelease, missing, malformed, or invented tags and never creates or moves a Git tag. It may rebuild a missing immutable SHA image, recreate a missing draft for the existing tag, re-upload assets, and finalize publication.
+Use **Actions → Delivery → Run workflow** from the `master` branch and provide exactly one input:
+
+- Set **version** to a new strict `X.Y.Z` version to create or update a reviewed Release Please PR at that exact version. The requested version must be newer than the latest stable tag. This metadata-only request does not rebuild a container; merge the resulting release PR to run the normal verified stable publication.
+- Set **tag** to an existing strict `vX.Y.Z` tag to recover its publication. The workflow rejects prerelease, missing, malformed, or invented tags and never creates or moves a Git tag during recovery. It may rebuild a missing immutable SHA image, recreate a missing draft for the existing tag, re-upload assets, and finalize publication.
 
 Recovery of an older stable version never rolls back `latest`, a major alias, or a minor alias past a newer matching stable version. If an immutable SemVer tag already points to another digest, recovery fails instead of moving it.
 

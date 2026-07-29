@@ -1,7 +1,7 @@
 name: Delivery
 
 run-name: >-
-  Delivery / ${{ github.event_name == 'workflow_dispatch' && inputs.tag || format('master / {0}', github.sha) }}
+  Delivery / ${{ github.event_name == 'workflow_dispatch' && (inputs.tag || inputs.version) || format('master / {0}', github.sha) }}
 
 on:
   push:
@@ -10,14 +10,18 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing stable tag to rebuild and finalize (strict vX.Y.Z)
-        required: true
+        description: Existing stable tag to recover (strict vX.Y.Z; exclusive with version)
+        required: false
+        type: string
+      version:
+        description: New stable version to request (strict X.Y.Z; exclusive with tag)
+        required: false
         type: string
 
 permissions: {}
 
 concurrency:
-  group: delivery-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.sha }}
+  group: delivery-${{ github.event_name == 'workflow_dispatch' && (inputs.tag || inputs.version) || github.sha }}
   cancel-in-progress: false
 
 jobs:
@@ -38,6 +42,7 @@ jobs:
       mode: ${{ steps.source.outputs.mode }}
       source_sha: ${{ steps.source.outputs.source_sha }}
       recovery_tag: ${{ steps.source.outputs.recovery_tag }}
+      manual_version: ${{ steps.source.outputs.manual_version }}
 
     steps:
       - name: Accept trusted master push source
@@ -58,33 +63,91 @@ jobs:
             printf 'mode=automatic\n'
             printf 'source_sha=%s\n' "${SOURCE_SHA}"
             printf 'recovery_tag=\n'
+            printf 'manual_version=\n'
           } >> "${GITHUB_OUTPUT}"
 
-      - name: Validate recovery tag
-        id: recovery
+      - name: Validate manual delivery request
+        id: manual
         if: github.event_name == 'workflow_dispatch'
         env:
           RECOVERY_TAG: ${{ inputs.tag }}
+          MANUAL_VERSION: ${{ inputs.version }}
+          SOURCE_REF: ${{ github.ref }}
         run: |
-          if [[ ! "${RECOVERY_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            printf 'Recovery requires an existing strict vX.Y.Z tag.\n' >&2
+          if [[ "${SOURCE_REF}" != "refs/heads/master" ]]; then
+            printf 'Manual delivery must run from the master branch.\n' >&2
+            exit 1
+          fi
+
+          if [[ -n "${RECOVERY_TAG}" && -n "${MANUAL_VERSION}" ]] ||
+             [[ -z "${RECOVERY_TAG}" && -z "${MANUAL_VERSION}" ]]; then
+            printf 'Provide exactly one of tag (recovery) or version (new release).\n' >&2
             exit 1
           fi
 
           remote="https://github.com/${GITHUB_REPOSITORY}.git"
-          tag_refs="$(git ls-remote "${remote}" \
-            "refs/tags/${RECOVERY_TAG}" "refs/tags/${RECOVERY_TAG}^{}")"
-          source_sha="$(awk '{print $1}' <<<"${tag_refs}" | tail -n 1)"
+          if [[ -n "${RECOVERY_TAG}" ]]; then
+            if [[ ! "${RECOVERY_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              printf 'Recovery requires an existing strict vX.Y.Z tag.\n' >&2
+              exit 1
+            fi
 
-          if [[ ! "${source_sha}" =~ ^[0-9a-f]{40}$ ]]; then
-            printf 'Tag %s does not exist in %s.\n' "${RECOVERY_TAG}" "${GITHUB_REPOSITORY}" >&2
-            exit 1
+            tag_refs="$(git ls-remote "${remote}" \
+              "refs/tags/${RECOVERY_TAG}" "refs/tags/${RECOVERY_TAG}^{}")"
+            source_sha="$(awk '{print $1}' <<<"${tag_refs}" | tail -n 1)"
+
+            if [[ ! "${source_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+              printf 'Tag %s does not exist in %s.\n' "${RECOVERY_TAG}" "${GITHUB_REPOSITORY}" >&2
+              exit 1
+            fi
+
+            mode=recovery
+            manual_version=
+          else
+            if [[ ! "${MANUAL_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              printf 'A manual release requires a strict X.Y.Z version.\n' >&2
+              exit 1
+            fi
+
+            if git ls-remote --exit-code "${remote}" "refs/tags/v${MANUAL_VERSION}" >/dev/null 2>&1; then
+              printf 'Version v%s already exists; use tag recovery instead.\n' "${MANUAL_VERSION}" >&2
+              exit 1
+            fi
+
+            latest_version="$(
+              git ls-remote --tags "${remote}" |
+                sed -nE 's#^[0-9a-f]{40}[[:space:]]+refs/tags/v([0-9]+\.[0-9]+\.[0-9]+)$#\1#p' |
+                sort -V |
+                tail -n 1
+            )"
+            newest_version="$(
+              printf '%s\n%s\n' "${latest_version}" "${MANUAL_VERSION}" |
+                sed '/^$/d' |
+                sort -V |
+                tail -n 1
+            )"
+            if [[ -n "${latest_version}" ]] &&
+               [[ "${newest_version}" != "${MANUAL_VERSION}" || "${latest_version}" == "${MANUAL_VERSION}" ]]; then
+              printf 'Manual version %s must be newer than existing stable %s.\n' \
+                "${MANUAL_VERSION}" "${latest_version}" >&2
+              exit 1
+            fi
+
+            source_sha="$(git ls-remote "${remote}" refs/heads/master | awk '{print $1}')"
+            if [[ ! "${source_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+              printf 'Unable to resolve the current master commit.\n' >&2
+              exit 1
+            fi
+
+            mode=manual-release
+            recovery_tag=
           fi
 
           {
-            printf 'mode=recovery\n'
+            printf 'mode=%s\n' "${mode}"
             printf 'source_sha=%s\n' "${source_sha}"
             printf 'recovery_tag=%s\n' "${RECOVERY_TAG}"
+            printf 'manual_version=%s\n' "${MANUAL_VERSION}"
           } >> "${GITHUB_OUTPUT}"
 
       - name: Export trusted source
@@ -92,27 +155,30 @@ jobs:
         env:
           AUTOMATIC_MODE: ${{ steps.automatic.outputs.mode }}
           AUTOMATIC_SHA: ${{ steps.automatic.outputs.source_sha }}
-          RECOVERY_MODE: ${{ steps.recovery.outputs.mode }}
-          RECOVERY_SHA: ${{ steps.recovery.outputs.source_sha }}
-          RECOVERY_TAG: ${{ steps.recovery.outputs.recovery_tag }}
+          MANUAL_MODE: ${{ steps.manual.outputs.mode }}
+          MANUAL_SHA: ${{ steps.manual.outputs.source_sha }}
+          RECOVERY_TAG: ${{ steps.manual.outputs.recovery_tag }}
+          MANUAL_VERSION: ${{ steps.manual.outputs.manual_version }}
         run: |
           if [[ -n "${AUTOMATIC_MODE}" ]]; then
             {
               printf 'mode=%s\n' "${AUTOMATIC_MODE}"
               printf 'source_sha=%s\n' "${AUTOMATIC_SHA}"
               printf 'recovery_tag=\n'
+              printf 'manual_version=\n'
             } >> "${GITHUB_OUTPUT}"
           else
             {
-              printf 'mode=%s\n' "${RECOVERY_MODE}"
-              printf 'source_sha=%s\n' "${RECOVERY_SHA}"
+              printf 'mode=%s\n' "${MANUAL_MODE}"
+              printf 'source_sha=%s\n' "${MANUAL_SHA}"
               printf 'recovery_tag=%s\n' "${RECOVERY_TAG}"
+              printf 'manual_version=%s\n' "${MANUAL_VERSION}"
             } >> "${GITHUB_OUTPUT}"
           fi
 
   release-please:
     name: Maintain release PR
-    if: needs.trust.outputs.mode == 'automatic'
+    if: needs.trust.outputs.mode == 'automatic' || needs.trust.outputs.mode == 'manual-release'
     needs:
       - trust
     runs-on: ubuntu-24.04
@@ -137,6 +203,7 @@ jobs:
           target-branch: master
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          release-as: ${{ needs.trust.outputs.manual_version }}
 
   prepare:
     name: Select delivery channel
@@ -183,7 +250,9 @@ jobs:
           version=""
           tag=""
 
-          if [[ "${MODE}" == "recovery" ]]; then
+          if [[ "${MODE}" == "manual-release" ]]; then
+            printf 'Release Please processed the requested version; no container rebuild is needed.\n'
+          elif [[ "${MODE}" == "recovery" ]]; then
             tag="${RECOVERY_TAG}"
             version="${tag#v}"
             channel=stable
@@ -279,7 +348,6 @@ jobs:
       - name: Generate image version metadata
         id: metadata
         env:
-          MODE: ${{ needs.prepare.outputs.mode }}
           CHANNEL: ${{ needs.prepare.outputs.channel }}
           VERSION: ${{ needs.prepare.outputs.version }}
           SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
@@ -496,6 +564,7 @@ jobs:
       - name: Promote verified channel aliases
         id: promote
         env:
+          MODE: ${{ needs.prepare.outputs.mode }}
           CHANNEL: ${{ needs.prepare.outputs.channel }}
           VERSION: ${{ needs.prepare.outputs.version }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}

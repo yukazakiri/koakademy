@@ -75,6 +75,13 @@ it('builds production assets from the canonical npm lockfile on Node 22', functi
         ->not->toContain('bun install');
 });
 
+it('generates portable same-origin Wayfinder routes for production assets', function (): void {
+    $dockerfile = file_get_contents(base_path('docker/Dockerfile')) ?: '';
+
+    expect($dockerfile)
+        ->toContain('PORTAL_HOST= ADMIN_HOST= php artisan wayfinder:generate --no-interaction');
+});
+
 it('installs a checksummed Supercronic binary for AMD64 and ARM64', function (): void {
     $dockerfile = file_get_contents(base_path('docker/Dockerfile')) ?: '';
 

@@ -142,6 +142,41 @@ it('shares the cashier payment entry contract', function (): void {
         );
 });
 
+it('allows cashiers to search students for payment entry by name and school ID', function (): void {
+    $cashier = User::factory()->create([
+        'role' => UserRole::Cashier,
+    ]);
+    $student = Student::factory()->create([
+        'first_name' => 'Rizalina',
+        'last_name' => 'Mercado',
+        'student_id' => 208323,
+    ]);
+
+    grantFinancePermission($cashier);
+
+    $nameResponse = $this->actingAs($cashier)
+        ->getJson(portalUrlForAdministrators('/administrators/enrollments/api/students?search=Rizalina%20Mercado'));
+
+    $nameResponse
+        ->assertOk()
+        ->assertJsonFragment([
+            'id' => $student->id,
+            'student_id' => 208323,
+            'full_name' => $student->full_name,
+        ]);
+
+    $studentIdResponse = $this->actingAs($cashier)
+        ->getJson(portalUrlForAdministrators('/administrators/enrollments/api/students?search=208323'));
+
+    $studentIdResponse
+        ->assertOk()
+        ->assertJsonFragment([
+            'id' => $student->id,
+            'student_id' => 208323,
+            'full_name' => $student->full_name,
+        ]);
+});
+
 it('returns a complete student transaction ledger for cashiers', function (): void {
     $cashier = User::factory()->create([
         'role' => UserRole::Cashier,

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.0](https://github.com/yukazakiri/koakademy/compare/v1.15.1...v1.16.0) (2026-07-29)
+
+
+### Features
+
+* **enrollments:** add course filter and reliable assessment exports ([#122](https://github.com/yukazakiri/koakademy/issues/122)) ([2e6b63c](https://github.com/yukazakiri/koakademy/commit/2e6b63c1286e8ad385bfaf6ce3cf293cd5461173))
+
 ## [1.15.1](https://github.com/yukazakiri/koakademy/compare/v1.15.0...v1.15.1) (2026-07-29)
 
 

@@ -23,7 +23,9 @@ import {
 import { resolveBranding, type Branding } from "@/lib/branding";
 import { isFacultyPortalRole, isStudentPortalRole, normalizePortalRole } from "@/lib/portal-role";
 import { cn } from "@/lib/utils";
+import { inbox as facultyNotificationsInbox } from "@/routes/faculty/notifications";
 import { index as libraryIndex } from "@/routes/library";
+import { inbox as studentNotificationsInbox } from "@/routes/student/notifications";
 import { User } from "@/types/user";
 import { Link, router, usePage } from "@inertiajs/react";
 import {
@@ -353,6 +355,12 @@ export function PortalSidebar({ user, ...props }: React.ComponentProps<typeof Si
         return "/admin/notifications";
     };
 
+    const getNotificationsInboxUrl = (): string | undefined => {
+        if (isStudent) return studentNotificationsInbox.url();
+        if (isFaculty) return facultyNotificationsInbox.url();
+        return undefined;
+    };
+
     return (
         <Sidebar collapsible="offcanvas" {...props}>
             <SidebarHeader
@@ -376,7 +384,7 @@ export function PortalSidebar({ user, ...props }: React.ComponentProps<typeof Si
                         </SidebarMenuButton>
                     </SidebarMenuItem>
                 </SidebarMenu>
-                <NotificationsPopover baseUrl={getNotificationsUrl()} />
+                <NotificationsPopover baseUrl={getNotificationsUrl()} inboxUrl={getNotificationsInboxUrl()} />
             </SidebarHeader>
             <SidebarContent>
                 <NavMain items={mainRoutes} showQuickActions={false} />

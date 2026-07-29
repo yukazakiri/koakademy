@@ -6,9 +6,30 @@ namespace App\Services;
 
 use App\Models\User;
 use Illuminate\Notifications\DatabaseNotification;
+use Illuminate\Pagination\LengthAwarePaginator;
 
 final class NotificationShareService
 {
+    /**
+     * Paginate notifications for the dedicated inbox.
+     *
+     * @return LengthAwarePaginator<int, array<string, mixed>>
+     */
+    public function paginateNotifications(User $user, string $status = 'all', int $perPage = 20): LengthAwarePaginator
+    {
+        $notifications = $user->notifications()
+            ->when($status === 'unread', fn ($query) => $query->whereNull('read_at'))
+            ->when($status === 'read', fn ($query) => $query->whereNotNull('read_at'))
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->paginate($perPage)
+            ->withQueryString();
+
+        return $notifications->through(
+            fn (DatabaseNotification $notification): array => $this->transformNotification($notification)
+        );
+    }
+
     /**
      * Transform notifications for frontend consumption.
      *

@@ -12,35 +12,14 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import type { NotificationAction, PortalNotification } from "@/types/notification";
 import { router, usePage } from "@inertiajs/react";
-import { IconBell, IconBellOff, IconCheck, IconChecks, IconTrash } from "@tabler/icons-react";
+import { IconArrowRight, IconBell, IconBellOff, IconCheck, IconChecks, IconTrash } from "@tabler/icons-react";
 import { formatDistanceToNow } from "date-fns";
 import { useEffect, useState, type ComponentProps, type MouseEvent } from "react";
 
-export interface NotificationAction {
-    name: string;
-    label: string;
-    url: string | null;
-    color: string | null;
-    icon: string | null;
-    shouldOpenInNewTab: boolean;
-}
-
-export interface Notification {
-    id: string;
-    type: string;
-    title: string;
-    message: string;
-    icon: string;
-    notificationType: "info" | "success" | "warning" | "error";
-    actionUrl: string | null;
-    actions?: NotificationAction[];
-    readAt: string | null;
-    createdAt: string;
-}
-
 interface PageProps {
-    notifications: Notification[];
+    notifications: PortalNotification[];
     unreadNotificationsCount: number;
     auth?: {
         user?: {
@@ -57,9 +36,18 @@ interface NotificationsPopoverProps {
      * Use "/administrators/notifications" for admin portal.
      */
     baseUrl?: string;
+    inboxUrl?: string;
 }
 
-export function NotificationsPopover({ baseUrl = "/notifications" }: NotificationsPopoverProps) {
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null;
+}
+
+function nullableString(value: unknown): string | null {
+    return typeof value === "string" && value !== "" ? value : null;
+}
+
+export function NotificationsPopover({ baseUrl = "/notifications", inboxUrl }: NotificationsPopoverProps) {
     const { props } = usePage<PageProps>();
     const initialNotifications = props.notifications ?? [];
     const initialUnreadCount = props.unreadNotificationsCount ?? 0;
@@ -83,22 +71,21 @@ export function NotificationsPopover({ baseUrl = "/notifications" }: Notificatio
 
         const channel = window.Echo.private(`App.Models.User.${userId}`);
 
-        channel.notification((notification: any) => {
-            const data = notification?.data ?? notification ?? {};
+        channel.notification((payload: unknown) => {
+            const notification = isRecord(payload) ? payload : {};
+            const data = isRecord(notification.data) ? notification.data : notification;
             const actionsRaw = Array.isArray(data.actions) ? data.actions : [];
 
-            let actions: NotificationAction[] = actionsRaw
-                .filter((action: any) => action && typeof action === "object")
-                .map((action: any) => ({
-                    name: String(action.name ?? action.id ?? ""),
-                    label: String(action.label ?? action.name ?? "View"),
-                    url: action.url ?? null,
-                    color: action.color ?? null,
-                    icon: action.icon ?? null,
-                    shouldOpenInNewTab: Boolean(action.shouldOpenInNewTab ?? action.shouldOpenUrlInNewTab ?? action.openUrlInNewTab ?? false),
-                }));
+            let actions: NotificationAction[] = actionsRaw.filter(isRecord).map((action) => ({
+                name: String(action.name ?? action.id ?? ""),
+                label: String(action.label ?? action.name ?? "View"),
+                url: nullableString(action.url),
+                color: nullableString(action.color),
+                icon: nullableString(action.icon),
+                shouldOpenInNewTab: Boolean(action.shouldOpenInNewTab ?? action.shouldOpenUrlInNewTab ?? action.openUrlInNewTab ?? false),
+            }));
 
-            let actionUrl = data.action_url ?? data.actionUrl ?? data.download_url ?? null;
+            let actionUrl = nullableString(data.action_url ?? data.actionUrl ?? data.download_url);
 
             if (actions.length === 0 && actionUrl) {
                 actions = [
@@ -118,13 +105,13 @@ export function NotificationsPopover({ baseUrl = "/notifications" }: Notificatio
             }
 
             // Add new notification to the top of the list
-            const newNotification: Notification = {
+            const newNotification: PortalNotification = {
                 id: String(notification.id ?? data.id),
                 type: String(notification.type ?? "DatabaseNotification"),
                 title: String(data.title ?? "Notification"),
                 message: String(data.message ?? data.body ?? ""),
                 icon: String(data.icon ?? "bell"),
-                notificationType: (String(data.type ?? data.status ?? "info") as Notification["notificationType"]) || "info",
+                notificationType: (String(data.type ?? data.status ?? "info") as PortalNotification["notificationType"]) || "info",
                 actionUrl,
                 actions,
                 readAt: null,
@@ -375,6 +362,15 @@ export function NotificationsPopover({ baseUrl = "/notifications" }: Notificatio
                             </DropdownMenuItem>
                         ))}
                     </div>
+                )}
+                {inboxUrl && (
+                    <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="m-1 justify-between px-3 py-2 font-medium" onClick={() => router.visit(inboxUrl)}>
+                            <span>View all notifications</span>
+                            <IconArrowRight className="size-4" />
+                        </DropdownMenuItem>
+                    </>
                 )}
             </DropdownMenuContent>
         </DropdownMenu>

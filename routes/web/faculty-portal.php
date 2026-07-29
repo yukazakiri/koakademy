@@ -448,6 +448,7 @@ Route::middleware(['auth', 'faculty.verified', 'faculty.only', 'ensure.feature']
         Route::get('/announcements', [PortalAnnouncementController::class, 'index'])->name('announcements.index');
 
         // Notifications
+        Route::get('/notifications/inbox', [App\Http\Controllers\NotificationController::class, 'inbox'])->name('notifications.inbox');
         Route::post('/notifications/{id}/read', [App\Http\Controllers\NotificationController::class, 'markAsRead'])->name('notifications.read');
         Route::post('/notifications/mark-all-read', [App\Http\Controllers\NotificationController::class, 'markAllAsRead'])->name('notifications.read-all');
         Route::delete('/notifications/{id}', [App\Http\Controllers\NotificationController::class, 'destroy'])->name('notifications.destroy');

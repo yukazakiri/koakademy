@@ -401,6 +401,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::delete('/help-tickets/{helpTicket}', [App\Http\Controllers\AdministratorHelpTicketController::class, 'destroy'])->name('help-tickets.destroy');
 
         // Notifications
+        Route::get('/notifications/inbox', [App\Http\Controllers\NotificationController::class, 'inbox'])->name('notifications.inbox');
         Route::post('/notifications/{id}/read', [App\Http\Controllers\NotificationController::class, 'markAsRead'])->name('notifications.read');
         Route::post('/notifications/mark-all-read', [App\Http\Controllers\NotificationController::class, 'markAllAsRead'])->name('notifications.read-all');
         Route::delete('/notifications/{id}', [App\Http\Controllers\NotificationController::class, 'destroy'])->name('notifications.destroy');

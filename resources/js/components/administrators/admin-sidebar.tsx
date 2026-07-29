@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getRoutesForRoleWithModules, ROUTE_SECTIONS, type AdminRoute, type ModuleAdminRoute, type RouteSection } from "@/config/admin-routes";
 import { resolveBranding, type Branding } from "@/lib/branding";
+import { inbox as administratorNotificationsInbox } from "@/routes/administrators/notifications";
 import type { User } from "@/types/user";
 import { USER_ROLE_LABELS, UserRole } from "@/types/user-role";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -561,7 +562,10 @@ export function AdministratorSidebar({ user }: { user: User }) {
                     <SidebarFooter className="[&_[data-sidebar=menu-button]_.grid]:hidden [&_[data-sidebar=menu-button]_.ml-auto]:hidden">
                         <SidebarMenu>
                             <SidebarMenuItem>
-                                <NotificationsPopover baseUrl="/administrators/notifications" />
+                                <NotificationsPopover
+                                    baseUrl="/administrators/notifications"
+                                    inboxUrl={administratorNotificationsInbox.url()}
+                                />
                             </SidebarMenuItem>
                         </SidebarMenu>
                         <NavUser user={navUserData} />

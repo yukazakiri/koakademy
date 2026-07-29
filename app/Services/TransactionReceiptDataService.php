@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\FinancialDocumentType;
+use App\Models\FinancialDocumentIssuance;
+use App\Models\StudentTransaction;
 use App\Models\Transaction;
 
 final readonly class TransactionReceiptDataService
@@ -13,12 +16,17 @@ final readonly class TransactionReceiptDataService
     /**
      * @return array<string, mixed>
      */
-    public function build(Transaction $transaction): array
+    public function build(Transaction $transaction, ?StudentTransaction $studentTransaction = null): array
     {
         $transaction->loadMissing(['student.Course', 'studentTransactions', 'user']);
-        $student = $transaction->student->first();
-        $studentTransaction = $transaction->studentTransactions->first();
+        $studentTransaction ??= $transaction->studentTransactions->first();
+        $studentTransaction?->loadMissing('student.Course');
+        $student = $studentTransaction?->student ?? $transaction->student->first();
         $settings = $this->settingsService->getGlobalSettingsModel();
+        $issuance = FinancialDocumentIssuance::query()
+            ->where('type', FinancialDocumentType::Receipt->value)
+            ->where('transaction_id', $transaction->id)
+            ->first();
         $items = collect($transaction->settlements ?? [])
             ->map(fn (mixed $amount): float => (float) $amount)
             ->filter(fn (float $amount): bool => $amount > 0)
@@ -50,12 +58,19 @@ final readonly class TransactionReceiptDataService
                 'support_phone' => $settings?->support_phone,
             ],
             'email_delivery' => [
-                'status' => $transaction->receipt_email_status,
-                'recipient' => $transaction->receipt_email_recipient,
-                'sent_at' => $transaction->receipt_emailed_at?->format('M d, Y h:i A'),
-                'failed_at' => $transaction->receipt_email_failed_at?->format('M d, Y h:i A'),
-                'error' => $transaction->receipt_email_error,
+                'status' => $issuance?->status->value ?? $transaction->receipt_email_status,
+                'recipient' => $issuance?->recipient ?? $transaction->receipt_email_recipient,
+                'sent_at' => $issuance?->sent_at?->format('M d, Y h:i A') ?? $transaction->receipt_emailed_at?->format('M d, Y h:i A'),
+                'failed_at' => $issuance?->failed_at?->format('M d, Y h:i A') ?? $transaction->receipt_email_failed_at?->format('M d, Y h:i A'),
+                'error' => $issuance?->failure_message ?? $transaction->receipt_email_error,
             ],
+            'official_document' => $issuance ? [
+                'number' => $issuance->document_number,
+                'verification_url' => route('finance-documents.verify', ['token' => $issuance->verification_token]),
+                'download_url' => $issuance->pdf_path
+                    ? route('administrators.finance.documents.download', $issuance, false)
+                    : null,
+            ] : null,
         ];
     }
 }

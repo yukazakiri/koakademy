@@ -171,6 +171,18 @@ final class StudentEnrollment extends Model
         return $this->hasMany(AdditionalFee::class, 'enrollment_id');
     }
 
+    public function financialDocuments(): HasMany
+    {
+        return $this->hasMany(FinancialDocumentIssuance::class, 'enrollment_id');
+    }
+
+    public function latestInvoice(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(FinancialDocumentIssuance::class, 'enrollment_id')
+            ->where('type', \App\Enums\FinancialDocumentType::Invoice->value)
+            ->latestOfMany('issued_at');
+    }
+
     /** @return BelongsTo<EnrollmentPolicySnapshot, $this> */
     public function policySnapshot(): BelongsTo
     {

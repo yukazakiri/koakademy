@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { payments } from "@/routes/administrators/finance";
 import { create, resendReceipt } from "@/routes/administrators/finance/payments";
 import { Head, Link, useForm } from "@inertiajs/react";
-import { ArrowLeft, CheckCircle2, Loader2, Mail, Printer, ReceiptText, RotateCw } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Download, Loader2, Mail, Printer, ReceiptText, RotateCw } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -18,7 +18,7 @@ interface ReceiptInstitution {
 }
 
 interface EmailDelivery {
-    status: "pending" | "sent" | "failed" | "skipped" | null;
+    status: "awaiting_reference" | "ready" | "queued" | "pending" | "sent" | "failed" | "skipped" | null;
     recipient: string | null;
     sent_at: string | null;
     failed_at: string | null;
@@ -46,6 +46,11 @@ interface TransactionDetails {
     currency: string;
     institution: ReceiptInstitution;
     email_delivery: EmailDelivery;
+    official_document: {
+        number: string;
+        verification_url: string;
+        download_url: string | null;
+    } | null;
 }
 
 interface ReceiptProps {
@@ -68,7 +73,7 @@ function formatSettlementLabel(key: string): string {
 function deliveryVariant(status: EmailDelivery["status"]): "default" | "secondary" | "destructive" | "outline" {
     if (status === "sent") return "default";
     if (status === "failed") return "destructive";
-    if (status === "pending") return "secondary";
+    if (status === "pending" || status === "queued" || status === "awaiting_reference") return "secondary";
     return "outline";
 }
 
@@ -76,6 +81,7 @@ export default function ReceiptPage({ transaction }: ReceiptProps) {
     const [resendOpen, setResendOpen] = useState(false);
     const { data, setData, post, processing, errors, clearErrors } = useForm({
         recipient: transaction.email_delivery.recipient || transaction.student_email || "",
+        reference_number: transaction.reference_number || "",
     });
 
     const submitResend = (event: React.FormEvent<HTMLFormElement>) => {
@@ -84,7 +90,7 @@ export default function ReceiptPage({ transaction }: ReceiptProps) {
             preserveScroll: true,
             onSuccess: () => {
                 setResendOpen(false);
-                toast.success("Receipt email queued for delivery.");
+                toast.success("Official eReceipt queued for delivery.");
             },
             onError: () => toast.error("Check the email address and try again."),
         });
@@ -161,22 +167,36 @@ export default function ReceiptPage({ transaction }: ReceiptProps) {
                             <DialogTrigger asChild>
                                 <Button
                                     variant="outline"
-                                    disabled={transaction.email_delivery.status === "pending"}
+                                    disabled={transaction.email_delivery.status === "pending" || transaction.email_delivery.status === "queued"}
                                     className="min-h-10 active:scale-[0.96]"
                                 >
                                     <RotateCw data-icon="inline-start" />
-                                    Resend receipt
+                                    {transaction.email_delivery.status === "awaiting_reference" ? "Add O.R. & send" : "Send eReceipt"}
                                 </Button>
                             </DialogTrigger>
                             <DialogContent>
                                 <form onSubmit={submitResend}>
                                     <DialogHeader>
-                                        <DialogTitle>Email this receipt</DialogTitle>
+                                        <DialogTitle>Email this official eReceipt</DialogTitle>
                                         <DialogDescription>
                                             The address is used for this delivery only and will not change the student record.
                                         </DialogDescription>
                                     </DialogHeader>
                                     <div className="space-y-2 py-5">
+                                        {!transaction.reference_number ? (
+                                            <div className="space-y-2">
+                                                <Label htmlFor="receipt-reference">Paper Official Receipt number</Label>
+                                                <Input
+                                                    id="receipt-reference"
+                                                    value={data.reference_number}
+                                                    onChange={(event) => setData("reference_number", event.target.value)}
+                                                    aria-invalid={Boolean(errors.reference_number)}
+                                                    placeholder="OR-2026-0001"
+                                                    autoFocus
+                                                />
+                                                {errors.reference_number && <p className="text-destructive text-sm">{errors.reference_number}</p>}
+                                            </div>
+                                        ) : null}
                                         <Label htmlFor="receipt-recipient">Recipient email</Label>
                                         <Input
                                             id="receipt-recipient"
@@ -185,7 +205,7 @@ export default function ReceiptPage({ transaction }: ReceiptProps) {
                                             onChange={(event) => setData("recipient", event.target.value)}
                                             aria-invalid={Boolean(errors.recipient)}
                                             placeholder="student@example.com"
-                                            autoFocus
+                                            autoFocus={Boolean(transaction.reference_number)}
                                         />
                                         {errors.recipient && <p className="text-destructive text-sm">{errors.recipient}</p>}
                                     </div>
@@ -202,7 +222,7 @@ export default function ReceiptPage({ transaction }: ReceiptProps) {
                                             ) : (
                                                 <>
                                                     <Mail className="size-4" />
-                                                    Send receipt
+                                                    Send eReceipt
                                                 </>
                                             )}
                                         </Button>
@@ -210,6 +230,14 @@ export default function ReceiptPage({ transaction }: ReceiptProps) {
                                 </form>
                             </DialogContent>
                         </Dialog>
+                        {transaction.official_document?.download_url ? (
+                            <Button asChild variant="outline" className="min-h-10 active:scale-[0.96]">
+                                <a href={transaction.official_document.download_url}>
+                                    <Download data-icon="inline-start" />
+                                    Download PDF
+                                </a>
+                            </Button>
+                        ) : null}
                         <Button variant="outline" onClick={() => window.print()} className="min-h-10 active:scale-[0.96]">
                             <Printer data-icon="inline-start" />
                             Print
@@ -238,11 +266,13 @@ export default function ReceiptPage({ transaction }: ReceiptProps) {
                             <p className="text-muted-foreground mt-1 text-sm">
                                 {transaction.email_delivery.status === "sent"
                                     ? `Sent to ${transaction.email_delivery.recipient} on ${transaction.email_delivery.sent_at}.`
-                                    : transaction.email_delivery.status === "pending"
+                                    : transaction.email_delivery.status === "pending" || transaction.email_delivery.status === "queued"
                                       ? `Queued for ${transaction.email_delivery.recipient}.`
-                                      : transaction.email_delivery.status === "failed"
-                                        ? transaction.email_delivery.error
-                                        : "No student email was available when the payment was recorded."}
+                                      : transaction.email_delivery.status === "awaiting_reference"
+                                        ? "Waiting for the paper Official Receipt number before email delivery."
+                                        : transaction.email_delivery.status === "failed"
+                                          ? transaction.email_delivery.error
+                                          : "No student email was available when the payment was recorded."}
                             </p>
                         </div>
                     </div>
@@ -262,8 +292,10 @@ export default function ReceiptPage({ transaction }: ReceiptProps) {
                                 )}
                             </div>
                             <div className="text-right">
-                                <h1 className="text-2xl font-bold tracking-[0.12em]">OFFICIAL RECEIPT</h1>
-                                <p className="mt-2 font-mono text-sm text-slate-500">No. {transaction.transaction_number}</p>
+                                <h1 className="text-2xl font-bold tracking-[0.12em]">OFFICIAL eRECEIPT</h1>
+                                <p className="mt-2 font-mono text-sm text-slate-500">
+                                    {transaction.official_document?.number || `TX-${transaction.transaction_number}`}
+                                </p>
                             </div>
                         </div>
                     </header>
@@ -280,7 +312,7 @@ export default function ReceiptPage({ transaction }: ReceiptProps) {
                             <p className="text-xs text-slate-500">{transaction.time}</p>
                         </div>
                         <div>
-                            <p className="text-[10px] font-bold tracking-widest text-slate-500 uppercase">Reference</p>
+                            <p className="text-[10px] font-bold tracking-widest text-slate-500 uppercase">Paper O.R. reference</p>
                             <p className="mt-1 font-semibold">{transaction.reference_number || "—"}</p>
                             <p className="text-xs text-slate-500">{transaction.method}</p>
                         </div>
@@ -333,7 +365,8 @@ export default function ReceiptPage({ transaction }: ReceiptProps) {
 
                     <footer className="mt-auto flex items-end justify-between gap-6 border-t border-slate-200 px-8 py-6 text-[10px] text-slate-500 sm:px-12">
                         <div>
-                            <p>This is a system-generated official receipt.</p>
+                            <p>This is an institution-issued official electronic receipt.</p>
+                            {transaction.official_document && <p>{transaction.official_document.verification_url}</p>}
                             {transaction.institution.support_email && <p>{transaction.institution.support_email}</p>}
                         </div>
                         <p>Transaction ID {transaction.id}</p>

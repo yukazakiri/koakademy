@@ -11,6 +11,7 @@ export type SystemManagementSectionKey =
     | "mail"
     | "api"
     | "notifications"
+    | "finance_documents"
     | "grading"
     | "identifiers"
     | "pulse";
@@ -131,6 +132,13 @@ export interface MailConfig {
     encryption: string;
     password_configured: boolean;
     api_key_configured: boolean;
+}
+
+export interface FinanceDocumentSettings {
+    automatic_receipts_enabled: boolean;
+    require_paper_or_reference: boolean;
+    manual_invoices_enabled: boolean;
+    mail_delivery_available: boolean;
 }
 
 export type EnrollmentPipelineActionType = "standard" | "department_verification" | "cashier_verification";
@@ -353,6 +361,7 @@ export interface SystemManagementPageProps {
     public_api_fields: Record<string, PublicApiFieldDefinition>;
     available_roles: string[];
     notification_channels: NotificationChannelConfig;
+    finance_document_settings: FinanceDocumentSettings;
     third_party_services: ThirdPartyServicesConfig;
     access: SystemManagementAccess;
     system_semester?: number | null;

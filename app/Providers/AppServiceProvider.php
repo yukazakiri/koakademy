@@ -42,7 +42,9 @@ use App\Features\Toggles\StudentTuition;
 use App\Filament\Handlers\ExportFailureHandler;
 use App\Filament\Plugins\Widgets\PennantFeatureAdoptionWidget;
 use App\Models\Passkey;
+use App\Models\StudentTransaction;
 use App\Models\User;
+use App\Observers\StudentTransactionObserver;
 use App\Services\ChangelogService;
 use App\Services\GeneralSettingsService;
 use App\Services\VersionService;
@@ -76,6 +78,7 @@ final class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Model::unguard();
+        StudentTransaction::observe(StudentTransactionObserver::class);
 
         Passkeys::useUserModel(User::class);
         Passkeys::usePasskeyModel(Passkey::class);

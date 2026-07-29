@@ -191,10 +191,13 @@ Route::middleware(['auth', 'administrators.only'])
         // Finance and Billing
         Route::get('/finance', [AdministratorFinanceController::class, 'index'])->name('finance.index');
         Route::get('/finance/invoices', [AdministratorFinanceController::class, 'invoices'])->name('finance.invoices');
+        Route::post('/finance/invoices/{enrollment}/send', [AdministratorFinanceController::class, 'sendInvoice'])->whereNumber('enrollment')->middleware('throttle:6,1')->name('finance.invoices.send');
         Route::get('/finance/payments', [AdministratorFinanceController::class, 'payments'])->name('finance.payments');
         Route::get('/finance/payments/create', [AdministratorFinanceController::class, 'create'])->name('finance.payments.create');
         Route::post('/finance/payments', [AdministratorFinanceController::class, 'store'])->name('finance.payments.store');
         Route::post('/finance/payments/{transaction}/resend-receipt', [AdministratorFinanceController::class, 'resendReceipt'])->whereNumber('transaction')->middleware('throttle:6,1')->name('finance.payments.resend-receipt');
+        Route::get('/finance/documents/{issuance}/download', [AdministratorFinanceController::class, 'downloadFinancialDocument'])->name('finance.documents.download');
+        Route::post('/finance/documents/{issuance}/resend', [AdministratorFinanceController::class, 'resendFinancialDocument'])->middleware('throttle:6,1')->name('finance.documents.resend');
         Route::get('/finance/payments/{transaction}', [AdministratorFinanceController::class, 'show'])->name('finance.payments.show');
         Route::get('/finance/api/student-details', [AdministratorFinanceController::class, 'getStudentDetails'])->name('finance.api.student-details');
         Route::get('/finance/api/students/{student}/transactions', [AdministratorFinanceController::class, 'studentTransactions'])->whereNumber('student')->name('finance.api.student-transactions');
@@ -389,6 +392,8 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/system-management/mail/test', [App\Http\Controllers\AdministratorSystemManagementController::class, 'sendTestEmail'])->name('system-management.mail.test');
         Route::get('/system-management/notifications', [App\Http\Controllers\AdministratorSystemManagementController::class, 'notifications'])->name('system-management.notifications.index');
         Route::put('/system-management/notifications', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateNotificationChannels'])->name('system-management.notifications.update');
+        Route::get('/system-management/finance-documents', [App\Http\Controllers\AdministratorSystemManagementController::class, 'financeDocuments'])->name('system-management.finance_documents.index');
+        Route::put('/system-management/finance-documents', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateFinanceDocuments'])->name('system-management.finance_documents.update');
         Route::get('/system-management/grading', [App\Http\Controllers\AdministratorSystemManagementController::class, 'grading'])->name('system-management.grading.index');
         Route::put('/system-management/grading', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateGrading'])->name('system-management.grading.update');
         Route::put('/system-management/identifiers', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateIdentifiers'])->name('system-management.identifiers.update');

@@ -604,6 +604,7 @@ final class StudentEnrollmentInfolist
                                             $totalAmount = array_sum(array_values($data['settlements']));
                                             StudentTransaction::query()->create([
                                                 'student_id' => $student->id,
+                                                'student_enrollment_id' => $enrollment->id,
                                                 'transaction_id' => $transaction->id,
                                                 'amount' => $totalAmount,
                                                 'status' => $data['status'],

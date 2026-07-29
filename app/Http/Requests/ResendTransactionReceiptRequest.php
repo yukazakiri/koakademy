@@ -26,6 +26,7 @@ final class ResendTransactionReceiptRequest extends FormRequest
     {
         return [
             'recipient' => ['required', 'email:rfc', 'max:255'],
+            'reference_number' => ['nullable', 'string', 'max:255'],
         ];
     }
 }

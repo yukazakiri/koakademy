@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Controllers\AppManifestController;
 use App\Http\Controllers\ClassesController;
 use App\Http\Controllers\DigitalIdCardController;
+use App\Http\Controllers\FinancialDocumentVerificationController;
 use App\Http\Controllers\StatementOfAccountVerificationController;
 use App\Models\Faculty;
 use Carbon\Carbon;
@@ -31,6 +32,10 @@ Route::post('/passkeys/login', [App\Http\Controllers\PasskeyAuthController::clas
 |--------------------------------------------------------------------------
 */
 Route::domain(config('app.portal_host'))->group(function () {
+    Route::get('/verify/finance/{token}', FinancialDocumentVerificationController::class)
+        ->middleware('throttle:30,1')
+        ->name('finance-documents.verify');
+
     Route::get('/verify/soa/{token}', StatementOfAccountVerificationController::class)
         ->middleware('throttle:30,1')
         ->name('soa.verify');

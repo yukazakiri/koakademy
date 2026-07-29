@@ -15,6 +15,7 @@ use App\Features\DynamicEnrollmentPolicies;
 use App\Http\Requests\Administrators\StoreSchoolRequest;
 use App\Http\Requests\Administrators\UpdateApiManagementRequest;
 use App\Http\Requests\Administrators\UpdateEnrollmentPipelineRequest;
+use App\Http\Requests\Administrators\UpdateFinanceDocumentSettingsRequest;
 use App\Http\Requests\Administrators\UpdateSchoolLevelRequest;
 use App\Http\Requests\Administrators\UpdateSchoolRequest;
 use App\Http\Requests\Administrators\UpdateSchoolStatusRequest;
@@ -26,6 +27,7 @@ use App\Models\School;
 use App\Models\User;
 use App\Services\AnalyticsSettingsService;
 use App\Services\EnrollmentPipelineService;
+use App\Services\FinanceDocumentSettingsService;
 use App\Services\GeneralSettingsService;
 use App\Services\GradingSystemService;
 use App\Services\IdentifierGenerator;
@@ -269,6 +271,28 @@ final class AdministratorSystemManagementController extends Controller
     public function notifications(): Response
     {
         return $this->renderSystemManagementPage('administrators/system-management/notifications', 'notifications', 'viewNotifications');
+    }
+
+    public function financeDocuments(): Response
+    {
+        return $this->renderSystemManagementPage(
+            'administrators/system-management/finance-documents',
+            'finance_documents',
+            'viewFinanceDocuments',
+        );
+    }
+
+    public function updateFinanceDocuments(
+        UpdateFinanceDocumentSettingsRequest $request,
+        FinanceDocumentSettingsService $settings,
+    ): RedirectResponse {
+        $settings->update($request->safe()->only([
+            'automatic_receipts_enabled',
+            'require_paper_or_reference',
+            'manual_invoices_enabled',
+        ]));
+
+        return Redirect::back()->with('success', 'Finance document settings updated successfully.');
     }
 
     public function api(): Response
@@ -1097,6 +1121,7 @@ final class AdministratorSystemManagementController extends Controller
                     'sender_id' => '',
                 ],
             ],
+            'finance_document_settings' => app(FinanceDocumentSettingsService::class)->get(),
             'third_party_services' => $settings->more_configs['third_party_services'] ?? $thirdPartyServices,
             'branding' => [
                 'app_name' => $this->siteSettings->app_name,
@@ -1138,6 +1163,7 @@ final class AdministratorSystemManagementController extends Controller
                 'mail' => 'updateMail',
                 'api' => 'updateApi',
                 'notifications' => 'updateNotifications',
+                'finance_documents' => 'updateFinanceDocuments',
                 'grading' => 'updateGrading',
                 'identifiers' => 'updateIdentifiers',
                 default => 'viewAny',
@@ -1153,6 +1179,7 @@ final class AdministratorSystemManagementController extends Controller
                 'mail' => 'viewMail',
                 'api' => 'viewApi',
                 'notifications' => 'viewNotifications',
+                'finance_documents' => 'viewFinanceDocuments',
                 'grading' => 'viewGrading',
                 'identifiers' => 'viewIdentifiers',
                 'pulse' => 'viewPulse',

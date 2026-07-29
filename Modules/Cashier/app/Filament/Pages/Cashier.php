@@ -6,7 +6,6 @@ namespace Modules\Cashier\Filament\Pages;
 
 use App\Models\GeneralSetting;
 use App\Models\Transaction;
-use App\Notifications\InvoiceTransact;
 use BackedEnum;
 use BezhanSalleh\FilamentShield\Traits\HasPageShield;
 // use Filament\Pages\Actions\Action;
@@ -31,7 +30,6 @@ use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Notification as NotificationFacade;
 use Illuminate\Support\HtmlString;
 use UnitEnum;
 
@@ -951,6 +949,7 @@ final class Cashier extends Page implements HasForms
         // $transactionType = $this->data['transaction_type'];
         $settlements = $this->data['settlements'];
         $invoicenumber = $this->data['invoicenumber'];
+        $studentEnrollmentId = null;
         if (
             isset($settlements['tuition_fee']) &&
             $settlements['tuition_fee'] > 0
@@ -959,6 +958,7 @@ final class Cashier extends Page implements HasForms
                 ->where('school_year', $schoolYear)
                 ->where('semester', $semester)
                 ->first();
+            $studentEnrollmentId = $studentTuition?->enrollment_id;
             $studentTuition->total_balance -= $settlements['tuition_fee'];
             $studentTuition->status = 'Paid';
             $studentTuition->save();
@@ -975,7 +975,9 @@ final class Cashier extends Page implements HasForms
                     : $this->data['signature'],
         ]);
         $student->studentTransactions()->create([
+            'student_enrollment_id' => $studentEnrollmentId,
             'transaction_id' => $transaction->id,
+            'amount' => array_sum(array_map('floatval', array_values($settlements))),
             'status' => 'Paid',
         ]);
 
@@ -992,9 +994,6 @@ final class Cashier extends Page implements HasForms
             ->sendToDatabase(Auth::user())
             ->send();
 
-        // NotificationFacade::route("mail", $student->email)->notify(
-        //     new InvoiceTransact($transaction, $student)
-        // );
     }
 
     public function saveStudentTuition(): void

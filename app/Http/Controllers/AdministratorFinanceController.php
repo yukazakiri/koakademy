@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\ResendFinancialDocumentRequest;
 use App\Http\Requests\ResendTransactionReceiptRequest;
-use App\Jobs\SendTransactionReceiptJob;
+use App\Http\Requests\SendEnrollmentInvoiceRequest;
+use App\Models\FinancialDocumentIssuance;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\StudentTransaction;
@@ -13,6 +15,8 @@ use App\Models\StudentTuition;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Services\EnrollmentBillingService;
+use App\Services\FinanceDocumentSettingsService;
+use App\Services\FinancialDocumentService;
 use App\Services\GeneralSettingsService;
 use App\Services\TransactionReceiptDataService;
 use Carbon\Carbon;
@@ -22,12 +26,11 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 use Modules\Inventory\Models\InventoryProduct;
-use Throwable;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class AdministratorFinanceController extends Controller
 {
@@ -449,9 +452,6 @@ final class AdministratorFinanceController extends Controller
                 // But looking at the example {"tuition_fee":"2500"}, they are strings.
                 $settlements = array_map(fn (int|float $val): string => (string) $val, $settlements);
 
-                $receiptRecipient = $student->email ?: null;
-                $receiptDeliveryId = $receiptRecipient !== null ? (string) Str::uuid() : null;
-
                 $transaction = Transaction::create([
                     'description' => $validated['remarks'] ?? 'Payment for '.implode(', ', array_map(fn (array $i) => $i['name'], $validated['items'])),
                     'payment_method' => $validated['payment_method'],
@@ -460,9 +460,7 @@ final class AdministratorFinanceController extends Controller
                     'settlements' => $settlements,
                     'invoicenumber' => $validated['reference_number'] ?? null,
                     'user_id' => Auth::id(),
-                    'receipt_email_status' => $receiptRecipient !== null ? 'pending' : 'skipped',
-                    'receipt_email_delivery_id' => $receiptDeliveryId,
-                    'receipt_email_recipient' => $receiptRecipient,
+                    'receipt_email_recipient' => $student->email ?: null,
                 ]);
 
                 // 2. Link to Student
@@ -507,23 +505,6 @@ final class AdministratorFinanceController extends Controller
             });
 
             if ($transaction) {
-                if ($receiptRecipient !== null && $receiptDeliveryId !== null) {
-                    try {
-                        SendTransactionReceiptJob::dispatch($transaction->id, $receiptRecipient, $receiptDeliveryId)->afterCommit();
-                    } catch (Throwable $throwable) {
-                        Log::error('Unable to queue transaction receipt email.', [
-                            'transaction_id' => $transaction->id,
-                            'delivery_id' => $receiptDeliveryId,
-                            'exception' => $throwable,
-                        ]);
-                        $transaction->update([
-                            'receipt_email_status' => 'failed',
-                            'receipt_email_failed_at' => now(),
-                            'receipt_email_error' => 'The receipt email could not be queued. Please resend it from the receipt page.',
-                        ]);
-                    }
-                }
-
                 return redirect()->route('administrators.finance.payments.show', $transaction->id)->with('flash', [
                     'success' => 'Payment recorded successfully.',
                 ]);
@@ -559,58 +540,92 @@ final class AdministratorFinanceController extends Controller
         ]);
     }
 
-    public function resendReceipt(ResendTransactionReceiptRequest $request, Transaction $transaction): RedirectResponse
-    {
+    public function resendReceipt(
+        ResendTransactionReceiptRequest $request,
+        Transaction $transaction,
+        FinancialDocumentService $documents,
+    ): RedirectResponse {
         $this->authorizeFinanceAccess();
 
         $recipient = (string) $request->validated('recipient');
-        $deliveryId = (string) Str::uuid();
-        $updated = Transaction::query()
-            ->whereKey($transaction->id)
-            ->where(function ($query): void {
-                $query->whereNull('receipt_email_status')
-                    ->orWhere('receipt_email_status', '!=', 'pending');
-            })
-            ->update([
-                'receipt_email_status' => 'pending',
-                'receipt_email_delivery_id' => $deliveryId,
-                'receipt_email_recipient' => $recipient,
-                'receipt_emailed_at' => null,
-                'receipt_email_failed_at' => null,
-                'receipt_email_error' => null,
-            ]);
+        $issuance = FinancialDocumentIssuance::query()
+            ->where('type', \App\Enums\FinancialDocumentType::Receipt->value)
+            ->where('transaction_id', $transaction->id)
+            ->first();
 
-        if ($updated === 0) {
-            return back()->with('flash', [
-                'error' => 'A receipt email is already pending for this transaction.',
-            ]);
+        if (! $issuance) {
+            $studentTransaction = $transaction->studentTransactions()->oldest('id')->firstOrFail();
+            $issuance = $documents->issueReceipt($studentTransaction, autoDeliver: false);
         }
 
-        try {
-            SendTransactionReceiptJob::dispatch($transaction->id, $recipient, $deliveryId)->afterCommit();
-        } catch (Throwable $throwable) {
-            Log::error('Unable to queue a resent transaction receipt.', [
-                'transaction_id' => $transaction->id,
-                'delivery_id' => $deliveryId,
-                'exception' => $throwable,
-            ]);
-            Transaction::query()
-                ->whereKey($transaction->id)
-                ->where('receipt_email_delivery_id', $deliveryId)
-                ->update([
-                    'receipt_email_status' => 'failed',
-                    'receipt_email_failed_at' => now(),
-                    'receipt_email_error' => 'The receipt email could not be queued. Please try again.',
-                ]);
-
-            return back()->with('flash', [
-                'error' => 'The receipt email could not be queued. Please try again.',
-            ]);
-        }
+        abort_unless($issuance instanceof FinancialDocumentIssuance, 422);
+        $documents->queueDelivery(
+            $issuance,
+            $recipient,
+            $request->validated('reference_number'),
+        );
 
         return back()->with('flash', [
-            'success' => 'Receipt email queued for delivery.',
+            'success' => 'Official eReceipt queued for delivery.',
         ]);
+    }
+
+    public function sendInvoice(
+        SendEnrollmentInvoiceRequest $request,
+        StudentEnrollment $enrollment,
+        FinancialDocumentService $documents,
+    ): RedirectResponse {
+        $this->authorizeFinanceAccess();
+        $user = Auth::user();
+        abort_unless($user instanceof User, 403);
+
+        $issuance = $documents->issueInvoice(
+            $enrollment,
+            $user,
+            (string) $request->validated('recipient'),
+        );
+
+        return back()->with('flash', [
+            'success' => "Official eInvoice {$issuance->document_number} queued for delivery.",
+        ]);
+    }
+
+    public function resendFinancialDocument(
+        ResendFinancialDocumentRequest $request,
+        FinancialDocumentIssuance $issuance,
+        FinancialDocumentService $documents,
+    ): RedirectResponse {
+        $this->authorizeFinanceAccess();
+        $documents->queueDelivery($issuance, (string) $request->validated('recipient'));
+
+        return back()->with('flash', [
+            'success' => "{$issuance->type->label()} queued for redelivery.",
+        ]);
+    }
+
+    public function downloadFinancialDocument(FinancialDocumentIssuance $issuance): StreamedResponse
+    {
+        $this->authorizeFinanceAccess();
+
+        abort_unless(
+            $issuance->disk !== null
+                && $issuance->pdf_path !== null
+                && Storage::disk($issuance->disk)->exists($issuance->pdf_path),
+            404,
+        );
+        $pdfBytes = Storage::disk($issuance->disk)->get($issuance->pdf_path);
+        abort_unless(
+            $issuance->pdf_checksum !== null
+                && hash_equals($issuance->pdf_checksum, hash('sha256', $pdfBytes)),
+            409,
+            'The stored document failed its integrity check.',
+        );
+
+        return Storage::disk($issuance->disk)->download(
+            $issuance->pdf_path,
+            $issuance->attachmentFilename(),
+            ['Content-Type' => 'application/pdf'],
+        );
     }
 
     public function getStudentDetails(Request $request): \Illuminate\Http\JsonResponse
@@ -691,8 +706,10 @@ final class AdministratorFinanceController extends Controller
         ]);
     }
 
-    public function invoices(Request $request): Response|RedirectResponse
-    {
+    public function invoices(
+        Request $request,
+        FinanceDocumentSettingsService $documentSettings,
+    ): Response|RedirectResponse {
         $this->authorizeFinanceAccess();
 
         $user = Auth::user();
@@ -705,7 +722,7 @@ final class AdministratorFinanceController extends Controller
         $status = (string) $request->query('status', 'all');
 
         $invoiceQuery = StudentEnrollment::query()
-            ->with(['student.Course', 'studentTuition'])
+            ->with(['student.Course', 'studentTuition', 'latestInvoice'])
             ->when($search !== '', function ($query) use ($search): void {
                 $query->where(function ($searchQuery) use ($search): void {
                     $searchQuery->whereHas('student', function ($studentQuery) use ($search): void {
@@ -766,6 +783,17 @@ final class AdministratorFinanceController extends Controller
                 'status' => $enrollment->studentTuition && $enrollment->studentTuition->total_balance <= 0 ? 'Paid' : 'Unpaid',
                 'date' => $enrollment->created_at->format('M d, Y'),
                 'payment_progress' => $enrollment->studentTuition?->payment_progress ?? 0,
+                'student_email' => $enrollment->student?->email,
+                'latest_invoice' => $enrollment->latestInvoice ? [
+                    'uuid' => $enrollment->latestInvoice->uuid,
+                    'number' => $enrollment->latestInvoice->document_number,
+                    'status' => $enrollment->latestInvoice->status->value,
+                    'recipient' => $enrollment->latestInvoice->recipient,
+                    'sent_at' => $enrollment->latestInvoice->sent_at?->format('M d, Y h:i A'),
+                    'download_url' => $enrollment->latestInvoice->pdf_path
+                        ? route('administrators.finance.documents.download', $enrollment->latestInvoice, false)
+                        : null,
+                ] : null,
             ]);
 
         return Inertia::render('administrators/finance/invoices', [
@@ -780,6 +808,7 @@ final class AdministratorFinanceController extends Controller
                 'search' => $search,
                 'status' => $status,
             ],
+            'finance_document_settings' => $documentSettings->get(),
         ]);
     }
 

@@ -2,9 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Enums\FinancialDocumentStatus;
 use App\Enums\UserRole;
+use App\Jobs\SendFinancialDocumentJob;
 use App\Jobs\SendTransactionReceiptJob;
 use App\Mail\TransactionReceiptMail;
+use App\Models\FinancialDocumentIssuance;
 use App\Models\Student;
 use App\Models\StudentTransaction;
 use App\Models\Transaction;
@@ -275,9 +278,11 @@ it('queues an e-receipt after recording a payment', function (): void {
         ->and($transaction->receipt_email_recipient)->toBe('payer@example.com')
         ->and($transaction->receipt_email_delivery_id)->not->toBeNull();
 
-    Bus::assertDispatched(SendTransactionReceiptJob::class, fn (SendTransactionReceiptJob $job): bool => $job->transactionId === $transaction->id
-        && $job->recipient === 'payer@example.com'
-        && $job->deliveryId === $transaction->receipt_email_delivery_id);
+    Bus::assertDispatched(SendFinancialDocumentJob::class, function (SendFinancialDocumentJob $job) use ($transaction): bool {
+        $issuance = FinancialDocumentIssuance::query()->where('transaction_id', $transaction->id)->sole();
+
+        return $issuance->deliveries()->whereKey($job->deliveryId)->exists();
+    });
 });
 
 it('records a payment without queueing email when the student has no address', function (): void {
@@ -291,6 +296,7 @@ it('records a payment without queueing email when the student has no address', f
         ->post(portalUrlForAdministrators('/administrators/finance/payments'), [
             'student_id' => $student->id,
             'payment_method' => 'Cash',
+            'reference_number' => 'OR-NO-EMAIL-001',
             'items' => [[
                 'type' => 'fee',
                 'name' => 'Certification',
@@ -301,7 +307,7 @@ it('records a payment without queueing email when the student has no address', f
         ->assertRedirect();
 
     expect(Transaction::query()->latest('id')->firstOrFail()->receipt_email_status)->toBe('skipped');
-    Bus::assertNotDispatched(SendTransactionReceiptJob::class);
+    Bus::assertNotDispatched(SendFinancialDocumentJob::class);
 });
 
 it('allows cashiers to resend a receipt to an override address', function (): void {
@@ -315,8 +321,19 @@ it('allows cashiers to resend a receipt to an override address', function (): vo
         'status' => 'paid',
         'transaction_date' => now(),
         'settlements' => ['others' => 500],
+        'invoicenumber' => 'OR-RESEND-001',
         'user_id' => $cashier->id,
         'receipt_email_status' => 'failed',
+    ]);
+    $student = Student::factory()->create(['email' => null]);
+    StudentTransaction::query()->create([
+        'student_id' => $student->id,
+        'transaction_id' => $transaction->id,
+        'amount' => 500,
+        'status' => 'paid',
+    ]);
+    FinancialDocumentIssuance::query()->where('transaction_id', $transaction->id)->update([
+        'status' => FinancialDocumentStatus::Failed,
     ]);
 
     $this->actingAs($cashier)
@@ -329,7 +346,7 @@ it('allows cashiers to resend a receipt to an override address', function (): vo
     expect($transaction->receipt_email_status)->toBe('pending')
         ->and($transaction->receipt_email_recipient)->toBe('corrected@example.com');
 
-    Bus::assertDispatched(SendTransactionReceiptJob::class, fn (SendTransactionReceiptJob $job): bool => $job->deliveryId === $transaction->receipt_email_delivery_id);
+    Bus::assertDispatched(SendFinancialDocumentJob::class);
 });
 
 it('prevents duplicate receipt delivery while one is pending', function (): void {
@@ -343,10 +360,18 @@ it('prevents duplicate receipt delivery while one is pending', function (): void
         'status' => 'paid',
         'transaction_date' => now(),
         'settlements' => ['others' => 500],
+        'invoicenumber' => 'OR-PENDING-001',
         'user_id' => $cashier->id,
         'receipt_email_status' => 'pending',
         'receipt_email_delivery_id' => fake()->uuid(),
         'receipt_email_recipient' => 'pending@example.com',
+    ]);
+    $student = Student::factory()->create(['email' => 'pending@example.com']);
+    StudentTransaction::query()->create([
+        'student_id' => $student->id,
+        'transaction_id' => $transaction->id,
+        'amount' => 500,
+        'status' => 'paid',
     ]);
 
     $this->actingAs($cashier)
@@ -356,10 +381,11 @@ it('prevents duplicate receipt delivery while one is pending', function (): void
         ->assertRedirect();
 
     expect($transaction->fresh()->receipt_email_recipient)->toBe('pending@example.com');
-    Bus::assertNotDispatched(SendTransactionReceiptJob::class);
+    Bus::assertDispatchedTimes(SendFinancialDocumentJob::class, 1);
 });
 
 it('shares document and email delivery data on the receipt page', function (): void {
+    Bus::fake();
     $cashier = User::factory()->create(['role' => UserRole::Cashier]);
     $student = Student::factory()->create(['email' => 'receipt@example.com']);
     grantFinancePermission($cashier);
@@ -369,6 +395,7 @@ it('shares document and email delivery data on the receipt page', function (): v
         'status' => 'paid',
         'transaction_date' => now(),
         'settlements' => ['tuition_fee' => 2000],
+        'invoicenumber' => 'OR-SHARED-001',
         'user_id' => $cashier->id,
         'receipt_email_status' => 'sent',
         'receipt_email_recipient' => 'receipt@example.com',
@@ -379,6 +406,11 @@ it('shares document and email delivery data on the receipt page', function (): v
         'transaction_id' => $transaction->id,
         'amount' => 2000,
         'status' => 'paid',
+    ]);
+    FinancialDocumentIssuance::query()->where('transaction_id', $transaction->id)->update([
+        'status' => FinancialDocumentStatus::Sent,
+        'recipient' => 'receipt@example.com',
+        'sent_at' => now(),
     ]);
 
     $this->actingAs($cashier)

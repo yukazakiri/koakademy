@@ -79,6 +79,12 @@ final class Transaction extends Model
         return $this->hasMany(StudentTransaction::class, 'transaction_id');
     }
 
+    /** @return HasMany<FinancialDocumentIssuance, $this> */
+    public function financialDocuments(): HasMany
+    {
+        return $this->hasMany(FinancialDocumentIssuance::class);
+    }
+
     public function adminTransactions()
     {
         return $this->hasMany(AdminTransaction::class, 'transaction_id');

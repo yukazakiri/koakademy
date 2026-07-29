@@ -105,6 +105,16 @@ final class GeneralSettingPolicy
         return $this->canUpdateSection($user, 'notifications');
     }
 
+    public function viewFinanceDocuments(User $user): bool
+    {
+        return $this->canViewSection($user, 'finance_documents');
+    }
+
+    public function updateFinanceDocuments(User $user): bool
+    {
+        return $this->canUpdateSection($user, 'finance_documents');
+    }
+
     public function viewPulse(User $user): bool
     {
         return $this->canViewSection($user, 'pulse');

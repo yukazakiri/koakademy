@@ -48,6 +48,10 @@ final class SystemManagementPermissions
                 'view' => 'View:SystemManagementNotifications',
                 'update' => 'Update:SystemManagementNotifications',
             ],
+            'finance_documents' => [
+                'view' => 'View:SystemManagementFinanceDocuments',
+                'update' => 'Update:SystemManagementFinanceDocuments',
+            ],
             'grading' => [
                 'view' => 'View:SystemManagementGrading',
                 'update' => 'Update:SystemManagementGrading',

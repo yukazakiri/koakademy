@@ -1,5 +1,5 @@
 {
-  "version": "1.14.0",
+  "version": "1.15.0",
   "image": "ghcr.io/yukazakiri/koakademy:v1.11.0",
   "commit": "2e607f00dd3459b868e1d771b6a17a62dcd78d30",
   "branch": "master",

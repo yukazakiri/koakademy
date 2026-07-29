@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.0](https://github.com/yukazakiri/koakademy/compare/v1.14.0...v1.15.0) (2026-07-29)
+
+
+### Features
+
+* **finance:** deliver official student eReceipts and eInvoices ([#118](https://github.com/yukazakiri/koakademy/issues/118)) ([f16a540](https://github.com/yukazakiri/koakademy/commit/f16a5408003a92e2120367e264df91c5a9f38149))
+
 ## [1.14.0](https://github.com/yukazakiri/koakademy/compare/v1.13.1...v1.14.0) (2026-07-29)
 
 

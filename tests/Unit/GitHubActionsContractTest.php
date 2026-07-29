@@ -7,27 +7,63 @@ function workflowContents(string $name): string
     return file_get_contents(base_path(".github/workflows/{$name}")) ?: '';
 }
 
-it('runs one fork-safe CI workflow for master, pull requests, merge queues, and dispatches', function (): void {
+it('runs expensive validation once for pull requests and manual dispatches', function (): void {
     $ci = workflowContents('ci.yml');
 
     expect($ci)
-        ->toContain("push:\n    branches:\n      - master")
         ->toContain("pull_request:\n    branches:\n      - master")
-        ->toContain('merge_group:')
         ->toContain('workflow_dispatch:')
         ->toContain('permissions: {}')
+        ->toContain('name: Classify pull request')
+        ->toContain('name: Detect a trusted Release Please metadata update')
+        ->toContain("pull.head.repo?.full_name === expectedRepository")
+        ->toContain("pull.head.ref.startsWith('release-please--branches--master--components--')")
+        ->toContain("changedFiles.size === allowedFiles.size")
+        ->toContain('name: Validate Release Please metadata')
+        ->toContain('needs.scope.outputs.release_only')
+        ->toContain('php artisan test --parallel --compact')
         ->toContain('name: Conventional PR title')
         ->toContain('name: Validate normalized title')
         ->toContain('Waiting for title normalization')
         ->toContain('name: required')
         ->toContain('ini-values: memory_limit=1G')
-        ->toContain('push: false')
-        ->toContain('linux/amd64')
-        ->toContain('linux/arm64')
-        ->toContain('ubuntu-24.04-arm')
         ->toContain('actionlint')
         ->toContain('zizmor')
+        ->not->toContain("push:\n    branches:\n      - master")
+        ->not->toContain('merge_group:')
+        ->not->toContain('name: Container (')
+        ->not->toContain('docker/build-push-action@')
+        ->not->toContain('npm --prefix docs ci')
+        ->not->toContain('name: Build Astro documentation')
         ->not->toContain('pull_request_target');
+});
+
+it('fast-tracks only exact Release Please metadata changes', function (): void {
+    $ci = workflowContents('ci.yml');
+
+    expect($ci)
+        ->toContain("'.release-please-manifest.json'")
+        ->toContain("'CHANGELOG.md'")
+        ->toContain("'version.json'")
+        ->toContain('manifest_version=')
+        ->toContain('tracked_version=')
+        ->toContain('"chore(release): release ${tracked_version}"')
+        ->toContain('grep --fixed-strings --quiet "## [${tracked_version}]" CHANGELOG.md')
+        ->toContain("if: needs.scope.outputs.release_only != 'true'");
+});
+
+it('leaves the Astro production build to the documentation deployment workflow', function (): void {
+    $ci = workflowContents('ci.yml');
+    $documentation = workflowContents('deploy-docs.yml');
+
+    expect($ci)
+        ->toContain('name: Check generated docs and local links')
+        ->not->toContain('npm --prefix docs run build')
+        ->and($documentation)
+        ->toContain("paths:\n            - 'docs/**'")
+        ->toContain('name: Build Astro site')
+        ->toContain('uses: actions/upload-pages-artifact@')
+        ->toContain('uses: actions/deploy-pages@');
 });
 
 it('normalizes pull request titles without executing contributor code', function (): void {
@@ -51,17 +87,33 @@ it('normalizes pull request titles without executing contributor code', function
         ->not->toContain('pull.head.sha');
 });
 
-it('gates privileged delivery on a successful trusted CI push from master', function (): void {
+it('starts privileged delivery directly from a trusted master push', function (): void {
     $delivery = workflowContents('delivery.yml');
 
     expect($delivery)
-        ->toContain("workflows:\n      - CI")
-        ->toContain("github.event.workflow_run.event == 'push'")
-        ->toContain("github.event.workflow_run.conclusion == 'success'")
-        ->toContain("github.event.workflow_run.head_branch == 'master'")
-        ->toContain('github.event.workflow_run.head_repository.full_name == github.repository')
+        ->toContain("push:\n    branches:\n      - master")
+        ->toContain("github.event_name == 'push'")
+        ->toContain("github.ref == 'refs/heads/master'")
+        ->toContain('github.event.repository.full_name == github.repository')
+        ->toContain('SOURCE_SHA: ${{ github.event.after }}')
+        ->toContain('[[ "${SOURCE_SHA}" == "${EXPECTED_SHA}" ]]')
         ->toContain('needs.trust.result')
-        ->toContain('secrets.RELEASE_PLEASE_TOKEN');
+        ->toContain('secrets.RELEASE_PLEASE_TOKEN')
+        ->not->toContain('workflow_run');
+});
+
+it('publishes every automatic master commit to edge without a second build', function (): void {
+    $delivery = workflowContents('delivery.yml');
+
+    expect($delivery)
+        ->toContain('mode: ${{ steps.plan.outputs.mode }}')
+        ->toContain("channel=edge\n            publish=true")
+        ->toContain('MODE: ${{ needs.prepare.outputs.mode }}')
+        ->toContain('if [[ "${MODE}" == "automatic" ]]')
+        ->toContain('promote_mutable_pair edge')
+        ->toContain('if [[ "${CHANNEL}" == "stable" ]]')
+        ->not->toContain('git diff-tree')
+        ->not->toContain('relevant_pattern');
 });
 
 it('publishes immutable SHA images to both registries before moving channel aliases', function (): void {
@@ -111,7 +163,8 @@ it('keeps latest stable-only and recovery unable to invent or move versions', fu
         ->toContain('if [[ ! "${RECOVERY_TAG}" =~ ^v[0-9]+\\.[0-9]+\\.[0-9]+$ ]]')
         ->toContain('Tag %s does not exist in %s.')
         ->toContain('Refusing to move immutable tag')
-        ->toContain('if [[ "${CHANNEL}" == "edge" ]]')
+        ->toContain('if [[ "${MODE}" == "automatic" ]]')
+        ->toContain('if [[ "${CHANNEL}" == "stable" ]]')
         ->toContain('A newer master commit exists')
         ->not->toContain('dev-latest')
         ->not->toContain('-dev.');

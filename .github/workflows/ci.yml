@@ -1,15 +1,9 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - master
   pull_request:
     branches:
       - master
-  merge_group:
-    types:
-      - checks_requested
   workflow_dispatch:
 
 permissions: {}
@@ -19,8 +13,84 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  scope:
+    name: Classify pull request
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      release_only: ${{ steps.classify.outputs.release_only }}
+
+    steps:
+      - name: Detect a trusted Release Please metadata update
+        id: classify
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            core.setOutput('release_only', 'false');
+
+            if (context.eventName !== 'pull_request') {
+              core.info('Manual CI dispatches always run the full validation suite.');
+              return;
+            }
+
+            const pull = context.payload.pull_request;
+            const expectedRepository = `${context.repo.owner}/${context.repo.repo}`;
+            const trustedReleaseBranch =
+              pull.base.ref === 'master' &&
+              pull.head.repo?.full_name === expectedRepository &&
+              pull.head.ref.startsWith('release-please--branches--master--components--');
+
+            if (!trustedReleaseBranch) {
+              core.info('This is not a same-repository Release Please branch.');
+              return;
+            }
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pull.number,
+              per_page: 100,
+            });
+            const allowedFiles = new Set([
+              '.release-please-manifest.json',
+              'CHANGELOG.md',
+              'version.json',
+            ]);
+            const changedFiles = new Set(files.map((file) => file.filename));
+            const releaseOnly =
+              changedFiles.size === allowedFiles.size &&
+              [...changedFiles].every((file) => allowedFiles.has(file));
+
+            core.info(`Release metadata only: ${releaseOnly}`);
+            core.setOutput('release_only', releaseOnly ? 'true' : 'false');
+
+      - name: Check out release metadata
+        if: steps.classify.outputs.release_only == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate Release Please metadata
+        if: steps.classify.outputs.release_only == 'true'
+        env:
+          PULL_REQUEST_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          manifest_version="$(jq --exit-status --raw-output '."."' .release-please-manifest.json)"
+          tracked_version="$(jq --exit-status --raw-output '.version' version.json)"
+
+          [[ "${manifest_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "${manifest_version}" == "${tracked_version}" ]]
+          [[ "${PULL_REQUEST_TITLE}" == "chore(release): release ${tracked_version}" ]]
+          grep --fixed-strings --quiet "## [${tracked_version}]" CHANGELOG.md
+
   validate:
     name: Application and documentation
+    if: needs.scope.outputs.release_only != 'true'
+    needs:
+      - scope
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -73,9 +143,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            docs/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install PHP dependencies
         run: composer install --no-interaction --prefer-dist --no-progress
@@ -84,9 +152,7 @@ jobs:
         run: composer audit --locked
 
       - name: Install JavaScript dependencies
-        run: |
-          npm ci
-          npm --prefix docs ci
+        run: npm ci
 
       - name: Check PHP formatting
         run: vendor/bin/pint --test
@@ -99,9 +165,6 @@ jobs:
 
       - name: Check generated docs and local links
         run: npm run docs:check
-
-      - name: Build Astro documentation
-        run: npm --prefix docs run build
 
       - name: Validate production Compose file
         env:
@@ -131,46 +194,11 @@ jobs:
             exit 1
           }
 
-  container:
-    name: Container (${{ matrix.arch }})
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: amd64
-            platform: linux/amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            platform: linux/arm64
-            runner: ubuntu-24.04-arm
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-
-      - name: Validate platform build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          file: docker/Dockerfile
-          platforms: ${{ matrix.platform }}
-          push: false
-          provenance: false
-          sbom: false
-          cache-from: type=gha,scope=ci-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=ci-${{ matrix.arch }}
-
   workflow-security:
     name: Workflow security
+    if: needs.scope.outputs.release_only != 'true'
+    needs:
+      - scope
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -258,8 +286,8 @@ jobs:
     name: required
     if: always()
     needs:
+      - scope
       - validate
-      - container
       - workflow-security
       - pr-title
     runs-on: ubuntu-24.04

@@ -14,7 +14,7 @@ Both topologies require an operator-managed Caddy, Nginx, Traefik, or tunnel for
 
 Stable releases are published identically to GHCR (`ghcr.io/yukazakiri/koakademy`) and Docker Hub (`yukazaki/koakademy`) for AMD64 and ARM64. Production deployments should use an exact `vX.Y.Z` tag. `latest` follows only the newest verified stable release; it is not the production recommendation because its target changes.
 
-The `edge` tag follows the newest green container-relevant `master` commit. It receives no GitHub Release and is unsupported rolling software. Immutable `sha-<40-character-commit>` tags are available for audit, canary pinning, and exact rollback. Historical `dev-latest` and `v*-dev.*` images are frozen and receive no new publications.
+The `edge` tag follows the newest successfully delivered `master` commit, including documentation, workflow, and stable release commits. It is unsupported rolling software; when the commit is also a stable release, `edge` and the stable aliases may resolve to the same verified image. Immutable `sha-<40-character-commit>` tags are available for audit, canary pinning, and exact rollback. Historical `dev-latest` and `v*-dev.*` images are frozen and receive no new publications.
 
 The default is one hostname:
 

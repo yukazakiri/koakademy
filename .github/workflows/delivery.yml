@@ -1,16 +1,12 @@
 name: Delivery
 
 run-name: >-
-  Delivery / ${{ github.event_name == 'workflow_dispatch' && inputs.tag || format('{0} CI / {1}', github.event.workflow_run.conclusion, github.event.workflow_run.head_sha) }}
+  Delivery / ${{ github.event_name == 'workflow_dispatch' && inputs.tag || format('master / {0}', github.sha) }}
 
 on:
-  workflow_run:
-    workflows:
-      - CI
+  push:
     branches:
       - master
-    types:
-      - completed
   workflow_dispatch:
     inputs:
       tag:
@@ -21,7 +17,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: delivery-${{ github.event.workflow_run.head_sha || inputs.tag }}
+  group: delivery-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.sha }}
   cancel-in-progress: false
 
 jobs:
@@ -30,10 +26,9 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (
-        github.event.workflow_run.event == 'push' &&
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.head_branch == 'master' &&
-        github.event.workflow_run.head_repository.full_name == github.repository
+        github.event_name == 'push' &&
+        github.ref == 'refs/heads/master' &&
+        github.event.repository.full_name == github.repository
       )
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -45,13 +40,20 @@ jobs:
       recovery_tag: ${{ steps.source.outputs.recovery_tag }}
 
     steps:
-      - name: Accept successful CI push source
+      - name: Accept trusted master push source
         id: automatic
-        if: github.event_name == 'workflow_run'
+        if: github.event_name == 'push'
         env:
-          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+          EXPECTED_REPOSITORY: ${{ github.repository }}
+          EXPECTED_SHA: ${{ github.sha }}
+          SOURCE_REF: ${{ github.ref }}
+          SOURCE_REPOSITORY: ${{ github.event.repository.full_name }}
+          SOURCE_SHA: ${{ github.event.after }}
         run: |
+          [[ "${SOURCE_REF}" == "refs/heads/master" ]]
+          [[ "${SOURCE_REPOSITORY}" == "${EXPECTED_REPOSITORY}" ]]
           [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${SOURCE_SHA}" == "${EXPECTED_SHA}" ]]
           {
             printf 'mode=automatic\n'
             printf 'source_sha=%s\n' "${SOURCE_SHA}"
@@ -151,6 +153,7 @@ jobs:
       contents: read
     outputs:
       publish: ${{ steps.plan.outputs.publish }}
+      mode: ${{ steps.plan.outputs.mode }}
       channel: ${{ steps.plan.outputs.channel }}
       version: ${{ steps.plan.outputs.version }}
       tag: ${{ steps.plan.outputs.tag }}
@@ -202,23 +205,13 @@ jobs:
               printf 'Tracked version.json must contain a stable X.Y.Z baseline.\n' >&2
               exit 1
             fi
-
-            mapfile -t changed_files < <(
-              git diff-tree --root --no-commit-id --name-only -r "${SOURCE_SHA}"
-            )
-            relevant_pattern='^(app|bootstrap|config|database|docker|lang|Modules|public|resources|routes)/|^(artisan|composer\.json|composer\.lock|package\.json|package-lock\.json|php\.ini|version\.json)$'
-
-            for changed_file in "${changed_files[@]}"; do
-              if [[ "${changed_file}" =~ ${relevant_pattern} ]]; then
-                channel=edge
-                publish=true
-                break
-              fi
-            done
+            channel=edge
+            publish=true
           fi
 
           {
             printf 'publish=%s\n' "${publish}"
+            printf 'mode=%s\n' "${MODE}"
             printf 'channel=%s\n' "${channel}"
             printf 'version=%s\n' "${version}"
             printf 'tag=%s\n' "${tag}"
@@ -286,6 +279,7 @@ jobs:
       - name: Generate image version metadata
         id: metadata
         env:
+          MODE: ${{ needs.prepare.outputs.mode }}
           CHANNEL: ${{ needs.prepare.outputs.channel }}
           VERSION: ${{ needs.prepare.outputs.version }}
           SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
@@ -555,14 +549,16 @@ jobs:
 
           release_latest=false
 
-          if [[ "${CHANNEL}" == "edge" ]]; then
+          if [[ "${MODE}" == "automatic" ]]; then
             master_sha="$(git ls-remote "https://github.com/${GITHUB_REPOSITORY}.git" refs/heads/master | awk '{print $1}')"
             if [[ "${master_sha}" != "${SOURCE_SHA}" ]]; then
               printf 'A newer master commit exists; immutable images remain available but edge will not move.\n'
             else
               promote_mutable_pair edge
             fi
-          else
+          fi
+
+          if [[ "${CHANNEL}" == "stable" ]]; then
             major="${VERSION%%.*}"
             remainder="${VERSION#*.}"
             minor="${remainder%%.*}"

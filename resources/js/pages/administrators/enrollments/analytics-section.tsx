@@ -4,7 +4,7 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import { Activity, ArrowDownRight, ArrowUpRight, CreditCard, GraduationCap, Minus, Trash2, TrendingDown, TrendingUp } from "lucide-react";
+import { Activity, ArrowDownRight, ArrowUpRight, CreditCard, GraduationCap, Loader2, Minus, Trash2, TrendingDown, TrendingUp } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, Tooltip as RechartsTooltip, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import type { EnrollmentRow } from "./columns";

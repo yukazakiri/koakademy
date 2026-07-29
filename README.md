@@ -54,6 +54,62 @@ The whole package, no per-seat pricing and no feature flags behind a sales call:
 
 ## Screenshots
 
+### Administrator experience
+
+<p align="center">
+  <img src="docs/src/assets/screenshots/admin-dashboard.png" alt="KoAkademy administrator dashboard overview" width="100%" />
+</p>
+
+<p align="center"><em>Administrator overview with unified navigation, live enrollment monitoring, finance shortcuts, and institutional health reporting.</em></p>
+
+<p align="center">
+  <img src="docs/src/assets/screenshots/admin-enrollment-analytics.png" alt="KoAkademy administrator enrollment analytics" width="100%" />
+</p>
+
+<p align="center"><em>Enrollment analytics workspace with applicant status, pipeline visibility, and movement reporting.</em></p>
+
+### Enrollment and registrar workflow
+
+<p align="center">
+  <img src="docs/src/assets/screenshots/enrollments.png" alt="KoAkademy enrolled students and registrar workflow" width="100%" />
+</p>
+
+<p align="center"><em>Real-time enrollment management with applicants, department filters, verification status, tuition visibility, and quick actions. Student identities and individual balances are blurred.</em></p>
+
+### Academics and scheduling
+
+<p align="center">
+  <img src="docs/src/assets/screenshots/classes.png" alt="KoAkademy classes and academic scheduling workspace" width="100%" />
+</p>
+
+<p align="center"><em>Class sections, capacity tracking, program coverage, comparison tools, and schedule-aware academic management. Faculty identities are blurred.</em></p>
+
+### Finance operations
+
+<p align="center">
+  <img src="docs/src/assets/screenshots/finance.png" alt="KoAkademy finance desk and collection dashboard" width="100%" />
+</p>
+
+<p align="center"><em>A cashier-focused workspace for collection health, outstanding balances, receipts, billing, and payment workflows. Student-level queue details are blurred.</em></p>
+
+### Digital library
+
+<p align="center">
+  <img src="docs/src/assets/screenshots/library.png" alt="KoAkademy searchable digital library catalog" width="100%" />
+</p>
+
+<p align="center"><em>A searchable library catalog with category, year, availability, and collection filters plus rights-cleared digital editions.</em></p>
+
+### White-label branding
+
+<p align="center">
+  <img src="docs/src/assets/screenshots/brand-appearance.png" alt="KoAkademy brand and appearance settings with live preview" width="100%" />
+</p>
+
+<p align="center"><em>Guided portal branding with identity, logo, color controls, and an instant live preview.</em></p>
+
+### Enrollment policy configuration
+
 <p align="center">
   <img src="docs/src/assets/enrollment-policies/blueprint-overview.png" alt="Enrollment blueprint overview" width="49%" />
   <img src="docs/src/assets/enrollment-policies/approval-workflow.png" alt="Enrollment approval workflow editor" width="49%" />

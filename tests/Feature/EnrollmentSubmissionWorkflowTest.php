@@ -8,6 +8,7 @@ use App\Enrollment\EnrollmentPolicyPreset;
 use App\Enrollment\EnrollmentWorkflowCoordinator;
 use App\Enrollment\Exceptions\EnrollmentTransitionException;
 use App\Enums\StudentStatus;
+use App\Enums\UserRole;
 use App\Features\DynamicEnrollmentPolicies;
 use App\Jobs\GenerateAssessmentPdfJob;
 use App\Jobs\SendAssessmentNotificationJob;
@@ -516,6 +517,127 @@ it('enforces payment gates, attributes the actor, and reverses only enrollment-s
             ->value('actor_id'))->toBe($this->actor->id);
 });
 
+it('records separate additional fees as idempotent enrollment-scoped ledger transactions', function (): void {
+    $school = School::factory()->create();
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id]);
+    $student = Student::factory()->create(['school_id' => $school->id, 'course_id' => $course->id, 'academic_year' => 1]);
+    $subject = Subject::factory()->create(['course_id' => $course->id, 'academic_year' => 1, 'semester' => 1]);
+    $configuration = EnrollmentPolicyPreset::standard();
+    $configuration['workflow']['steps'][0]['actions'] = [
+        ['key' => 'subjects', 'handler' => 'enrollment.assign_subjects', 'configuration' => ['source' => 'runtime_payload']],
+        ['key' => 'fees', 'handler' => 'enrollment.assign_additional_fees', 'configuration' => []],
+        ['key' => 'tuition', 'handler' => 'enrollment.calculate_tuition', 'configuration' => []],
+    ];
+    $configuration['workflow']['steps'][2]['actions'] = [[
+        'key' => 'payment_status',
+        'handler' => 'enrollment.verify_payment',
+        'configuration' => ['receipt_mode' => 'required', 'record_transaction' => true],
+    ]];
+    ($this->publishEnrollmentPolicy)($configuration, $school);
+    $coordinator = app(EnrollmentWorkflowCoordinator::class);
+    $enrollment = $coordinator->submit(($this->submissionFor)(
+        $student,
+        $subject,
+        'separate-fee-submission-1',
+        [[
+            'fee_name' => 'Laboratory kit',
+            'amount' => 750,
+            'is_separate_transaction' => true,
+        ]],
+    ));
+    $fee = $enrollment->additionalFees()->sole();
+    $coordinator->verifyAcademic($enrollment, $this->actor, 'separate-fee-academic-1');
+
+    expect(fn () => $coordinator->verifyPayment($enrollment->refresh(), $this->actor, [
+        'invoicenumber' => 'INV-TUITION-001',
+        'payment_method' => 'Cash',
+        'settlements' => ['tuition_fee' => 500],
+    ], 'separate-fee-missing-invoice-1'))
+        ->toThrow(EnrollmentTransitionException::class, 'Transaction number is required for Laboratory kit');
+    expect(Transaction::query()->count())->toBe(0)
+        ->and(StudentTransaction::query()->count())->toBe(0)
+        ->and(AdminTransaction::query()->count())->toBe(0);
+
+    $payload = [
+        'invoicenumber' => 'INV-TUITION-001',
+        'payment_method' => 'Cash',
+        'settlements' => ['tuition_fee' => 500],
+        "separate_fee_{$fee->id}_transaction" => 'INV-LAB-KIT-001',
+    ];
+    $first = $coordinator->verifyPayment($enrollment->refresh(), $this->actor, $payload, 'separate-fee-payment-1');
+    $retry = $coordinator->verifyPayment($enrollment->refresh(), $this->actor, $payload, 'separate-fee-payment-1');
+    $separateTransaction = Transaction::query()->where('invoicenumber', 'INV-LAB-KIT-001')->sole();
+
+    expect($first->successful)->toBeTrue()
+        ->and($retry->message)->toContain('already processed')
+        ->and(Transaction::query()->count())->toBe(2)
+        ->and(StudentTransaction::query()->where('student_enrollment_id', $enrollment->id)->count())->toBe(2)
+        ->and(AdminTransaction::query()->where('admin_id', $this->actor->id)->count())->toBe(2)
+        ->and($separateTransaction->description)->toBe('Payment for Laboratory kit')
+        ->and($separateTransaction->settlements)->toBe(['others' => 750])
+        ->and((float) StudentTransaction::query()->where('transaction_id', $separateTransaction->id)->value('amount'))->toBe(750.0)
+        ->and($fee->refresh()->transaction_number)->toBe('INV-LAB-KIT-001')
+        ->and(data_get($first->actions, '0.metadata.separate_transaction_count'))->toBe(1);
+
+    $this->actor->givePermissionTo(Permission::findOrCreate('Reopen:StudentEnrollment', 'web'));
+    $coordinator->reopen(
+        $enrollment->refresh(),
+        $this->actor,
+        'academic_verified',
+        'Correct the separate fee receipts.',
+        'separate-fee-reopen-1',
+    );
+
+    expect(Transaction::query()->count())->toBe(0)
+        ->and(StudentTransaction::query()->count())->toBe(0)
+        ->and(AdminTransaction::query()->count())->toBe(0)
+        ->and($fee->refresh()->transaction_number)->toBeNull();
+});
+
+it('forwards only enrollment-owned separate fee invoices through the administrator cashier endpoint', function (): void {
+    $this->actor->update(['role' => UserRole::Admin]);
+    $school = School::factory()->create();
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id]);
+    $student = Student::factory()->create(['school_id' => $school->id, 'course_id' => $course->id, 'academic_year' => 1]);
+    $subject = Subject::factory()->create(['course_id' => $course->id, 'academic_year' => 1, 'semester' => 1]);
+    $configuration = EnrollmentPolicyPreset::standard();
+    $configuration['workflow']['steps'][0]['actions'] = [
+        ['key' => 'subjects', 'handler' => 'enrollment.assign_subjects', 'configuration' => ['source' => 'runtime_payload']],
+        ['key' => 'fees', 'handler' => 'enrollment.assign_additional_fees', 'configuration' => []],
+        ['key' => 'tuition', 'handler' => 'enrollment.calculate_tuition', 'configuration' => []],
+    ];
+    $configuration['workflow']['steps'][2]['actions'] = [[
+        'key' => 'payment_status',
+        'handler' => 'enrollment.verify_payment',
+        'configuration' => ['receipt_mode' => 'required', 'record_transaction' => true],
+    ]];
+    ($this->publishEnrollmentPolicy)($configuration, $school);
+    $coordinator = app(EnrollmentWorkflowCoordinator::class);
+    $enrollment = $coordinator->submit(($this->submissionFor)(
+        $student,
+        $subject,
+        'separate-fee-http-submission-1',
+        [['fee_name' => 'ID card', 'amount' => 300, 'is_separate_transaction' => true]],
+    ));
+    $fee = $enrollment->additionalFees()->sole();
+    $coordinator->verifyAcademic($enrollment, $this->actor, 'separate-fee-http-academic-1');
+
+    $response = $this->post(route('administrators.enrollments.verify-cashier', $enrollment), [
+        'invoicenumber' => 'INV-HTTP-TUITION-001',
+        'payment_method' => 'Cash',
+        'settlements' => ['tuition_fee' => 500],
+        "separate_fee_{$fee->id}_transaction" => 'INV-HTTP-ID-001',
+        'separate_fee_999999_transaction' => 'MUST-NOT-BE-FORWARDED',
+    ]);
+
+    $response->assertRedirect()
+        ->assertSessionHas('flash.success', 'Successfully enrolled student.');
+    expect(Transaction::query()->count())->toBe(2)
+        ->and(Transaction::query()->where('invoicenumber', 'INV-HTTP-ID-001')->exists())->toBeTrue()
+        ->and(Transaction::query()->where('invoicenumber', 'MUST-NOT-BE-FORWARDED')->exists())->toBeFalse()
+        ->and($fee->refresh()->transaction_number)->toBe('INV-HTTP-ID-001');
+});
+
 it('rolls back payments and after-commit jobs when a later configured action fails', function (): void {
     Queue::fake();
     $school = School::factory()->create();
@@ -530,6 +652,7 @@ it('rolls back payments and after-commit jobs when a later configured action fai
     $configuration = EnrollmentPolicyPreset::standard();
     $configuration['workflow']['steps'][0]['actions'] = [
         ['key' => 'subjects', 'handler' => 'enrollment.assign_subjects', 'configuration' => ['source' => 'runtime_payload']],
+        ['key' => 'fees', 'handler' => 'enrollment.assign_additional_fees', 'configuration' => []],
         ['key' => 'tuition', 'handler' => 'enrollment.calculate_tuition', 'configuration' => []],
     ];
     $configuration['workflow']['steps'][2]['actions'] = [
@@ -539,18 +662,27 @@ it('rolls back payments and after-commit jobs when a later configured action fai
     ];
     ($this->publishEnrollmentPolicy)($configuration, $school);
     $coordinator = app(EnrollmentWorkflowCoordinator::class);
-    $enrollment = $coordinator->submit(($this->submissionFor)($student, $subject, 'rollback-actions-1'));
+    $enrollment = $coordinator->submit(($this->submissionFor)(
+        $student,
+        $subject,
+        'rollback-actions-1',
+        [['fee_name' => 'Rollback fee', 'amount' => 250, 'is_separate_transaction' => true]],
+    ));
+    $fee = $enrollment->additionalFees()->sole();
     $coordinator->verifyAcademic($enrollment, $this->actor, 'rollback-academic-1');
 
     expect(fn () => $coordinator->verifyPayment($enrollment->refresh(), $this->actor, [
         'invoicenumber' => 'INV-ROLLBACK-001',
         'payment_method' => 'Cash',
         'settlements' => ['tuition_fee' => 500],
+        "separate_fee_{$fee->id}_transaction" => 'INV-ROLLBACK-FEE-001',
     ], 'rollback-payment-1'))->toThrow(EnrollmentTransitionException::class, 'email address');
 
     expect($enrollment->refresh()->current_step_key)->toBe('academic_verified')
         ->and(Transaction::query()->count())->toBe(0)
-        ->and(StudentTransaction::query()->count())->toBe(0);
+        ->and(StudentTransaction::query()->count())->toBe(0)
+        ->and(AdminTransaction::query()->count())->toBe(0)
+        ->and($fee->refresh()->transaction_number)->toBeNull();
     Queue::assertNotPushed(GenerateAssessmentPdfJob::class);
     Queue::assertNotPushed(SendAssessmentNotificationJob::class);
 });

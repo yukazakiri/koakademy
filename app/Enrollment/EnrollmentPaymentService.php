@@ -88,43 +88,84 @@ final readonly class EnrollmentPaymentService
             return ActionResult::failure('The tuition payment does not meet the configured minimum of '.number_format($minimum, 2).'.');
         }
 
-        $existing = StudentTransaction::query()->where('idempotency_key', $idempotencyKey)->first();
-        if ($existing) {
-            return ActionResult::success([
-                'verified' => 'payment',
-                'student_transaction_id' => $existing->id,
-                'transaction_id' => $existing->transaction_id,
-                'already_exists' => true,
-            ]);
+        $separateFees = $enrollment->additionalFees()
+            ->where('is_separate_transaction', true)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
+        $separateInvoiceNumbers = [];
+        foreach ($separateFees as $fee) {
+            $field = "separate_fee_{$fee->id}_transaction";
+            $value = $payload[$field] ?? null;
+            if ($value !== null && ! is_string($value) && ! is_int($value)) {
+                return ActionResult::failure("Transaction number for {$fee->fee_name} must be text.");
+            }
+
+            $separateInvoiceNumbers[$fee->id] = mb_trim((string) $value);
+            if ($receiptMode === 'required' && $separateInvoiceNumbers[$fee->id] === '') {
+                return ActionResult::failure("Transaction number is required for {$fee->fee_name}.");
+            }
         }
 
-        $transaction = Transaction::query()->create([
-            'description' => (string) ($configuration['description'] ?? 'Enrollment tuition payment'),
-            'payment_method' => $paymentMethod,
-            'settlements' => $settlements,
-            'status' => 'Paid',
-            'transaction_date' => now(),
-            'invoicenumber' => $invoiceNumber === '' ? null : $invoiceNumber,
-            'signature' => $payload['signature'] ?? null,
-            'user_id' => $context->actor->id,
-        ]);
+        $separateTransactions = [];
+        foreach ($separateFees as $fee) {
+            $feeIdempotencyKey = hash('sha256', "{$idempotencyKey}:additional-fee:{$fee->id}");
+            $invoiceNumberForFee = $separateInvoiceNumbers[$fee->id];
+            $link = StudentTransaction::query()
+                ->where('student_enrollment_id', $enrollment->id)
+                ->where('idempotency_key', $feeIdempotencyKey)
+                ->with('transaction')
+                ->first();
+            $alreadyExists = $link instanceof StudentTransaction;
+            if (! $link instanceof StudentTransaction) {
+                $link = $this->createLinkedTransaction(
+                    enrollment: $enrollment,
+                    actorId: $context->actor->id,
+                    description: "Payment for {$fee->fee_name}",
+                    adminDescription: 'Enrollment additional fee payment',
+                    paymentMethod: $paymentMethod,
+                    settlements: ['others' => (float) $fee->amount],
+                    invoiceNumber: $invoiceNumberForFee,
+                    signature: $payload['signature'] ?? null,
+                    amount: (float) $fee->amount,
+                    idempotencyKey: $feeIdempotencyKey,
+                );
+            }
 
-        $studentTransaction = StudentTransaction::query()->create([
-            'student_id' => $enrollment->student_id,
-            'student_enrollment_id' => $enrollment->id,
-            'transaction_id' => $transaction->id,
-            'amount' => $tuitionPayment,
-            'status' => $transaction->status,
-            'idempotency_key' => $idempotencyKey,
-        ]);
-        AdminTransaction::query()->create([
-            'admin_id' => $context->actor->id,
-            'transaction_id' => $transaction->id,
-            'amount' => $tuitionPayment,
-            'type' => 'credit',
-            'description' => 'Enrollment tuition payment',
-            'status' => $transaction->status,
-        ]);
+            $persistedInvoiceNumber = is_string($link->transaction->invoicenumber)
+                ? $link->transaction->invoicenumber
+                : ($invoiceNumberForFee === '' ? null : $invoiceNumberForFee);
+            if ($fee->transaction_number !== $persistedInvoiceNumber) {
+                $fee->update(['transaction_number' => $persistedInvoiceNumber]);
+            }
+            $separateTransactions[] = [
+                'additional_fee_id' => $fee->id,
+                'student_transaction_id' => $link->id,
+                'transaction_id' => $link->transaction_id,
+                'invoice_number' => $persistedInvoiceNumber,
+                'already_exists' => $alreadyExists,
+            ];
+        }
+
+        $studentTransaction = StudentTransaction::query()
+            ->where('student_enrollment_id', $enrollment->id)
+            ->where('idempotency_key', $idempotencyKey)
+            ->first();
+        $alreadyExists = $studentTransaction instanceof StudentTransaction;
+        if (! $studentTransaction instanceof StudentTransaction) {
+            $studentTransaction = $this->createLinkedTransaction(
+                enrollment: $enrollment,
+                actorId: $context->actor->id,
+                description: (string) ($configuration['description'] ?? 'Enrollment tuition payment'),
+                adminDescription: 'Enrollment tuition payment',
+                paymentMethod: $paymentMethod,
+                settlements: $settlements,
+                invoiceNumber: $invoiceNumber,
+                signature: $payload['signature'] ?? null,
+                amount: $tuitionPayment,
+                idempotencyKey: $idempotencyKey,
+            );
+        }
 
         if ($enrollment->studentTuition) {
             $this->billing->syncTuitionBalance($enrollment->studentTuition->refresh());
@@ -133,9 +174,12 @@ final readonly class EnrollmentPaymentService
         return ActionResult::success([
             'verified' => 'payment',
             'student_transaction_id' => $studentTransaction->id,
-            'transaction_id' => $transaction->id,
+            'transaction_id' => $studentTransaction->transaction_id,
+            'separate_transactions' => $separateTransactions,
+            'separate_transaction_count' => count($separateTransactions),
             'receipt_mode' => $receiptMode,
             'recorded_transaction' => true,
+            'already_exists' => $alreadyExists,
         ]);
     }
 
@@ -158,8 +202,58 @@ final readonly class EnrollmentPaymentService
         if ($enrollment->studentTuition) {
             $this->billing->syncTuitionBalance($enrollment->studentTuition->refresh());
         }
+        $enrollment->additionalFees()
+            ->where('is_separate_transaction', true)
+            ->whereNotNull('transaction_number')
+            ->update(['transaction_number' => null]);
 
         return ['transactions' => $transactionIds->count(), 'amount' => $amount];
+    }
+
+    /**
+     * @param  array<string, mixed>  $settlements
+     */
+    private function createLinkedTransaction(
+        StudentEnrollment $enrollment,
+        int $actorId,
+        string $description,
+        string $adminDescription,
+        string $paymentMethod,
+        array $settlements,
+        string $invoiceNumber,
+        mixed $signature,
+        float $amount,
+        string $idempotencyKey,
+    ): StudentTransaction {
+        $transaction = Transaction::query()->create([
+            'description' => $description,
+            'payment_method' => $paymentMethod,
+            'settlements' => $settlements,
+            'status' => 'Paid',
+            'transaction_date' => now(),
+            'invoicenumber' => $invoiceNumber === '' ? null : $invoiceNumber,
+            'signature' => $signature,
+            'user_id' => $actorId,
+        ]);
+
+        $studentTransaction = StudentTransaction::query()->create([
+            'student_id' => $enrollment->student_id,
+            'student_enrollment_id' => $enrollment->id,
+            'transaction_id' => $transaction->id,
+            'amount' => $amount,
+            'status' => $transaction->status,
+            'idempotency_key' => $idempotencyKey,
+        ]);
+        AdminTransaction::query()->create([
+            'admin_id' => $actorId,
+            'transaction_id' => $transaction->id,
+            'amount' => $amount,
+            'type' => 'credit',
+            'description' => $adminDescription,
+            'status' => $transaction->status,
+        ]);
+
+        return $studentTransaction->setRelation('transaction', $transaction);
     }
 
     /** @param array<string, mixed> $billing */

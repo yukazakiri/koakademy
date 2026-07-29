@@ -708,10 +708,23 @@ final class AdministratorEnrollmentManagementController extends Controller
             abort(403);
         }
 
+        $separateFeeTransactionKeys = $enrollment->additionalFees()
+            ->where('is_separate_transaction', true)
+            ->orderBy('id')
+            ->pluck('id')
+            ->mapWithKeys(fn (int $id): array => [
+                "separate_fee_{$id}_transaction" => [
+                    $enrollment->workflow_runtime === StudentEnrollment::WorkflowRuntimePolicyV1 ? 'nullable' : 'required',
+                    'string',
+                    'max:255',
+                ],
+            ])
+            ->all();
         $validated = $request->validate([
             'invoicenumber' => [
                 $enrollment->workflow_runtime === StudentEnrollment::WorkflowRuntimePolicyV1 ? 'nullable' : 'required',
                 'string',
+                'max:255',
             ],
             'settlements' => ['required', 'array'],
             'settlements.registration_fee' => ['nullable', 'numeric', 'min:0'],
@@ -720,14 +733,11 @@ final class AdministratorEnrollmentManagementController extends Controller
             'settlements.others' => ['nullable', 'numeric', 'min:0'],
             'payment_method' => ['required', 'string'],
             'reason' => ['nullable', 'string', 'max:2000'],
+            ...$separateFeeTransactionKeys,
         ]);
 
-        $separateFeeTransactionFields = collect($request->all())
-            ->filter(fn (mixed $value, int|string $key): bool => is_string($key) && str_starts_with($key, 'separate_fee_') && str_ends_with($key, '_transaction'))
-            ->all();
-
         try {
-            $this->workflowCoordinator->verifyPayment($enrollment, $user, [...$validated, ...$separateFeeTransactionFields]);
+            $this->workflowCoordinator->verifyPayment($enrollment, $user, $validated);
 
             return back()->with('flash', ['success' => 'Successfully enrolled student.']);
         } catch (Throwable $throwable) {

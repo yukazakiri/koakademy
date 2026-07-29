@@ -143,6 +143,8 @@ interface EnrollmentData {
         id: number;
         fee_name: string;
         amount: number;
+        is_separate_transaction: boolean;
+        transaction_number: string | null;
     }>;
     transactions: Array<{
         id: number;
@@ -1509,6 +1511,19 @@ function EditTransactionDialog({ enrollmentId, transaction }: { enrollmentId: nu
     );
 }
 
+type SeparateFeeTransactionField = `separate_fee_${number}_transaction`;
+type CashierPaymentForm = {
+    invoicenumber: string;
+    payment_method: string;
+    reason: string;
+    settlements: {
+        registration_fee: number;
+        tuition_fee: number;
+        miscelanous_fee: number;
+        others: number;
+    };
+} & Partial<Record<SeparateFeeTransactionField, string>>;
+
 function VerifyCashierDialog({
     enrollmentId,
     tuition,
@@ -1520,7 +1535,7 @@ function VerifyCashierDialog({
 }: {
     enrollmentId: number;
     tuition: any;
-    additionalFees: any[];
+    additionalFees: EnrollmentData["additional_fees"];
     label?: string;
     requiresReason?: boolean;
     receiptMode?: "required" | "optional" | "none";
@@ -1530,11 +1545,15 @@ function VerifyCashierDialog({
     const currency = props.branding?.currency || "PHP";
     const outstandingBalance = Number(tuition?.balance_due ?? tuition?.total_balance ?? 0);
     const requiredPayment = Number(tuition?.required_downpayment ?? tuition?.downpayment ?? 5000);
-    const defaultTuitionPayment = Math.min(
-        requiredPayment > 0 ? requiredPayment : 5000,
-        outstandingBalance > 0 ? outstandingBalance : requiredPayment,
-    );
-    const { data, setData, post, processing, errors, reset } = useForm({
+    const separateTransactionFees = additionalFees.filter((fee) => fee.is_separate_transaction);
+    const separateFeesTotal = separateTransactionFees.reduce((total, fee) => total + Number(fee.amount), 0);
+    const mainRequiredPayment = Math.max(0, requiredPayment - separateFeesTotal);
+    const mainOutstandingBalance = Math.max(0, outstandingBalance - separateFeesTotal);
+    const defaultTuitionPayment = Math.min(mainRequiredPayment, mainOutstandingBalance);
+    const separateFeeTransactionFields = Object.fromEntries(
+        separateTransactionFees.map((fee) => [`separate_fee_${fee.id}_transaction`, fee.transaction_number ?? ""]),
+    ) as Partial<Record<SeparateFeeTransactionField, string>>;
+    const { data, setData, post, processing, errors, reset } = useForm<CashierPaymentForm>({
         invoicenumber: "",
         payment_method: allowedPaymentMethods[0] ?? "Cash",
         reason: "",
@@ -1544,6 +1563,7 @@ function VerifyCashierDialog({
             miscelanous_fee: 0,
             others: 0,
         },
+        ...separateFeeTransactionFields,
     });
     const [open, setOpen] = useState(false);
 
@@ -1585,6 +1605,40 @@ function VerifyCashierDialog({
                         {errors.invoicenumber && <p className="text-xs text-red-500">{errors.invoicenumber}</p>}
                     </div>
 
+                    {separateTransactionFees.length > 0 && (
+                        <div className="space-y-3 rounded-lg border p-3">
+                            <div>
+                                <p className="text-sm font-medium">Separate fee receipts</p>
+                                <p className="text-muted-foreground text-xs">Each fee is recorded as its own cashier ledger transaction.</p>
+                            </div>
+                            {separateTransactionFees.map((fee) => {
+                                const field = `separate_fee_${fee.id}_transaction` as SeparateFeeTransactionField;
+
+                                return (
+                                    <div key={fee.id} className="grid gap-2">
+                                        <Label htmlFor={field} className="flex items-center justify-between gap-3">
+                                            <span>{fee.fee_name} invoice / OR number</span>
+                                            <span className="text-muted-foreground font-normal">
+                                                {new Intl.NumberFormat(currency === "USD" ? "en-US" : "en-PH", {
+                                                    style: "currency",
+                                                    currency,
+                                                }).format(Number(fee.amount))}
+                                            </span>
+                                        </Label>
+                                        <Input
+                                            id={field}
+                                            required={receiptMode === "required"}
+                                            placeholder={`Enter receipt for ${fee.fee_name}`}
+                                            value={data[field] ?? ""}
+                                            onChange={(event) => setData(field, event.target.value)}
+                                        />
+                                        {errors[field] && <p className="text-xs text-red-500">{errors[field]}</p>}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+
                     {requiresReason && (
                         <div className="grid gap-2">
                             <Label htmlFor="payment-transition-reason">Audited reason</Label>
@@ -1622,10 +1676,20 @@ function VerifyCashierDialog({
                             <span className="text-muted-foreground">Required Downpayment</span>
                             <span className="font-medium">
                                 {new Intl.NumberFormat(currency === "USD" ? "en-US" : "en-PH", { style: "currency", currency }).format(
-                                    requiredPayment,
+                                    mainRequiredPayment,
                                 )}
                             </span>
                         </div>
+                        {separateFeesTotal > 0 && (
+                            <div className="mt-1 flex justify-between gap-4">
+                                <span className="text-muted-foreground">Separate fees</span>
+                                <span className="font-medium">
+                                    {new Intl.NumberFormat(currency === "USD" ? "en-US" : "en-PH", { style: "currency", currency }).format(
+                                        separateFeesTotal,
+                                    )}
+                                </span>
+                            </div>
+                        )}
                         <div className="mt-1 flex justify-between gap-4">
                             <span className="text-muted-foreground">Current Balance</span>
                             <span className="font-medium">

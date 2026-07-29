@@ -591,10 +591,7 @@ final readonly class LegacyEnrollmentWorkflowAdapter
             Notification::make()
                 ->danger()
                 ->title('Enrollment Failed')
-                ->body(
-                    'An error occurred during cashier verification: '.
-                        $exception->getMessage()
-                )
+                ->body('The cashier verification could not be completed. No payment changes were saved. Please retry or contact an administrator.')
                 ->sendToDatabase(User::role('super_admin')->get()) // Send to DB
                 ->send(); // Also send regular notification
 

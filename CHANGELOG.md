@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.1](https://github.com/yukazakiri/koakademy/compare/v1.16.0...v1.16.1) (2026-07-29)
+
+
+### Bug Fixes
+
+* **enrollments:** restore analytics loading icon import ([#124](https://github.com/yukazakiri/koakademy/issues/124)) ([fb673a5](https://github.com/yukazakiri/koakademy/commit/fb673a54cfad134c418efc381dc1126efc8acebd))
+
 ## [1.16.0](https://github.com/yukazakiri/koakademy/compare/v1.15.1...v1.16.0) (2026-07-29)
 
 

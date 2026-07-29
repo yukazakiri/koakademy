@@ -22,6 +22,7 @@ use App\Models\User;
 use App\Notifications\StudentEnrolledVerified;
 use App\Services\EnrollmentBillingService;
 use App\Services\EnrollmentPipelineService;
+use App\Services\FinancialDocumentService;
 use Exception;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
@@ -34,7 +35,10 @@ use Illuminate\Support\Facades\Notification as NotificationFacade;
 
 final readonly class LegacyEnrollmentWorkflowAdapter
 {
-    public function __construct(private EnrollmentBillingService $billingService) {}
+    public function __construct(
+        private EnrollmentBillingService $billingService,
+        private FinancialDocumentService $financialDocuments,
+    ) {}
 
     /**
      * Checks if any selected classes for enrollment are full based on their maximum slots.
@@ -809,6 +813,10 @@ final readonly class LegacyEnrollmentWorkflowAdapter
                 ->filter(fn ($id): bool => $id !== null)
                 ->unique()
                 ->values();
+            $this->financialDocuments->revokeForTransactions(
+                $transactionIds,
+                'The related enrollment payment was reversed.',
+            );
 
             // Restore the record if it was soft-deleted
             if ($enrollmentRecord->trashed()) {

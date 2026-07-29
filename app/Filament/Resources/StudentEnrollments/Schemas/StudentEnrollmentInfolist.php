@@ -25,6 +25,7 @@ use Filament\Schemas\Components\Fieldset;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Enums\FontWeight;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -598,6 +599,7 @@ final class StudentEnrollmentInfolist
                                                 'transaction_date' => now(),
                                                 'invoicenumber' => $data['invoicenumber'],
                                                 'settlements' => $data['settlements'],
+                                                'user_id' => Auth::id(),
                                             ]);
 
                                             // Create the student transaction relationship

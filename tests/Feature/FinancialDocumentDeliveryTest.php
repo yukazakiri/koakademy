@@ -7,6 +7,7 @@ use App\Enums\FinancialDocumentType;
 use App\Enums\UserRole;
 use App\Jobs\SendFinancialDocumentJob;
 use App\Mail\FinancialDocumentMail;
+use App\Models\AdditionalFee;
 use App\Models\FinancialDocumentIssuance;
 use App\Models\GeneralSetting;
 use App\Models\Student;
@@ -23,6 +24,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia;
+use Modules\Cashier\Filament\Pages\Cashier;
 use Spatie\LaravelPdf\Enums\Format;
 use Spatie\LaravelPdf\Facades\Pdf;
 use Spatie\LaravelPdf\PdfBuilder;
@@ -53,6 +55,32 @@ function enableFinancialDocumentMail(): GeneralSetting
 
     return $settings;
 }
+
+it('attributes Cashier page receipts to the authenticated operator before the admin ledger is written', function (): void {
+    enableFinancialDocumentMail();
+    $cashier = User::factory()->create(['role' => UserRole::Cashier]);
+    $student = Student::factory()->create(['email' => 'cashier-flow@example.test']);
+    Bus::fake();
+    $this->actingAs($cashier);
+    $page = app(Cashier::class);
+    $page->data = [
+        'selectedStudent' => $student,
+        'description' => 'Cashier page payment',
+        'selectedSchoolYear' => '2026 - 2027',
+        'selectedSemester' => 1,
+        'settlements' => ['others' => 500],
+        'invoicenumber' => 'OR-CASHIER-PAGE-1',
+        'signature' => null,
+    ];
+
+    $page->create();
+
+    $transaction = Transaction::query()->sole();
+    $receipt = FinancialDocumentIssuance::query()->sole();
+    expect($transaction->user_id)->toBe($cashier->id)
+        ->and($receipt->issued_by)->toBe($cashier->id)
+        ->and($receipt->snapshot['cashier'])->toBe($cashier->name);
+});
 
 it('holds a paid eReceipt until its paper OR number is recorded', function (): void {
     Bus::fake();
@@ -289,6 +317,89 @@ it('manually issues one enrollment eInvoice with a frozen outstanding balance', 
     Bus::assertDispatchedTimes(SendFinancialDocumentJob::class, 1);
 });
 
+it('reconciles separate enrollment fees and their dedicated payments on an eInvoice', function (): void {
+    Bus::fake();
+    enableFinancialDocumentMail();
+    $issuer = User::factory()->create(['role' => UserRole::Cashier]);
+    $student = Student::factory()->create(['email' => 'separate-fee@example.test']);
+    $enrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'semester' => 1,
+        'school_year' => '2026 - 2027',
+    ]);
+    StudentTuition::query()->create([
+        'student_id' => $student->id,
+        'enrollment_id' => $enrollment->id,
+        'semester' => 1,
+        'school_year' => '2026 - 2027',
+        'academic_year' => 1,
+        'total_lectures' => 3000,
+        'total_laboratory' => 1000,
+        'total_miscelaneous_fees' => 1000,
+        'total_tuition' => 4000,
+        'overall_tuition' => 5750,
+        'total_balance' => 5750,
+        'paid' => 0,
+        'discount' => 0,
+        'downpayment' => 0,
+        'status' => 'pending',
+    ]);
+    AdditionalFee::query()->create([
+        'enrollment_id' => $enrollment->id,
+        'fee_name' => 'Laboratory kit',
+        'amount' => 750,
+        'is_separate_transaction' => true,
+        'transaction_number' => 'OR-LAB-KIT-1',
+    ]);
+    $tuitionPayment = Transaction::query()->create([
+        'description' => 'Enrollment tuition payment',
+        'payment_method' => 'Cash',
+        'status' => 'paid',
+        'transaction_date' => now(),
+        'settlements' => ['tuition_fee' => 1000],
+        'invoicenumber' => 'OR-TUITION-1',
+        'user_id' => $issuer->id,
+    ]);
+    StudentTransaction::query()->create([
+        'student_id' => $student->id,
+        'student_enrollment_id' => $enrollment->id,
+        'transaction_id' => $tuitionPayment->id,
+        'amount' => 1000,
+        'status' => 'paid',
+    ]);
+    $separateFeePayment = Transaction::query()->create([
+        'description' => 'Payment for Laboratory kit',
+        'payment_method' => 'Cash',
+        'status' => 'paid',
+        'transaction_date' => now(),
+        'settlements' => ['others' => 750],
+        'invoicenumber' => 'OR-LAB-KIT-1',
+        'user_id' => $issuer->id,
+    ]);
+    StudentTransaction::query()->create([
+        'student_id' => $student->id,
+        'student_enrollment_id' => $enrollment->id,
+        'transaction_id' => $separateFeePayment->id,
+        'amount' => 750,
+        'status' => 'paid',
+    ]);
+
+    $invoice = app(FinancialDocumentService::class)->issueInvoice(
+        $enrollment->fresh(),
+        $issuer,
+        'separate-fee@example.test',
+    );
+    $charges = collect($invoice->snapshot['charges']);
+    $payments = collect($invoice->snapshot['payments']);
+
+    expect($charges->firstWhere('label', 'Laboratory kit')['amount'])->toEqual(750.0)
+        ->and((float) $charges->sum('amount'))->toEqual(5750.0)
+        ->and((float) $payments->sum('amount'))->toEqual(1750.0)
+        ->and($invoice->snapshot['totals']['assessed'])->toEqual(5750.0)
+        ->and($invoice->snapshot['totals']['paid'])->toEqual(1750.0)
+        ->and($invoice->snapshot['totals']['balance'])->toEqual(4000.0);
+});
+
 it('rejects paid enrollments and preserves older invoice snapshots when a balance changes', function (): void {
     Bus::fake();
     enableFinancialDocumentMail();
@@ -387,6 +498,8 @@ it('stores and emails the official PDF while preserving an audit checksum', func
         'documentType' => $mail->type,
     ])->render();
     expect($issuance->status)->toBe(FinancialDocumentStatus::Sent)
+        ->and($issuance->issued_by)->toBe($cashier->id)
+        ->and($issuance->snapshot['cashier'])->toBe($cashier->name)
         ->and($issuance->pdf_checksum)->toBe(hash('sha256', '%PDF-1.4 official document'))
         ->and($mail->render())->toContain('Official eReceipt', 'OR-ATTACH-1')
         ->and($plainText)->toContain('Official eReceipt', 'We recorded your payment');
@@ -400,6 +513,79 @@ it('stores and emails the official PDF while preserving an audit checksum', func
     $this->actingAs($cashier)
         ->get(portalUrlForAdministrators("/administrators/finance/documents/{$issuance->uuid}/download"))
         ->assertStatus(409);
+});
+
+it('regenerates the official PDF after correcting a receipt paper OR number', function (): void {
+    Bus::fake();
+    Mail::fake();
+    Storage::fake('private');
+    enableFinancialDocumentMail();
+    $cashier = User::factory()->create(['role' => UserRole::Cashier]);
+    $student = Student::factory()->create(['email' => 'corrected@example.test']);
+    $transaction = Transaction::query()->create([
+        'description' => 'Corrected paper OR test',
+        'payment_method' => 'Cash',
+        'status' => 'paid',
+        'transaction_date' => now(),
+        'settlements' => ['tuition_fee' => 900],
+        'invoicenumber' => 'OR-ORIGINAL',
+        'user_id' => $cashier->id,
+    ]);
+    StudentTransaction::query()->create([
+        'student_id' => $student->id,
+        'transaction_id' => $transaction->id,
+        'amount' => 900,
+        'status' => 'paid',
+    ]);
+    $issuance = FinancialDocumentIssuance::query()->with('deliveries')->sole();
+    $firstDelivery = $issuance->deliveries->sole();
+    $originalBuilder = Mockery::mock(PdfBuilder::class);
+    $originalBuilder->shouldReceive('format')->once()->with(Format::A4)->andReturnSelf();
+    $originalBuilder->shouldReceive('base64')->once()->andReturn(base64_encode('%PDF-1.4 original OR'));
+    Pdf::shouldReceive('view')
+        ->once()
+        ->withArgs(fn (string $view, array $data): bool => $view === 'pdf.financial-document-receipt'
+            && data_get($data, 'financialDocument.document.paper_reference') === 'OR-ORIGINAL')
+        ->andReturn($originalBuilder);
+
+    (new SendFinancialDocumentJob($firstDelivery->id))
+        ->handle(app(FinancialDocumentViewDataService::class));
+
+    $issuance->refresh();
+    $stalePath = $issuance->pdf_path;
+    Storage::disk('private')->assertExists($stalePath);
+
+    app(FinancialDocumentService::class)->queueDelivery(
+        $issuance,
+        'corrected@example.test',
+        'OR-CORRECTED',
+    );
+
+    $issuance->refresh();
+    expect($issuance->paper_reference)->toBe('OR-CORRECTED')
+        ->and($issuance->snapshot['reference_number'])->toBe('OR-CORRECTED')
+        ->and($issuance->disk)->toBeNull()
+        ->and($issuance->pdf_path)->toBeNull()
+        ->and($issuance->pdf_checksum)->toBeNull();
+    Storage::disk('private')->assertMissing($stalePath);
+
+    $correctedBuilder = Mockery::mock(PdfBuilder::class);
+    $correctedBuilder->shouldReceive('format')->once()->with(Format::A4)->andReturnSelf();
+    $correctedBuilder->shouldReceive('base64')->once()->andReturn(base64_encode('%PDF-1.4 corrected OR'));
+    Pdf::shouldReceive('view')
+        ->once()
+        ->withArgs(fn (string $view, array $data): bool => $view === 'pdf.financial-document-receipt'
+            && data_get($data, 'financialDocument.document.paper_reference') === 'OR-CORRECTED')
+        ->andReturn($correctedBuilder);
+    $secondDelivery = $issuance->deliveries()->latest('id')->firstOrFail();
+
+    (new SendFinancialDocumentJob($secondDelivery->id))
+        ->handle(app(FinancialDocumentViewDataService::class));
+
+    $issuance->refresh();
+    Storage::disk('private')->assertExists($issuance->pdf_path);
+    expect(Storage::disk('private')->get($issuance->pdf_path))->toBe('%PDF-1.4 corrected OR')
+        ->and($issuance->pdf_checksum)->toBe(hash('sha256', '%PDF-1.4 corrected OR'));
 });
 
 it('records a sanitized permanent delivery failure without changing the payment', function (): void {

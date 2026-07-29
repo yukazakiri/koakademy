@@ -49,7 +49,7 @@ final class EnrollmentBillingService
                 ->get();
             if ($linkedPayments->isNotEmpty()) {
                 $linkedPaid = $linkedPayments->sum(
-                    fn (StudentTransaction $link): float => $this->tuitionPaymentFromSettlements($link->transaction),
+                    fn (StudentTransaction $link): float => (float) $link->amount,
                 );
 
                 return max($manualPaid, (float) $linkedPaid);

@@ -948,6 +948,7 @@ final class Cashier extends Page implements HasForms
         $semester = $this->data['selectedSemester'];
         // $transactionType = $this->data['transaction_type'];
         $settlements = $this->data['settlements'];
+        $totalAmount = array_sum(array_map('floatval', array_values($settlements)));
         $invoicenumber = $this->data['invoicenumber'];
         $studentEnrollmentId = null;
         if (
@@ -969,15 +970,17 @@ final class Cashier extends Page implements HasForms
             'description' => $description,
             'settlements' => $settlements,
             'status' => 'Paid',
+            'transaction_date' => now(),
             'invoicenumber' => $invoicenumber,
             'signature' => GeneralSetting::first()->enable_signatures === false
                     ? null
                     : $this->data['signature'],
+            'user_id' => Auth::id(),
         ]);
         $student->studentTransactions()->create([
             'student_enrollment_id' => $studentEnrollmentId,
             'transaction_id' => $transaction->id,
-            'amount' => array_sum(array_map('floatval', array_values($settlements))),
+            'amount' => $totalAmount,
             'status' => 'Paid',
         ]);
 
@@ -985,6 +988,9 @@ final class Cashier extends Page implements HasForms
         \App\Models\AdminTransaction::create([
             'admin_id' => Auth::id(),
             'transaction_id' => $transaction->id,
+            'amount' => $totalAmount,
+            'type' => 'credit',
+            'description' => $description,
             'status' => 'Paid',
         ]);
 

@@ -12,10 +12,14 @@ use App\Models\StudentEnrollment;
 use App\Models\StudentTransaction;
 use App\Models\Transaction;
 use App\Services\EnrollmentBillingService;
+use App\Services\FinancialDocumentService;
 
 final readonly class EnrollmentPaymentService
 {
-    public function __construct(private EnrollmentBillingService $billing) {}
+    public function __construct(
+        private EnrollmentBillingService $billing,
+        private FinancialDocumentService $financialDocuments,
+    ) {}
 
     /** @param array<string, mixed> $configuration */
     public function record(
@@ -183,12 +187,16 @@ final readonly class EnrollmentPaymentService
         ]);
     }
 
-    /** @return array{transactions:int, amount:float} */
+    /** @return array{transactions:int, amount:float, documents_revoked:int} */
     public function reverseLinked(StudentEnrollment $enrollment): array
     {
         $links = $enrollment->enrollmentTransactions()->lockForUpdate()->get();
         $amount = (float) $links->sum('amount');
         $transactionIds = $links->pluck('transaction_id')->filter()->unique()->values();
+        $documentsRevoked = $this->financialDocuments->revokeForTransactions(
+            $transactionIds,
+            'The related enrollment payment was reversed.',
+        );
 
         $links->each->delete();
         foreach ($transactionIds as $transactionId) {
@@ -207,7 +215,11 @@ final readonly class EnrollmentPaymentService
             ->whereNotNull('transaction_number')
             ->update(['transaction_number' => null]);
 
-        return ['transactions' => $transactionIds->count(), 'amount' => $amount];
+        return [
+            'transactions' => $transactionIds->count(),
+            'amount' => $amount,
+            'documents_revoked' => $documentsRevoked,
+        ];
     }
 
     /**

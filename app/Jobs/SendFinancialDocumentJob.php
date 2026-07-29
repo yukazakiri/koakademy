@@ -55,7 +55,10 @@ final class SendFinancialDocumentJob implements ShouldBeUnique, ShouldQueue
         $delivery = FinancialDocumentDelivery::query()->with('issuance')->findOrFail($this->deliveryId);
         $issuance = $delivery->issuance;
 
-        if ($delivery->status === FinancialDeliveryStatus::Sent || $issuance->status === FinancialDocumentStatus::Revoked) {
+        if (
+            in_array($delivery->status, [FinancialDeliveryStatus::Sent, FinancialDeliveryStatus::Cancelled], true)
+            || $issuance->status === FinancialDocumentStatus::Revoked
+        ) {
             return;
         }
 
@@ -67,10 +70,29 @@ final class SendFinancialDocumentJob implements ShouldBeUnique, ShouldQueue
 
         $document = $viewDataService->build($issuance);
         $pdfBytes = $this->pdfBytes($issuance, $document);
+        $delivery->refresh();
+        $issuance->refresh();
+
+        if (
+            $delivery->status === FinancialDeliveryStatus::Cancelled
+            || $issuance->status === FinancialDocumentStatus::Revoked
+        ) {
+            return;
+        }
 
         Mail::to($delivery->recipient)->send(
             new FinancialDocumentMail($issuance->type, $document, $pdfBytes),
         );
+
+        $delivery->refresh();
+        $issuance->refresh();
+
+        if (
+            $delivery->status === FinancialDeliveryStatus::Cancelled
+            || $issuance->status === FinancialDocumentStatus::Revoked
+        ) {
+            return;
+        }
 
         $now = now();
         $delivery->update([
@@ -100,15 +122,21 @@ final class SendFinancialDocumentJob implements ShouldBeUnique, ShouldQueue
 
     public function failed(Throwable $throwable): void
     {
-        Log::error('Official financial document delivery failed permanently.', [
-            'delivery_id' => $this->deliveryId,
-            'exception_class' => $throwable::class,
-        ]);
-
         $delivery = FinancialDocumentDelivery::query()->with('issuance')->find($this->deliveryId);
         if (! $delivery) {
             return;
         }
+        if (
+            $delivery->status === FinancialDeliveryStatus::Cancelled
+            || $delivery->issuance->status === FinancialDocumentStatus::Revoked
+        ) {
+            return;
+        }
+
+        Log::error('Official financial document delivery failed permanently.', [
+            'delivery_id' => $this->deliveryId,
+            'exception_class' => $throwable::class,
+        ]);
 
         $message = 'The document email could not be delivered after multiple attempts.';
         $delivery->update([

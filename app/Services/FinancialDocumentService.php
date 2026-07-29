@@ -15,6 +15,7 @@ use App\Models\StudentTransaction;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
@@ -135,9 +136,7 @@ final readonly class FinancialDocumentService
             throw ValidationException::withMessages(['invoice' => 'This enrollment does not have a tuition assessment.']);
         }
 
-        $invoiceAdditionalFees = $enrollment->additionalFees
-            ->where('is_separate_transaction', false);
-        $additionalFees = $invoiceAdditionalFees
+        $additionalFees = $enrollment->additionalFees
             ->sum(fn ($fee): float => (float) $fee->amount);
         $billing = $this->billing->toSummaryArray($tuition, $additionalFees);
 
@@ -146,6 +145,31 @@ final readonly class FinancialDocumentService
         }
 
         $settings = $this->generalSettings->getGlobalSettingsModel();
+        $charges = collect([
+            ['label' => 'Lecture tuition', 'amount' => (float) $tuition->total_lectures],
+            ['label' => 'Laboratory fees', 'amount' => (float) $tuition->total_laboratory],
+            [
+                'label' => 'Other tuition components',
+                'amount' => max(
+                    0.0,
+                    (float) $tuition->total_tuition
+                        - (float) $tuition->total_lectures
+                        - (float) $tuition->total_laboratory,
+                ),
+            ],
+            ['label' => 'Miscellaneous fees', 'amount' => (float) $tuition->total_miscelaneous_fees],
+            ...$enrollment->additionalFees->map(fn ($fee): array => [
+                'label' => (string) $fee->fee_name,
+                'amount' => (float) $fee->amount,
+            ])->all(),
+        ])->filter(fn (array $charge): bool => abs((float) $charge['amount']) > 0.00001);
+        $assessmentAdjustment = (float) $billing['overall_tuition'] - (float) $charges->sum('amount');
+        if (abs($assessmentAdjustment) > 0.00001) {
+            $charges->push([
+                'label' => 'Assessment adjustment',
+                'amount' => $assessmentAdjustment,
+            ]);
+        }
         $snapshot = [
             'student' => [
                 'name' => $enrollment->student?->full_name ?? 'N/A',
@@ -158,15 +182,7 @@ final readonly class FinancialDocumentService
                 'school_year' => $enrollment->school_year,
                 'semester' => $enrollment->semester,
             ],
-            'charges' => [
-                ['label' => 'Lecture tuition', 'amount' => (float) $tuition->total_lectures],
-                ['label' => 'Laboratory fees', 'amount' => (float) $tuition->total_laboratory],
-                ['label' => 'Miscellaneous fees', 'amount' => (float) $tuition->total_miscelaneous_fees],
-                ...$invoiceAdditionalFees->map(fn ($fee): array => [
-                    'label' => (string) $fee->fee_name,
-                    'amount' => (float) $fee->amount,
-                ])->all(),
-            ],
+            'charges' => $charges->values()->all(),
             'discount' => [
                 'name' => $tuition->enrollmentDiscount?->name,
                 'percentage' => (int) $tuition->discount,
@@ -242,10 +258,21 @@ final readonly class FinancialDocumentService
                 if (filled($paperReference) && $locked->paper_reference !== $paperReference) {
                     $snapshot = $locked->snapshot;
                     $snapshot['reference_number'] = $paperReference;
+                    $staleDisk = $locked->disk;
+                    $stalePath = $locked->pdf_path;
                     $locked->paper_reference = $paperReference;
                     $locked->snapshot = $snapshot;
                     $locked->integrity_signature = $this->sign($snapshot);
+                    $locked->disk = null;
+                    $locked->pdf_path = null;
+                    $locked->pdf_checksum = null;
                     $locked->transaction?->update(['invoicenumber' => $paperReference]);
+
+                    if ($staleDisk !== null && $stalePath !== null) {
+                        DB::afterCommit(static function () use ($staleDisk, $stalePath): void {
+                            Storage::disk($staleDisk)->delete($stalePath);
+                        });
+                    }
                 }
             }
 
@@ -288,6 +315,54 @@ final readonly class FinancialDocumentService
         }
 
         return $issuance->fresh();
+    }
+
+    /**
+     * @param  iterable<int, int|string>  $transactionIds
+     */
+    public function revokeForTransactions(iterable $transactionIds, string $reason): int
+    {
+        $ids = collect($transactionIds)
+            ->filter(fn (mixed $id): bool => is_numeric($id))
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter(fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return 0;
+        }
+
+        $issuances = FinancialDocumentIssuance::query()
+            ->where('type', FinancialDocumentType::Receipt->value)
+            ->whereIn('transaction_id', $ids)
+            ->where('status', '!=', FinancialDocumentStatus::Revoked->value)
+            ->lockForUpdate()
+            ->get();
+        $now = now();
+
+        foreach ($issuances as $issuance) {
+            $issuance->deliveries()
+                ->whereIn('status', [
+                    FinancialDeliveryStatus::Queued->value,
+                    FinancialDeliveryStatus::Processing->value,
+                ])
+                ->update([
+                    'status' => FinancialDeliveryStatus::Cancelled->value,
+                    'error' => 'Delivery cancelled because the related payment was reversed.',
+                ]);
+            $issuance->forceFill([
+                'status' => FinancialDocumentStatus::Revoked,
+                'revoked_at' => $now,
+                'revocation_reason' => $reason,
+            ])->save();
+            $issuance->transaction?->update([
+                'receipt_email_status' => 'revoked',
+                'receipt_email_error' => 'The related payment was reversed.',
+            ]);
+        }
+
+        return $issuances->count();
     }
 
     public function hasValidIntegrity(FinancialDocumentIssuance $issuance): bool

@@ -18,7 +18,7 @@ interface ReceiptInstitution {
 }
 
 interface EmailDelivery {
-    status: "awaiting_reference" | "ready" | "queued" | "pending" | "sent" | "failed" | "skipped" | null;
+    status: "awaiting_reference" | "ready" | "queued" | "pending" | "sent" | "failed" | "skipped" | "revoked" | null;
     recipient: string | null;
     sent_at: string | null;
     failed_at: string | null;

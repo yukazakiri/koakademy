@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.0](https://github.com/yukazakiri/koakademy/compare/v1.13.1...v1.14.0) (2026-07-29)
+
+
+### Features
+
+* **notifications:** add personal notification inbox ([#116](https://github.com/yukazakiri/koakademy/issues/116)) ([1aac6a3](https://github.com/yukazakiri/koakademy/commit/1aac6a3290a6c15c6bf4818f9a53f06f79bcc969))
+
 ## [1.13.1](https://github.com/yukazakiri/koakademy/compare/v1.13.0...v1.13.1) (2026-07-29)
 
 

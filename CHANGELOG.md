@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.1](https://github.com/yukazakiri/koakademy/compare/v1.15.0...v1.15.1) (2026-07-29)
+
+
+### Bug Fixes
+
+* **enrollment:** repair cashier ledger schema ([#120](https://github.com/yukazakiri/koakademy/issues/120)) ([1313072](https://github.com/yukazakiri/koakademy/commit/1313072cb68dd68e285cea1e079d1df085eea865))
+
 ## [1.15.0](https://github.com/yukazakiri/koakademy/compare/v1.14.0...v1.15.0) (2026-07-29)
 
 

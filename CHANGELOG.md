@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.0](https://github.com/yukazakiri/koakademy/compare/v1.12.1...v1.13.0) (2026-07-29)
+
+
+### Features
+
+* **enrollment:** make enrollment workflows policy-driven ([#111](https://github.com/yukazakiri/koakademy/issues/111)) ([84a742c](https://github.com/yukazakiri/koakademy/commit/84a742cd9b26ef17c70ec175559e15016e05e268))
+
 ## [1.12.1](https://github.com/yukazakiri/koakademy/compare/v1.12.0...v1.12.1) (2026-07-27)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.1](https://github.com/yukazakiri/koakademy/compare/v1.13.0...v1.13.1) (2026-07-29)
+
+
+### Bug Fixes
+
+* **finance:** restore receive payment student search ([#114](https://github.com/yukazakiri/koakademy/issues/114)) ([755f55c](https://github.com/yukazakiri/koakademy/commit/755f55c8d76fc9b630a581d6d0dd3bbb0c0aa2bd))
+
 ## [1.13.0](https://github.com/yukazakiri/koakademy/compare/v1.12.1...v1.13.0) (2026-07-29)
 
 

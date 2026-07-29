@@ -23,6 +23,7 @@ final readonly class EnrollmentTransitionEngine
         private EnrollmentRequirementService $requirements,
         private EnrollmentPaymentService $payments,
         private EnrollmentActionPayloadValidator $payloadValidator,
+        private EnrollmentStudentSynchronizationService $studentSynchronization,
     ) {}
 
     public function initialize(StudentEnrollment $enrollment, EnrollmentSubmissionData $submission): TransitionResult
@@ -161,6 +162,9 @@ final readonly class EnrollmentTransitionEngine
 
                 $this->requirements->assertSatisfiedForStep($locked, (string) $target['key']);
                 $actionResults = $this->executeActions($target['actions'] ?? [], $context, $payload, $idempotencyKey);
+                if (($target['terminal'] ?? false) === true) {
+                    $this->assertCompletionRules($snapshot->configuration['rules'] ?? [], $context);
+                }
 
                 $notifications = is_array($snapshot->configuration['notifications'] ?? null)
                     ? $snapshot->configuration['notifications']
@@ -268,6 +272,7 @@ final readonly class EnrollmentTransitionEngine
             }
 
             $fromStepKey = $locked->current_step_key;
+            $studentStateReversal = $this->reverseStudentSynchronization($locked, (string) $fromStepKey);
             $reversal = $this->payments->reverseLinked($locked);
             $locked->update([
                 'current_step_key' => $target['key'],
@@ -284,11 +289,46 @@ final readonly class EnrollmentTransitionEngine
                 'status' => $locked->status,
                 'idempotency_key' => $idempotencyKey,
                 'reason' => $reason,
-                'result' => ['payment_reversal' => $reversal],
+                'result' => [
+                    'payment_reversal' => $reversal,
+                    'student_state_reversal' => $studentStateReversal,
+                ],
             ]);
 
             return new TransitionResult(true, $fromStepKey, $target['key'], null, message: 'Enrollment reopened.');
         }, 3);
+    }
+
+    /** @return array<string, mixed> */
+    private function reverseStudentSynchronization(StudentEnrollment $enrollment, string $terminalStepKey): array
+    {
+        $terminalEvent = EnrollmentWorkflowEvent::query()
+            ->where('student_enrollment_id', $enrollment->id)
+            ->where('event_type', 'transition_succeeded')
+            ->where('to_step_key', $terminalStepKey)
+            ->latest('id')
+            ->first();
+        $actions = is_array($terminalEvent?->result['actions'] ?? null)
+            ? $terminalEvent->result['actions']
+            : [];
+        $synchronizations = collect($actions)
+            ->filter(fn (mixed $action): bool => is_array($action) && ($action['key'] ?? null) === 'enrollment.sync_student')
+            ->reverse()
+            ->values();
+        if ($synchronizations->isEmpty()) {
+            return ['restored' => false, 'skipped' => true];
+        }
+
+        $reversals = [];
+        foreach ($synchronizations as $synchronization) {
+            $metadata = $synchronization['metadata'] ?? null;
+            if (! is_array($metadata)) {
+                throw new EnrollmentTransitionException('Student synchronization cannot be safely reversed because its audit snapshot is unavailable.');
+            }
+            $reversals[] = $this->studentSynchronization->reverse($enrollment, $metadata);
+        }
+
+        return ['restored' => true, 'actions' => $reversals];
     }
 
     /** @param array<int, array<string, mixed>> $transitions @return array<string, mixed> */
@@ -305,6 +345,22 @@ final readonly class EnrollmentTransitionEngine
         }
 
         throw new EnrollmentTransitionException('No transition is available for the current enrollment context.');
+    }
+
+    /** @param array<int, array<string, mixed>> $rules */
+    private function assertCompletionRules(array $rules, EnrollmentContext $context): void
+    {
+        foreach ($rules as $rule) {
+            $handler = (string) ($rule['handler'] ?? '');
+            if (! EnrollmentRuleTiming::appliesAtCompletion($handler)) {
+                continue;
+            }
+
+            $result = $this->registry->rule($handler)->evaluate($context, $rule['configuration'] ?? []);
+            if (! $result->passed) {
+                throw new EnrollmentTransitionException($result->message);
+            }
+        }
     }
 
     /** @param array<int, array<string, mixed>> $conditions */

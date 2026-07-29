@@ -13,6 +13,7 @@ use App\Enrollment\EnrollmentPolicyManager;
 use App\Enrollment\EnrollmentPolicyRegistry;
 use App\Enrollment\EnrollmentPolicyResolver;
 use App\Enrollment\EnrollmentPolicySimulationService;
+use App\Enrollment\EnrollmentStudentSynchronizationService;
 use App\Enrollment\EnrollmentSubmissionContext;
 use App\Enrollment\EnrollmentTransitionEngine;
 use App\Enrollment\EnrollmentTuitionService;
@@ -33,12 +34,13 @@ final class EnrollmentPolicyServiceProvider extends ServiceProvider
             $assignmentService = $this->app->make(EnrollmentAssignmentService::class);
             $tuitionService = $this->app->make(EnrollmentTuitionService::class);
             $paymentService = $this->app->make(EnrollmentPaymentService::class);
+            $studentSynchronization = $this->app->make(EnrollmentStudentSynchronizationService::class);
 
             foreach ($this->ruleCatalog() as $key => [$label, $category]) {
                 $registry->registerRule(new ConfiguredEnrollmentRuleHandler($key, $label, $category));
             }
             foreach ($this->stateActionCatalog() as $key => $label) {
-                $registry->registerAction(new EnrollmentStateActionHandler($key, $label));
+                $registry->registerAction(new EnrollmentStateActionHandler($key, $label, $studentSynchronization));
             }
             foreach ($this->integrationActionCatalog() as $key => $label) {
                 $registry->registerAction(new EnrollmentIntegrationActionHandler(

@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Data\Enrollment\EnrollmentContext;
 use App\Enrollment\EnrollmentPolicyRegistry;
 use App\Enrollment\EnrollmentPolicyResolver;
+use App\Enrollment\EnrollmentRuleTiming;
 use App\Features\DynamicEnrollmentPolicies;
 use App\Http\Requests\ShowEnrollmentPolicyContextRequest;
 use App\Models\Course;
@@ -51,6 +52,10 @@ final readonly class EnrollmentPolicyContextController
         $compiled = $this->resolver->resolve($context);
         $failures = [];
         foreach ($compiled->configuration['rules'] ?? [] as $rule) {
+            if (! EnrollmentRuleTiming::appliesAtEntry((string) $rule['handler'])) {
+                continue;
+            }
+
             $result = $this->registry->rule((string) $rule['handler'])
                 ->evaluate($context, $rule['configuration'] ?? []);
             if (! $result->passed) {

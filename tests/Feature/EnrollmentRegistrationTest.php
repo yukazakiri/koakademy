@@ -2,12 +2,17 @@
 
 declare(strict_types=1);
 
+use App\Enrollment\EnrollmentPolicyManager;
+use App\Enrollment\EnrollmentPolicyPreset;
 use App\Enums\StudentStatus;
 use App\Enums\StudentType;
+use App\Features\DynamicEnrollmentPolicies;
 use App\Features\Toggles\OnlineCollegeEnrollment;
+use App\Models\ClassEnrollment;
 use App\Models\Classes;
 use App\Models\Course;
 use App\Models\Department;
+use App\Models\EnrollmentWorkflowEvent;
 use App\Models\GeneralSetting;
 use App\Models\School;
 use App\Models\Student;
@@ -289,6 +294,110 @@ it('auto creates student enrollment for new applicants when pipeline automation 
         'course_id' => $course->id,
     ]);
 });
+
+it('lets the resolved policy strategy control public curriculum assignment', function (
+    string $assignmentStrategy,
+    bool $legacyAutoAssignSubjects,
+    int $expectedSubjects,
+): void {
+    $school = School::factory()->create(['is_active' => true]);
+    $course = Course::factory()->create([
+        'school_id' => $school->id,
+        'department' => 'TESDA',
+        'is_active' => true,
+    ]);
+    $subject = Subject::factory()->create([
+        'course_id' => $course->id,
+        'academic_year' => 1,
+        'semester' => 1,
+    ]);
+    Classes::factory()->create([
+        'school_id' => $school->id,
+        'subject_id' => $subject->id,
+        'subject_ids' => [$subject->id],
+        'subject_code' => $subject->code,
+        'academic_year' => 1,
+        'semester' => 1,
+        'school_year' => '2035 - 2036',
+        'course_codes' => [$course->id],
+        'maximum_slots' => 40,
+    ]);
+    GeneralSetting::query()->updateOrCreate(
+        ['site_name' => 'KoAkademy'],
+        [
+            'semester' => 1,
+            'school_starting_date' => '2035-08-01',
+            'school_ending_date' => '2036-05-31',
+            'more_configs' => [
+                'enrollment_pipeline' => [
+                    'automation' => [
+                        'auto_create_student_enrollment' => true,
+                        'auto_assign_subjects' => $legacyAutoAssignSubjects,
+                        'default_new_applicant_to_first_year' => true,
+                    ],
+                ],
+            ],
+        ],
+    );
+    $author = User::factory()->create();
+    $configuration = EnrollmentPolicyPreset::standard();
+    $configuration['assignment']['strategy'] = $assignmentStrategy;
+    $manager = app(EnrollmentPolicyManager::class);
+    $policy = $manager->create([
+        'name' => 'Public policy assignment',
+        'school_id' => $school->id,
+        'configuration' => $configuration,
+    ], $author);
+    $manager->publish($policy, $policy->versions->first(), $author);
+    Feature::activate(DynamicEnrollmentPolicies::class);
+
+    $response = $this->post(route('enrollment.store'), [
+        'first_name' => 'Manual',
+        'last_name' => 'Policy',
+        'student_type' => 'tesda',
+        'course_id' => $course->id,
+        'birth_date' => '2000-01-01',
+        'gender' => 'male',
+        'nationality' => 'Filipino',
+        'address' => '123 Policy Street',
+        'academic_year' => 1,
+        'income_bracket_mode' => 'annual',
+        'use_same_parent_income' => true,
+        'family_income_bracket' => 'below_250k',
+        'contacts' => [
+            'emergency_contact_name' => 'Policy Guardian',
+            'emergency_contact_phone' => '09987654321',
+        ],
+        'parents' => [
+            'guardian_name' => 'Policy Guardian',
+            'guardian_relationship' => 'Parent',
+            'guardian_contact' => '09987654321',
+        ],
+        'consent' => true,
+    ]);
+
+    $response->assertRedirect(route('enrollment.create'))
+        ->assertSessionHas('flash.success');
+    $student = Student::query()->where('first_name', 'Manual')->where('last_name', 'Policy')->sole();
+    $enrollment = StudentEnrollment::query()->where('student_id', $student->id)->sole();
+    $initialized = EnrollmentWorkflowEvent::query()
+        ->where('student_enrollment_id', $enrollment->id)
+        ->where('event_type', 'initialized')
+        ->sole();
+
+    expect($enrollment->workflow_runtime)->toBe(StudentEnrollment::WorkflowRuntimePolicyV1)
+        ->and($enrollment->subjectsEnrolled()->count())->toBe($expectedSubjects)
+        ->and(ClassEnrollment::query()->where('student_id', $student->id)->count())->toBe(0)
+        ->and(data_get($initialized->result, 'actions.0.metadata.source'))->toBe(
+            $assignmentStrategy === 'assignment.manual' ? 'runtime_payload' : 'curriculum',
+        )
+        ->and(data_get($initialized->result, 'actions.0.metadata.skipped'))->toBe(
+            $assignmentStrategy === 'assignment.manual' ? true : null,
+        );
+})->with([
+    'manual ignores enabled legacy automation' => ['assignment.manual', true, 0],
+    'automatic ignores disabled legacy automation' => ['assignment.curriculum_automatic', false, 1],
+]);
 
 it('auto assigns first year subjects and open classes when enabled', function () {
     $course = Course::factory()->create([

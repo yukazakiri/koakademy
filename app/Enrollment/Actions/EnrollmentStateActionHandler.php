@@ -8,13 +8,15 @@ use App\Contracts\Enrollment\EnrollmentActionHandler;
 use App\Contracts\Enrollment\EnrollmentOperatorSchemaProvider;
 use App\Data\Enrollment\ActionResult;
 use App\Data\Enrollment\EnrollmentContext;
-use App\Models\Account;
-use App\Models\Student;
-use App\Models\StudentStatusRecord;
+use App\Enrollment\EnrollmentStudentSynchronizationService;
 
 final readonly class EnrollmentStateActionHandler implements EnrollmentActionHandler, EnrollmentOperatorSchemaProvider
 {
-    public function __construct(private string $handlerKey, private string $label) {}
+    public function __construct(
+        private string $handlerKey,
+        private string $label,
+        private EnrollmentStudentSynchronizationService $studentSynchronization,
+    ) {}
 
     public function key(): string
     {
@@ -104,46 +106,6 @@ final readonly class EnrollmentStateActionHandler implements EnrollmentActionHan
     /** @param array<string, mixed> $configuration */
     private function syncStudent(EnrollmentContext $context, array $configuration): ActionResult
     {
-        $attribute = (string) ($configuration['attribute'] ?? 'student_status');
-        $value = $configuration['value'] ?? null;
-
-        if (! in_array($attribute, ['status', 'student_status'], true)) {
-            return ActionResult::failure('Student synchronization attribute is not allowed.');
-        }
-
-        if ($value === null || ! $context->enrollment?->student) {
-            return ActionResult::failure('Student synchronization requires an attribute and value.');
-        }
-
-        $student = $context->enrollment->student;
-        $column = $attribute === 'student_status' ? 'status' : $attribute;
-        $student->forceFill([$column => $value])->save();
-        StudentStatusRecord::query()->updateOrCreate(
-            [
-                'student_id' => $context->enrollment->student_id,
-                'academic_year' => $context->enrollment->school_year,
-                'semester' => $context->enrollment->semester,
-            ],
-            ['status' => $value],
-        );
-
-        $accountId = null;
-        if (($configuration['sync_account'] ?? false) === true && $student->email) {
-            $account = Account::query()->where('email', $student->email)->first();
-            if ($account) {
-                $account->forceFill([
-                    'role' => 'student',
-                    'person_id' => $student->id,
-                    'person_type' => Student::class,
-                ])->save();
-                $accountId = $account->id;
-            }
-        }
-
-        return ActionResult::success([
-            'attribute' => $column,
-            'value' => $value,
-            'account_id' => $accountId,
-        ]);
+        return $this->studentSynchronization->synchronize($context, $configuration);
     }
 }

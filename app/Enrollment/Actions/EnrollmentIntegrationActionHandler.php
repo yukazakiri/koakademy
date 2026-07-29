@@ -265,6 +265,16 @@ final readonly class EnrollmentIntegrationActionHandler implements EnrollmentAct
     /** @param array<string, mixed> $configuration */
     private function calculateTuition(EnrollmentContext $context, array $configuration, string $idempotencyKey): ActionResult
     {
+        $assignmentStrategy = (string) data_get($context->pinnedPolicyConfiguration, 'assignment.strategy', 'assignment.manual');
+        if ($context->channel === 'public'
+            && $assignmentStrategy === 'assignment.manual'
+            && $context->enrollment?->subjectsEnrolled()->doesntExist()) {
+            return ActionResult::success([
+                'skipped' => true,
+                'reason' => 'awaiting_staff_subject_selection',
+            ]);
+        }
+
         $strategyKey = (string) data_get($context->pinnedPolicyConfiguration, 'billing.strategy', 'billing.course_rate');
         $strategy = $this->registry->billingStrategy($strategyKey);
         if (! $strategy instanceof RuntimeEnrollmentBillingStrategy) {

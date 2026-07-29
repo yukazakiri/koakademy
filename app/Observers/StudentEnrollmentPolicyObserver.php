@@ -9,6 +9,7 @@ use App\Data\Enrollment\EnrollmentSubmissionData;
 use App\Enrollment\EnrollmentPolicyPreset;
 use App\Enrollment\EnrollmentPolicyRegistry;
 use App\Enrollment\EnrollmentPolicyResolver;
+use App\Enrollment\EnrollmentRuleTiming;
 use App\Enrollment\EnrollmentSubmissionContext;
 use App\Features\DynamicEnrollmentPolicies;
 use App\Models\StudentEnrollment;
@@ -49,6 +50,10 @@ final readonly class StudentEnrollmentPolicyObserver
         $snapshot = $this->resolver->snapshot($context);
         $failures = [];
         foreach ($snapshot->configuration['rules'] ?? [] as $rule) {
+            if (! EnrollmentRuleTiming::appliesAtEntry((string) $rule['handler'])) {
+                continue;
+            }
+
             $result = $this->registry->rule($rule['handler'])->evaluate($context, $rule['configuration'] ?? []);
             if (! $result->passed) {
                 $failures[$rule['key']] = $result->message;

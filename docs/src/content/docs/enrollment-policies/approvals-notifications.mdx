@@ -49,6 +49,8 @@ Example:
 
 :::caution[No backward loops]
 Corrections use an authorized **reopen** operation, not a backward workflow link. Reopen records the actor, target step, reason, and idempotency key.
+
+When the terminal path synchronized the student status, period status record, or linked account role, reopen restores the audited pre-transition values in the same transaction that reverses enrollment-scoped payments.
 :::
 
 ## Built-in actions

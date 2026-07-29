@@ -12,6 +12,7 @@ use App\Enums\UserRole;
 use App\Features\DynamicEnrollmentPolicies;
 use App\Jobs\GenerateAssessmentPdfJob;
 use App\Jobs\SendAssessmentNotificationJob;
+use App\Models\Account;
 use App\Models\AdditionalFee;
 use App\Models\AdminTransaction;
 use App\Models\EnrollmentPolicy;
@@ -20,6 +21,7 @@ use App\Models\EnrollmentWorkflowEvent;
 use App\Models\School;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
+use App\Models\StudentStatusRecord;
 use App\Models\StudentTransaction;
 use App\Models\Subject;
 use App\Models\Transaction;
@@ -330,6 +332,156 @@ it('executes the explicit default journey through synchronization and completion
     Queue::assertPushed(GenerateAssessmentPdfJob::class, 1);
     Queue::assertPushed(SendAssessmentNotificationJob::class, 1);
 });
+
+it('defers minimum payment rules until the terminal transition', function (string $type, float $value): void {
+    Queue::fake();
+    $school = School::factory()->create();
+    $course = App\Models\Course::factory()->create([
+        'school_id' => $school->id,
+        'miscellaneous' => 0,
+        'miscelaneous' => 0,
+    ]);
+    $student = Student::factory()->create([
+        'school_id' => $school->id,
+        'course_id' => $course->id,
+        'academic_year' => 1,
+        'status' => StudentStatus::Applicant,
+    ]);
+    $subject = Subject::factory()->create([
+        'course_id' => $course->id,
+        'academic_year' => 1,
+        'semester' => 1,
+    ]);
+    $configuration = EnrollmentPolicyPreset::standard();
+    $configuration['rules'][] = [
+        'key' => 'minimum_payment',
+        'handler' => 'billing.minimum_payment',
+        'configuration' => ['type' => $type, 'value' => $value],
+    ];
+    ($this->publishEnrollmentPolicy)($configuration, $school);
+    $coordinator = app(EnrollmentWorkflowCoordinator::class);
+
+    $enrollment = $coordinator->submit(($this->submissionFor)(
+        $student,
+        $subject,
+        "minimum-payment-{$type}-submission",
+        billingOverrides: ['miscellaneous_fee' => 0],
+    ));
+    expect($enrollment->current_step_key)->toBe('submitted');
+
+    $coordinator->verifyAcademic($enrollment, $this->actor, "minimum-payment-{$type}-academic");
+    expect(fn () => $coordinator->verifyPayment($enrollment->refresh(), $this->actor, [
+        'invoicenumber' => "INV-MINIMUM-{$type}-LOW",
+        'payment_method' => 'Cash',
+        'settlements' => ['tuition_fee' => 400],
+    ], "minimum-payment-{$type}-low"))
+        ->toThrow(EnrollmentTransitionException::class, 'configured minimum payment');
+
+    expect($enrollment->refresh()->current_step_key)->toBe('academic_verified')
+        ->and(StudentTransaction::query()->where('student_enrollment_id', $enrollment->id)->exists())->toBeFalse()
+        ->and($student->refresh()->status)->toBe(StudentStatus::Applicant);
+    Queue::assertNotPushed(GenerateAssessmentPdfJob::class);
+    Queue::assertNotPushed(SendAssessmentNotificationJob::class);
+
+    $result = $coordinator->verifyPayment($enrollment->refresh(), $this->actor, [
+        'invoicenumber' => "INV-MINIMUM-{$type}-OK",
+        'payment_method' => 'Cash',
+        'settlements' => ['tuition_fee' => 500],
+    ], "minimum-payment-{$type}-ok");
+
+    expect($result->terminalOutcome)->toBe('completed')
+        ->and($enrollment->refresh()->current_step_key)->toBe('completed')
+        ->and($student->refresh()->status)->toBe(StudentStatus::Enrolled);
+})->with([
+    'fixed amount' => ['fixed', 500],
+    'percentage of tuition' => ['percentage', 50],
+]);
+
+it('restores student status records and account linkage when reopening a terminal enrollment', function (bool $existingStatusRecord): void {
+    Queue::fake();
+    $school = School::factory()->create();
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id]);
+    $student = Student::factory()->create([
+        'school_id' => $school->id,
+        'course_id' => $course->id,
+        'academic_year' => 1,
+        'email' => 'reopen-policy-student@example.com',
+        'status' => StudentStatus::Applicant,
+    ]);
+    $subject = Subject::factory()->create([
+        'course_id' => $course->id,
+        'academic_year' => 1,
+        'semester' => 1,
+    ]);
+    if ($existingStatusRecord) {
+        StudentStatusRecord::query()->create([
+            'student_id' => $student->id,
+            'school_id' => $school->id,
+            'academic_year' => '2035 - 2036',
+            'semester' => 1,
+            'status' => StudentStatus::Applicant,
+        ]);
+    }
+    $account = Account::factory()->create([
+        'email' => $student->email,
+        'role' => 'guest',
+        'person_id' => null,
+        'person_type' => null,
+        'is_active' => true,
+    ]);
+    ($this->publishEnrollmentPolicy)(EnrollmentPolicyPreset::standard(), $school);
+    $coordinator = app(EnrollmentWorkflowCoordinator::class);
+    $enrollment = $coordinator->submit(($this->submissionFor)($student, $subject, 'reopen-state-submission'));
+    $coordinator->verifyAcademic($enrollment, $this->actor, 'reopen-state-academic');
+    $coordinator->verifyPayment($enrollment->refresh(), $this->actor, [
+        'invoicenumber' => 'INV-REOPEN-STATE',
+        'payment_method' => 'Cash',
+        'settlements' => ['tuition_fee' => 500],
+    ], 'reopen-state-payment');
+
+    $synchronizedStatus = StudentStatusRecord::query()
+        ->where('student_id', $student->id)
+        ->where('academic_year', '2035 - 2036')
+        ->where('semester', 1)
+        ->sole();
+    expect($student->refresh()->status)->toBe(StudentStatus::Enrolled)
+        ->and($synchronizedStatus->status)->toBe(StudentStatus::Enrolled)
+        ->and($account->refresh()->role)->toBe('student')
+        ->and($account->person_id)->toBe($student->id)
+        ->and($account->person_type)->toBe(Student::class);
+
+    $this->actor->givePermissionTo(Permission::findOrCreate('Reopen:StudentEnrollment', 'web'));
+    $result = $coordinator->reopen(
+        $enrollment->refresh(),
+        $this->actor,
+        'academic_verified',
+        'Correct the cashier verification.',
+        'reopen-state-reversal',
+    );
+
+    expect($result->successful)->toBeTrue()
+        ->and($enrollment->refresh()->current_step_key)->toBe('academic_verified')
+        ->and($student->refresh()->status)->toBe(StudentStatus::Applicant)
+        ->and($account->refresh()->role)->toBe('guest')
+        ->and($account->person_id)->toBeNull()
+        ->and($account->person_type)->toBeNull()
+        ->and(StudentTransaction::query()->where('student_enrollment_id', $enrollment->id)->exists())->toBeFalse()
+        ->and(StudentStatusRecord::query()
+            ->where('student_id', $student->id)
+            ->where('academic_year', '2035 - 2036')
+            ->where('semester', 1)
+            ->exists())->toBe($existingStatusRecord)
+        ->and(data_get(
+            EnrollmentWorkflowEvent::query()->where('event_type', 'reopened')->latest('id')->value('result'),
+            'student_state_reversal.restored',
+        ))->toBeTrue();
+    if ($existingStatusRecord) {
+        expect($synchronizedStatus->refresh()->status)->toBe(StudentStatus::Applicant);
+    }
+})->with([
+    'restores an existing period status' => true,
+    'removes a status created by completion' => false,
+]);
 
 it('keeps normalized billing behavior pinned after a newer policy version is published', function (): void {
     $school = School::factory()->create();

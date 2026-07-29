@@ -6,6 +6,7 @@ namespace App\Enrollment;
 
 use App\Data\Enrollment\CompiledEnrollmentPolicy;
 use App\Data\Enrollment\EnrollmentContext;
+use App\Data\Enrollment\RuleResult;
 
 final readonly class EnrollmentPolicySimulationService
 {
@@ -28,7 +29,10 @@ final readonly class EnrollmentPolicySimulationService
         $manifest = $this->registry->manifest();
 
         foreach ($compiled->configuration['rules'] ?? [] as $rule) {
-            $result = $this->registry->rule($rule['handler'])->evaluate($context, $rule['configuration'] ?? []);
+            $handler = (string) $rule['handler'];
+            $result = EnrollmentRuleTiming::appliesAtCompletion($handler)
+                ? RuleResult::pass(['deferred' => true, 'enforcement' => 'terminal_transition'])
+                : $this->registry->rule($handler)->evaluate($context, $rule['configuration'] ?? []);
             $category = (string) data_get($manifest, "rules.{$rule['handler']}.category", 'eligibility');
             $row = [
                 'key' => $rule['key'],

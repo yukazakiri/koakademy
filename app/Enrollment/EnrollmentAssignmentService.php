@@ -40,6 +40,14 @@ final readonly class EnrollmentAssignmentService
             ? $this->payloadSubjects($payload)
             : $this->curriculumSubjects($enrollment);
         if ($subjects->isEmpty()) {
+            if ($source === 'runtime_payload' && $context->channel === 'public') {
+                return ActionResult::success([
+                    'subject_enrollment_ids' => [],
+                    'source' => $source,
+                    'skipped' => true,
+                ]);
+            }
+
             return ActionResult::failure($source === 'runtime_payload'
                 ? 'The enrollment submission does not contain any subjects.'
                 : 'No curriculum subjects match this enrollment.');

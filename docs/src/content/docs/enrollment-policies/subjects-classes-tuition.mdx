@@ -52,6 +52,8 @@ Receipt behavior is also explicit:
 - **Fixed amount** — require a specific currency amount.
 - **Percentage** — require a portion of calculated tuition.
 
+Minimum-payment rules are deferred while an applicant starts enrollment. They are enforced inside the terminal transition after configured payment actions run, and policy simulations identify them as completion gates rather than entry blockers.
+
 A no-payment blueprint omits the payment action entirely; it does not synthesize a zero-value transaction.
 
 :::caution[Billing sections replace atomically]
@@ -63,6 +65,8 @@ When a scoped blueprint overrides billing, it owns the complete billing strategy
 ### Manual enrollment with payment later
 
 Use manual assignment, course-rate tuition, accepted payment methods, and **No minimum**. Keep assessment generation in the workflow if students still need an official statement.
+
+Public manual applications do not synthesize curriculum or class selections. Staff can make those selections through the configured assisted workflow; automatic curriculum policies continue to resolve subjects through their pinned assignment strategy.
 
 ### Reserve a class after cashier verification
 

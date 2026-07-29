@@ -39,6 +39,11 @@ it('returns only the safe server-resolved enrollment requirements for the public
         'required' => true,
         'enforcement_step' => 'academic_verified',
     ]];
+    $configuration['rules'][] = [
+        'key' => 'minimum_payment',
+        'handler' => 'billing.minimum_payment',
+        'configuration' => ['type' => 'fixed', 'value' => 500],
+    ];
     $manager = app(EnrollmentPolicyManager::class);
     $policy = $manager->create([
         'name' => 'Public requirements',

@@ -109,6 +109,40 @@ it('assigns curriculum subjects and calculates tuition idempotently', function (
         ->and($enrollment->studentTuition()->count())->toBe(1);
 });
 
+it('skips empty public manual subject selections but rejects empty staff submissions', function (): void {
+    $course = Course::factory()->create();
+    $student = Student::factory()->create(['course_id' => $course->id, 'academic_year' => 1]);
+    $enrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'academic_year' => 1,
+        'semester' => 1,
+        'school_year' => '2026 - 2027',
+    ]);
+    $handler = app(EnrollmentPolicyRegistry::class)->action('enrollment.assign_subjects');
+    $configuration = [
+        'source' => 'runtime_payload',
+        'runtime_payload' => ['subjects' => []],
+    ];
+
+    $public = $handler->execute(
+        EnrollmentContext::fromEnrollment($enrollment, 'public'),
+        $configuration,
+        'public-empty-subjects',
+    );
+    $administrator = $handler->execute(
+        EnrollmentContext::fromEnrollment($enrollment, 'administrator'),
+        $configuration,
+        'administrator-empty-subjects',
+    );
+
+    expect($public->successful)->toBeTrue()
+        ->and($public->metadata['skipped'])->toBeTrue()
+        ->and($administrator->successful)->toBeFalse()
+        ->and($administrator->message)->toBe('The enrollment submission does not contain any subjects.')
+        ->and($enrollment->subjectsEnrolled()->count())->toBe(0);
+});
+
 it('reserves an available class without duplicating enrollment on retry', function (): void {
     $course = Course::factory()->create();
     $student = Student::factory()->create(['course_id' => $course->id, 'academic_year' => 1]);

@@ -8,6 +8,7 @@ use App\Enrollment\EnrollmentPolicyManager;
 use App\Enrollment\EnrollmentPolicyPreset;
 use App\Enrollment\EnrollmentPolicyResolver;
 use App\Enrollment\EnrollmentPolicyRolloutService;
+use App\Enrollment\EnrollmentPolicySimulationService;
 use App\Features\DynamicEnrollmentPolicies;
 use App\Models\EnrollmentPolicyVersion;
 use App\Models\School;
@@ -46,6 +47,37 @@ it('publishes scoped drafts and resolves them after the global layer', function 
     expect(collect($compiled->configuration['rules'])->pluck('key'))
         ->toContain('school_documents')
         ->and($compiled->sourceVersionIds)->toContain($draft->id);
+});
+
+it('reports completion payment rules as deferred instead of enrollment blockers during simulation', function (): void {
+    $manager = app(EnrollmentPolicyManager::class);
+    $school = School::factory()->create();
+    $author = User::factory()->create();
+    $configuration = EnrollmentPolicyPreset::standard();
+    $configuration['rules'][] = [
+        'key' => 'minimum_payment',
+        'handler' => 'billing.minimum_payment',
+        'configuration' => ['type' => 'percentage', 'value' => 20],
+    ];
+    $policy = $manager->create([
+        'name' => 'Deferred payment simulation',
+        'school_id' => $school->id,
+        'configuration' => $configuration,
+    ], $author);
+    $manager->publish($policy, $policy->versions->first(), $author);
+
+    $result = app(EnrollmentPolicySimulationService::class)->simulate(new EnrollmentContext(
+        schoolId: $school->id,
+        studentType: 'college',
+        courseId: null,
+        schoolYear: '2035 - 2036',
+        semester: 1,
+    ));
+    $minimumPayment = collect($result['eligibility'])->firstWhere('handler', 'billing.minimum_payment');
+
+    expect($minimumPayment['passed'])->toBeTrue()
+        ->and($minimumPayment['metadata']['deferred'])->toBeTrue()
+        ->and(collect($result['blockers'])->pluck('handler'))->not->toContain('billing.minimum_payment');
 });
 
 it('stores sparse scoped drafts and reports inherited source provenance', function (): void {

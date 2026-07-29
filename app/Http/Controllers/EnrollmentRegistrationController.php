@@ -990,7 +990,7 @@ final class EnrollmentRegistrationController extends Controller
             return;
         }
 
-        $subjects = Feature::active(\App\Features\DynamicEnrollmentPolicies::class) || $shouldAutoAssignSubjects
+        $subjects = ! Feature::active(\App\Features\DynamicEnrollmentPolicies::class) && $shouldAutoAssignSubjects
             ? Subject::query()
                 ->where('course_id', $student->course_id)
                 ->where('academic_year', $targetAcademicYear)

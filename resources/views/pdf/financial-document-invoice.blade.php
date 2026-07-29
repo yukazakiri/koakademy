@@ -56,7 +56,7 @@
             <thead><tr><th>Assessment item</th><th class="amount">Amount</th></tr></thead>
             <tbody>
             @foreach($financialDocument['charges'] as $charge)
-                @if((float) $charge['amount'] > 0)
+                @if(abs((float) $charge['amount']) > 0.00001)
                     <tr><td>{{ $charge['label'] }}</td><td class="amount">{{ $currency((float) $charge['amount']) }}</td></tr>
                 @endif
             @endforeach

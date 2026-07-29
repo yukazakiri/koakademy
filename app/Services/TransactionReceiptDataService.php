@@ -31,6 +31,7 @@ final readonly class TransactionReceiptDataService
             ->map(fn (mixed $amount): float => (float) $amount)
             ->filter(fn (float $amount): bool => $amount > 0)
             ->all();
+        $displayedTotal = (float) array_sum($items);
 
         return [
             'id' => $transaction->id,
@@ -44,7 +45,9 @@ final readonly class TransactionReceiptDataService
             'student_email' => $student?->email,
             'student_course' => $student?->Course?->code ?? 'N/A',
             'student_year_level' => $student?->academic_year,
-            'amount' => (float) ($studentTransaction?->amount ?? $transaction->raw_total_amount),
+            'amount' => $displayedTotal > 0
+                ? $displayedTotal
+                : (float) ($studentTransaction?->amount ?? $transaction->raw_total_amount),
             'method' => $transaction->payment_method,
             'status' => $studentTransaction?->status ?? $transaction->status,
             'items' => $items,

@@ -2,9 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Enrollment\LegacyEnrollmentWorkflowAdapter;
+use App\Enums\EnrollStat;
 use App\Enums\FinancialDeliveryStatus;
 use App\Enums\FinancialDocumentStatus;
+use App\Enums\UserRole;
 use App\Jobs\SendFinancialDocumentJob;
+use App\Models\AdditionalFee;
+use App\Models\AdminTransaction;
 use App\Models\Course;
 use App\Models\FinancialDocumentIssuance;
 use App\Models\GeneralSetting;
@@ -13,12 +18,91 @@ use App\Models\StudentEnrollment;
 use App\Models\StudentTransaction;
 use App\Models\StudentTuition;
 use App\Models\Transaction;
+use App\Models\User;
 use App\Services\EnrollmentPipelineService;
 use App\Services\EnrollmentService;
 use App\Services\FinancialDocumentViewDataService;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Mail;
 use Inertia\Testing\AssertableInertia;
+
+it('legacy cashier verification links the full mixed-settlement receipt amount', function (): void {
+    GeneralSetting::factory()->create([
+        'school_starting_date' => '2026-06-01',
+        'school_ending_date' => '2027-03-31',
+        'semester' => 1,
+        'email_from_address' => 'billing@example.test',
+        'more_configs' => [
+            'notification_channels' => ['enabled_channels' => ['mail']],
+            'finance_documents' => [
+                'automatic_receipts_enabled' => true,
+                'require_paper_or_reference' => true,
+                'manual_invoices_enabled' => true,
+            ],
+        ],
+    ]);
+    $course = Course::factory()->create();
+    $student = Student::factory()->create([
+        'course_id' => $course->id,
+        'academic_year' => 2,
+        'email' => 'legacy-mixed-settlements@example.test',
+    ]);
+    $enrollment = StudentEnrollment::factory()->legacyWorkflow()->create([
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'academic_year' => 2,
+        'status' => EnrollStat::VerifiedByDeptHead->value,
+    ]);
+    StudentTuition::query()->create([
+        'enrollment_id' => $enrollment->id,
+        'student_id' => $student->id,
+        'total_tuition' => 4000,
+        'total_balance' => 5000,
+        'total_lectures' => 3000,
+        'total_laboratory' => 1000,
+        'total_miscelaneous_fees' => 1000,
+        'discount' => 0,
+        'downpayment' => 500,
+        'overall_tuition' => 5000,
+        'semester' => 1,
+        'school_year' => '2026 - 2027',
+        'academic_year' => 2,
+    ]);
+    $separateFee = AdditionalFee::query()->create([
+        'enrollment_id' => $enrollment->id,
+        'fee_name' => 'Legacy ID card',
+        'amount' => 50,
+        'is_separate_transaction' => true,
+    ]);
+    $cashier = User::factory()->create(['role' => UserRole::Cashier]);
+    $this->actingAs($cashier);
+    Bus::fake();
+
+    $result = app(LegacyEnrollmentWorkflowAdapter::class)->verifyByCashier($enrollment, [
+        'invoicenumber' => 'OR-LEGACY-MIXED-1',
+        'payment_method' => 'Cash',
+        'settlements' => [
+            'tuition_fee' => 500,
+            'registration_fee' => 125,
+            'others' => 75,
+        ],
+        "separate_fee_{$separateFee->id}_transaction" => 'OR-LEGACY-SEPARATE-1',
+    ]);
+
+    $transaction = Transaction::query()->where('invoicenumber', 'OR-LEGACY-MIXED-1')->sole();
+    $separateTransaction = Transaction::query()->where('invoicenumber', 'OR-LEGACY-SEPARATE-1')->sole();
+    $receipt = FinancialDocumentIssuance::query()
+        ->where('transaction_id', $transaction->id)
+        ->sole();
+    expect($result)->toBeTrue()
+        ->and((float) StudentTransaction::query()->where('transaction_id', $transaction->id)->value('amount'))->toBe(700.0)
+        ->and((float) AdminTransaction::query()->where('transaction_id', $transaction->id)->value('amount'))->toBe(700.0)
+        ->and((float) collect($receipt->snapshot['items'])->sum())->toBe(700.0)
+        ->and($receipt->snapshot['amount'])->toEqual(700.0)
+        ->and($transaction->transaction_date)->not->toBeNull()
+        ->and($separateTransaction->transaction_date)->not->toBeNull()
+        ->and($transaction->transaction_date?->equalTo($separateTransaction->transaction_date))->toBeTrue();
+});
 
 it('undo cashier verification reverses linked transactions and recalculates tuition', function (): void {
     GeneralSetting::factory()->create([

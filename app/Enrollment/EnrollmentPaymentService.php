@@ -131,7 +131,6 @@ final readonly class EnrollmentPaymentService
                     settlements: ['others' => (float) $fee->amount],
                     invoiceNumber: $invoiceNumberForFee,
                     signature: $payload['signature'] ?? null,
-                    amount: (float) $fee->amount,
                     idempotencyKey: $feeIdempotencyKey,
                 );
             }
@@ -166,7 +165,6 @@ final readonly class EnrollmentPaymentService
                 settlements: $settlements,
                 invoiceNumber: $invoiceNumber,
                 signature: $payload['signature'] ?? null,
-                amount: $tuitionPayment,
                 idempotencyKey: $idempotencyKey,
             );
         }
@@ -234,7 +232,6 @@ final readonly class EnrollmentPaymentService
         array $settlements,
         string $invoiceNumber,
         mixed $signature,
-        float $amount,
         string $idempotencyKey,
     ): StudentTransaction {
         $transaction = Transaction::query()->create([
@@ -247,6 +244,10 @@ final readonly class EnrollmentPaymentService
             'signature' => $signature,
             'user_id' => $actorId,
         ]);
+        $amount = (float) collect($settlements)
+            ->map(fn (mixed $value): float => (float) $value)
+            ->filter(fn (float $value): bool => $value > 0)
+            ->sum();
 
         $studentTransaction = StudentTransaction::query()->create([
             'student_id' => $enrollment->student_id,

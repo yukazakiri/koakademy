@@ -82,6 +82,35 @@ it('attributes Cashier page receipts to the authenticated operator before the ad
         ->and($receipt->snapshot['cashier'])->toBe($cashier->name);
 });
 
+it('freezes the receipt total from every displayed settlement row', function (): void {
+    Bus::fake();
+    enableFinancialDocumentMail();
+    $student = Student::factory()->create(['email' => 'mixed-settlements@example.test']);
+    $transaction = Transaction::query()->create([
+        'description' => 'Mixed enrollment payment',
+        'payment_method' => 'Cash',
+        'status' => 'paid',
+        'transaction_date' => now(),
+        'settlements' => [
+            'tuition_fee' => 500,
+            'registration_fee' => 125,
+            'others' => 75,
+        ],
+        'invoicenumber' => 'OR-MIXED-1',
+    ]);
+    StudentTransaction::query()->create([
+        'student_id' => $student->id,
+        'transaction_id' => $transaction->id,
+        'amount' => 500,
+        'status' => 'paid',
+    ]);
+
+    $receipt = FinancialDocumentIssuance::query()->sole();
+
+    expect((float) collect($receipt->snapshot['items'])->sum())->toBe(700.0)
+        ->and($receipt->snapshot['amount'])->toEqual(700.0);
+});
+
 it('holds a paid eReceipt until its paper OR number is recorded', function (): void {
     Bus::fake();
     enableFinancialDocumentMail();
@@ -400,6 +429,53 @@ it('reconciles separate enrollment fees and their dedicated payments on an eInvo
         ->and($invoice->snapshot['totals']['balance'])->toEqual(4000.0);
 });
 
+it('renders a negative assessment adjustment on an official eInvoice', function (): void {
+    Bus::fake();
+    enableFinancialDocumentMail();
+    $issuer = User::factory()->create(['role' => UserRole::Cashier]);
+    $student = Student::factory()->create(['email' => 'adjustment@example.test']);
+    $enrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'semester' => 1,
+        'school_year' => '2026 - 2027',
+    ]);
+    StudentTuition::query()->create([
+        'student_id' => $student->id,
+        'enrollment_id' => $enrollment->id,
+        'semester' => 1,
+        'school_year' => '2026 - 2027',
+        'academic_year' => 1,
+        'total_lectures' => 3000,
+        'total_laboratory' => 1000,
+        'total_miscelaneous_fees' => 1000,
+        'total_tuition' => 4000,
+        'overall_tuition' => 4500,
+        'total_balance' => 4500,
+        'paid' => 0,
+        'discount' => 0,
+        'downpayment' => 0,
+        'status' => 'pending',
+    ]);
+
+    $invoice = app(FinancialDocumentService::class)->issueInvoice(
+        $enrollment,
+        $issuer,
+        'adjustment@example.test',
+    );
+    $document = app(FinancialDocumentViewDataService::class)->build($invoice);
+    $rendered = view('pdf.financial-document-invoice', [
+        'financialDocument' => $document,
+    ])->render();
+    $adjustment = collect($invoice->snapshot['charges'])
+        ->firstWhere('label', 'Assessment adjustment');
+    $formatter = new NumberFormatter('en_PH', NumberFormatter::CURRENCY);
+    $formattedAdjustment = $formatter->formatCurrency(-500, 'PHP');
+
+    expect($adjustment['amount'])->toEqual(-500.0)
+        ->and((float) collect($invoice->snapshot['charges'])->sum('amount'))->toBe(4500.0)
+        ->and($rendered)->toContain('Assessment adjustment', $formattedAdjustment);
+});
+
 it('rejects paid enrollments and preserves older invoice snapshots when a balance changes', function (): void {
     Bus::fake();
     enableFinancialDocumentMail();
@@ -664,4 +740,51 @@ it('verifies authentic documents without exposing full student identity', functi
     $this->get(portalUrlForAdministrators("/verify/finance/{$issuance->verification_token}"))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page->where('status', 'integrity_failed'));
+});
+
+it('verifies historical documents with a retained previous application key', function (): void {
+    $previousKey = 'base64:'.base64_encode(str_repeat('p', 32));
+    $currentKey = 'base64:'.base64_encode(str_repeat('c', 32));
+    config([
+        'app.key' => $previousKey,
+        'app.previous_keys' => [],
+    ]);
+    Bus::fake();
+    enableFinancialDocumentMail();
+    $student = Student::factory()->create(['email' => 'rotated-key@example.test']);
+    $transaction = Transaction::query()->create([
+        'description' => 'Pre-rotation payment',
+        'payment_method' => 'Cash',
+        'status' => 'paid',
+        'transaction_date' => now(),
+        'settlements' => ['tuition_fee' => 900],
+        'invoicenumber' => 'OR-PRE-ROTATION',
+    ]);
+    StudentTransaction::query()->create([
+        'student_id' => $student->id,
+        'transaction_id' => $transaction->id,
+        'amount' => 900,
+        'status' => 'paid',
+    ]);
+    $issuance = FinancialDocumentIssuance::query()->sole();
+    $verificationToken = $issuance->verification_token;
+
+    config([
+        'app.key' => $currentKey,
+        'app.previous_keys' => [$previousKey],
+    ]);
+
+    expect(app(FinancialDocumentService::class)->hasValidIntegrity($issuance->fresh()))->toBeTrue();
+    $this->get(portalUrlForAdministrators("/verify/finance/{$verificationToken}"))
+        ->assertSuccessful()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page->where('status', 'valid'));
+
+    config(['app.previous_keys' => []]);
+    expect(app(FinancialDocumentService::class)->hasValidIntegrity($issuance->fresh()))->toBeFalse();
+
+    config(['app.previous_keys' => [$previousKey]]);
+    $tamperedSnapshot = $issuance->snapshot;
+    $tamperedSnapshot['amount'] = 9999;
+    $issuance->update(['snapshot' => $tamperedSnapshot]);
+    expect(app(FinancialDocumentService::class)->hasValidIntegrity($issuance->fresh()))->toBeFalse();
 });

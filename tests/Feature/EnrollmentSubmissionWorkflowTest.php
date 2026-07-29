@@ -617,7 +617,11 @@ it('enforces payment gates, attributes the actor, and reverses only enrollment-s
     $payload = [
         'invoicenumber' => 'INV-VALID-001',
         'payment_method' => 'Bank Transfer',
-        'settlements' => ['tuition_fee' => 500],
+        'settlements' => [
+            'tuition_fee' => 500,
+            'registration_fee' => 125,
+            'others' => 75,
+        ],
     ];
     $first = $coordinator->verifyPayment($enrollment->refresh(), $this->actor, $payload, 'payment-valid-1');
     $retry = $coordinator->verifyPayment($enrollment->refresh(), $this->actor, $payload, 'payment-valid-1');
@@ -626,7 +630,9 @@ it('enforces payment gates, attributes the actor, and reverses only enrollment-s
         ->and($retry->message)->toContain('already processed')
         ->and(Transaction::query()->count())->toBe(1)
         ->and(StudentTransaction::query()->where('student_enrollment_id', $enrollment->id)->count())->toBe(1)
+        ->and((float) StudentTransaction::query()->where('student_enrollment_id', $enrollment->id)->value('amount'))->toBe(700.0)
         ->and(AdminTransaction::query()->value('admin_id'))->toBe($this->actor->id)
+        ->and((float) AdminTransaction::query()->value('amount'))->toBe(700.0)
         ->and(EnrollmentWorkflowEvent::query()
             ->where('student_enrollment_id', $enrollment->id)
             ->where('event_type', 'transition_succeeded')

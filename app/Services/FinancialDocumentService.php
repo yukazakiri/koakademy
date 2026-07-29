@@ -367,7 +367,20 @@ final readonly class FinancialDocumentService
 
     public function hasValidIntegrity(FinancialDocumentIssuance $issuance): bool
     {
-        return hash_equals($issuance->integrity_signature, $this->sign($issuance->snapshot));
+        $payload = $this->signaturePayload($issuance->snapshot);
+        $keys = collect([
+            config('app.key'),
+            ...((array) config('app.previous_keys', [])),
+        ])
+            ->filter(fn (mixed $key): bool => is_string($key) && $key !== '')
+            ->unique();
+
+        return $keys->contains(
+            fn (string $key): bool => hash_equals(
+                $issuance->integrity_signature,
+                hash_hmac('sha256', $payload, $key),
+            ),
+        );
     }
 
     /** @param array<string, mixed> $snapshot */
@@ -375,7 +388,7 @@ final readonly class FinancialDocumentService
     {
         return hash_hmac(
             'sha256',
-            json_encode($this->canonicalize($snapshot), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+            $this->signaturePayload($snapshot),
             (string) config('app.key'),
         );
     }
@@ -480,5 +493,14 @@ final readonly class FinancialDocumentService
         }
 
         return $value;
+    }
+
+    /** @param array<string, mixed> $snapshot */
+    private function signaturePayload(array $snapshot): string
+    {
+        return json_encode(
+            $this->canonicalize($snapshot),
+            JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
+        );
     }
 }

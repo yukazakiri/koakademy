@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.0](https://github.com/yukazakiri/koakademy/compare/v1.16.2...v1.17.0) (2026-07-31)
+
+
+### Features
+
+* **library:** add filters, pagination, and bulk delete to admin book… ([#129](https://github.com/yukazakiri/koakademy/issues/129)) ([ba83d25](https://github.com/yukazakiri/koakademy/commit/ba83d2545d703a7ef3913bc7b1121d6972b85463))
+
 ## [1.16.2](https://github.com/yukazakiri/koakademy/compare/v1.16.1...v1.16.2) (2026-07-29)
 
 

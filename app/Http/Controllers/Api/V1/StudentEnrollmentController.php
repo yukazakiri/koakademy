@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Filament\Resources\StudentEnrollments\Api;
+namespace App\Http\Controllers\Api\V1;
 
 use App\Data\Enrollment\EnrollmentSubmissionData;
 use App\Enrollment\EnrollmentWorkflowCoordinator;

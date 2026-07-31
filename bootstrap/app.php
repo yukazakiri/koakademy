@@ -72,6 +72,9 @@ return Application::configure(basePath: dirname(__DIR__))
                         'errors' => $e->errors(),
                         'code' => $code,
                     ], $statusCode);
+                } elseif ($e instanceof Illuminate\Http\Exceptions\ThrottleRequestsException) {
+                    $statusCode = 429;
+                    $code = 'RATE_LIMITED';
                 } elseif ($e instanceof Symfony\Component\HttpKernel\Exception\HttpExceptionInterface) {
                     $statusCode = $e->getStatusCode();
                     $code = $statusCode === 403 ? 'FORBIDDEN' : ($statusCode === 404 ? 'NOT_FOUND' : 'HTTP_ERROR');

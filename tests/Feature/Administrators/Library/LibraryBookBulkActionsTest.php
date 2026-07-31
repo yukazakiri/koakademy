@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Enums\UserRole;
 use App\Models\GeneralSetting;
 use App\Models\User;
+use Database\Seeders\RolesSeeder;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Storage;
@@ -16,8 +17,15 @@ use Modules\LibrarySystem\Models\UserBookState;
 
 use function Pest\Laravel\actingAs;
 
-beforeEach(function (): void {
+$seededRoles = false;
+
+beforeEach(function () use (&$seededRoles): void {
     Config::set('inertia.testing.ensure_pages_exist', false);
+
+    if (! $seededRoles) {
+        $this->seed(RolesSeeder::class);
+        $seededRoles = true;
+    }
 
     GeneralSetting::factory()->create([
         'library_module_enabled' => true,
@@ -30,6 +38,7 @@ beforeEach(function (): void {
 
 it('bulk deletes selected books', function (): void {
     $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $admin->assignRole(UserRole::Admin->value);
     $books = Book::factory()->count(3)->create();
     $ids = $books->pluck('id')->all();
 
@@ -50,6 +59,7 @@ it('bulk deletes selected books', function (): void {
 
 it('deletes cover images when bulk deleting', function (): void {
     $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $admin->assignRole(UserRole::Admin->value);
     $file = UploadedFile::fake()->image('cover.jpg');
     $path = $file->storePublicly('library/books/covers', 'public');
     $book = Book::factory()->create(['cover_image_path' => $path]);
@@ -66,6 +76,7 @@ it('deletes cover images when bulk deleting', function (): void {
 
 it('requires at least one book id for bulk delete', function (): void {
     $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $admin->assignRole(UserRole::Admin->value);
 
     actingAs($admin)
         ->delete(route('administrators.library.books.bulk-destroy'), [
@@ -76,6 +87,7 @@ it('requires at least one book id for bulk delete', function (): void {
 
 it('rejects invalid book ids for bulk delete', function (): void {
     $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $admin->assignRole(UserRole::Admin->value);
 
     actingAs($admin)
         ->delete(route('administrators.library.books.bulk-destroy'), [
@@ -86,6 +98,7 @@ it('rejects invalid book ids for bulk delete', function (): void {
 
 it('bulk force deletes selected books and their relationships', function (): void {
     $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $admin->assignRole(UserRole::Admin->value);
     $user = User::factory()->create(['role' => UserRole::Student]);
     $book = Book::factory()->create();
     $ids = [$book->id];
@@ -125,6 +138,7 @@ it('bulk force deletes selected books and their relationships', function (): voi
 
 it('deletes the digital edition file when bulk force deleting', function (): void {
     $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $admin->assignRole(UserRole::Admin->value);
     $book = Book::factory()->create();
     $pdf = UploadedFile::fake()->create('edition.pdf', 100);
     $path = $pdf->store('library/books/editions', 'local');
@@ -153,6 +167,7 @@ it('deletes the digital edition file when bulk force deleting', function (): voi
 
 it('rejects force delete without the correct confirmation text', function (): void {
     $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $admin->assignRole(UserRole::Admin->value);
     $book = Book::factory()->create();
 
     actingAs($admin)
@@ -167,6 +182,7 @@ it('rejects force delete without the correct confirmation text', function (): vo
 
 it('requires confirmation text for bulk force delete', function (): void {
     $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $admin->assignRole(UserRole::Admin->value);
     $book = Book::factory()->create();
 
     actingAs($admin)
@@ -178,6 +194,7 @@ it('requires confirmation text for bulk force delete', function (): void {
 
 it('uses plural confirmation text for multiple books', function (): void {
     $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $admin->assignRole(UserRole::Admin->value);
     $books = Book::factory()->count(2)->create();
 
     actingAs($admin)

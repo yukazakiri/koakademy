@@ -56,6 +56,13 @@ final class RolesSeeder extends Seeder
         $policiesPath = app_path('Policies');
         $policyFiles = File::files($policiesPath);
 
+        foreach (File::directories(base_path('Modules')) as $moduleDir) {
+            $modulePolicyPath = $moduleDir.'/app/Policies';
+            if (File::isDirectory($modulePolicyPath)) {
+                $policyFiles = array_merge($policyFiles, File::files($modulePolicyPath));
+            }
+        }
+
         $createdPermissions = collect();
 
         foreach ($policyFiles as $file) {
@@ -351,6 +358,7 @@ final class RolesSeeder extends Seeder
     {
         return $this->filterPermissions($all, [
             'User', 'Student',
+            'Book', 'Author', 'Category', 'BorrowRecord', 'ResearchPaper',
             'View:Inventory',
             'BorrowInventory', 'ViewInventory',
             'View:Announcement', 'View:Event',

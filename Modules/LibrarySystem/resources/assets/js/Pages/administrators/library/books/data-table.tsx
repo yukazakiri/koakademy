@@ -169,6 +169,10 @@ export function DataTable<TData extends Book, TValue>({
         }
     };
 
+    const buildPageUrl = (page: number): string => {
+        return route(routeName, { ...filters, page });
+    };
+
     const handlePerPageChange = (value: string | null) => {
         if (!value) return;
 
@@ -230,7 +234,13 @@ export function DataTable<TData extends Book, TValue>({
                 confirm_text: forceDeleteConfirmText,
             },
             preserveScroll: true,
-            onSuccess: () => {
+            onSuccess: (page) => {
+                const flash = (page.props as Record<string, unknown>).flash as { type: string; message: string } | undefined;
+
+                if (flash?.type === 'error') {
+                    return;
+                }
+
                 toast.success(`Permanently deleted ${selectedCount} book(s).`);
                 setForceDeleteDialogOpen(false);
                 setForceDeleteConfirmText("");
@@ -285,7 +295,13 @@ export function DataTable<TData extends Book, TValue>({
                 confirm_text: individualForceDeleteConfirmText,
             },
             preserveScroll: true,
-            onSuccess: () => {
+            onSuccess: (page) => {
+                const flash = (page.props as Record<string, unknown>).flash as { type: string; message: string } | undefined;
+
+                if (flash?.type === 'error') {
+                    return;
+                }
+
                 toast.success(`"${individualTarget.title}" permanently deleted.`);
                 setIndividualForceDeleteDialogOpen(false);
                 setIndividualForceDeleteConfirmText("");
@@ -410,8 +426,8 @@ export function DataTable<TData extends Book, TValue>({
                         <Button
                             variant="outline"
                             className="hidden h-8 w-8 p-0 lg:flex"
-                            onClick={() => navigateToPage(pagination.prev_page_url)}
-                            disabled={!pagination.prev_page_url}
+                            onClick={() => navigateToPage(buildPageUrl(1))}
+                            disabled={pagination.current_page === 1}
                         >
                             <span className="sr-only">Go to first page</span>
                             <ChevronsLeft className="h-4 w-4" />
@@ -440,8 +456,8 @@ export function DataTable<TData extends Book, TValue>({
                         <Button
                             variant="outline"
                             className="hidden h-8 w-8 p-0 lg:flex"
-                            onClick={() => navigateToPage(pagination.next_page_url)}
-                            disabled={!pagination.next_page_url}
+                            onClick={() => navigateToPage(buildPageUrl(pagination.last_page))}
+                            disabled={pagination.current_page === pagination.last_page}
                         >
                             <span className="sr-only">Go to last page</span>
                             <ChevronsRight className="h-4 w-4" />

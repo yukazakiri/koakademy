@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Modules\LibrarySystem\Http\Controllers;
 
 use App\Http\Controllers\Controller;
-use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -44,7 +44,7 @@ final class AdministratorLibraryBookController extends Controller
             ->when(is_string($search) && mb_trim($search) !== '', function ($query) use ($search): void {
                 $term = mb_strtolower(mb_trim($search));
                 $pattern = "%{$term}%";
-                $query->where(function ($nested) use ($term, $pattern): void {
+                $query->where(function ($nested) use ($pattern): void {
                     $nested->whereRaw('LOWER(title) LIKE ?', [$pattern])
                         ->orWhereRaw('LOWER(isbn) LIKE ?', [$pattern])
                         ->orWhereRaw('LOWER(call_number) LIKE ?', [$pattern])
@@ -266,6 +266,7 @@ final class AdministratorLibraryBookController extends Controller
         $books = Book::query()->whereIn('id', $ids)->get();
 
         foreach ($books as $book) {
+            Gate::authorize('delete', $book);
             $this->deleteCoverImage($book);
             $book->delete();
         }
@@ -294,11 +295,15 @@ final class AdministratorLibraryBookController extends Controller
             ]);
         }
 
+        Gate::authorize('forceDeleteAny', Book::class);
+
         $books = Book::withTrashed()->whereIn('id', $ids)->get();
         $failures = [];
         $deletedCount = 0;
 
         foreach ($books as $book) {
+            Gate::authorize('forceDelete', $book);
+
             try {
                 DB::transaction(function () use ($book): void {
                     $this->deleteCoverImage($book);

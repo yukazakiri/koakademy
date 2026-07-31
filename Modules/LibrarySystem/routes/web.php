@@ -54,6 +54,10 @@ Route::middleware(['auth', 'administrators.only'])
             ->name('library.books.field-values');
         Route::get('/library/books/create', [AdministratorLibraryBookController::class, 'create'])->name('library.books.create');
         Route::post('/library/books', [AdministratorLibraryBookController::class, 'store'])->name('library.books.store');
+        Route::delete('/library/books/bulk', [AdministratorLibraryBookController::class, 'bulkDestroy'])
+            ->name('library.books.bulk-destroy');
+        Route::delete('/library/books/bulk/force', [AdministratorLibraryBookController::class, 'bulkForceDestroy'])
+            ->name('library.books.bulk-force-destroy');
         Route::get('/library/books/{book}/edit', [AdministratorLibraryBookController::class, 'edit'])->name('library.books.edit');
         Route::put('/library/books/{book}', [AdministratorLibraryBookController::class, 'update'])->name('library.books.update');
         Route::delete('/library/books/{book}', [AdministratorLibraryBookController::class, 'destroy'])->name('library.books.destroy');

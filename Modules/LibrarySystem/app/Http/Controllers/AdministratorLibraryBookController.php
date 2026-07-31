@@ -5,19 +5,24 @@ declare(strict_types=1);
 namespace Modules\LibrarySystem\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 use Modules\LibrarySystem\Enums\DigitalRightsBasis;
+use Modules\LibrarySystem\Http\Requests\Administrators\BulkDeleteBookRequest;
+use Modules\LibrarySystem\Http\Requests\Administrators\BulkForceDeleteBookRequest;
 use Modules\LibrarySystem\Http\Requests\Administrators\LibraryBookIdentifierSuggestionsRequest;
 use Modules\LibrarySystem\Http\Requests\Administrators\LibraryBookRequest;
 use Modules\LibrarySystem\Models\Author;
 use Modules\LibrarySystem\Models\Book;
 use Modules\LibrarySystem\Models\Category;
+use Throwable;
 
 final class AdministratorLibraryBookController extends Controller
 {
@@ -25,25 +30,38 @@ final class AdministratorLibraryBookController extends Controller
     {
         $search = $request->input('search');
         $status = $request->input('status');
+        $sort = $request->string('sort', 'created_at')->toString();
+        $direction = $request->string('direction', 'desc')->toString();
+        $perPage = $request->integer('per_page', 20);
 
-        $books = Book::query()
+        $allowedSorts = ['title', 'publication_year', 'created_at'];
+        $sort = in_array($sort, $allowedSorts, true) ? $sort : 'created_at';
+        $direction = in_array($direction, ['asc', 'desc'], true) ? $direction : 'desc';
+        $perPage = in_array($perPage, [10, 20, 50, 100], true) ? $perPage : 20;
+
+        $booksQuery = Book::query()
             ->with(['author', 'category'])
             ->when(is_string($search) && mb_trim($search) !== '', function ($query) use ($search): void {
-                $term = mb_trim($search);
-                $query->where(function ($nested) use ($term): void {
-                    $nested->where('title', 'ilike', "%{$term}%")
-                        ->orWhere('isbn', 'ilike', "%{$term}%")
-                        ->orWhere('call_number', 'ilike', "%{$term}%")
-                        ->orWhere('accession_number', 'ilike', "%{$term}%")
-                        ->orWhereHas('author', fn ($authorQuery) => $authorQuery->where('name', 'ilike', "%{$term}%"))
-                        ->orWhereHas('category', fn ($categoryQuery) => $categoryQuery->where('name', 'ilike', "%{$term}%"));
+                $term = mb_strtolower(mb_trim($search));
+                $pattern = "%{$term}%";
+                $query->where(function ($nested) use ($term, $pattern): void {
+                    $nested->whereRaw('LOWER(title) LIKE ?', [$pattern])
+                        ->orWhereRaw('LOWER(isbn) LIKE ?', [$pattern])
+                        ->orWhereRaw('LOWER(call_number) LIKE ?', [$pattern])
+                        ->orWhereRaw('LOWER(accession_number) LIKE ?', [$pattern])
+                        ->orWhereHas('author', fn ($authorQuery) => $authorQuery->whereRaw('LOWER(name) LIKE ?', [$pattern]))
+                        ->orWhereHas('category', fn ($categoryQuery) => $categoryQuery->whereRaw('LOWER(name) LIKE ?', [$pattern]));
                 });
             })
-            ->when(is_string($status) && $status !== '' && $status !== 'all', fn ($query) => $query->where('status', $status))
-            ->orderBy('title')
-            ->limit(50)
-            ->get()
-            ->map(fn (Book $book): array => [
+            ->when(is_string($status) && $status !== '' && $status !== 'all', fn ($query) => $query->where('status', $status));
+
+        $booksQuery->orderBy($sort, $direction)
+            ->orderBy('id', $direction);
+
+        /** @var \Illuminate\Contracts\Pagination\LengthAwarePaginator $books */
+        $books = $booksQuery->paginate($perPage)
+            ->withQueryString()
+            ->through(fn (Book $book): array => [
                 'id' => $book->id,
                 'title' => $book->title,
                 'isbn' => $book->isbn,
@@ -65,6 +83,7 @@ final class AdministratorLibraryBookController extends Controller
                 'location' => $book->location,
                 'cover_image_url' => $this->resolveCoverImageUrl($book),
                 'updated_at' => format_timestamp($book->updated_at),
+                'created_at' => format_timestamp($book->created_at),
             ]);
 
         $stats = [
@@ -80,6 +99,9 @@ final class AdministratorLibraryBookController extends Controller
             'filters' => [
                 'search' => is_string($search) ? $search : null,
                 'status' => is_string($status) ? $status : null,
+                'sort' => $sort,
+                'direction' => $direction,
+                'per_page' => $perPage,
             ],
             'options' => [
                 'statuses' => [
@@ -87,6 +109,12 @@ final class AdministratorLibraryBookController extends Controller
                     ['value' => 'available', 'label' => 'Available'],
                     ['value' => 'borrowed', 'label' => 'Borrowed'],
                     ['value' => 'maintenance', 'label' => 'Maintenance'],
+                ],
+                'per_page' => [
+                    ['value' => 10, 'label' => '10'],
+                    ['value' => 20, 'label' => '20'],
+                    ['value' => 50, 'label' => '50'],
+                    ['value' => 100, 'label' => '100'],
                 ],
             ],
             'flash' => session('flash'),
@@ -218,9 +246,7 @@ final class AdministratorLibraryBookController extends Controller
 
     public function destroy(Book $book): RedirectResponse
     {
-        if (is_string($book->cover_image_path) && $book->cover_image_path !== '') {
-            Storage::disk('public')->delete($book->cover_image_path);
-        }
+        $this->deleteCoverImage($book);
 
         $book->delete();
 
@@ -230,6 +256,94 @@ final class AdministratorLibraryBookController extends Controller
                 'type' => 'success',
                 'message' => 'Book removed from the catalog.',
             ]);
+    }
+
+    public function bulkDestroy(BulkDeleteBookRequest $request): RedirectResponse
+    {
+        $validated = $request->validated();
+        $ids = $validated['book_ids'];
+
+        $books = Book::query()->whereIn('id', $ids)->get();
+
+        foreach ($books as $book) {
+            $this->deleteCoverImage($book);
+            $book->delete();
+        }
+
+        return redirect()
+            ->route('administrators.library.books.index')
+            ->with('flash', [
+                'type' => 'success',
+                'message' => "{$books->count()} book(s) moved to trash.",
+            ]);
+    }
+
+    public function bulkForceDestroy(BulkForceDeleteBookRequest $request): RedirectResponse
+    {
+        $validated = $request->validated();
+        $ids = $validated['book_ids'];
+        $confirmText = (string) ($validated['confirm_text'] ?? '');
+        $count = count($ids);
+        $expected = $count === 1
+            ? 'PERMANENTLY DELETE 1 BOOK'
+            : "PERMANENTLY DELETE {$count} BOOKS";
+
+        if (! hash_equals($expected, $confirmText)) {
+            return back()->withErrors([
+                'confirm_text' => 'The confirmation text does not match.',
+            ]);
+        }
+
+        $books = Book::withTrashed()->whereIn('id', $ids)->get();
+        $failures = [];
+        $deletedCount = 0;
+
+        foreach ($books as $book) {
+            try {
+                DB::transaction(function () use ($book): void {
+                    $this->deleteCoverImage($book);
+
+                    $edition = $book->digitalEdition;
+                    if ($edition !== null) {
+                        try {
+                            Storage::disk($edition->disk)->delete($edition->path);
+                        } catch (Throwable $throwable) {
+                            report($throwable);
+                        }
+                    }
+
+                    $book->forceDelete();
+                });
+
+                $deletedCount++;
+            } catch (Throwable $throwable) {
+                report($throwable);
+                $failures[] = $book->title;
+            }
+        }
+
+        if ($failures !== []) {
+            return redirect()
+                ->route('administrators.library.books.index')
+                ->with('flash', [
+                    'type' => 'error',
+                    'message' => "Deleted {$deletedCount} book(s). Failed to delete: ".implode(', ', $failures).'.',
+                ]);
+        }
+
+        return redirect()
+            ->route('administrators.library.books.index')
+            ->with('flash', [
+                'type' => 'success',
+                'message' => "{$deletedCount} book(s) permanently deleted.",
+            ]);
+    }
+
+    private function deleteCoverImage(Book $book): void
+    {
+        if (is_string($book->cover_image_path) && $book->cover_image_path !== '') {
+            Storage::disk('public')->delete($book->cover_image_path);
+        }
     }
 
     private function normalizeBookData(array $validated): array

@@ -28,8 +28,8 @@ final class Category extends Model
         return $this->hasMany(Book::class);
     }
 
-    // protected static function newFactory()
-    // {
-    //     return CategoryFactory::new();
-    // }
+    protected static function newFactory(): CategoryFactory
+    {
+        return CategoryFactory::new();
+    }
 }

@@ -1,49 +1,35 @@
 import AdminLayout from "@/components/administrators/admin-layout";
-import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { User } from "@/types/user";
 import { Head, Link, router } from "@inertiajs/react";
-import { BookOpen, Plus, Search, Trash2 } from "lucide-react";
+import { BookOpen, Plus, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useDebouncedCallback } from "use-debounce";
+import { columns, type Book } from "./columns";
+import { DataTable } from "./data-table";
 
-declare const route: any;
+declare const route: any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
-interface BookItem {
-    id: number;
-    title: string;
-    isbn?: string | null;
-    call_number?: string | null;
-    accession_number?: string | null;
-    author: { id?: number | null; name?: string | null } | null;
-    category: { id?: number | null; name?: string | null; color?: string | null } | null;
-    status: string;
-    available_copies: number;
-    total_copies: number;
-    publication_year?: number | null;
-    location?: string | null;
-    updated_at?: string | null;
-    cover_image_url?: string | null;
+interface PaginationInfo {
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+    next_page_url: string | null;
+    prev_page_url: string | null;
+    from: number;
+    to: number;
 }
 
 interface Props {
     user: User;
-    books: BookItem[];
+    books: {
+        data: Book[];
+    } & PaginationInfo;
     stats: {
         total_books: number;
         available_copies: number;
@@ -52,9 +38,13 @@ interface Props {
     filters: {
         search?: string | null;
         status?: string | null;
+        sort?: string;
+        direction?: string;
+        per_page?: number;
     };
     options: {
         statuses: { value: string; label: string }[];
+        per_page: { value: number; label: string }[];
     };
     flash?: {
         type: string;
@@ -62,15 +52,8 @@ interface Props {
     };
 }
 
-const statusStyles: Record<string, string> = {
-    available: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-    borrowed: "bg-amber-500/10 text-amber-700 dark:text-amber-300",
-    maintenance: "bg-rose-500/10 text-rose-700 dark:text-rose-300",
-};
-
 export default function LibraryBooksIndex({ user, books, stats, filters, options, flash }: Props) {
     const [search, setSearch] = useState(filters.search ?? "");
-    const [deleteTarget, setDeleteTarget] = useState<BookItem | null>(null);
 
     useEffect(() => {
         if (!flash?.message) return;
@@ -90,17 +73,47 @@ export default function LibraryBooksIndex({ user, books, stats, filters, options
     const handleStatusChange = (value: string) => {
         router.get(
             route("administrators.library.books.index"),
-            { ...filters, status: value === "all" ? null : value },
+            { ...filters, status: value === "all" ? null : value, page: 1 },
             { preserveState: true, replace: true },
         );
     };
 
-    const confirmDelete = () => {
-        if (!deleteTarget) return;
-        router.delete(route("administrators.library.books.destroy", deleteTarget.id), {
-            preserveState: true,
-            onFinish: () => setDeleteTarget(null),
-        });
+    const handleSortFieldChange = (value: string) => {
+        router.get(
+            route("administrators.library.books.index"),
+            { ...filters, sort: value, page: 1 },
+            { preserveState: true, replace: true },
+        );
+    };
+
+    const handleSortDirectionChange = (value: string) => {
+        router.get(
+            route("administrators.library.books.index"),
+            { ...filters, direction: value, page: 1 },
+            { preserveState: true, replace: true },
+        );
+    };
+
+    const sortFieldOptions = [
+        { value: "created_at", label: "Recently Added" },
+        { value: "publication_year", label: "Publication Year" },
+        { value: "title", label: "Title" },
+    ];
+
+    const sortDirectionOptions = [
+        { value: "desc", label: "Newest / Z → A" },
+        { value: "asc", label: "Oldest / A → Z" },
+    ];
+
+    const pagination = {
+        current_page: books.current_page,
+        last_page: books.last_page,
+        per_page: books.per_page,
+        total: books.total,
+        next_page_url: books.next_page_url,
+        prev_page_url: books.prev_page_url,
+        from: books.from,
+        to: books.to,
     };
 
     return (
@@ -156,7 +169,7 @@ export default function LibraryBooksIndex({ user, books, stats, filters, options
                                 />
                             </div>
                             <Select value={filters.status ?? "all"} onValueChange={handleStatusChange}>
-                                <SelectTrigger className="w-full sm:w-48">
+                                <SelectTrigger className="w-full sm:w-44">
                                     <SelectValue placeholder="Filter status" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -167,112 +180,37 @@ export default function LibraryBooksIndex({ user, books, stats, filters, options
                                     ))}
                                 </SelectContent>
                             </Select>
+                            <Select value={filters.sort ?? "created_at"} onValueChange={handleSortFieldChange}>
+                                <SelectTrigger className="w-full sm:w-44">
+                                    <SelectValue placeholder="Sort by" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {sortFieldOptions.map((option) => (
+                                        <SelectItem key={option.value} value={option.value}>
+                                            {option.label}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <Select value={filters.direction ?? "desc"} onValueChange={handleSortDirectionChange}>
+                                <SelectTrigger className="w-full sm:w-44">
+                                    <SelectValue placeholder="Order" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {sortDirectionOptions.map((option) => (
+                                        <SelectItem key={option.value} value={option.value}>
+                                            {option.label}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Title</TableHead>
-                                    <TableHead>Author</TableHead>
-                                    <TableHead>Category</TableHead>
-                                    <TableHead>Copies</TableHead>
-                                    <TableHead>Status</TableHead>
-                                    <TableHead className="text-right">Actions</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {books.length === 0 ? (
-                                    <TableRow>
-                                        <TableCell colSpan={6} className="text-muted-foreground h-24 text-center text-sm">
-                                            No books match the current filters.
-                                        </TableCell>
-                                    </TableRow>
-                                ) : (
-                                    books.map((book) => (
-                                        <TableRow key={book.id}>
-                                            <TableCell>
-                                                <div className="flex items-center gap-3">
-                                                    {book.cover_image_url ? (
-                                                        <img
-                                                            src={book.cover_image_url}
-                                                            alt=""
-                                                            className="h-12 w-9 rounded-md border object-cover"
-                                                            loading="lazy"
-                                                        />
-                                                    ) : (
-                                                        <div className="bg-muted text-muted-foreground flex h-12 w-9 items-center justify-center rounded-md border text-[10px] uppercase">
-                                                            Cover
-                                                        </div>
-                                                    )}
-                                                    <div className="space-y-1">
-                                                        <p className="text-foreground font-medium">{book.title}</p>
-                                                        <p className="text-muted-foreground text-xs">{book.isbn ? `ISBN ${book.isbn}` : "No ISBN"}</p>
-                                                        {(book.call_number || book.accession_number) && (
-                                                            <p className="text-muted-foreground text-xs">
-                                                                {[
-                                                                    book.call_number ? `Call ${book.call_number}` : null,
-                                                                    book.accession_number ? `Acc. ${book.accession_number}` : null,
-                                                                ]
-                                                                    .filter(Boolean)
-                                                                    .join(" · ")}
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </TableCell>
-                                            <TableCell className="text-muted-foreground text-sm">{book.author?.name ?? "Unknown"}</TableCell>
-                                            <TableCell>
-                                                <div className="flex items-center gap-2">
-                                                    <span
-                                                        className="h-2 w-2 rounded-full"
-                                                        style={{ backgroundColor: book.category?.color ?? "#64748b" }}
-                                                    />
-                                                    <span className="text-muted-foreground text-sm">{book.category?.name ?? "Uncategorized"}</span>
-                                                </div>
-                                            </TableCell>
-                                            <TableCell className="text-muted-foreground text-sm">
-                                                {book.available_copies}/{book.total_copies}
-                                            </TableCell>
-                                            <TableCell>
-                                                <Badge className={statusStyles[book.status] ?? "bg-muted text-muted-foreground"}>{book.status}</Badge>
-                                            </TableCell>
-                                            <TableCell className="text-right">
-                                                <div className="flex justify-end gap-2">
-                                                    <Button variant="outline" size="sm" asChild>
-                                                        <Link href={route("administrators.library.books.edit", book.id)}>Edit</Link>
-                                                    </Button>
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        className="text-destructive"
-                                                        onClick={() => setDeleteTarget(book)}
-                                                    >
-                                                        <Trash2 className="h-4 w-4" />
-                                                    </Button>
-                                                </div>
-                                            </TableCell>
-                                        </TableRow>
-                                    ))
-                                )}
-                            </TableBody>
-                        </Table>
+                        <DataTable columns={columns} data={books.data} pagination={pagination} filters={filters} />
                     </CardContent>
                 </Card>
             </div>
-
-            <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>Delete book?</AlertDialogTitle>
-                        <AlertDialogDescription>This will remove "{deleteTarget?.title}" from the catalog.</AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
         </AdminLayout>
     );
 }

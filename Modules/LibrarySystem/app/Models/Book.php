@@ -90,8 +90,8 @@ final class Book extends Model
         };
     }
 
-    // protected static function newFactory()
-    // {
-    //     return BookFactory::new();
-    // }
+    protected static function newFactory(): BookFactory
+    {
+        return BookFactory::new();
+    }
 }

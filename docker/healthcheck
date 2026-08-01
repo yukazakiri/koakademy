@@ -47,6 +47,8 @@ if [ "${container_mode}" = "http" ]; then
     '
 elif [ "${container_mode}" = "station" ]; then
     php "${ROOT}/artisan" station:status
+    check_supervisor_program "assessment-pdf:assessment-pdf_00"
+    check_supervisor_program "assessment-events:assessment-events_00"
 elif [ "${container_mode}" = "scheduler" ]; then
     check_supervisor_program "scheduler:scheduler_0"
 elif [ "${container_mode}" = "reverb" ]; then

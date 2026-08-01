@@ -26,9 +26,19 @@ type BulkReportsDialogProps = {
     isGenerating: boolean;
     onGenerate: () => void;
     courseOptions: EnrollmentCourseOption[];
+    studentLimitOptions: number[];
 };
 
-export function BulkReportsDialog({ open, onOpenChange, filters, onFiltersChange, isGenerating, onGenerate, courseOptions }: BulkReportsDialogProps) {
+export function BulkReportsDialog({
+    open,
+    onOpenChange,
+    filters,
+    onFiltersChange,
+    isGenerating,
+    onGenerate,
+    courseOptions,
+    studentLimitOptions,
+}: BulkReportsDialogProps) {
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-lg">
@@ -99,12 +109,11 @@ export function BulkReportsDialog({ open, onOpenChange, filters, onFiltersChange
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">All Students</SelectItem>
-                                <SelectItem value="10">10 Students</SelectItem>
-                                <SelectItem value="25">25 Students</SelectItem>
-                                <SelectItem value="50">50 Students</SelectItem>
-                                <SelectItem value="100">100 Students</SelectItem>
-                                <SelectItem value="250">250 Students</SelectItem>
-                                <SelectItem value="500">500 Students</SelectItem>
+                                {studentLimitOptions.map((limit) => (
+                                    <SelectItem key={limit} value={String(limit)}>
+                                        {limit} Students
+                                    </SelectItem>
+                                ))}
                             </SelectContent>
                         </Select>
                     </div>

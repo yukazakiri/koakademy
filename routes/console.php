@@ -19,6 +19,11 @@ Schedule::command('station:alerts:check')
     ->when(static fn (): bool => (bool) config('station.alerts.enabled', false))
     ->withoutOverlapping();
 
+Schedule::command('assessment-exports:maintain')
+    ->everyTenMinutes()
+    ->onOneServer()
+    ->withoutOverlapping();
+
 Schedule::command('migrate:fresh --seed --force')
     ->daily()
     ->environments(['demo'])

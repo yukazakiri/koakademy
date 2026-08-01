@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\AssessmentExportDownloadController;
 use App\Jobs\GenerateTimetablePdfJob;
 use App\Models\Faculty;
 use App\Models\Schedule;
@@ -222,26 +223,7 @@ Route::get('/download/enrollment-report/{filename}', function (string $filename)
     return Storage::disk($disk)->download($path, $filename);
 })->name('download.enrollment-report');
 
-Route::get('/download/bulk-assessment/{jobId}/{filename}', function (string $jobId, string $filename) {
-    $user = Auth::user();
-
-    if (! $user || ! $user->canAccessAdminPortal()) {
-        abort(403, 'Unauthorized');
-    }
-
-    if ($jobId !== basename($jobId) || $filename !== basename($filename)) {
-        abort(404);
-    }
-
-    $disk = config('filesystems.default');
-    $path = sprintf('exports/bulk-assessments/%d/%s/%s', $user->id, $jobId, $filename);
-
-    if (! Storage::disk($disk)->exists($path)) {
-        abort(404, 'Bulk assessment export not found.');
-    }
-
-    return Storage::disk($disk)->download($path, $filename);
-})
-    ->where('jobId', '[A-Za-z0-9-]+')
-    ->where('filename', '[A-Za-z0-9._-]+')
+Route::get('/download/bulk-assessment/{assessmentExport}', [AssessmentExportDownloadController::class, 'download'])
     ->name('download.bulk-assessment');
+Route::get('/download/bulk-assessment/{assessmentExport}/skipped-report', [AssessmentExportDownloadController::class, 'report'])
+    ->name('download.bulk-assessment-report');

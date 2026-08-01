@@ -7,12 +7,12 @@ namespace App\Http\Controllers;
 use App\Data\Enrollment\EnrollmentSubmissionData;
 use App\Enrollment\EnrollmentWorkflowCoordinator;
 use App\Enums\StudentStatus;
+use App\Exceptions\AssessmentExportLimitReached;
 use App\Exports\EnrollmentReportExport;
 use App\Features\DynamicEnrollmentPolicies;
 use App\Http\Requests\Administrators\GenerateBulkAssessmentsRequest;
 use App\Http\Requests\Administrators\SaveEnrollmentRequest;
 use App\Jobs\GenerateAssessmentPdfJob;
-use App\Jobs\GenerateBulkAssessmentsJob;
 use App\Jobs\GenerateEnrollmentReportPreviewPdfJob;
 use App\Jobs\SendClassChangeNotificationJob;
 use App\Models\ClassEnrollment;
@@ -27,13 +27,15 @@ use App\Models\SubjectEnrollment;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Notifications\ApplicantApprovedForRequirements;
+use App\Services\AssessmentExportPayloadService;
 use App\Services\AssessmentFormDataService;
 use App\Services\ClassScheduleChangeNotificationService;
 use App\Services\EnrollmentBillingService;
 use App\Services\EnrollmentPipelineService;
 use App\Services\EnrollmentService;
 use App\Services\GeneralSettingsService;
-use App\Services\JobTrackerService;
+use App\Services\QueueAssessmentExportService;
+use App\Services\TenantContext;
 use App\Settings\SiteSettings;
 use Closure;
 use Exception;
@@ -136,6 +138,9 @@ final class AdministratorEnrollmentManagementController extends Controller
                     'status_classes' => $this->enrollmentPipelineService->getStatusColorClasses(),
                 ],
                 'enrollment_stats' => $this->enrollmentPipelineService->getStatsConfiguration(),
+                'assessment_export_options' => [
+                    'student_limits' => config('assessment-exports.student_limit_options'),
+                ],
                 'workflow_setup_required' => true,
             ]);
         }
@@ -306,6 +311,9 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'status_classes' => $this->enrollmentPipelineService->getStatusColorClasses(),
             ],
             'enrollment_stats' => $this->enrollmentPipelineService->getStatsConfiguration(),
+            'assessment_export_options' => [
+                'student_limits' => config('assessment-exports.student_limit_options'),
+            ],
             'workflow_setup_required' => false,
         ]);
     }
@@ -904,7 +912,9 @@ final class AdministratorEnrollmentManagementController extends Controller
     public function generateBulkAssessments(
         GenerateBulkAssessmentsRequest $request,
         GeneralSettingsService $settingsService,
-        JobTrackerService $jobTracker,
+        TenantContext $tenantContext,
+        QueueAssessmentExportService $exports,
+        AssessmentExportPayloadService $payloads,
     ): JsonResponse {
         $user = $request->user();
         if (! $user instanceof User) {
@@ -912,8 +922,10 @@ final class AdministratorEnrollmentManagementController extends Controller
         }
 
         $validated = $request->validated();
-        $jobId = (string) Str::uuid();
-        $message = 'Bulk assessment export queued and waiting for the PDF worker.';
+        $schoolId = $tenantContext->getCurrentSchoolId();
+        if ($schoolId === null || ! $tenantContext->canAccessOrganization($schoolId)) {
+            abort(403, 'Select an accessible school before starting an assessment export.');
+        }
         $filters = [
             'course_id' => $validated['course_id'] ?? null,
             'year_level' => $validated['year_level'] ?? null,
@@ -923,35 +935,14 @@ final class AdministratorEnrollmentManagementController extends Controller
             'school_year' => $settingsService->getCurrentSchoolYearString(),
         ];
 
-        $jobTracker->registerJob(
-            $jobId,
-            $user->id,
-            'bulk_assessment',
-            'Bulk Assessment Export',
-            [
-                'filters' => $filters,
-                'stage' => 'queued',
-            ]
-        );
-        $jobTracker->updateProgress($jobId, 0, $message, 'pending');
-
         try {
-            GenerateBulkAssessmentsJob::dispatch($filters, $user->id, $jobId);
-        } catch (Throwable $throwable) {
-            $jobTracker->markFailed($jobId, 'Failed to queue bulk assessment generation: '.$throwable->getMessage());
-
-            return response()->json([
-                'job_id' => $jobId,
-                'status' => 'failed',
-                'message' => 'Failed to queue bulk assessment generation.',
-            ], 500);
+            $export = $exports->queue($user, $schoolId, $filters);
+        } catch (AssessmentExportLimitReached $exception) {
+            return response()->json(['message' => $exception->getMessage()], 409);
         }
+        $payload = $payloads->make($export);
 
-        return response()->json([
-            'job_id' => $jobId,
-            'status' => 'pending',
-            'message' => $message,
-        ], 202);
+        return response()->json($payload, 202);
     }
 
     /**

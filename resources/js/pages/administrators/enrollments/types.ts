@@ -57,6 +57,9 @@ export interface EnrollmentManagementProps {
         course_filter?: string;
     };
     enrollment_pipeline: EnrollmentPipeline;
+    assessment_export_options: {
+        student_limits: number[];
+    };
     enrollment_stats?: {
         cards: Array<{
             key: string;

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Contracts\AssessmentFormPdfRenderer;
 use App\Features\Toggles\AdminDeveloperMode;
 use App\Features\Toggles\FacultyActionCenter;
 use App\Features\Toggles\FacultyAnnouncements;
@@ -47,6 +48,7 @@ use App\Models\User;
 use App\Observers\StudentTransactionObserver;
 use App\Services\ChangelogService;
 use App\Services\GeneralSettingsService;
+use App\Services\LaravelAssessmentFormPdfRenderer;
 use App\Services\VersionService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Gate;
@@ -70,6 +72,7 @@ final class AppServiceProvider extends ServiceProvider
         // scoped = one instance per HTTP request, so Auth is always available when first used
         $this->app->scoped(GeneralSettingsService::class);
         $this->app->scoped(\App\Services\TenantContext::class);
+        $this->app->bind(AssessmentFormPdfRenderer::class, LaravelAssessmentFormPdfRenderer::class);
     }
 
     /**

@@ -103,6 +103,15 @@ return [
             'after_commit' => false,
         ],
 
+        'assessment-pdf' => [
+            'driver' => 'redis',
+            'connection' => 'queue-assessment',
+            'queue' => env('ASSESSMENT_EXPORT_QUEUE', 'assessment-pdf'),
+            'retry_after' => (int) env('ASSESSMENT_EXPORT_RETRY_AFTER', 2400),
+            'block_for' => (int) env('ASSESSMENT_EXPORT_BLOCK_FOR', 5),
+            'after_commit' => true,
+        ],
+
     ],
 
     /*

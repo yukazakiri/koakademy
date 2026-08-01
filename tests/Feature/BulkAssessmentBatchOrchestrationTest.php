@@ -2,274 +2,363 @@
 
 declare(strict_types=1);
 
+use App\Contracts\AssessmentFormPdfRenderer;
 use App\Enums\UserRole;
-use App\Jobs\GenerateBulkAssessmentChunkJob;
+use App\Events\AssessmentExportProgressed;
+use App\Jobs\GenerateBulkAssessmentItemJob;
 use App\Jobs\GenerateBulkAssessmentsJob;
-use App\Jobs\MergeBulkAssessmentChunksJob;
+use App\Jobs\MergeBulkAssessmentExportJob;
+use App\Models\AssessmentExport;
+use App\Models\AssessmentExportItem;
 use App\Models\Course;
+use App\Models\School;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\User;
+use App\Services\AssessmentExportArtifactService;
+use App\Services\AssessmentExportCoordinator;
+use App\Services\AssessmentExportNotificationService;
 use App\Services\EnrollmentPipelineService;
-use App\Services\JobTrackerService;
-use App\Services\PdfGenerationService;
+use App\Services\TenantContext;
 use Illuminate\Bus\PendingBatch;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use setasign\Fpdi\Fpdi;
 
-it('dispatches chunk jobs in a batch for bulk assessment generation', function (): void {
-    Bus::fake();
+function assessmentExportSchoolContext(School $school): void
+{
+    app(TenantContext::class)->setCurrentSchoolId($school->id);
+}
 
-    $storageDisk = (string) config('filesystems.default');
-    Storage::fake($storageDisk);
-
-    $user = User::factory()->create();
-    $course = Course::factory()->create();
-    $student = Student::factory()->create([
-        'course_id' => $course->id,
+function createTrackedAssessmentExport(User $user, School $school, array $attributes = []): AssessmentExport
+{
+    return AssessmentExport::withoutSchoolScope()->create([
+        'user_id' => $user->id,
+        'school_id' => $school->id,
+        'status' => 'processing',
+        'stage' => 'rendering',
+        'filters' => [
+            'course_id' => null,
+            'year_level' => null,
+            'student_limit' => null,
+            'include_deleted' => false,
+            'semester' => 1,
+            'school_year' => '2024 - 2025',
+        ],
+        'message' => 'Rendering assessments...',
+        ...$attributes,
     ]);
+}
 
-    $cashierVerifiedStatus = app(EnrollmentPipelineService::class)->getCashierVerifiedStatus();
+function storeAssessmentFixturePdf(string $disk, string $path, string $label): array
+{
+    $temporary = tempnam(sys_get_temp_dir(), 'assessment_export_test_');
+    if ($temporary === false) {
+        throw new RuntimeException('Unable to allocate test PDF path.');
+    }
+    $localPath = $temporary.'.pdf';
+    rename($temporary, $localPath);
+    $pdf = new FPDF('L', 'mm', 'A4');
+    $pdf->AddPage();
+    $pdf->SetFont('Arial', '', 16);
+    $pdf->Cell(0, 10, $label);
+    $pdf->Output($localPath, 'F');
 
-    StudentEnrollment::factory()->create([
-        'student_id' => $student->id,
-        'course_id' => $course->id,
-        'status' => $cashierVerifiedStatus,
-        'semester' => 1,
-        'school_year' => '2024 - 2025',
-    ]);
+    try {
+        return app(AssessmentExportArtifactService::class)->storeValidatedPdf($disk, $path, $localPath);
+    } finally {
+        @unlink($localPath);
+    }
+}
 
-    $filters = [
-        'course_id' => null,
-        'year_level' => null,
-        'student_limit' => null,
-        'include_deleted' => false,
-        'semester' => 1,
-        'school_year' => '2024 - 2025',
-    ];
-
-    $job = new GenerateBulkAssessmentsJob($filters, $user->id, 'bulk-orchestration-test');
-    $job->handle(app(JobTrackerService::class));
-
-    Bus::assertBatched(function (PendingBatch $batch): bool {
-        return $batch->name === 'bulk-assessment-bulk-orchestration-test'
-            && $batch->connection() === config('queue.assessment_notification_connection')
-            && $batch->queue() === config('queue.assessment_notification_queue')
-            && $batch->hasJobs([
-                fn (GenerateBulkAssessmentChunkJob $chunkJob): bool => $chunkJob->jobId === 'bulk-orchestration-test'
-                    && $chunkJob->chunkIndex === 0
-                    && $chunkJob->connection === config('queue.assessment_notification_connection')
-                    && $chunkJob->queue === config('queue.assessment_notification_queue'),
-            ]);
-    });
-
-    Storage::disk($storageDisk)->assertExists('bulk_assessments/bulk-orchestration-test/manifest.json');
-});
-
-it('registers and queues bulk assessment exports before the worker starts', function (): void {
+it('registers a durable tenant-scoped export before dispatching preparation', function (): void {
     Queue::fake();
-
-    $user = User::factory()->create(['role' => UserRole::Admin]);
-    $course = Course::factory()->create();
+    $school = School::factory()->create();
+    assessmentExportSchoolContext($school);
+    $user = User::factory()->create(['role' => UserRole::Admin, 'school_id' => $school->id]);
+    $course = Course::factory()->create(['school_id' => $school->id]);
 
     $response = $this->actingAs($user)->postJson(
         portalUrlForAdministrators('/administrators/enrollments/reports/bulk-assessments'),
-        [
-            'course_id' => $course->id,
-            'year_level' => 2,
-            'student_limit' => 25,
-            'include_deleted' => false,
-        ]
+        ['course_id' => $course->id, 'year_level' => 2, 'student_limit' => 25, 'include_deleted' => false],
     );
 
-    $response
-        ->assertAccepted()
+    $response->assertAccepted()
         ->assertJsonPath('status', 'pending')
-        ->assertJsonStructure(['job_id', 'status', 'message']);
+        ->assertJsonPath('stage', 'queued')
+        ->assertJsonPath('metadata.filters.course_id', $course->id)
+        ->assertJsonStructure(['id', 'status', 'stage', 'message', 'counts', 'actions']);
 
-    $jobId = (string) $response->json('job_id');
-    $trackedJob = app(JobTrackerService::class)->getJobStatus($jobId);
-
-    expect($trackedJob)
-        ->not->toBeNull()
-        ->and($trackedJob['status'])->toBe('pending')
-        ->and($trackedJob['metadata']['stage'])->toBe('queued')
-        ->and($trackedJob['metadata']['filters']['course_id'])->toBe($course->id)
-        ->and($trackedJob['metadata']['filters']['year_level'])->toBe(2);
-
-    Queue::assertPushed(GenerateBulkAssessmentsJob::class, fn (GenerateBulkAssessmentsJob $job): bool => $job->connection === config('queue.assessment_notification_connection')
-        && $job->queue === config('queue.assessment_notification_queue'));
-
-    $this->actingAs($user)
-        ->getJson('/api/jobs')
-        ->assertSuccessful()
-        ->assertJsonPath('has_active', true)
-        ->assertJsonPath('jobs.0.id', $jobId);
+    $export = AssessmentExport::withoutSchoolScope()->findOrFail((string) $response->json('id'));
+    expect($export->user_id)->toBe($user->id)
+        ->and($export->school_id)->toBe($school->id)
+        ->and($export->filters['year_level'])->toBe(2);
+    Queue::assertPushed(GenerateBulkAssessmentsJob::class, fn (GenerateBulkAssessmentsJob $job): bool => $job->exportId === $export->id
+        && $job->connection === 'assessment-pdf'
+        && $job->queue === 'assessment-pdf');
 });
 
-it('validates bulk assessment filters before registering a queued job', function (): void {
+it('rejects courses outside the active school and concurrent exports', function (): void {
     Queue::fake();
+    $school = School::factory()->create();
+    $otherSchool = School::factory()->create();
+    assessmentExportSchoolContext($school);
+    $user = User::factory()->create(['role' => UserRole::Admin, 'school_id' => $school->id]);
+    $foreignCourse = Course::withoutSchoolScope()->create(Course::factory()->raw(['school_id' => $otherSchool->id]));
 
-    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $this->actingAs($user)->postJson(
+        portalUrlForAdministrators('/administrators/enrollments/reports/bulk-assessments'),
+        ['course_id' => $foreignCourse->id, 'year_level' => null, 'student_limit' => null, 'include_deleted' => false],
+    )->assertUnprocessable()->assertJsonValidationErrors('course_id');
 
-    $this->actingAs($user)
-        ->postJson(
-            portalUrlForAdministrators('/administrators/enrollments/reports/bulk-assessments'),
-            [
-                'course_id' => PHP_INT_MAX,
-                'year_level' => 8,
-                'student_limit' => 7,
-            ]
-        )
-        ->assertUnprocessable()
-        ->assertJsonValidationErrors([
-            'course_id',
-            'year_level',
-            'student_limit',
-            'include_deleted',
-        ]);
-
-    Queue::assertNotPushed(GenerateBulkAssessmentsJob::class);
+    createTrackedAssessmentExport($user, $school, ['status' => 'pending', 'stage' => 'queued']);
+    $this->postJson(
+        portalUrlForAdministrators('/administrators/enrollments/reports/bulk-assessments'),
+        ['course_id' => null, 'year_level' => null, 'student_limit' => null, 'include_deleted' => false],
+    )->assertConflict();
 });
 
-it('finishes explicitly without a download when no enrolled students match', function (): void {
+it('snapshots matching enrollments in deterministic order and dispatches one item per assessment', function (): void {
     Bus::fake();
-    Storage::fake((string) config('filesystems.default'));
+    Event::fake([AssessmentExportProgressed::class]);
+    $school = School::factory()->create();
+    assessmentExportSchoolContext($school);
+    $user = User::factory()->create(['role' => UserRole::Admin, 'school_id' => $school->id]);
+    $courseB = Course::factory()->create(['school_id' => $school->id, 'code' => 'ZZZ']);
+    $courseA = Course::factory()->create(['school_id' => $school->id, 'code' => 'AAA']);
+    $studentZulu = Student::factory()->create(['id' => 1001, 'school_id' => $school->id, 'course_id' => $courseA->id, 'last_name' => 'Zulu']);
+    $studentAlpha = Student::factory()->create(['id' => 1002, 'school_id' => $school->id, 'course_id' => $courseA->id, 'last_name' => 'Alpha']);
+    $studentCourseB = Student::factory()->create(['id' => 1003, 'school_id' => $school->id, 'course_id' => $courseB->id, 'last_name' => 'Able']);
+    $status = app(EnrollmentPipelineService::class)->getCashierVerifiedStatus();
+    $orderedEnrollments = [
+        StudentEnrollment::factory()->create(['school_id' => $school->id, 'student_id' => $studentAlpha->id, 'course_id' => $courseA->id, 'academic_year' => 2, 'status' => $status, 'semester' => 1, 'school_year' => '2024 - 2025']),
+        StudentEnrollment::factory()->create(['school_id' => $school->id, 'student_id' => $studentZulu->id, 'course_id' => $courseA->id, 'academic_year' => 2, 'status' => $status, 'semester' => 1, 'school_year' => '2024 - 2025']),
+        StudentEnrollment::factory()->create(['school_id' => $school->id, 'student_id' => $studentCourseB->id, 'course_id' => $courseB->id, 'academic_year' => 2, 'status' => $status, 'semester' => 1, 'school_year' => '2024 - 2025']),
+    ];
+    $export = createTrackedAssessmentExport($user, $school, ['status' => 'pending', 'stage' => 'queued']);
 
-    $user = User::factory()->create(['role' => UserRole::Admin]);
-    $jobId = 'bulk-no-matches-test';
-    $tracker = app(JobTrackerService::class);
+    (new GenerateBulkAssessmentsJob($export->id))->handle(
+        app(EnrollmentPipelineService::class),
+        app(AssessmentExportCoordinator::class),
+        app(AssessmentExportNotificationService::class),
+    );
 
-    $tracker->registerJob($jobId, $user->id, 'bulk_assessment', 'Bulk Assessment Export');
-
-    $job = new GenerateBulkAssessmentsJob([
-        'course_id' => null,
-        'year_level' => null,
-        'student_limit' => null,
-        'include_deleted' => false,
-        'semester' => 1,
-        'school_year' => '2099 - 2100',
-    ], $user->id, $jobId);
-    $job->handle($tracker);
-
-    $trackedJob = $tracker->getJobStatus($jobId);
-
-    expect($trackedJob['status'])->toBe('completed')
-        ->and($trackedJob['message'])->toContain('No enrolled students matched')
-        ->and($trackedJob['download_url'])->toBeNull()
-        ->and($trackedJob['metadata']['total_count'])->toBe(0);
+    expect($export->items()->orderBy('sequence')->pluck('enrollment_id')->all())
+        ->toBe(array_map(fn (StudentEnrollment $enrollment): int => $enrollment->id, $orderedEnrollments));
+    Bus::assertBatched(fn (PendingBatch $batch): bool => $batch->connection() === 'assessment-pdf'
+        && $batch->queue() === 'assessment-pdf'
+        && count($batch->jobs) === 3
+        && collect($batch->jobs)->every(fn ($job): bool => $job instanceof GenerateBulkAssessmentItemJob));
 });
 
-it('merges completed assessment chunks into one tracked user export', function (): void {
-    $disk = (string) config('filesystems.default');
-    Storage::fake($disk);
+it('merges every validated item into one page-verified PDF', function (): void {
+    Event::fake([AssessmentExportProgressed::class]);
+    config()->set('assessment-exports.disk', 'local');
+    Storage::fake('local');
+    $school = School::factory()->create();
+    assessmentExportSchoolContext($school);
+    $user = User::factory()->create(['role' => UserRole::Admin, 'school_id' => $school->id]);
+    $export = createTrackedAssessmentExport($user, $school, [
+        'stage' => 'merging', 'total_count' => 2, 'processed_count' => 2, 'completed_count' => 2, 'percentage' => 85,
+    ]);
 
-    $user = User::factory()->create(['role' => UserRole::Admin]);
-    $jobId = 'bulk-merge-test';
-    $manifestPath = "bulk_assessments/{$jobId}/manifest.json";
-    $chunkDirectory = "bulk_assessments/{$jobId}/chunks";
-    $tracker = app(JobTrackerService::class);
-
-    $tracker->registerJob($jobId, $user->id, 'bulk_assessment', 'Bulk Assessment Export');
-
-    foreach ([0 => 'FIRST ASSESSMENT', 1 => 'SECOND ASSESSMENT'] as $index => $label) {
-        $temporaryPath = tempnam(sys_get_temp_dir(), 'bulk-assessment-test-');
-
-        if ($temporaryPath === false) {
-            throw new RuntimeException('Unable to allocate a temporary PDF path.');
-        }
-
-        $pdfPath = $temporaryPath.'.pdf';
-        rename($temporaryPath, $pdfPath);
-
-        $pdf = new FPDF('L', 'mm', 'A4');
-        $pdf->AddPage();
-        $pdf->SetFont('Arial', '', 16);
-        $pdf->Cell(0, 10, $label);
-        $pdf->Output($pdfPath, 'F');
-
-        $storagePath = sprintf('%s/chunk-%03d.pdf', $chunkDirectory, $index);
-        Storage::disk($disk)->put($storagePath, file_get_contents($pdfPath));
-        Storage::disk($disk)->put(
-            sprintf('%s/chunk-%03d.json', $chunkDirectory, $index),
-            json_encode([
-                'job_id' => $jobId,
-                'chunk_index' => $index,
-                'status' => 'completed',
-                'storage_path' => $storagePath,
-                'enrollment_ids' => [$index + 1],
-                'generated_count' => 1,
-                'skipped' => [],
-            ], JSON_THROW_ON_ERROR)
-        );
-
-        unlink($pdfPath);
+    foreach ([1 => 'FIRST ASSESSMENT', 2 => 'SECOND ASSESSMENT'] as $sequence => $label) {
+        $path = sprintf('assessment-exports/%d/%d/%s/items/%06d.pdf', $school->id, $user->id, $export->id, $sequence);
+        $metadata = storeAssessmentFixturePdf('local', $path, $label);
+        AssessmentExportItem::query()->create([
+            'assessment_export_id' => $export->id,
+            'school_id' => $school->id,
+            'sequence' => $sequence,
+            'status' => 'completed',
+            'attempts' => 1,
+            'artifact_disk' => 'local',
+            'artifact_path' => $path,
+            'page_count' => $metadata['page_count'],
+            'byte_size' => $metadata['byte_size'],
+            'checksum' => $metadata['checksum'],
+            'completed_at' => now(),
+        ]);
     }
 
-    Storage::disk($disk)->put($manifestPath, json_encode([
-        'job_id' => $jobId,
-        'skipped_enrollments' => [],
-    ], JSON_THROW_ON_ERROR));
+    (new MergeBulkAssessmentExportJob($export->id))->handle(
+        app(App\Services\PdfGenerationService::class),
+        app(AssessmentExportArtifactService::class),
+        app(AssessmentExportCoordinator::class),
+        app(AssessmentExportNotificationService::class),
+    );
 
-    $job = new MergeBulkAssessmentChunksJob($jobId, $user->id, 'batch-test', $manifestPath);
-    $job->handle($tracker, app(PdfGenerationService::class));
-
-    $exportFiles = Storage::disk($disk)->files("exports/bulk-assessments/{$user->id}/{$jobId}");
-    $pdfExport = collect($exportFiles)->first(fn (string $path): bool => str_ends_with($path, '.pdf'));
-
-    expect($pdfExport)->not->toBeNull();
-
-    $reader = new Fpdi();
-    $trackedJob = $tracker->getJobStatus($jobId);
-
-    expect($reader->setSourceFile(Storage::disk($disk)->path($pdfExport)))->toBe(2)
-        ->and($trackedJob['status'])->toBe('completed')
-        ->and($trackedJob['metadata']['total_count'])->toBe(2)
-        ->and($trackedJob['download_url'])->toContain("/download/bulk-assessment/{$jobId}/");
+    $export->refresh();
+    expect($export->status)->toBe('completed')
+        ->and($export->stage)->toBe('ready')
+        ->and($export->output_path)->not->toBeNull()
+        ->and((new Fpdi)->setSourceFile(Storage::disk('local')->path($export->output_path)))->toBe(2);
 });
 
-it('never marks an export ready when a completed chunk PDF is missing', function (): void {
-    $disk = (string) config('filesystems.default');
-    Storage::fake($disk);
+it('renders an item idempotently and advances exact student progress once', function (): void {
+    Queue::fake();
+    Event::fake([AssessmentExportProgressed::class]);
+    config()->set('assessment-exports.disk', 'local');
+    Storage::fake('local');
+    $school = School::factory()->create();
+    assessmentExportSchoolContext($school);
+    $user = User::factory()->create(['role' => UserRole::Admin, 'school_id' => $school->id]);
+    $course = Course::factory()->create(['school_id' => $school->id]);
+    $student = Student::factory()->create(['school_id' => $school->id, 'course_id' => $course->id]);
+    $enrollment = StudentEnrollment::factory()->create([
+        'school_id' => $school->id,
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'status' => app(EnrollmentPipelineService::class)->getCashierVerifiedStatus(),
+    ]);
+    $export = createTrackedAssessmentExport($user, $school, ['total_count' => 1]);
+    $item = AssessmentExportItem::query()->create([
+        'assessment_export_id' => $export->id,
+        'school_id' => $school->id,
+        'enrollment_id' => $enrollment->id,
+        'sequence' => 1,
+        'status' => 'pending',
+    ]);
+    $renderer = new class implements AssessmentFormPdfRenderer
+    {
+        public function render(StudentEnrollment $enrollment, string $outputPath): void
+        {
+            $pdf = new FPDF('L', 'mm', 'A4');
+            $pdf->AddPage();
+            $pdf->SetFont('Arial', '', 12);
+            $pdf->Cell(0, 10, 'ASSESSMENT '.$enrollment->id);
+            $pdf->Output($outputPath, 'F');
+        }
+    };
+    $job = new GenerateBulkAssessmentItemJob($item->id);
 
-    $user = User::factory()->create(['role' => UserRole::Admin]);
-    $jobId = 'bulk-missing-chunk-test';
-    $manifestPath = "bulk_assessments/{$jobId}/manifest.json";
-    $tracker = app(JobTrackerService::class);
+    $job->handle($renderer, app(AssessmentExportArtifactService::class), app(AssessmentExportCoordinator::class));
+    $job->handle($renderer, app(AssessmentExportArtifactService::class), app(AssessmentExportCoordinator::class));
 
-    $tracker->registerJob($jobId, $user->id, 'bulk_assessment', 'Bulk Assessment Export');
-    Storage::disk($disk)->put(
-        "bulk_assessments/{$jobId}/chunks/chunk-000.json",
-        json_encode([
-            'job_id' => $jobId,
-            'chunk_index' => 0,
-            'status' => 'completed',
-            'storage_path' => "bulk_assessments/{$jobId}/chunks/chunk-000.pdf",
-            'generated_count' => 1,
-            'skipped' => [],
-        ], JSON_THROW_ON_ERROR)
-    );
-    Storage::disk($disk)->put($manifestPath, json_encode([
-        'job_id' => $jobId,
-        'skipped_enrollments' => [],
-    ], JSON_THROW_ON_ERROR));
+    expect($item->refresh()->status)->toBe('completed')
+        ->and($item->attempts)->toBe(1)
+        ->and($export->refresh()->completed_count)->toBe(1)
+        ->and($export->processed_count)->toBe(1)
+        ->and($export->stage)->toBe('merging');
+    Queue::assertPushed(MergeBulkAssessmentExportJob::class, 1);
+});
 
-    $job = new MergeBulkAssessmentChunksJob($jobId, $user->id, 'batch-missing', $manifestPath);
-    $failure = null;
+it('never publishes an export when an item artifact is missing', function (): void {
+    Event::fake([AssessmentExportProgressed::class]);
+    config()->set('assessment-exports.disk', 'local');
+    Storage::fake('local');
+    $school = School::factory()->create();
+    assessmentExportSchoolContext($school);
+    $user = User::factory()->create(['role' => UserRole::Admin, 'school_id' => $school->id]);
+    $export = createTrackedAssessmentExport($user, $school, [
+        'stage' => 'merging', 'total_count' => 1, 'processed_count' => 1, 'completed_count' => 1, 'percentage' => 85,
+    ]);
+    AssessmentExportItem::query()->create([
+        'assessment_export_id' => $export->id,
+        'school_id' => $school->id,
+        'sequence' => 1,
+        'status' => 'completed',
+        'artifact_disk' => 'local',
+        'artifact_path' => 'missing.pdf',
+        'page_count' => 1,
+        'checksum' => str_repeat('a', 64),
+    ]);
+    $job = new MergeBulkAssessmentExportJob($export->id);
 
     try {
-        $job->handle($tracker, app(PdfGenerationService::class));
+        $job->handle(
+            app(App\Services\PdfGenerationService::class),
+            app(AssessmentExportArtifactService::class),
+            app(AssessmentExportCoordinator::class),
+            app(AssessmentExportNotificationService::class),
+        );
     } catch (Throwable $throwable) {
-        $failure = $throwable;
         $job->failed($throwable);
     }
 
-    $trackedJob = $tracker->getJobStatus($jobId);
+    $export->refresh();
+    expect($export->status)->toBe('failed')
+        ->and($export->output_path)->toBeNull()
+        ->and($export->error_context['stage'])->toBe('merging');
+});
 
-    expect($failure)->not->toBeNull()
-        ->and($trackedJob['status'])->toBe('failed')
-        ->and($trackedJob['download_url'] ?? null)->toBeNull()
-        ->and(Storage::disk($disk)->files("exports/bulk-assessments/{$user->id}/{$jobId}"))->toBe([]);
+it('authorizes job details and supports cancel then retry without discarding completed items', function (): void {
+    Bus::fake();
+    Event::fake([AssessmentExportProgressed::class]);
+    $school = School::factory()->create();
+    assessmentExportSchoolContext($school);
+    $owner = User::factory()->create(['role' => UserRole::Admin, 'school_id' => $school->id]);
+    $other = User::factory()->create(['role' => UserRole::Admin, 'school_id' => $school->id]);
+    $export = createTrackedAssessmentExport($owner, $school, ['total_count' => 2, 'completed_count' => 1, 'processed_count' => 1]);
+    AssessmentExportItem::query()->create(['assessment_export_id' => $export->id, 'school_id' => $school->id, 'sequence' => 1, 'status' => 'completed']);
+    AssessmentExportItem::query()->create(['assessment_export_id' => $export->id, 'school_id' => $school->id, 'sequence' => 2, 'status' => 'pending']);
+
+    $this->actingAs($other)->getJson('/api/jobs/'.$export->id)->assertNotFound();
+    $this->actingAs($owner)->postJson('/api/jobs/'.$export->id.'/cancel')->assertAccepted()->assertJsonPath('job.status', 'cancelled');
+    $this->postJson('/api/jobs/'.$export->id.'/retry')->assertAccepted()->assertJsonPath('job.status', 'processing');
+
+    expect($export->items()->where('sequence', 1)->value('status'))->toBe('completed')
+        ->and($export->items()->where('sequence', 2)->value('status'))->toBe('pending');
+    Bus::assertBatched(fn (PendingBatch $batch): bool => count($batch->jobs) === 1);
+});
+
+it('can cancel and retry an export before preparation creates any items', function (): void {
+    Queue::fake();
+    Event::fake([AssessmentExportProgressed::class]);
+    $school = School::factory()->create();
+    assessmentExportSchoolContext($school);
+    $owner = User::factory()->create(['role' => UserRole::Admin, 'school_id' => $school->id]);
+    $export = createTrackedAssessmentExport($owner, $school, [
+        'status' => 'pending',
+        'stage' => 'queued',
+        'total_count' => 0,
+    ]);
+
+    $this->actingAs($owner)->postJson('/api/jobs/'.$export->id.'/cancel')
+        ->assertAccepted()
+        ->assertJsonPath('job.status', 'cancelled');
+    $this->postJson('/api/jobs/'.$export->id.'/retry')
+        ->assertAccepted()
+        ->assertJsonPath('job.stage', 'preparing');
+
+    Queue::assertPushed(GenerateBulkAssessmentsJob::class, fn (GenerateBulkAssessmentsJob $job): bool => $job->exportId === $export->id);
+});
+
+it('finishes an all-skipped export with a downloadable report and no partial PDF', function (): void {
+    Queue::fake();
+    Event::fake([AssessmentExportProgressed::class]);
+    config()->set('assessment-exports.disk', 'local');
+    Storage::fake('local');
+    $school = School::factory()->create();
+    assessmentExportSchoolContext($school);
+    $owner = User::factory()->create(['role' => UserRole::Admin, 'school_id' => $school->id]);
+    $export = createTrackedAssessmentExport($owner, $school, ['total_count' => 1]);
+    AssessmentExportItem::query()->create([
+        'assessment_export_id' => $export->id,
+        'school_id' => $school->id,
+        'enrollment_id' => null,
+        'sequence' => 1,
+        'status' => 'skipped',
+        'error_code' => 'invalid_enrollment',
+        'error_message' => 'Student record is missing.',
+        'completed_at' => now(),
+    ]);
+
+    app(AssessmentExportCoordinator::class)->synchronize($export->id);
+    Queue::assertPushed(MergeBulkAssessmentExportJob::class, 1);
+
+    (new MergeBulkAssessmentExportJob($export->id))->handle(
+        app(App\Services\PdfGenerationService::class),
+        app(AssessmentExportArtifactService::class),
+        app(AssessmentExportCoordinator::class),
+        app(AssessmentExportNotificationService::class),
+    );
+
+    $export->refresh();
+    expect($export->status)->toBe('completed')
+        ->and($export->stage)->toBe('no_matches')
+        ->and($export->output_path)->toBeNull()
+        ->and($export->report_path)->not->toBeNull();
+    Storage::disk('local')->assertExists($export->report_path);
 });

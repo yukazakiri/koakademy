@@ -6,6 +6,13 @@ app_env=$(printf '%s' "${APP_ENV:-production}" | tr '[:upper:]' '[:lower:]')
 database_connection=$(printf '%s' "${DB_CONNECTION:-}" | tr '[:upper:]' '[:lower:]')
 
 station_enabled=true
+export ASSESSMENT_EXPORT_PROCESSES="${ASSESSMENT_EXPORT_PROCESSES:-2}"
+export ASSESSMENT_EXPORT_EVENT_PROCESSES="${ASSESSMENT_EXPORT_EVENT_PROCESSES:-1}"
+export ASSESSMENT_EXPORT_CONNECTION="${ASSESSMENT_EXPORT_CONNECTION:-assessment-pdf}"
+export ASSESSMENT_EXPORT_QUEUE="${ASSESSMENT_EXPORT_QUEUE:-assessment-pdf}"
+export ASSESSMENT_EXPORT_EVENT_QUEUE="${ASSESSMENT_EXPORT_EVENT_QUEUE:-assessment-events}"
+export ASSESSMENT_EXPORT_WORKER_TIMEOUT="${ASSESSMENT_EXPORT_WORKER_TIMEOUT:-1900}"
+export ASSESSMENT_EXPORT_WORKER_MEMORY="${ASSESSMENT_EXPORT_WORKER_MEMORY:-2048}"
 
 # Schedule Scout settings sync after services are already running under
 # supervisord. Full Scout imports are intentionally never run from container

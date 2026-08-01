@@ -131,8 +131,10 @@ Route::middleware(['auth:sanctum'])->prefix('class-posts')->name('api.class-post
 // Active Jobs API Routes (for real-time job tracking)
 Route::middleware(['web', 'auth'])->prefix('jobs')->name('api.jobs.')->group(function (): void {
     Route::get('/', [ActiveJobsController::class, 'index'])->name('index');
-    Route::get('/{jobId}', [ActiveJobsController::class, 'show'])->name('show');
-    Route::delete('/{jobId}', [ActiveJobsController::class, 'dismiss'])->name('dismiss');
+    Route::get('/{assessmentExport}', [ActiveJobsController::class, 'show'])->name('show');
+    Route::post('/{assessmentExport}/retry', [ActiveJobsController::class, 'retry'])->name('retry');
+    Route::post('/{assessmentExport}/cancel', [ActiveJobsController::class, 'cancel'])->name('cancel');
+    Route::delete('/{assessmentExport}', [ActiveJobsController::class, 'dismiss'])->name('dismiss');
 });
 
 // Organization API Routes (Multi-tenancy)

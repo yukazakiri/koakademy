@@ -141,6 +141,7 @@ export default function AdministratorEnrollmentsIndex({
     analytics,
     filters,
     enrollment_pipeline,
+    assessment_export_options,
 }: EnrollmentManagementProps) {
     const { props } = usePage<{ branding?: Branding }>();
     const currency = props.branding?.currency || "PHP";
@@ -325,7 +326,10 @@ export default function AdministratorEnrollmentsIndex({
         toast.loading("Queueing bulk assessment export...", { id: queueToastId });
 
         try {
-            const response = await axios.post<{ job_id: string; status: string; message: string }>(generateBulkAssessments.url(), bulkReportFilters);
+            const response = await axios.post<{ id: string; status: string; stage: string; message: string }>(
+                generateBulkAssessments.url(),
+                bulkReportFilters,
+            );
 
             toast.success(response.data.message, { id: queueToastId });
             window.dispatchEvent(new Event(ACTIVE_JOBS_REFRESH_EVENT));
@@ -766,6 +770,7 @@ export default function AdministratorEnrollmentsIndex({
                         isGenerating={isGeneratingBulkReport}
                         onGenerate={handleGenerateBulkAssessments}
                         courseOptions={enrollmentCourseOptions}
+                        studentLimitOptions={assessment_export_options.student_limits}
                     />
 
                     {/* Delete Enrollment Confirmation Dialog */}

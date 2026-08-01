@@ -23,3 +23,14 @@ it('serializes export creation without a postgres aggregate row lock', function 
         ->toContain('DB::table((new User)->getTable())')
         ->not->toMatch('/whereIn\([^;]+lockForUpdate\(\)[^;]+count\(\)/s');
 });
+
+it('compares legacy enrollment identifiers without postgres type mismatches', function (): void {
+    $job = file_get_contents(base_path('app/Jobs/GenerateBulkAssessmentsJob.php'));
+
+    expect($job)
+        ->toContain('CAST(export_courses.id AS {$textCast})')
+        ->toContain('CAST(student_enrollment.course_id AS {$textCast})')
+        ->toContain('CAST(export_students.id AS {$textCast})')
+        ->toContain('CAST(student_enrollment.student_id AS {$textCast})')
+        ->toContain('CAST(student_enrollment.course_id AS {$textCast}) = ?');
+});

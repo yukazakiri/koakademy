@@ -19,11 +19,16 @@ final class QueueAssessmentExportService
         $lock = Cache::lock(sprintf('assessment-export:create:%d:%d', $schoolId, $user->id), 10);
         $export = $lock->get(function () use ($user, $schoolId, $filters): AssessmentExport {
             return DB::transaction(function () use ($user, $schoolId, $filters): AssessmentExport {
+                DB::table((new User)->getTable())
+                    ->where('id', $user->id)
+                    ->select('id')
+                    ->lockForUpdate()
+                    ->first();
+
                 $activeCount = AssessmentExport::withoutSchoolScope()
                     ->where('user_id', $user->id)
                     ->where('school_id', $schoolId)
                     ->whereIn('status', AssessmentExport::ACTIVE_STATUSES)
-                    ->lockForUpdate()
                     ->count();
 
                 if ($activeCount >= (int) config('assessment-exports.max_active_per_user', 1)) {

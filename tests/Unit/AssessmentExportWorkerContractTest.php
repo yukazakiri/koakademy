@@ -15,3 +15,11 @@ it('uses an isolated native redis queue with compatible worker timeouts', functi
         ->and($healthcheck)->toContain('assessment-pdf:assessment-pdf_00')
         ->toContain('assessment-events:assessment-events_00');
 });
+
+it('serializes export creation without a postgres aggregate row lock', function (): void {
+    $service = file_get_contents(base_path('app/Services/QueueAssessmentExportService.php'));
+
+    expect($service)
+        ->toContain('DB::table((new User)->getTable())')
+        ->not->toMatch('/whereIn\([^;]+lockForUpdate\(\)[^;]+count\(\)/s');
+});

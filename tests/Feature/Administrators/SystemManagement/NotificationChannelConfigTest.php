@@ -6,6 +6,7 @@ use App\Enums\NotificationChannel;
 use App\Enums\UserRole;
 use App\Models\GeneralSetting;
 use App\Models\User;
+use App\Providers\NotificationChannelServiceProvider;
 use Spatie\Permission\Models\Permission;
 
 use function Pest\Laravel\actingAs;
@@ -74,6 +75,25 @@ it('rejects invalid channel values', function (): void {
             'sms' => [],
         ])
         ->assertSessionHasErrors('enabled_channels.0');
+});
+
+it('keeps the default pusher api host synchronized with the saved cluster', function (): void {
+    $settings = GeneralSetting::query()->firstOrCreate([], ['site_name' => 'Test']);
+    $moreConfigs = $settings->more_configs ?? [];
+    $moreConfigs['notification_channels'] = [
+        'enabled_channels' => ['database', 'broadcast'],
+        'pusher' => [
+            'cluster' => 'ap1',
+        ],
+    ];
+    $settings->update(['more_configs' => $moreConfigs]);
+    config()->set('broadcasting.connections.pusher.options.cluster', 'mt1');
+    config()->set('broadcasting.connections.pusher.options.host', 'api-mt1.pusher.com');
+
+    (new NotificationChannelServiceProvider(app()))->boot();
+
+    expect(config('broadcasting.connections.pusher.options.cluster'))->toBe('ap1')
+        ->and(config('broadcasting.connections.pusher.options.host'))->toBe('api-ap1.pusher.com');
 });
 
 it('has all expected notification channel enum cases', function (): void {

@@ -82,7 +82,16 @@ final class NotificationChannelServiceProvider extends ServiceProvider
             config()->set('broadcasting.connections.pusher.secret', $pusherConfig['secret']);
         }
         if (! empty($pusherConfig['cluster'])) {
-            config()->set('broadcasting.connections.pusher.options.cluster', $pusherConfig['cluster']);
+            $cluster = (string) $pusherConfig['cluster'];
+            config()->set('broadcasting.connections.pusher.options.cluster', $cluster);
+
+            $host = config('broadcasting.connections.pusher.options.host');
+            if (
+                preg_match('/^[a-z0-9-]+$/i', $cluster) === 1
+                && (! is_string($host) || preg_match('/^api-[a-z0-9-]+\.pusher\.com$/i', $host) === 1)
+            ) {
+                config()->set('broadcasting.connections.pusher.options.host', "api-{$cluster}.pusher.com");
+            }
         }
     }
 

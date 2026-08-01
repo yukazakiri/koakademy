@@ -49,10 +49,13 @@ use App\Services\ChangelogService;
 use App\Services\GeneralSettingsService;
 use App\Services\VersionService;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\View\FileViewFinder;
 use Laravel\Passkeys\Passkeys;
 use Laravel\Pennant\Feature;
@@ -89,6 +92,8 @@ final class AppServiceProvider extends ServiceProvider
 
         Gate::define('viewApiDocs', fn (User $user): bool => $user->hasRole('super_admin'));
 
+        $this->configureApiRateLimiting();
+
         Livewire::component(
             'daacreators.pennant-manager.widgets.feature-adoption-widget',
             PennantFeatureAdoptionWidget::class,
@@ -104,6 +109,20 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->booted(function (): void {
             $this->removeMissingViewFinderPaths();
         });
+    }
+
+    /**
+     * Named rate limiters for the external API. The 'api' limiter is applied
+     * automatically by the throttle:api middleware to every /api/* route;
+     * 'api-login' guards credential and OTP endpoints on /api/v1/auth/*.
+     */
+    private function configureApiRateLimiting(): void
+    {
+        RateLimiter::for('api', fn (Request $request): Limit => Limit::perMinute((int) config('api.rate_limit', 60))
+            ->by($request->user()?->id !== null ? (string) $request->user()->id : $request->ip()));
+
+        RateLimiter::for('api-login', fn (Request $request): Limit => Limit::perMinute((int) config('api.login_rate_limit', 5))
+            ->by((string) $request->string('email') !== '' ? (string) $request->string('email') : $request->ip()));
     }
 
     private function definePennantFeatures(): void

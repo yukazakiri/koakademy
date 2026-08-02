@@ -27,6 +27,8 @@ return [
     'sequenzy' => [
         'key' => env('SEQUENZY_API_KEY'),
         'legacy_key' => env('MAIL_PASSWORD'),
+        'url' => env('SEQUENZY_API_BASE_URL', 'https://api.sequenzy.com/api/v1'),
+        'timeout' => (float) env('SEQUENZY_TIMEOUT', 15),
     ],
 
     'ses' => [

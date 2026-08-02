@@ -2,6 +2,7 @@ import { AdministratorSidebar } from "@/components/administrators/admin-sidebar"
 import { AnalyticsScripts } from "@/components/analytics-scripts";
 import { FacultySidebar } from "@/components/faculty/faculty-sidebar";
 import { GlobalCommandPalette } from "@/components/global-command-palette";
+import { NewsletterSubscribeDialog } from "@/components/newsletter-subscribe-dialog";
 import { SeoHead } from "@/components/seo-head";
 import { SiteHeader } from "@/components/site-header";
 import { StudentSidebar } from "@/components/student/student-sidebar";
@@ -43,13 +44,12 @@ export default function PortalLayout({ user, children }: PortalLayoutProps) {
                 <AnnouncementBanner announcements={announcements ?? []} />
                 <div className="flex flex-1 flex-col">
                     <div className="@container/main flex flex-1 flex-col gap-2">
-                        <div className="flex flex-col gap-4 px-4 py-4 md:gap-6 md:py-6 lg:px-6">
-                            {children}
-                        </div>
+                        <div className="flex flex-col gap-4 px-4 py-4 md:gap-6 md:py-6 lg:px-6">{children}</div>
                     </div>
                 </div>
             </SidebarInset>
             <GlobalCommandPalette user={user} />
+            <NewsletterSubscribeDialog />
         </SidebarProvider>
     );
 }

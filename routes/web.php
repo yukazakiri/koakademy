@@ -304,6 +304,10 @@ Route::get('/changelog', App\Http\Controllers\ChangelogController::class)->name(
 Route::get('/health', fn () => response()->json(['status' => 'ok', 'timestamp' => now()->toIso8601String()]))->name('health');
 
 Route::middleware(['auth'])->group(function () {
+    // Newsletter Subscription Prompt (Student & Faculty portals)
+    Route::post('/newsletter/subscribe', [App\Http\Controllers\NewsletterSubscriptionController::class, 'store'])->name('newsletter.subscribe');
+    Route::post('/newsletter/decline', [App\Http\Controllers\NewsletterSubscriptionController::class, 'decline'])->name('newsletter.decline');
+
     // Generic Social Auth Routes
     Route::get('/integrations/{provider}/connect', [App\Http\Controllers\SocialAuthController::class, 'connect'])->name('social.connect');
     Route::get('/integrations/{provider}/callback', [App\Http\Controllers\SocialAuthController::class, 'connectCallback'])->name('social.callback');

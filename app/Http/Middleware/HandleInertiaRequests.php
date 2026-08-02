@@ -18,6 +18,7 @@ use App\Services\GeneralSettingsService;
 use App\Services\ModuleAdminNavigationService;
 use App\Services\NotificationShareService;
 use App\Services\OnboardingShareService;
+use App\Services\SequenzySubscriberService;
 use App\Services\SettingsShareService;
 use App\Services\SocialiteProviderService;
 use App\Services\StudentClassShareService;
@@ -110,6 +111,7 @@ final class HandleInertiaRequests extends Middleware
                 'notifications' => $notificationService->transformNotifications($user),
                 'unreadNotificationsCount' => $notificationService->getUnreadCount($user),
                 'unresolvedHelpTicketsCount' => $onboardingService->getUnresolvedHelpTicketsCount($user),
+                'newsletter' => fn (): array => $this->getNewsletterData($user),
                 'adminSidebarCounts' => fn () => $administratorSidebarCounts->resolve($request),
                 'moduleAdminRoutes' => $moduleAdminNavigationService->getRoutes(),
                 'institutionOnboarding' => fn (): ?array => $this->getInstitutionOnboardingData($request, $user),
@@ -124,6 +126,34 @@ final class HandleInertiaRequests extends Middleware
                 ),
             ]
         );
+    }
+
+    /**
+     * Newsletter prompt state shared with the portal frontend. Only student
+     * and faculty users are ever prompted; admins and guests are skipped
+     * without touching the database or the Sequenzy API.
+     *
+     * @return array{enabled: bool, shouldPrompt: bool, feedback: array{type: string, message: string}|null}
+     */
+    private function getNewsletterData(?User $user): array
+    {
+        $feedback = session('newsletter_feedback');
+
+        if (! $user instanceof User || (! $user->isStudentRole() && ! $user->isFaculty())) {
+            return [
+                'enabled' => false,
+                'shouldPrompt' => false,
+                'feedback' => $feedback,
+            ];
+        }
+
+        $sequenzy = app(SequenzySubscriberService::class);
+
+        return [
+            'enabled' => $sequenzy->isConfigured(),
+            'shouldPrompt' => $sequenzy->shouldPromptUser($user),
+            'feedback' => $feedback,
+        ];
     }
 
     /**

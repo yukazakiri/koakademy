@@ -176,7 +176,7 @@ case "${command_name}" in
             ps)
                 name="${*: -1}"
                 case "${name}" in
-                    koakademy-*-init|koakademy-migrate|koakademy-storage-init|koakademy-rustfs-volume-init)
+                    koakademy-*-init|koakademy-migrate)
                         case "$*" in
                             *'{{.CurrentState}}'*) printf 'Complete 1 second ago\n' ;;
                             *'{{.Error}}'*) printf '\n' ;;

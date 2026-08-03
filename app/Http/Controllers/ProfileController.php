@@ -12,6 +12,7 @@ use App\Http\Requests\ToggleExperimentalFeaturesRequest;
 use App\Http\Requests\UpdateStudentProfileRequest;
 use App\Models\ConnectedAccount;
 use App\Models\Faculty;
+use App\Models\GeneralSetting;
 use App\Models\Student;
 use App\Models\User;
 use App\Services\DigitalIdCardService;
@@ -137,6 +138,7 @@ final class ProfileController extends Controller
 
         return Inertia::render('profile', [
             'connected_accounts' => $connectedAccounts,
+            'can_view_newsletter_settings' => $isAdmin && $user->can('viewNewsletter', GeneralSetting::class),
             'id_card' => $idCardData,
             'user' => [
                 'id' => $user->id,

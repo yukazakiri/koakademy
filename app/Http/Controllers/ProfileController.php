@@ -118,6 +118,7 @@ final class ProfileController extends Controller
         $developerModeEnabled = $developerModeFeature !== null && Feature::for($user)->active($developerModeFeature);
         $studentInformationUpdatesEnabled = $isStudent && Feature::for($user)->active(StudentInformationUpdates::class);
         $studentProfileCompletion = app(StudentProfileCompletionService::class)->summarize($student);
+        $canViewNewsletterSettings = $isAdmin && $user->can('viewNewsletter', GeneralSetting::class);
 
         $apiTokens = [];
         if ($developerModeEnabled) {
@@ -138,7 +139,10 @@ final class ProfileController extends Controller
 
         return Inertia::render('profile', [
             'connected_accounts' => $connectedAccounts,
-            'can_view_newsletter_settings' => $isAdmin && $user->can('viewNewsletter', GeneralSetting::class),
+            'can_view_newsletter_settings' => $canViewNewsletterSettings,
+            'newsletter_settings_url' => $canViewNewsletterSettings
+                ? route('administrators.settings.newsletter.index', absolute: false)
+                : null,
             'id_card' => $idCardData,
             'user' => [
                 'id' => $user->id,

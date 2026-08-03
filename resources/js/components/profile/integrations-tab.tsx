@@ -20,9 +20,10 @@ type ConnectedAccountsPayload = {
 interface IntegrationsTabProps {
     connectedAccounts: ConnectedAccountsPayload;
     canViewNewsletterSettings?: boolean;
+    newsletterSettingsUrl?: string | null;
 }
 
-export function IntegrationsTab({ connectedAccounts, canViewNewsletterSettings = false }: IntegrationsTabProps) {
+export function IntegrationsTab({ connectedAccounts, canViewNewsletterSettings = false, newsletterSettingsUrl = null }: IntegrationsTabProps) {
     const [integrations, setIntegrations] = useState({
         googleCalendar: connectedAccounts.providers["google"] || false,
         microsoftOutlook: connectedAccounts.providers["microsoft"] || false,
@@ -84,7 +85,7 @@ export function IntegrationsTab({ connectedAccounts, canViewNewsletterSettings =
 
     return (
         <div className="grid gap-6">
-            {canViewNewsletterSettings ? <NewsletterSettingsCard /> : null}
+            {canViewNewsletterSettings && newsletterSettingsUrl ? <NewsletterSettingsCard href={newsletterSettingsUrl} /> : null}
 
             <Card>
                 <CardHeader>

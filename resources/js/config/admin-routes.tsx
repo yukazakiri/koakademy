@@ -31,6 +31,7 @@ import {
     IconHelp,
     IconHistory,
     IconMedicalCross,
+    IconNews,
     IconReportAnalytics,
     IconSchool,
     IconServer,
@@ -650,6 +651,8 @@ export const ADMIN_ROUTES: AdminRoute[] = [
             "Update:SystemManagementSocialite",
             "View:SystemManagementMail",
             "Update:SystemManagementMail",
+            "View:SystemManagementNewsletter",
+            "Update:SystemManagementNewsletter",
             "View:SystemManagementApi",
             "Update:SystemManagementApi",
             "View:SystemManagementNotifications",
@@ -699,6 +702,11 @@ export const ADMIN_ROUTES: AdminRoute[] = [
                 title: "Email Configuration",
                 link: "/administrators/system-management/mail",
                 icon: <IconBell className="size-4" />,
+            },
+            {
+                title: "Newsletter Marketing",
+                link: "/administrators/settings/newsletter",
+                icon: <IconNews className="size-4" />,
             },
             {
                 title: "API & Integrations",

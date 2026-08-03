@@ -98,6 +98,7 @@ Route::middleware(['auth', 'administrators.only'])
         })->name('dashboard');
 
         Route::get('/settings', [App\Http\Controllers\ProfileController::class, 'index'])->name('settings.index');
+        Route::get('/settings/newsletter', [App\Http\Controllers\AdministratorSystemManagementController::class, 'newsletter'])->name('settings.newsletter.index');
         Route::put('/settings', [App\Http\Controllers\ProfileController::class, 'updateUser'])->name('settings.update');
         Route::put('/settings/faculty', [App\Http\Controllers\ProfileController::class, 'updateFaculty'])->name('settings.faculty.update');
         Route::put('/settings/password', [App\Http\Controllers\ProfileController::class, 'changePassword'])->name('settings.password.update');

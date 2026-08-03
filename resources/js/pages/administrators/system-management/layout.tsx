@@ -85,7 +85,7 @@ export const systemManagementNavItems: SystemManagementNavItem[] = [
         key: "newsletter",
         label: "Newsletter",
         description: "Marketing contacts, consent prompts, and provider setup.",
-        href: "/administrators/system-management/newsletter",
+        href: "/administrators/settings/newsletter",
         icon: Newspaper,
     },
     {

@@ -1,10 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { decline, subscribe } from "@/routes/newsletter";
 import { router, usePage } from "@inertiajs/react";
-import { BellRing, CalendarClock, Loader2, MailCheck, Newspaper } from "lucide-react";
+import { BellOff, Loader2, Mail, MailOpen, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { route } from "ziggy-js";
 
 type NewsletterFeedback = {
     type: "success" | "error";
@@ -24,7 +24,7 @@ const PROMPT_DELAY_MS = 1500;
  * One-time opt-in prompt asking students and faculty to subscribe to the
  * school newsletter. Visibility is driven entirely by the shared `newsletter`
  * Inertia prop: the server hides it for users who already responded or who
- * already exist as Sequenzy subscribers.
+ * already responded through the active marketing contact provider.
  */
 export function NewsletterSubscribeDialog() {
     const { newsletter } = usePage().props as unknown as {
@@ -68,7 +68,7 @@ export function NewsletterSubscribeDialog() {
         setSubmitting("subscribe");
 
         router.post(
-            route("newsletter.subscribe"),
+            subscribe.url(),
             {},
             {
                 preserveScroll: true,
@@ -87,7 +87,7 @@ export function NewsletterSubscribeDialog() {
         setSubmitting("decline");
 
         router.post(
-            route("newsletter.decline"),
+            decline.url(),
             {},
             {
                 preserveScroll: true,
@@ -111,53 +111,69 @@ export function NewsletterSubscribeDialog() {
                 }
             }}
         >
-            <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                    <div className="bg-primary/10 mx-auto mb-1 flex size-12 items-center justify-center rounded-full sm:mx-0">
-                        <Newspaper className="text-primary size-6" />
-                    </div>
-                    <DialogTitle className="text-xl">Stay in the loop!</DialogTitle>
-                    <DialogDescription>
-                        Subscribe to the school newsletter and get the latest news and announcements delivered straight to your inbox.
-                    </DialogDescription>
-                </DialogHeader>
+            <DialogContent className="border-border/70 max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-2xl p-0 shadow-2xl sm:max-w-[900px] [&_[data-slot=dialog-close]]:top-4 [&_[data-slot=dialog-close]]:right-4 [&_[data-slot=dialog-close]]:flex [&_[data-slot=dialog-close]]:size-10 [&_[data-slot=dialog-close]]:items-center [&_[data-slot=dialog-close]]:justify-center [&_[data-slot=dialog-close]]:rounded-xl [&_[data-slot=dialog-close]]:border sm:[&_[data-slot=dialog-close]]:top-7 sm:[&_[data-slot=dialog-close]]:right-7 sm:[&_[data-slot=dialog-close]]:size-12">
+                <div className="px-6 pt-9 pb-7 sm:px-16 sm:pt-16 sm:pb-12">
+                    <DialogHeader className="items-center gap-0 text-center sm:text-center">
+                        <div className="bg-muted text-foreground mb-6 flex size-16 items-center justify-center rounded-full sm:mb-8 sm:size-24">
+                            <MailOpen className="size-8 stroke-[1.7] sm:size-12" aria-hidden="true" />
+                        </div>
+                        <DialogTitle className="text-2xl leading-tight font-semibold tracking-tight sm:text-4xl">
+                            Get the important school updates
+                        </DialogTitle>
+                        <DialogDescription className="mt-4 max-w-[40rem] text-base leading-7 sm:mt-6 sm:text-xl sm:leading-9">
+                            Opt in to our newsletter for news, events, and deadline reminders. This is separate from account and transactional
+                            messages.
+                        </DialogDescription>
+                    </DialogHeader>
 
-                <div className="border-border/60 bg-muted/40 rounded-lg border px-4 py-3">
-                    <ul className="text-muted-foreground space-y-2.5 text-sm">
-                        <li className="flex items-center gap-2.5">
-                            <BellRing className="text-primary size-4 shrink-0" />
-                            Important announcements and deadline reminders
-                        </li>
-                        <li className="flex items-center gap-2.5">
-                            <CalendarClock className="text-primary size-4 shrink-0" />
-                            School events, activities, and schedule updates
-                        </li>
-                        <li className="flex items-center gap-2.5">
-                            <MailCheck className="text-primary size-4 shrink-0" />
-                            No spam — unsubscribe at any time
-                        </li>
-                    </ul>
+                    <div className="text-muted-foreground my-7 flex items-center justify-center gap-3 text-sm sm:my-10 sm:text-lg">
+                        <ShieldCheck className="size-5 shrink-0 sm:size-6" aria-hidden="true" />
+                        <span>Unsubscribe anytime.</span>
+                    </div>
+
+                    <DialogFooter className="flex-col gap-3 sm:flex-col">
+                        <Button
+                            size="lg"
+                            onClick={handleSubscribe}
+                            disabled={submitting !== null}
+                            className="min-h-12 w-full text-base font-semibold sm:min-h-14 sm:text-lg"
+                        >
+                            {submitting === "subscribe" ? <Loader2 className="animate-spin" /> : <Mail aria-hidden="true" />}
+                            {submitting === "subscribe" ? "Subscribing…" : "Subscribe to newsletter"}
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="lg"
+                            onClick={handleNotNow}
+                            disabled={submitting !== null}
+                            className="min-h-12 w-full text-base font-semibold sm:min-h-14 sm:text-lg"
+                        >
+                            Maybe later
+                        </Button>
+                    </DialogFooter>
                 </div>
 
-                <DialogFooter className="flex-col gap-3 sm:flex-col">
-                    <Button onClick={handleSubscribe} disabled={submitting !== null} className="w-full">
-                        {submitting === "subscribe" ? <Loader2 className="animate-spin" /> : <MailCheck />}
-                        {submitting === "subscribe" ? "Subscribing…" : "Yes, subscribe me"}
-                    </Button>
-                    <div className="flex w-full items-center justify-between">
-                        <button
-                            type="button"
-                            onClick={handleDecline}
-                            disabled={submitting !== null}
-                            className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 transition-colors hover:underline disabled:opacity-50"
-                        >
-                            Don&apos;t ask again
-                        </button>
-                        <Button variant="ghost" size="sm" onClick={handleNotNow} disabled={submitting !== null}>
-                            Not now
-                        </Button>
-                    </div>
-                </DialogFooter>
+                <button
+                    type="button"
+                    onClick={handleDecline}
+                    disabled={submitting !== null}
+                    className="group border-border/70 hover:bg-muted/50 focus-visible:ring-ring flex min-h-24 w-full items-center gap-4 border-t px-6 py-5 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset disabled:opacity-50 sm:min-h-32 sm:gap-5 sm:px-16 sm:py-8"
+                >
+                    {submitting === "decline" ? (
+                        <Loader2 className="text-muted-foreground size-5 shrink-0 animate-spin" />
+                    ) : (
+                        <BellOff
+                            className="text-muted-foreground group-hover:text-foreground size-5 shrink-0 transition-colors sm:size-6"
+                            aria-hidden="true"
+                        />
+                    )}
+                    <span>
+                        <span className="text-foreground block text-sm font-semibold sm:text-lg">Don&apos;t ask me again</span>
+                        <span className="text-muted-foreground mt-1 block text-xs leading-5 sm:text-base sm:leading-6">
+                            You won&apos;t be shown this again. This setting is permanent.
+                        </span>
+                    </span>
+                </button>
             </DialogContent>
         </Dialog>
     );

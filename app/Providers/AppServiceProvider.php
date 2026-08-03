@@ -49,6 +49,8 @@ use App\Observers\StudentTransactionObserver;
 use App\Services\ChangelogService;
 use App\Services\GeneralSettingsService;
 use App\Services\LaravelAssessmentFormPdfRenderer;
+use App\Services\Newsletter\NewsletterSettingsService;
+use App\Services\Newsletter\NewsletterSubscriptionService;
 use App\Services\VersionService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Gate;
@@ -71,6 +73,8 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->singleton(ExportFailureHandler::class);
         // scoped = one instance per HTTP request, so Auth is always available when first used
         $this->app->scoped(GeneralSettingsService::class);
+        $this->app->scoped(NewsletterSettingsService::class);
+        $this->app->scoped(NewsletterSubscriptionService::class);
         $this->app->scoped(\App\Services\TenantContext::class);
         $this->app->bind(AssessmentFormPdfRenderer::class, LaravelAssessmentFormPdfRenderer::class);
     }

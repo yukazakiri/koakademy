@@ -358,6 +358,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/system-management/brand/appearance', [App\Http\Controllers\AdministratorSystemManagementController::class, 'brand'])->name('system-management.brand.appearance.index');
         Route::get('/system-management/socialite', [App\Http\Controllers\AdministratorSystemManagementController::class, 'socialite'])->name('system-management.socialite.index');
         Route::get('/system-management/mail', [App\Http\Controllers\AdministratorSystemManagementController::class, 'mail'])->name('system-management.mail.index');
+        Route::get('/system-management/newsletter', [App\Http\Controllers\AdministratorSystemManagementController::class, 'newsletter'])->name('system-management.newsletter.index');
         Route::get('/system-management/api', [App\Http\Controllers\AdministratorSystemManagementController::class, 'api'])->name('system-management.api.index');
         Route::get('/system-management/pulse', [App\Http\Controllers\AdministratorSystemManagementController::class, 'pulse'])->name('system-management.pulse.index');
         Route::get('/system-management/identifiers', [App\Http\Controllers\AdministratorSystemManagementController::class, 'identifiers'])->name('system-management.identifiers.index');
@@ -375,6 +376,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::put('/system-management/brand', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateBrand'])->name('system-management.brand.update');
         Route::put('/system-management/socialite', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateSocialite'])->name('system-management.socialite.update');
         Route::put('/system-management/mail', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateMail'])->name('system-management.mail.update');
+        Route::put('/system-management/newsletter', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateNewsletter'])->name('system-management.newsletter.update');
         Route::put('/system-management/api', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateApiManagement'])->name('system-management.api.update');
         Route::put('/system-management/enrollment-pipeline', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateEnrollmentPipeline'])->name('system-management.enrollment-pipeline.update');
         Route::post('/system-management/enrollment-policies', [AdministratorEnrollmentPolicyController::class, 'store'])->name('system-management.enrollment-policies.store');
@@ -390,6 +392,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/system-management/enrollment-policies/{policy}/versions/{version}/rollback', [AdministratorEnrollmentPolicyController::class, 'rollback'])->whereNumber(['policy', 'version'])->name('system-management.enrollment-policies.versions.rollback');
         Route::get('/system-management/enrollment-policies/{policy}/versions/{version}/export', [AdministratorEnrollmentPolicyController::class, 'export'])->whereNumber(['policy', 'version'])->name('system-management.enrollment-policies.versions.export');
         Route::post('/system-management/mail/test', [App\Http\Controllers\AdministratorSystemManagementController::class, 'sendTestEmail'])->name('system-management.mail.test');
+        Route::post('/system-management/newsletter/test', [App\Http\Controllers\AdministratorSystemManagementController::class, 'testNewsletterConnection'])->name('system-management.newsletter.test');
         Route::get('/system-management/notifications', [App\Http\Controllers\AdministratorSystemManagementController::class, 'notifications'])->name('system-management.notifications.index');
         Route::put('/system-management/notifications', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateNotificationChannels'])->name('system-management.notifications.update');
         Route::get('/system-management/finance-documents', [App\Http\Controllers\AdministratorSystemManagementController::class, 'financeDocuments'])->name('system-management.finance_documents.index');

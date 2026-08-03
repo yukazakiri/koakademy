@@ -48,6 +48,7 @@ final class GeneralSetting extends Model
         'seo_keywords',
         'seo_metadata',
         'email_settings',
+        'newsletter_settings',
         'sequenzy_api_key',
         'email_from_address',
         'email_from_name',
@@ -81,6 +82,7 @@ final class GeneralSetting extends Model
 
     #[Override]
     protected $hidden = [
+        'newsletter_settings',
         'sequenzy_api_key',
     ];
 
@@ -138,6 +140,7 @@ final class GeneralSetting extends Model
         return [
             'seo_metadata' => 'array',
             'email_settings' => 'array',
+            'newsletter_settings' => 'encrypted:array',
             'sequenzy_api_key' => 'encrypted',
             'social_network' => 'array',
             'analytics_enabled' => 'boolean',

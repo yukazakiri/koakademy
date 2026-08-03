@@ -68,6 +68,7 @@ it('renders all refactored system management pages', function (string $url, stri
     'brand page' => ['/administrators/system-management/brand', 'administrators/system-management/brand'],
     'socialite page' => ['/administrators/system-management/socialite', 'administrators/system-management/socialite'],
     'mail page' => ['/administrators/system-management/mail', 'administrators/system-management/mail'],
+    'newsletter page' => ['/administrators/system-management/newsletter', 'administrators/system-management/newsletter'],
     'notifications page' => ['/administrators/system-management/notifications', 'administrators/system-management/notifications'],
     'finance documents page' => ['/administrators/system-management/finance-documents', 'administrators/system-management/finance-documents'],
     'pulse page' => ['/administrators/system-management/pulse', 'administrators/system-management/pulse'],

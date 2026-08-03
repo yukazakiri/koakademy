@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\NewsletterProvider;
 use App\Enums\NewsletterSubscriptionStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -17,6 +18,7 @@ use Override;
  * @property int $id
  * @property int $user_id
  * @property string $email
+ * @property NewsletterProvider|null $provider
  * @property NewsletterSubscriptionStatus $status
  * @property \Illuminate\Support\Carbon|null $subscribed_at
  * @property \Illuminate\Support\Carbon|null $declined_at
@@ -27,6 +29,7 @@ final class NewsletterSubscription extends Model
     protected $fillable = [
         'user_id',
         'email',
+        'provider',
         'status',
         'subscribed_at',
         'declined_at',
@@ -50,6 +53,7 @@ final class NewsletterSubscription extends Model
     {
         return [
             'status' => NewsletterSubscriptionStatus::class,
+            'provider' => NewsletterProvider::class,
             'subscribed_at' => 'datetime',
             'declined_at' => 'datetime',
         ];

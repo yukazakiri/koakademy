@@ -27,9 +27,38 @@ it('shares newsletter settings visibility only with authorized administrators', 
         ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
             ->component('profile', false)
             ->whereType('can_view_newsletter_settings', 'boolean')
-            ->where('can_view_newsletter_settings', $expected));
+            ->where('can_view_newsletter_settings', $expected)
+            ->where('newsletter_settings_url', $expected ? '/administrators/settings/newsletter' : null));
 })->with([
     'newsletter viewer' => [SystemManagementPermissions::viewPermission('newsletter'), true],
     'newsletter updater' => [SystemManagementPermissions::updatePermission('newsletter'), true],
     'administrator without newsletter access' => [null, false],
 ]);
+
+it('serves newsletter configuration from the administrator settings route', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $permission = SystemManagementPermissions::viewPermission('newsletter');
+
+    Permission::firstOrCreate([
+        'name' => $permission,
+        'guard_name' => 'web',
+    ]);
+    $user->givePermissionTo($permission);
+
+    actingAs($user)
+        ->get(portalUrlForAdministrators('/administrators/settings/newsletter'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->component('administrators/system-management/newsletter', false)
+            ->where('access.active_section', 'newsletter'));
+});
+
+it('lists newsletter configuration in the administrator sidebar', function (): void {
+    $routes = file_get_contents(resource_path('js/config/admin-routes.tsx')) ?: '';
+
+    expect($routes)
+        ->toContain('"View:SystemManagementNewsletter"')
+        ->toContain('"Update:SystemManagementNewsletter"')
+        ->toContain('title: "Newsletter Marketing"')
+        ->toContain('link: "/administrators/settings/newsletter"');
+});

@@ -125,6 +125,7 @@ export default function ProfilePage() {
         endpoints,
         connected_accounts = { providers: {}, accounts: [] },
         can_view_newsletter_settings = false,
+        newsletter_settings_url = null,
         id_card,
         feature_flags,
         featureFlags,
@@ -139,6 +140,7 @@ export default function ProfilePage() {
         } | null;
         connected_accounts: ConnectedAccountsPayload;
         can_view_newsletter_settings?: boolean;
+        newsletter_settings_url?: string | null;
         user: {
             id: number;
             name: string;
@@ -914,7 +916,11 @@ export default function ProfilePage() {
                             </TabsContent>
 
                             <TabsContent value="integrations" className="mt-0 outline-none">
-                                <IntegrationsTab connectedAccounts={connected_accounts} canViewNewsletterSettings={can_view_newsletter_settings} />
+                                <IntegrationsTab
+                                    connectedAccounts={connected_accounts}
+                                    canViewNewsletterSettings={can_view_newsletter_settings}
+                                    newsletterSettingsUrl={newsletter_settings_url}
+                                />
                             </TabsContent>
                         </div>
                     </Tabs>

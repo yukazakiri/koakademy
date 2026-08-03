@@ -1,11 +1,14 @@
-import { newsletter } from "@/actions/App/Http/Controllers/AdministratorSystemManagementController";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link } from "@inertiajs/react";
 import { ArrowRight, MailCheck, Newspaper, ShieldCheck } from "lucide-react";
 
-export function NewsletterSettingsCard() {
+interface NewsletterSettingsCardProps {
+    href: string;
+}
+
+export function NewsletterSettingsCard({ href }: NewsletterSettingsCardProps) {
     return (
         <Card className="border-primary/20 overflow-hidden">
             <CardHeader className="gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -31,7 +34,7 @@ export function NewsletterSettingsCard() {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-muted-foreground text-sm">Configure credentials, test the connection, then enable future signups.</p>
                     <Button asChild className="shrink-0">
-                        <Link href={newsletter.url()} prefetch>
+                        <Link href={href} prefetch>
                             Configure newsletter
                             <ArrowRight className="size-4" aria-hidden="true" />
                         </Link>

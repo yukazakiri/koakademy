@@ -9,6 +9,7 @@ export type SystemManagementSectionKey =
     | "brand"
     | "socialite"
     | "mail"
+    | "newsletter"
     | "api"
     | "notifications"
     | "finance_documents"
@@ -132,6 +133,18 @@ export interface MailConfig {
     encryption: string;
     password_configured: boolean;
     api_key_configured: boolean;
+}
+
+export type NewsletterProviderName = "sequenzy" | "brevo" | "mailchimp";
+
+export interface NewsletterConfig {
+    enabled: boolean;
+    provider: NewsletterProviderName;
+    providers: {
+        sequenzy: { configured: boolean };
+        brevo: { configured: boolean; list_id: string };
+        mailchimp: { configured: boolean; server_prefix: string; audience_id: string };
+    };
 }
 
 export interface FinanceDocumentSettings {
@@ -345,6 +358,7 @@ export interface SystemManagementPageProps {
     sanity_config: SanityConfig;
     socialite_config: SocialiteConfig;
     mail_config: MailConfig;
+    newsletter_config: NewsletterConfig;
     analytics: AnalyticsConfig;
     branding: BrandingSettings;
     enrollment_pipeline: EnrollmentPipelineSettings;

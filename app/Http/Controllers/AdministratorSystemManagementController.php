@@ -16,6 +16,7 @@ use App\Http\Requests\Administrators\StoreSchoolRequest;
 use App\Http\Requests\Administrators\UpdateApiManagementRequest;
 use App\Http\Requests\Administrators\UpdateEnrollmentPipelineRequest;
 use App\Http\Requests\Administrators\UpdateFinanceDocumentSettingsRequest;
+use App\Http\Requests\Administrators\UpdateNewsletterSettingsRequest;
 use App\Http\Requests\Administrators\UpdateSchoolLevelRequest;
 use App\Http\Requests\Administrators\UpdateSchoolRequest;
 use App\Http\Requests\Administrators\UpdateSchoolStatusRequest;
@@ -32,11 +33,14 @@ use App\Services\GeneralSettingsService;
 use App\Services\GradingSystemService;
 use App\Services\IdentifierGenerator;
 use App\Services\LogoConversionService;
+use App\Services\Newsletter\NewsletterProviderManager;
+use App\Services\Newsletter\NewsletterSettingsService;
 use App\Services\SocialiteProviderService;
 use App\Settings\SiteSettings;
 use App\Support\SystemManagementPermissions;
 use Exception;
 use Illuminate\Database\QueryException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -47,6 +51,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Redirect;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Laravel\Pennant\Feature;
@@ -204,6 +209,16 @@ final class AdministratorSystemManagementController extends Controller
     public function mail(): Response
     {
         return $this->renderSystemManagementPage('administrators/system-management/mail', 'mail', 'viewMail');
+    }
+
+    public function newsletter(NewsletterSettingsService $newsletterSettings): Response
+    {
+        return $this->renderSystemManagementPage(
+            'administrators/system-management/newsletter',
+            'newsletter',
+            'viewNewsletter',
+            ['newsletter_config' => $newsletterSettings->forAdministration()],
+        );
     }
 
     public function pulse(): Response
@@ -797,6 +812,55 @@ final class AdministratorSystemManagementController extends Controller
         return Redirect::back()->with('success', 'Mail configuration updated successfully.');
     }
 
+    public function updateNewsletter(
+        UpdateNewsletterSettingsRequest $request,
+        NewsletterSettingsService $newsletterSettings,
+        NewsletterProviderManager $providers,
+    ): RedirectResponse {
+        $previous = $newsletterSettings->get();
+        $candidate = $newsletterSettings->merge($request->validated());
+        $provider = $providers->forSettings($candidate);
+
+        if ((bool) $candidate['enabled'] && (! $provider->isConfigured() || ! $provider->testConnection())) {
+            throw ValidationException::withMessages([
+                'provider' => 'The selected newsletter provider could not be verified. Check its credentials and destination, then try again.',
+            ]);
+        }
+
+        $newsletterSettings->save($candidate);
+        $providerChanged = $previous['provider'] !== $candidate['provider'];
+
+        $response = Redirect::back()->with('success', 'Newsletter settings updated successfully.');
+
+        if ($providerChanged) {
+            $response->with(
+                'warning',
+                'The provider was changed for future signups only. Existing subscribed and declined records were not synchronized.',
+            );
+        }
+
+        return $response;
+    }
+
+    public function testNewsletterConnection(
+        UpdateNewsletterSettingsRequest $request,
+        NewsletterSettingsService $newsletterSettings,
+        NewsletterProviderManager $providers,
+    ): JsonResponse {
+        $candidate = $newsletterSettings->merge($request->validated());
+        $provider = $providers->forSettings($candidate);
+
+        if (! $provider->isConfigured() || ! $provider->testConnection()) {
+            return response()->json([
+                'message' => 'Connection failed. Check the provider credentials and destination.',
+            ], 422);
+        }
+
+        return response()->json([
+            'message' => ucfirst($provider->name()->value).' connection verified.',
+        ]);
+    }
+
     public function updateEnrollmentPipeline(UpdateEnrollmentPipelineRequest $request): RedirectResponse
     {
         if (Feature::active(DynamicEnrollmentPolicies::class)) {
@@ -1161,6 +1225,7 @@ final class AdministratorSystemManagementController extends Controller
                 'brand' => 'updateBrand',
                 'socialite' => 'updateSocialite',
                 'mail' => 'updateMail',
+                'newsletter' => 'updateNewsletter',
                 'api' => 'updateApi',
                 'notifications' => 'updateNotifications',
                 'finance_documents' => 'updateFinanceDocuments',
@@ -1177,6 +1242,7 @@ final class AdministratorSystemManagementController extends Controller
                 'brand' => 'viewBrand',
                 'socialite' => 'viewSocialite',
                 'mail' => 'viewMail',
+                'newsletter' => 'viewNewsletter',
                 'api' => 'viewApi',
                 'notifications' => 'viewNotifications',
                 'finance_documents' => 'viewFinanceDocuments',

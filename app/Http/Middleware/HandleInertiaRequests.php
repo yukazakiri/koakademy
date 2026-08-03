@@ -16,9 +16,9 @@ use App\Services\AnalyticsSettingsService;
 use App\Services\FacultyClassShareService;
 use App\Services\GeneralSettingsService;
 use App\Services\ModuleAdminNavigationService;
+use App\Services\Newsletter\NewsletterSubscriptionService;
 use App\Services\NotificationShareService;
 use App\Services\OnboardingShareService;
-use App\Services\SequenzySubscriberService;
 use App\Services\SettingsShareService;
 use App\Services\SocialiteProviderService;
 use App\Services\StudentClassShareService;
@@ -131,7 +131,7 @@ final class HandleInertiaRequests extends Middleware
     /**
      * Newsletter prompt state shared with the portal frontend. Only student
      * and faculty users are ever prompted; admins and guests are skipped
-     * without touching the database or the Sequenzy API.
+     * without touching the database or the active newsletter provider.
      *
      * @return array{enabled: bool, shouldPrompt: bool, feedback: array{type: string, message: string}|null}
      */
@@ -147,11 +147,11 @@ final class HandleInertiaRequests extends Middleware
             ];
         }
 
-        $sequenzy = app(SequenzySubscriberService::class);
+        $newsletter = app(NewsletterSubscriptionService::class);
 
         return [
-            'enabled' => $sequenzy->isConfigured(),
-            'shouldPrompt' => $sequenzy->shouldPromptUser($user),
+            'enabled' => $newsletter->isEnabled(),
+            'shouldPrompt' => $newsletter->shouldPromptUser($user),
             'feedback' => $feedback,
         ];
     }

@@ -4,25 +4,23 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
-use App\Enums\NewsletterSubscriptionStatus;
-use App\Enums\SequenzySubscribeResult;
-use App\Models\NewsletterSubscription;
+use App\Enums\NewsletterSubscribeResult;
 use App\Models\User;
-use App\Services\SequenzySubscriberService;
+use App\Services\Newsletter\NewsletterSubscriptionService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
 final class NewsletterSubscriptionController extends Controller
 {
-    public function store(Request $request, SequenzySubscriberService $sequenzy): RedirectResponse
+    public function store(Request $request, NewsletterSubscriptionService $newsletter): RedirectResponse
     {
         $user = $request->user();
         abort_unless($user instanceof User && ($user->isStudentRole() || $user->isFaculty()), 403);
 
-        $result = $sequenzy->subscribe($user);
+        $result = $newsletter->subscribe($user);
 
         if (! $result->succeeded()) {
-            $message = $result === SequenzySubscribeResult::NotConfigured
+            $message = $result === NewsletterSubscribeResult::NotConfigured
                 ? 'The newsletter service is not available yet. Please try again later.'
                 : 'We could not subscribe you right now. Please try again in a moment.';
 
@@ -32,17 +30,7 @@ final class NewsletterSubscriptionController extends Controller
             ]);
         }
 
-        NewsletterSubscription::query()->updateOrCreate(
-            ['user_id' => $user->id],
-            [
-                'email' => (string) $user->email,
-                'status' => NewsletterSubscriptionStatus::Subscribed,
-                'subscribed_at' => now(),
-                'declined_at' => null,
-            ],
-        );
-
-        $message = $result === SequenzySubscribeResult::AlreadySubscribed
+        $message = $result === NewsletterSubscribeResult::AlreadySubscribed
             ? "You're already on our newsletter list — no further action needed."
             : "You're subscribed! School news and announcements will be sent to your inbox.";
 
@@ -52,19 +40,12 @@ final class NewsletterSubscriptionController extends Controller
         ]);
     }
 
-    public function decline(Request $request): RedirectResponse
+    public function decline(Request $request, NewsletterSubscriptionService $newsletter): RedirectResponse
     {
         $user = $request->user();
         abort_unless($user instanceof User && ($user->isStudentRole() || $user->isFaculty()), 403);
 
-        NewsletterSubscription::query()->updateOrCreate(
-            ['user_id' => $user->id],
-            [
-                'email' => (string) $user->email,
-                'status' => NewsletterSubscriptionStatus::Declined,
-                'declined_at' => now(),
-            ],
-        );
+        $newsletter->decline($user);
 
         return back();
     }

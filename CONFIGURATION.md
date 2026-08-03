@@ -131,6 +131,32 @@ Gotenberg remains on the private Compose network or Swarm overlay. DOMPDF is not
 
 The template uses `MAIL_MAILER=log` and `BROADCAST_CONNECTION=log` so first boot needs no third-party credentials. Configure an authenticated production mail transport before relying on invitations, password resets, or notifications. Do not claim email delivery is working until a real message is verified.
 
+## Newsletter marketing integration
+
+Newsletter subscriptions are a consent-based marketing contact integration and are intentionally separate from transactional mail. Configure them in **System Settings → Newsletter**; SMTP is not a newsletter provider and changing these settings does not affect password resets, receipts, invitations, or system notifications.
+
+New installations start with newsletter prompting disabled. Choose one provider, enter its dedicated marketing credentials, test the connection, and then enable the prompt:
+
+| Provider | Required settings |
+| --- | --- |
+| Sequenzy | API key |
+| Brevo | API key and contact list ID |
+| Mailchimp | API key, server prefix such as `us21`, and audience ID |
+
+Provider credentials and all provider-specific settings are encrypted in the database. They are never returned through Inertia; a blank API key field preserves the credential already stored. Do not reuse the transactional Sequenzy credential automatically—enter the key that is authorized for marketing contacts.
+
+Disabling newsletter prompting takes effect without contacting the provider. Switching providers clears remote lookup caches but affects future signups only: local subscribed and declined records are retained, and KoAkademy performs no historical contact migration or backfill. Remote opt-outs suppress the prompt, while unavailable provider APIs never create a successful local subscription record.
+
+Provider endpoints and HTTP timeouts can be overridden for self-hosted gateways or network policy:
+
+```dotenv
+NEWSLETTER_HTTP_TIMEOUT=10
+NEWSLETTER_HTTP_CONNECT_TIMEOUT=5
+NEWSLETTER_SEQUENZY_URL=https://api.sequenzy.com/api/v1
+NEWSLETTER_BREVO_URL=https://api.brevo.com/v3
+NEWSLETTER_MAILCHIMP_URL=https://{server}.api.mailchimp.com/3.0
+```
+
 ## Optional observability and search
 
 Telescope, Pulse, Nightwatch, Sentry, and external search are disabled by default in the production template. Enable one service at a time, read its upstream privacy and retention documentation, and configure authentication before exposing any dashboard. Secrets for optional services do not belong in examples or commits.

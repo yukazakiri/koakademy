@@ -2,214 +2,173 @@
 
 declare(strict_types=1);
 
+use App\Enums\NewsletterProvider;
 use App\Enums\NewsletterSubscriptionStatus;
 use App\Enums\UserRole;
 use App\Models\NewsletterSubscription;
 use App\Models\User;
-use App\Services\SequenzySubscriberService;
+use App\Services\Newsletter\NewsletterSettingsService;
+use App\Services\Newsletter\NewsletterSubscriptionService;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 use function Pest\Laravel\actingAs;
 
 beforeEach(function (): void {
-    config()->set('services.sequenzy.key', 'seq_test_key');
-    config()->set('services.sequenzy.url', 'https://api.sequenzy.com/api/v1');
+    Cache::flush();
+    config([
+        'newsletter.providers.sequenzy.url' => 'https://sequenzy.test/api/v1',
+        'newsletter.providers.brevo.url' => 'https://brevo.test/v3',
+        'newsletter.providers.mailchimp.url' => 'https://{server}.mailchimp.test/3.0',
+    ]);
 });
 
-it('creates a subscriber on Sequenzy and records the subscription locally', function (): void {
+function configureNewsletterForTest(NewsletterProvider $provider, array $configuration, bool $enabled = true): void
+{
+    $settings = app(NewsletterSettingsService::class)->get();
+    $settings['enabled'] = $enabled;
+    $settings['provider'] = $provider->value;
+    $settings['providers'][$provider->value] = $configuration;
+    app(NewsletterSettingsService::class)->save($settings);
+}
+
+it('subscribes through Sequenzy and records the provider used', function (): void {
+    configureNewsletterForTest(NewsletterProvider::Sequenzy, ['api_key' => 'seq-key']);
     Http::preventStrayRequests();
     Http::fake([
-        'https://api.sequenzy.com/api/v1/subscribers' => Http::response([
+        'https://sequenzy.test/api/v1/subscribers' => Http::response([
             'success' => true,
-            'subscriber' => ['created' => true, 'skipped' => false, 'updated' => false],
-        ], 200),
+            'subscriber' => ['created' => true, 'skipped' => false],
+        ]),
     ]);
-
     $user = User::factory()->create([
         'role' => UserRole::Student,
         'name' => 'Louis Mariano',
-        'email' => 'marianolouis18@gmail.com',
+        'email' => 'louis@example.test',
     ]);
 
-    actingAs($user)
-        ->post(route('newsletter.subscribe'))
+    actingAs($user)->post(route('newsletter.subscribe'))
         ->assertRedirect()
         ->assertSessionHas('newsletter_feedback.type', 'success');
 
-    Http::assertSent(function ($request) use ($user): bool {
-        return $request->method() === 'POST'
-            && $request->url() === 'https://api.sequenzy.com/api/v1/subscribers'
-            && $request->hasHeader('X-API-Key', 'seq_test_key')
-            && $request['email'] === $user->email
-            && $request['firstName'] === 'Louis'
-            && $request['lastName'] === 'Mariano'
-            && $request['externalId'] === 'user_'.$user->id
-            && $request['enrollInSequences'] === true
-            && $request['duplicateStrategy'] === 'skip'
-            && in_array('portal', $request['tags'], true)
-            && in_array('student', $request['tags'], true)
-            && $request['customAttributes']['role'] === 'student'
-            && $request['customAttributes']['source'] === 'portal_prompt';
-    });
+    Http::assertSent(fn ($request): bool => $request->hasHeader('X-API-Key', 'seq-key')
+        && $request['externalId'] === 'user_'.$user->id
+        && $request['customAttributes']['role'] === 'student');
 
     $subscription = NewsletterSubscription::query()->where('user_id', $user->id)->sole();
-
     expect($subscription->status)->toBe(NewsletterSubscriptionStatus::Subscribed)
-        ->and($subscription->subscribed_at)->not->toBeNull();
+        ->and($subscription->provider)->toBe(NewsletterProvider::Sequenzy);
 });
 
-it('treats a 409 conflict as an existing subscriber', function (): void {
+it('subscribes through Brevo with list mapping and provider authentication', function (): void {
+    configureNewsletterForTest(NewsletterProvider::Brevo, ['api_key' => 'brevo-key', 'list_id' => '42']);
     Http::preventStrayRequests();
-    Http::fake([
-        'https://api.sequenzy.com/api/v1/subscribers' => Http::response([
-            'success' => false,
-            'error' => 'Subscriber identity conflict: email and externalId point to different subscribers.',
-        ], 409),
+    Http::fake(['https://brevo.test/v3/contacts' => Http::response(['id' => 123], 201)]);
+    $user = User::factory()->create(['role' => UserRole::Professor, 'email' => 'faculty@example.test']);
+
+    actingAs($user)->post(route('newsletter.subscribe'))->assertSessionHas('newsletter_feedback.type', 'success');
+
+    Http::assertSent(fn ($request): bool => $request->hasHeader('api-key', 'brevo-key')
+        && $request['email'] === 'faculty@example.test'
+        && $request['listIds'] === [42]
+        && $request['updateEnabled'] === true);
+    expect(NewsletterSubscription::query()->where('user_id', $user->id)->sole()->provider)->toBe(NewsletterProvider::Brevo);
+});
+
+it('subscribes through the stable Mailchimp audience member endpoint', function (): void {
+    configureNewsletterForTest(NewsletterProvider::Mailchimp, [
+        'api_key' => 'mailchimp-key',
+        'server_prefix' => 'us21',
+        'audience_id' => 'audience-7',
     ]);
+    Http::preventStrayRequests();
+    Http::fake(['https://us21.mailchimp.test/3.0/lists/audience-7/members/*' => Http::response(['status' => 'subscribed'])]);
+    $user = User::factory()->create(['role' => UserRole::Instructor, 'email' => 'CaseSensitive@example.test']);
 
-    $user = User::factory()->create(['role' => UserRole::Professor]);
+    actingAs($user)->post(route('newsletter.subscribe'))->assertSessionHas('newsletter_feedback.type', 'success');
 
-    actingAs($user)
-        ->post(route('newsletter.subscribe'))
-        ->assertRedirect()
+    $hash = md5('casesensitive@example.test');
+    Http::assertSent(fn ($request): bool => $request->method() === 'PUT'
+        && $request->url() === "https://us21.mailchimp.test/3.0/lists/audience-7/members/{$hash}"
+        && $request->hasHeader('Authorization')
+        && $request['status_if_new'] === 'subscribed');
+    expect(NewsletterSubscription::query()->where('user_id', $user->id)->sole()->provider)->toBe(NewsletterProvider::Mailchimp);
+});
+
+it('normalizes a provider duplicate as a successful local subscription', function (): void {
+    configureNewsletterForTest(NewsletterProvider::Sequenzy, ['api_key' => 'seq-key']);
+    Http::fake(['https://sequenzy.test/api/v1/subscribers' => Http::response(['error' => 'duplicate'], 409)]);
+    $user = User::factory()->create(['role' => UserRole::Student]);
+
+    actingAs($user)->post(route('newsletter.subscribe'))
         ->assertSessionHas('newsletter_feedback.type', 'success');
 
     expect(NewsletterSubscription::query()->where('user_id', $user->id)->sole()->status)
         ->toBe(NewsletterSubscriptionStatus::Subscribed);
 });
 
-it('treats a skipped duplicate response as an existing subscriber', function (): void {
-    Http::preventStrayRequests();
-    Http::fake([
-        'https://api.sequenzy.com/api/v1/subscribers' => Http::response([
-            'success' => true,
-            'subscriber' => ['created' => false, 'skipped' => true, 'updated' => false],
-        ], 200),
-    ]);
-
-    $user = User::factory()->create(['role' => UserRole::Instructor]);
-
-    actingAs($user)
-        ->post(route('newsletter.subscribe'))
-        ->assertRedirect()
-        ->assertSessionHas('newsletter_feedback.type', 'success');
-
-    expect(NewsletterSubscription::query()->where('user_id', $user->id)->sole()->status)
-        ->toBe(NewsletterSubscriptionStatus::Subscribed);
-});
-
-it('reports an error and records nothing when the Sequenzy API fails', function (): void {
-    Http::preventStrayRequests();
-    Http::fake([
-        'https://api.sequenzy.com/api/v1/subscribers' => Http::response([
-            'success' => false,
-            'error' => 'Internal server error',
-        ], 500),
-    ]);
-
+it('suppresses the prompt and records a remote Brevo opt-out', function (): void {
+    configureNewsletterForTest(NewsletterProvider::Brevo, ['api_key' => 'brevo-key', 'list_id' => '42']);
+    Http::fake(['https://brevo.test/v3/contacts/*' => Http::response(['emailBlacklisted' => true, 'listIds' => [42]])]);
     $user = User::factory()->create(['role' => UserRole::Student]);
 
-    actingAs($user)
-        ->post(route('newsletter.subscribe'))
-        ->assertRedirect()
-        ->assertSessionHas('newsletter_feedback.type', 'error');
+    expect(app(NewsletterSubscriptionService::class)->shouldPromptUser($user))->toBeFalse();
 
-    expect(NewsletterSubscription::query()->where('user_id', $user->id)->exists())->toBeFalse();
+    $subscription = NewsletterSubscription::query()->where('user_id', $user->id)->sole();
+    expect($subscription->status)->toBe(NewsletterSubscriptionStatus::Declined)
+        ->and($subscription->provider)->toBe(NewsletterProvider::Brevo);
 });
 
-it('does not prompt users who already exist as Sequenzy subscribers', function (): void {
-    Http::preventStrayRequests();
-    Http::fake([
-        'https://api.sequenzy.com/api/v1/subscribers/*' => Http::response([
-            'success' => true,
-            'subscriber' => ['email' => 'marianolouis18@gmail.com', 'status' => 'active'],
-        ], 200),
-    ]);
-
-    $user = User::factory()->create([
-        'role' => UserRole::Student,
-        'email' => 'marianolouis18@gmail.com',
-    ]);
-
-    expect(app(SequenzySubscriberService::class)->shouldPromptUser($user))->toBeFalse();
-
-    // Persisted locally so no further API lookups are needed.
-    expect(NewsletterSubscription::query()->where('user_id', $user->id)->sole()->status)
-        ->toBe(NewsletterSubscriptionStatus::Subscribed);
-
-    Http::assertSentCount(1);
-});
-
-it('prompts users who are not Sequenzy subscribers yet', function (): void {
-    Http::preventStrayRequests();
-    Http::fake([
-        'https://api.sequenzy.com/api/v1/subscribers/*' => Http::response([
-            'success' => false,
-            'error' => 'Subscriber not found',
-        ], 404),
-    ]);
-
+it('does not prompt or record success when the provider is unavailable', function (): void {
+    configureNewsletterForTest(NewsletterProvider::Sequenzy, ['api_key' => 'seq-key']);
+    Http::fake(['https://sequenzy.test/api/v1/subscribers/*' => Http::response([], 503)]);
     $user = User::factory()->create(['role' => UserRole::Student]);
 
-    expect(app(SequenzySubscriberService::class)->shouldPromptUser($user))->toBeTrue()
+    expect(app(NewsletterSubscriptionService::class)->shouldPromptUser($user))->toBeFalse()
         ->and(NewsletterSubscription::query()->where('user_id', $user->id)->exists())->toBeFalse();
 });
 
-it('caches the remote lookup so the API is not queried on every request', function (): void {
+it('never prompts when newsletter marketing is disabled', function (): void {
+    configureNewsletterForTest(NewsletterProvider::Sequenzy, ['api_key' => 'seq-key'], false);
     Http::preventStrayRequests();
+    $user = User::factory()->create(['role' => UserRole::Student]);
+
+    expect(app(NewsletterSubscriptionService::class)->shouldPromptUser($user))->toBeFalse();
+});
+
+it('isolates remote lookup caches when the provider changes', function (): void {
+    configureNewsletterForTest(NewsletterProvider::Sequenzy, ['api_key' => 'seq-key']);
     Http::fake([
-        'https://api.sequenzy.com/api/v1/subscribers/*' => Http::response([
-            'success' => false,
-            'error' => 'Subscriber not found',
-        ], 404),
+        'https://sequenzy.test/api/v1/subscribers/*' => Http::response([], 404),
+        'https://brevo.test/v3/contacts/*' => Http::response([], 404),
     ]);
-
     $user = User::factory()->create(['role' => UserRole::Student]);
 
-    expect(app(SequenzySubscriberService::class)->shouldPromptUser($user))->toBeTrue()
-        ->and(app(SequenzySubscriberService::class)->shouldPromptUser($user))->toBeTrue();
+    expect(app(NewsletterSubscriptionService::class)->shouldPromptUser($user))->toBeTrue();
+    configureNewsletterForTest(NewsletterProvider::Brevo, ['api_key' => 'brevo-key', 'list_id' => '42']);
+    expect(app(NewsletterSubscriptionService::class)->shouldPromptUser($user))->toBeTrue();
 
-    Http::assertSentCount(1);
+    Http::assertSentCount(2);
 });
 
-it('does not prompt users who already responded to the prompt', function (): void {
-    Http::preventStrayRequests();
-
-    $user = User::factory()->create(['role' => UserRole::Student]);
-
-    NewsletterSubscription::query()->create([
-        'user_id' => $user->id,
-        'email' => $user->email,
-        'status' => NewsletterSubscriptionStatus::Declined,
-        'declined_at' => now(),
+it('records a permanent decline with the active provider', function (): void {
+    configureNewsletterForTest(NewsletterProvider::Mailchimp, [
+        'api_key' => 'key',
+        'server_prefix' => 'us1',
+        'audience_id' => 'audience',
     ]);
-
-    expect(app(SequenzySubscriberService::class)->shouldPromptUser($user))->toBeFalse();
-});
-
-it('does not prompt users without a configured Sequenzy API key', function (): void {
-    config()->set('services.sequenzy.key', null);
-    config()->set('services.sequenzy.legacy_key', null);
-
     $user = User::factory()->create(['role' => UserRole::Student]);
 
-    expect(app(SequenzySubscriberService::class)->shouldPromptUser($user))->toBeFalse();
-});
-
-it('records a decline so the prompt is hidden permanently', function (): void {
-    $user = User::factory()->create(['role' => UserRole::Student]);
-
-    actingAs($user)
-        ->post(route('newsletter.decline'))
-        ->assertRedirect();
+    actingAs($user)->post(route('newsletter.decline'))->assertRedirect();
 
     $subscription = NewsletterSubscription::query()->where('user_id', $user->id)->sole();
-
     expect($subscription->status)->toBe(NewsletterSubscriptionStatus::Declined)
-        ->and($subscription->declined_at)->not->toBeNull();
+        ->and($subscription->provider)->toBe(NewsletterProvider::Mailchimp)
+        ->and($subscription->subscribed_at)->toBeNull();
 });
 
-it('forbids users outside the student and faculty portals', function (): void {
+it('forbids roles outside student and faculty portals', function (): void {
+    configureNewsletterForTest(NewsletterProvider::Sequenzy, ['api_key' => 'seq-key']);
     $user = User::factory()->create(['role' => UserRole::Admin]);
 
     actingAs($user)->post(route('newsletter.subscribe'))->assertForbidden();

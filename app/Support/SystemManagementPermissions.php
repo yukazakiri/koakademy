@@ -40,6 +40,10 @@ final class SystemManagementPermissions
                 'view' => 'View:SystemManagementMail',
                 'update' => 'Update:SystemManagementMail',
             ],
+            'newsletter' => [
+                'view' => 'View:SystemManagementNewsletter',
+                'update' => 'Update:SystemManagementNewsletter',
+            ],
             'api' => [
                 'view' => 'View:SystemManagementApi',
                 'update' => 'Update:SystemManagementApi',

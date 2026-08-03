@@ -27,9 +27,11 @@ const PROMPT_DELAY_MS = 1500;
  * already responded through the active marketing contact provider.
  */
 export function NewsletterSubscribeDialog() {
-    const { newsletter } = usePage().props as unknown as {
+    const { auth, newsletter } = usePage().props as unknown as {
+        auth?: { user?: { id?: number | string } | null };
         newsletter?: NewsletterSharedProps;
     };
+    const snoozeStorageKey = `${SNOOZE_STORAGE_KEY}:${auth?.user?.id ?? "guest"}`;
     const [open, setOpen] = useState(false);
     const [submitting, setSubmitting] = useState<"subscribe" | "decline" | null>(null);
 
@@ -40,14 +42,14 @@ export function NewsletterSubscribeDialog() {
             return;
         }
 
-        if (sessionStorage.getItem(SNOOZE_STORAGE_KEY) === "1") {
+        if (sessionStorage.getItem(snoozeStorageKey) === "1") {
             return;
         }
 
         const timer = window.setTimeout(() => setOpen(true), PROMPT_DELAY_MS);
 
         return () => window.clearTimeout(timer);
-    }, [newsletter?.shouldPrompt]);
+    }, [newsletter?.shouldPrompt, snoozeStorageKey]);
 
     // Surface server feedback (flashed after subscribe attempts) as toasts.
     useEffect(() => {
@@ -79,7 +81,7 @@ export function NewsletterSubscribeDialog() {
     };
 
     const handleNotNow = () => {
-        sessionStorage.setItem(SNOOZE_STORAGE_KEY, "1");
+        sessionStorage.setItem(snoozeStorageKey, "1");
         setOpen(false);
     };
 

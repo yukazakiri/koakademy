@@ -60,7 +60,13 @@ final class NewsletterSubscriptionService
             return false;
         }
 
-        return $status === NewsletterRemoteStatus::Missing;
+        // An unavailable lookup must not silently disable the consent prompt.
+        // The subscribe action still requires a successful provider response
+        // before anything is recorded locally, so prompting here is safe.
+        return in_array($status, [
+            NewsletterRemoteStatus::Missing,
+            NewsletterRemoteStatus::Unavailable,
+        ], true);
     }
 
     public function subscribe(User $user): NewsletterSubscribeResult

@@ -11,6 +11,7 @@ use App\Services\Newsletter\NewsletterSettingsService;
 use App\Services\Newsletter\NewsletterSubscriptionService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Inertia\Testing\AssertableInertia;
 
 use function Pest\Laravel\actingAs;
 
@@ -119,13 +120,29 @@ it('suppresses the prompt and records a remote Brevo opt-out', function (): void
         ->and($subscription->provider)->toBe(NewsletterProvider::Brevo);
 });
 
-it('does not prompt or record success when the provider is unavailable', function (): void {
+it('keeps the consent prompt eligible without recording success when the provider lookup is unavailable', function (): void {
     configureNewsletterForTest(NewsletterProvider::Sequenzy, ['api_key' => 'seq-key']);
     Http::fake(['https://sequenzy.test/api/v1/subscribers/*' => Http::response([], 503)]);
     $user = User::factory()->create(['role' => UserRole::Student]);
 
-    expect(app(NewsletterSubscriptionService::class)->shouldPromptUser($user))->toBeFalse()
+    expect(app(NewsletterSubscriptionService::class)->shouldPromptUser($user))->toBeTrue()
         ->and(NewsletterSubscription::query()->where('user_id', $user->id)->exists())->toBeFalse();
+});
+
+it('shares an enabled prompt with the student portal when provider lookup is temporarily unavailable', function (): void {
+    config(['inertia.testing.ensure_pages_exist' => false]);
+    configureNewsletterForTest(NewsletterProvider::Sequenzy, ['api_key' => 'seq-key']);
+    Http::fake(['https://sequenzy.test/api/v1/subscribers/*' => Http::response([], 503)]);
+    $user = User::factory()->create(['role' => UserRole::Student]);
+
+    actingAs($user)
+        ->get(route('student.dashboard'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->where('newsletter.enabled', true)
+            ->where('newsletter.shouldPrompt', true));
+
+    expect(NewsletterSubscription::query()->where('user_id', $user->id)->exists())->toBeFalse();
 });
 
 it('never prompts when newsletter marketing is disabled', function (): void {

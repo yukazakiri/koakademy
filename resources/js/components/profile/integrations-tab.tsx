@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
+import { NewsletterSettingsCard } from "@/pages/administrators/settings/newsletter-settings-card";
 import { router } from "@inertiajs/react";
 import axios from "axios";
 import { Calendar, Mail, Plug, Video } from "lucide-react";
@@ -18,9 +19,10 @@ type ConnectedAccountsPayload = {
 
 interface IntegrationsTabProps {
     connectedAccounts: ConnectedAccountsPayload;
+    canViewNewsletterSettings?: boolean;
 }
 
-export function IntegrationsTab({ connectedAccounts }: IntegrationsTabProps) {
+export function IntegrationsTab({ connectedAccounts, canViewNewsletterSettings = false }: IntegrationsTabProps) {
     const [integrations, setIntegrations] = useState({
         googleCalendar: connectedAccounts.providers["google"] || false,
         microsoftOutlook: connectedAccounts.providers["microsoft"] || false,
@@ -82,6 +84,8 @@ export function IntegrationsTab({ connectedAccounts }: IntegrationsTabProps) {
 
     return (
         <div className="grid gap-6">
+            {canViewNewsletterSettings ? <NewsletterSettingsCard /> : null}
+
             <Card>
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">

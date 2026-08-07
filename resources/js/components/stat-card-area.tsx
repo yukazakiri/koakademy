@@ -5,7 +5,7 @@ import {
   AreaChart,
   ChartStatFlow,
   LinearGradient,
-} from "@/Components/charts";
+} from "@/components/charts";
 import { curveCardinal } from "@visx/curve";
 import { useState } from "react";
 import {

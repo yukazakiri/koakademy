@@ -1,6 +1,6 @@
 import AdminLayout from "@/components/administrators/admin-layout";
-import { Area, AreaChart, Bar, BarChart, BarXAxis, ChartTooltip, Grid, XAxis, chartCssVars } from "@/Components/charts";
-import { StatCardArea, type StatCardAreaPoint } from "@/Components/stat-card-area";
+import { Area, AreaChart, Bar, BarChart, BarXAxis, ChartTooltip, Grid, XAxis, chartCssVars } from "@/components/charts";
+import { StatCardArea, type StatCardAreaPoint } from "@/components/stat-card-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";

@@ -110,11 +110,11 @@
         "baseUrl": ".",
         "paths": {
             "@/components/*": ["./resources/js/components/*"],
-            "@/context/*": ["./resources/js/Context/*"],
+            "@/context/*": ["./resources/js/context/*"],
             "@/hooks/*": ["./resources/js/hooks/*"],
             "@/lib/*": ["./resources/js/lib/*"],
             "@/types/*": ["./resources/js/types/*"],
-            "@/wrappers/*": ["./resources/js/Wrappers/*"],
+            "@/wrappers/*": ["./resources/js/wrappers/*"],
             "@/*": ["./resources/js/*"],
             "ziggy-js": ["./vendor/tightenco/ziggy"],
         },

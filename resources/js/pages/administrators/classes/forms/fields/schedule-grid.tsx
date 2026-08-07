@@ -1,4 +1,4 @@
-import { ClassScheduleVisualizer } from "@/Components/administrators/classes/schedule-visualizer";
+import { ClassScheduleVisualizer } from "@/components/administrators/classes/schedule-visualizer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CalendarPlus, DoorOpen } from "lucide-react";

@@ -1,6 +1,6 @@
-import { FloatingDock } from "@/Components/ShadCN/FloatingDock";
-import { filterAndReturnSocialMediaLinks } from "@/Lib/Utils";
-import { SharedData } from "@/Types/Types";
+import { FloatingDock } from "@/components/ShadCN/FloatingDock";
+import { filterAndReturnSocialMediaLinks } from "@/lib/utils";
+import { SharedData } from "@/types/Types";
 import { usePage } from "@inertiajs/react";
 
 const FloatingSocialMedia = () => {

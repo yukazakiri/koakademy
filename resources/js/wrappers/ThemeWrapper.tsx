@@ -1,6 +1,6 @@
-import ThemeContext from "@/Context/ThemeContext";
-import { Theme } from "@/Types/Enums";
-import type { LayoutProps } from "@/Types/Types";
+import ThemeContext from "@/context/ThemeContext";
+import { Theme } from "@/types/Enums";
+import type { LayoutProps } from "@/types/Types";
 import { type FC, useEffect, useMemo, useState } from "react";
 
 const ThemeWrapper: FC<LayoutProps> = ({ children }) => {

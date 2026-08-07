@@ -1,8 +1,8 @@
-import FloatingSocialMedia from "@/Components/Shared/FloatingSocialMedia";
-import Navbar from "@/Components/Shared/Navbar";
-import { cn } from "@/Lib/Utils";
-import { LayoutProps } from "@/Types/Types";
-import ThemeWrapper from "@/Wrappers/ThemeWrapper";
+import FloatingSocialMedia from "@/components/Shared/FloatingSocialMedia";
+import Navbar from "@/components/Shared/Navbar";
+import { cn } from "@/lib/utils";
+import { LayoutProps } from "@/types/Types";
+import ThemeWrapper from "@/wrappers/ThemeWrapper";
 import { Head } from "@inertiajs/react";
 import { FC } from "react";
 import { Bounce, ToastContainer } from "react-toastify";

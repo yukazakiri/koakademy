@@ -22,8 +22,8 @@ import {
     XAxis,
     chartCssVars,
     type LegendItemData,
-} from "@/Components/charts";
-import { StatCardArea, type StatCardAreaPoint } from "@/Components/stat-card-area";
+} from "@/components/charts";
+import { StatCardArea, type StatCardAreaPoint } from "@/components/stat-card-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";

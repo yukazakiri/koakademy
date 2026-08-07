@@ -1,5 +1,5 @@
 import AdminLayout from "@/components/administrators/admin-layout";
-import { ClassScheduleVisualizer } from "@/Components/administrators/classes/schedule-visualizer";
+import { ClassScheduleVisualizer } from "@/components/administrators/classes/schedule-visualizer";
 import { Filters, type FilterFieldConfig, type Filter as FilterType } from "@/components/reui/filters";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

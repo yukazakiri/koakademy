@@ -1,7 +1,7 @@
 import { AnimatePresence, MotionValue, motion, useMotionValue, useSpring, useTransform } from "motion/react";
 
-import { cn } from "@/Lib/Utils";
-import { FloatingDockItem } from "@/Types/Types";
+import { cn } from "@/lib/utils";
+import { FloatingDockItem } from "@/types/Types";
 import { Link, XIcon } from "lucide-react";
 import { useRef, useState } from "react";
 

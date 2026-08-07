@@ -1,4 +1,4 @@
-import { SocialMedia } from "@/Types/Enums";
+import { SocialMedia } from "@/types/Enums";
 import { IconType, SiFacebook, SiGithub, SiInstagram, SiMedium, SiTiktok, SiWhatsapp, SiX, SiYoutube } from "@icons-pack/react-simple-icons";
 import { Link2 } from "lucide-react";
 import { createElement } from "react";

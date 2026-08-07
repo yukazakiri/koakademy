@@ -1,5 +1,5 @@
-import { cn } from "@/Lib/Utils";
-import { type InputFieldProps } from "@/Types/Inputs";
+import { cn } from "@/lib/utils";
+import { type InputFieldProps } from "@/types/Inputs";
 
 const Input = (props: InputFieldProps) => {
     const { className, type, label, errorMessage, id, helperText, ...rest } = props;

@@ -77,11 +77,11 @@ export default defineConfig({
         dedupe: ["react", "react-dom"],
         alias: [
             { find: "@/components", replacement: path.resolve(__dirname, "resources/js/components") },
-            { find: "@/context", replacement: path.resolve(__dirname, "resources/js/Context") },
+            { find: "@/context", replacement: path.resolve(__dirname, "resources/js/context") },
             { find: "@/hooks", replacement: path.resolve(__dirname, "resources/js/hooks") },
             { find: "@/lib", replacement: path.resolve(__dirname, "resources/js/lib") },
             { find: "@/types", replacement: path.resolve(__dirname, "resources/js/types") },
-            { find: "@/wrappers", replacement: path.resolve(__dirname, "resources/js/Wrappers") },
+            { find: "@/wrappers", replacement: path.resolve(__dirname, "resources/js/wrappers") },
             { find: "@", replacement: path.resolve(__dirname, "resources/js") },
         ],
     },

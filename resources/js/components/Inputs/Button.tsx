@@ -1,7 +1,7 @@
 "use client";
 
-import { cn } from "@/Lib/Utils";
-import { ButtonProps } from "@/Types/Inputs";
+import { cn } from "@/lib/utils";
+import { ButtonProps } from "@/types/Inputs";
 import { motion, useAnimate } from "motion/react";
 import React, { useEffect } from "react";
 

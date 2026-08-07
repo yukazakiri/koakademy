@@ -1,7 +1,7 @@
-import ThemeToggler from "@/Components/Components/ThemeToggler";
-import useTheme from "@/Hooks/useTheme";
-import { cn } from "@/Lib/Utils";
-import { SharedData } from "@/Types/Types";
+import ThemeToggler from "@/components/Components/ThemeToggler";
+import useTheme from "@/hooks/useTheme";
+import { cn } from "@/lib/utils";
+import { SharedData } from "@/types/Types";
 import { SiGithub } from "@icons-pack/react-simple-icons";
 import { usePage } from "@inertiajs/react";
 import { motion } from "motion/react";

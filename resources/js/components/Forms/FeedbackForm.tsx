@@ -1,5 +1,5 @@
-import Button from "@/Components/Inputs/Button";
-import Input from "@/Components/Inputs/Input";
+import Button from "@/components/Inputs/Button";
+import Input from "@/components/Inputs/Input";
 import { useForm } from "@inertiajs/react";
 import { FormEvent, useState } from "react";
 import { toast } from "react-toastify";

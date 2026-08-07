@@ -32,6 +32,8 @@ RUN composer dump-autoload --optimize --classmap-authoritative --no-dev --no-scr
 # Stage 2: Generate Wayfinder Files (requires the application's PHP version)
 # -----------------------------------------------------------------------------
 FROM dunglas/frankenphp:1.12-php8.5@sha256:da270879b95225345b2ee984f717aef5cba7336e1f206ec005074a79235af347 AS wayfinder
+# The application boots during wayfinder:generate and config/backup.php
+# instantiates ZipArchive, so the extension must be present in this stage.
 RUN install-php-extensions zip
 WORKDIR /app
 COPY . .
@@ -85,7 +87,8 @@ ENV XDG_DATA_HOME=${ROOT}/.data
 
 WORKDIR ${ROOT}
 
-# Install system dependencies and PostgreSQL clients
+# Install system dependencies and PostgreSQL client tools.
+# install-php-extensions fetches its own build dependencies below.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
@@ -93,32 +96,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     supervisor \
     libcap2-bin \
-    libpng-dev \
-    libzip-dev \
-    libicu-dev \
-    libpq-dev \
     librsvg2-bin \
-    postgresql-client \
-    postgresql-17 && \
+    postgresql-client && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install PHP extensions
+# Install only the PHP extensions the application actually requires.
+# The base image already ships ctype, curl, dom, fileinfo, iconv, json,
+# mbstring, openssl, opcache, pdo_sqlite, posix, session, simplexml,
+# sqlite3, tokenizer, xml, xmlreader, xmlwriter, and zlib.
 RUN install-php-extensions \
-    apcu \
-    bz2 \
     pcntl \
-    mbstring \
-    bcmath \
     sockets \
     pdo_pgsql \
-    pgsql \
-    opcache \
     exif \
     zip \
     intl \
     gd \
-    redis \
-    soap
+    redis
 
 # Install Supercronic
 RUN case "${TARGETARCH}" in \

@@ -32,6 +32,8 @@ RUN composer dump-autoload --optimize --classmap-authoritative --no-dev --no-scr
 # Stage 2: Generate Wayfinder Files (requires the application's PHP version)
 # -----------------------------------------------------------------------------
 FROM php:8.5-fpm@sha256:32ef9f35b567a741f24c5d2c3312f803fe6c9e34b7db46212f95fce675e1d13f AS wayfinder
+# The application boots during wayfinder:generate and config/backup.php
+# instantiates ZipArchive, so the extension must be present in this stage.
 RUN apt-get update && apt-get install -y --no-install-recommends libzip-dev \
     && docker-php-ext-install zip \
     && rm -rf /var/lib/apt/lists/*
@@ -86,7 +88,11 @@ ENV XDG_DATA_HOME=${ROOT}/.data
 
 WORKDIR ${ROOT}
 
-# Install system dependencies: web server, process supervision, and PostgreSQL clients
+# Install system dependencies: web server, process supervision, and PostgreSQL client tools.
+# Only build dependencies for the extensions compiled below are installed.
+# The base image already ships ctype, curl, dom, fileinfo, iconv, json, mbstring,
+# openssl, opcache, pdo_sqlite, posix, session, simplexml, sqlite3, tokenizer,
+# xml, xmlreader, xmlwriter, and zlib.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     $PHPIZE_DEPS \
     curl \
@@ -101,30 +107,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libzip-dev \
     libicu-dev \
     libpq-dev \
-    libbz2-dev \
-    libxml2-dev \
-    libonig-dev \
     librsvg2-bin \
-    postgresql-client \
-    postgresql-17 && \
+    postgresql-client && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install PHP extensions
+# Install only the PHP extensions the application actually requires
 RUN docker-php-ext-configure gd --with-jpeg --with-freetype \
     && docker-php-ext-install \
-        bz2 \
         pcntl \
-        bcmath \
         sockets \
         pdo_pgsql \
-        pgsql \
         exif \
         zip \
         intl \
         gd \
-        soap \
-    && pecl install apcu redis \
-    && docker-php-ext-enable apcu redis
+    && pecl install redis \
+    && docker-php-ext-enable redis
 
 # Install Supercronic
 RUN case "${TARGETARCH}" in \
@@ -182,7 +180,11 @@ RUN groupadd --force -g ${GROUP_ID} ${USER} \
     .config \
     .data \
     /tmp/opcache-file-cache \
-    /tmp/nginx
+    /tmp/nginx/client_body \
+    /tmp/nginx/proxy \
+    /tmp/nginx/fastcgi \
+    /tmp/nginx/uwsgi \
+    /tmp/nginx/scgi
 
 # Copy application code from build stages
 COPY --chown=${USER}:${USER} --from=vendor /app/vendor ./vendor
@@ -190,7 +192,7 @@ COPY --chown=${USER}:${USER} --from=build-assets /app/public/build ./public/buil
 COPY --chown=${USER}:${USER} . .
 
 # Set ownership
-RUN chown -R ${USER}:${USER} ${ROOT}/storage ${ROOT}/bootstrap/cache ${ROOT}/.config ${ROOT}/.data \
+RUN chown -R ${USER}:${USER} ${ROOT}/storage ${ROOT}/bootstrap/cache ${ROOT}/.config ${ROOT}/.data /tmp/nginx \
     && chmod -R 777 /tmp/opcache-file-cache
 
 USER root

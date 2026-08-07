@@ -31,8 +31,10 @@ RUN composer dump-autoload --optimize --classmap-authoritative --no-dev --no-scr
 # -----------------------------------------------------------------------------
 # Stage 2: Generate Wayfinder Files (requires the application's PHP version)
 # -----------------------------------------------------------------------------
-FROM dunglas/frankenphp:1.12-php8.5@sha256:da270879b95225345b2ee984f717aef5cba7336e1f206ec005074a79235af347 AS wayfinder
-RUN install-php-extensions zip
+FROM php:8.5-fpm@sha256:32ef9f35b567a741f24c5d2c3312f803fe6c9e34b7db46212f95fce675e1d13f AS wayfinder
+RUN apt-get update && apt-get install -y --no-install-recommends libzip-dev \
+    && docker-php-ext-install zip \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY . .
 COPY --from=vendor /app/vendor ./vendor
@@ -56,7 +58,7 @@ RUN WAYFINDER_GENERATE=false npm run build
 # -----------------------------------------------------------------------------
 # Stage 4: Final Runtime Image
 # -----------------------------------------------------------------------------
-FROM dunglas/frankenphp:1.12-php8.5@sha256:da270879b95225345b2ee984f717aef5cba7336e1f206ec005074a79235af347
+FROM php:8.5-fpm@sha256:32ef9f35b567a741f24c5d2c3312f803fe6c9e34b7db46212f95fce675e1d13f
 
 LABEL maintainer="Yuka <128908897+yukazakiri@users.noreply.github.com>"
 LABEL org.opencontainers.image.title="KoAkademy"
@@ -74,7 +76,6 @@ ARG SUPERCRONIC_SHA256_AMD64=feefa310da569c81b99e1027b86b27b51e6ee9ab647747b4909
 ARG SUPERCRONIC_SHA256_ARM64=f1f8585c66de020fef494dd636058f99949d108f569fef00016a1c8b9eb145b3
 
 ENV TERM=xterm-color
-ENV OCTANE_SERVER=frankenphp
 ENV TZ=${TZ}
 ENV ROOT=${ROOT}
 ENV USER=laravel
@@ -85,40 +86,45 @@ ENV XDG_DATA_HOME=${ROOT}/.data
 
 WORKDIR ${ROOT}
 
-# Install system dependencies and PostgreSQL clients
+# Install system dependencies: web server, process supervision, and PostgreSQL clients
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    $PHPIZE_DEPS \
     curl \
     ca-certificates \
     zip \
     unzip \
     supervisor \
-    libcap2-bin \
+    nginx \
     libpng-dev \
+    libjpeg62-turbo-dev \
+    libfreetype6-dev \
     libzip-dev \
     libicu-dev \
     libpq-dev \
+    libbz2-dev \
+    libxml2-dev \
+    libonig-dev \
     librsvg2-bin \
     postgresql-client \
     postgresql-17 && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install PHP extensions
-RUN install-php-extensions \
-    apcu \
-    bz2 \
-    pcntl \
-    mbstring \
-    bcmath \
-    sockets \
-    pdo_pgsql \
-    pgsql \
-    opcache \
-    exif \
-    zip \
-    intl \
-    gd \
-    redis \
-    soap
+RUN docker-php-ext-configure gd --with-jpeg --with-freetype \
+    && docker-php-ext-install \
+        bz2 \
+        pcntl \
+        bcmath \
+        sockets \
+        pdo_pgsql \
+        pgsql \
+        exif \
+        zip \
+        intl \
+        gd \
+        soap \
+    && pecl install apcu redis \
+    && docker-php-ext-enable apcu redis
 
 # Install Supercronic
 RUN case "${TARGETARCH}" in \
@@ -140,10 +146,14 @@ RUN case "${TARGETARCH}" in \
 RUN cp ${PHP_INI_DIR}/php.ini-production ${PHP_INI_DIR}/php.ini
 COPY docker/php.ini ${PHP_INI_DIR}/conf.d/99-custom.ini
 
+# Web server configuration
+COPY --link docker/nginx.conf /etc/nginx/nginx.conf
+COPY --link docker/php-fpm.conf /usr/local/etc/php-fpm.d/www.conf
+
 # Copy Supervisor configs
 COPY --link docker/supervisord.conf /etc/supervisord.conf
-COPY --link docker/supervisord.frankenphp.conf /etc/supervisor/conf.d/
-COPY --link docker/supervisord.frankenphp.no-horizon.conf /etc/supervisor/conf.d/
+COPY --link docker/supervisord.web.conf /etc/supervisor/conf.d/
+COPY --link docker/supervisord.web.no-horizon.conf /etc/supervisor/conf.d/
 COPY --link docker/supervisord.horizon.conf /etc/supervisor/conf.d/
 COPY --link docker/supervisord.scheduler.conf /etc/supervisor/conf.d/
 COPY --link docker/supervisord.pulse.conf /etc/supervisor/conf.d/
@@ -171,7 +181,8 @@ RUN groupadd --force -g ${GROUP_ID} ${USER} \
     bootstrap/cache \
     .config \
     .data \
-    /tmp/opcache-file-cache
+    /tmp/opcache-file-cache \
+    /tmp/nginx
 
 # Copy application code from build stages
 COPY --chown=${USER}:${USER} --from=vendor /app/vendor ./vendor
@@ -182,13 +193,9 @@ COPY --chown=${USER}:${USER} . .
 RUN chown -R ${USER}:${USER} ${ROOT}/storage ${ROOT}/bootstrap/cache ${ROOT}/.config ${ROOT}/.data \
     && chmod -R 777 /tmp/opcache-file-cache
 
-# Allow FrankenPHP to bind to port 80 and 443 (if needed) and run as non-root
-RUN setcap CAP_NET_BIND_SERVICE=+eip /usr/local/bin/frankenphp
-
 USER root
 
 EXPOSE 8000
-EXPOSE 2019
 
 ENTRYPOINT ["start-container"]
 

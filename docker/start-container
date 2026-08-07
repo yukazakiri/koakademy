@@ -33,7 +33,6 @@ schedule_scout_settings_post_start() {
 
     disown 2>/dev/null || true
 }
-octane_server=${OCTANE_SERVER:-""}
 
 # Production deployment settings
 # RUN_MIGRATIONS: Opt in to migrations on container start (not recommended for production)
@@ -762,26 +761,17 @@ bootstrap_container() {
 }
 
 start_http_container() {
-    echo "Octane Server: ${octane_server}"
+    echo "Web Server: nginx + PHP-FPM"
 
     # Ensure any files created during startup (logs, caches, etc.) are
     # writable by the web server process before it starts.
     fix_storage_permissions
 
-    if [ "${octane_server}" = "frankenphp" ]; then
-        if [ "${horizon_enabled}" = "true" ]; then
-            exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.frankenphp.conf
-        fi
-
-        exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.frankenphp.no-horizon.conf
-    elif [ "${octane_server}" = "swoole" ]; then
-        exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.swoole.conf
-    elif [ "${octane_server}" = "roadrunner" ]; then
-        exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.roadrunner.conf
+    if [ "${horizon_enabled}" = "true" ]; then
+        exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.web.conf
     fi
 
-    echo "Invalid Octane server supplied."
-    exit 1
+    exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.web.no-horizon.conf
 }
 
 start_non_http_container() {

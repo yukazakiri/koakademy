@@ -1289,10 +1289,6 @@ write_application_env() {
         printf 'TRUSTED_HOSTS=\n'
         printf 'TRUSTED_PROXIES=%s\n' "${KOAKADEMY_TRUSTED_PROXIES:-}"
         printf 'APP_PORT=8000\n'
-        printf 'OCTANE_SERVER=frankenphp\n'
-        printf 'OCTANE_HTTPS=false\n'
-        printf 'OCTANE_WORKERS=auto\n'
-        printf 'OCTANE_MAX_REQUESTS=500\n'
         printf 'DB_CONNECTION=pgsql\n'
         printf 'DB_HOST=%s\n' "${POSTGRES_SERVICE}"
         printf 'DB_PORT=5432\n'

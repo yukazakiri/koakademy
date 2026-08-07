@@ -32,7 +32,7 @@ $this->app->afterResolving(
 );
 ```
 
-Registry objects may contain immutable metadata and stateless collaborators. Do not store a request, user, enrollment, or tenant as mutable registry state; KoAkademy runs under Octane.
+Registry objects may contain immutable metadata and stateless collaborators. Do not store a request, user, enrollment, or tenant as mutable registry state; the registry is shared by long-lived processes such as Horizon queue workers.
 
 ## Configuration schemas
 

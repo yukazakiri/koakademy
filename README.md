@@ -96,7 +96,7 @@ A Laravel application with a React portal layer, packaged for self-hosting rathe
 | **Portals**       | [Inertia](https://inertiajs.com) · [React 19](https://react.dev) · TypeScript · Vite                                 |
 | **Data and jobs** | PostgreSQL · Redis · Laravel queues, cache, sessions, and scheduled work                                             |
 | **Documents**     | [Gotenberg](https://gotenberg.dev) for PDFs · S3-compatible object storage for uploads                               |
-| **Runtime**       | [FrankenPHP](https://frankenphp.dev) in a Docker image · Docker Swarm installer or supported Docker Compose topology |
+| **Runtime**       | nginx + PHP-FPM in a Docker image · Docker Swarm installer or supported Docker Compose topology |
 | **Quality**       | Pest · Laravel Pint · frontend and documentation builds · CI validation                                              |
 
 ### Layout

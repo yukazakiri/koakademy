@@ -70,7 +70,7 @@ Policy rollout uses additive forward migrations. Existing status data, duplicate
 
 ## Production operations
 
-After configuration or code deployment under Octane/FrankenPHP, reload long-running workers so new registry metadata and environment-backed documentation URLs are visible. Cache only immutable compiled snapshots; publication invalidates policy-list metadata.
+After configuration or code deployment, restart long-running processes (queue workers, scheduler) so new registry metadata and environment-backed documentation URLs are visible. Cache only immutable compiled snapshots; publication invalidates policy-list metadata.
 
 Set the contextual help base URL with:
 

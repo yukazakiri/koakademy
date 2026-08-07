@@ -21,7 +21,8 @@ check_supervisor_program() {
 }
 
 if [ "${container_mode}" = "http" ]; then
-    check_supervisor_program "frankenphp"
+    check_supervisor_program "nginx"
+    check_supervisor_program "php-fpm"
 
     php -r '
         $port = getenv("PORT") ?: "8000";

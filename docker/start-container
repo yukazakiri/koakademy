@@ -761,6 +761,20 @@ bootstrap_container() {
 }
 
 start_http_container() {
+    if [ -n "${OCTANE_SERVER:-}" ]; then
+        echo "Web Server: FrankenPHP (${OCTANE_SERVER})"
+
+        # Ensure any files created during startup (logs, caches, etc.) are
+        # writable by the web server process before it starts.
+        fix_storage_permissions
+
+        if [ "${horizon_enabled}" = "true" ]; then
+            exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.frankenphp.conf
+        fi
+
+        exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.frankenphp.no-horizon.conf
+    fi
+
     echo "Web Server: nginx + PHP-FPM"
 
     # Ensure any files created during startup (logs, caches, etc.) are

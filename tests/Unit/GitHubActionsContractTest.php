@@ -128,6 +128,9 @@ it('publishes immutable SHA images to both registries before moving channel alia
     expect($delivery)
         ->toContain('ghcr.io/${GITHUB_REPOSITORY}:sha-${SOURCE_SHA}')
         ->toContain('${{ vars.DOCKERHUB_IMAGE }}:sha-${SOURCE_SHA}')
+        ->toContain('ghcr.io/${GITHUB_REPOSITORY}:sha-${SOURCE_SHA}-franken')
+        ->toContain('${{ vars.DOCKERHUB_IMAGE }}:sha-${SOURCE_SHA}-franken')
+        ->toContain('file: docker/Dockerfile.franken')
         ->toContain('provenance: mode=max')
         ->toContain('sbom: true')
         ->toContain('actions/attest@')
@@ -136,6 +139,11 @@ it('publishes immutable SHA images to both registries before moving channel alia
         ->toContain('promote_mutable_pair latest')
         ->toContain('promote_mutable_pair "${major}.${minor}"')
         ->toContain('promote_mutable_pair "${major}"')
+        ->toContain('promote_mutable_franken_pair edge')
+        ->toContain('promote_mutable_franken_pair latest')
+        ->toContain('promote_mutable_franken_pair "${major}.${minor}"')
+        ->toContain('promote_mutable_franken_pair "${major}"')
+        ->toContain('--output version-franken.json')
         ->and($immutableBuild)->toBeInt()
         ->and($verification)->toBeGreaterThan($immutableBuild)
         ->and($promotion)->toBeGreaterThan($verification);
@@ -147,16 +155,22 @@ it('keeps recovery tooling and provenance bound to the workflow that built the i
         $delivery,
         "if: steps.existing.outputs.build_required == 'true'\n        uses: actions/attest@",
     );
+    $frankenConditionalAttestations = mb_substr_count(
+        $delivery,
+        "if: steps.existing-franken.outputs.build_required == 'true'\n        uses: actions/attest@",
+    );
 
     expect($delivery)
         ->toContain('name: Load metadata generator from workflow revision')
         ->toContain('WORKFLOW_SHA: ${{ github.workflow_sha }}')
         ->toContain('"${RUNNER_TEMP}/generate-version-metadata.sh"')
         ->toContain('name: Restore metadata from reused immutable image')
+        ->toContain('name: Restore metadata from reused immutable FrankenPHP image')
         ->toContain('"${RUNNER_TEMP}/crane" export')
         ->toContain('--platform linux/amd64')
         ->toContain('.metadata.channel == $channel')
-        ->and($conditionalAttestations)->toBe(2);
+        ->and($conditionalAttestations)->toBe(2)
+        ->and($frankenConditionalAttestations)->toBe(2);
 });
 
 it('keeps latest stable-only and recovery unable to invent or move versions', function (): void {

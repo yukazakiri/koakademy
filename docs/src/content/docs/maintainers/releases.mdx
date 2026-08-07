@@ -19,6 +19,8 @@ Both registries receive the same `linux/amd64` and `linux/arm64` manifest:
 - `ghcr.io/yukazakiri/koakademy`
 - `yukazaki/koakademy`
 
+KoAkademy publishes two image variants under the same delivery pipeline. The default image serves the application with nginx and PHP-FPM; a FrankenPHP variant runs the same code through Laravel Octane and is tagged with a `-franken` suffix on every channel: `sha-<commit>-franken`, `edge-franken`, `vX.Y.Z-franken`, `X.Y.Z-franken`, `X.Y-franken`, `X-franken`, and `latest-franken`. Both variants share the same version metadata and are built, verified, and promoted identically.
+
 Use an exact `vX.Y.Z` image in production. `latest` is a convenience alias for the newest verified stable release. `edge` is unsupported rolling software and may change after every successfully delivered `master` commit. The historical `dev-latest` and `v*-dev.*` tags and prereleases remain available but are frozen.
 
 ## Pull requests and version selection
@@ -62,7 +64,7 @@ When the release PR is merged, Release Please:
 2. force-creates the strict `vX.Y.Z` tag;
 3. creates a draft GitHub Release.
 
-Delivery then generates runtime build metadata without committing it, builds and pushes immutable SHA tags to both registries, verifies identical digests and both architectures, generates BuildKit SBOM/provenance records plus GitHub provenance attestations, and only then promotes release aliases. Every automatic delivery promotes the same verified image to `edge`; a stable release commit therefore updates both `edge` and its stable aliases without a duplicate build. Exact SemVer aliases are immutable. Major, minor, and `latest` aliases move only when the recovered or newly released version is the newest applicable stable tag.
+Delivery then generates runtime build metadata without committing it, builds and pushes immutable SHA tags for both image variants to both registries, verifies identical digests and both architectures, generates BuildKit SBOM/provenance records plus GitHub provenance attestations, and only then promotes release aliases. Every automatic delivery promotes the same verified image to `edge`; a stable release commit therefore updates both `edge` and its stable aliases without a duplicate build. Exact SemVer aliases are immutable. Major, minor, and `latest` aliases move only when the recovered or newly released version is the newest applicable stable tag.
 
 The draft is published and marked latest only after container verification, alias promotion, release asset upload, and checksums all succeed. Immutable SHA references remain the audit and rollback source of truth.
 

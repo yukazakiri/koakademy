@@ -294,7 +294,7 @@ jobs:
     needs:
       - prepare
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 120
     environment: container-publishing
     permissions:
       attestations: write
@@ -303,6 +303,7 @@ jobs:
       packages: write
     outputs:
       digest: ${{ steps.digest.outputs.digest }}
+      franken_digest: ${{ steps.digest-franken.outputs.digest }}
 
     steps:
       - name: Check out immutable source
@@ -365,6 +366,31 @@ jobs:
             printf 'display_version=%s\n' "$(jq --raw-output '.version' version.json)"
             printf 'ghcr_ref=%s\n' "${immutable_ref}"
             printf 'dockerhub_ref=%s\n' "${{ vars.DOCKERHUB_IMAGE }}:sha-${SOURCE_SHA}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Generate FrankenPHP image version metadata
+        id: metadata-franken
+        env:
+          CHANNEL: ${{ needs.prepare.outputs.channel }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+          BUILD_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          immutable_ref="ghcr.io/${GITHUB_REPOSITORY}:sha-${SOURCE_SHA}-franken"
+          "${RUNNER_TEMP}/generate-version-metadata.sh" \
+            --channel "${CHANNEL}" \
+            --version "${VERSION}" \
+            --commit "${SOURCE_SHA}" \
+            --image "${immutable_ref}" \
+            --build-url "${BUILD_URL}" \
+            --repository "${GITHUB_REPOSITORY}" \
+            --output version-franken.json
+
+          {
+            printf 'created=%s\n' "$(jq --raw-output '.timestamp' version-franken.json)"
+            printf 'display_version=%s\n' "$(jq --raw-output '.version' version-franken.json)"
+            printf 'ghcr_ref=%s\n' "${immutable_ref}"
+            printf 'dockerhub_ref=%s\n' "${{ vars.DOCKERHUB_IMAGE }}:sha-${SOURCE_SHA}-franken"
           } >> "${GITHUB_OUTPUT}"
 
       - name: Set up QEMU
@@ -437,6 +463,44 @@ jobs:
             printf 'digest=%s\n' "${digest}"
           } >> "${GITHUB_OUTPUT}"
 
+      - name: Protect immutable FrankenPHP SHA tags
+        id: existing-franken
+        env:
+          GHCR_REF: ${{ steps.metadata-franken.outputs.ghcr_ref }}
+          DOCKERHUB_REF: ${{ steps.metadata-franken.outputs.dockerhub_ref }}
+        run: |
+          remote_digest() {
+            "${RUNNER_TEMP}/crane" digest "$1" 2>/dev/null || true
+          }
+
+          ghcr_digest="$(remote_digest "${GHCR_REF}")"
+          dockerhub_digest="$(remote_digest "${DOCKERHUB_REF}")"
+
+          if [[ -z "${ghcr_digest}" && -z "${dockerhub_digest}" ]]; then
+            build_required=true
+            replication_required=true
+            digest=
+          elif [[ -n "${ghcr_digest}" && "${ghcr_digest}" == "${dockerhub_digest}" ]]; then
+            printf 'Reusing immutable FrankenPHP image %s.\n' "${ghcr_digest}"
+            build_required=false
+            replication_required=false
+            digest="${ghcr_digest}"
+          elif [[ -n "${ghcr_digest}" && -z "${dockerhub_digest}" ]]; then
+            printf 'Repairing the missing Docker Hub copy from immutable GHCR FrankenPHP image %s.\n' "${ghcr_digest}"
+            build_required=false
+            replication_required=true
+            digest="${ghcr_digest}"
+          else
+            printf 'Immutable FrankenPHP SHA tags are missing from one registry or have different digests.\n' >&2
+            exit 1
+          fi
+
+          {
+            printf 'build_required=%s\n' "${build_required}"
+            printf 'replication_required=%s\n' "${replication_required}"
+            printf 'digest=%s\n' "${digest}"
+          } >> "${GITHUB_OUTPUT}"
+
       - name: Restore metadata from reused immutable image
         if: steps.existing.outputs.build_required == 'false'
         env:
@@ -474,6 +538,43 @@ jobs:
               )
             ' version.json >/dev/null
 
+      - name: Restore metadata from reused immutable FrankenPHP image
+        if: steps.existing-franken.outputs.build_required == 'false'
+        env:
+          CHANNEL: ${{ needs.prepare.outputs.channel }}
+          EXPECTED_IMAGE: ${{ steps.metadata-franken.outputs.ghcr_ref }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          archive="${RUNNER_TEMP}/franken-rootfs.tar"
+          "${RUNNER_TEMP}/crane" export \
+            --platform linux/amd64 \
+            "${EXPECTED_IMAGE}" \
+            "${archive}"
+
+          metadata_member="$(tar -tf "${archive}" |
+            awk '$0 == "app/version.json" || $0 == "./app/version.json" { print; exit }')"
+          [[ -n "${metadata_member}" ]] || {
+            printf 'The immutable FrankenPHP image does not contain /app/version.json.\n' >&2
+            exit 1
+          }
+          tar -xOf "${archive}" "${metadata_member}" > "${RUNNER_TEMP}/version-franken.json"
+
+          jq --exit-status \
+            --arg channel "${CHANNEL}" \
+            --arg commit "${SOURCE_SHA}" \
+            --arg image "${EXPECTED_IMAGE}" \
+            --arg version "${VERSION}" \
+            '
+              .commit == $commit and
+              .image == $image and
+              .metadata.channel == $channel and
+              (
+                ($channel == "stable" and .version == $version) or
+                ($channel == "edge" and (.version | startswith($version + "-edge+sha.")))
+              )
+            ' "${RUNNER_TEMP}/version-franken.json" >/dev/null
+
       - name: Build and push immutable multi-platform images
         id: build
         if: steps.existing.outputs.build_required == 'true'
@@ -494,11 +595,38 @@ jobs:
           cache-from: type=gha,scope=delivery
           cache-to: type=gha,mode=max,scope=delivery,ignore-error=true
 
+      - name: Build and push immutable multi-platform FrankenPHP image
+        id: build-franken
+        if: steps.existing-franken.outputs.build_required == 'true'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: docker/Dockerfile.franken
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.metadata-franken.outputs.ghcr_ref }}
+          labels: |
+            org.opencontainers.image.created=${{ steps.metadata-franken.outputs.created }}
+            org.opencontainers.image.revision=${{ needs.prepare.outputs.source_sha }}
+            org.opencontainers.image.version=${{ steps.metadata-franken.outputs.display_version }}
+            org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=delivery-franken
+          cache-to: type=gha,mode=max,scope=delivery-franken,ignore-error=true
+
       - name: Replicate immutable image to Docker Hub
         if: steps.existing.outputs.replication_required == 'true'
         env:
           GHCR_REF: ${{ steps.metadata.outputs.ghcr_ref }}
           DOCKERHUB_REF: ${{ steps.metadata.outputs.dockerhub_ref }}
+        run: '"${RUNNER_TEMP}/crane" copy "${GHCR_REF}" "${DOCKERHUB_REF}"'
+
+      - name: Replicate immutable FrankenPHP image to Docker Hub
+        if: steps.existing-franken.outputs.replication_required == 'true'
+        env:
+          GHCR_REF: ${{ steps.metadata-franken.outputs.ghcr_ref }}
+          DOCKERHUB_REF: ${{ steps.metadata-franken.outputs.dockerhub_ref }}
         run: '"${RUNNER_TEMP}/crane" copy "${GHCR_REF}" "${DOCKERHUB_REF}"'
 
       - name: Resolve immutable digest
@@ -510,6 +638,19 @@ jobs:
           digest="${BUILT_DIGEST:-${EXISTING_DIGEST}}"
           [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]] || {
             printf 'The immutable image digest is invalid.\n' >&2
+            exit 1
+          }
+          printf 'digest=%s\n' "${digest}" >> "${GITHUB_OUTPUT}"
+
+      - name: Resolve immutable FrankenPHP digest
+        id: digest-franken
+        env:
+          BUILT_DIGEST: ${{ steps.build-franken.outputs.digest }}
+          EXISTING_DIGEST: ${{ steps.existing-franken.outputs.digest }}
+        run: |
+          digest="${BUILT_DIGEST:-${EXISTING_DIGEST}}"
+          [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+            printf 'The immutable FrankenPHP image digest is invalid.\n' >&2
             exit 1
           }
           printf 'digest=%s\n' "${digest}" >> "${GITHUB_OUTPUT}"
@@ -530,20 +671,40 @@ jobs:
           subject-digest: ${{ steps.digest.outputs.digest }}
           push-to-registry: true
 
+      - name: Attest FrankenPHP GHCR build provenance
+        if: steps.existing-franken.outputs.build_required == 'true'
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.digest-franken.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest FrankenPHP Docker Hub build provenance
+        if: steps.existing-franken.outputs.build_required == 'true'
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-name: index.docker.io/${{ vars.DOCKERHUB_IMAGE }}
+          subject-digest: ${{ steps.digest-franken.outputs.digest }}
+          push-to-registry: true
+
       - name: Verify registries, architectures, SBOM, and provenance
         env:
           EXPECTED_DIGEST: ${{ steps.digest.outputs.digest }}
           GHCR_REF: ${{ steps.metadata.outputs.ghcr_ref }}
           DOCKERHUB_REF: ${{ steps.metadata.outputs.dockerhub_ref }}
+          FRANKEN_EXPECTED_DIGEST: ${{ steps.digest-franken.outputs.digest }}
+          FRANKEN_GHCR_REF: ${{ steps.metadata-franken.outputs.ghcr_ref }}
+          FRANKEN_DOCKERHUB_REF: ${{ steps.metadata-franken.outputs.dockerhub_ref }}
         run: |
           verify_manifest() {
             local reference="$1"
+            local expected_digest="$2"
             local inspection=""
             local digest=""
 
             inspection="$(docker buildx imagetools inspect "${reference}")"
             digest="$(sed -n 's/^Digest:[[:space:]]*//p' <<<"${inspection}" | head -n 1)"
-            [[ "${digest}" == "${EXPECTED_DIGEST}" ]]
+            [[ "${digest}" == "${expected_digest}" ]]
             grep -q 'Platform:[[:space:]]*linux/amd64' <<<"${inspection}"
             grep -q 'Platform:[[:space:]]*linux/arm64' <<<"${inspection}"
 
@@ -556,8 +717,10 @@ jobs:
             ' <<<"${raw_manifest}" >/dev/null
           }
 
-          verify_manifest "${GHCR_REF}"
-          verify_manifest "${DOCKERHUB_REF}"
+          verify_manifest "${GHCR_REF}" "${EXPECTED_DIGEST}"
+          verify_manifest "${DOCKERHUB_REF}" "${EXPECTED_DIGEST}"
+          verify_manifest "${FRANKEN_GHCR_REF}" "${FRANKEN_EXPECTED_DIGEST}"
+          verify_manifest "${FRANKEN_DOCKERHUB_REF}" "${FRANKEN_EXPECTED_DIGEST}"
 
       - name: Promote verified channel aliases
         id: promote
@@ -570,6 +733,9 @@ jobs:
           EXPECTED_DIGEST: ${{ steps.digest.outputs.digest }}
           GHCR_REF: ${{ steps.metadata.outputs.ghcr_ref }}
           DOCKERHUB_REF: ${{ steps.metadata.outputs.dockerhub_ref }}
+          FRANKEN_EXPECTED_DIGEST: ${{ steps.digest-franken.outputs.digest }}
+          FRANKEN_GHCR_REF: ${{ steps.metadata-franken.outputs.ghcr_ref }}
+          FRANKEN_DOCKERHUB_REF: ${{ steps.metadata-franken.outputs.dockerhub_ref }}
           GHCR_IMAGE: ghcr.io/${{ github.repository }}
           DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
         run: |
@@ -579,12 +745,13 @@ jobs:
 
           verify_alias() {
             local reference="$1"
+            local expected_digest="$2"
             local digest=""
 
             digest="$(remote_digest "${reference}")"
-            [[ "${digest}" == "${EXPECTED_DIGEST}" ]] || {
+            [[ "${digest}" == "${expected_digest}" ]] || {
               printf 'Alias %s resolved to %s instead of %s.\n' \
-                "${reference}" "${digest:-missing}" "${EXPECTED_DIGEST}" >&2
+                "${reference}" "${digest:-missing}" "${expected_digest}" >&2
               exit 1
             }
           }
@@ -592,17 +759,18 @@ jobs:
           promote_immutable() {
             local source="$1"
             local target="$2"
+            local expected_digest="$3"
             local existing=""
 
             existing="$(remote_digest "${target}")"
-            if [[ -n "${existing}" && "${existing}" != "${EXPECTED_DIGEST}" ]]; then
+            if [[ -n "${existing}" && "${existing}" != "${expected_digest}" ]]; then
               printf 'Refusing to move immutable tag %s from %s.\n' "${target}" "${existing}" >&2
               exit 1
             fi
             if [[ -z "${existing}" ]]; then
               "${RUNNER_TEMP}/crane" tag "${source}" "${target##*:}"
             fi
-            verify_alias "${target}"
+            verify_alias "${target}" "${expected_digest}"
           }
 
           promote_mutable_pair() {
@@ -610,8 +778,17 @@ jobs:
 
             "${RUNNER_TEMP}/crane" tag "${GHCR_REF}" "${tag}"
             "${RUNNER_TEMP}/crane" tag "${DOCKERHUB_REF}" "${tag}"
-            verify_alias "${GHCR_IMAGE}:${tag}"
-            verify_alias "${DOCKERHUB_IMAGE}:${tag}"
+            verify_alias "${GHCR_IMAGE}:${tag}" "${EXPECTED_DIGEST}"
+            verify_alias "${DOCKERHUB_IMAGE}:${tag}" "${EXPECTED_DIGEST}"
+          }
+
+          promote_mutable_franken_pair() {
+            local tag="$1"
+
+            "${RUNNER_TEMP}/crane" tag "${FRANKEN_GHCR_REF}" "${tag}"
+            "${RUNNER_TEMP}/crane" tag "${FRANKEN_DOCKERHUB_REF}" "${tag}"
+            verify_alias "${GHCR_IMAGE}:${tag}" "${FRANKEN_EXPECTED_DIGEST}"
+            verify_alias "${DOCKERHUB_IMAGE}:${tag}" "${FRANKEN_EXPECTED_DIGEST}"
           }
 
           release_latest=false
@@ -622,6 +799,7 @@ jobs:
               printf 'A newer master commit exists; immutable images remain available but edge will not move.\n'
             else
               promote_mutable_pair edge
+              promote_mutable_franken_pair edge
             fi
           fi
 
@@ -630,10 +808,15 @@ jobs:
             remainder="${VERSION#*.}"
             minor="${remainder%%.*}"
 
-            promote_immutable "${GHCR_REF}" "${GHCR_IMAGE}:${RELEASE_TAG}"
-            promote_immutable "${DOCKERHUB_REF}" "${DOCKERHUB_IMAGE}:${RELEASE_TAG}"
-            promote_immutable "${GHCR_REF}" "${GHCR_IMAGE}:${VERSION}"
-            promote_immutable "${DOCKERHUB_REF}" "${DOCKERHUB_IMAGE}:${VERSION}"
+            promote_immutable "${GHCR_REF}" "${GHCR_IMAGE}:${RELEASE_TAG}" "${EXPECTED_DIGEST}"
+            promote_immutable "${DOCKERHUB_REF}" "${DOCKERHUB_IMAGE}:${RELEASE_TAG}" "${EXPECTED_DIGEST}"
+            promote_immutable "${GHCR_REF}" "${GHCR_IMAGE}:${VERSION}" "${EXPECTED_DIGEST}"
+            promote_immutable "${DOCKERHUB_REF}" "${DOCKERHUB_IMAGE}:${VERSION}" "${EXPECTED_DIGEST}"
+
+            promote_immutable "${FRANKEN_GHCR_REF}" "${GHCR_IMAGE}:${RELEASE_TAG}-franken" "${FRANKEN_EXPECTED_DIGEST}"
+            promote_immutable "${FRANKEN_DOCKERHUB_REF}" "${DOCKERHUB_IMAGE}:${RELEASE_TAG}-franken" "${FRANKEN_EXPECTED_DIGEST}"
+            promote_immutable "${FRANKEN_GHCR_REF}" "${GHCR_IMAGE}:${VERSION}-franken" "${FRANKEN_EXPECTED_DIGEST}"
+            promote_immutable "${FRANKEN_DOCKERHUB_REF}" "${DOCKERHUB_IMAGE}:${VERSION}-franken" "${FRANKEN_EXPECTED_DIGEST}"
 
             mapfile -t stable_versions < <(
               git tag --list |
@@ -648,12 +831,15 @@ jobs:
 
             if [[ "${VERSION}" == "${newest_minor}" ]]; then
               promote_mutable_pair "${major}.${minor}"
+              promote_mutable_franken_pair "${major}.${minor}"
             fi
             if [[ "${VERSION}" == "${newest_major}" ]]; then
               promote_mutable_pair "${major}"
+              promote_mutable_franken_pair "${major}"
             fi
             if [[ "${VERSION}" == "${newest_global}" ]]; then
               promote_mutable_pair latest
+              promote_mutable_franken_pair latest
               release_latest=true
             fi
           fi

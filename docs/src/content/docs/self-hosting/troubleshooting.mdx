@@ -157,7 +157,7 @@ docker compose --env-file .env -f compose.production.yaml logs --tail=100 gotenb
 
 ## Queued work does not run
 
-Verify Redis health, `QUEUE_CONNECTION=redis`, and the application logs. Station workers run inside the application container in the production image. Avoid repeatedly dispatching the same export or notification until the original job state is understood.
+Verify Redis health, `QUEUE_CONNECTION=redis`, and the application logs. Horizon workers run inside the application container in the production image. Avoid repeatedly dispatching the same export or notification until the original job state is understood.
 
 ## Asking for help
 

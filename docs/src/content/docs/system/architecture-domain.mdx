@@ -11,7 +11,7 @@ This page is the map. It explains which moving parts exist, where requests enter
 
 KoAkademy is a **modular monolith**. One Laravel 12 application serves everything — admin panel, portals, public pages, and API — running on **PHP 8.5 under Laravel Octane with FrankenPHP** in production. The long-running worker means application boot happens once per worker, not per request; code must not leak mutable state between requests (Octane-safe patterns are expected in contributions).
 
-The production container image is a multi-stage build (`docker/Dockerfile`): Composer dependencies → Wayfinder route generation → Bun/Vite asset build → a `dunglas/frankenphp:1.9-php8.5` runtime. Supervisord variants in the image can run the web worker, queue workers ("station"), scheduler, and Pulse processes; alternative nginx/php-fpm, RoadRunner, and Swoole configurations ship for operators who need them.
+The production container image is a multi-stage build (`docker/Dockerfile`): Composer dependencies → Wayfinder route generation → Bun/Vite asset build → a `dunglas/frankenphp:1.9-php8.5` runtime. Supervisord variants in the image can run the web worker, queue workers (via Horizon), scheduler, and Pulse processes; alternative nginx/php-fpm, RoadRunner, and Swoole configurations ship for operators who need them.
 
 Supporting services are external: **PostgreSQL** (primary data), **Redis** (cache, sessions, queues), **Gotenberg** (PDF rendering), and **S3-compatible object storage** (uploads via media library).
 

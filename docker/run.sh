@@ -54,7 +54,7 @@ docker run -d \
 
 echo "✅ KoAkademy deployed successfully!"
 echo "🌐 Application is available at: http://localhost:8000"
-echo "Station dashboard: http://localhost:8000/station"
+echo "Horizon dashboard: http://localhost:8000/horizon"
 echo "💓 Pulse dashboard: http://localhost:8000/pulse"
 echo ""
 echo "Note: Using host networking mode. The container shares your host's network."

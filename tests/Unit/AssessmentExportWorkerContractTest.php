@@ -7,7 +7,7 @@ it('uses an isolated native redis queue with compatible worker timeouts', functi
         ->and(config('queue.connections.assessment-pdf.connection'))->toBe('queue-assessment')
         ->and(config('queue.connections.assessment-pdf.retry_after'))->toBeGreaterThan(config('assessment-exports.merge.timeout'));
 
-    $supervisor = file_get_contents(base_path('docker/supervisord.station.conf'));
+    $supervisor = file_get_contents(base_path('docker/supervisord.horizon.conf'));
     $healthcheck = file_get_contents(base_path('docker/healthcheck'));
 
     expect($supervisor)->toContain('queue:work %(ENV_ASSESSMENT_EXPORT_CONNECTION)s --queue=%(ENV_ASSESSMENT_EXPORT_QUEUE)s')

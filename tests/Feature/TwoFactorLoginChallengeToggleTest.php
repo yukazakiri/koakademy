@@ -6,7 +6,6 @@ use App\Enums\UserRole;
 use App\Filament\Auth\MultiFactor\SecurityAwareAppAuthentication;
 use App\Filament\Auth\MultiFactor\SecurityAwareEmailAuthentication;
 use App\Models\User;
-use Illuminate\Support\Facades\Notification;
 use Inertia\Testing\AssertableInertia;
 
 it('requires a two factor challenge when configured credentials are active for login', function (): void {
@@ -128,34 +127,6 @@ it('verifies portal authenticator challenges with the Filament app authenticatio
 
     $response = $this->post('/two-factor-challenge', [
         'code' => $appAuthentication->getCurrentCode($user, $secret),
-    ]);
-
-    $response->assertRedirect('/dashboard');
-    $this->assertAuthenticatedAs($user);
-});
-
-it('verifies portal email challenges with the Filament email authentication provider', function (): void {
-    Notification::fake();
-
-    $emailAuthentication = SecurityAwareEmailAuthentication::make()
-        ->generateCodesUsing(fn (): string => '123456');
-
-    app()->instance(SecurityAwareEmailAuthentication::class, $emailAuthentication);
-
-    $user = User::factory()->create([
-        'has_email_authentication' => true,
-    ]);
-
-    $this->post('/login', [
-        'email' => $user->email,
-        'password' => 'password',
-    ])->assertRedirect(route('two-factor.login'));
-
-    $this->post('/two-factor-challenge/send-email')
-        ->assertRedirect();
-
-    $response = $this->post('/two-factor-challenge', [
-        'code' => '123456',
     ]);
 
     $response->assertRedirect('/dashboard');

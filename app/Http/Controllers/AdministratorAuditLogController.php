@@ -59,7 +59,7 @@ final class AdministratorAuditLogController extends Controller
             'log_name' => $activity->log_name,
             'subject_type' => $activity->subject_type ? class_basename($activity->subject_type) : null,
             'subject_id' => $activity->subject_id,
-            'properties' => $activity->properties,
+            'properties' => $activity->attribute_changes,
             'causer' => $activity->causer ? [
                 'id' => $activity->causer->id,
                 'name' => $activity->causer->name ?? 'System',

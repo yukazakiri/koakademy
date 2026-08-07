@@ -45,8 +45,8 @@ if [ "${container_mode}" = "http" ]; then
         fwrite(STDERR, "Healthcheck failed: {$url} did not return 2xx ({$statusLine}).\n");
         exit(1);
     '
-elif [ "${container_mode}" = "station" ]; then
-    php "${ROOT}/artisan" station:status
+elif [ "${container_mode}" = "horizon" ]; then
+    php "${ROOT}/artisan" horizon:status
     check_supervisor_program "assessment-pdf:assessment-pdf_00"
     check_supervisor_program "assessment-events:assessment-events_00"
 elif [ "${container_mode}" = "scheduler" ]; then

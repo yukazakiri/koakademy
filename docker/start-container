@@ -5,7 +5,7 @@ container_mode=${CONTAINER_MODE:-"http"}
 app_env=$(printf '%s' "${APP_ENV:-production}" | tr '[:upper:]' '[:lower:]')
 database_connection=$(printf '%s' "${DB_CONNECTION:-}" | tr '[:upper:]' '[:lower:]')
 
-station_enabled=true
+horizon_enabled=true
 export ASSESSMENT_EXPORT_PROCESSES="${ASSESSMENT_EXPORT_PROCESSES:-2}"
 export ASSESSMENT_EXPORT_EVENT_PROCESSES="${ASSESSMENT_EXPORT_EVENT_PROCESSES:-1}"
 export ASSESSMENT_EXPORT_CONNECTION="${ASSESSMENT_EXPORT_CONNECTION:-assessment-pdf}"
@@ -111,26 +111,26 @@ is_falsy() {
     return 1
 }
 
-resolve_station_enabled() {
+resolve_horizon_enabled() {
     queue_connection=$(printf '%s' "${QUEUE_CONNECTION:-database}" | tr '[:upper:]' '[:lower:]')
-    station_env=$(printf '%s' "${STATION_ENABLED:-}" | tr '[:upper:]' '[:lower:]')
+    horizon_env=$(printf '%s' "${HORIZON_ENABLED:-}" | tr '[:upper:]' '[:lower:]')
 
     if [ "${queue_connection}" = "redis" ]; then
-        station_enabled=true
+        horizon_enabled=true
         return 0
     fi
 
-    if is_truthy "${station_env}"; then
-        station_enabled=true
+    if is_truthy "${horizon_env}"; then
+        horizon_enabled=true
         return 0
     fi
 
-    if is_falsy "${station_env}"; then
-        station_enabled=false
+    if is_falsy "${horizon_env}"; then
+        horizon_enabled=false
         return 0
     fi
 
-    station_enabled=false
+    horizon_enabled=false
 }
 
 is_redis_required() {
@@ -744,8 +744,8 @@ run_primary_startup_tasks() {
 bootstrap_container() {
     echo "Container mode: ${container_mode}"
 
-    resolve_station_enabled
-    echo "Station enabled: ${station_enabled}"
+    resolve_horizon_enabled
+    echo "Horizon enabled: ${horizon_enabled}"
 
     fix_storage_permissions
     purge_laravel_provider_caches
@@ -769,11 +769,11 @@ start_http_container() {
     fix_storage_permissions
 
     if [ "${octane_server}" = "frankenphp" ]; then
-        if [ "${station_enabled}" = "true" ]; then
+        if [ "${horizon_enabled}" = "true" ]; then
             exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.frankenphp.conf
         fi
 
-        exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.frankenphp.no-station.conf
+        exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.frankenphp.no-horizon.conf
     elif [ "${octane_server}" = "swoole" ]; then
         exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.swoole.conf
     elif [ "${octane_server}" = "roadrunner" ]; then
@@ -785,13 +785,13 @@ start_http_container() {
 }
 
 start_non_http_container() {
-    if [ "${container_mode}" = "station" ]; then
-        if [ "${station_enabled}" != "true" ]; then
-            echo "CONTAINER_MODE=station requested but Station is disabled for queue driver '${QUEUE_CONNECTION:-database}'."
+    if [ "${container_mode}" = "horizon" ]; then
+        if [ "${horizon_enabled}" != "true" ]; then
+            echo "CONTAINER_MODE=horizon requested but Horizon is disabled for queue driver '${QUEUE_CONNECTION:-database}'."
             exit 0
         fi
 
-        exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.station.conf
+        exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.horizon.conf
     elif [ "${container_mode}" = "reverb" ]; then
         exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.reverb.conf
     elif [ "${container_mode}" = "scheduler" ]; then

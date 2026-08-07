@@ -45,21 +45,6 @@ it('keeps setup and extension documentation in a separate developer area', funct
         );
 });
 
-it('keeps enrollment blueprint instructions in the operator user guide', function () {
-    $this->withoutMiddleware()
-        ->get(portalUrlForAdministrators('/docs/v1/quick-start'))
-        ->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->component('docs/index', false)
-            ->where('type', 'guide')
-            ->where('page.title', 'Quick start — preset to activation')
-            ->where('navigation', fn (Collection $navigation): bool => $navigation->pluck('id')->all() === [
-                'user-guide',
-                'enrollment-policies',
-            ]),
-        );
-});
-
 it('renders the legacy API documentation URL from the current API source', function () {
     $this->withoutMiddleware()
         ->get(portalUrlForAdministrators('/docs/v1/api-overview'))

@@ -4,14 +4,14 @@ set -e
 scout_driver=${SCOUT_DRIVER:-"collection"}
 scout_index_models=${SCOUT_INDEX_MODELS:-""}
 # When SCOUT_IMPORT_QUEUE=1, scout:import is invoked with --queue so per-chunk
-# MakeSearchable jobs are dispatched to the queue (processed by Station) instead
+# MakeSearchable jobs are dispatched to the queue (processed by Horizon) instead
 # of running inline. This makes the import command return in seconds.
 scout_import_queue=${SCOUT_IMPORT_QUEUE:-"0"}
 
 echo "Starting Scout indexing process..."
 echo "Detected Scout driver: ${scout_driver}"
 if [ "${scout_import_queue}" = "1" ]; then
-    echo "Scout import mode: queued (jobs dispatched to queue, processed by Station)"
+    echo "Scout import mode: queued (jobs dispatched to queue, processed by Horizon)"
 else
     echo "Scout import mode: inline (synchronous)"
 fi

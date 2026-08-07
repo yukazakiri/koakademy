@@ -60,8 +60,8 @@ it('logs activity when a class is updated', function (): void {
     expect($activity)->not()->toBeNull()
         ->and($activity->log_name)->toBe('classes')
         ->and($activity->event)->toBe('updated')
-        ->and($activity->properties->has('old'))->toBeTrue()
-        ->and($activity->properties->has('attributes'))->toBeTrue();
+        ->and($activity->attribute_changes->has('old'))->toBeTrue()
+        ->and($activity->attribute_changes->has('attributes'))->toBeTrue();
 });
 
 it('logs activity when a class post is created', function (): void {
@@ -122,7 +122,7 @@ it('logs activity when class enrollment grades are updated', function (): void {
 
     expect($activity)->not()->toBeNull()
         ->and($activity->subject_type)->toBe(ClassEnrollment::class)
-        ->and($activity->properties->get('attributes'))->toHaveKey('prelim_grade');
+        ->and($activity->attribute_changes->get('attributes'))->toHaveKey('prelim_grade');
 });
 
 it('only logs dirty attributes when class is updated', function (): void {
@@ -146,7 +146,7 @@ it('only logs dirty attributes when class is updated', function (): void {
     $activity = Activity::latest()->first();
 
     expect($activity)->not()->toBeNull()
-        ->and($activity->properties->get('attributes'))->toHaveKey('section')
-        ->and($activity->properties->get('old'))->toHaveKey('section')
-        ->and($activity->properties->get('attributes'))->not()->toHaveKey('maximum_slots');
+        ->and($activity->attribute_changes->get('attributes'))->toHaveKey('section')
+        ->and($activity->attribute_changes->get('old'))->toHaveKey('section')
+        ->and($activity->attribute_changes->get('attributes'))->not()->toHaveKey('maximum_slots');
 });

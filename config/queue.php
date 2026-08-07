@@ -46,7 +46,7 @@ return [
     | used by your application. An example configuration is provided for
     | each backend supported by Laravel. You're also free to add more.
     |
-    | Drivers: "sync", "database", "beanstalkd", "sqs", "redis", "station-redis", "null"
+    | Drivers: "sync", "database", "beanstalkd", "sqs", "redis", "null"
     |
     */
 
@@ -86,10 +86,7 @@ return [
         ],
 
         'redis' => [
-            // The 'station-redis' driver is provided by the ojbaeza/station
-            // package, which is only installed in production. Set
-            // REDIS_QUEUE_DRIVER=redis in local environments.
-            'driver' => env('REDIS_QUEUE_DRIVER', 'station-redis'),
+            'driver' => 'redis',
             'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
             'queue' => env('REDIS_QUEUE', 'default'),
             'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 90),
@@ -98,7 +95,7 @@ return [
         ],
 
         'redis-pdf' => [
-            'driver' => 'station-redis',
+            'driver' => 'redis',
             'connection' => 'queue-pdf',
             'queue' => env('REDIS_PDF_QUEUE', 'pdf-generation'),
             'retry_after' => (int) env('REDIS_PDF_QUEUE_RETRY_AFTER', 7200),

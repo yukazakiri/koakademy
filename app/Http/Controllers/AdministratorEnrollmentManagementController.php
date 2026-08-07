@@ -1945,19 +1945,19 @@ final class AdministratorEnrollmentManagementController extends Controller
                 // Subject enrollment deletions for this enrollment
                 $query->where('log_name', 'subject_enrollment')
                     ->where('event', 'deleted')
-                    ->where('properties', 'like', '%"enrollment_id":'.$enrollment->id.'%');
+                    ->where('attribute_changes', 'like', '%"enrollment_id":'.$enrollment->id.'%');
             })
             ->orWhere(function ($query) use ($enrollment): void {
                 // Class enrollment deletions for this student in the same school year/semester
                 $query->where('log_name', 'class_enrollments')
                     ->where('event', 'deleted')
-                    ->where('properties', 'like', '%"student_id":'.$enrollment->student_id.'%');
+                    ->where('attribute_changes', 'like', '%"student_id":'.$enrollment->student_id.'%');
             })
             ->orderByDesc('created_at')
             ->limit(50)
             ->get()
             ->map(function (Activity $activity): array {
-                $properties = $activity->properties?->toArray() ?? [];
+                $properties = $activity->attribute_changes?->toArray() ?? [];
                 $oldData = $properties['old'] ?? [];
 
                 return [
@@ -2001,7 +2001,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                     continue;
                 }
 
-                $properties = $activity->properties?->toArray() ?? [];
+                $properties = $activity->attribute_changes?->toArray() ?? [];
                 $oldData = $properties['old'] ?? [];
 
                 if ($activity->log_name === 'subject_enrollment' && $activity->event === 'deleted') {
@@ -2709,13 +2709,13 @@ final class AdministratorEnrollmentManagementController extends Controller
             ->where(function ($query) use ($enrollment): void {
                 $query->where('log_name', 'subject_enrollment')
                     ->where('event', 'deleted')
-                    ->where('properties', 'like', '%"enrollment_id":'.$enrollment->id.'%');
+                    ->where('attribute_changes', 'like', '%"enrollment_id":'.$enrollment->id.'%');
             })
             ->orderByDesc('created_at')
             ->limit(20)
             ->get()
             ->map(function (Activity $activity): array {
-                $properties = $activity->properties?->toArray() ?? [];
+                $properties = $activity->attribute_changes?->toArray() ?? [];
                 $oldData = $properties['old'] ?? [];
 
                 // Get subject info for display

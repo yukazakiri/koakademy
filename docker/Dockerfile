@@ -144,8 +144,8 @@ COPY docker/php.ini ${PHP_INI_DIR}/conf.d/99-custom.ini
 # Copy Supervisor configs
 COPY --link docker/supervisord.conf /etc/supervisord.conf
 COPY --link docker/supervisord.frankenphp.conf /etc/supervisor/conf.d/
-COPY --link docker/supervisord.frankenphp.no-station.conf /etc/supervisor/conf.d/
-COPY --link docker/supervisord.station.conf /etc/supervisor/conf.d/
+COPY --link docker/supervisord.frankenphp.no-horizon.conf /etc/supervisor/conf.d/
+COPY --link docker/supervisord.horizon.conf /etc/supervisor/conf.d/
 COPY --link docker/supervisord.scheduler.conf /etc/supervisor/conf.d/
 COPY --link docker/supervisord.pulse.conf /etc/supervisor/conf.d/
 COPY --link docker/supervisord.worker.conf /etc/supervisor/conf.d/

@@ -10,13 +10,8 @@ Artisan::command('inspire', function (): void {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-Schedule::command('station:prune')
-    ->daily()
-    ->withoutOverlapping();
-
-Schedule::command('station:alerts:check')
+Schedule::command('horizon:snapshot')
     ->everyFiveMinutes()
-    ->when(static fn (): bool => (bool) config('station.alerts.enabled', false))
     ->withoutOverlapping();
 
 Schedule::command('assessment-exports:maintain')

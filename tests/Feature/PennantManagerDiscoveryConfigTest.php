@@ -6,9 +6,9 @@ use App\Features\Toggles\FacultyDashboard;
 use App\Features\Toggles\OnlineCollegeEnrollment;
 use App\Features\Toggles\OnlineTesdaEnrollment;
 use App\Features\Toggles\StudentDashboard;
+use App\Filament\Plugins\PennantManager\Services\FeatureDiscovery;
 use App\Models\User;
 use App\Services\FeatureToggleRegistry;
-use daacreators\PennantManager\Services\FeatureDiscovery;
 use Illuminate\Support\Facades\DB;
 
 it('discovers explicit class based feature definitions from app service provider', function (): void {

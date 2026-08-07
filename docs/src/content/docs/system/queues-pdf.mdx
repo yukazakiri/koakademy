@@ -17,7 +17,7 @@ Defined in `config/queue.php`:
 | `redis` | Default application queues in production (`default`, `assessments`) |
 | `redis-pdf` | PDF generation jobs (`pdf-generation`) — isolated so a heavy render batch never delays transactional work |
 
-In production, supervisord **station** workers consume these queues inside the container (the dev Compose stack runs the same layout: three workers on `default,assessments`, two on `pdf-generation` with raised memory and timeout). Production deployments should run the scheduler and workers via the provided supervisord variants.
+In production, **Horizon** supervisors consume these queues inside the container (the dev Compose stack runs the same layout: three workers on `default,assessments`, two on `pdf-generation` with raised memory and timeout). Production deployments should run the scheduler and workers via the provided supervisord variants.
 
 ## Job inventory (by purpose)
 

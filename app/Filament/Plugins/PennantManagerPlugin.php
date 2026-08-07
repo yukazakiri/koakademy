@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Filament\Plugins;
 
+use App\Filament\Plugins\PennantManager\Resources\FeatureResource;
 use App\Filament\Plugins\Widgets\PennantFeatureAdoptionWidget;
-use daacreators\PennantManager\Resources\FeatureResource;
 use Filament\Contracts\Plugin;
 use Filament\Panel;
 

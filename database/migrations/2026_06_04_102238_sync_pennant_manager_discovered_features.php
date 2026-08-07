@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use daacreators\PennantManager\Services\FeatureDiscovery;
-use daacreators\PennantManager\Support\FeatureValue;
+use App\Filament\Plugins\PennantManager\Services\FeatureDiscovery;
+use App\Filament\Plugins\PennantManager\Support\FeatureValue;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;

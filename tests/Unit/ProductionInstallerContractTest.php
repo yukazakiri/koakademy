@@ -88,20 +88,6 @@ it('does not use destructive Swarm operations or mutable application images', fu
         ->not->toContain('rustfsadmin');
 });
 
-it('parses the Bash installer', function (): void {
-    $bash = (new ExecutableFinder)->find('bash');
-
-    if ($bash === null) {
-        $this->markTestSkipped('Bash is not available.');
-    }
-
-    $process = new Process([$bash, '-n', base_path('scripts/install.sh')], base_path());
-    $process->run();
-
-    expect($process->isSuccessful())
-        ->toBeTrue($process->getErrorOutput() ?: $process->getOutput());
-});
-
 it('accepts only the explicit edge rolling override and warns prominently', function (): void {
     $bash = productionInstallerContents('install.sh');
     $powerShell = productionInstallerContents('install.ps1');

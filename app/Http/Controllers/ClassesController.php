@@ -411,8 +411,8 @@ final class ClassesController extends Controller
      */
     private function formatActivityAction(\Spatie\Activitylog\Models\Activity $activity): string
     {
-        $attributes = $activity->properties->get('attributes', []);
-        $oldValues = $activity->properties->get('old', []);
+        $attributes = $activity->attribute_changes?->get('attributes', []) ?? [];
+        $oldValues = $activity->attribute_changes?->get('old', []) ?? [];
 
         // Handle ClassEnrollment events specially
         if ($activity->subject_type === \App\Models\ClassEnrollment::class) {

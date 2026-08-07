@@ -59,7 +59,7 @@ Schema changes use versioned Laravel migrations. Production startup does not aut
 
 ## Asynchronous work
 
-Exports, notifications, PDFs, and other expensive operations should use queues. Redis backs queues and Station manages worker processes in the production image. Jobs must be retry-safe where possible and should not expose sensitive payloads in logs or failure UIs.
+Exports, notifications, PDFs, and other expensive operations should use queues. Redis backs queues and Horizon manages worker processes in the production image. Jobs must be retry-safe where possible and should not expose sensitive payloads in logs or failure UIs.
 
 ## PDF boundary
 

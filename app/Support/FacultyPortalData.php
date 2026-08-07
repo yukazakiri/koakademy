@@ -266,7 +266,7 @@ final class FacultyPortalData
         };
 
         // For updates, show what specific fields changed
-        if ($activity->event === 'updated' && $activity->properties->has('attributes')) {
+        if ($activity->event === 'updated' && $activity->attribute_changes?->has('attributes')) {
             $changes = self::formatChangedFields($activity);
             if ($changes) {
                 return "Updated {$subjectType}: {$changes}";
@@ -288,8 +288,8 @@ final class FacultyPortalData
      */
     private static function formatEnrollmentAction(Activity $activity): string
     {
-        $attributes = $activity->properties->get('attributes', []);
-        $oldValues = $activity->properties->get('old', []);
+        $attributes = $activity->attribute_changes?->get('attributes', []) ?? [];
+        $oldValues = $activity->attribute_changes?->get('old', []) ?? [];
 
         // New student enrolled
         if ($activity->event === 'created') {
@@ -347,8 +347,8 @@ final class FacultyPortalData
      */
     private static function formatChangedFields(Activity $activity): ?string
     {
-        $attributes = $activity->properties->get('attributes', []);
-        $oldValues = $activity->properties->get('old', []);
+        $attributes = $activity->attribute_changes?->get('attributes', []) ?? [];
+        $oldValues = $activity->attribute_changes?->get('old', []) ?? [];
 
         if (empty($attributes)) {
             return null;

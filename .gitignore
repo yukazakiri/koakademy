@@ -45,6 +45,7 @@ yarn-error.log
 /.github/skills/*
 /.mcp.json
 /.opencode/*
+/.omo/
 /.tmp/*
 /.outputs/*
 CLAUDE.md

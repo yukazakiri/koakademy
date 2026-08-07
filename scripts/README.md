@@ -1,51 +1,21 @@
-# Script Notes
+# Scripts
 
-## `fix-ssl.sh`
+Helper scripts used by the repository. Local development and certificate tooling
+lives with the Docker Compose development topology and the application docs, not
+here; this folder only keeps the scripts the project actually runs or ships.
 
-`scripts/fix-ssl.sh` rebuilds the local Traefik certificates used by the KoAkademy development domains. Use it when the browser reports certificate trust errors for the local HTTPS hosts.
+## Installation
 
-### Run
+- `install.sh` — supported production installer for Linux (Docker Swarm). Runs
+  `docker compose` against `compose.production.yaml`, provisions services, runs
+  migrations, and prints the one-time `/setup` URL.
+- `install.ps1` — Windows PowerShell equivalent of `install.sh`.
 
-```bash
-./scripts/fix-ssl.sh
-```
+## Maintainers
 
-### What It Does
-
-1. Verifies `mkcert` is installed and trusted.
-2. Backs up the current certificate directory.
-3. Regenerates local certificates for the KoAkademy and supporting local domains.
-4. Restarts Traefik so the new certificates are picked up.
-5. Performs a quick connectivity check.
-
-### Managed Domains
-
-- `admin.koakademy.test`
-- `portal.koakademy.test`
-- `*.koakademy.test`
-- `mailpit.local.test`
-- `*.local.test`
-
-### Common Issues
-
-- `mkcert: command not found`
-
-  Install `mkcert` and run `mkcert -install`.
-
-- Browser still warns after regeneration
-
-  Hard-refresh the page and restart the browser if needed.
-
-- Traefik does not come back cleanly
-
-  Inspect logs:
-
-  ```bash
-  docker compose logs -f traefik
-  ```
-
-### Relevant Paths
-
-- Script: `scripts/fix-ssl.sh`
-- Certificates: `docker/traefik/certs/`
-- Backups: `docker/traefik/certs/backup-*/`
+- `generate-version-metadata.sh` — writes the `version.json` metadata file baked
+  into the production image during delivery.
+- `check-docs.mjs` — validates canonical documentation files, links, and
+  documented API endpoints (`npm run docs:check`).
+- `sync-docs.mjs` — copies canonical root markdown into the docs site and in-app
+  viewer mirrors (`npm run docs:sync`).

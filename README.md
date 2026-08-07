@@ -161,3 +161,15 @@ Contributions are welcome when they are focused, tested, and safe for self-hosti
 ## License
 
 KoAkademy is licensed under the [GNU AGPL-3.0-or-later](LICENSE.md). If people use a modified version over a network, they must be able to obtain that modified source. The code that handles a school’s records should remain available to the people who depend on it.
+
+## Notes from the author
+
+KoAkademy started in 2023 as a college feasibility project here in the Philippines. The first version was written in vanilla PHP, and in 2024 it was migrated to Laravel. My groupmates and I built it together until we graduated — after that, I kept going alone. The system eventually went live at our school, and it has been running there ever since as part of their core infrastructure. Every feature and every piece of logic in this codebase is modeled on that school's real, day-to-day workflow.
+
+As time passed, managing the codebase on my own became increasingly hard, so I now lean heavily on Codex as my main development agent. I have also grown professionally since those college days and currently work as a Senior Software Developer.
+
+Today, KoAkademy is being used by two different schools that run the same workflow. I will be honest: I am not very good at closing deals, and I have never been paid for this project. I have always treated it as my way of helping my school innovate, even just a little. That is why I decided to open source it and make it configurable — so that any institution that cannot afford its own SIS or LIS can use it freely, without handing student information to third-party providers.
+
+You will notice that this project is only half complete, but it is usable today. If you have any suggestions or improvements, you are always welcome to share them. And if this project has been useful to you, I would also ask you to star this repository — it gives me motivation to continue.
+
+Feel free to try it and give feedback. Even the harsh kind. I appreciate every single one.

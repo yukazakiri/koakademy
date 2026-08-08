@@ -1,5 +1,57 @@
 # Changelog
 
+## [1.18.0](https://github.com/yukazakiri/koakademy/compare/v1.17.0...v1.18.0) (2026-08-08)
+
+
+### Features
+
+* **delivery:** publish a FrankenPHP Octane image variant ([#149](https://github.com/yukazakiri/koakademy/issues/149)) ([e07c411](https://github.com/yukazakiri/koakademy/commit/e07c411bca4f2a78372159a93ebf374675bdd482))
+* **newsletter:** add configurable marketing providers ([#143](https://github.com/yukazakiri/koakademy/issues/143)) ([2ff1241](https://github.com/yukazakiri/koakademy/commit/2ff12416ac9ab01b27b2716857babecb8422086f))
+* **newsletter:** Sequenzy subscription prompt for students and faculty ([#140](https://github.com/yukazakiri/koakademy/issues/140)) ([3c97f18](https://github.com/yukazakiri/koakademy/commit/3c97f18126031721211c5149aacf6417c48f3eb5))
+* **newsletter:** surface configuration in administrator settings ([#144](https://github.com/yukazakiri/koakademy/issues/144)) ([23eb1bf](https://github.com/yukazakiri/koakademy/commit/23eb1bf01bfac46e5eb55f095371abf1bb6536c7))
+
+
+### Bug Fixes
+
+* **delivery:** construct image refs locally ([#153](https://github.com/yukazakiri/koakademy/issues/153)) ([fd0a45a](https://github.com/yukazakiri/koakademy/commit/fd0a45adffca8cb74bd8d21bc41c31f57c483f79))
+* **delivery:** construct image refs locally instead of passing through job outputs ([#152](https://github.com/yukazakiri/koakademy/issues/152)) ([db5f6a1](https://github.com/yukazakiri/koakademy/commit/db5f6a147a0230eb1e7bf9a89c66fb2119946ac9))
+* **delivery:** separate frankenphp aliases ([1c4ba63](https://github.com/yukazakiri/koakademy/commit/1c4ba63ec65aecb91e1b81ac501dba384f0286bc))
+* **deps:** update frontend packages and regenerate lockfile ([cea0549](https://github.com/yukazakiri/koakademy/commit/cea0549eb6af1b330373d520f5cc0ac32bce9d39))
+* **docker:** remove COPY of deleted patches directory ([130eccf](https://github.com/yukazakiri/koakademy/commit/130eccf60726195ce0090ac509cb6b20463bbbc0))
+* **inertia:** parse initial page payload ([#154](https://github.com/yukazakiri/koakademy/issues/154)) ([a89236e](https://github.com/yukazakiri/koakademy/commit/a89236e377743e2f06258e9cf2c0fd7112f1eb11))
+* **newsletter:** expose administrator settings route ([#145](https://github.com/yukazakiri/koakademy/issues/145)) ([95fbbe0](https://github.com/yukazakiri/koakademy/commit/95fbbe0794a8de4a872ad9688e84fe9c34ea3e71))
+* **newsletter:** keep student consent prompt available ([#146](https://github.com/yukazakiri/koakademy/issues/146)) ([ac93761](https://github.com/yukazakiri/koakademy/commit/ac93761606f78751f5b285fe60d3fdca44866ca7))
+
+
+### Performance Improvements
+
+* **docker:** native parallel builds and slimmer container images ([#151](https://github.com/yukazakiri/koakademy/issues/151)) ([2eb00a2](https://github.com/yukazakiri/koakademy/commit/2eb00a28e6ddd6ea72b1a3cbf3477f3a1ac195b7))
+* **docker:** trim PHP extensions and fix container boot ([#150](https://github.com/yukazakiri/koakademy/issues/150)) ([79f7761](https://github.com/yukazakiri/koakademy/commit/79f7761f5227d6521ebf2d4690de39cc2aa205d2))
+
+
+### Build System
+
+* **deps:** bump the docker-base-images group in /docker with 2 updates ([#142](https://github.com/yukazakiri/koakademy/issues/142)) ([4e22755](https://github.com/yukazakiri/koakademy/commit/4e22755e9712d8f3e705184e5b095ee46e081c5b))
+* **deps:** bump the github-actions group with 2 updates ([#141](https://github.com/yukazakiri/koakademy/issues/141)) ([b047c2d](https://github.com/yukazakiri/koakademy/commit/b047c2d1fcee070d2cab98f39a214ed13cd0cffa))
+
+
+### Documentation
+
+* **readme:** add notes from the author ([c2f307d](https://github.com/yukazakiri/koakademy/commit/c2f307d1e85e76b3798a45c1093a36dfa7c60b59))
+* **readme:** add notes from the author ([#148](https://github.com/yukazakiri/koakademy/issues/148)) ([e9a02dd](https://github.com/yukazakiri/koakademy/commit/e9a02dd4548cfa9bc3d35f5214962ff246bbe337))
+* **readme:** center self-hosted story ([8d63bfd](https://github.com/yukazakiri/koakademy/commit/8d63bfd8c9c53842e28748fe2037a278af201bab))
+
+
+### Code Refactoring
+
+* **branding:** rebrand DCCP to KoAkademy ([d2f5723](https://github.com/yukazakiri/koakademy/commit/d2f57237c704a5e840f5663b73ccd41dd641899c))
+* **queues:** replace Station with Horizon and self-host Pennant Manager ([#147](https://github.com/yukazakiri/koakademy/issues/147)) ([ff087d0](https://github.com/yukazakiri/koakademy/commit/ff087d05dc602ff4a5098974b98e5557f93b6c17))
+
+
+### Tests
+
+* add newsletter subscription prompt for students and faculty ([#138](https://github.com/yukazakiri/koakademy/issues/138)) ([c3bac3f](https://github.com/yukazakiri/koakademy/commit/c3bac3ffb7b1a261f7787b78cfc5c6095fbf3a1a))
+
 ## [1.17.0](https://github.com/yukazakiri/koakademy/compare/v1.16.2...v1.17.0) (2026-08-01)
 
 

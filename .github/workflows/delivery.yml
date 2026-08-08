@@ -305,6 +305,10 @@ jobs:
       version: ${{ needs.prepare.outputs.version }}
       tag: ${{ needs.prepare.outputs.tag }}
       source_sha: ${{ needs.prepare.outputs.source_sha }}
+      ghcr_ref: ${{ steps.existing.outputs.ghcr_ref }}
+      dockerhub_ref: ${{ steps.existing.outputs.dockerhub_ref }}
+      ghcr_ref_franken: ${{ steps.existing-franken.outputs.ghcr_ref }}
+      dockerhub_ref_franken: ${{ steps.existing-franken.outputs.dockerhub_ref }}
       build_required: ${{ steps.existing.outputs.build_required }}
       build_required_franken: ${{ steps.existing-franken.outputs.build_required }}
       replication_required: ${{ steps.existing.outputs.replication_required }}
@@ -556,7 +560,7 @@ jobs:
           file: docker/Dockerfile
           platforms: linux/${{ matrix.platform }}
           push: true
-          tags: ghcr.io/${{ github.repository }}:sha-${{ needs.publish.outputs.source_sha }}-${{ matrix.platform }}
+          tags: ${{ needs.publish.outputs.ghcr_ref }}-${{ matrix.platform }}
           labels: |
             org.opencontainers.image.created=${{ steps.metadata.outputs.created }}
             org.opencontainers.image.revision=${{ needs.publish.outputs.source_sha }}
@@ -577,7 +581,7 @@ jobs:
           file: docker/Dockerfile.franken
           platforms: linux/${{ matrix.platform }}
           push: true
-          tags: ghcr.io/${{ github.repository }}:sha-${{ needs.publish.outputs.source_sha }}-franken-${{ matrix.platform }}
+          tags: ${{ needs.publish.outputs.ghcr_ref_franken }}-${{ matrix.platform }}
           labels: |
             org.opencontainers.image.created=${{ steps.metadata-franken.outputs.created }}
             org.opencontainers.image.revision=${{ needs.publish.outputs.source_sha }}
@@ -634,9 +638,9 @@ jobs:
         id: merge
         if: needs.publish.outputs.build_required == 'true'
         env:
-          AMD64_REF: ghcr.io/${{ github.repository }}:sha-${{ needs.publish.outputs.source_sha }}-amd64
-          ARM64_REF: ghcr.io/${{ github.repository }}:sha-${{ needs.publish.outputs.source_sha }}-arm64
-          TARGET_REF: ghcr.io/${{ github.repository }}:sha-${{ needs.publish.outputs.source_sha }}
+          AMD64_REF: ${{ needs.publish.outputs.ghcr_ref }}-amd64
+          ARM64_REF: ${{ needs.publish.outputs.ghcr_ref }}-arm64
+          TARGET_REF: ${{ needs.publish.outputs.ghcr_ref }}
         run: |
           docker buildx imagetools create \
             --tag "${TARGET_REF}" \
@@ -653,9 +657,9 @@ jobs:
         id: merge-franken
         if: needs.publish.outputs.build_required_franken == 'true'
         env:
-          AMD64_REF: ghcr.io/${{ github.repository }}:sha-${{ needs.publish.outputs.source_sha }}-franken-amd64
-          ARM64_REF: ghcr.io/${{ github.repository }}:sha-${{ needs.publish.outputs.source_sha }}-franken-arm64
-          TARGET_REF: ghcr.io/${{ github.repository }}:sha-${{ needs.publish.outputs.source_sha }}-franken
+          AMD64_REF: ${{ needs.publish.outputs.ghcr_ref_franken }}-amd64
+          ARM64_REF: ${{ needs.publish.outputs.ghcr_ref_franken }}-arm64
+          TARGET_REF: ${{ needs.publish.outputs.ghcr_ref_franken }}
         run: |
           docker buildx imagetools create \
             --tag "${TARGET_REF}" \
@@ -743,21 +747,21 @@ jobs:
       - name: Replicate immutable image to Docker Hub
         if: needs.publish.outputs.replication_required == 'true'
         env:
-          GHCR_REF: ghcr.io/${{ github.repository }}:sha-${{ needs.publish.outputs.source_sha }}
-          DOCKERHUB_REF: ${{ vars.DOCKERHUB_IMAGE }}:sha-${{ needs.publish.outputs.source_sha }}
+          GHCR_REF: ${{ needs.publish.outputs.ghcr_ref }}
+          DOCKERHUB_REF: ${{ needs.publish.outputs.dockerhub_ref }}
         run: '"${RUNNER_TEMP}/crane" copy "${GHCR_REF}" "${DOCKERHUB_REF}"'
 
       - name: Replicate immutable FrankenPHP image to Docker Hub
         if: needs.publish.outputs.replication_required_franken == 'true'
         env:
-          GHCR_REF: ghcr.io/${{ github.repository }}:sha-${{ needs.publish.outputs.source_sha }}-franken
-          DOCKERHUB_REF: ${{ vars.DOCKERHUB_IMAGE }}:sha-${{ needs.publish.outputs.source_sha }}-franken
+          GHCR_REF: ${{ needs.publish.outputs.ghcr_ref_franken }}
+          DOCKERHUB_REF: ${{ needs.publish.outputs.dockerhub_ref_franken }}
         run: '"${RUNNER_TEMP}/crane" copy "${GHCR_REF}" "${DOCKERHUB_REF}"'
 
       - name: Restore metadata from immutable image
         env:
           CHANNEL: ${{ needs.publish.outputs.channel }}
-          EXPECTED_IMAGE: ghcr.io/${{ github.repository }}:sha-${{ needs.publish.outputs.source_sha }}
+          EXPECTED_IMAGE: ${{ needs.publish.outputs.ghcr_ref }}
           SOURCE_SHA: ${{ needs.publish.outputs.source_sha }}
           VERSION: ${{ needs.publish.outputs.version }}
         run: |
@@ -793,7 +797,7 @@ jobs:
       - name: Restore metadata from immutable FrankenPHP image
         env:
           CHANNEL: ${{ needs.publish.outputs.channel }}
-          EXPECTED_IMAGE: ghcr.io/${{ github.repository }}:sha-${{ needs.publish.outputs.source_sha }}-franken
+          EXPECTED_IMAGE: ${{ needs.publish.outputs.ghcr_ref_franken }}
           SOURCE_SHA: ${{ needs.publish.outputs.source_sha }}
           VERSION: ${{ needs.publish.outputs.version }}
         run: |
@@ -887,11 +891,11 @@ jobs:
       - name: Verify registries, architectures, SBOM, and provenance
         env:
           EXPECTED_DIGEST: ${{ steps.digest.outputs.digest }}
-          GHCR_REF: ghcr.io/${{ github.repository }}:sha-${{ needs.publish.outputs.source_sha }}
-          DOCKERHUB_REF: ${{ vars.DOCKERHUB_IMAGE }}:sha-${{ needs.publish.outputs.source_sha }}
+          GHCR_REF: ${{ needs.publish.outputs.ghcr_ref }}
+          DOCKERHUB_REF: ${{ needs.publish.outputs.dockerhub_ref }}
           FRANKEN_EXPECTED_DIGEST: ${{ steps.digest-franken.outputs.digest }}
-          FRANKEN_GHCR_REF: ghcr.io/${{ github.repository }}:sha-${{ needs.publish.outputs.source_sha }}-franken
-          FRANKEN_DOCKERHUB_REF: ${{ vars.DOCKERHUB_IMAGE }}:sha-${{ needs.publish.outputs.source_sha }}-franken
+          FRANKEN_GHCR_REF: ${{ needs.publish.outputs.ghcr_ref_franken }}
+          FRANKEN_DOCKERHUB_REF: ${{ needs.publish.outputs.dockerhub_ref_franken }}
         run: |
           verify_manifest() {
             local reference="$1"
@@ -928,11 +932,11 @@ jobs:
           RELEASE_TAG: ${{ needs.publish.outputs.tag }}
           SOURCE_SHA: ${{ needs.publish.outputs.source_sha }}
           EXPECTED_DIGEST: ${{ steps.digest.outputs.digest }}
-          GHCR_REF: ghcr.io/${{ github.repository }}:sha-${{ needs.publish.outputs.source_sha }}
-          DOCKERHUB_REF: ${{ vars.DOCKERHUB_IMAGE }}:sha-${{ needs.publish.outputs.source_sha }}
+          GHCR_REF: ${{ needs.publish.outputs.ghcr_ref }}
+          DOCKERHUB_REF: ${{ needs.publish.outputs.dockerhub_ref }}
           FRANKEN_EXPECTED_DIGEST: ${{ steps.digest-franken.outputs.digest }}
-          FRANKEN_GHCR_REF: ghcr.io/${{ github.repository }}:sha-${{ needs.publish.outputs.source_sha }}-franken
-          FRANKEN_DOCKERHUB_REF: ${{ vars.DOCKERHUB_IMAGE }}:sha-${{ needs.publish.outputs.source_sha }}-franken
+          FRANKEN_GHCR_REF: ${{ needs.publish.outputs.ghcr_ref_franken }}
+          FRANKEN_DOCKERHUB_REF: ${{ needs.publish.outputs.dockerhub_ref_franken }}
           GHCR_IMAGE: ghcr.io/${{ github.repository }}
           DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
         run: |

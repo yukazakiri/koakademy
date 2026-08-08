@@ -116,20 +116,20 @@ it('publishes every automatic master commit to edge without a second build', fun
         ->not->toContain('git diff-tree')
         ->not->toContain('relevant_pattern')
         ->and($promotion)->toBeInt()
-        ->and($promotionWorkflow)->toContain('MODE: ${{ needs.prepare.outputs.mode }}');
+        ->and($promotionWorkflow)->toContain('MODE: ${{ needs.publish.outputs.mode }}');
 });
 
 it('publishes immutable SHA images to both registries before moving channel aliases', function (): void {
     $delivery = workflowContents('delivery.yml');
-    $immutableBuild = mb_strpos($delivery, 'Build and push immutable multi-platform images');
+    $immutableBuild = mb_strpos($delivery, 'Build and push immutable');
     $verification = mb_strpos($delivery, 'Verify registries, architectures, SBOM, and provenance');
     $promotion = mb_strpos($delivery, 'Promote verified channel aliases');
 
     expect($delivery)
         ->toContain('ghcr.io/${GITHUB_REPOSITORY}:sha-${SOURCE_SHA}')
-        ->toContain('${{ vars.DOCKERHUB_IMAGE }}:sha-${SOURCE_SHA}')
+        ->toContain('"${DOCKERHUB_IMAGE}:sha-${SOURCE_SHA}"')
         ->toContain('ghcr.io/${GITHUB_REPOSITORY}:sha-${SOURCE_SHA}-franken')
-        ->toContain('${{ vars.DOCKERHUB_IMAGE }}:sha-${SOURCE_SHA}-franken')
+        ->toContain('"${DOCKERHUB_IMAGE}:sha-${SOURCE_SHA}-franken"')
         ->toContain('file: docker/Dockerfile.franken')
         ->toContain('provenance: mode=max')
         ->toContain('sbom: true')
@@ -153,19 +153,19 @@ it('keeps recovery tooling and provenance bound to the workflow that built the i
     $delivery = workflowContents('delivery.yml');
     $conditionalAttestations = mb_substr_count(
         $delivery,
-        "if: steps.existing.outputs.build_required == 'true'\n        uses: actions/attest@",
+        "if: needs.publish.outputs.build_required == 'true'\n        uses: actions/attest@",
     );
     $frankenConditionalAttestations = mb_substr_count(
         $delivery,
-        "if: steps.existing-franken.outputs.build_required == 'true'\n        uses: actions/attest@",
+        "if: needs.publish.outputs.build_required_franken == 'true'\n        uses: actions/attest@",
     );
 
     expect($delivery)
         ->toContain('name: Load metadata generator from workflow revision')
         ->toContain('WORKFLOW_SHA: ${{ github.workflow_sha }}')
         ->toContain('"${RUNNER_TEMP}/generate-version-metadata.sh"')
-        ->toContain('name: Restore metadata from reused immutable image')
-        ->toContain('name: Restore metadata from reused immutable FrankenPHP image')
+        ->toContain('name: Restore metadata from immutable image')
+        ->toContain('name: Restore metadata from immutable FrankenPHP image')
         ->toContain('"${RUNNER_TEMP}/crane" export')
         ->toContain('--platform linux/amd64')
         ->toContain('.metadata.channel == $channel')

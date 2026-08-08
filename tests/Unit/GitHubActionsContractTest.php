@@ -149,6 +149,18 @@ it('publishes immutable SHA images to both registries before moving channel alia
         ->and($promotion)->toBeGreaterThan($verification);
 });
 
+it('never routes image references through job outputs', function (): void {
+    $delivery = workflowContents('delivery.yml');
+
+    expect($delivery)
+        ->not->toContain('outputs.ghcr_ref')
+        ->not->toContain('outputs.dockerhub_ref')
+        ->toContain('tags: ghcr.io/${{ github.repository }}:sha-${{ needs.publish.outputs.source_sha }}-${{ matrix.platform }}')
+        ->toContain('tags: ghcr.io/${{ github.repository }}:sha-${{ needs.publish.outputs.source_sha }}-franken-${{ matrix.platform }}')
+        ->toContain('TARGET_REF: ghcr.io/${{ github.repository }}:sha-${{ needs.publish.outputs.source_sha }}')
+        ->toContain('EXPECTED_IMAGE: ghcr.io/${{ github.repository }}:sha-${{ needs.publish.outputs.source_sha }}');
+});
+
 it('keeps recovery tooling and provenance bound to the workflow that built the image', function (): void {
     $delivery = workflowContents('delivery.yml');
     $conditionalAttestations = mb_substr_count(

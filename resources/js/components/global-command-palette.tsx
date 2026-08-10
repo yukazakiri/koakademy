@@ -114,11 +114,6 @@ interface PageProps {
     moduleAdminRoutes?: ModuleAdminRoute[];
 }
 
-interface GlobalCommandPaletteProps {
-    user: User;
-    onSelect?: () => void;
-}
-
 type StudentPublicInfo = {
     id: number;
     student_id: number | string;
@@ -313,6 +308,14 @@ export function GlobalCommandContent({
                     keywords: "admin profile settings",
                     icon: <IconSettings className="h-4 w-4" />,
                     onSelect: () => router.visit("/administrators/settings"),
+                },
+                {
+                    id: "nav:admin-system-management",
+                    routeId: "admin-system-management",
+                    label: "System Settings",
+                    keywords: "institution campus enrollment grading branding notifications newsletter api integrations system health",
+                    icon: <IconSettings className="h-4 w-4" />,
+                    onSelect: () => router.visit("/administrators/system-management"),
                 },
                 {
                     id: "nav:help",

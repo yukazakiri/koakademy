@@ -1,9 +1,9 @@
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { SiFacebook, SiGithub, SiGoogle, SiX } from "@icons-pack/react-simple-icons";
 import { useForm } from "@inertiajs/react";
@@ -138,99 +138,145 @@ export default function SystemManagementSocialitePage({ user, socialite_config, 
             user={user}
             access={access}
             activeSection="socialite"
-            heading="Social Auth"
-            description="Configure OAuth providers used for social sign-in flows."
+            heading="Sign-in Providers"
+            description="Configure OAuth providers available on your institution's sign-in screen."
         >
-            <Card>
-                <CardHeader>
-                    <div className="flex items-start justify-between gap-3">
-                        <div className="space-y-1">
-                            <CardTitle>OAuth Providers</CardTitle>
-                            <CardDescription>Store provider credentials in one place and sync environment values.</CardDescription>
-                        </div>
-                        <Button
-                            onClick={() =>
-                                submitSystemForm({
-                                    form: socialiteForm,
-                                    routeName: "administrators.system-management.socialite.update",
-                                    successMessage: "Social authentication settings updated successfully.",
-                                    errorMessage: "Failed to update social authentication settings.",
-                                })
-                            }
-                            disabled={socialiteForm.processing}
-                        >
-                            {socialiteForm.processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                            Save
-                        </Button>
+            <div className="space-y-5">
+                <div className="border-border/70 bg-card flex flex-col gap-4 rounded-2xl border px-5 py-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                        <p className="text-foreground text-sm font-semibold">Choose the sign-in methods people can actually use.</p>
+                        <p className="text-muted-foreground mt-1 text-sm">
+                            Provider credentials stay collapsed until you need to configure or review them.
+                        </p>
                     </div>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                    <div className="rounded-lg border border-blue-300/60 bg-blue-50/80 p-4 dark:border-blue-900/50 dark:bg-blue-950/30">
-                        <div className="flex items-start gap-3 text-sm">
-                            <Info className="h-5 w-5 shrink-0 text-blue-600" />
-                            <div className="space-y-1">
-                                <p className="font-medium text-blue-700 dark:text-blue-300">Callback URL pattern</p>
-                                <code className="block rounded bg-blue-100 px-2 py-1 text-xs text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">
-                                    {callbackBase}/auth/{"{provider}"}/callback
-                                </code>
+                    <Button
+                        onClick={() =>
+                            submitSystemForm({
+                                form: socialiteForm,
+                                routeName: "administrators.system-management.socialite.update",
+                                successMessage: "Social authentication settings updated successfully.",
+                                errorMessage: "Failed to update social authentication settings.",
+                            })
+                        }
+                        disabled={socialiteForm.processing || !socialiteForm.isDirty}
+                        className="shrink-0"
+                    >
+                        {socialiteForm.processing ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                        {socialiteForm.processing ? "Saving" : "Save changes"}
+                    </Button>
+                </div>
+
+                <Card>
+                    <CardHeader className="border-b">
+                        <CardTitle>Sign-in providers</CardTitle>
+                        <CardDescription>
+                            Open only the provider you want to configure. A provider cannot be enabled until both credentials are present.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="pt-0">
+                        <div className="border-primary/20 bg-primary/5 text-primary mt-5 rounded-xl border px-4 py-3">
+                            <div className="flex items-start gap-3 text-sm">
+                                <Info className="mt-0.5 size-4 shrink-0" />
+                                <div>
+                                    <p className="font-medium">Callback address</p>
+                                    <code className="bg-background/80 text-foreground mt-1 block w-fit rounded-md px-2 py-1 text-xs">
+                                        {callbackBase}/auth/{"{provider}"}/callback
+                                    </code>
+                                </div>
                             </div>
                         </div>
-                    </div>
 
-                    {providerConfigs.map((provider, index) => {
-                        const Icon = provider.icon;
-                        const isConfigured =
-                            String(socialiteForm.data[provider.idField]).trim() !== "" &&
-                            String(socialiteForm.data[provider.secretField]).trim() !== "";
+                        <Accordion type="multiple" className="mt-4 space-y-2">
+                            {providerConfigs.map((provider) => {
+                                const Icon = provider.icon;
+                                const isConfigured =
+                                    String(socialiteForm.data[provider.idField]).trim() !== "" &&
+                                    String(socialiteForm.data[provider.secretField]).trim() !== "";
+                                const isEnabled = Boolean(socialiteForm.data[provider.enabledField]);
 
-                        return (
-                            <div key={provider.key} className="space-y-4">
-                                <div className="flex items-center justify-between gap-4">
-                                    <div className="flex items-center gap-2">
-                                        <Icon className="h-5 w-5" />
-                                        <h3 className="font-medium">{provider.label}</h3>
-                                        {isConfigured ? <Badge variant="outline">Configured</Badge> : null}
-                                    </div>
-                                    {isConfigured ? (
-                                        <div className="flex items-center gap-2">
-                                            <Label className="text-sm">Enable sign-in</Label>
-                                            <Switch
-                                                checked={Boolean(socialiteForm.data[provider.enabledField])}
-                                                onCheckedChange={(checked) => socialiteForm.setData(provider.enabledField, checked)}
-                                            />
-                                        </div>
-                                    ) : null}
-                                </div>
-                                <div className="grid gap-4 sm:grid-cols-2">
-                                    <div className="space-y-2">
-                                        <Label>{provider.idLabel}</Label>
-                                        <Input
-                                            value={String(socialiteForm.data[provider.idField] || "")}
-                                            onChange={(event) => socialiteForm.setData(provider.idField, event.target.value)}
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>{provider.secretLabel}</Label>
-                                        <Input
-                                            type="password"
-                                            value={String(socialiteForm.data[provider.secretField] || "")}
-                                            onChange={(event) => socialiteForm.setData(provider.secretField, event.target.value)}
-                                        />
-                                    </div>
-                                </div>
-                                <div className="space-y-2">
-                                    <Label>Login callback URL</Label>
-                                    <Input
-                                        value={String(socialiteForm.data[provider.redirectField] || `${callbackBase}/auth/${provider.key}/callback`)}
-                                        onChange={(event) => socialiteForm.setData(provider.redirectField, event.target.value)}
-                                    />
-                                </div>
-                                {index < providerConfigs.length - 1 ? <Separator /> : null}
-                            </div>
-                        );
-                    })}
-                </CardContent>
-            </Card>
+                                return (
+                                    <AccordionItem
+                                        key={provider.key}
+                                        value={provider.key}
+                                        className="border-border/70 rounded-xl border px-4 last:border-b"
+                                    >
+                                        <AccordionTrigger className="py-4 hover:no-underline">
+                                            <div className="flex min-w-0 items-center gap-3 text-left">
+                                                <span className="bg-muted text-foreground flex size-8 shrink-0 items-center justify-center rounded-lg">
+                                                    <Icon className="size-4" />
+                                                </span>
+                                                <span className="min-w-0">
+                                                    <span className="text-foreground block font-medium">{provider.label}</span>
+                                                    <span className="text-muted-foreground mt-0.5 block text-xs font-normal">
+                                                        {isConfigured
+                                                            ? isEnabled
+                                                                ? "Configured and enabled"
+                                                                : "Configured but not enabled"
+                                                            : "Needs credentials"}
+                                                    </span>
+                                                </span>
+                                                <Badge variant={isConfigured ? "outline" : "secondary"} className="mr-2 ml-auto shrink-0">
+                                                    {isConfigured ? (isEnabled ? "Enabled" : "Ready") : "Not set up"}
+                                                </Badge>
+                                            </div>
+                                        </AccordionTrigger>
+                                        <AccordionContent className="pb-4">
+                                            <div className="grid gap-4 border-t pt-4 sm:grid-cols-2">
+                                                <div className="space-y-2">
+                                                    <Label htmlFor={`${provider.key}-client-id`}>{provider.idLabel}</Label>
+                                                    <Input
+                                                        id={`${provider.key}-client-id`}
+                                                        value={String(socialiteForm.data[provider.idField] || "")}
+                                                        onChange={(event) => socialiteForm.setData(provider.idField, event.target.value)}
+                                                    />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label htmlFor={`${provider.key}-client-secret`}>{provider.secretLabel}</Label>
+                                                    <Input
+                                                        id={`${provider.key}-client-secret`}
+                                                        type="password"
+                                                        value={String(socialiteForm.data[provider.secretField] || "")}
+                                                        onChange={(event) => socialiteForm.setData(provider.secretField, event.target.value)}
+                                                    />
+                                                </div>
+                                                <div className="space-y-2 sm:col-span-2">
+                                                    <Label htmlFor={`${provider.key}-callback`}>Login callback URL</Label>
+                                                    <Input
+                                                        id={`${provider.key}-callback`}
+                                                        value={String(
+                                                            socialiteForm.data[provider.redirectField] ||
+                                                                `${callbackBase}/auth/${provider.key}/callback`,
+                                                        )}
+                                                        onChange={(event) => socialiteForm.setData(provider.redirectField, event.target.value)}
+                                                    />
+                                                </div>
+                                                <div className="bg-muted/50 flex items-center justify-between rounded-lg px-3 py-2.5 sm:col-span-2">
+                                                    <div>
+                                                        <Label htmlFor={`${provider.key}-enabled`} className="font-medium">
+                                                            Offer {provider.label} sign-in
+                                                        </Label>
+                                                        <p className="text-muted-foreground mt-0.5 text-xs">
+                                                            {isConfigured
+                                                                ? "Available to users after you save."
+                                                                : "Add both credentials before enabling this option."}
+                                                        </p>
+                                                    </div>
+                                                    <Switch
+                                                        id={`${provider.key}-enabled`}
+                                                        checked={isEnabled}
+                                                        disabled={!isConfigured}
+                                                        onCheckedChange={(checked) => socialiteForm.setData(provider.enabledField, checked)}
+                                                    />
+                                                </div>
+                                            </div>
+                                        </AccordionContent>
+                                    </AccordionItem>
+                                );
+                            })}
+                        </Accordion>
+                    </CardContent>
+                </Card>
+            </div>
         </SystemManagementLayout>
     );
 }

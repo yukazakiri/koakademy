@@ -1,113 +1,13 @@
 import AdminLayout from "@/components/administrators/admin-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import type { User } from "@/types/user";
-import { Head } from "@inertiajs/react";
-import type { LucideIcon } from "lucide-react";
-import { Activity, BarChart3, Bell, Building2, Calculator, FileBadge2, Globe, Hash, List, Lock, Mail, Palette, Share2, Webhook } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Head, Link } from "@inertiajs/react";
+import { ChevronRight, Lock } from "lucide-react";
 import type { ReactNode } from "react";
+
+import type { User } from "@/types/user";
+import { getSystemSettingsItem, getSystemSettingsStatus, SystemSettingsNavigation } from "./settings-catalog";
 import type { SystemManagementAccess, SystemManagementSectionKey } from "./types";
-
-interface SystemManagementNavItem {
-    key: SystemManagementSectionKey;
-    label: string;
-    description: string;
-    href: string;
-    icon: LucideIcon;
-}
-
-export const systemManagementNavItems: SystemManagementNavItem[] = [
-    {
-        key: "school",
-        label: "School & Campus",
-        description: "Active school instance and campus details.",
-        href: "/administrators/system-management/school",
-        icon: Building2,
-    },
-    {
-        key: "pipeline",
-        label: "Enrollment Pipeline",
-        description: "Workflow steps, permissions, and analytics cards.",
-        href: "/administrators/system-management/enrollment-pipeline",
-        icon: List,
-    },
-    {
-        key: "seo",
-        label: "SEO & Metadata",
-        description: "Search engine defaults and social metadata.",
-        href: "/administrators/system-management/seo",
-        icon: Globe,
-    },
-    {
-        key: "analytics",
-        label: "Analytics",
-        description: "Tracking providers, snippets, and telemetry controls.",
-        href: "/administrators/system-management/analytics",
-        icon: BarChart3,
-    },
-    {
-        key: "brand",
-        label: "Brand & Appearance",
-        description: "Application identity, visuals, and contact data.",
-        href: "/administrators/system-management/brand",
-        icon: Palette,
-    },
-    {
-        key: "socialite",
-        label: "Social Auth",
-        description: "OAuth credentials for supported providers.",
-        href: "/administrators/system-management/socialite",
-        icon: Share2,
-    },
-    {
-        key: "mail",
-        label: "Deployment Mail",
-        description: "Runtime mail transport managed by the server operator.",
-        href: "/administrators/system-management/mail",
-        icon: Mail,
-    },
-    {
-        key: "api",
-        label: "API Management",
-        description: "Public API exposure and developer-friendly endpoint setup.",
-        href: "/administrators/system-management/api",
-        icon: Webhook,
-    },
-    {
-        key: "notifications",
-        label: "Notifications",
-        description: "Configure notification channels and providers.",
-        href: "/administrators/system-management/notifications",
-        icon: Bell,
-    },
-    {
-        key: "finance_documents",
-        label: "Finance Documents",
-        description: "Official eReceipt and eInvoice delivery policies.",
-        href: "/administrators/system-management/finance-documents",
-        icon: FileBadge2,
-    },
-    {
-        key: "grading",
-        label: "Grading System",
-        description: "Scale, passing marks, and GWA exclusions (OJT, NSTP, etc.).",
-        href: "/administrators/system-management/grading",
-        icon: Calculator,
-    },
-    {
-        key: "identifiers",
-        label: "ID Sequences",
-        description: "Student and shared staff numeric identifier counters.",
-        href: "/administrators/system-management/identifiers",
-        icon: Hash,
-    },
-    {
-        key: "pulse",
-        label: "System Pulse",
-        description: "Live infrastructure and performance metrics.",
-        href: "/administrators/system-management/pulse",
-        icon: Activity,
-    },
-];
 
 interface SystemManagementLayoutProps {
     user: User;
@@ -119,27 +19,72 @@ interface SystemManagementLayoutProps {
 }
 
 export default function SystemManagementLayout({ user, access, activeSection, heading, description, children }: SystemManagementLayoutProps) {
+    const item = getSystemSettingsItem(activeSection);
+    const category =
+        item.group === "academic_operations"
+            ? "Academic Operations"
+            : item.group === "integrations"
+              ? "Access & Integrations"
+              : item.group[0].toUpperCase() + item.group.slice(1);
     const canUpdateActiveSection = access.sections[activeSection]?.can_update ?? false;
+    const status = getSystemSettingsStatus(item, access);
+    const StatusIcon = status.icon;
 
     return (
         <AdminLayout user={user} title="System Settings">
             <Head title={`System Settings • ${heading}`} />
 
-            <div className="space-y-6">
-                <div className="space-y-1">
-                    <h1 className="text-2xl font-semibold tracking-tight">{heading}</h1>
-                    <p className="text-muted-foreground">{description}</p>
+            <div className="system-settings mx-auto w-full max-w-[90rem] space-y-6">
+                <header className="border-border/70 bg-card/85 [@media(prefers-contrast:more)]:border-foreground/60 [@media(prefers-reduced-transparency:reduce)]:bg-card rounded-2xl border px-5 py-5 shadow-sm backdrop-blur-xl sm:px-6">
+                    <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                            <div className="text-muted-foreground mb-3 flex flex-wrap items-center gap-1.5 text-xs font-medium">
+                                <Link
+                                    href="/administrators/system-management"
+                                    className="hover:text-foreground focus-visible:ring-ring rounded-sm transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                                >
+                                    System Settings
+                                </Link>
+                                <ChevronRight className="size-3.5" aria-hidden="true" />
+                                <span>{category}</span>
+                            </div>
+                            <div className="flex items-start gap-3">
+                                <span className="bg-primary/10 text-primary mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl">
+                                    <item.icon className="size-[1.125rem]" aria-hidden="true" />
+                                </span>
+                                <div>
+                                    <p className="text-muted-foreground text-xs font-semibold tracking-[0.08em] uppercase">{category}</p>
+                                    <h1 className="text-foreground mt-1 text-2xl font-semibold tracking-[-0.02em] sm:text-[1.75rem]">{heading}</h1>
+                                    <p className="text-muted-foreground mt-1.5 max-w-3xl text-sm leading-6">{description}</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2 self-start">
+                            <Badge variant="outline" className="border-border/70 bg-background/70 text-muted-foreground gap-1.5">
+                                <StatusIcon className="size-3" aria-hidden="true" />
+                                {status.label}
+                            </Badge>
+                            <SystemSettingsNavigation access={access} activeSection={activeSection} mobile />
+                        </div>
+                    </div>
+                </header>
+
+                <div className="grid gap-6 lg:grid-cols-[15rem_minmax(0,1fr)] lg:items-start">
+                    <SystemSettingsNavigation access={access} activeSection={activeSection} />
+                    <main className="min-w-0 space-y-6">
+                        {!canUpdateActiveSection ? (
+                            <Alert>
+                                <Lock className="size-4" />
+                                <AlertTitle>Read-only access</AlertTitle>
+                                <AlertDescription>You can review this configuration, but your role cannot change it.</AlertDescription>
+                            </Alert>
+                        ) : null}
+
+                        <fieldset disabled={!canUpdateActiveSection} className="min-w-0 space-y-6 border-0 p-0 disabled:cursor-not-allowed">
+                            {children}
+                        </fieldset>
+                    </main>
                 </div>
-
-                {!canUpdateActiveSection ? (
-                    <Alert>
-                        <Lock className="h-4 w-4" />
-                        <AlertTitle>Read-only access</AlertTitle>
-                        <AlertDescription>You can view this section, but your role does not include update access for it.</AlertDescription>
-                    </Alert>
-                ) : null}
-
-                {children}
             </div>
         </AdminLayout>
     );

@@ -102,27 +102,30 @@ export default function SystemManagementBrandPage({ user, branding, access }: Sy
             user={user}
             access={access}
             activeSection="brand"
-            heading="Brand & Appearance"
-            description="A simple guided setup for your portal's look and feel."
+            heading="Brand & Sign-in"
+            description="Set your portal identity, visual language, and sign-in experience in one guided workspace."
         >
             <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
                 <div className="space-y-5">
-                    <Card className="border-primary/20 from-primary/5 via-background to-background bg-gradient-to-br">
+                    <Card className="border-border/70 bg-card/70 shadow-sm backdrop-blur-sm">
                         <CardHeader className="pb-3">
                             <div className="flex items-center justify-between gap-3">
                                 <div>
                                     <CardTitle className="flex items-center gap-2 text-base">
                                         <WandSparkles className="h-4 w-4" />
-                                        Quick Setup Status
+                                        Identity status
                                     </CardTitle>
-                                    <CardDescription>Fill in the basics below. Everything updates in the live preview.</CardDescription>
+                                    <CardDescription>Complete the essentials, then use the preview to check the sign-in experience.</CardDescription>
                                 </div>
                                 <Badge variant="secondary">{completion}% complete</Badge>
                             </div>
                         </CardHeader>
                         <CardContent>
                             <div className="bg-muted h-2 rounded-full">
-                                <div className="bg-primary h-2 rounded-full transition-all" style={{ width: `${completion}%` }} />
+                                <div
+                                    className="bg-primary h-2 rounded-full transition-[width] duration-200 motion-reduce:transition-none"
+                                    style={{ width: `${completion}%` }}
+                                />
                             </div>
                             <div className="mt-4 flex flex-wrap items-center gap-2">
                                 {isDirty ? (
@@ -139,7 +142,7 @@ export default function SystemManagementBrandPage({ user, branding, access }: Sy
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2 text-base">
                                 <Type className="h-4 w-4" />
-                                1) Portal Name & Identity
+                                Portal identity
                             </CardTitle>
                             <CardDescription>What users will read first when they visit your portal.</CardDescription>
                         </CardHeader>
@@ -181,7 +184,7 @@ export default function SystemManagementBrandPage({ user, branding, access }: Sy
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2 text-base">
                                 <ImageIcon className="h-4 w-4" />
-                                2) Logo & Color
+                                Visual identity
                             </CardTitle>
                             <CardDescription>Upload your logo and pick a color. The system handles the rest.</CardDescription>
                         </CardHeader>
@@ -249,7 +252,7 @@ export default function SystemManagementBrandPage({ user, branding, access }: Sy
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2 text-base">
                                 <Sparkles className="h-4 w-4" />
-                                3) Login Page Style
+                                Sign-in layout
                             </CardTitle>
                             <CardDescription>Pick the layout your users see when signing in.</CardDescription>
                         </CardHeader>
@@ -340,7 +343,7 @@ export default function SystemManagementBrandPage({ user, branding, access }: Sy
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2 text-base">
                                 <Building2 className="h-4 w-4" />
-                                4) School Contact & Legal
+                                Official details
                             </CardTitle>
                             <CardDescription>Used in footers, support info, and formal documents.</CardDescription>
                         </CardHeader>

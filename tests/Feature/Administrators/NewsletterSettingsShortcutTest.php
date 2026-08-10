@@ -53,12 +53,29 @@ it('serves newsletter configuration from the administrator settings route', func
             ->where('access.active_section', 'newsletter'));
 });
 
-it('lists newsletter configuration in the administrator sidebar', function (): void {
+it('keeps the global sidebar focused while the settings workspace retains newsletter discovery', function (): void {
     $routes = file_get_contents(resource_path('js/config/admin-routes.tsx')) ?: '';
+    $catalog = file_get_contents(resource_path('js/pages/administrators/system-management/settings-catalog.tsx')) ?: '';
+    $systemSettingsOffset = mb_strpos($routes, 'id: "admin-system-management"');
+    $supportSectionOffset = mb_strpos($routes, '// SUPPORT', $systemSettingsOffset ?: 0);
+    $systemSettingsRoute = $systemSettingsOffset === false
+        ? ''
+        : mb_substr($routes, $systemSettingsOffset, ($supportSectionOffset ?: mb_strlen($routes)) - $systemSettingsOffset);
 
     expect($routes)
         ->toContain('"View:SystemManagementNewsletter"')
         ->toContain('"Update:SystemManagementNewsletter"')
-        ->toContain('title: "Newsletter Marketing"')
-        ->toContain('link: "/administrators/settings/newsletter"');
+        ->toContain('"View:SystemManagementFinanceDocuments"')
+        ->toContain('"Update:SystemManagementFinanceDocuments"')
+        ->toContain('"View:SystemManagementIdentifiers"')
+        ->toContain('"Update:SystemManagementIdentifiers"')
+        ->toContain('title: "System Settings"')
+        ->toContain('link: "/administrators/system-management"')
+        ->not->toContain('title: "Newsletter Marketing"');
+
+    expect($systemSettingsRoute)->not->toContain('subs:');
+
+    expect($catalog)
+        ->toContain('label: "Newsletter"')
+        ->toContain('href: "/administrators/system-management/newsletter"');
 });

@@ -73,8 +73,8 @@ export default function SystemManagementPulsePage({ user, access }: SystemManage
             user={user}
             access={access}
             activeSection="pulse"
-            heading="System Pulse"
-            description="Live operational health from Pulse telemetry endpoints."
+            heading="System Health"
+            description="Review live operational health from Pulse telemetry endpoints."
         >
             <div className="flex justify-end">
                 <Button variant="outline" onClick={() => window.location.reload()} disabled={loadingPulse}>

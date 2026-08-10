@@ -175,7 +175,7 @@ export default function SystemManagementIdentifiersPage({ user, access, id_seque
             user={user}
             access={access}
             activeSection="identifiers"
-            heading="ID Sequence Configuration"
+            heading="Student & Staff IDs"
             description="Configure numeric student IDs separately from the shared faculty and employee staff sequence."
         >
             <form onSubmit={submit} className="space-y-6">

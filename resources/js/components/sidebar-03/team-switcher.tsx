@@ -68,7 +68,6 @@ export function TeamSwitcher({ teams, user }: { teams: Team[]; user: User }) {
     const { props } = usePage<PageProps>();
     const currentOrganization = props.currentOrganization;
     const organizations = props.organizations || [];
-    const canSwitchOrganization = props.canSwitchOrganization || false;
 
     // Check if user can create organizations (super admin)
     const canCreateOrganization = ["admin", "super_admin", "developer"].includes(user.role);
@@ -258,7 +257,7 @@ export function TeamSwitcher({ teams, user }: { teams: Team[]; user: User }) {
                                 <DropdownMenuItem asChild className="text-foreground">
                                     <Link href="/administrators/system-management" className="flex items-center gap-2">
                                         <Shield className="size-4" />
-                                        <span>System Management</span>
+                                        <span>System Settings</span>
                                     </Link>
                                 </DropdownMenuItem>
                             )}

@@ -54,8 +54,8 @@ export default function EnrollmentBlueprintWorkspace({
             user={user}
             access={access}
             activeSection="pipeline"
-            heading="Enrollment Blueprint"
-            description="Guide students from eligibility to completion using school-friendly settings and safe, future-only publishing."
+            heading="Admissions & Enrollment"
+            description="Design, test, and publish the enrollment journey with safe, future-only changes."
         >
             <div className="space-y-6">
                 <RolloutBanner rollout={enrollment_rollout} canUpdate={canUpdate} />

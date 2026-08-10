@@ -598,7 +598,7 @@ export default function AdministratorEnrollmentsIndex({
                         <CardHeader>
                             <CardTitle>Enrollment Workflow Setup Required</CardTitle>
                             <CardDescription>
-                                Enrollment Management is locked until you configure an Enrollment Pipeline in System Management.
+                                Enrollment Management is locked until you configure an enrollment workflow in System Settings.
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -607,7 +607,7 @@ export default function AdministratorEnrollmentsIndex({
                             </p>
                             <Link href={route("administrators.system-management.index")} className={buttonVariants({ className: "gap-2" })}>
                                 <Settings2 className="h-4 w-4" />
-                                Open System Management
+                                Open System Settings
                             </Link>
                         </CardContent>
                     </Card>

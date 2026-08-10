@@ -71,17 +71,26 @@ it('renders all refactored system management pages', function (string $url, stri
     'newsletter page' => ['/administrators/system-management/newsletter', 'administrators/system-management/newsletter'],
     'notifications page' => ['/administrators/system-management/notifications', 'administrators/system-management/notifications'],
     'finance documents page' => ['/administrators/system-management/finance-documents', 'administrators/system-management/finance-documents'],
+    'grading page' => ['/administrators/system-management/grading', 'administrators/system-management/grading'],
+    'identifiers page' => ['/administrators/system-management/identifiers', 'administrators/system-management/identifiers'],
+    'api page' => ['/administrators/system-management/api', 'administrators/system-management/api'],
     'pulse page' => ['/administrators/system-management/pulse', 'administrators/system-management/pulse'],
 ]);
 
-it('redirects the system management index to the first accessible section', function (): void {
+it('renders a focused settings home with only the sections the administrator can access', function (): void {
     $user = User::factory()->create([
         'role' => UserRole::Admin,
     ]);
 
-    grantSystemManagementPermissions($user, ['school']);
+    grantSystemManagementPermissions($user, ['school', 'identifiers']);
 
     actingAs($user)
         ->get(portalUrlForAdministrators('/administrators/system-management'))
-        ->assertRedirect(portalUrlForAdministrators('/administrators/system-management/school'));
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->component('administrators/system-management/index', false)
+            ->where('access.active_section', null)
+            ->where('access.sections.school.can_view', true)
+            ->where('access.sections.identifiers.can_view', true)
+            ->where('access.sections.brand.can_view', false));
 });

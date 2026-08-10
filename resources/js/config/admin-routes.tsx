@@ -31,7 +31,6 @@ import {
     IconHelp,
     IconHistory,
     IconMedicalCross,
-    IconNews,
     IconReportAnalytics,
     IconSchool,
     IconServer,
@@ -632,9 +631,9 @@ export const ADMIN_ROUTES: AdminRoute[] = [
     },
     {
         id: "admin-system-management",
-        title: "System Configuration",
+        title: "System Settings",
         icon: <IconSettings className="size-4" />,
-        link: "/administrators/system-management/school",
+        link: "/administrators/system-management",
         section: "system",
         requiredPermission: [
             "View:SystemManagementSchool",
@@ -657,78 +656,15 @@ export const ADMIN_ROUTES: AdminRoute[] = [
             "Update:SystemManagementApi",
             "View:SystemManagementNotifications",
             "Update:SystemManagementNotifications",
+            "View:SystemManagementFinanceDocuments",
+            "Update:SystemManagementFinanceDocuments",
             "View:SystemManagementGrading",
             "Update:SystemManagementGrading",
+            "View:SystemManagementIdentifiers",
+            "Update:SystemManagementIdentifiers",
             "View:SystemManagementPulse",
         ],
         allowedRoles: SYSTEM_ADMIN_ROLES,
-        subs: [
-            {
-                title: "School & Campus",
-                link: "/administrators/system-management/school",
-                icon: <IconBuilding className="size-4" />,
-            },
-            {
-                title: "Enrollment Settings",
-                link: "/administrators/system-management/enrollment-pipeline",
-                icon: <IconChecklist className="size-4" />,
-            },
-            {
-                title: "SEO & Metadata",
-                link: "/administrators/system-management/seo",
-                icon: <IconFileAnalytics className="size-4" />,
-            },
-            {
-                title: "Analytics",
-                link: "/administrators/system-management/analytics",
-                icon: <IconChartBar className="size-4" />,
-            },
-            {
-                title: "Brand & Appearance",
-                link: "/administrators/system-management/brand",
-                icon: <IconSparkles className="size-4" />,
-            },
-            {
-                title: "Authentication Page Appearance",
-                link: "/administrators/system-management/brand/appearance",
-                icon: <IconShieldLock className="size-4" />,
-            },
-            {
-                title: "Social Login Providers",
-                link: "/administrators/system-management/socialite",
-                icon: <IconUserCircle className="size-4" />,
-            },
-            {
-                title: "Deployment Mail Status",
-                link: "/administrators/system-management/mail",
-                icon: <IconBell className="size-4" />,
-            },
-            {
-                title: "Newsletter Marketing",
-                link: "/administrators/settings/newsletter",
-                icon: <IconNews className="size-4" />,
-            },
-            {
-                title: "API & Integrations",
-                link: "/administrators/system-management/api",
-                icon: <IconServer className="size-4" />,
-            },
-            {
-                title: "Notifications",
-                link: "/administrators/system-management/notifications",
-                icon: <IconBell className="size-4" />,
-            },
-            {
-                title: "Grading System",
-                link: "/administrators/system-management/grading",
-                icon: <IconClipboardCheck className="size-4" />,
-            },
-            {
-                title: "System Health Monitor",
-                link: "/administrators/system-management/pulse",
-                icon: <IconServer className="size-4" />,
-            },
-        ],
     },
 
     // ============================================

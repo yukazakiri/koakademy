@@ -159,7 +159,7 @@ export default function SystemManagementSeoPage({ user, general_settings, access
             user={user}
             access={access}
             activeSection="seo"
-            heading="SEO & Sharing"
+            heading="Website & Sharing"
             description="Set how the portal appears in browser tabs, search results, and social link previews."
         >
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_390px]">

@@ -65,17 +65,27 @@ final class AdministratorSystemManagementController extends Controller
         private readonly EnrollmentPipelineService $enrollmentPipelineService
     ) {}
 
-    public function index(): RedirectResponse
+    public function index(): Response
     {
         $user = Auth::user();
 
         abort_unless($user instanceof User, 403);
 
-        $firstAccessibleSection = $this->resolveFirstAccessibleSection($user);
+        $this->authorize('viewAny', GeneralSetting::class);
 
-        abort_if($firstAccessibleSection === null, 403);
-
-        return Redirect::route("administrators.system-management.{$firstAccessibleSection}.index");
+        return Inertia::render('administrators/system-management/index', [
+            'user' => [
+                'name' => $user->name,
+                'email' => $user->email,
+                'avatar' => $user->avatar_url ?? null,
+                'role' => $user->role?->getLabel() ?? 'Administrator',
+                'permissions' => $user->getAllPermissions()->pluck('name')->values()->all(),
+            ],
+            'access' => [
+                'active_section' => null,
+                'sections' => $this->getSectionAccessMap($user),
+            ],
+        ]);
     }
 
     public function school(): Response
@@ -1127,17 +1137,6 @@ final class AdministratorSystemManagementController extends Controller
         }
 
         return $access;
-    }
-
-    private function resolveFirstAccessibleSection(User $user): ?string
-    {
-        foreach (SystemManagementPermissions::sectionKeys() as $section) {
-            if ($this->getSectionAccessMap($user)[$section]['can_view']) {
-                return $section;
-            }
-        }
-
-        return null;
     }
 
     private function deleteSchoolScopedRecords(int $schoolId): void

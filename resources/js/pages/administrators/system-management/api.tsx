@@ -6,14 +6,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useForm } from "@inertiajs/react";
-import { AlertCircle, BookOpen, Globe, Loader2, Mail, Palette, Phone, Save, School, Settings2, Sparkles, Webhook } from "lucide-react";
+import { AlertCircle, BookOpen, Globe, Loader2, Mail, Palette, Phone, Save, School, Sparkles, Webhook } from "lucide-react";
 import * as React from "react";
 
 import { submitSystemForm } from "./form-submit";
@@ -268,317 +266,283 @@ export default function SystemManagementApiPage({
             user={user}
             access={access}
             activeSection="api"
-            heading="API Management"
-            description="Configure the public settings API using native shadcn components, with a workspace layout that separates exposure rules, content values, and response output."
+            heading="API & Integrations"
+            description="Configure public API exposure, portal values, and response contracts for connected services."
         >
-            <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-                <Card className="border-border/70 h-fit lg:sticky lg:top-6">
-                    <CardHeader className="space-y-4">
-                        <div className="space-y-2">
-                            <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium">
-                                <Webhook className="h-3.5 w-3.5" />
-                                Public Endpoint
-                            </div>
-                            <CardTitle className="text-xl">API Workspace</CardTitle>
-                            <CardDescription>
-                                Use the sections below to control access, edit values, and review the response contract.
-                            </CardDescription>
-                        </div>
-
-                        <Alert>
-                            <Settings2 className="h-4 w-4" />
-                            <AlertTitle>{publicApiReady ? "Configured" : "Needs attention"}</AlertTitle>
-                            <AlertDescription>
-                                {publicApiReady
-                                    ? `${selectedFieldCount} field(s) are currently included in the public response.`
-                                    : "Enable the endpoint and choose at least one field to expose."}
-                            </AlertDescription>
-                        </Alert>
-                    </CardHeader>
-
-                    <CardContent className="space-y-4">
-                        <div className="space-y-2">
-                            <Label htmlFor="public_api_url">Endpoint</Label>
-                            <Input id="public_api_url" value={public_api_url} readOnly className="font-mono text-xs" />
-                        </div>
-
-                        <div className="flex flex-wrap gap-2">
-                            <Badge variant={publicApiReady ? "default" : "secondary"}>{publicApiReady ? "Ready" : "Incomplete"}</Badge>
+            <div className="bg-card/70 flex flex-col gap-4 rounded-2xl border p-4 shadow-sm backdrop-blur-sm lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex min-w-0 items-center gap-3">
+                    <div className="bg-primary/10 text-primary rounded-xl p-2.5">
+                        <Webhook className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-medium">Public settings endpoint</p>
+                            <Badge variant={publicApiReady ? "default" : "secondary"}>{publicApiReady ? "Ready" : "Needs attention"}</Badge>
                             <Badge variant="outline">{selectedFieldCount} selected</Badge>
                         </div>
+                        <p className="text-muted-foreground truncate font-mono text-xs">{public_api_url}</p>
+                    </div>
+                </div>
+                <Button
+                    onClick={() =>
+                        submitSystemForm({
+                            form,
+                            routeName: "administrators.system-management.api.update",
+                            successMessage: "API management settings updated successfully.",
+                            errorMessage: "Failed to update API management settings.",
+                        })
+                    }
+                    disabled={form.processing || !form.isDirty}
+                >
+                    {form.processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                    Save changes
+                </Button>
+            </div>
 
-                        <Separator />
+            <Tabs defaultValue="exposure" className="min-w-0 space-y-6">
+                <TabsList variant="underline" className="bg-muted/30 grid h-auto w-full grid-cols-2 gap-1 rounded-xl border p-1 sm:flex sm:w-fit">
+                    <TabsTrigger value="exposure" className="justify-center rounded-lg px-3 py-2 sm:justify-start">
+                        Exposure Rules
+                    </TabsTrigger>
+                    <TabsTrigger value="values" className="justify-center rounded-lg px-3 py-2 sm:justify-start">
+                        Website Values
+                    </TabsTrigger>
+                    <TabsTrigger value="social" className="justify-center rounded-lg px-3 py-2 sm:justify-start">
+                        Social Links
+                    </TabsTrigger>
+                    <TabsTrigger value="response" className="justify-center rounded-lg px-3 py-2 sm:justify-start">
+                        Response Contract
+                    </TabsTrigger>
+                </TabsList>
 
-                        <Button
-                            onClick={() =>
-                                submitSystemForm({
-                                    form,
-                                    routeName: "administrators.system-management.api.update",
-                                    successMessage: "API management settings updated successfully.",
-                                    errorMessage: "Failed to update API management settings.",
-                                })
-                            }
-                            disabled={form.processing}
-                            className="w-full"
-                        >
-                            {form.processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                            Save Changes
-                        </Button>
-                    </CardContent>
-                </Card>
-
-                <Tabs defaultValue="exposure" orientation="vertical" className="min-w-0 gap-6">
-                    <TabsList
-                        variant="underline"
-                        className="w-full justify-start gap-1 overflow-x-auto rounded-none border-b bg-transparent p-0 text-sm lg:w-52 lg:flex-col lg:items-stretch lg:border-r lg:border-b-0 lg:pr-4"
-                    >
-                        <TabsTrigger value="exposure" className="justify-start rounded-none px-3 py-2 lg:w-full">
-                            Exposure Rules
-                        </TabsTrigger>
-                        <TabsTrigger value="values" className="justify-start rounded-none px-3 py-2 lg:w-full">
-                            Website Values
-                        </TabsTrigger>
-                        <TabsTrigger value="social" className="justify-start rounded-none px-3 py-2 lg:w-full">
-                            Social Links
-                        </TabsTrigger>
-                        <TabsTrigger value="response" className="justify-start rounded-none px-3 py-2 lg:w-full">
-                            Response Contract
-                        </TabsTrigger>
-                    </TabsList>
-
-                    <TabsContent value="exposure" className="min-w-0">
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Exposure Rules</CardTitle>
-                                <CardDescription>Choose what is public before editing what the website receives.</CardDescription>
-                            </CardHeader>
-                            <CardContent className="space-y-6">
-                                <div className="grid gap-4 md:grid-cols-2">
-                                    <div className="rounded-2xl border p-5">
-                                        <div className="flex items-center justify-between gap-4">
-                                            <div>
-                                                <Label className="font-medium">Enable public API group</Label>
-                                                <p className="text-muted-foreground mt-1 text-sm">Master switch for all public API endpoints.</p>
-                                            </div>
-                                            <Switch
-                                                checked={form.data.public_api_enabled}
-                                                onCheckedChange={(checked) => form.setData("public_api_enabled", checked)}
-                                            />
+                <TabsContent value="exposure" className="min-w-0">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Exposure Rules</CardTitle>
+                            <CardDescription>Choose what is public before editing what the website receives.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-6">
+                            <div className="grid gap-4 md:grid-cols-2">
+                                <div className="rounded-2xl border p-5">
+                                    <div className="flex items-center justify-between gap-4">
+                                        <div>
+                                            <Label className="font-medium">Enable public API group</Label>
+                                            <p className="text-muted-foreground mt-1 text-sm">Master switch for all public API endpoints.</p>
                                         </div>
-                                    </div>
-
-                                    <div className="rounded-2xl border p-5">
-                                        <div className="flex items-center justify-between gap-4">
-                                            <div>
-                                                <Label className="font-medium">Enable settings endpoint</Label>
-                                                <p className="text-muted-foreground mt-1 text-sm">Controls `GET /api/v1/public/settings`.</p>
-                                            </div>
-                                            <Switch
-                                                checked={form.data.public_settings_enabled}
-                                                onCheckedChange={(checked) => form.setData("public_settings_enabled", checked)}
-                                            />
-                                        </div>
+                                        <Switch
+                                            checked={form.data.public_api_enabled}
+                                            onCheckedChange={(checked) => form.setData("public_api_enabled", checked)}
+                                        />
                                     </div>
                                 </div>
 
-                                <Accordion type="multiple" defaultValue={["identity", "contact", "portal"]} className="rounded-2xl border px-5">
-                                    {FIELD_GROUPS.map((group) => (
-                                        <AccordionItem key={group.value} value={group.value}>
-                                            <AccordionTrigger className="hover:no-underline">
-                                                <div>
-                                                    <div className="font-medium">{group.title}</div>
-                                                    <div className="text-muted-foreground mt-1 text-sm">{group.description}</div>
-                                                </div>
-                                            </AccordionTrigger>
-                                            <AccordionContent>
-                                                <div className="grid gap-3 md:grid-cols-2">
-                                                    {group.fields.map((fieldKey) => {
-                                                        const definition = public_api_fields[fieldKey];
-                                                        const checked = form.data.public_settings_fields.includes(fieldKey);
-
-                                                        return (
-                                                            <label
-                                                                key={fieldKey}
-                                                                className="hover:bg-muted/40 flex items-start gap-3 rounded-xl border p-4 transition-colors"
-                                                            >
-                                                                <Checkbox
-                                                                    checked={checked}
-                                                                    onCheckedChange={(value) => toggleField(fieldKey, value === true)}
-                                                                />
-                                                                <div className="space-y-1">
-                                                                    <div className="flex flex-wrap items-center gap-2">
-                                                                        <span className="text-sm font-medium">{definition.label}</span>
-                                                                        <Badge variant="outline">
-                                                                            {definition.editable ? "Editable" : "Computed"}
-                                                                        </Badge>
-                                                                    </div>
-                                                                    <p className="text-muted-foreground text-sm">{definition.description}</p>
-                                                                    <code className="text-muted-foreground text-xs">{fieldKey}</code>
-                                                                </div>
-                                                            </label>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </AccordionContent>
-                                        </AccordionItem>
-                                    ))}
-                                </Accordion>
-                            </CardContent>
-                        </Card>
-                    </TabsContent>
-
-                    <TabsContent value="values" className="min-w-0">
-                        <ScrollArea className="h-[75vh] rounded-2xl border">
-                            <div className="space-y-6 p-6">
-                                <div className="space-y-1">
-                                    <h2 className="text-xl font-semibold">Website Values</h2>
-                                    <p className="text-muted-foreground text-sm">Proper form fields based on the model schema and casts.</p>
-                                </div>
-
-                                <div className="grid gap-4 xl:grid-cols-2">
-                                    {IDENTITY_FIELDS.map((field) => (
-                                        <ValueField key={field.key} field={field} definition={public_api_fields[field.key]} form={form} />
-                                    ))}
-                                    {CONTACT_FIELDS.map((field) => (
-                                        <ValueField key={field.key} field={field} definition={public_api_fields[field.key]} form={form} />
-                                    ))}
-                                    {PORTAL_FIELDS.map((field) => (
-                                        <ValueField key={field.key} field={field} definition={public_api_fields[field.key]} form={form} />
-                                    ))}
-                                </div>
-
-                                <div className="grid gap-4 md:grid-cols-3">
-                                    <div className="rounded-2xl border p-5">
-                                        <div className="flex items-center justify-between gap-3">
-                                            <div>
-                                                <Label className="font-medium">Portal enabled</Label>
-                                                <p className="text-muted-foreground mt-1 text-sm">Boolean cast on the model.</p>
-                                            </div>
-                                            <Switch
-                                                checked={form.data.school_portal_enabled}
-                                                onCheckedChange={(checked) => form.setData("school_portal_enabled", checked)}
-                                            />
+                                <div className="rounded-2xl border p-5">
+                                    <div className="flex items-center justify-between gap-4">
+                                        <div>
+                                            <Label className="font-medium">Enable settings endpoint</Label>
+                                            <p className="text-muted-foreground mt-1 text-sm">Controls `GET /api/v1/public/settings`.</p>
                                         </div>
-                                    </div>
-                                    <div className="rounded-2xl border p-5">
-                                        <div className="flex items-center justify-between gap-3">
-                                            <div>
-                                                <Label className="font-medium">Online enrollment</Label>
-                                                <p className="text-muted-foreground mt-1 text-sm">Boolean cast on the model.</p>
-                                            </div>
-                                            <Switch
-                                                checked={form.data.online_enrollment_enabled}
-                                                onCheckedChange={(checked) => form.setData("online_enrollment_enabled", checked)}
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="rounded-2xl border p-5">
-                                        <div className="flex items-center justify-between gap-3">
-                                            <div>
-                                                <Label className="font-medium">Portal maintenance</Label>
-                                                <p className="text-muted-foreground mt-1 text-sm">Boolean cast on the model.</p>
-                                            </div>
-                                            <Switch
-                                                checked={form.data.school_portal_maintenance}
-                                                onCheckedChange={(checked) => form.setData("school_portal_maintenance", checked)}
-                                            />
-                                        </div>
+                                        <Switch
+                                            checked={form.data.public_settings_enabled}
+                                            onCheckedChange={(checked) => form.setData("public_settings_enabled", checked)}
+                                        />
                                     </div>
                                 </div>
                             </div>
-                        </ScrollArea>
-                    </TabsContent>
 
-                    <TabsContent value="social" className="min-w-0">
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Social Links</CardTitle>
-                                <CardDescription>
-                                    `social_network` is an array cast, so this section uses structured URL fields instead of a raw JSON editor.
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent className="grid gap-4 xl:grid-cols-2">
-                                {SOCIAL_LINK_FIELDS.map((field) => (
-                                    <div key={field.key} className="rounded-2xl border p-5">
-                                        <Label htmlFor={`social-${field.key}`} className="font-medium">
-                                            {field.label}
-                                        </Label>
-                                        <Input
-                                            id={`social-${field.key}`}
-                                            type="url"
-                                            value={form.data.social_network[field.key] ?? ""}
-                                            onChange={(event) => updateSocialLink(field.key, event.target.value)}
-                                            placeholder={field.placeholder}
-                                            className="mt-3"
+                            <Accordion type="multiple" defaultValue={["identity", "contact", "portal"]} className="rounded-2xl border px-5">
+                                {FIELD_GROUPS.map((group) => (
+                                    <AccordionItem key={group.value} value={group.value}>
+                                        <AccordionTrigger className="hover:no-underline">
+                                            <div>
+                                                <div className="font-medium">{group.title}</div>
+                                                <div className="text-muted-foreground mt-1 text-sm">{group.description}</div>
+                                            </div>
+                                        </AccordionTrigger>
+                                        <AccordionContent>
+                                            <div className="grid gap-3 md:grid-cols-2">
+                                                {group.fields.map((fieldKey) => {
+                                                    const definition = public_api_fields[fieldKey];
+                                                    const checked = form.data.public_settings_fields.includes(fieldKey);
+
+                                                    return (
+                                                        <label
+                                                            key={fieldKey}
+                                                            className="hover:bg-muted/40 flex items-start gap-3 rounded-xl border p-4 transition-colors"
+                                                        >
+                                                            <Checkbox
+                                                                checked={checked}
+                                                                onCheckedChange={(value) => toggleField(fieldKey, value === true)}
+                                                            />
+                                                            <div className="space-y-1">
+                                                                <div className="flex flex-wrap items-center gap-2">
+                                                                    <span className="text-sm font-medium">{definition.label}</span>
+                                                                    <Badge variant="outline">{definition.editable ? "Editable" : "Computed"}</Badge>
+                                                                </div>
+                                                                <p className="text-muted-foreground text-sm">{definition.description}</p>
+                                                                <code className="text-muted-foreground text-xs">{fieldKey}</code>
+                                                            </div>
+                                                        </label>
+                                                    );
+                                                })}
+                                            </div>
+                                        </AccordionContent>
+                                    </AccordionItem>
+                                ))}
+                            </Accordion>
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
+                <TabsContent value="values" className="min-w-0">
+                    <Card>
+                        <CardContent className="space-y-6 p-6">
+                            <div className="space-y-1">
+                                <h2 className="text-xl font-semibold">Website Values</h2>
+                                <p className="text-muted-foreground text-sm">Proper form fields based on the model schema and casts.</p>
+                            </div>
+
+                            <div className="grid gap-4 xl:grid-cols-2">
+                                {IDENTITY_FIELDS.map((field) => (
+                                    <ValueField key={field.key} field={field} definition={public_api_fields[field.key]} form={form} />
+                                ))}
+                                {CONTACT_FIELDS.map((field) => (
+                                    <ValueField key={field.key} field={field} definition={public_api_fields[field.key]} form={form} />
+                                ))}
+                                {PORTAL_FIELDS.map((field) => (
+                                    <ValueField key={field.key} field={field} definition={public_api_fields[field.key]} form={form} />
+                                ))}
+                            </div>
+
+                            <div className="grid gap-4 md:grid-cols-3">
+                                <div className="rounded-2xl border p-5">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div>
+                                            <Label className="font-medium">Portal enabled</Label>
+                                            <p className="text-muted-foreground mt-1 text-sm">Boolean cast on the model.</p>
+                                        </div>
+                                        <Switch
+                                            checked={form.data.school_portal_enabled}
+                                            onCheckedChange={(checked) => form.setData("school_portal_enabled", checked)}
                                         />
                                     </div>
-                                ))}
-                            </CardContent>
-                        </Card>
-                    </TabsContent>
+                                </div>
+                                <div className="rounded-2xl border p-5">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div>
+                                            <Label className="font-medium">Online enrollment</Label>
+                                            <p className="text-muted-foreground mt-1 text-sm">Boolean cast on the model.</p>
+                                        </div>
+                                        <Switch
+                                            checked={form.data.online_enrollment_enabled}
+                                            onCheckedChange={(checked) => form.setData("online_enrollment_enabled", checked)}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="rounded-2xl border p-5">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div>
+                                            <Label className="font-medium">Portal maintenance</Label>
+                                            <p className="text-muted-foreground mt-1 text-sm">Boolean cast on the model.</p>
+                                        </div>
+                                        <Switch
+                                            checked={form.data.school_portal_maintenance}
+                                            onCheckedChange={(checked) => form.setData("school_portal_maintenance", checked)}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </TabsContent>
 
-                    <TabsContent value="response" className="min-w-0 space-y-6">
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Response Contract</CardTitle>
-                                <CardDescription>Selected fields on the left, exact JSON on the right.</CardDescription>
-                            </CardHeader>
-                            <CardContent className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-                                <div className="rounded-2xl border">
-                                    <Table>
-                                        <TableHeader>
-                                            <TableRow>
-                                                <TableHead>Field</TableHead>
-                                                <TableHead>Type</TableHead>
-                                                <TableHead>Visibility</TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {form.data.public_settings_fields.length > 0 ? (
-                                                form.data.public_settings_fields.map((fieldKey) => (
-                                                    <TableRow key={fieldKey}>
-                                                        <TableCell className="font-medium">{public_api_fields[fieldKey].label}</TableCell>
-                                                        <TableCell>
-                                                            <code className="text-xs">{public_api_fields[fieldKey].input}</code>
-                                                        </TableCell>
-                                                        <TableCell>
-                                                            <Badge variant="outline">
-                                                                {public_api_fields[fieldKey].editable ? "Editable" : "Computed"}
-                                                            </Badge>
-                                                        </TableCell>
-                                                    </TableRow>
-                                                ))
-                                            ) : (
-                                                <TableRow>
-                                                    <TableCell colSpan={3} className="text-muted-foreground h-24 text-center">
-                                                        No fields selected yet.
+                <TabsContent value="social" className="min-w-0">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Social Links</CardTitle>
+                            <CardDescription>
+                                `social_network` is an array cast, so this section uses structured URL fields instead of a raw JSON editor.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="grid gap-4 xl:grid-cols-2">
+                            {SOCIAL_LINK_FIELDS.map((field) => (
+                                <div key={field.key} className="rounded-2xl border p-5">
+                                    <Label htmlFor={`social-${field.key}`} className="font-medium">
+                                        {field.label}
+                                    </Label>
+                                    <Input
+                                        id={`social-${field.key}`}
+                                        type="url"
+                                        value={form.data.social_network[field.key] ?? ""}
+                                        onChange={(event) => updateSocialLink(field.key, event.target.value)}
+                                        placeholder={field.placeholder}
+                                        className="mt-3"
+                                    />
+                                </div>
+                            ))}
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
+                <TabsContent value="response" className="min-w-0 space-y-6">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Response Contract</CardTitle>
+                            <CardDescription>Selected fields on the left, exact JSON on the right.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+                            <div className="rounded-2xl border">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>Field</TableHead>
+                                            <TableHead>Type</TableHead>
+                                            <TableHead>Visibility</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {form.data.public_settings_fields.length > 0 ? (
+                                            form.data.public_settings_fields.map((fieldKey) => (
+                                                <TableRow key={fieldKey}>
+                                                    <TableCell className="font-medium">{public_api_fields[fieldKey].label}</TableCell>
+                                                    <TableCell>
+                                                        <code className="text-xs">{public_api_fields[fieldKey].input}</code>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Badge variant="outline">
+                                                            {public_api_fields[fieldKey].editable ? "Editable" : "Computed"}
+                                                        </Badge>
                                                     </TableCell>
                                                 </TableRow>
-                                            )}
-                                        </TableBody>
-                                    </Table>
-                                </div>
+                                            ))
+                                        ) : (
+                                            <TableRow>
+                                                <TableCell colSpan={3} className="text-muted-foreground h-24 text-center">
+                                                    No fields selected yet.
+                                                </TableCell>
+                                            </TableRow>
+                                        )}
+                                    </TableBody>
+                                </Table>
+                            </div>
 
-                                <div className="space-y-3">
-                                    {!publicApiReady ? (
-                                        <Alert>
-                                            <AlertCircle className="h-4 w-4" />
-                                            <AlertTitle>Preview incomplete</AlertTitle>
-                                            <AlertDescription>
-                                                Enable the endpoint and choose at least one field to generate a usable response example.
-                                            </AlertDescription>
-                                        </Alert>
-                                    ) : null}
+                            <div className="space-y-3">
+                                {!publicApiReady ? (
+                                    <Alert>
+                                        <AlertCircle className="h-4 w-4" />
+                                        <AlertTitle>Preview incomplete</AlertTitle>
+                                        <AlertDescription>
+                                            Enable the endpoint and choose at least one field to generate a usable response example.
+                                        </AlertDescription>
+                                    </Alert>
+                                ) : null}
 
-                                    <pre className="overflow-x-auto rounded-2xl bg-slate-950 p-5 text-xs leading-6 text-slate-100">
-                                        {responseExample}
-                                    </pre>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    </TabsContent>
-                </Tabs>
-            </div>
+                                <pre className="overflow-x-auto rounded-2xl bg-slate-950 p-5 text-xs leading-6 text-slate-100">{responseExample}</pre>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+            </Tabs>
         </SystemManagementLayout>
     );
 }

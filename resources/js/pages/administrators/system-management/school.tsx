@@ -121,7 +121,6 @@ export default function SystemManagementSchoolPage({
             school_starting_date: system_school_starting_date ?? "",
             school_ending_date: system_school_ending_date ?? "",
         });
-         
     }, [system_semester, system_school_starting_date, system_school_ending_date]);
 
     useEffect(() => {
@@ -244,8 +243,8 @@ export default function SystemManagementSchoolPage({
             user={user}
             access={access}
             activeSection="school"
-            heading="School & Campus Config"
-            description="Manage your active operating environment and configure the directory of campus profiles."
+            heading="Institution & Campus"
+            description="Manage the active institution, campus identity, contacts, and academic calendar used throughout the portal."
         >
             <Tabs defaultValue="active" className="w-full space-y-6">
                 <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
@@ -560,10 +559,7 @@ export default function SystemManagementSchoolPage({
                         <CardContent className="p-6">
                             <div className="grid gap-6 sm:grid-cols-3">
                                 <div className="space-y-2.5">
-                                    <Label
-                                        htmlFor="system_semester"
-                                        className="text-muted-foreground text-xs font-semibold tracking-wider uppercase"
-                                    >
+                                    <Label htmlFor="system_semester" className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
                                         Default Semester
                                     </Label>
                                     <Select
@@ -595,9 +591,7 @@ export default function SystemManagementSchoolPage({
                                             id="school_starting_date"
                                             type="date"
                                             value={academicCalendarForm.data.school_starting_date}
-                                            onChange={(event) =>
-                                                academicCalendarForm.setData("school_starting_date", event.target.value)
-                                            }
+                                            onChange={(event) => academicCalendarForm.setData("school_starting_date", event.target.value)}
                                             className="bg-background pl-9"
                                         />
                                     </div>
@@ -615,9 +609,7 @@ export default function SystemManagementSchoolPage({
                                             id="school_ending_date"
                                             type="date"
                                             value={academicCalendarForm.data.school_ending_date}
-                                            onChange={(event) =>
-                                                academicCalendarForm.setData("school_ending_date", event.target.value)
-                                            }
+                                            onChange={(event) => academicCalendarForm.setData("school_ending_date", event.target.value)}
                                             className="bg-background pl-9"
                                         />
                                     </div>
@@ -914,7 +906,10 @@ export default function SystemManagementSchoolPage({
                             <Label htmlFor="edit_school_level" className="text-muted-foreground text-xs font-semibold uppercase">
                                 School Level
                             </Label>
-                            <Select value={editSchoolForm.data.school_level} onValueChange={(value) => editSchoolForm.setData("school_level", value ?? "")}>
+                            <Select
+                                value={editSchoolForm.data.school_level}
+                                onValueChange={(value) => editSchoolForm.setData("school_level", value ?? "")}
+                            >
                                 <SelectTrigger id="edit_school_level">
                                     <SelectValue placeholder="Choose school level" />
                                 </SelectTrigger>

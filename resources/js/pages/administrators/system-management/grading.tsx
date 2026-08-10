@@ -44,12 +44,7 @@ const SAMPLE_SUBJECTS_PERCENT = SAMPLE_SUBJECTS_POINT.map((s) => ({
     grade: Math.round(100 - (s.grade - 1) * 10),
 }));
 
-export default function SystemManagementGradingPage({
-    user,
-    grading_config,
-    courses_with_subjects,
-    access,
-}: SystemManagementPageProps) {
+export default function SystemManagementGradingPage({ user, grading_config, courses_with_subjects, access }: SystemManagementPageProps) {
     const courses: CourseWithSubjects[] = courses_with_subjects ?? [];
 
     const gradingForm = useForm<GradingFormData>({
@@ -66,10 +61,7 @@ export default function SystemManagementGradingPage({
     const [keywordDraft, setKeywordDraft] = useState("");
     const [courseSearch, setCourseSearch] = useState("");
 
-    const excludedSubjectIds = useMemo(
-        () => new Set(gradingForm.data.excluded_subject_ids),
-        [gradingForm.data.excluded_subject_ids],
-    );
+    const excludedSubjectIds = useMemo(() => new Set(gradingForm.data.excluded_subject_ids), [gradingForm.data.excluded_subject_ids]);
 
     const filteredCourses = useMemo(() => {
         const q = courseSearch.trim().toLowerCase();
@@ -79,9 +71,7 @@ export default function SystemManagementGradingPage({
         return courses
             .map((course) => {
                 const courseMatches = course.code.toLowerCase().includes(q) || course.title.toLowerCase().includes(q);
-                const matchingSubjects = course.subjects.filter(
-                    (s) => s.code.toLowerCase().includes(q) || s.title.toLowerCase().includes(q),
-                );
+                const matchingSubjects = course.subjects.filter((s) => s.code.toLowerCase().includes(q) || s.title.toLowerCase().includes(q));
                 if (courseMatches) {
                     return course;
                 }
@@ -167,8 +157,8 @@ export default function SystemManagementGradingPage({
             user={user}
             access={access}
             activeSection="grading"
-            heading="Grading System"
-            description="Configure how GWAs are computed across the platform and exempt subjects like OJT and NSTP from the calculation."
+            heading="Grade Calculation"
+            description="Configure GWA calculation, passing thresholds, and exclusions such as OJT and NSTP."
         >
             <Card>
                 <CardHeader>
@@ -178,16 +168,10 @@ export default function SystemManagementGradingPage({
                                 <Calculator className="h-5 w-5" />
                                 Grade Scale & Thresholds
                             </CardTitle>
-                            <CardDescription>
-                                Choose the grading scale used in transcripts and define the passing thresholds.
-                            </CardDescription>
+                            <CardDescription>Choose the grading scale used in transcripts and define the passing thresholds.</CardDescription>
                         </div>
                         <Button onClick={handleSave} disabled={gradingForm.processing}>
-                            {gradingForm.processing ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                                <Save className="mr-2 h-4 w-4" />
-                            )}
+                            {gradingForm.processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                             Save Changes
                         </Button>
                     </div>
@@ -200,34 +184,21 @@ export default function SystemManagementGradingPage({
                             onValueChange={(value) => gradingForm.setData("scale", value as GradingConfigPayload["scale"])}
                             className="grid gap-3 md:grid-cols-3"
                         >
-                            <label
-                                htmlFor="scale-auto"
-                                className="hover:bg-muted/40 flex cursor-pointer items-start gap-3 rounded-md border p-3"
-                            >
+                            <label htmlFor="scale-auto" className="hover:bg-muted/40 flex cursor-pointer items-start gap-3 rounded-md border p-3">
                                 <RadioGroupItem id="scale-auto" value="auto" className="mt-1" />
                                 <div className="space-y-0.5">
                                     <div className="font-medium">Auto detect</div>
-                                    <p className="text-muted-foreground text-xs">
-                                        Infer per record. Recommended when legacy records mix scales.
-                                    </p>
+                                    <p className="text-muted-foreground text-xs">Infer per record. Recommended when legacy records mix scales.</p>
                                 </div>
                             </label>
-                            <label
-                                htmlFor="scale-point"
-                                className="hover:bg-muted/40 flex cursor-pointer items-start gap-3 rounded-md border p-3"
-                            >
+                            <label htmlFor="scale-point" className="hover:bg-muted/40 flex cursor-pointer items-start gap-3 rounded-md border p-3">
                                 <RadioGroupItem id="scale-point" value="point" className="mt-1" />
                                 <div className="space-y-0.5">
                                     <div className="font-medium">Point (1.0 – 5.0)</div>
-                                    <p className="text-muted-foreground text-xs">
-                                        Lower is better. Common in Philippine tertiary institutions.
-                                    </p>
+                                    <p className="text-muted-foreground text-xs">Lower is better. Common in Philippine tertiary institutions.</p>
                                 </div>
                             </label>
-                            <label
-                                htmlFor="scale-percent"
-                                className="hover:bg-muted/40 flex cursor-pointer items-start gap-3 rounded-md border p-3"
-                            >
+                            <label htmlFor="scale-percent" className="hover:bg-muted/40 flex cursor-pointer items-start gap-3 rounded-md border p-3">
                                 <RadioGroupItem id="scale-percent" value="percent" className="mt-1" />
                                 <div className="space-y-0.5">
                                     <div className="font-medium">Percent (0 – 100)</div>
@@ -319,8 +290,8 @@ export default function SystemManagementGradingPage({
                         <div className="space-y-1">
                             <Label className="text-base">Include failed grades in GWA</Label>
                             <p className="text-muted-foreground text-sm">
-                                When enabled, subjects with a failing grade still contribute their weighted units to the GWA. Turn off
-                                to compute GWA from passed subjects only.
+                                When enabled, subjects with a failing grade still contribute their weighted units to the GWA. Turn off to compute GWA
+                                from passed subjects only.
                             </p>
                         </div>
                         <Switch
@@ -335,16 +306,16 @@ export default function SystemManagementGradingPage({
                 <CardHeader>
                     <CardTitle>GWA Exemptions</CardTitle>
                     <CardDescription>
-                        Subjects selected here — and subjects whose code or title matches any of the configured keywords — are
-                        excluded from GWA calculations but will still appear on the student's checklist.
+                        Subjects selected here — and subjects whose code or title matches any of the configured keywords — are excluded from GWA
+                        calculations but will still appear on the student's checklist.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                     <div className="space-y-3">
                         <Label>Keyword exclusions</Label>
                         <p className="text-muted-foreground text-sm">
-                            A subject is excluded if its code or title contains any of these keywords (case-insensitive). Useful for
-                            blanket-excluding OJT, NSTP, PE, and similar programs.
+                            A subject is excluded if its code or title contains any of these keywords (case-insensitive). Useful for blanket-excluding
+                            OJT, NSTP, PE, and similar programs.
                         </p>
                         <div className="flex flex-wrap gap-2">
                             {gradingForm.data.excluded_keywords.length === 0 && (
@@ -414,9 +385,7 @@ export default function SystemManagementGradingPage({
                                 <Info className="h-4 w-4" />
                                 <AlertTitle>No results</AlertTitle>
                                 <AlertDescription>
-                                    {courses.length === 0
-                                        ? "No courses are available yet."
-                                        : "No courses match your search. Try a different term."}
+                                    {courses.length === 0 ? "No courses are available yet." : "No courses match your search. Try a different term."}
                                 </AlertDescription>
                             </Alert>
                         ) : (
@@ -473,21 +442,16 @@ export default function SystemManagementGradingPage({
                                                                         <Checkbox
                                                                             id={`subject-${subject.id}`}
                                                                             checked={checked}
-                                                                            onCheckedChange={(value) =>
-                                                                                toggleSubject(subject.id, value === true)
-                                                                            }
+                                                                            onCheckedChange={(value) => toggleSubject(subject.id, value === true)}
                                                                         />
                                                                         <div className="flex-1">
                                                                             <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
                                                                                 <span className="font-mono">{subject.code}</span>
                                                                                 <span className="text-muted-foreground text-xs">
-                                                                                    Year {subject.year_level || "—"} • Sem{" "}
-                                                                                    {subject.semester || "—"}
+                                                                                    Year {subject.year_level || "—"} • Sem {subject.semester || "—"}
                                                                                 </span>
                                                                             </div>
-                                                                            <div className="text-muted-foreground text-xs">
-                                                                                {subject.title}
-                                                                            </div>
+                                                                            <div className="text-muted-foreground text-xs">{subject.title}</div>
                                                                         </div>
                                                                         <Badge variant="outline" className="font-mono text-xs">
                                                                             {subject.units}u
@@ -512,8 +476,8 @@ export default function SystemManagementGradingPage({
                 <CardHeader>
                     <CardTitle>Live Preview</CardTitle>
                     <CardDescription>
-                        Sample GWAs using the current configuration. Change the settings above and watch the preview update in real
-                        time — remember to click <strong>Save Changes</strong> to persist the configuration.
+                        Sample GWAs using the current configuration. Change the settings above and watch the preview update in real time — remember to
+                        click <strong>Save Changes</strong> to persist the configuration.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
@@ -525,8 +489,7 @@ export default function SystemManagementGradingPage({
                             </div>
                             <div className="text-muted-foreground mt-1 text-xs">
                                 {gradeScaleLabel(samplePoint.scale) && `(${gradeScaleLabel(samplePoint.scale)}) `}
-                                {samplePoint.gradedCount}/{samplePoint.itemCount} subjects •{" "}
-                                {samplePoint.excludedCount} excluded
+                                {samplePoint.gradedCount}/{samplePoint.itemCount} subjects • {samplePoint.excludedCount} excluded
                             </div>
                         </div>
                         <div className="rounded-md border p-4">
@@ -536,8 +499,7 @@ export default function SystemManagementGradingPage({
                             </div>
                             <div className="text-muted-foreground mt-1 text-xs">
                                 {gradeScaleLabel(samplePercent.scale) && `(${gradeScaleLabel(samplePercent.scale)}) `}
-                                {samplePercent.gradedCount}/{samplePercent.itemCount} subjects •{" "}
-                                {samplePercent.excludedCount} excluded
+                                {samplePercent.gradedCount}/{samplePercent.itemCount} subjects • {samplePercent.excludedCount} excluded
                             </div>
                         </div>
                     </div>
@@ -569,9 +531,7 @@ export default function SystemManagementGradingPage({
                                             <td className="px-3 py-2">{subject.title}</td>
                                             <td className="px-3 py-2 text-right">{subject.units}</td>
                                             <td className="px-3 py-2 text-right font-mono">{subject.grade}</td>
-                                            <td className="px-3 py-2 text-right font-mono">
-                                                {SAMPLE_SUBJECTS_PERCENT[idx].grade}
-                                            </td>
+                                            <td className="px-3 py-2 text-right font-mono">{SAMPLE_SUBJECTS_PERCENT[idx].grade}</td>
                                             <td className="px-3 py-2 text-center">
                                                 {excluded ? (
                                                     <Badge variant="outline" className="text-amber-600">

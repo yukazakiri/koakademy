@@ -29,7 +29,7 @@ it('forbids access to a system management page without the matching permission',
         ->assertForbidden();
 });
 
-it('redirects the index route to the first section the user can access', function (): void {
+it('renders the settings home when the user can access any system settings section', function (): void {
     $user = User::factory()->create([
         'role' => UserRole::ITSupport,
     ]);
@@ -39,7 +39,11 @@ it('redirects the index route to the first section the user can access', functio
 
     actingAs($user)
         ->get(portalUrlForAdministrators('/administrators/system-management'))
-        ->assertRedirect(portalUrlForAdministrators('/administrators/system-management/brand'));
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->component('administrators/system-management/index', false)
+            ->where('access.active_section', null)
+            ->where('access.sections.brand.can_view', true));
 });
 
 it('exposes only permitted sections in the system management access payload', function (): void {

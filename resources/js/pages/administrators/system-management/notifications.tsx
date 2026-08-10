@@ -1,3 +1,4 @@
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -103,40 +104,45 @@ export default function SystemManagementNotificationsPage({ user, notification_c
             user={user}
             access={access}
             activeSection="notifications"
-            heading="Notification Channels"
-            description="Enable, disable, and configure notification delivery channels used across the application."
+            heading="Notifications"
+            description="Configure the delivery channels used for email, in-app, realtime, and SMS updates."
         >
-            {/* ── Master toggle card ─────────────────────────────────── */}
+            <div className="bg-card/70 flex flex-col gap-4 rounded-2xl border p-4 shadow-sm backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-3">
+                    <div className="bg-primary/10 text-primary rounded-xl p-2.5">
+                        <BellRing className="h-5 w-5" />
+                    </div>
+                    <div>
+                        <p className="font-medium">
+                            {form.data.enabled_channels.length} delivery channel{form.data.enabled_channels.length === 1 ? "" : "s"} active
+                        </p>
+                        <p className="text-muted-foreground text-sm">Only enabled channels can deliver future notifications.</p>
+                    </div>
+                </div>
+                <Button
+                    onClick={() =>
+                        submitSystemForm({
+                            form,
+                            routeName: "administrators.system-management.notifications.update",
+                            successMessage: "Notification channels updated successfully.",
+                            errorMessage: "Failed to update notification channels.",
+                        })
+                    }
+                    disabled={form.processing || !form.isDirty}
+                >
+                    {form.processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                    Save changes
+                </Button>
+            </div>
+
             <Card>
                 <CardHeader>
-                    <div className="flex items-start justify-between gap-3">
-                        <div className="space-y-1">
-                            <CardTitle className="flex items-center gap-2">
-                                <BellRing className="h-5 w-5" />
-                                Channel Configuration
-                            </CardTitle>
-                            <CardDescription>
-                                Toggle each channel on or off. Provider-specific settings appear below when a channel is active.
-                            </CardDescription>
-                        </div>
-                        <Button
-                            onClick={() =>
-                                submitSystemForm({
-                                    form: form as any,
-                                    routeName: "administrators.system-management.notifications.update",
-                                    successMessage: "Notification channels updated successfully.",
-                                    errorMessage: "Failed to update notification channels.",
-                                })
-                            }
-                            disabled={form.processing}
-                        >
-                            {form.processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                            Save
-                        </Button>
-                    </div>
+                    <CardTitle>Delivery channels</CardTitle>
+                    <CardDescription>
+                        Choose how the institution can reach people. Connection details appear only when they are needed.
+                    </CardDescription>
                 </CardHeader>
-
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-2">
                     {CHANNEL_DEFINITIONS.map((channel) => {
                         const Icon = channel.icon;
                         const active = isEnabled(channel.key);
@@ -144,13 +150,13 @@ export default function SystemManagementNotificationsPage({ user, notification_c
                         return (
                             <div
                                 key={channel.key}
-                                className={`flex items-center justify-between rounded-lg border p-4 transition-colors ${active ? "border-primary/30 bg-primary/5" : "border-border"}`}
+                                className={`flex items-center justify-between gap-4 rounded-xl border p-4 transition-colors duration-200 motion-reduce:transition-none ${active ? "border-primary/30 bg-primary/5" : "border-border"}`}
                             >
-                                <div className="flex items-center gap-4">
+                                <div className="flex min-w-0 items-center gap-3">
                                     <div className={`bg-muted rounded-lg p-2.5 ${channel.color}`}>
                                         <Icon className="h-5 w-5" />
                                     </div>
-                                    <div>
+                                    <div className="min-w-0">
                                         <div className="flex items-center gap-2">
                                             <span className="font-medium">{channel.label}</span>
                                             {active && (
@@ -162,186 +168,213 @@ export default function SystemManagementNotificationsPage({ user, notification_c
                                         <p className="text-muted-foreground text-sm">{channel.description}</p>
                                     </div>
                                 </div>
-                                <Switch checked={active} onCheckedChange={() => toggleChannel(channel.key)} />
+                                <Switch
+                                    checked={active}
+                                    onCheckedChange={() => toggleChannel(channel.key)}
+                                    aria-label={`Enable ${channel.label} notifications`}
+                                />
                             </div>
                         );
                     })}
                 </CardContent>
             </Card>
 
-            {/* ── Pusher config card ─────────────────────────────────── */}
-            {showPusherConfig && (
+            {(showPusherConfig || showSmsConfig || Object.keys(form.data.third_party_services || {}).length > 0) && (
                 <Card>
                     <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-base">
-                            <Bolt className="h-4 w-4 text-orange-500" />
-                            Pusher Configuration
-                        </CardTitle>
+                        <CardTitle>Connections</CardTitle>
                         <CardDescription>
-                            Credentials for Pusher Channels. These values are also written to your environment file on save.
+                            Configure only the providers your active channels rely on. Sensitive values remain hidden until you choose to edit them.
                         </CardDescription>
                     </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div className="grid gap-4 sm:grid-cols-2">
-                            <div className="space-y-2">
-                                <Label htmlFor="pusher_app_id">App ID</Label>
-                                <Input
-                                    id="pusher_app_id"
-                                    value={form.data.pusher.app_id}
-                                    onChange={(e) => form.setData("pusher", { ...form.data.pusher, app_id: e.target.value })}
-                                    placeholder="123456"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="pusher_key">Key</Label>
-                                <Input
-                                    id="pusher_key"
-                                    value={form.data.pusher.key}
-                                    onChange={(e) => form.setData("pusher", { ...form.data.pusher, key: e.target.value })}
-                                    placeholder="xxxxxxxxxxxxxxxx"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="pusher_secret">Secret</Label>
-                                <Input
-                                    id="pusher_secret"
-                                    type="password"
-                                    value={form.data.pusher.secret}
-                                    onChange={(e) => form.setData("pusher", { ...form.data.pusher, secret: e.target.value })}
-                                    placeholder="••••••••••••"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="pusher_cluster">Cluster</Label>
-                                <Select
-                                    value={form.data.pusher.cluster || "mt1"}
-                                    onValueChange={(value) => form.setData("pusher", { ...form.data.pusher, cluster: value })}
-                                >
-                                    <SelectTrigger id="pusher_cluster">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="mt1">mt1 (US East)</SelectItem>
-                                        <SelectItem value="us2">us2 (US East 2)</SelectItem>
-                                        <SelectItem value="us3">us3 (US West)</SelectItem>
-                                        <SelectItem value="eu">eu (EU Ireland)</SelectItem>
-                                        <SelectItem value="ap1">ap1 (Asia Pacific – Singapore)</SelectItem>
-                                        <SelectItem value="ap2">ap2 (Asia Pacific – Mumbai)</SelectItem>
-                                        <SelectItem value="ap3">ap3 (Asia Pacific – Tokyo)</SelectItem>
-                                        <SelectItem value="ap4">ap4 (Asia Pacific – Sydney)</SelectItem>
-                                        <SelectItem value="sa1">sa1 (South America – São Paulo)</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        </div>
+                    <CardContent>
+                        <Accordion type="multiple" className="space-y-2">
+                            {showPusherConfig && (
+                                <AccordionItem value="pusher" className="rounded-xl border px-4">
+                                    <AccordionTrigger className="py-4 text-left hover:no-underline">
+                                        <span className="flex items-center gap-3">
+                                            <span className="rounded-lg bg-orange-500/10 p-2 text-orange-500">
+                                                <Bolt className="h-4 w-4" />
+                                            </span>
+                                            <span>
+                                                <span className="block font-medium">Pusher Channels</span>
+                                                <span className="text-muted-foreground block text-sm font-normal">
+                                                    Live browser notifications and broadcasts
+                                                </span>
+                                            </span>
+                                        </span>
+                                    </AccordionTrigger>
+                                    <AccordionContent className="pb-4">
+                                        <p className="text-muted-foreground mb-4 text-sm">
+                                            These values are written to the environment file when you save.
+                                        </p>
+                                        <div className="grid gap-4 sm:grid-cols-2">
+                                            <div className="space-y-2">
+                                                <Label htmlFor="pusher_app_id">App ID</Label>
+                                                <Input
+                                                    id="pusher_app_id"
+                                                    value={form.data.pusher.app_id}
+                                                    onChange={(e) => form.setData("pusher", { ...form.data.pusher, app_id: e.target.value })}
+                                                    placeholder="123456"
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label htmlFor="pusher_key">Key</Label>
+                                                <Input
+                                                    id="pusher_key"
+                                                    value={form.data.pusher.key}
+                                                    onChange={(e) => form.setData("pusher", { ...form.data.pusher, key: e.target.value })}
+                                                    placeholder="xxxxxxxxxxxxxxxx"
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label htmlFor="pusher_secret">Secret</Label>
+                                                <Input
+                                                    id="pusher_secret"
+                                                    type="password"
+                                                    value={form.data.pusher.secret}
+                                                    onChange={(e) => form.setData("pusher", { ...form.data.pusher, secret: e.target.value })}
+                                                    placeholder="••••••••••••"
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label htmlFor="pusher_cluster">Cluster</Label>
+                                                <Select
+                                                    value={form.data.pusher.cluster || "mt1"}
+                                                    onValueChange={(value) => form.setData("pusher", { ...form.data.pusher, cluster: value })}
+                                                >
+                                                    <SelectTrigger id="pusher_cluster">
+                                                        <SelectValue />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="mt1">mt1 (US East)</SelectItem>
+                                                        <SelectItem value="us2">us2 (US East 2)</SelectItem>
+                                                        <SelectItem value="us3">us3 (US West)</SelectItem>
+                                                        <SelectItem value="eu">eu (EU Ireland)</SelectItem>
+                                                        <SelectItem value="ap1">ap1 (Asia Pacific – Singapore)</SelectItem>
+                                                        <SelectItem value="ap2">ap2 (Asia Pacific – Mumbai)</SelectItem>
+                                                        <SelectItem value="ap3">ap3 (Asia Pacific – Tokyo)</SelectItem>
+                                                        <SelectItem value="ap4">ap4 (Asia Pacific – Sydney)</SelectItem>
+                                                        <SelectItem value="sa1">sa1 (South America – São Paulo)</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                        </div>
+                                    </AccordionContent>
+                                </AccordionItem>
+                            )}
+
+                            {showSmsConfig && (
+                                <AccordionItem value="sms" className="rounded-xl border px-4">
+                                    <AccordionTrigger className="py-4 text-left hover:no-underline">
+                                        <span className="flex items-center gap-3">
+                                            <span className="rounded-lg bg-violet-500/10 p-2 text-violet-500">
+                                                <MessageSquare className="h-4 w-4" />
+                                            </span>
+                                            <span>
+                                                <span className="block font-medium">SMS gateway</span>
+                                                <span className="text-muted-foreground block text-sm font-normal">
+                                                    Text-message delivery provider
+                                                </span>
+                                            </span>
+                                        </span>
+                                    </AccordionTrigger>
+                                    <AccordionContent className="pb-4">
+                                        <div className="grid gap-4 sm:grid-cols-2">
+                                            <div className="space-y-2">
+                                                <Label htmlFor="sms_provider">Provider</Label>
+                                                <Select
+                                                    value={form.data.sms.provider || ""}
+                                                    onValueChange={(value) => form.setData("sms", { ...form.data.sms, provider: value })}
+                                                >
+                                                    <SelectTrigger id="sms_provider">
+                                                        <SelectValue placeholder="Select a provider" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="vonage">Vonage (Nexmo)</SelectItem>
+                                                        <SelectItem value="twilio">Twilio</SelectItem>
+                                                        <SelectItem value="semaphore">Semaphore</SelectItem>
+                                                        <SelectItem value="other">Other</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label htmlFor="sms_sender_id">Sender ID / From</Label>
+                                                <Input
+                                                    id="sms_sender_id"
+                                                    value={form.data.sms.sender_id}
+                                                    onChange={(e) => form.setData("sms", { ...form.data.sms, sender_id: e.target.value })}
+                                                    placeholder="KOA"
+                                                />
+                                            </div>
+                                            <div className="space-y-2 sm:col-span-2">
+                                                <Label htmlFor="sms_api_key">API key / auth token</Label>
+                                                <Input
+                                                    id="sms_api_key"
+                                                    type="password"
+                                                    value={form.data.sms.api_key}
+                                                    onChange={(e) => form.setData("sms", { ...form.data.sms, api_key: e.target.value })}
+                                                    placeholder="••••••••••••"
+                                                />
+                                            </div>
+                                        </div>
+                                    </AccordionContent>
+                                </AccordionItem>
+                            )}
+
+                            {Object.entries(form.data.third_party_services || {}).map(([serviceName, config]) => (
+                                <AccordionItem key={serviceName} value={`service-${serviceName}`} className="rounded-xl border px-4">
+                                    <AccordionTrigger className="py-4 text-left hover:no-underline">
+                                        <span className="flex items-center gap-3">
+                                            <span className="bg-primary/10 text-primary rounded-lg p-2">
+                                                <Bolt className="h-4 w-4" />
+                                            </span>
+                                            <span>
+                                                <span className="block font-medium capitalize">{serviceName}</span>
+                                                <span className="text-muted-foreground block text-sm font-normal">Optional service overrides</span>
+                                            </span>
+                                        </span>
+                                    </AccordionTrigger>
+                                    <AccordionContent className="pb-4">
+                                        <p className="text-muted-foreground mb-4 text-sm">Leave a value blank to keep the environment default.</p>
+                                        <div className="grid gap-4 sm:grid-cols-2">
+                                            {Object.entries(config || {}).map(([key, value]) => {
+                                                const isSensitive =
+                                                    key.toLowerCase().includes("secret") ||
+                                                    key.toLowerCase().includes("token") ||
+                                                    key.toLowerCase().includes("key");
+                                                return (
+                                                    <div key={key} className="space-y-2">
+                                                        <Label htmlFor={`${serviceName}_${key}`} className="capitalize">
+                                                            {key.replace(/_/g, " ")}
+                                                        </Label>
+                                                        <Input
+                                                            id={`${serviceName}_${key}`}
+                                                            type={isSensitive ? "password" : "text"}
+                                                            value={value || ""}
+                                                            onChange={(e) => {
+                                                                const newServices = { ...form.data.third_party_services };
+                                                                newServices[serviceName] = { ...newServices[serviceName], [key]: e.target.value };
+                                                                form.setData("third_party_services", newServices);
+                                                            }}
+                                                            placeholder={`Optionally override ${key}`}
+                                                        />
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </AccordionContent>
+                                </AccordionItem>
+                            ))}
+                        </Accordion>
                     </CardContent>
                 </Card>
             )}
 
-            {/* ── SMS config card ────────────────────────────────────── */}
-            {showSmsConfig && (
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-base">
-                            <MessageSquare className="h-4 w-4 text-violet-500" />
-                            SMS Provider Configuration
-                        </CardTitle>
-                        <CardDescription>Enter credentials for your SMS gateway provider (Vonage, Twilio, Semaphore, etc.).</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div className="grid gap-4 sm:grid-cols-2">
-                            <div className="space-y-2">
-                                <Label htmlFor="sms_provider">Provider</Label>
-                                <Select
-                                    value={form.data.sms.provider || ""}
-                                    onValueChange={(value) => form.setData("sms", { ...form.data.sms, provider: value })}
-                                >
-                                    <SelectTrigger id="sms_provider">
-                                        <SelectValue placeholder="Select a provider" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="vonage">Vonage (Nexmo)</SelectItem>
-                                        <SelectItem value="twilio">Twilio</SelectItem>
-                                        <SelectItem value="semaphore">Semaphore</SelectItem>
-                                        <SelectItem value="other">Other</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="sms_sender_id">Sender ID / From</Label>
-                                <Input
-                                    id="sms_sender_id"
-                                    value={form.data.sms.sender_id}
-                                    onChange={(e) => form.setData("sms", { ...form.data.sms, sender_id: e.target.value })}
-                                    placeholder="KOA"
-                                />
-                            </div>
-                            <div className="space-y-2 sm:col-span-2">
-                                <Label htmlFor="sms_api_key">API Key / Auth Token</Label>
-                                <Input
-                                    id="sms_api_key"
-                                    type="password"
-                                    value={form.data.sms.api_key}
-                                    onChange={(e) => form.setData("sms", { ...form.data.sms, api_key: e.target.value })}
-                                    placeholder="••••••••••••"
-                                />
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-            )}
-
-            {/* ── Third-Party Services config cards ────────────────────── */}
-            {Object.entries(form.data.third_party_services || {}).map(([serviceName, config]) => (
-                <Card key={serviceName}>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-base capitalize">
-                            <Bolt className="text-primary h-4 w-4" />
-                            {serviceName} Configuration
-                        </CardTitle>
-                        <CardDescription>Auto-detected from your services configuration. Override specific keys below.</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div className="grid gap-4 sm:grid-cols-2">
-                            {Object.entries(config || {}).map(([key, value]) => {
-                                // Simple heuristic: if key contains 'secret', 'token', or 'key', make it a password field
-                                const isSensitive =
-                                    key.toLowerCase().includes("secret") || key.toLowerCase().includes("token") || key.toLowerCase().includes("key");
-                                return (
-                                    <div key={key} className="space-y-2">
-                                        <Label htmlFor={`${serviceName}_${key}`} className="capitalize">
-                                            {key.replace(/_/g, " ")}
-                                        </Label>
-                                        <Input
-                                            id={`${serviceName}_${key}`}
-                                            type={isSensitive ? "password" : "text"}
-                                            value={value || ""}
-                                            onChange={(e) => {
-                                                const newServices = { ...form.data.third_party_services };
-                                                newServices[serviceName] = {
-                                                    ...newServices[serviceName],
-                                                    [key]: e.target.value,
-                                                };
-                                                form.setData("third_party_services", newServices);
-                                            }}
-                                            placeholder={`Optionally override ${key}`}
-                                        />
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </CardContent>
-                </Card>
-            ))}
-
-            {/* ── Summary / info card ────────────────────────────────── */}
             <Card>
                 <CardHeader>
-                    <CardTitle className="text-base">Active Channels Summary</CardTitle>
-                    <CardDescription>
-                        When services or controllers send notifications, only the channels marked active above will be used. You can reference the{" "}
-                        <code className="text-xs">NotificationChannel</code> enum in PHP for type-safe channel selection.
-                    </CardDescription>
+                    <CardTitle className="text-base">What will happen</CardTitle>
+                    <CardDescription>Only the channels selected above will be used when the application sends a notification.</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="flex flex-wrap gap-2">

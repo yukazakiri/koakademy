@@ -341,7 +341,7 @@ export interface SystemManagementSectionAccess {
 }
 
 export interface SystemManagementAccess {
-    active_section: SystemManagementSectionKey;
+    active_section: SystemManagementSectionKey | null;
     sections: Record<SystemManagementSectionKey, SystemManagementSectionAccess>;
 }
 

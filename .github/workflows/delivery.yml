@@ -138,8 +138,34 @@ jobs:
             --build-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
             --repository "${GITHUB_REPOSITORY}"
 
+      - name: Check immutable release tags
+        id: existing
+        env:
+          IMAGE: ${{ steps.release.outputs.image }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          SOURCE_SHA: ${{ steps.release.outputs.source_sha }}
+        run: |
+          sha_ref="${IMAGE}:sha-${SOURCE_SHA}"
+          release_ref="${IMAGE}:${RELEASE_TAG}"
+          sha_digest="$(docker buildx imagetools inspect "${sha_ref}" --format '{{.Manifest.Digest}}' 2>/dev/null || true)"
+          release_digest="$(docker buildx imagetools inspect "${release_ref}" --format '{{.Manifest.Digest}}' 2>/dev/null || true)"
+
+          if [[ -z "${sha_digest}" && -z "${release_digest}" ]]; then
+            printf 'build_required=true\n' >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          [[ -n "${sha_digest}" && -n "${release_digest}" && "${sha_digest}" == "${release_digest}" ]] || {
+            printf 'Immutable release tags already exist but do not resolve to one digest. Refusing to overwrite them.\n' >&2
+            exit 1
+          }
+
+          printf 'build_required=false\n' >> "${GITHUB_OUTPUT}"
+          printf 'digest=%s\n' "${sha_digest}" >> "${GITHUB_OUTPUT}"
+
       - name: Build and push the immutable release image
         id: build
+        if: steps.existing.outputs.build_required == 'true'
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
@@ -162,11 +188,12 @@ jobs:
         id: image
         env:
           BUILT_DIGEST: ${{ steps.build.outputs.digest }}
+          EXISTING_DIGEST: ${{ steps.existing.outputs.digest }}
           IMAGE: ${{ steps.release.outputs.image }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
           SOURCE_SHA: ${{ steps.release.outputs.source_sha }}
         run: |
-          digest="${BUILT_DIGEST}"
+          digest="${BUILT_DIGEST:-${EXISTING_DIGEST}}"
           [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]] || {
             printf 'Buildx did not return an immutable image digest.\n' >&2
             exit 1

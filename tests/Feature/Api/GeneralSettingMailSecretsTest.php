@@ -13,6 +13,7 @@ it('does not persist mail transport credentials through the generic settings API
     actingAs($user, 'sanctum')
         ->postJson('/api/settings', [
             'site_name' => 'Test School',
+            'currency' => 'PHP',
             'email_from_address' => 'legacy@school.example',
             'email_from_name' => 'Legacy Sender',
             'email_settings' => [
@@ -27,6 +28,7 @@ it('does not persist mail transport credentials through the generic settings API
     $setting = GeneralSetting::query()->sole();
 
     expect($setting->email_settings)->toBeNull()
+        ->and($setting->currency)->toBe('PHP')
         ->and($setting->email_from_address)->toBeNull()
         ->and($setting->email_from_name)->toBeNull()
         ->and($setting->sequenzy_api_key)->toBeNull();

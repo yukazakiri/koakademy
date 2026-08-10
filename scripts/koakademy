@@ -183,6 +183,7 @@ PREVIOUS_KOAKADEMY_IMAGE=
 APP_REPLICAS=0
 RELEASE_TAG=$release_tag
 RELEASE_DIRECTORY=$release_directory
+INSTALLATION_COMPLETE=false
 EOF
     chmod 600 "$runtime_file"
 }
@@ -344,18 +345,36 @@ ensure_release_configs() {
 }
 
 deploy_stack() {
+    local image_override="${1:-}"
     set -a
     # shellcheck disable=SC1090
     source "$runtime_file"
     set +a
+    if [[ -n "$image_override" ]]; then
+        KOAKADEMY_IMAGE="$image_override" docker stack deploy --with-registry-auth --prune --compose-file "$release_directory/swarm-stack.yml" "$STACK_NAME"
+        return
+    fi
     docker stack deploy --with-registry-auth --prune --compose-file "$release_directory/swarm-stack.yml" "$STACK_NAME"
 }
 
 wait_for_service() {
     local service="$1"
+    local expected_image="${2:-}"
     local deadline="$((SECONDS + 600))"
-    local states
+    local states update_state configured_image
     while (( SECONDS < deadline )); do
+        if [[ -n "$expected_image" ]]; then
+            configured_image="$(docker service inspect "$service" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || true)"
+            [[ "$configured_image" == "$expected_image" ]] || { sleep 2; continue; }
+            update_state="$(docker service inspect "$service" --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{end}}' 2>/dev/null || true)"
+            case "$update_state" in
+                paused|rollback_paused|rollback_completed)
+                    docker service ps "$service" --no-trunc >&2 || true
+                    fail "Service $service did not complete its update ($update_state)."
+                    ;;
+                updating|rollback_started) sleep 2; continue ;;
+            esac
+        fi
         # Service history includes intentionally stopped tasks after a rolling
         # deployment. Inspect only the tasks whose desired state is running so
         # a healthy replacement is not mistaken for a failed update.
@@ -396,7 +415,9 @@ run_app_job() {
         --mount type=volume,source=koakademy_app-storage,target=/app/storage \
         --entrypoint /bin/sh "$image" /run/configs/koakademy-app-entrypoint "$@" >/dev/null
     while (( SECONDS < deadline )); do
-        states="$(docker service ps "$job_name" --no-trunc --format '{{.CurrentState}}' 2>/dev/null || true)"
+        # Docker lists the newest attempt first, so historical failures do not
+        # prematurely exhaust the retry policy of a replicated job.
+        states="$(docker service ps "$job_name" --no-trunc --format '{{.CurrentState}}' 2>/dev/null | head -n 1 || true)"
         grep -qi Complete <<<"$states" && { docker service rm "$job_name" >/dev/null 2>&1 || true; return; }
         grep -Eqi 'Rejected|Failed' <<<"$states" && { docker service ps "$job_name" --no-trunc >&2 || true; fail "Job $job_name failed."; }
         sleep 2
@@ -437,23 +458,33 @@ backup_database() {
 }
 
 perform_install() {
-    local domain image
-    [[ ! -f "$runtime_file" ]] || fail "KoAkademy is already installed. Use update or configure."
+    local domain image resuming=false
     require_root
-    ensure_docker
-    reject_legacy_installation
-    ensure_ports_available
-    ensure_swarm_manager
-    if [[ -z "${KOAKADEMY_DOMAIN:-}" ]]; then
-        ask KOAKADEMY_DOMAIN "Public HTTPS domain" ""
-        domain="$ANSWER"
-    else
+    if [[ -f "$runtime_file" ]]; then
+        load_runtime
+        [[ "${INSTALLATION_COMPLETE:-false}" != true ]] || fail "KoAkademy is already installed. Use update or configure."
+        release_tag="$RELEASE_TAG"
         domain="$KOAKADEMY_DOMAIN"
+        resuming=true
+        info "Resuming the incomplete KoAkademy installation for $domain."
+    else
+        ensure_docker
+        reject_legacy_installation
+        ensure_ports_available
+        ensure_swarm_manager
+        if [[ -z "${KOAKADEMY_DOMAIN:-}" ]]; then
+            ask KOAKADEMY_DOMAIN "Public HTTPS domain" ""
+            domain="$ANSWER"
+        else
+            domain="$KOAKADEMY_DOMAIN"
+        fi
+        validate_domain "$domain"
     fi
-    validate_domain "$domain"
     fetch_release
     image="$(release_image)"
-    write_initial_runtime "$domain" "$image"
+    if [[ "$resuming" == false ]]; then
+        write_initial_runtime "$domain" "$image"
+    fi
     load_runtime
     ensure_initial_secrets
     ensure_release_configs
@@ -469,9 +500,10 @@ perform_install() {
     run_app_job "koakademy-migrate-$(date +%s)" "$KOAKADEMY_IMAGE" php artisan migrate --force --no-interaction
     set_runtime APP_REPLICAS 1
     deploy_stack
-    wait_for_service "${STACK_NAME}_app"
+    wait_for_service "${STACK_NAME}_app" "$KOAKADEMY_IMAGE"
     verify_https
     install_operator_command
+    set_runtime INSTALLATION_COMPLETE true
     info "KoAkademy is ready at https://$KOAKADEMY_DOMAIN/setup"
 }
 
@@ -489,15 +521,14 @@ perform_update() {
     backup="$(backup_database)"
     info "Running migrations for $release_tag before replacing the application."
     run_app_job "koakademy-migrate-$(date +%s)" "$image" php artisan migrate --force --no-interaction
-    set_runtime PREVIOUS_KOAKADEMY_IMAGE "$previous"
+    ensure_release_configs
+    deploy_stack "$image"
+    wait_for_service "${STACK_NAME}_app" "$image"
+    verify_https
     set_runtime KOAKADEMY_IMAGE "$image"
     set_runtime RELEASE_TAG "$release_tag"
     set_runtime RELEASE_DIRECTORY "$release_directory"
     set_runtime APP_REPLICAS 1
-    ensure_release_configs
-    deploy_stack
-    wait_for_service "${STACK_NAME}_app"
-    verify_https
     install_operator_command
     info "Updated to $release_tag. Database backup: $backup"
     warn "Rollback is application-only; restore that backup when schema compatibility is uncertain."
@@ -506,7 +537,7 @@ perform_update() {
 apply_configuration() {
     set_runtime APP_REPLICAS 1
     deploy_stack
-    wait_for_service "${STACK_NAME}_app"
+    wait_for_service "${STACK_NAME}_app" "$KOAKADEMY_IMAGE"
     verify_https
 }
 
@@ -611,8 +642,8 @@ perform_rollback() {
         [[ "$answer" =~ ^[Yy]$ ]] || exit 0
     fi
     current="$KOAKADEMY_IMAGE"
+    deploy_stack "$target"; wait_for_service "${STACK_NAME}_app" "$target"; verify_https
     set_runtime KOAKADEMY_IMAGE "$target"; set_runtime PREVIOUS_KOAKADEMY_IMAGE "$current"
-    deploy_stack; wait_for_service "${STACK_NAME}_app"; verify_https
     warn "Application image rolled back. Database migrations were not reversed."
 }
 

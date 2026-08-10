@@ -53,6 +53,7 @@ case "$command_name" in
         create services koakademy_caddy
         if [[ "${APP_REPLICAS:-1}" != 0 ]]; then
             create services koakademy_app
+            printf '%s\n' "${KOAKADEMY_IMAGE:-}" >"$state/services/koakademy_app_image"
         fi
         ;;
     ps)
@@ -88,6 +89,13 @@ case "$command_name" in
                     printf 'Complete\n'
                 else
                     printf 'Running\n'
+                fi
+                ;;
+            inspect)
+                if [[ "$*" == *'UpdateStatus'* ]]; then
+                    printf '\n'
+                else
+                    cat "$state/services/koakademy_app_image"
                 fi
                 ;;
             *) exit 1 ;;

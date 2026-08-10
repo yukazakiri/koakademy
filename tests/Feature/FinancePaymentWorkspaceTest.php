@@ -77,6 +77,10 @@ function tuitionPaymentPayload(Student $student, StudentTuition $tuition, float 
 
 it('shares the cashier-approved catalog charges with the payment workspace', function (): void {
     $cashier = paymentWorkspaceCashier();
+    $uniform = InventoryProduct::factory()->create([
+        'price' => 650.25,
+        'is_active' => true,
+    ]);
 
     $this->actingAs($cashier)
         ->get(portalUrlForAdministrators('/administrators/finance/payments/create'))
@@ -87,6 +91,8 @@ it('shares the cashier-approved catalog charges with the payment workspace', fun
             ->where('fee_options.6.label', 'ID Replacement')
             ->where('fee_options.7.key', 'lace_replacement')
             ->where('fee_options.7.label', 'Lace Replacement')
+            ->where('items.0.id', $uniform->id)
+            ->where('items.0.price', 650.25)
         );
 });
 
@@ -295,8 +301,11 @@ it('records fee and inventory spreadsheet rows for a student without tuition', f
         ])
         ->assertOk()
         ->assertJsonPath('results.0.status', 'recorded')
+        ->assertJsonPath('results.0.amount', 75.5)
         ->assertJsonPath('results.1.status', 'recorded')
+        ->assertJsonPath('results.1.amount', 30)
         ->assertJsonPath('results.2.status', 'recorded')
+        ->assertJsonPath('results.2.amount', 650)
         ->assertJsonPath('summary.recorded_count', 3);
 
     $transactions = Transaction::query()->orderBy('id')->get();
@@ -337,6 +346,7 @@ it('records valid spreadsheet rows, retains rejected rows, and makes retries ide
     $first->assertOk()
         ->assertJsonPath('results.0.client_row_id', 'row-1')
         ->assertJsonPath('results.0.status', 'recorded')
+        ->assertJsonPath('results.0.amount', 10.25)
         ->assertJsonPath('results.1.client_row_id', 'row-2')
         ->assertJsonPath('results.1.status', 'rejected')
         ->assertJsonPath('summary.recorded_count', 1)
@@ -349,6 +359,7 @@ it('records valid spreadsheet rows, retains rejected rows, and makes retries ide
         ])
         ->assertOk()
         ->assertJsonPath('results.0.status', 'duplicate')
+        ->assertJsonPath('results.0.amount', 10.25)
         ->assertJsonPath('summary.duplicate_count', 1);
 
     $tuition->refresh();

@@ -105,11 +105,16 @@ jobs:
             const todoOptionId = process.env.STATUS_TODO_OPTION_ID;
             const issueNodeId = context.payload.issue.node_id;
 
-            const getProjectItems = async () => github.graphql(
-              `query($projectId: ID!) {
+            const findProjectItem = async (contentId) => {
+              let cursor = null;
+
+              do {
+                const result = await github.graphql(
+                  `query($projectId: ID!, $cursor: String) {
                 node(id: $projectId) {
                   ... on ProjectV2 {
-                    items(first: 100) {
+                    items(first: 100, after: $cursor) {
+                      pageInfo { hasNextPage endCursor }
                       nodes {
                         id
                         content {
@@ -119,16 +124,22 @@ jobs:
                     }
                   }
                 }
-              }`,
-              { projectId },
-            );
+                  }`,
+                  { projectId, cursor },
+                );
+                const items = result.node.items;
+                const match = items.nodes.find((item) => item.content?.id === contentId);
+                if (match) return match.id;
+                cursor = items.pageInfo.hasNextPage ? items.pageInfo.endCursor : null;
+              } while (cursor);
+
+              return null;
+            };
 
             let projectItemId = null;
-            for (let attempt = 1; attempt <= 10; attempt += 1) {
-              const result = await getProjectItems();
-              const match = result.node.items.nodes.find((item) => item.content?.id === issueNodeId);
-              if (match) {
-                projectItemId = match.id;
+            for (let attempt = 1; attempt <= 30; attempt += 1) {
+              projectItemId = await findProjectItem(issueNodeId);
+              if (projectItemId) {
                 break;
               }
               await new Promise((resolve) => setTimeout(resolve, 3000));
@@ -213,11 +224,16 @@ jobs:
               targetOptionId = todoOptionId;
             }
 
-            const getProjectItems = async () => github.graphql(
-              `query($projectId: ID!) {
+            const findProjectItem = async (contentId) => {
+              let cursor = null;
+
+              do {
+                const result = await github.graphql(
+                  `query($projectId: ID!, $cursor: String) {
                 node(id: $projectId) {
                   ... on ProjectV2 {
-                    items(first: 100) {
+                    items(first: 100, after: $cursor) {
+                      pageInfo { hasNextPage endCursor }
                       nodes {
                         id
                         content {
@@ -227,16 +243,22 @@ jobs:
                     }
                   }
                 }
-              }`,
-              { projectId },
-            );
+                  }`,
+                  { projectId, cursor },
+                );
+                const items = result.node.items;
+                const match = items.nodes.find((item) => item.content?.id === prNodeId);
+                if (match) return match.id;
+                cursor = items.pageInfo.hasNextPage ? items.pageInfo.endCursor : null;
+              } while (cursor);
+
+              return null;
+            };
 
             let projectItemId = null;
-            for (let attempt = 1; attempt <= 10; attempt += 1) {
-              const result = await getProjectItems();
-              const match = result.node.items.nodes.find((item) => item.content?.id === prNodeId);
-              if (match) {
-                projectItemId = match.id;
+            for (let attempt = 1; attempt <= 30; attempt += 1) {
+              projectItemId = await findProjectItem(prNodeId);
+              if (projectItemId) {
                 break;
               }
               await new Promise((resolve) => setTimeout(resolve, 3000));

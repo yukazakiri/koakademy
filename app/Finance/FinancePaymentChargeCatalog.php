@@ -25,6 +25,12 @@ final class FinancePaymentChargeCatalog
         return array_keys(self::FEE_LABELS);
     }
 
+    /** @return array<string, string> */
+    public static function feeLabels(): array
+    {
+        return self::FEE_LABELS;
+    }
+
     /** @return list<array{key: string, label: string}> */
     public static function feeOptions(): array
     {

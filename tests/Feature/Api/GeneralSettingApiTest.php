@@ -120,7 +120,7 @@ final class GeneralSettingApiTest extends TestCase
     public function it_validates_when_creating_general_settings(): void
     {
         $response = $this->postJson('/api/settings', [
-            'email_from_address' => 'invalid-email',
+            'support_email' => 'invalid-email',
             'school_ending_date' => '2023-01-01',
             'school_starting_date' => '2023-12-31',
             'semester' => 3,
@@ -129,7 +129,7 @@ final class GeneralSettingApiTest extends TestCase
 
         $response->assertUnprocessable()
             ->assertJsonValidationErrors([
-                'email_from_address',
+                'support_email',
                 'school_ending_date',
                 'semester',
                 'enrollment_courses.0',

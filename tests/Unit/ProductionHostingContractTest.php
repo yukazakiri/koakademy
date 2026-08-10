@@ -63,11 +63,11 @@ it('keeps KoAkademy package and image metadata AGPL consistent', function (): vo
     }
 });
 
-it('builds production assets from the canonical npm lockfile on Node 22', function (): void {
+it('builds production assets from the canonical npm lockfile on Node 26', function (): void {
     $dockerfile = file_get_contents(base_path('docker/Dockerfile')) ?: '';
 
     expect($dockerfile)
-        ->toContain('FROM node:22-bookworm-slim@sha256:')
+        ->toContain('FROM node:26-bookworm-slim@sha256:')
         ->toContain('COPY package.json package-lock.json ./')
         ->toContain('RUN npm ci')
         ->toContain('WAYFINDER_GENERATE=false npm run build')

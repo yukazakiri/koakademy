@@ -610,9 +610,37 @@ it('returns revenue breakdown report data', function (): void {
 
     grantFinancePermission($user);
 
+    $schoolYear = now()->month >= 8
+        ? now()->year.' - '.(now()->year + 1)
+        : (now()->year - 1).' - '.now()->year;
+    $semester = now()->month >= 8 ? 1 : 2;
+    Transaction::query()->create([
+        'description' => 'ID replacement payment',
+        'payment_method' => 'Cash',
+        'status' => 'paid',
+        'transaction_date' => now(),
+        'settlements' => ['id_replacement' => 75.50],
+        'user_id' => $user->id,
+    ]);
+    Transaction::query()->create([
+        'description' => 'Lace replacement payment',
+        'payment_method' => 'Cash',
+        'status' => 'paid',
+        'transaction_date' => now(),
+        'settlements' => ['lace_replacement' => 30.00],
+        'user_id' => $user->id,
+    ]);
+
     $this->actingAs($user)
-        ->getJson(portalUrlForAdministrators('/administrators/finance/reports/revenue-breakdown'))
+        ->getJson(portalUrlForAdministrators("/administrators/finance/reports/revenue-breakdown?school_year={$schoolYear}&semester={$semester}"))
         ->assertOk()
+        ->assertJsonPath('summary.total_revenue', 105.5)
+        ->assertJsonPath('summary.breakdown.7.key', 'id_replacement')
+        ->assertJsonPath('summary.breakdown.7.label', 'ID Replacement')
+        ->assertJsonPath('summary.breakdown.7.total', 75.5)
+        ->assertJsonPath('summary.breakdown.8.key', 'lace_replacement')
+        ->assertJsonPath('summary.breakdown.8.label', 'Lace Replacement')
+        ->assertJsonPath('summary.breakdown.8.total', 30)
         ->assertJsonStructure([
             'summary' => [
                 'total_revenue',

@@ -100,35 +100,35 @@ it('uses master pushes only to maintain a reviewed Release Please PR', function 
         ->not->toContain('workflow_run');
 });
 
-it('publishes only exact stable release tags to GHCR', function (): void {
+it('publishes immutable source-tagged images from trusted release sources', function (): void {
     $delivery = workflowContents('delivery.yml');
 
     expect($delivery)
-        ->toContain('Delivery requires an exact stable vX.Y.Z tag.')
-        ->toContain("printf 'image=ghcr.io/%s\\n' \"\${GITHUB_REPOSITORY}\"")
-        ->toContain(':sha-${{ steps.release.outputs.source_sha }}')
-        ->toContain(':${{ steps.release.outputs.tag }}')
+        ->toContain('Accept trusted master push source')
+        ->toContain('A manual release requires a strict X.Y.Z version.')
+        ->toContain('ghcr_ref="ghcr.io/${GITHUB_REPOSITORY}:sha-${SOURCE_SHA}"')
+        ->toContain('dockerhub_ref="${DOCKERHUB_IMAGE}:sha-${SOURCE_SHA}"')
         ->toContain('provenance: mode=max')
         ->toContain('sbom: true')
         ->toContain('actions/attest@')
-        ->not->toContain('DOCKERHUB_')
-        ->not->toContain('promote_mutable_pair')
-        ->not->toContain('crane')
-        ->not->toContain('channel=edge');
+        ->toContain('Refusing to move immutable tag')
+        ->toContain('promote_immutable');
 });
 
-it('ships a verified immutable digest in the checksummed installer bundle', function (): void {
+it('verifies immutable images and ships checksummed release assets', function (): void {
     $delivery = workflowContents('delivery.yml');
 
     expect($delivery)
-        ->toContain('name: Verify the immutable release image')
-        ->toContain('IMAGE_DIGEST: ${{ steps.image.outputs.digest }}')
-        ->toContain("'.image = \$image'")
+        ->toContain('name: Verify registries, architectures, SBOM, and provenance')
+        ->toContain('EXPECTED_DIGEST: ${{ steps.digest.outputs.digest }}')
+        ->toContain('verify_manifest "${GHCR_REF}" "${EXPECTED_DIGEST}"')
         ->toContain('sha256sum .env.production.example compose.production.yaml')
-        ->toContain('release-assets/koakademy')
-        ->toContain('release-assets/swarm-stack.yml')
+        ->toContain('release-assets/compose.production.yaml')
+        ->toContain('release-assets/SHA256SUMS')
         ->toContain('gh release upload')
-        ->toContain('gh release edit "${RELEASE_TAG}" --draft=false --prerelease=false --latest');
+        ->toContain('arguments=("${RELEASE_TAG}" "--draft=false" "--prerelease=false")')
+        ->toContain('arguments+=("--latest")')
+        ->toContain('gh release edit "${arguments[@]}"');
 });
 
 it('keeps Release Please aligned with the tracked stable version and reviewed draft releases', function (): void {
@@ -220,5 +220,7 @@ it('keeps optional roadmap automation green when its dedicated token is unavaila
         ->toContain("needs.credentials.outputs.available == 'true'")
         ->toContain('Roadmap automation is skipped')
         ->toContain('actions/add-to-project@5afcf98fcd03f1c2f92c3c83f58ae24323cc57fd # v2.0.0')
-        ->toContain('actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0');
+        ->toContain('actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0')
+        ->toContain('pageInfo { hasNextPage endCursor }')
+        ->toContain('attempt <= 30');
 });

@@ -63,6 +63,7 @@ type BatchResponse = {
         status: "recorded" | "duplicate" | "rejected";
         transaction_id?: number;
         receipt_url?: string;
+        amount?: number | null;
         errors?: string[] | Record<string, string[]>;
     }>;
 };
@@ -135,7 +136,7 @@ export function SpreadsheetPaymentWorkspace({
     const rowAmount = (row: LedgerRow): number => {
         if (row.charge_type === "item") {
             const quantity = Number.parseInt(row.quantity, 10) || 0;
-            return (selectedItem(row)?.price ?? 0) * quantity;
+            return Number(selectedItem(row)?.price ?? 0) * quantity;
         }
 
         return Number.parseFloat(row.amount) || 0;
@@ -355,7 +356,7 @@ export function SpreadsheetPaymentWorkspace({
                         status: result.status as "recorded" | "duplicate",
                         transaction_id: result.transaction_id,
                         receipt_url: result.receipt_url,
-                        amount: rowAmount(row),
+                        amount: result.amount ?? rowAmount(row),
                         student_name: row.student?.full_name || row.student_identifier,
                     };
                 }),

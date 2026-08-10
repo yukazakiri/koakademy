@@ -1,13 +1,63 @@
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { themes, type ColorTheme } from "@/conf/themes";
 import { useTheme } from "@/hooks/use-theme";
-import { Check, Laptop, LayoutGrid, Monitor, Moon, Paintbrush, Sun } from "lucide-react";
+import { useForm } from "@inertiajs/react";
+import { Check, Grid2X2, Laptop, LayoutGrid, Monitor, Moon, Paintbrush, ReceiptText, Save, Sun } from "lucide-react";
+import { useEffect } from "react";
+import { toast } from "sonner";
 
-export function PersonalizationTab() {
+type PaymentWorkspacePreference = {
+    layout: "guided" | "spreadsheet";
+    density: "comfortable" | "compact";
+    history_visibility: "auto" | "open" | "hidden";
+    default_payment_method: string;
+};
+
+type PaymentMethodOption = {
+    value: string;
+    label: string;
+};
+
+type PersonalizationTabProps = {
+    canConfigurePaymentWorkspace?: boolean;
+    paymentWorkspace?: PaymentWorkspacePreference | null;
+    paymentWorkspaceUrl?: string | null;
+    paymentMethods?: PaymentMethodOption[];
+};
+
+const fallbackPaymentWorkspace: PaymentWorkspacePreference = {
+    layout: "guided",
+    density: "comfortable",
+    history_visibility: "auto",
+    default_payment_method: "Cash",
+};
+
+export function PersonalizationTab({
+    canConfigurePaymentWorkspace = false,
+    paymentWorkspace,
+    paymentWorkspaceUrl,
+    paymentMethods = [],
+}: PersonalizationTabProps) {
     const { theme, setThemeWithViewTransition, colorTheme, setColorTheme } = useTheme();
+    const workspaceForm = useForm<PaymentWorkspacePreference>(paymentWorkspace ?? fallbackPaymentWorkspace);
+
+    useEffect(() => {
+        workspaceForm.setData(paymentWorkspace ?? fallbackPaymentWorkspace);
+    }, [paymentWorkspace]);
+
+    const savePaymentWorkspace = () => {
+        if (!paymentWorkspaceUrl) return;
+
+        workspaceForm.put(paymentWorkspaceUrl, {
+            preserveScroll: true,
+            onSuccess: () => toast.success("Finance workspace preferences saved."),
+        });
+    };
 
     return (
         <div className="space-y-6">
@@ -21,15 +71,15 @@ export function PersonalizationTab() {
                 </CardHeader>
                 <CardContent>
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                        {[
+                        {([
                             { value: "light", label: "Light", icon: Sun },
                             { value: "dark", label: "Dark", icon: Moon },
                             { value: "system", label: "System", icon: Laptop },
-                        ].map((mode) => (
+                        ] as const).map((mode) => (
                             <button
                                 key={mode.value}
                                 type="button"
-                                onClick={(e) => setThemeWithViewTransition(mode.value as any, e)}
+                                onClick={(e) => setThemeWithViewTransition(mode.value, e)}
                                 className={`relative flex items-center justify-center gap-3 rounded-xl border-2 p-4 transition-all duration-200 ${
                                     theme === mode.value
                                         ? "border-primary bg-primary/5 ring-primary/20 ring-1"
@@ -50,6 +100,117 @@ export function PersonalizationTab() {
                     </div>
                 </CardContent>
             </Card>
+
+            {canConfigurePaymentWorkspace && paymentWorkspaceUrl && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <ReceiptText className="h-5 w-5" />
+                            Finance Workspace
+                        </CardTitle>
+                        <CardDescription>
+                            Set up the payment desk that best matches how you collect payments. These settings only affect your account.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                        <div className="space-y-3">
+                            <Label className="text-muted-foreground text-xs font-medium tracking-wider uppercase">Default desk</Label>
+                            <div className="grid gap-3 md:grid-cols-2">
+                                {[
+                                    {
+                                        value: "guided" as const,
+                                        title: "Guided desk",
+                                        description: "One student at a time, with every balance and collection detail in view.",
+                                        icon: ReceiptText,
+                                    },
+                                    {
+                                        value: "spreadsheet" as const,
+                                        title: "Spreadsheet desk",
+                                        description: "A keyboard-first payment ledger for pasting independent rows from Excel.",
+                                        icon: Grid2X2,
+                                    },
+                                ].map((workspace) => (
+                                    <button
+                                        key={workspace.value}
+                                        type="button"
+                                        onClick={() => workspaceForm.setData("layout", workspace.value)}
+                                        className={`relative flex items-start gap-3 rounded-xl border p-4 text-left transition-colors ${
+                                            workspaceForm.data.layout === workspace.value
+                                                ? "border-primary bg-primary/5 ring-primary/20 ring-1"
+                                                : "border-muted hover:border-primary/50 hover:bg-muted/50"
+                                        }`}
+                                    >
+                                        <workspace.icon className={`mt-0.5 h-5 w-5 ${workspaceForm.data.layout === workspace.value ? "text-primary" : "text-muted-foreground"}`} />
+                                        <span className="space-y-1">
+                                            <span className="block font-medium">{workspace.title}</span>
+                                            <span className="text-muted-foreground block text-sm leading-5">{workspace.description}</span>
+                                        </span>
+                                        {workspaceForm.data.layout === workspace.value && <Check className="text-primary ml-auto h-4 w-4" />}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="grid gap-5 md:grid-cols-3">
+                            <div className="space-y-2">
+                                <Label htmlFor="payment-workspace-density">Workspace density</Label>
+                                <Select value={workspaceForm.data.density} onValueChange={(value) => workspaceForm.setData("density", value as PaymentWorkspacePreference["density"])}>
+                                    <SelectTrigger id="payment-workspace-density">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="comfortable">Comfortable</SelectItem>
+                                        <SelectItem value="compact">Compact</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-muted-foreground text-xs">Compact keeps more ledger rows on screen.</p>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="payment-workspace-history">Payment history</Label>
+                                <Select
+                                    value={workspaceForm.data.history_visibility}
+                                    onValueChange={(value) => workspaceForm.setData("history_visibility", value as PaymentWorkspacePreference["history_visibility"])}
+                                >
+                                    <SelectTrigger id="payment-workspace-history">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="auto">Open when helpful</SelectItem>
+                                        <SelectItem value="open">Always open</SelectItem>
+                                        <SelectItem value="hidden">Keep hidden</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-muted-foreground text-xs">You can still open or close it while recording.</p>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="payment-workspace-method">Default payment method</Label>
+                                <Select value={workspaceForm.data.default_payment_method} onValueChange={(value) => workspaceForm.setData("default_payment_method", value)}>
+                                    <SelectTrigger id="payment-workspace-method">
+                                        <SelectValue placeholder="Choose a method" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {paymentMethods.map((method) => (
+                                            <SelectItem key={method.value} value={method.value}>
+                                                {method.label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-muted-foreground text-xs">Used to prefill new guided payments and ledger rows.</p>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end border-t pt-4">
+                            <Button type="button" onClick={savePaymentWorkspace} disabled={workspaceForm.processing}>
+                                <Save className="mr-2 h-4 w-4" />
+                                Save finance workspace
+                            </Button>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
 
             <Card>
                 <CardHeader>

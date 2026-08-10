@@ -237,7 +237,7 @@ final class StudentTuition extends Model
             'discount_id' => 'integer',
             'downpayment' => 'float',
             'overall_tuition' => 'float',
-            'paid' => 'integer',
+            'paid' => 'float',
             'created_at' => 'datetime',
             'updated_at' => 'date',
             'deleted_at' => 'datetime',

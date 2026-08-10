@@ -126,6 +126,10 @@ export default function ProfilePage() {
         connected_accounts = { providers: {}, accounts: [] },
         can_view_newsletter_settings = false,
         newsletter_settings_url = null,
+        can_configure_payment_workspace = false,
+        payment_workspace = null,
+        payment_workspace_url = null,
+        payment_methods = [],
         id_card,
         feature_flags,
         featureFlags,
@@ -141,6 +145,15 @@ export default function ProfilePage() {
         connected_accounts: ConnectedAccountsPayload;
         can_view_newsletter_settings?: boolean;
         newsletter_settings_url?: string | null;
+        can_configure_payment_workspace?: boolean;
+        payment_workspace?: {
+            layout: "guided" | "spreadsheet";
+            density: "comfortable" | "compact";
+            history_visibility: "auto" | "open" | "hidden";
+            default_payment_method: string;
+        } | null;
+        payment_workspace_url?: string | null;
+        payment_methods?: Array<{ value: string; label: string }>;
         user: {
             id: number;
             name: string;
@@ -898,7 +911,12 @@ export default function ProfilePage() {
                             </TabsContent>
 
                             <TabsContent value="personalization" className="mt-0 outline-none">
-                                <PersonalizationTab />
+                                <PersonalizationTab
+                                    canConfigurePaymentWorkspace={can_configure_payment_workspace}
+                                    paymentWorkspace={payment_workspace}
+                                    paymentWorkspaceUrl={payment_workspace_url}
+                                    paymentMethods={payment_methods}
+                                />
                             </TabsContent>
 
                             {experimentalAvailable.length > 0 && (

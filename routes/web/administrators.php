@@ -100,6 +100,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/settings', [App\Http\Controllers\ProfileController::class, 'index'])->name('settings.index');
         Route::get('/settings/newsletter', [App\Http\Controllers\AdministratorSystemManagementController::class, 'newsletter'])->name('settings.newsletter.index');
         Route::put('/settings', [App\Http\Controllers\ProfileController::class, 'updateUser'])->name('settings.update');
+        Route::put('/settings/payment-workspace', [App\Http\Controllers\ProfileController::class, 'updatePaymentWorkspace'])->name('settings.payment-workspace.update');
         Route::put('/settings/faculty', [App\Http\Controllers\ProfileController::class, 'updateFaculty'])->name('settings.faculty.update');
         Route::put('/settings/password', [App\Http\Controllers\ProfileController::class, 'changePassword'])->name('settings.password.update');
         Route::post('/settings/two-factor-authentication/enable', [App\Http\Controllers\ProfileController::class, 'enableTwoFactor'])->name('settings.two-factor.enable');
@@ -196,6 +197,12 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/finance/payments', [AdministratorFinanceController::class, 'payments'])->name('finance.payments');
         Route::get('/finance/payments/create', [AdministratorFinanceController::class, 'create'])->name('finance.payments.create');
         Route::post('/finance/payments', [AdministratorFinanceController::class, 'store'])->name('finance.payments.store');
+        Route::post('/finance/payments/ledger/resolve', [AdministratorFinanceController::class, 'resolvePaymentLedger'])
+            ->middleware('throttle:30,1')
+            ->name('finance.payments.ledger.resolve');
+        Route::post('/finance/payments/batch', [AdministratorFinanceController::class, 'storeBatch'])
+            ->middleware('throttle:30,1')
+            ->name('finance.payments.batch.store');
         Route::post('/finance/payments/{transaction}/resend-receipt', [AdministratorFinanceController::class, 'resendReceipt'])->whereNumber('transaction')->middleware('throttle:6,1')->name('finance.payments.resend-receipt');
         Route::get('/finance/documents/{issuance}/download', [AdministratorFinanceController::class, 'downloadFinancialDocument'])->name('finance.documents.download');
         Route::post('/finance/documents/{issuance}/resend', [AdministratorFinanceController::class, 'resendFinancialDocument'])->middleware('throttle:6,1')->name('finance.documents.resend');

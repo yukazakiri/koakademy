@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Enums\PaymentMethod;
+use App\Finance\RecordFinancePayment;
 use App\Http\Requests\ResendFinancialDocumentRequest;
 use App\Http\Requests\ResendTransactionReceiptRequest;
+use App\Http\Requests\ResolvePaymentLedgerRequest;
 use App\Http\Requests\SendEnrollmentInvoiceRequest;
+use App\Http\Requests\StoreBatchFinancePaymentsRequest;
+use App\Http\Requests\StoreFinancePaymentRequest;
 use App\Models\FinancialDocumentIssuance;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
@@ -21,7 +26,6 @@ use App\Services\GeneralSettingsService;
 use App\Services\TransactionReceiptDataService;
 use Carbon\Carbon;
 use DateTimeInterface;
-use Exception;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -31,6 +35,7 @@ use Inertia\Inertia;
 use Inertia\Response;
 use Modules\Inventory\Models\InventoryProduct;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Throwable;
 
 final class AdministratorFinanceController extends Controller
 {
@@ -343,6 +348,8 @@ final class AdministratorFinanceController extends Controller
 
         $items = InventoryProduct::query()
             ->where('is_active', true)
+            ->select(['id', 'name', 'price', 'sku', 'category_id'])
+            ->with('category:id,name')
             ->get()
             ->map(fn ($product): array => [
                 'id' => $product->id,
@@ -360,165 +367,121 @@ final class AdministratorFinanceController extends Controller
             ],
             'items' => $items,
             'currency' => $settingsService->getCurrency(),
+            'payment_workspace' => $this->paymentWorkspace($user),
+            'payment_methods' => PaymentMethod::options(),
+            'ledger_resolve_url' => route('administrators.finance.payments.ledger.resolve', absolute: false),
+            'batch_payment_url' => route('administrators.finance.payments.batch.store', absolute: false),
         ]);
     }
 
-    public function store(Request $request, GeneralSettingsService $settingsService): RedirectResponse
+    public function store(StoreFinancePaymentRequest $request, RecordFinancePayment $payments): RedirectResponse
     {
         $this->authorizeFinanceAccess();
 
-        $validated = $request->validate([
-            'student_id' => ['required', 'exists:students,id'],
-            'payment_method' => ['required', 'string'],
-            'reference_number' => ['nullable', 'string'],
-            'remarks' => ['nullable', 'string'],
-            'items' => ['required', 'array', 'min:1'],
-            'items.*.type' => ['required', 'string', 'in:tuition,item,fee'],
-            'items.*.name' => ['required', 'string'],
-            'items.*.amount' => ['required', 'numeric', 'min:0'],
-            'items.*.id' => ['nullable', 'exists:inventory_products,id'], // For items
-            'items.*.fee_key' => ['nullable', 'string'], // For specific fee types
-            'items.*.tuition_id' => ['nullable', 'exists:student_tuition,id'], // For specific tuition payments
+        $user = Auth::user();
+        abort_unless($user instanceof User, 403);
+
+        $recorded = $payments->record($user, $request->validated());
+
+        return redirect()->route('administrators.finance.payments.show', $recorded->transaction)->with('flash', [
+            'success' => 'Payment recorded successfully.',
         ]);
+    }
 
-        try {
-            // 1. Create Transaction
-            $transaction = null; // Initialize variable
-            $receiptRecipient = null;
-            $receiptDeliveryId = null;
+    public function resolvePaymentLedger(ResolvePaymentLedgerRequest $request): \Illuminate\Http\JsonResponse
+    {
+        $this->authorizeFinanceAccess();
 
-            DB::transaction(function () use ($validated, $settingsService, &$transaction, &$receiptRecipient, &$receiptDeliveryId): void {
-                $student = Student::findOrFail($validated['student_id']);
-                $totalAmount = collect($validated['items'])->sum('amount');
-                $schoolYear = $settingsService->getCurrentSchoolYearString();
-                $semester = $settingsService->getCurrentSemester();
+        $identifiers = collect($request->validated('student_identifiers'))
+            ->map(fn (mixed $identifier): string => mb_trim((string) $identifier))
+            ->values();
+        $students = Student::query()
+            ->select(['id', 'student_id', 'first_name', 'middle_name', 'last_name'])
+            ->whereIn('student_id', $identifiers)
+            ->with(['StudentTuition' => fn ($query) => $query
+                ->select(['id', 'student_id', 'enrollment_id', 'school_year', 'semester', 'total_balance'])
+                ->where('total_balance', '>', 0)
+                ->orderByDesc('id')])
+            ->get()
+            ->groupBy(fn (Student $student): string => (string) $student->student_id);
 
-                // Prepare settlements JSON with default structure
-                $settlements = [
-                    'registration_fee' => 0,
-                    'tuition_fee' => 0,
-                    'miscelanous_fee' => 0,
-                    'diploma_or_certificate' => 0,
-                    'transcript_of_records' => 0,
-                    'certification' => 0,
-                    'special_exam' => 0,
-                    'others' => 0,
+        return response()->json([
+            'matches' => $identifiers->map(function (string $identifier) use ($students): array {
+                return [
+                    'identifier' => $identifier,
+                    'students' => $students->get($identifier, collect())
+                        ->map(fn (Student $student): array => [
+                            'id' => $student->id,
+                            'student_id' => $student->student_id,
+                            'full_name' => $student->full_name,
+                            'open_tuitions' => $student->StudentTuition
+                                ->map(fn (StudentTuition $tuition): array => [
+                                    'id' => $tuition->id,
+                                    'enrollment_id' => $tuition->enrollment_id,
+                                    'school_year' => $tuition->school_year,
+                                    'semester' => $tuition->semester,
+                                    'balance' => (float) $tuition->total_balance,
+                                ])
+                                ->values()
+                                ->all(),
+                        ])
+                        ->values()
+                        ->all(),
                 ];
+            })->all(),
+        ]);
+    }
 
-                $tuitionPayment = 0;
-                // Group tuition payments by tuition_id for batch updates
-                $tuitionPaymentsByRecord = [];
+    public function storeBatch(StoreBatchFinancePaymentsRequest $request, RecordFinancePayment $payments): \Illuminate\Http\JsonResponse
+    {
+        $this->authorizeFinanceAccess();
 
-                foreach ($validated['items'] as $item) {
-                    $amount = (float) $item['amount'];
+        $user = Auth::user();
+        abort_unless($user instanceof User, 403);
 
-                    if ($item['type'] === 'tuition') {
-                        $settlements['tuition_fee'] += $amount;
-                        $tuitionPayment += $amount;
+        $validated = $request->validated();
+        $results = collect($validated['rows'])->map(function (array $row) use ($payments, $user, $validated): array {
+            $idempotencyKey = hash('sha256', $validated['batch_id'].'|'.$row['client_row_id']);
 
-                        // Track which specific tuition record this payment is for
-                        if (! empty($item['tuition_id'])) {
-                            if (! isset($tuitionPaymentsByRecord[$item['tuition_id']])) {
-                                $tuitionPaymentsByRecord[$item['tuition_id']] = 0;
-                            }
-                            $tuitionPaymentsByRecord[$item['tuition_id']] += $amount;
-                        } else {
-                            // Fallback to "current" tuition if no ID provided (legacy behavior)
-                            // We'll handle this in the update block
-                            if (! isset($tuitionPaymentsByRecord['current'])) {
-                                $tuitionPaymentsByRecord['current'] = 0;
-                            }
-                            $tuitionPaymentsByRecord['current'] += $amount;
-                        }
+            try {
+                $recorded = $payments->record($user, $row, $idempotencyKey);
 
-                    } elseif ($item['type'] === 'fee' && ! empty($item['fee_key']) && array_key_exists((string) $item['fee_key'], $settlements)) {
-                        // Map specific fee types to their corresponding keys in settlements
-                        $settlements[$item['fee_key']] += $amount;
-                    } else {
-                        // Fallback for items or unmapped fees
-                        $settlements['others'] += $amount;
-                    }
+                return [
+                    'client_row_id' => $row['client_row_id'],
+                    'status' => $recorded->duplicate ? 'duplicate' : 'recorded',
+                    'transaction_id' => $recorded->transaction->id,
+                    'receipt_url' => route('administrators.finance.payments.show', $recorded->transaction, false),
+                    'errors' => [],
+                ];
+            } catch (\Illuminate\Validation\ValidationException $exception) {
+                return [
+                    'client_row_id' => $row['client_row_id'],
+                    'status' => 'rejected',
+                    'transaction_id' => null,
+                    'receipt_url' => null,
+                    'errors' => collect($exception->errors())->flatten()->values()->all(),
+                ];
+            } catch (Throwable $throwable) {
+                report($throwable);
 
-                    // If it's an inventory item, we should probably deduct stock here
-                    if ($item['type'] === 'item' && ! empty($item['id'])) {
-                        $product = InventoryProduct::find($item['id']);
-                        if ($product && $product->track_stock) {
-                            $product->decrement('stock_quantity', 1); // Assuming quantity 1 for now or add quantity to input
-                        }
-                    }
-                }
-
-                // Convert all values to string to match existing structure if needed, though JSON handles numbers fine.
-                // But looking at the example {"tuition_fee":"2500"}, they are strings.
-                $settlements = array_map(fn (int|float $val): string => (string) $val, $settlements);
-
-                $transaction = Transaction::create([
-                    'description' => $validated['remarks'] ?? 'Payment for '.implode(', ', array_map(fn (array $i) => $i['name'], $validated['items'])),
-                    'payment_method' => $validated['payment_method'],
-                    'status' => 'paid', // Assuming immediate payment
-                    'transaction_date' => now(),
-                    'settlements' => $settlements,
-                    'invoicenumber' => $validated['reference_number'] ?? null,
-                    'user_id' => Auth::id(),
-                    'receipt_email_recipient' => $student->email ?: null,
-                ]);
-
-                // 2. Link to Student
-                StudentTransaction::create([
-                    'student_id' => $student->id,
-                    'transaction_id' => $transaction->id,
-                    'amount' => $totalAmount,
-                    'status' => 'paid',
-                ]);
-
-                // 3. Update Tuition Records
-                foreach ($tuitionPaymentsByRecord as $tuitionId => $amount) {
-                    if ($amount <= 0) {
-                        continue;
-                    }
-
-                    $tuition = null;
-
-                    if ($tuitionId === 'current') {
-                        // Logic for "current" tuition fallback
-                        $enrollment = StudentEnrollment::query()
-                            ->where('student_id', $student->id)
-                            ->where('school_year', $schoolYear)
-                            ->where('semester', $semester)
-                            ->first();
-
-                        if ($enrollment && $enrollment->studentTuition) {
-                            $tuition = $enrollment->studentTuition;
-                        }
-                    } else {
-                        // Specific tuition record
-                        $tuition = StudentTuition::find($tuitionId);
-                    }
-
-                    if ($tuition) {
-                        $tuition->paid = (float) $tuition->paid + $amount;
-                        $tuition->save();
-
-                        app(EnrollmentBillingService::class)->syncTuitionBalance($tuition);
-                    }
-                }
-            });
-
-            if ($transaction) {
-                return redirect()->route('administrators.finance.payments.show', $transaction->id)->with('flash', [
-                    'success' => 'Payment recorded successfully.',
-                ]);
+                return [
+                    'client_row_id' => $row['client_row_id'],
+                    'status' => 'rejected',
+                    'transaction_id' => null,
+                    'receipt_url' => null,
+                    'errors' => ['This row could not be recorded. Please review it and try again.'],
+                ];
             }
+        });
 
-            return redirect()->route('administrators.finance.payments')->with('flash', [
-                'error' => 'Transaction failed to create.',
-            ]);
-
-        } catch (Exception $e) {
-            return back()->with('flash', [
-                'error' => 'Failed to record payment: '.$e->getMessage(),
-            ]);
-        }
+        return response()->json([
+            'results' => $results->all(),
+            'summary' => [
+                'recorded_count' => $results->where('status', 'recorded')->count(),
+                'duplicate_count' => $results->where('status', 'duplicate')->count(),
+                'rejected_count' => $results->where('status', 'rejected')->count(),
+            ],
+        ]);
     }
 
     public function show(Transaction $transaction, TransactionReceiptDataService $receiptDataService): Response|RedirectResponse
@@ -924,7 +887,7 @@ final class AdministratorFinanceController extends Controller
             'filters' => [
                 'school_years' => $schoolYears,
                 'semesters' => [1, 2],
-                'payment_methods' => array_column(\App\Enums\PaymentMethod::cases(), 'value'),
+                'payment_methods' => array_column(PaymentMethod::cases(), 'value'),
                 'current_school_year' => $settingsService->getCurrentSchoolYearString(),
                 'current_semester' => $currentSemester,
             ],
@@ -1344,5 +1307,26 @@ final class AdministratorFinanceController extends Controller
         $user = Auth::user();
 
         $this->abortUnlessUserHasAnyPermission($user instanceof User ? $user : null, 'View:Cashier');
+    }
+
+    /** @return array{layout: string, density: string, history_visibility: string, default_payment_method: string} */
+    private function paymentWorkspace(User $user): array
+    {
+        $workspace = data_get($user->preferences, 'finance.payment_workspace', []);
+        $workspace = is_array($workspace) ? $workspace : [];
+
+        return [
+            'layout' => in_array($workspace['layout'] ?? null, ['guided', 'spreadsheet'], true)
+                ? $workspace['layout']
+                : 'guided',
+            'density' => in_array($workspace['density'] ?? null, ['comfortable', 'compact'], true)
+                ? $workspace['density']
+                : 'comfortable',
+            'history_visibility' => in_array($workspace['history_visibility'] ?? null, ['auto', 'open', 'hidden'], true)
+                ? $workspace['history_visibility']
+                : 'auto',
+            'default_payment_method' => PaymentMethod::tryFrom((string) ($workspace['default_payment_method'] ?? ''))?->value
+                ?? PaymentMethod::Cash->value,
+        ];
     }
 }

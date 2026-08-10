@@ -65,7 +65,7 @@ final class StudentTransaction extends Model
             'student_id' => 'integer',
             'student_enrollment_id' => 'integer',
             'transaction_id' => 'integer',
-            'amount' => 'integer',
+            'amount' => 'decimal:2',
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
         ];

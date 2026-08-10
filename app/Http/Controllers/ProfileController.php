@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Enums\PaymentMethod;
 use App\Features\Toggles\AdminDeveloperMode;
 use App\Features\Toggles\FacultyDeveloperMode;
 use App\Features\Toggles\StudentDeveloperMode;
 use App\Features\Toggles\StudentInformationUpdates;
 use App\Http\Requests\ToggleExperimentalFeaturesRequest;
+use App\Http\Requests\UpdatePaymentWorkspacePreferencesRequest;
 use App\Http\Requests\UpdateStudentProfileRequest;
 use App\Models\ConnectedAccount;
 use App\Models\Faculty;
@@ -26,6 +28,7 @@ use Endroid\QrCode\RoundBlockSizeMode;
 use Endroid\QrCode\Writer\PngWriter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -119,6 +122,10 @@ final class ProfileController extends Controller
         $studentInformationUpdatesEnabled = $isStudent && Feature::for($user)->active(StudentInformationUpdates::class);
         $studentProfileCompletion = app(StudentProfileCompletionService::class)->summarize($student);
         $canViewNewsletterSettings = $isAdmin && $user->can('viewNewsletter', GeneralSetting::class);
+        $canConfigurePaymentWorkspace = $request->is('administrators/*')
+            && $isAdmin
+            && $user instanceof User
+            && $user->can('View:Cashier');
 
         $apiTokens = [];
         if ($developerModeEnabled) {
@@ -143,6 +150,14 @@ final class ProfileController extends Controller
             'newsletter_settings_url' => $canViewNewsletterSettings
                 ? route('administrators.settings.newsletter.index', absolute: false)
                 : null,
+            'can_configure_payment_workspace' => $canConfigurePaymentWorkspace,
+            'payment_workspace' => $canConfigurePaymentWorkspace
+                ? $this->paymentWorkspacePreferences($user)
+                : null,
+            'payment_workspace_url' => $canConfigurePaymentWorkspace && $request->is('administrators/*')
+                ? route('administrators.settings.payment-workspace.update', absolute: false)
+                : null,
+            'payment_methods' => $canConfigurePaymentWorkspace ? PaymentMethod::options() : [],
             'id_card' => $idCardData,
             'user' => [
                 'id' => $user->id,
@@ -502,6 +517,24 @@ final class ProfileController extends Controller
 
         return back()->with('flash', [
             'success' => 'Profile updated successfully!',
+        ]);
+    }
+
+    public function updatePaymentWorkspace(UpdatePaymentWorkspacePreferencesRequest $request)
+    {
+        $user = $request->user();
+
+        if (! $user instanceof User) {
+            abort(403);
+        }
+
+        $preferences = is_array($user->preferences) ? $user->preferences : [];
+        Arr::set($preferences, 'finance.payment_workspace', $request->validated());
+
+        $user->forceFill(['preferences' => $preferences])->save();
+
+        return back()->with('flash', [
+            'success' => 'Finance workspace preferences saved.',
         ]);
     }
 
@@ -1008,6 +1041,28 @@ final class ProfileController extends Controller
                 'last_active' => Carbon::createFromTimestamp($session->last_activity)->diffForHumans(),
                 'user_agent' => $session->user_agent,
             ]);
+    }
+
+    /**
+     * @return array{layout: string, density: string, history_visibility: string, default_payment_method: string}
+     */
+    private function paymentWorkspacePreferences(User $user): array
+    {
+        $workspace = data_get($user->preferences, 'finance.payment_workspace', []);
+
+        return [
+            'layout' => in_array(data_get($workspace, 'layout'), ['guided', 'spreadsheet'], true)
+                ? data_get($workspace, 'layout')
+                : 'guided',
+            'density' => in_array(data_get($workspace, 'density'), ['comfortable', 'compact'], true)
+                ? data_get($workspace, 'density')
+                : 'comfortable',
+            'history_visibility' => in_array(data_get($workspace, 'history_visibility'), ['auto', 'open', 'hidden'], true)
+                ? data_get($workspace, 'history_visibility')
+                : 'auto',
+            'default_payment_method' => PaymentMethod::tryFrom((string) data_get($workspace, 'default_payment_method'))?->value
+                ?? PaymentMethod::Cash->value,
+        ];
     }
 
     /**

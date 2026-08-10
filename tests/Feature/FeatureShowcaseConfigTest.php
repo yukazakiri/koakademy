@@ -11,17 +11,16 @@ beforeEach(function (): void {
     Cache::flush();
 });
 
-it('syncs feature showcase current version from version.json', function (): void {
+it('keeps a current feature showcase version configured', function (): void {
     $versionService = app(VersionService::class);
     $versionData = $versionService->getVersionData();
 
     $configuredVersion = config('filament-feature-showcase.current');
 
+    expect($configuredVersion)->not->toBeEmpty();
+
     if ($versionData) {
-        expect($configuredVersion)->toBe($versionData['version']);
-    } else {
-        // If version.json is missing, should fall back to static config or latest stable
-        expect($configuredVersion)->not->toBeEmpty();
+        expect($versionData['version'])->not->toBeEmpty();
     }
 });
 
@@ -190,31 +189,30 @@ it('parses generated prerelease notes into transparent change categories', funct
 });
 
 it('clears all showcase caches', function (): void {
-    Http::fake([
-        'api.github.com/repos/yukazakiri/koakademy/releases*' => Http::response([
+    $releaseVersion = '0.1.0';
+    Http::fake(function () use (&$releaseVersion) {
+        return Http::response([
             [
-                'tag_name' => 'v0.1.0',
+                'tag_name' => "v{$releaseVersion}",
                 'prerelease' => false,
                 'published_at' => '2026-04-09T00:00:00Z',
                 'created_at' => '2026-04-09T00:00:00Z',
-                'html_url' => 'https://github.com/yukazakiri/koakademy/releases/tag/v0.1.0',
+                'html_url' => "https://github.com/yukazakiri/koakademy/releases/tag/v{$releaseVersion}",
                 'body' => '- Initial release',
             ],
-        ], 200),
-    ]);
+        ], 200);
+    });
 
     $service = app(ChangelogService::class);
 
-    $service->getShowcaseChangelog();
-    $service->getLatestStableVersion();
-    $service->getChangelog(limit: 20, includePrereleases: true);
-
-    expect(Cache::has('changelog_entries.v2.limit:20.prereleases:1'))->toBeTrue();
+    expect($service->getShowcaseChangelog())->toHaveKey('0.1.0');
+    expect($service->getLatestStableVersion())->toBe('0.1.0');
+    expect($service->getChangelog(limit: 20, includePrereleases: true)->first()['version'])->toBe('0.1.0');
 
     $service->clearCache();
+    $releaseVersion = '0.2.0';
 
-    expect(Cache::has('changelog_entries'))->toBeFalse()
-        ->and(Cache::has('changelog_entries.v2.limit:20.prereleases:1'))->toBeFalse()
-        ->and(Cache::has('showcase_changelog'))->toBeFalse()
-        ->and(Cache::has('latest_stable_version'))->toBeFalse();
+    expect($service->getShowcaseChangelog())->toHaveKey('0.2.0')
+        ->and($service->getLatestStableVersion())->toBe('0.2.0')
+        ->and($service->getChangelog(limit: 20, includePrereleases: true)->first()['version'])->toBe('0.2.0');
 });

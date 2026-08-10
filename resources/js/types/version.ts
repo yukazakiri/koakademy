@@ -5,15 +5,7 @@ export interface VersionData {
     branch: string;
     timestamp: string;
     build_url: string;
-    release_type:
-        | "major"
-        | "minor"
-        | "patch"
-        | "feature"
-        | "bugfix"
-        | "chore"
-        | "stable"
-        | "edge";
+    release_type: "major" | "minor" | "patch" | "feature" | "bugfix" | "chore" | "stable" | "edge";
     changelog: {
         current: string;
         previous: string;
@@ -27,15 +19,7 @@ export interface VersionData {
 
 export interface VersionInfo {
     version: string;
-    release_type:
-        | "major"
-        | "minor"
-        | "patch"
-        | "feature"
-        | "bugfix"
-        | "chore"
-        | "stable"
-        | "edge";
+    release_type: "major" | "minor" | "patch" | "feature" | "bugfix" | "chore" | "stable" | "edge";
     commit: string | null;
     build_url: string | null;
     timestamp: string | null;
@@ -68,7 +52,7 @@ export interface ChangelogProps {
     version: string;
     versionInfo?: VersionInfo;
     changelog: ChangelogEntry[];
-    changelog_source?: "github_releases" | "build_metadata";
-    show_technical_links?: boolean;
-    github_repo?: string;
+    changelog_status?: "live" | "stale" | "empty" | "unavailable";
+    changelog_last_synced_at?: string | null;
+    github_repo?: string | null;
 }

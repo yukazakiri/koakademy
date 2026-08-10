@@ -42,6 +42,23 @@
 @import "./themes/japan-blues.css";
 @import "./themes/bain-design-system.css";
 
+.changelog-material {
+    backdrop-filter: blur(18px) saturate(140%);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+    .changelog-material {
+        background-color: var(--card);
+        backdrop-filter: none;
+    }
+}
+
+@media (prefers-contrast: more) {
+    .changelog-material {
+        border-color: var(--foreground);
+    }
+}
+
 @source "../views";
 @source "../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php";
 

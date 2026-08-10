@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use Exception;
 use Illuminate\Console\Command;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -382,18 +383,18 @@ final class TestConnections extends Command
         try {
             $start = microtime(true);
 
-            $token = env('GITHUB_TOKEN');
-            $repo = env('GITHUB_REPOSITORY');
+            $token = config('services.github.token');
+            $repo = config('services.github.repo');
 
-            if (! $token || ! $repo) {
-                throw new Exception('Missing GitHub configuration');
+            if (! $repo) {
+                throw new Exception('Missing GitHub repository configuration');
             }
 
-            // Test GitHub API connection
-            $response = Http::withHeaders([
-                'Authorization' => "token {$token}",
-                'Accept' => 'application/vnd.github.v3+json',
-            ])->timeout(10)->get("https://api.github.com/repos/{$repo}");
+            $response = $this->githubRequest($token)->get("/repos/{$repo}");
+
+            if ($token && ($response->status() === 401 || $response->status() === 403)) {
+                $response = $this->githubRequest()->get("/repos/{$repo}");
+            }
 
             $duration = round((microtime(true) - $start) * 1000, 2);
 
@@ -436,6 +437,21 @@ final class TestConnections extends Command
                 ],
             ];
         }
+    }
+
+    private function githubRequest(?string $token = null): PendingRequest
+    {
+        $request = Http::baseUrl('https://api.github.com')
+            ->accept('application/vnd.github+json')
+            ->withUserAgent(config('app.name', 'Laravel').'/connection-test')
+            ->connectTimeout(3)
+            ->timeout(10);
+
+        if ($token) {
+            $request->withToken($token);
+        }
+
+        return $request;
     }
 
     private function displayResults(array $results): void

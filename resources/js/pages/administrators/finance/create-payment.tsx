@@ -8,12 +8,19 @@ import { Head, Link, usePage } from "@inertiajs/react";
 import { ArrowLeft, Grid2X2, ReceiptText, Settings2 } from "lucide-react";
 
 import { GuidedPaymentWorkspace } from "./guided-payment-workspace";
-import { defaultPaymentWorkspace, type InventoryItem, type PaymentMethodOption, type PaymentWorkspacePreference } from "./payment-workspace-types";
+import {
+    defaultPaymentWorkspace,
+    type FeeOption,
+    type InventoryItem,
+    type PaymentMethodOption,
+    type PaymentWorkspacePreference,
+} from "./payment-workspace-types";
 import { SpreadsheetPaymentWorkspace } from "./spreadsheet-payment-workspace";
 
 type CreatePaymentProps = {
     user: User;
     items: InventoryItem[];
+    fee_options: FeeOption[];
     currency: string;
     payment_workspace?: PaymentWorkspacePreference;
     payment_methods?: PaymentMethodOption[];
@@ -26,6 +33,7 @@ type Branding = { currency: string };
 export default function CreatePaymentPage({
     user,
     items,
+    fee_options,
     currency: propCurrency,
     payment_workspace,
     payment_methods = [],
@@ -41,8 +49,13 @@ export default function CreatePaymentPage({
     return (
         <AdminLayout user={user} title="Receive Payment">
             <Head title="Finance · Receive Payment" />
-            <div className={cn("mx-auto max-w-[1500px] antialiased", workspace.density === "compact" ? "[&_.workspace-density-row]:py-2" : "[&_.workspace-density-row]:py-4")}>
-                <header className="border-border/70 mb-4 flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-end sm:justify-between">
+            <div
+                className={cn(
+                    "mx-auto w-full max-w-[1500px] min-w-0 antialiased",
+                    workspace.density === "compact" ? "[&_.workspace-density-row]:py-2" : "[&_.workspace-density-row]:py-4",
+                )}
+            >
+                <header className="border-border/70 mb-4 flex min-w-0 flex-col gap-4 border-b pb-5 @lg/main:flex-row @lg/main:items-end @lg/main:justify-between">
                     <div className="space-y-1.5">
                         <div className="text-muted-foreground flex items-center gap-2 text-xs font-semibold tracking-[0.16em] uppercase">
                             <span className="size-2 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.12)]" />
@@ -57,7 +70,7 @@ export default function CreatePaymentPage({
                                 : "Review a student’s balances, collect payment, and reconcile the receipt in one focused desk."}
                         </p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="grid w-full min-w-0 grid-cols-1 gap-2 @lg/main:w-auto @lg/main:grid-cols-3">
                         <Badge variant="secondary" className="h-10 gap-2 px-3 font-medium">
                             {isSpreadsheet ? <Grid2X2 className="size-4" /> : <ReceiptText className="size-4" />}
                             {isSpreadsheet ? "Spreadsheet desk" : "Guided desk"}
@@ -82,16 +95,13 @@ export default function CreatePaymentPage({
                         batchUrl={batch_payment_url}
                         currency={currency}
                         defaultPaymentMethod={workspace.default_payment_method}
+                        feeOptions={fee_options}
+                        inventoryItems={items}
                         paymentMethods={paymentMethods}
                         resolveUrl={ledger_resolve_url}
                     />
                 ) : (
-                    <GuidedPaymentWorkspace
-                        currency={currency}
-                        inventoryItems={items}
-                        paymentMethods={paymentMethods}
-                        preference={workspace}
-                    />
+                    <GuidedPaymentWorkspace currency={currency} inventoryItems={items} paymentMethods={paymentMethods} preference={workspace} />
                 )}
             </div>
         </AdminLayout>

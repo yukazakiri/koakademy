@@ -24,4 +24,17 @@ final class ResolvePaymentLedgerRequest extends FormRequest
             'student_identifiers.*' => ['required', 'string', 'max:64', 'distinct'],
         ];
     }
+
+    protected function prepareForValidation(): void
+    {
+        $identifiers = collect($this->input('student_identifiers', []))
+            ->filter(static fn (mixed $identifier): bool => is_string($identifier))
+            ->map(static fn (string $identifier): string => mb_trim($identifier))
+            ->filter(static fn (string $identifier): bool => $identifier !== '')
+            ->unique()
+            ->values()
+            ->all();
+
+        $this->merge(['student_identifiers' => $identifiers]);
+    }
 }

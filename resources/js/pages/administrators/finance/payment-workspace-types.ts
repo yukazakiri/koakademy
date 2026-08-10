@@ -23,6 +23,11 @@ export type FeeType = {
     label: string;
 };
 
+export type FeeOption = {
+    key: string;
+    label: string;
+};
+
 export type StudentOption = {
     id: number;
     full_name: string;
@@ -78,6 +83,8 @@ export const FEE_TYPES: FeeType[] = [
     { id: "transcript_of_records", label: "Transcript of Records" },
     { id: "certification", label: "Certification" },
     { id: "special_exam", label: "Special Exam" },
+    { id: "id_replacement", label: "ID Replacement" },
+    { id: "lace_replacement", label: "Lace Replacement" },
     { id: "others", label: "Other Fees" },
 ];
 

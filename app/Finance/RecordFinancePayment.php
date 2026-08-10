@@ -22,17 +22,6 @@ use Modules\Inventory\Models\InventoryStockMovement;
 
 final readonly class RecordFinancePayment
 {
-    /** @var array<string, string> */
-    private const FEE_LABELS = [
-        'registration_fee' => 'Registration Fee',
-        'miscelanous_fee' => 'Miscellaneous Fee',
-        'diploma_or_certificate' => 'Diploma / Certificate',
-        'transcript_of_records' => 'Transcript of Records',
-        'certification' => 'Certification',
-        'special_exam' => 'Special Exam',
-        'others' => 'Other Fee',
-    ];
-
     public function __construct(private EnrollmentBillingService $billing) {}
 
     /**
@@ -127,7 +116,7 @@ final readonly class RecordFinancePayment
             ->get()
             ->keyBy('id');
 
-        $settlements = array_fill_keys(array_keys(self::FEE_LABELS), 0.0);
+        $settlements = array_fill_keys(FinancePaymentChargeCatalog::feeKeys(), 0.0);
         $settlements['tuition_fee'] = 0.0;
         $lineLabels = [];
         $tuitionAmounts = [];
@@ -167,13 +156,13 @@ final readonly class RecordFinancePayment
 
             if ($type === 'fee') {
                 $feeKey = (string) ($item['fee_key'] ?? '');
-                if (! array_key_exists($feeKey, self::FEE_LABELS)) {
+                if (! FinancePaymentChargeCatalog::hasFee($feeKey)) {
                     $this->fail("items.{$index}.fee_key", 'Choose a supported fee.');
                 }
 
                 $amount = $this->money($item['amount'] ?? null, "items.{$index}.amount");
                 $settlements[$feeKey] += $amount;
-                $lineLabels[] = self::FEE_LABELS[$feeKey];
+                $lineLabels[] = FinancePaymentChargeCatalog::labelFor($feeKey) ?? 'Fee';
 
                 continue;
             }

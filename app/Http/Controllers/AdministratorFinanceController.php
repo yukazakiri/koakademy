@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Enums\PaymentMethod;
+use App\Finance\FinancePaymentChargeCatalog;
 use App\Finance\RecordFinancePayment;
 use App\Http\Requests\ResendFinancialDocumentRequest;
 use App\Http\Requests\ResendTransactionReceiptRequest;
@@ -366,6 +367,7 @@ final class AdministratorFinanceController extends Controller
                 'role' => $user->role?->getLabel() ?? 'Administrator',
             ],
             'items' => $items,
+            'fee_options' => FinancePaymentChargeCatalog::feeOptions(),
             'currency' => $settingsService->getCurrency(),
             'payment_workspace' => $this->paymentWorkspace($user),
             'payment_methods' => PaymentMethod::options(),
@@ -394,6 +396,7 @@ final class AdministratorFinanceController extends Controller
 
         $identifiers = collect($request->validated('student_identifiers'))
             ->map(fn (mixed $identifier): string => mb_trim((string) $identifier))
+            ->unique()
             ->values();
         $students = Student::query()
             ->select(['id', 'student_id', 'first_name', 'middle_name', 'last_name'])

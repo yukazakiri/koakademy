@@ -198,7 +198,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/finance/payments/create', [AdministratorFinanceController::class, 'create'])->name('finance.payments.create');
         Route::post('/finance/payments', [AdministratorFinanceController::class, 'store'])->name('finance.payments.store');
         Route::post('/finance/payments/ledger/resolve', [AdministratorFinanceController::class, 'resolvePaymentLedger'])
-            ->middleware('throttle:30,1')
+            ->middleware('throttle:120,1')
             ->name('finance.payments.ledger.resolve');
         Route::post('/finance/payments/batch', [AdministratorFinanceController::class, 'storeBatch'])
             ->middleware('throttle:30,1')

@@ -11,6 +11,7 @@ use App\Models\StudentTuition;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Support\Str;
+use Inertia\Testing\AssertableInertia;
 use Modules\Inventory\Models\InventoryProduct;
 use Modules\Inventory\Models\InventoryStockMovement;
 use Spatie\Permission\Models\Permission;
@@ -73,6 +74,21 @@ function tuitionPaymentPayload(Student $student, StudentTuition $tuition, float 
         ]],
     ];
 }
+
+it('shares the cashier-approved catalog charges with the payment workspace', function (): void {
+    $cashier = paymentWorkspaceCashier();
+
+    $this->actingAs($cashier)
+        ->get(portalUrlForAdministrators('/administrators/finance/payments/create'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->has('fee_options', 9)
+            ->where('fee_options.6.key', 'id_replacement')
+            ->where('fee_options.6.label', 'ID Replacement')
+            ->where('fee_options.7.key', 'lace_replacement')
+            ->where('fee_options.7.label', 'Lace Replacement')
+        );
+});
 
 it('records a cents-accurate tuition payment with enrollment and finance ledger links', function (): void {
     $cashier = paymentWorkspaceCashier();
@@ -213,6 +229,87 @@ it('resolves pasted student identifiers with their open tuition allocations', fu
         ->assertJsonPath('matches.0.students.0.open_tuitions.0.id', $tuition->id)
         ->assertJsonPath('matches.0.students.0.open_tuitions.0.balance', 800)
         ->assertJsonPath('matches.1.students', []);
+});
+
+it('resolves a typed student ID even when the student only needs a catalog charge', function (): void {
+    $cashier = paymentWorkspaceCashier();
+    $student = Student::factory()->create(['student_id' => 208324]);
+
+    $this->actingAs($cashier)
+        ->postJson(portalUrlForAdministrators('/administrators/finance/payments/ledger/resolve'), [
+            'student_identifiers' => [' 208324 ', '208324'],
+        ])
+        ->assertOk()
+        ->assertJsonCount(1, 'matches')
+        ->assertJsonPath('matches.0.identifier', '208324')
+        ->assertJsonPath('matches.0.students.0.id', $student->id)
+        ->assertJsonPath('matches.0.students.0.open_tuitions', []);
+});
+
+it('records fee and inventory spreadsheet rows for a student without tuition', function (): void {
+    $cashier = paymentWorkspaceCashier();
+    $student = Student::factory()->create();
+    $uniform = InventoryProduct::factory()->create([
+        'name' => 'School Uniform',
+        'price' => 650.00,
+        'stock_quantity' => 2,
+        'track_stock' => true,
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($cashier)
+        ->postJson(portalUrlForAdministrators('/administrators/finance/payments/batch'), [
+            'batch_id' => (string) Str::uuid(),
+            'rows' => [
+                [
+                    'client_row_id' => 'id-replacement',
+                    'student_id' => $student->id,
+                    'payment_method' => 'Cash',
+                    'items' => [[
+                        'type' => 'fee',
+                        'fee_key' => 'id_replacement',
+                        'amount' => 75.50,
+                    ]],
+                ],
+                [
+                    'client_row_id' => 'lace-replacement',
+                    'student_id' => $student->id,
+                    'payment_method' => 'Maya',
+                    'items' => [[
+                        'type' => 'fee',
+                        'fee_key' => 'lace_replacement',
+                        'amount' => 30.00,
+                    ]],
+                ],
+                [
+                    'client_row_id' => 'uniform',
+                    'student_id' => $student->id,
+                    'payment_method' => 'GCash',
+                    'items' => [[
+                        'type' => 'item',
+                        'id' => $uniform->id,
+                        'quantity' => 1,
+                    ]],
+                ],
+            ],
+        ])
+        ->assertOk()
+        ->assertJsonPath('results.0.status', 'recorded')
+        ->assertJsonPath('results.1.status', 'recorded')
+        ->assertJsonPath('results.2.status', 'recorded')
+        ->assertJsonPath('summary.recorded_count', 3);
+
+    $transactions = Transaction::query()->orderBy('id')->get();
+    $uniform->refresh();
+
+    expect($transactions)->toHaveCount(3)
+        ->and((float) $transactions[0]->settlements['id_replacement'])->toBe(75.50)
+        ->and((float) $transactions[1]->settlements['lace_replacement'])->toBe(30.00)
+        ->and((float) $transactions[2]->settlements['others'])->toBe(650.00)
+        ->and(StudentTransaction::query()->whereNull('student_enrollment_id')->count())->toBe(3)
+        ->and(AdminTransaction::query()->count())->toBe(3)
+        ->and($uniform->stock_quantity)->toBe(1)
+        ->and(InventoryStockMovement::query()->where('product_id', $uniform->id)->count())->toBe(1);
 });
 
 it('records valid spreadsheet rows, retains rejected rows, and makes retries idempotent', function (): void {

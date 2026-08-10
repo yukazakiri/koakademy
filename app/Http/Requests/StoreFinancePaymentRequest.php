@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests;
 
 use App\Enums\PaymentMethod;
+use App\Finance\FinancePaymentChargeCatalog;
 use App\Models\User;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -13,17 +14,6 @@ use Illuminate\Validation\Rules\Enum;
 
 final class StoreFinancePaymentRequest extends FormRequest
 {
-    /** @var list<string> */
-    private const FEE_KEYS = [
-        'registration_fee',
-        'miscelanous_fee',
-        'diploma_or_certificate',
-        'transcript_of_records',
-        'certification',
-        'special_exam',
-        'others',
-    ];
-
     public function authorize(): bool
     {
         $user = $this->user();
@@ -43,7 +33,7 @@ final class StoreFinancePaymentRequest extends FormRequest
             'items.*.type' => ['required', 'string', Rule::in(['tuition', 'fee', 'item'])],
             'items.*.amount' => ['nullable', 'numeric', 'decimal:0,2', 'gt:0'],
             'items.*.tuition_id' => ['nullable', 'integer'],
-            'items.*.fee_key' => ['nullable', 'string', Rule::in(self::FEE_KEYS)],
+            'items.*.fee_key' => ['nullable', 'string', Rule::in(FinancePaymentChargeCatalog::feeKeys())],
             'items.*.id' => ['nullable', 'integer'],
             'items.*.quantity' => ['nullable', 'integer', 'between:1,100'],
         ];

@@ -376,7 +376,6 @@ Route::middleware(['auth', 'administrators.only'])
         Route::put('/system-management/analytics', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateAnalytics'])->name('system-management.analytics.update');
         Route::put('/system-management/brand', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateBrand'])->name('system-management.brand.update');
         Route::put('/system-management/socialite', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateSocialite'])->name('system-management.socialite.update');
-        Route::put('/system-management/mail', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateMail'])->name('system-management.mail.update');
         Route::put('/system-management/newsletter', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateNewsletter'])->name('system-management.newsletter.update');
         Route::put('/system-management/api', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateApiManagement'])->name('system-management.api.update');
         Route::put('/system-management/enrollment-pipeline', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateEnrollmentPipeline'])->name('system-management.enrollment-pipeline.update');
@@ -392,7 +391,6 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/system-management/enrollment-policies/{policy}/versions/{version}/publish', [AdministratorEnrollmentPolicyController::class, 'publish'])->whereNumber(['policy', 'version'])->name('system-management.enrollment-policies.versions.publish');
         Route::post('/system-management/enrollment-policies/{policy}/versions/{version}/rollback', [AdministratorEnrollmentPolicyController::class, 'rollback'])->whereNumber(['policy', 'version'])->name('system-management.enrollment-policies.versions.rollback');
         Route::get('/system-management/enrollment-policies/{policy}/versions/{version}/export', [AdministratorEnrollmentPolicyController::class, 'export'])->whereNumber(['policy', 'version'])->name('system-management.enrollment-policies.versions.export');
-        Route::post('/system-management/mail/test', [App\Http\Controllers\AdministratorSystemManagementController::class, 'sendTestEmail'])->name('system-management.mail.test');
         Route::post('/system-management/newsletter/test', [App\Http\Controllers\AdministratorSystemManagementController::class, 'testNewsletterConnection'])->name('system-management.newsletter.test');
         Route::get('/system-management/notifications', [App\Http\Controllers\AdministratorSystemManagementController::class, 'notifications'])->name('system-management.notifications.index');
         Route::put('/system-management/notifications', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateNotificationChannels'])->name('system-management.notifications.update');

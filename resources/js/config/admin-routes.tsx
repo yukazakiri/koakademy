@@ -699,7 +699,7 @@ export const ADMIN_ROUTES: AdminRoute[] = [
                 icon: <IconUserCircle className="size-4" />,
             },
             {
-                title: "Email Configuration",
+                title: "Deployment Mail Status",
                 link: "/administrators/system-management/mail",
                 icon: <IconBell className="size-4" />,
             },

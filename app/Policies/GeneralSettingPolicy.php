@@ -80,11 +80,6 @@ final class GeneralSettingPolicy
         return $this->canViewSection($user, 'mail');
     }
 
-    public function updateMail(User $user): bool
-    {
-        return $this->canUpdateSection($user, 'mail');
-    }
-
     public function viewNewsletter(User $user): bool
     {
         return $this->canViewSection($user, 'newsletter');

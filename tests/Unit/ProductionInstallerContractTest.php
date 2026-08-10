@@ -6,321 +6,277 @@ use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 
-function productionInstallerContents(string $name): string
+function productionAsset(string $path): string
 {
-    return file_get_contents(base_path("scripts/{$name}")) ?: '';
+    return file_get_contents(base_path($path)) ?: '';
 }
 
-it('documents copyable one-line installers for Linux and Windows', function (): void {
-    $gettingStarted = file_get_contents(base_path('GETTING_STARTED.md')) ?: '';
-    $readme = file_get_contents(base_path('README.md')) ?: '';
-    $bashCommand = 'bash -c "$(curl -fsSL https://raw.githubusercontent.com/yukazakiri/koakademy/master/scripts/install.sh)"';
-    $powerShellCommand = '& ([scriptblock]::Create((irm https://raw.githubusercontent.com/yukazakiri/koakademy/master/scripts/install.ps1)))';
+/**
+ * @param  array<string, string>  $overrides
+ * @return array<string, string>
+ */
+function installerEnvironment(string $state, array $overrides = []): array
+{
+    return array_replace([
+        'PATH' => base_path('tests/Fixtures/installer').PATH_SEPARATOR.getenv('PATH'),
+        'KOAKADEMY_INSTALLER_TEST_STATE' => $state,
+        'KOAKADEMY_INSTALLER_TEST_RELEASE_TAG' => 'v1.16.2',
+        'KOAKADEMY_VERSION' => 'v1.16.2',
+        'KOAKADEMY_INSTALLER_TEST_IMAGE' => 'ghcr.io/yukazakiri/koakademy@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        'KOAKADEMY_DOMAIN' => 'school.example',
+    ], $overrides);
+}
 
-    expect($gettingStarted)
-        ->toContain($bashCommand)
-        ->toContain($powerShellCommand)
-        ->toContain('local RustFS')
-        ->toContain('external S3-compatible service')
-        ->and($readme)
-        ->toContain($bashCommand)
-        ->toContain($powerShellCommand);
+it('documents the Linux release-backed one-line installer', function (): void {
+    $command = 'curl -fsSL https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh | sudo bash -s -- install --domain school.example';
+
+    expect(productionAsset('README.md'))
+        ->toContain($command)
+        ->and(productionAsset('GETTING_STARTED.md'))
+        ->toContain($command)
+        ->not->toContain('install.ps1');
 });
 
-it('keeps the Bash and PowerShell Swarm contracts aligned', function (): void {
-    $bash = productionInstallerContents('install.sh');
-    $powerShell = productionInstallerContents('install.ps1');
-    $services = [
-        'koakademy-app',
-        'koakademy-postgres',
-        'koakademy-redis',
-        'koakademy-gotenberg',
-        'koakademy-rustfs',
-    ];
+it('keeps the bootstrap focused on a checksummed stable release command', function (): void {
+    $bootstrap = productionAsset('scripts/install.sh');
+    $operator = productionAsset('scripts/koakademy');
 
-    foreach ($services as $service) {
-        expect($bash)->toContain($service)
-            ->and($powerShell)->toContain($service);
-    }
-
-    expect($bash)
-        ->toContain('api.github.com/repos/${repository}/tags')
-        ->toContain('https://github.com/${repository}/tags.atom')
-        ->toContain('--mode replicated-job')
-        ->toContain('mode=host')
-        ->toContain('docker secret create')
-        ->toContain('Swarm is already active; preserving the existing cluster.')
-        ->toContain('service_replica_status')
-        ->toContain('--filter "name=${service}"')
-        ->not->toContain('name=^${service}$')
-        ->and($powerShell)
-        ->toContain('api.github.com/repos/$RepositoryName/tags')
-        ->toContain('https://github.com/$RepositoryName/tags.atom')
-        ->toContain("'--mode', 'replicated-job'")
-        ->toContain('mode=host')
-        ->toContain('docker secret create')
-        ->toContain('Docker Swarm is already active; preserving the existing cluster.')
-        ->toContain('Get-ServiceReplicaStatus')
-        ->toContain("'--filter', \"name=\$Name\"")
-        ->not->toContain('name=^$Name')
-        ->and($bash)
-        ->toContain('installation_detected')
-        ->toContain('hydrate_runtime_from_existing')
-        ->toContain('Service ${service} is unhealthy')
-        ->toContain('Existing KoAkademy deployment detected; checking service health...')
-        ->and($powerShell)
-        ->toContain('Test-InstallationDetected')
-        ->toContain('Initialize-RuntimeFromExisting')
-        ->toContain('is unhealthy')
-        ->toContain('Existing KoAkademy deployment detected; checking service health...');
-});
-
-it('does not use destructive Swarm operations or mutable application images', function (): void {
-    $installers = productionInstallerContents('install.sh')."\n".productionInstallerContents('install.ps1');
-
-    expect($installers)
-        ->not->toContain('docker swarm leave')
-        ->not->toContain("'swarm', 'leave'")
-        ->not->toContain('docker network rm')
-        ->not->toContain('docker secret rm')
+    expect($bootstrap)
+        ->toContain('releases/download/$'.'{tag}/koakademy')
+        ->toContain('sha256sum --check')
+        ->toContain('exact stable vX.Y.Z release tag')
+        ->and($operator)
+        ->toContain('https://get.docker.com')
+        ->toContain('docker stack deploy')
+        ->toContain('sha256sum --check')
+        ->toContain('immutable GHCR digest')
+        ->toContain('koakademy configure storage')
+        ->toContain('koakademy configure mail')
+        ->toContain('koakademy configure search')
+        ->toContain('Application image rolled back. Database migrations were not reversed.')
         ->not->toContain('ghcr.io/yukazakiri/koakademy:latest')
-        ->not->toContain('rustfs/rustfs:latest')
-        ->not->toContain('rustfsadmin');
+        ->not->toContain('KOAKADEMY_VERSION=edge')
+        ->not->toContain('docker swarm leave');
 });
 
-it('accepts only the explicit edge rolling override and warns prominently', function (): void {
-    $bash = productionInstallerContents('install.sh');
-    $powerShell = productionInstallerContents('install.ps1');
+it('keeps Caddy public and the application private on the Swarm overlay', function (): void {
+    $stack = productionAsset('scripts/swarm-stack.yml');
+    $caddyfile = productionAsset('scripts/Caddyfile');
 
-    expect($bash)
-        ->toContain('if [[ "${KOAKADEMY_VERSION}" == "edge" ]]')
-        ->toContain('KOAKADEMY_VERSION=edge selects the unsupported rolling channel.')
-        ->toContain('pin an exact vX.Y.Z tag for production')
-        ->and($powerShell)
-        ->toContain("if (\$KoAkademyVersion -ceq 'edge')")
-        ->toContain('KOAKADEMY_VERSION=edge selects the unsupported rolling channel.')
-        ->toContain('pin an exact vX.Y.Z tag for production')
-        ->and($bash)
-        ->not->toContain('KOAKADEMY_VERSION:-edge')
-        ->and($powerShell)
-        ->not->toContain("[string]\$KoAkademyVersion = 'edge'");
+    expect($stack)
+        ->toContain('published: 80')
+        ->toContain('published: 443')
+        ->toContain('APP_REPLICAS')
+        ->toContain('driver: overlay')
+        ->toContain('attachable: true')
+        ->not->toContain('published: 8000')
+        ->and($caddyfile)
+        ->toContain('reverse_proxy app:8000');
 });
 
-it('keeps automatic KoAkademy discovery restricted to exact stable tags', function (): void {
-    $bash = productionInstallerContents('install.sh');
-    $powerShell = productionInstallerContents('install.ps1');
-
-    expect($bash)
-        ->toContain('api.github.com/repos/${repository}/releases/latest')
-        ->toContain('"draft":[[:space:]]*false')
-        ->toContain('"prerelease":[[:space:]]*false')
-        ->and($powerShell)
-        ->toContain('api.github.com/repos/$RepositoryName/releases/latest')
-        ->toContain('$release.draft')
-        ->toContain('$release.prerelease');
-});
-
-it('accepts Docker architecture names for AMD64 and ARM64', function (): void {
-    $bash = productionInstallerContents('install.sh');
-    $powerShell = productionInstallerContents('install.ps1');
-
-    expect($bash)
-        ->toContain('"x86_64" || "${architecture}" == "amd64"')
-        ->toContain('"aarch64" || "${architecture}" == "arm64"')
-        ->toContain('supports linux/amd64 and linux/arm64')
-        ->and($powerShell)
-        ->toContain("@('x86_64', 'amd64', 'aarch64', 'arm64')")
-        ->toContain('supports linux/amd64 and linux/arm64');
-});
-
-it('discovers and pins the latest published stable release', function (): void {
+it('parses all release installer shell assets', function (): void {
     $bash = (new ExecutableFinder)->find('bash');
+    $sh = (new ExecutableFinder)->find('sh');
 
-    if ($bash === null || DIRECTORY_SEPARATOR === '\\') {
-        $this->markTestSkipped('The Bash smoke test requires a Unix-like host.');
+    if ($bash === null || $sh === null) {
+        $this->markTestSkipped('Shell executables are unavailable.');
     }
 
-    $filesystem = new Filesystem;
-    $state = storage_path('framework/testing/installer-release-'.bin2hex(random_bytes(6)));
-    $filesystem->mkdir($state);
-
-    $environment = [
-        'PATH' => base_path('tests/Fixtures/installer').PATH_SEPARATOR.getenv('PATH'),
-        'KOAKADEMY_INSTALLER_TEST_STATE' => $state,
-        'KOAKADEMY_INSTALLER_TEST_RELEASE_TAG' => 'v1.12.0',
-        'KOAKADEMY_APP_URL' => 'http://127.0.0.1:18003',
-        'KOAKADEMY_APP_PORT' => '18003',
-        'KOAKADEMY_RUSTFS_PORT' => '19003',
-        'KOAKADEMY_STORAGE' => 'rustfs',
-        'RUSTFS_VERSION' => '1.0.0-beta.10',
-    ];
-
-    try {
-        $process = new Process([$bash, base_path('scripts/install.sh')], base_path(), $environment);
-        $process->setTimeout(30);
+    foreach ([
+        [$bash, '-n', base_path('scripts/install.sh')],
+        [$bash, '-n', base_path('scripts/koakademy')],
+        [$sh, '-n', base_path('scripts/koakademy-app-entrypoint.sh')],
+    ] as $command) {
+        $process = new Process($command, base_path());
         $process->run();
 
-        expect($process->isSuccessful())
-            ->toBeTrue($process->getErrorOutput().$process->getOutput());
-
-        $log = file_get_contents($state.'/docker.log') ?: '';
-        expect($log)->toContain('ghcr.io/yukazakiri/koakademy:v1.12.0');
-    } finally {
-        $filesystem->remove($state);
+        expect($process->isSuccessful())->toBeTrue($process->getErrorOutput().$process->getOutput());
     }
 });
 
-it('smoke tests the explicit edge installer warning and image selection', function (): void {
+it('installs a Caddy-backed Swarm release through the fixture Docker engine', function (): void {
     $bash = (new ExecutableFinder)->find('bash');
 
     if ($bash === null || DIRECTORY_SEPARATOR === '\\') {
-        $this->markTestSkipped('The Bash smoke test requires a Unix-like host.');
-    }
-
-    $filesystem = new Filesystem;
-    $state = storage_path('framework/testing/installer-edge-'.bin2hex(random_bytes(6)));
-    $filesystem->mkdir($state);
-
-    $environment = [
-        'PATH' => base_path('tests/Fixtures/installer').PATH_SEPARATOR.getenv('PATH'),
-        'KOAKADEMY_INSTALLER_TEST_STATE' => $state,
-        'KOAKADEMY_APP_URL' => 'http://127.0.0.1:18001',
-        'KOAKADEMY_APP_PORT' => '18001',
-        'KOAKADEMY_RUSTFS_PORT' => '19001',
-        'KOAKADEMY_STORAGE' => 'rustfs',
-        'KOAKADEMY_VERSION' => 'edge',
-        'KOAKADEMY_INSTALLER_TEST_ARCHITECTURE' => 'aarch64',
-        'RUSTFS_VERSION' => '1.0.0-beta.10',
-    ];
-
-    try {
-        $process = new Process([$bash, base_path('scripts/install.sh')], base_path(), $environment);
-        $process->setTimeout(30);
-        $process->run();
-
-        expect($process->isSuccessful())
-            ->toBeTrue($process->getErrorOutput().$process->getOutput())
-            ->and($process->getErrorOutput())
-            ->toContain('KOAKADEMY_VERSION=edge selects the unsupported rolling channel.')
-            ->toContain('pin an exact vX.Y.Z tag for production');
-
-        $log = file_get_contents($state.'/docker.log') ?: '';
-        expect($log)->toContain('ghcr.io/yukazakiri/koakademy:edge');
-    } finally {
-        $filesystem->remove($state);
-    }
-});
-
-it('rejects edge-like tags that are not the exact rolling channel name', function (): void {
-    $bash = (new ExecutableFinder)->find('bash');
-
-    if ($bash === null || DIRECTORY_SEPARATOR === '\\') {
-        $this->markTestSkipped('The Bash smoke test requires a Unix-like host.');
-    }
-
-    $filesystem = new Filesystem;
-    $state = storage_path('framework/testing/installer-invalid-edge-'.bin2hex(random_bytes(6)));
-    $filesystem->mkdir($state);
-
-    $environment = [
-        'PATH' => base_path('tests/Fixtures/installer').PATH_SEPARATOR.getenv('PATH'),
-        'KOAKADEMY_INSTALLER_TEST_STATE' => $state,
-        'KOAKADEMY_APP_URL' => 'http://127.0.0.1:18002',
-        'KOAKADEMY_APP_PORT' => '18002',
-        'KOAKADEMY_RUSTFS_PORT' => '19002',
-        'KOAKADEMY_STORAGE' => 'rustfs',
-        'KOAKADEMY_VERSION' => 'edge-latest',
-        'RUSTFS_VERSION' => '1.0.0-beta.10',
-    ];
-
-    try {
-        $process = new Process([$bash, base_path('scripts/install.sh')], base_path(), $environment);
-        $process->setTimeout(30);
-        $process->run();
-
-        expect($process->isSuccessful())
-            ->toBeFalse()
-            ->and($process->getErrorOutput())
-            ->toContain("KOAKADEMY_VERSION 'edge-latest' is not a safe container tag.");
-    } finally {
-        $filesystem->remove($state);
-    }
-});
-
-it('smoke tests a fresh and repeated Bash installation without a Docker daemon', function (): void {
-    $bash = (new ExecutableFinder)->find('bash');
-
-    if ($bash === null || DIRECTORY_SEPARATOR === '\\') {
-        $this->markTestSkipped('The Bash smoke test requires a Unix-like host.');
+        $this->markTestSkipped('The installer fixture requires Bash on a Unix-like host.');
     }
 
     $filesystem = new Filesystem;
     $state = storage_path('framework/testing/installer-'.bin2hex(random_bytes(6)));
     $filesystem->mkdir($state);
 
-    $environment = [
-        'PATH' => base_path('tests/Fixtures/installer').PATH_SEPARATOR.getenv('PATH'),
-        'KOAKADEMY_INSTALLER_TEST_STATE' => $state,
-        'KOAKADEMY_APP_URL' => 'http://127.0.0.1:18000',
-        'KOAKADEMY_APP_PORT' => '18000',
-        'KOAKADEMY_RUSTFS_PORT' => '19000',
-        'KOAKADEMY_STORAGE' => 'rustfs',
-        'KOAKADEMY_VERSION' => 'v1.9.0',
-        'RUSTFS_VERSION' => '1.0.0-beta.10',
-    ];
-
     try {
-        $firstRun = new Process([$bash, base_path('scripts/install.sh')], base_path(), $environment);
-        $firstRun->setTimeout(30);
-        $firstRun->run();
+        $environment = installerEnvironment($state);
+        $process = new Process([$bash, base_path('scripts/install.sh'), 'install', '--domain', 'school.example'], base_path(), $environment);
+        $process->setTimeout(30);
+        $process->run();
 
-        expect($firstRun->isSuccessful())
-            ->toBeTrue($firstRun->getErrorOutput().$firstRun->getOutput());
+        expect($process->isSuccessful())->toBeTrue($process->getErrorOutput().$process->getOutput());
 
         $log = file_get_contents($state.'/docker.log') ?: '';
+        $runtime = file_get_contents($state.'/runtime/runtime.env') ?: '';
         expect($log)
-            ->toContain('volume create --label com.koakademy.managed-by=swarm-installer koakademy-postgres-data')
-            ->toContain('volume create --label com.koakademy.managed-by=swarm-installer koakademy-rustfs-data')
-            ->toContain('service create --name koakademy-postgres')
-            ->toContain('service create --name koakademy-redis')
-            ->toContain('service create --name koakademy-gotenberg')
-            ->toContain('service create --name koakademy-rustfs')
-            ->toContain('service create --name koakademy-app')
-            ->toContain('published=18000,target=8000,mode=host')
-            ->toContain('published=19000,target=9000,mode=host')
-            ->not->toContain('swarm init');
+            ->toContain('stack deploy')
+            ->toContain('service create --name koakademy-migrate-')
+            ->and($runtime)
+            ->toContain('APP_REPLICAS=1')
+            ->toContain('FILESYSTEM_DISK=public')
+            ->toContain('KOAKADEMY_IMAGE=ghcr.io/yukazakiri/koakademy@sha256:');
+    } finally {
+        $filesystem->remove($state);
+    }
+});
 
-        $createsBeforeRepeat = mb_substr_count($log, 'service create --name');
-        $secondRun = new Process([$bash, base_path('scripts/install.sh')], base_path(), $environment);
-        $secondRun->setTimeout(30);
-        $secondRun->run();
+it('backs up, migrates, and records the prior immutable image during an update', function (): void {
+    $bash = (new ExecutableFinder)->find('bash');
 
-        expect($secondRun->isSuccessful())
-            ->toBeTrue($secondRun->getErrorOutput().$secondRun->getOutput())
-            ->and($secondRun->getOutput())
-            ->toContain('Existing KoAkademy deployment detected; checking service health...')
-            ->toContain('KoAkademy v1.9.0 is ready.')
-            ->toContain('koakademy-postgres: healthy');
+    if ($bash === null || DIRECTORY_SEPARATOR === '\\') {
+        $this->markTestSkipped('The installer fixture requires Bash on a Unix-like host.');
+    }
 
-        $repeatedLog = file_get_contents($state.'/docker.log') ?: '';
-        expect(mb_substr_count($repeatedLog, 'service create --name'))->toBe($createsBeforeRepeat);
+    $filesystem = new Filesystem;
+    $state = storage_path('framework/testing/installer-update-'.bin2hex(random_bytes(6)));
+    $filesystem->mkdir($state);
 
-        $filesystem->dumpFile($state.'/unhealthy/koakademy-postgres', '');
-        $repairRun = new Process([$bash, base_path('scripts/install.sh')], base_path(), $environment);
-        $repairRun->setTimeout(30);
-        $repairRun->run();
+    try {
+        $environment = installerEnvironment($state);
+        $install = new Process([$bash, base_path('scripts/install.sh'), 'install', '--domain', 'school.example'], base_path(), $environment);
+        $install->setTimeout(30);
+        $install->run();
+        expect($install->isSuccessful())->toBeTrue($install->getErrorOutput().$install->getOutput());
 
-        expect($repairRun->isSuccessful())
-            ->toBeTrue($repairRun->getErrorOutput().$repairRun->getOutput())
-            ->and($repairRun->getErrorOutput().$repairRun->getOutput())
-            ->toContain('Service koakademy-postgres is unhealthy')
-            ->toContain('KoAkademy v1.9.0 is ready.');
+        $environment['KOAKADEMY_VERSION'] = 'v1.16.3';
+        $environment['KOAKADEMY_INSTALLER_TEST_RELEASE_TAG'] = 'v1.16.3';
+        $environment['KOAKADEMY_INSTALLER_TEST_IMAGE'] = 'ghcr.io/yukazakiri/koakademy@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+        $update = new Process([$bash, base_path('scripts/koakademy'), 'update', '--release', 'v1.16.3'], base_path(), $environment);
+        $update->setTimeout(30);
+        $update->run();
 
-        $repairLog = file_get_contents($state.'/docker.log') ?: '';
-        expect($repairLog)
-            ->toContain('service rm koakademy-postgres')
-            ->and(mb_substr_count($repairLog, 'service create --name koakademy-postgres'))
-            ->toBeGreaterThan(1);
+        expect($update->isSuccessful())->toBeTrue($update->getErrorOutput().$update->getOutput());
+
+        $runtime = file_get_contents($state.'/runtime/runtime.env') ?: '';
+        $backups = glob($state.'/runtime/backups/*.dump');
+        expect($runtime)
+            ->toContain('KOAKADEMY_IMAGE=ghcr.io/yukazakiri/koakademy@sha256:bbbb')
+            ->toContain('PREVIOUS_KOAKADEMY_IMAGE=ghcr.io/yukazakiri/koakademy@sha256:aaaaaaaa')
+            ->and($backups)
+            ->not->toBeEmpty();
+    } finally {
+        $filesystem->remove($state);
+    }
+});
+
+it('initializes an inactive Swarm, but fails before deployment on unsafe hosts', function (): void {
+    $bash = (new ExecutableFinder)->find('bash');
+
+    if ($bash === null || DIRECTORY_SEPARATOR === '\\') {
+        $this->markTestSkipped('The installer fixture requires Bash on a Unix-like host.');
+    }
+
+    $filesystem = new Filesystem;
+    $state = storage_path('framework/testing/installer-safety-'.bin2hex(random_bytes(6)));
+    $filesystem->mkdir($state);
+
+    try {
+        $inactive = new Process([$bash, base_path('scripts/install.sh'), 'install', '--domain', 'school.example'], base_path(), installerEnvironment($state, [
+            'KOAKADEMY_INSTALLER_TEST_SWARM_STATE' => 'inactive',
+        ]));
+        $inactive->run();
+        expect($inactive->isSuccessful())->toBeTrue($inactive->getErrorOutput().$inactive->getOutput())
+            ->and(file_get_contents($state.'/docker.log'))
+            ->toContain('swarm init');
+
+        $legacyState = $state.'-legacy';
+        $filesystem->mkdir($legacyState);
+        $legacy = new Process([$bash, base_path('scripts/install.sh'), 'install', '--domain', 'school.example'], base_path(), installerEnvironment($legacyState, [
+            'KOAKADEMY_INSTALLER_TEST_LEGACY_SERVICE' => 'koakademy-app',
+        ]));
+        $legacy->run();
+        expect($legacy->isSuccessful())->toBeFalse()
+            ->and($legacy->getErrorOutput())
+            ->toContain('Legacy service koakademy-app was detected')
+            ->and(file_get_contents($legacyState.'/docker.log'))
+            ->not->toContain('stack deploy');
+
+        $managerState = $state.'-manager';
+        $filesystem->mkdir($managerState);
+        $manager = new Process([$bash, base_path('scripts/install.sh'), 'install', '--domain', 'school.example'], base_path(), installerEnvironment($managerState, [
+            'KOAKADEMY_INSTALLER_TEST_SWARM_MANAGER' => 'false',
+        ]));
+        $manager->run();
+        expect($manager->isSuccessful())->toBeFalse()
+            ->and($manager->getErrorOutput())
+            ->toContain('Docker Swarm manager node')
+            ->and(file_get_contents($managerState.'/docker.log'))
+            ->not->toContain('stack deploy');
+
+        $portState = $state.'-port';
+        $filesystem->mkdir($portState);
+        $port = new Process([$bash, base_path('scripts/install.sh'), 'install', '--domain', 'school.example'], base_path(), installerEnvironment($portState, [
+            'KOAKADEMY_INSTALLER_TEST_PORT_CONFLICT' => '443',
+        ]));
+        $port->run();
+        expect($port->isSuccessful())->toBeFalse()
+            ->and($port->getErrorOutput())
+            ->toContain('Port 443 is already in use')
+            ->and(file_get_contents($portState.'/docker.log'))
+            ->not->toContain('stack deploy');
+    } finally {
+        $filesystem->remove([$state, $state.'-legacy', $state.'-manager', $state.'-port']);
+    }
+});
+
+it('is idempotent and rotates provider secrets without leaking their values', function (): void {
+    $bash = (new ExecutableFinder)->find('bash');
+
+    if ($bash === null || DIRECTORY_SEPARATOR === '\\') {
+        $this->markTestSkipped('The installer fixture requires Bash on a Unix-like host.');
+    }
+
+    $filesystem = new Filesystem;
+    $state = storage_path('framework/testing/installer-providers-'.bin2hex(random_bytes(6)));
+    $filesystem->mkdir($state);
+
+    try {
+        $environment = installerEnvironment($state);
+        $install = new Process([$bash, base_path('scripts/install.sh'), 'install', '--domain', 'school.example'], base_path(), $environment);
+        $install->run();
+        expect($install->isSuccessful())->toBeTrue($install->getErrorOutput().$install->getOutput());
+
+        $logBeforeRepeat = file_get_contents($state.'/docker.log') ?: '';
+        $repeat = new Process([$bash, base_path('scripts/koakademy'), 'install', '--domain', 'school.example'], base_path(), $environment);
+        $repeat->run();
+        expect($repeat->isSuccessful())->toBeFalse()
+            ->and($repeat->getErrorOutput())
+            ->toContain('already installed')
+            ->and(file_get_contents($state.'/docker.log'))
+            ->toBe($logBeforeRepeat);
+
+        $before = file_get_contents($state.'/runtime/runtime.env') ?: '';
+        preg_match('/S3_SECRET_KEY_SECRET=([^\\n]+)/', $before, $matches);
+        $previousSecretName = $matches[1] ?? '';
+
+        $storage = new Process([$bash, base_path('scripts/koakademy'), 'configure', 'storage', 'r2'], base_path(), installerEnvironment($state, [
+            'KOAKADEMY_S3_ENDPOINT' => 'https://account-id.r2.cloudflarestorage.com',
+            'KOAKADEMY_S3_BUCKET' => 'koakademy-uploads',
+            'KOAKADEMY_S3_PUBLIC_URL' => '',
+            'KOAKADEMY_S3_ACCESS_KEY' => 'r2-access-key',
+            'KOAKADEMY_S3_SECRET_KEY' => 'r2-secret-value',
+        ]));
+        $storage->run();
+        expect($storage->isSuccessful())->toBeTrue($storage->getErrorOutput().$storage->getOutput());
+
+        $after = file_get_contents($state.'/runtime/runtime.env') ?: '';
+        $log = file_get_contents($state.'/docker.log') ?: '';
+        expect($after)
+            ->toContain('FILESYSTEM_DISK=s3')
+            ->not->toContain('r2-secret-value')
+            ->and($after)
+            ->not->toContain("S3_SECRET_KEY_SECRET={$previousSecretName}")
+            ->and($log)
+            ->toContain('stack deploy')
+            ->not->toContain('r2-secret-value')
+            ->not->toContain('r2-access-key');
     } finally {
         $filesystem->remove($state);
     }

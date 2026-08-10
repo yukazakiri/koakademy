@@ -5,7 +5,7 @@ description: Required pull request validation for application, documentation, an
 
 # CI Pipeline
 
-`.github/workflows/ci.yml` runs for pull requests into `master` and explicit manual dispatches. It does not repeat the full suite after merge; a `master` push starts Delivery directly.
+`.github/workflows/ci.yml` runs for pull requests into `master` and explicit manual dispatches. It does not repeat the full suite after merge; a `master` push lets Delivery maintain the reviewed Release Please PR. Delivery builds containers only after that release PR is merged.
 
 CI is intentionally secret-free and fork-safe. Actions are commit-SHA pinned, checkout credentials are not persisted, permissions are scoped per job, event values are passed to shells through environment variables, and every job has a timeout.
 
@@ -21,7 +21,7 @@ CI is intentionally secret-free and fork-safe. Actions are commit-SHA pinned, ch
 
 The test environment is hermetic: SQLite in memory, array cache/session/mail, sync queues, null broadcasting, Scout's collection driver, and optional observability disabled. Composer downloads and npm dependencies are cached.
 
-Delivery owns the only multi-architecture container build. The path-filtered documentation deployment owns the Astro production build, while CI still catches generated-document and local-link drift before merge.
+Delivery owns the only multi-architecture release-image build. The path-filtered documentation deployment owns the Astro production build, while CI still catches generated-document and local-link drift before merge.
 
 Release Please pull requests use a fast path because they do not change application code. The classifier trusts only the same-repository Release Please branch and requires the change set to be exactly `.release-please-manifest.json`, `CHANGELOG.md`, and `version.json`. It then checks matching stable versions, the generated PR title, and the changelog entry. Any additional file automatically restores the full application and workflow-security suite.
 
@@ -37,9 +37,11 @@ php artisan test --parallel --compact
 npm run docs:check
 KOAKADEMY_ENV_FILE=.env.production.example \
   docker compose --env-file .env.production.example -f compose.production.yaml config --quiet
-bash -n scripts/install.sh scripts/generate-version-metadata.sh
-shellcheck scripts/install.sh scripts/generate-version-metadata.sh \
+bash -n scripts/install.sh scripts/koakademy scripts/generate-version-metadata.sh
+shellcheck scripts/install.sh scripts/koakademy scripts/koakademy-app-entrypoint.sh \
   tests/Fixtures/installer/docker tests/Fixtures/installer/curl
+docker compose --env-file tests/Fixtures/installer/swarm-stack.env \
+  -f scripts/swarm-stack.yml config --quiet
 ```
 
 Run a focused test while iterating:
@@ -55,6 +57,6 @@ php artisan test --compact --filter="shows the setup screen"
 - **No secrets:** do not add registry credentials or deployment side effects to CI. Privileged publication stays in [Delivery](./releases/).
 - **Forks:** pull-request validation remains secret-free and never publishes artifacts.
 - **PR titles:** the metadata-only `pull_request_target` workflow may read the title, description, labels, and changed-file names to infer a Conventional Commit type and scope. It never checks out or executes contributor code. Maintainers should review the inferred title because it controls release notes and SemVer.
-- **Release ordering:** a same-repository `master` push starts Delivery immediately; CI is not repeated after merge.
+- **Release ordering:** a same-repository `master` push maintains Release Please; only its merged release PR starts stable image publication. CI is not repeated after merge.
 - **Administrator bypass:** branch protection does not apply to administrators, so an administrator can intentionally merge and publish before `CI / required` completes.
 - **Existing quality debt:** repository-wide Prettier, PHPStan, strict Composer validation, and npm audit are not blocking until their independent findings are resolved.

@@ -1,166 +1,79 @@
 # Configuration
 
-The default Docker Swarm installer generates the production environment and stores credentials as Docker secrets. The manual Compose path starts from `.env.production.example`, which is the public contract for `compose.production.yaml`. Keep local environment files out of version control and restart or update the application service after changes.
+The one-line Swarm installation is deployment-managed. Non-secret runtime settings live in `/opt/koakademy/runtime.env` with mode 0600; credentials live only in Docker Secrets. Do not edit that file or a container `.env` by hand. Use the `koakademy` command so a change is validated, secrets are rotated, and FrankenPHP workers restart.
 
-## Swarm installer inputs
+## Runtime commands
 
-The installer is interactive by default. Set these process environment variables before running it to override a prompt or default:
+```sh
+sudo koakademy status
+sudo koakademy configure storage local
+sudo koakademy configure storage s3
+sudo koakademy configure storage r2
+sudo koakademy configure storage library-r2
+sudo koakademy configure mail log
+sudo koakademy configure mail smtp
+sudo koakademy configure mail sequenzy
+sudo koakademy configure search enable
+sudo koakademy configure search disable
+```
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `KOAKADEMY_VERSION` | Latest published stable GitHub Release | Pin an exact stable KoAkademy image tag. Explicit `edge` is accepted only for unsupported rolling evaluation. |
-| `KOAKADEMY_APP_URL` | `http://<detected-ip>:8000` | Public origin without a path. |
-| `KOAKADEMY_APP_PORT` | `8000` | Host port published for KoAkademy. |
-| `KOAKADEMY_STORAGE` | Interactive, local RustFS first | Choose `rustfs` or `external`. |
-| `RUSTFS_VERSION` | Newest stable or non-preview beta GitHub tag with a published image | Pin the local RustFS image tag. |
-| `KOAKADEMY_RUSTFS_PORT` | `9000` | Host port for the local RustFS S3 API. |
-| `KOAKADEMY_S3_ENDPOINT` | Interactive for external storage | S3-compatible API origin. |
-| `KOAKADEMY_S3_BUCKET` | `koakademy` for RustFS | Existing external bucket or local bucket name. |
-| `KOAKADEMY_S3_REGION` | `us-east-1` for RustFS; `auto` for external | Provider region value. |
-| `KOAKADEMY_S3_PUBLIC_URL` | Local RustFS bucket URL | Browser-visible bucket or CDN base URL. |
-| `KOAKADEMY_S3_PATH_STYLE` | `true` for RustFS; interactive for external | Whether the S3 client uses path-style requests. |
-| `KOAKADEMY_S3_ACCESS_KEY` | Generated for RustFS; interactive for external | Storage access key used only when creating the Docker secret. |
-| `KOAKADEMY_S3_SECRET_KEY` | Generated for RustFS; hidden prompt for external | Storage secret key used only when creating the Docker secret. |
-| `KOAKADEMY_TRUSTED_PROXIES` | Empty | Comma-separated edge IP addresses or CIDRs. |
-| `GITHUB_TOKEN` | Empty | Optional GitHub token for authenticated tag lookup and a higher API rate limit. |
+Commands prompt for values and hide secrets. For unattended use, supply the documented `KOAKADEMY_*` environment variable for each prompt; do not put credential values in shared shell history or source control.
 
-On Bash, prefix the installer command with non-secret values such as `KOAKADEMY_APP_URL=https://school.example`. On PowerShell, set `$env:KOAKADEMY_APP_URL` first. Prefer the hidden credential prompt over putting secrets in shell history.
+## Storage
 
-Generated application, database, Redis, and storage credentials live in Swarm's encrypted state and are reused on subsequent runs. Back up the Swarm manager state as well as application data; the installer does not write a plaintext recovery file.
+Fresh installs use `FILESYSTEM_DISK=public` on the persistent app volume. This keeps first boot simple but is tied to one VPS. Move uploads to S3 or Cloudflare R2 before relying on the server as production infrastructure:
 
-The one-line installers automatically discover only exact stable tags from published, non-draft, non-prerelease GitHub Releases. To evaluate the rolling channel explicitly, set `KOAKADEMY_VERSION=edge`; both installers print a prominent unsupported-channel warning. Never use `edge` for production or assume its current digest can be recovered later—use an exact `vX.Y.Z` or `sha-<commit>` reference instead.
+```sh
+sudo koakademy configure storage r2
+```
+
+The command collects the endpoint, bucket, region, optional public/CDN URL, access key, and secret key. It stores only the two keys as Docker Secrets. R2 selects region `auto` and path-style requests by default; generic S3 asks for those provider-specific values.
+
+Digital Library editions require a separate private bucket. Configure it separately:
+
+```sh
+sudo koakademy configure storage library-r2
+```
+
+Never expose that bucket through a public URL. Limit credentials to its bucket, retain the existing reader/download authorization controls, and configure exact-origin CORS for PDF range requests.
+
+## Mail
+
+First boot uses Laravel's `log` mailer. Configure external delivery only through the operator command:
+
+```sh
+sudo koakademy configure mail smtp
+```
+
+SMTP accepts host, port, scheme, username, password, and sender identity. Sequenzy accepts its API endpoint and API key. The password or API key becomes a Docker Secret; the System Management page intentionally shows only the active mailer and sender identity. It cannot edit or test credentials from the web application.
+
+## Search
+
+Meilisearch is external-only:
+
+```sh
+sudo koakademy configure search enable
+```
+
+Provide the external HTTPS endpoint and API key. KoAkademy enables the Scout Meilisearch driver, rolls the app service, synchronizes index settings, and imports the registered searchable models. No Meilisearch service is added to the Swarm stack. Disable it with `sudo koakademy configure search disable`.
 
 ## Application and routing
 
-| Variable            | Required | Production guidance                                                 |
-| ------------------- | -------- | ------------------------------------------------------------------- |
-| `KOAKADEMY_VERSION` | Yes      | Pin the latest stable, non-prerelease image tag.                    |
-| `APP_KEY`           | Yes      | Generate once per installation and store as a secret.               |
-| `APP_ENV`           | Yes      | Must be `production`.                                               |
-| `APP_DEBUG`         | Yes      | Must be `false`; debug output can disclose secrets.                 |
-| `APP_URL`           | Yes      | Public HTTPS origin, without a trailing path.                       |
-| `PORTAL_HOST`       | Yes      | Hostname only. Normally the host from `APP_URL`.                    |
-| `ADMIN_HOST`        | Yes      | Same hostname for the supported `/admin` topology.                  |
-| `TRUSTED_HOSTS`     | No       | Comma-separated additional exact hostnames; not regex.              |
-| `TRUSTED_PROXIES`   | Yes      | `*`, addresses, or CIDRs for the HTTPS edge. See the warning below. |
-
-Host-header validation derives exact patterns from `APP_URL`, `PORTAL_HOST`, `ADMIN_HOST`, and `TRUSTED_HOSTS`. Invalid entries are ignored. `localhost` and `127.0.0.1` remain accepted for local health and maintenance operations.
-
-`TRUSTED_PROXIES=*` is safe in the supplied Compose topology because the origin binds only to loopback. If the application is reachable from another host or network, replace it with explicit proxy IPs/CIDRs so clients cannot forge forwarded headers.
-
-## PostgreSQL
-
-`DB_CONNECTION=pgsql` is required by the prebuilt image. Set `DB_HOST=postgres`, `DB_PORT=5432`, a dedicated database and user, and a random `DB_PASSWORD`. Do not publish the database service port. Use a separately managed PostgreSQL service only after matching backup, TLS, availability, and connection-limit requirements.
-
-## Redis
-
-The production template uses Redis for cache, sessions, and queues. Keep `CACHE_STORE=redis`, `SESSION_DRIVER=redis`, and `QUEUE_CONNECTION=redis`. Set a random `REDIS_PASSWORD`; the Compose service requires it and is not host-published.
-
-## Sessions
-
-Production defaults encrypt server-side session data and mark cookies Secure, HttpOnly, and SameSite=Lax. Leave `SESSION_DOMAIN` empty for a host-only cookie in the one-host topology. Split subdomains may require an explicit shared cookie domain and a security review.
-
-## Object storage
-
-Production uploads require `FILESYSTEM_DISK=s3`. The Swarm installer can supply these values from local RustFS or an external S3-compatible service; the manual Compose path requires all of:
+Caddy terminates HTTPS and is the only public service. It forwards to the internal FrankenPHP app over the Swarm overlay. The installer sets:
 
 ```dotenv
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
-AWS_DEFAULT_REGION=us-east-1
-AWS_BUCKET=
-AWS_ENDPOINT=
-AWS_URL=
-AWS_USE_PATH_STYLE_ENDPOINT=true
+APP_URL=https://school.example
+PORTAL_HOST=school.example
+ADMIN_HOST=school.example
+TRUSTED_PROXIES=*
+SESSION_SECURE_COOKIE=true
+OCTANE_SERVER=frankenphp
 ```
 
-Use a bucket dedicated to this installation and credentials limited to that bucket. `AWS_ENDPOINT` is the provider API endpoint. `AWS_URL` is the public or CDN base URL if objects are served publicly; leave it empty when the provider and application generate URLs without an override. Path-style behavior depends on the provider.
+The wildcard proxy trust is valid because the app service is not published outside the overlay. If the topology is changed to expose the app directly, replace it with explicit proxy addresses or CIDRs.
 
-Application-container storage is retained only for framework runtime files, logs, caches, and temporary work. It is not the supported production upload store. The optional local RustFS service is object storage backed by its own persistent volume, but it remains a single-node topology that must be backed up.
+## Manual Compose configuration
 
-### Private Digital Library storage
+`.env.production.example` remains the public interface for `compose.production.yaml`. Compose operators must create a protected `.env`, generate one `APP_KEY` per installation, configure a dedicated PostgreSQL/Redis password and external S3-compatible storage, then restart the app after any environment change. Under FrankenPHP, an environment or configuration change does not reach already booted workers until a restart.
 
-Digital editions use a separate private S3-compatible bucket. Do not reuse the public upload bucket, add a public custom domain, or place an object-storage URL in Inertia data.
-
-```dotenv
-LIBRARY_EBOOK_DRIVER=s3
-LIBRARY_EBOOK_MAX_KB=92160
-LIBRARY_READER_URL_MINUTES=60
-LIBRARY_DOWNLOAD_URL_MINUTES=5
-LIBRARY_TAKEDOWN_EMAIL=library@example.edu
-LIBRARY_R2_ACCESS_KEY_ID=
-LIBRARY_R2_SECRET_ACCESS_KEY=
-LIBRARY_R2_DEFAULT_REGION=auto
-LIBRARY_R2_BUCKET=
-LIBRARY_R2_ENDPOINT=https://account-id.r2.cloudflarestorage.com
-```
-
-Grant the application credentials access only to the private library bucket. The application validates uploads, stores random object names and checksums, and authorizes every reader or download request before issuing an expiring URL. Keep downloads disabled unless the documented license permits them.
-
-Configure bucket CORS for the exact KoAkademy HTTPS origin so PDF.js can make range requests. Do not use `*` for `AllowedOrigins`:
-
-```json
-[
-    {
-        "AllowedOrigins": ["https://portal.koakademy.example"],
-        "AllowedMethods": ["GET", "HEAD"],
-        "AllowedHeaders": ["Range"],
-        "ExposeHeaders": ["Accept-Ranges", "Content-Length", "Content-Range", "Content-Type", "ETag"],
-        "MaxAgeSeconds": 3600
-    }
-]
-```
-
-Before production publication, the librarian must record the digital rights basis and attest that the KoAkademy operator may reproduce and communicate the file. Use the takedown address for rights complaints and unpublish or remove disputed material immediately. The feature flag `library_module_enabled` hides and blocks the authenticated Digital Library without affecting the restricted Library Management records.
-
-## PDF rendering
-
-KoAkademy uses `spatie/laravel-pdf` with the Gotenberg driver:
-
-```dotenv
-LARAVEL_PDF_DRIVER=gotenberg
-LARAVEL_PDF_PRODUCTION_DRIVER=gotenberg
-LARAVEL_PDF_PRODUCTION_FALLBACK=
-LARAVEL_PDF_ROLLBACK_DRIVER=gotenberg
-GOTENBERG_URL=http://gotenberg:3000
-```
-
-Gotenberg remains on the private Compose network or Swarm overlay. DOMPDF is not installed or supported as a fallback. Treat PDF jobs as failed when Gotenberg is unavailable and restore that service before retrying.
-
-## Mail and broadcasting
-
-The template uses `MAIL_MAILER=log` and `BROADCAST_CONNECTION=log` so first boot needs no third-party credentials. Configure an authenticated production mail transport before relying on invitations, password resets, or notifications. Do not claim email delivery is working until a real message is verified.
-
-## Newsletter marketing integration
-
-Newsletter subscriptions are a consent-based marketing contact integration and are intentionally separate from transactional mail. Configure them in **System Settings → Newsletter**; SMTP is not a newsletter provider and changing these settings does not affect password resets, receipts, invitations, or system notifications.
-
-New installations start with newsletter prompting disabled. Choose one provider, enter its dedicated marketing credentials, test the connection, and then enable the prompt:
-
-| Provider | Required settings |
-| --- | --- |
-| Sequenzy | API key |
-| Brevo | API key and contact list ID |
-| Mailchimp | API key, server prefix such as `us21`, and audience ID |
-
-Provider credentials and all provider-specific settings are encrypted in the database. They are never returned through Inertia; a blank API key field preserves the credential already stored. Do not reuse the transactional Sequenzy credential automatically—enter the key that is authorized for marketing contacts.
-
-Disabling newsletter prompting takes effect without contacting the provider. Switching providers clears remote lookup caches but affects future signups only: local subscribed and declined records are retained, and KoAkademy performs no historical contact migration or backfill. Remote opt-outs suppress the prompt, while unavailable provider APIs never create a successful local subscription record.
-
-Provider endpoints and HTTP timeouts can be overridden for self-hosted gateways or network policy:
-
-```dotenv
-NEWSLETTER_HTTP_TIMEOUT=10
-NEWSLETTER_HTTP_CONNECT_TIMEOUT=5
-NEWSLETTER_SEQUENZY_URL=https://api.sequenzy.com/api/v1
-NEWSLETTER_BREVO_URL=https://api.brevo.com/v3
-NEWSLETTER_MAILCHIMP_URL=https://{server}.api.mailchimp.com/3.0
-```
-
-## Optional observability and search
-
-Telescope, Pulse, Nightwatch, Sentry, and external search are disabled by default in the production template. Enable one service at a time, read its upstream privacy and retention documentation, and configure authentication before exposing any dashboard. Secrets for optional services do not belong in examples or commits.
-
-## Startup controls
-
-Keep `RUN_MIGRATIONS=false`. Database migrations are explicit install and upgrade steps. `RUN_SCOUT_SETTINGS` and `RUN_DOCKER_SCRIPTS` are also disabled in the baseline; invoke maintenance work deliberately and observe it to completion.
+Keep `RUN_MIGRATIONS=false`. Migrations are explicit install/update operations, never app-startup work.

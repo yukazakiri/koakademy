@@ -1,0 +1,280 @@
+name: koakademy
+
+services:
+  caddy:
+    image: caddy:2.10.0-alpine
+    environment:
+      KOAKADEMY_DOMAIN: ${KOAKADEMY_DOMAIN}
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
+        mode: 0444
+    ports:
+      - target: 80
+        published: 80
+        protocol: tcp
+        mode: host
+      - target: 443
+        published: 443
+        protocol: tcp
+        mode: host
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - private
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.hostname == ${KOAKADEMY_NODE}
+      restart_policy:
+        condition: any
+
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: koakademy
+      POSTGRES_USER: koakademy
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - source: postgres_password
+        target: postgres_password
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    networks:
+      - private
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U koakademy -d koakademy"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.hostname == ${KOAKADEMY_NODE}
+      restart_policy:
+        condition: any
+
+  redis:
+    image: redis:8-alpine
+    command: ["sh", "-ec", "exec redis-server --appendonly yes --requirepass \"$$(cat /run/secrets/redis_password)\""]
+    secrets:
+      - source: redis_password
+        target: redis_password
+    volumes:
+      - redis-data:/data
+    networks:
+      - private
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/redis_password)\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.hostname == ${KOAKADEMY_NODE}
+      restart_policy:
+        condition: any
+
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    networks:
+      - private
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.hostname == ${KOAKADEMY_NODE}
+      restart_policy:
+        condition: any
+
+  app:
+    image: ${KOAKADEMY_IMAGE}
+    entrypoint: ["/bin/sh", "/run/configs/koakademy-app-entrypoint"]
+    environment:
+      APP_NAME: ${APP_NAME}
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_URL: ${APP_URL}
+      APP_TIMEZONE: ${APP_TIMEZONE}
+      APP_LOCALE: ${APP_LOCALE}
+      APP_FALLBACK_LOCALE: ${APP_FALLBACK_LOCALE}
+      APP_MAINTENANCE_DRIVER: file
+      PORTAL_HOST: ${KOAKADEMY_DOMAIN}
+      ADMIN_HOST: ${KOAKADEMY_DOMAIN}
+      TRUSTED_HOSTS: ${TRUSTED_HOSTS}
+      TRUSTED_PROXIES: "*"
+      OCTANE_SERVER: frankenphp
+      OCTANE_HTTPS: "false"
+      OCTANE_WORKERS: auto
+      OCTANE_MAX_REQUESTS: "500"
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_DATABASE: koakademy
+      DB_USERNAME: koakademy
+      REDIS_CLIENT: phpredis
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      REDIS_CACHE_DB: "1"
+      REDIS_QUEUE_DB: "2"
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
+      SESSION_DRIVER: redis
+      SESSION_LIFETIME: "120"
+      SESSION_ENCRYPT: "true"
+      SESSION_SECURE_COOKIE: "true"
+      SESSION_HTTP_ONLY: "true"
+      SESSION_SAME_SITE: lax
+      LARAVEL_PDF_DRIVER: gotenberg
+      LARAVEL_PDF_PRODUCTION_DRIVER: gotenberg
+      LARAVEL_PDF_PRODUCTION_FALLBACK: ""
+      LARAVEL_PDF_ROLLBACK_DRIVER: gotenberg
+      GOTENBERG_URL: http://gotenberg:3000
+      MAIL_MAILER: ${MAIL_MAILER}
+      MAIL_SCHEME: ${MAIL_SCHEME}
+      MAIL_HOST: ${MAIL_HOST}
+      MAIL_PORT: ${MAIL_PORT}
+      MAIL_USERNAME: ${MAIL_USERNAME}
+      MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME}
+      SEQUENZY_API_URL: ${SEQUENZY_API_URL}
+      FILESYSTEM_DISK: ${FILESYSTEM_DISK}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
+      AWS_BUCKET: ${AWS_BUCKET}
+      AWS_ENDPOINT: ${AWS_ENDPOINT}
+      AWS_URL: ${AWS_URL}
+      AWS_USE_PATH_STYLE_ENDPOINT: ${AWS_USE_PATH_STYLE_ENDPOINT}
+      LIBRARY_EBOOK_DRIVER: ${LIBRARY_EBOOK_DRIVER}
+      LIBRARY_EBOOK_MAX_KB: "92160"
+      LIBRARY_READER_URL_MINUTES: "60"
+      LIBRARY_DOWNLOAD_URL_MINUTES: "5"
+      LIBRARY_TAKEDOWN_EMAIL: ${LIBRARY_TAKEDOWN_EMAIL}
+      LIBRARY_R2_DEFAULT_REGION: ${LIBRARY_R2_DEFAULT_REGION}
+      LIBRARY_R2_BUCKET: ${LIBRARY_R2_BUCKET}
+      LIBRARY_R2_ENDPOINT: ${LIBRARY_R2_ENDPOINT}
+      SCOUT_DRIVER: ${SCOUT_DRIVER}
+      MEILISEARCH_HOST: ${MEILISEARCH_HOST}
+      RUN_MIGRATIONS: "false"
+      RUN_DOCKER_SCRIPTS: "false"
+      RUN_SCOUT_SETTINGS: "false"
+      RUN_OPTIMIZE: foreground
+      STATION_ENABLED: "true"
+      PULSE_ENABLED: "false"
+      NIGHTWATCH_ENABLED: "false"
+      TELESCOPE_ENABLED: "false"
+      BROADCAST_CONNECTION: log
+      LOG_CHANNEL: stack
+      LOG_STACK: single
+      LOG_LEVEL: info
+    configs:
+      - source: app_entrypoint
+        target: /run/configs/koakademy-app-entrypoint
+        mode: 0555
+    secrets:
+      - source: app_key
+        target: koakademy-app-key
+      - source: postgres_password
+        target: koakademy-db-password
+      - source: redis_password
+        target: koakademy-redis-password
+      - source: s3_access_key
+        target: koakademy-s3-access-key
+      - source: s3_secret_key
+        target: koakademy-s3-secret-key
+      - source: library_access_key
+        target: koakademy-library-access-key
+      - source: library_secret_key
+        target: koakademy-library-secret-key
+      - source: smtp_password
+        target: koakademy-smtp-password
+      - source: sequenzy_api_key
+        target: koakademy-sequenzy-api-key
+      - source: meilisearch_key
+        target: koakademy-meilisearch-key
+    volumes:
+      - app-storage:/app/storage
+    networks:
+      - private
+    healthcheck:
+      test: ["CMD", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      replicas: ${APP_REPLICAS}
+      placement:
+        constraints:
+          - node.hostname == ${KOAKADEMY_NODE}
+      update_config:
+        parallelism: 1
+        order: start-first
+        failure_action: pause
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+      restart_policy:
+        condition: any
+
+configs:
+  caddyfile:
+    external: true
+    name: ${CADDYFILE_CONFIG}
+  app_entrypoint:
+    external: true
+    name: ${APP_ENTRYPOINT_CONFIG}
+
+secrets:
+  app_key:
+    external: true
+    name: ${APP_KEY_SECRET}
+  postgres_password:
+    external: true
+    name: ${POSTGRES_PASSWORD_SECRET}
+  redis_password:
+    external: true
+    name: ${REDIS_PASSWORD_SECRET}
+  s3_access_key:
+    external: true
+    name: ${S3_ACCESS_KEY_SECRET}
+  s3_secret_key:
+    external: true
+    name: ${S3_SECRET_KEY_SECRET}
+  library_access_key:
+    external: true
+    name: ${LIBRARY_ACCESS_KEY_SECRET}
+  library_secret_key:
+    external: true
+    name: ${LIBRARY_SECRET_KEY_SECRET}
+  smtp_password:
+    external: true
+    name: ${SMTP_PASSWORD_SECRET}
+  sequenzy_api_key:
+    external: true
+    name: ${SEQUENZY_API_KEY_SECRET}
+  meilisearch_key:
+    external: true
+    name: ${MEILISEARCH_KEY_SECRET}
+
+volumes:
+  app-storage:
+  postgres-data:
+  redis-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  private:
+    driver: overlay
+    attachable: true

@@ -1,0 +1,667 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+readonly REPOSITORY_DEFAULT="yukazakiri/koakademy"
+readonly STACK_NAME="koakademy"
+readonly MANAGED_LABEL="com.koakademy.managed-by=one-line-installer"
+readonly OPTIONAL_SECRET_VALUE="__KOAKADEMY_NOT_CONFIGURED__"
+
+repository="${KOAKADEMY_REPOSITORY:-$REPOSITORY_DEFAULT}"
+root="${KOAKADEMY_ROOT:-/opt/koakademy}"
+release_tag=""
+release_directory=""
+runtime_file=""
+command_name=""
+subcommand=""
+configure_mode=""
+yes=false
+
+fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+warn() { printf 'WARN: %s\n' "$*" >&2; }
+info() { printf '==> %s\n' "$*"; }
+is_test() { [[ -n "${KOAKADEMY_INSTALLER_TEST_STATE:-}" ]]; }
+
+usage() {
+    cat <<'EOF'
+KoAkademy production operator
+
+Usage:
+  koakademy install --domain school.example [--release vX.Y.Z]
+  koakademy update [--release vX.Y.Z]
+  koakademy configure storage <local|s3|r2|library-r2>
+  koakademy configure mail <log|smtp|sequenzy>
+  koakademy configure search <enable|disable>
+  koakademy status
+  koakademy rollback [--yes]
+
+Rollback changes only the application image. It never reverses database migrations.
+EOF
+}
+
+setup_paths() {
+    if is_test; then
+        root="${KOAKADEMY_ROOT:-$KOAKADEMY_INSTALLER_TEST_STATE/runtime}"
+    fi
+    runtime_file="$root/runtime.env"
+}
+
+require_root() {
+    if ! is_test && [[ "$(id -u)" -ne 0 ]]; then
+        fail "Run as root, for example: sudo koakademy $command_name"
+    fi
+}
+
+require_command() {
+    command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1"
+}
+
+validate_release_tag() {
+    [[ "$1" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
+        fail "Release tags must use the exact vX.Y.Z form."
+}
+
+validate_domain() {
+    local value="$1"
+    [[ "$value" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] &&
+        [[ "$value" != *..* ]] && [[ "$value" != *://* ]] && [[ "$value" != */* ]] ||
+        fail "Domain must be a hostname without a protocol, port, or path."
+}
+
+validate_url() {
+    [[ "$1" =~ ^https:// ]] || fail "Expected an HTTPS URL."
+}
+
+validate_bucket() {
+    [[ "$1" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]] ||
+        fail "Bucket names must be 3-63 lowercase characters, numbers, dots, or hyphens."
+}
+
+random_secret() {
+    require_command openssl
+    openssl rand -base64 48 | tr -d '/+=\n' | cut -c1-48
+}
+
+ask() {
+    local environment_name="$1"
+    local label="$2"
+    local default_value="$3"
+    local value="${!environment_name-}"
+    local supplied=false
+
+    if [[ -v "$environment_name" ]]; then
+        supplied=true
+    fi
+
+    if [[ "$supplied" != true && -z "$value" ]]; then
+        if [[ ! -t 0 ]]; then
+            [[ -n "$default_value" ]] || fail "Set $environment_name or run this command interactively."
+            value="$default_value"
+        else
+            read -r -p "$label [$default_value]: " value
+            value="${value:-$default_value}"
+        fi
+    fi
+    ANSWER="$value"
+}
+
+ask_secret() {
+    local environment_name="$1"
+    local label="$2"
+    local value="${!environment_name:-}"
+
+    if [[ -z "$value" ]]; then
+        [[ -t 0 ]] || fail "Set $environment_name or run this command interactively."
+        read -r -s -p "$label: " value
+        printf '\n'
+    fi
+    [[ -n "$value" ]] || fail "$label cannot be empty."
+    ANSWER="$value"
+}
+
+load_runtime() {
+    [[ -f "$runtime_file" ]] || fail "No KoAkademy installation exists at $root."
+    [[ "$(stat -c '%a' "$runtime_file" 2>/dev/null || printf 600)" -le 600 ]] ||
+        fail "Refusing a runtime file readable by other users."
+    # shellcheck disable=SC1090
+    source "$runtime_file"
+    release_directory="$RELEASE_DIRECTORY"
+}
+
+set_runtime() {
+    local key="$1"
+    local value="$2"
+    local temporary
+
+    [[ "$key" =~ ^[A-Z][A-Z0-9_]*$ ]] || fail "Invalid runtime key."
+    temporary="$(mktemp "$root/runtime.XXXXXX")"
+    chmod 600 "$temporary"
+    grep -v "^$key=" "$runtime_file" >"$temporary" || true
+    printf '%s=%q\n' "$key" "$value" >>"$temporary"
+    mv "$temporary" "$runtime_file"
+    export "$key=$value"
+}
+
+write_initial_runtime() {
+    local domain="$1"
+    local image="$2"
+
+    umask 077
+    mkdir -p "$root/releases" "$root/backups"
+    cat >"$runtime_file" <<EOF
+KOAKADEMY_DOMAIN=$domain
+KOAKADEMY_NODE=$(docker info --format '{{.Name}}')
+APP_NAME=KoAkademy
+APP_URL=https://$domain
+APP_TIMEZONE=UTC
+APP_LOCALE=en
+APP_FALLBACK_LOCALE=en
+TRUSTED_HOSTS=
+MAIL_MAILER=log
+MAIL_SCHEME=
+MAIL_HOST=
+MAIL_PORT=
+MAIL_USERNAME=
+MAIL_FROM_ADDRESS=no-reply@$domain
+MAIL_FROM_NAME=KoAkademy
+SEQUENZY_API_URL=https://api.sequenzy.com/api/v1/transactional/send
+FILESYSTEM_DISK=public
+AWS_DEFAULT_REGION=
+AWS_BUCKET=
+AWS_ENDPOINT=
+AWS_URL=
+AWS_USE_PATH_STYLE_ENDPOINT=false
+LIBRARY_EBOOK_DRIVER=
+LIBRARY_TAKEDOWN_EMAIL=
+LIBRARY_R2_DEFAULT_REGION=
+LIBRARY_R2_BUCKET=
+LIBRARY_R2_ENDPOINT=
+SCOUT_DRIVER=null
+MEILISEARCH_HOST=
+KOAKADEMY_IMAGE=$image
+PREVIOUS_KOAKADEMY_IMAGE=
+APP_REPLICAS=0
+RELEASE_TAG=$release_tag
+RELEASE_DIRECTORY=$release_directory
+EOF
+    chmod 600 "$runtime_file"
+}
+
+resolve_latest_release() {
+    local response tag
+    if is_test; then
+        printf '%s\n' "${KOAKADEMY_INSTALLER_TEST_RELEASE_TAG:-v1.0.0}"
+        return
+    fi
+    response="$(curl --fail --location --silent --show-error "https://api.github.com/repos/$repository/releases/latest")" ||
+        fail "Could not resolve the latest KoAkademy release."
+    tag="$(sed -nE 's/^[[:space:]]*"tag_name":[[:space:]]*"([^"]+)".*/\1/p' <<<"$response" | head -n 1)"
+    validate_release_tag "$tag"
+    printf '%s\n' "$tag"
+}
+
+download_asset() {
+    local asset="$1"
+    [[ -f "$release_directory/$asset" ]] && return
+    curl --fail --location --silent --show-error \
+        "https://github.com/$repository/releases/download/$release_tag/$asset" \
+        --output "$release_directory/$asset" ||
+        fail "Could not download release asset $asset for $release_tag."
+}
+
+fetch_release() {
+    local source_directory asset
+    [[ -n "$release_tag" ]] || release_tag="$(resolve_latest_release)"
+    validate_release_tag "$release_tag"
+    release_directory="$root/releases/$release_tag"
+    mkdir -p "$release_directory"
+    source_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+    if is_test && [[ -f "$source_directory/swarm-stack.yml" ]]; then
+        cp "$source_directory/koakademy" "$source_directory/swarm-stack.yml" \
+            "$source_directory/Caddyfile" "$source_directory/koakademy-app-entrypoint.sh" \
+            "$source_directory/../version.json" "$release_directory/"
+        return
+    fi
+
+    for asset in koakademy swarm-stack.yml Caddyfile koakademy-app-entrypoint.sh version.json SHA256SUMS; do
+        download_asset "$asset"
+    done
+    (cd "$release_directory" && sha256sum --check --ignore-missing SHA256SUMS) ||
+        fail "Release asset checksum verification failed."
+}
+
+release_image() {
+    local image
+    image="$(sed -nE 's/^[[:space:]]*"image":[[:space:]]*"([^"]+)".*/\1/p' "$release_directory/version.json" | head -n 1)"
+    if is_test && [[ -n "${KOAKADEMY_INSTALLER_TEST_IMAGE:-}" ]]; then
+        image="$KOAKADEMY_INSTALLER_TEST_IMAGE"
+    fi
+    [[ "$image" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[a-f0-9]{64}$ ]] && {
+        printf '%s\n' "$image"; return;
+    }
+    if is_test && [[ "$image" =~ ^ghcr\.io/[A-Za-z0-9._/-]+:sha-[a-f0-9]{40}$ ]]; then
+        printf '%s\n' "$image"; return
+    fi
+    fail "Release image must be an immutable GHCR digest."
+}
+
+ensure_docker() {
+    if ! command -v docker >/dev/null 2>&1; then
+        info "Docker was not found; installing Docker Engine with Docker's official installer."
+        curl --fail --location --silent --show-error https://get.docker.com | sh
+    fi
+    docker version >/dev/null 2>&1 || fail "Docker is installed but the daemon is unreachable."
+    local os architecture
+    os="$(docker info --format '{{.OSType}}')"
+    architecture="$(docker info --format '{{.Architecture}}')"
+    [[ "$os" == linux ]] || fail "KoAkademy requires Docker's Linux engine."
+    [[ "$architecture" == x86_64 || "$architecture" == amd64 || "$architecture" == aarch64 || "$architecture" == arm64 ]] ||
+        fail "KoAkademy images support linux/amd64 and linux/arm64."
+}
+
+ensure_swarm_manager() {
+    local state manager
+    state="$(docker info --format '{{.Swarm.LocalNodeState}}')"
+    if [[ "$state" == inactive ]]; then
+        info "Initializing a single-node Docker Swarm."
+        if [[ -n "${KOAKADEMY_ADVERTISE_ADDR:-}" ]]; then
+            docker swarm init --advertise-addr "$KOAKADEMY_ADVERTISE_ADDR"
+        else
+            docker swarm init
+        fi
+    elif [[ "$state" != active ]]; then
+        fail "Docker Swarm is in unsupported state '$state'."
+    fi
+    manager="$(docker info --format '{{.Swarm.ControlAvailable}}')"
+    [[ "$manager" == true ]] || fail "Run on a Docker Swarm manager node."
+}
+
+ensure_ports_available() {
+    local port
+    if is_test; then
+        [[ -z "${KOAKADEMY_INSTALLER_TEST_PORT_CONFLICT:-}" ]] ||
+            fail "Port ${KOAKADEMY_INSTALLER_TEST_PORT_CONFLICT} is already in use. Caddy needs ports 80 and 443."
+        return
+    fi
+    command -v ss >/dev/null 2>&1 || return
+    for port in 80 443; do
+        if ss -ltn | awk '{print $4}' | grep -Eq "(:|\\.)$port$"; then
+            fail "Port $port is already in use. Caddy needs ports 80 and 443."
+        fi
+    done
+}
+
+reject_legacy_installation() {
+    local service
+    for service in koakademy-app koakademy-postgres koakademy-redis koakademy-gotenberg koakademy-rustfs; do
+        if docker service ls --format '{{.Name}}' | grep -Fxq "$service"; then
+            fail "Legacy service $service was detected. Follow DEPLOYMENT.md#legacy-swarm-migration; nothing was changed."
+        fi
+    done
+}
+
+create_secret() {
+    local state_key="$1"
+    local value="$2"
+    local secret_name
+    secret_name="koakademy_${state_key,,}_$(date -u +%Y%m%d%H%M%S)_$(openssl rand -hex 6)"
+    printf '%s' "$value" | docker secret create --label "$MANAGED_LABEL" "$secret_name" - >/dev/null
+    set_runtime "$state_key" "$secret_name"
+}
+
+ensure_secret() {
+    local state_key="$1"
+    local value="$2"
+    [[ -n "${!state_key:-}" ]] || create_secret "$state_key" "$value"
+}
+
+ensure_initial_secrets() {
+    ensure_secret APP_KEY_SECRET "base64:$(openssl rand -base64 32)"
+    ensure_secret POSTGRES_PASSWORD_SECRET "$(random_secret)"
+    ensure_secret REDIS_PASSWORD_SECRET "$(random_secret)"
+    ensure_secret S3_ACCESS_KEY_SECRET "$OPTIONAL_SECRET_VALUE"
+    ensure_secret S3_SECRET_KEY_SECRET "$OPTIONAL_SECRET_VALUE"
+    ensure_secret LIBRARY_ACCESS_KEY_SECRET "$OPTIONAL_SECRET_VALUE"
+    ensure_secret LIBRARY_SECRET_KEY_SECRET "$OPTIONAL_SECRET_VALUE"
+    ensure_secret SMTP_PASSWORD_SECRET "$OPTIONAL_SECRET_VALUE"
+    ensure_secret SEQUENZY_API_KEY_SECRET "$OPTIONAL_SECRET_VALUE"
+    ensure_secret MEILISEARCH_KEY_SECRET "$OPTIONAL_SECRET_VALUE"
+}
+
+ensure_release_configs() {
+    local app_hash caddy_hash
+    app_hash="$(sha256sum "$release_directory/koakademy-app-entrypoint.sh" | awk '{print substr($1, 1, 12)}')"
+    caddy_hash="$(sha256sum "$release_directory/Caddyfile" | awk '{print substr($1, 1, 12)}')"
+    APP_ENTRYPOINT_CONFIG="koakademy_app_entrypoint_$app_hash"
+    CADDYFILE_CONFIG="koakademy_caddyfile_$caddy_hash"
+    docker config inspect "$APP_ENTRYPOINT_CONFIG" >/dev/null 2>&1 ||
+        docker config create --label "$MANAGED_LABEL" "$APP_ENTRYPOINT_CONFIG" "$release_directory/koakademy-app-entrypoint.sh" >/dev/null
+    docker config inspect "$CADDYFILE_CONFIG" >/dev/null 2>&1 ||
+        docker config create --label "$MANAGED_LABEL" "$CADDYFILE_CONFIG" "$release_directory/Caddyfile" >/dev/null
+    set_runtime APP_ENTRYPOINT_CONFIG "$APP_ENTRYPOINT_CONFIG"
+    set_runtime CADDYFILE_CONFIG "$CADDYFILE_CONFIG"
+}
+
+deploy_stack() {
+    set -a
+    # shellcheck disable=SC1090
+    source "$runtime_file"
+    set +a
+    docker stack deploy --with-registry-auth --prune --compose-file "$release_directory/swarm-stack.yml" "$STACK_NAME"
+}
+
+wait_for_service() {
+    local service="$1"
+    local deadline="$((SECONDS + 600))"
+    local states
+    while (( SECONDS < deadline )); do
+        # Service history includes intentionally stopped tasks after a rolling
+        # deployment. Inspect only the tasks whose desired state is running so
+        # a healthy replacement is not mistaken for a failed update.
+        states="$(docker service ps "$service" --filter desired-state=running --no-trunc --format '{{.CurrentState}}' 2>/dev/null || true)"
+        grep -Eqi 'Rejected|Failed' <<<"$states" && {
+            docker service ps "$service" --no-trunc >&2 || true
+            fail "Service $service failed to start."
+        }
+        grep -qi Running <<<"$states" && return
+        sleep 2
+    done
+    fail "Timed out waiting for service $service."
+}
+
+run_app_job() {
+    local job_name="$1"
+    local image="$2"
+    shift 2
+    local deadline="$((SECONDS + 900))"
+    local states
+    docker service rm "$job_name" >/dev/null 2>&1 || true
+    docker service create \
+        --name "$job_name" --label "$MANAGED_LABEL" --mode replicated-job \
+        --restart-condition on-failure --restart-max-attempts 3 \
+        --constraint "node.hostname==$KOAKADEMY_NODE" --network "${STACK_NAME}_private" \
+        --env-file "$runtime_file" \
+        --secret "source=$APP_KEY_SECRET,target=koakademy-app-key" \
+        --secret "source=$POSTGRES_PASSWORD_SECRET,target=koakademy-db-password" \
+        --secret "source=$REDIS_PASSWORD_SECRET,target=koakademy-redis-password" \
+        --secret "source=$S3_ACCESS_KEY_SECRET,target=koakademy-s3-access-key" \
+        --secret "source=$S3_SECRET_KEY_SECRET,target=koakademy-s3-secret-key" \
+        --secret "source=$LIBRARY_ACCESS_KEY_SECRET,target=koakademy-library-access-key" \
+        --secret "source=$LIBRARY_SECRET_KEY_SECRET,target=koakademy-library-secret-key" \
+        --secret "source=$SMTP_PASSWORD_SECRET,target=koakademy-smtp-password" \
+        --secret "source=$SEQUENZY_API_KEY_SECRET,target=koakademy-sequenzy-api-key" \
+        --secret "source=$MEILISEARCH_KEY_SECRET,target=koakademy-meilisearch-key" \
+        --config "source=$APP_ENTRYPOINT_CONFIG,target=/run/configs/koakademy-app-entrypoint,mode=0555" \
+        --mount type=volume,source=koakademy_app-storage,target=/app/storage \
+        --entrypoint /bin/sh "$image" /run/configs/koakademy-app-entrypoint "$@" >/dev/null
+    while (( SECONDS < deadline )); do
+        states="$(docker service ps "$job_name" --no-trunc --format '{{.CurrentState}}' 2>/dev/null || true)"
+        grep -qi Complete <<<"$states" && { docker service rm "$job_name" >/dev/null 2>&1 || true; return; }
+        grep -Eqi 'Rejected|Failed' <<<"$states" && { docker service ps "$job_name" --no-trunc >&2 || true; fail "Job $job_name failed."; }
+        sleep 2
+    done
+    fail "Timed out waiting for job $job_name."
+}
+
+verify_https() {
+    local deadline="$((SECONDS + 600))"
+    is_test && return
+    while (( SECONDS < deadline )); do
+        curl --fail --silent --show-error --resolve "$KOAKADEMY_DOMAIN:443:127.0.0.1" "https://$KOAKADEMY_DOMAIN/up" >/dev/null && return
+        sleep 5
+    done
+    fail "Caddy did not serve https://$KOAKADEMY_DOMAIN/up. Check DNS, ports 80/443, and docker service logs koakademy_caddy."
+}
+
+install_operator_command() {
+    install -d -m 0700 "$root"
+    install -m 0755 "$release_directory/koakademy" "$root/koakademy"
+    if is_test; then
+        install -d -m 0700 "$root/bin"
+        ln -sfn "$root/koakademy" "$root/bin/koakademy"
+        return
+    fi
+    ln -sfn "$root/koakademy" /usr/local/bin/koakademy
+}
+
+backup_database() {
+    local container backup_file
+    container="$(docker ps --filter "label=com.docker.swarm.service.name=${STACK_NAME}_postgres" --format '{{.ID}}' | head -n 1)"
+    [[ -n "$container" ]] || fail "Could not find the PostgreSQL container for backup."
+    backup_file="$root/backups/$(date -u +%Y%m%dT%H%M%SZ)-before-$release_tag.dump"
+    printf '==> Creating PostgreSQL backup at %s\n' "$backup_file" >&2
+    docker exec -i "$container" sh -ec 'PGPASSWORD="$(cat /run/secrets/postgres_password)" exec pg_dump --format=custom --username=koakademy koakademy' >"$backup_file"
+    chmod 600 "$backup_file"
+    printf '%s\n' "$backup_file"
+}
+
+perform_install() {
+    local domain image
+    [[ ! -f "$runtime_file" ]] || fail "KoAkademy is already installed. Use update or configure."
+    require_root
+    ensure_docker
+    reject_legacy_installation
+    ensure_ports_available
+    ensure_swarm_manager
+    if [[ -z "${KOAKADEMY_DOMAIN:-}" ]]; then
+        ask KOAKADEMY_DOMAIN "Public HTTPS domain" ""
+        domain="$ANSWER"
+    else
+        domain="$KOAKADEMY_DOMAIN"
+    fi
+    validate_domain "$domain"
+    fetch_release
+    image="$(release_image)"
+    write_initial_runtime "$domain" "$image"
+    load_runtime
+    ensure_initial_secrets
+    ensure_release_configs
+    set_runtime RELEASE_TAG "$release_tag"
+    set_runtime RELEASE_DIRECTORY "$release_directory"
+    set_runtime APP_REPLICAS 0
+    info "Deploying PostgreSQL, Redis, Gotenberg, and Caddy."
+    deploy_stack
+    wait_for_service "${STACK_NAME}_postgres"
+    wait_for_service "${STACK_NAME}_redis"
+    wait_for_service "${STACK_NAME}_gotenberg"
+    info "Running database migrations for $release_tag."
+    run_app_job "koakademy-migrate-$(date +%s)" "$KOAKADEMY_IMAGE" php artisan migrate --force --no-interaction
+    set_runtime APP_REPLICAS 1
+    deploy_stack
+    wait_for_service "${STACK_NAME}_app"
+    verify_https
+    install_operator_command
+    info "KoAkademy is ready at https://$KOAKADEMY_DOMAIN/setup"
+}
+
+perform_update() {
+    local previous image backup
+    require_root
+    load_runtime
+    fetch_release
+    image="$(release_image)"
+    [[ "$image" != "$KOAKADEMY_IMAGE" ]] || { info "KoAkademy $release_tag is already deployed."; return; }
+    previous="$KOAKADEMY_IMAGE"
+    # Persist the known-good application image before any migration runs so an
+    # interrupted update still leaves an explicit application rollback target.
+    set_runtime PREVIOUS_KOAKADEMY_IMAGE "$previous"
+    backup="$(backup_database)"
+    info "Running migrations for $release_tag before replacing the application."
+    run_app_job "koakademy-migrate-$(date +%s)" "$image" php artisan migrate --force --no-interaction
+    set_runtime PREVIOUS_KOAKADEMY_IMAGE "$previous"
+    set_runtime KOAKADEMY_IMAGE "$image"
+    set_runtime RELEASE_TAG "$release_tag"
+    set_runtime RELEASE_DIRECTORY "$release_directory"
+    set_runtime APP_REPLICAS 1
+    ensure_release_configs
+    deploy_stack
+    wait_for_service "${STACK_NAME}_app"
+    verify_https
+    install_operator_command
+    info "Updated to $release_tag. Database backup: $backup"
+    warn "Rollback is application-only; restore that backup when schema compatibility is uncertain."
+}
+
+apply_configuration() {
+    set_runtime APP_REPLICAS 1
+    deploy_stack
+    wait_for_service "${STACK_NAME}_app"
+    verify_https
+}
+
+configure_storage() {
+    local mode="$1"
+    local endpoint bucket region public_url path_style access_key secret_key
+    case "$mode" in
+        local)
+            set_runtime FILESYSTEM_DISK public; set_runtime AWS_DEFAULT_REGION ""; set_runtime AWS_BUCKET ""
+            set_runtime AWS_ENDPOINT ""; set_runtime AWS_URL ""; set_runtime AWS_USE_PATH_STYLE_ENDPOINT false
+            create_secret S3_ACCESS_KEY_SECRET "$OPTIONAL_SECRET_VALUE"; create_secret S3_SECRET_KEY_SECRET "$OPTIONAL_SECRET_VALUE"
+            ;;
+        s3|r2)
+            ask KOAKADEMY_S3_ENDPOINT "S3 API endpoint" "${KOAKADEMY_S3_ENDPOINT:-}"; endpoint="$ANSWER"; validate_url "$endpoint"
+            ask KOAKADEMY_S3_BUCKET "Bucket name" "${KOAKADEMY_S3_BUCKET:-}"; bucket="$ANSWER"; validate_bucket "$bucket"
+            if [[ "$mode" == r2 ]]; then region="${KOAKADEMY_S3_REGION:-auto}"; path_style=true
+            else
+                ask KOAKADEMY_S3_REGION "S3 region" "${KOAKADEMY_S3_REGION:-us-east-1}"; region="$ANSWER"
+                ask KOAKADEMY_S3_PATH_STYLE "Use path-style requests (true/false)" "${KOAKADEMY_S3_PATH_STYLE:-false}"; path_style="$ANSWER"
+            fi
+            ask KOAKADEMY_S3_PUBLIC_URL "Public object or CDN URL (blank to omit)" "${KOAKADEMY_S3_PUBLIC_URL:-}"; public_url="$ANSWER"
+            [[ -z "$public_url" ]] || validate_url "$public_url"
+            ask_secret KOAKADEMY_S3_ACCESS_KEY "S3 access key ID"; access_key="$ANSWER"
+            ask_secret KOAKADEMY_S3_SECRET_KEY "S3 secret access key"; secret_key="$ANSWER"
+            set_runtime FILESYSTEM_DISK s3; set_runtime AWS_DEFAULT_REGION "$region"; set_runtime AWS_BUCKET "$bucket"
+            set_runtime AWS_ENDPOINT "$endpoint"; set_runtime AWS_URL "$public_url"; set_runtime AWS_USE_PATH_STYLE_ENDPOINT "$path_style"
+            create_secret S3_ACCESS_KEY_SECRET "$access_key"; create_secret S3_SECRET_KEY_SECRET "$secret_key"
+            ;;
+        library-r2)
+            ask KOAKADEMY_LIBRARY_R2_ENDPOINT "Private library R2 endpoint" "${KOAKADEMY_LIBRARY_R2_ENDPOINT:-}"; endpoint="$ANSWER"; validate_url "$endpoint"
+            ask KOAKADEMY_LIBRARY_R2_BUCKET "Private library bucket" "${KOAKADEMY_LIBRARY_R2_BUCKET:-}"; bucket="$ANSWER"; validate_bucket "$bucket"
+            ask_secret KOAKADEMY_LIBRARY_R2_ACCESS_KEY "Private library access key ID"; access_key="$ANSWER"
+            ask_secret KOAKADEMY_LIBRARY_R2_SECRET_KEY "Private library secret access key"; secret_key="$ANSWER"
+            set_runtime LIBRARY_EBOOK_DRIVER s3; set_runtime LIBRARY_R2_DEFAULT_REGION auto; set_runtime LIBRARY_R2_BUCKET "$bucket"; set_runtime LIBRARY_R2_ENDPOINT "$endpoint"
+            create_secret LIBRARY_ACCESS_KEY_SECRET "$access_key"; create_secret LIBRARY_SECRET_KEY_SECRET "$secret_key"
+            ;;
+        *) fail "Storage mode must be local, s3, r2, or library-r2." ;;
+    esac
+    apply_configuration
+    info "Storage configuration was applied and FrankenPHP was restarted."
+}
+
+configure_mail() {
+    local mode="$1"
+    local host port scheme username password api_key from_address from_name endpoint
+    ask KOAKADEMY_MAIL_FROM_ADDRESS "Mail from address" "${MAIL_FROM_ADDRESS:-no-reply@$KOAKADEMY_DOMAIN}"; from_address="$ANSWER"
+    [[ "$from_address" == *@* ]] || fail "Mail from address must be valid."
+    ask KOAKADEMY_MAIL_FROM_NAME "Mail from name" "${MAIL_FROM_NAME:-KoAkademy}"; from_name="$ANSWER"
+    case "$mode" in
+        log)
+            set_runtime MAIL_MAILER log; set_runtime MAIL_SCHEME ""; set_runtime MAIL_HOST ""; set_runtime MAIL_PORT ""; set_runtime MAIL_USERNAME ""
+            create_secret SMTP_PASSWORD_SECRET "$OPTIONAL_SECRET_VALUE"; create_secret SEQUENZY_API_KEY_SECRET "$OPTIONAL_SECRET_VALUE"
+            ;;
+        smtp)
+            ask KOAKADEMY_MAIL_HOST "SMTP host" "${KOAKADEMY_MAIL_HOST:-}"; host="$ANSWER"
+            ask KOAKADEMY_MAIL_PORT "SMTP port" "${KOAKADEMY_MAIL_PORT:-587}"; port="$ANSWER"; [[ "$port" =~ ^[0-9]{1,5}$ ]] || fail "SMTP port must be numeric."
+            ask KOAKADEMY_MAIL_SCHEME "SMTP scheme (tls, smtps, or blank)" "${KOAKADEMY_MAIL_SCHEME:-tls}"; scheme="$ANSWER"
+            ask_secret KOAKADEMY_MAIL_USERNAME "SMTP username"; username="$ANSWER"
+            ask_secret KOAKADEMY_MAIL_PASSWORD "SMTP password"; password="$ANSWER"
+            set_runtime MAIL_MAILER smtp; set_runtime MAIL_SCHEME "$scheme"; set_runtime MAIL_HOST "$host"; set_runtime MAIL_PORT "$port"; set_runtime MAIL_USERNAME "$username"
+            create_secret SMTP_PASSWORD_SECRET "$password"; create_secret SEQUENZY_API_KEY_SECRET "$OPTIONAL_SECRET_VALUE"
+            ;;
+        sequenzy)
+            ask KOAKADEMY_SEQUENZY_API_URL "Sequenzy API URL" "${SEQUENZY_API_URL:-https://api.sequenzy.com/api/v1/transactional/send}"; endpoint="$ANSWER"; validate_url "$endpoint"
+            ask_secret KOAKADEMY_SEQUENZY_API_KEY "Sequenzy API key"; api_key="$ANSWER"
+            set_runtime MAIL_MAILER sequenzy; set_runtime SEQUENZY_API_URL "$endpoint"
+            create_secret SMTP_PASSWORD_SECRET "$OPTIONAL_SECRET_VALUE"; create_secret SEQUENZY_API_KEY_SECRET "$api_key"
+            ;;
+        *) fail "Mail mode must be log, smtp, or sequenzy." ;;
+    esac
+    set_runtime MAIL_FROM_ADDRESS "$from_address"; set_runtime MAIL_FROM_NAME "$from_name"
+    apply_configuration
+    info "Mail configuration was applied through Docker Secrets and FrankenPHP was restarted."
+}
+
+configure_search() {
+    local mode="$1"
+    local endpoint api_key
+    case "$mode" in
+        disable)
+            set_runtime SCOUT_DRIVER null; set_runtime MEILISEARCH_HOST ""; create_secret MEILISEARCH_KEY_SECRET "$OPTIONAL_SECRET_VALUE"; apply_configuration
+            ;;
+        enable)
+            ask KOAKADEMY_MEILISEARCH_HOST "External Meilisearch HTTPS endpoint" "${KOAKADEMY_MEILISEARCH_HOST:-}"; endpoint="$ANSWER"; validate_url "$endpoint"
+            ask_secret KOAKADEMY_MEILISEARCH_KEY "Meilisearch API key"; api_key="$ANSWER"
+            set_runtime SCOUT_DRIVER meilisearch; set_runtime MEILISEARCH_HOST "$endpoint"; create_secret MEILISEARCH_KEY_SECRET "$api_key"
+            apply_configuration
+            info "Synchronizing Scout settings and importing searchable models."
+            run_app_job "koakademy-scout-$(date +%s)" "$KOAKADEMY_IMAGE" /app/docker/docker-scripts/scout-index.sh
+            ;;
+        *) fail "Search mode must be enable or disable." ;;
+    esac
+}
+
+perform_rollback() {
+    local current target answer
+    require_root; load_runtime; target="${PREVIOUS_KOAKADEMY_IMAGE:-}"
+    [[ -n "$target" ]] || fail "No previous application image is recorded."
+    if [[ "$yes" != true ]]; then
+        [[ -t 0 ]] || fail "Pass --yes to confirm a non-interactive rollback."
+        read -r -p "Deploy the previous application image without reversing migrations? [y/N] " answer
+        [[ "$answer" =~ ^[Yy]$ ]] || exit 0
+    fi
+    current="$KOAKADEMY_IMAGE"
+    set_runtime KOAKADEMY_IMAGE "$target"; set_runtime PREVIOUS_KOAKADEMY_IMAGE "$current"
+    deploy_stack; wait_for_service "${STACK_NAME}_app"; verify_https
+    warn "Application image rolled back. Database migrations were not reversed."
+}
+
+print_status() {
+    load_runtime
+    printf 'Domain: %s\nRelease: %s\nImage: %s\nStorage: %s\nMail: %s\nSearch: %s\n' \
+        "$KOAKADEMY_DOMAIN" "$RELEASE_TAG" "$KOAKADEMY_IMAGE" "$FILESYSTEM_DISK" "$MAIL_MAILER" "$SCOUT_DRIVER"
+    docker stack services "$STACK_NAME" || true
+}
+
+parse_command() {
+    command_name="${1:-}"; shift || true
+    case "$command_name" in
+        install|update|configure|status|rollback) ;;
+        -h|--help|"") usage; exit 0 ;;
+        *) fail "Unknown command: $command_name" ;;
+    esac
+    if [[ "$command_name" == configure ]]; then
+        subcommand="${1:-}"; shift || true
+        configure_mode="${1:-}"; shift || true
+    fi
+    while (( $# > 0 )); do
+        case "$1" in
+            --release) (( $# >= 2 )) || fail "--release requires a tag."; release_tag="$2"; shift 2 ;;
+            --domain) (( $# >= 2 )) || fail "--domain requires a hostname."; KOAKADEMY_DOMAIN="$2"; shift 2 ;;
+            --yes) yes=true; shift ;;
+            *) fail "Unknown option: $1" ;;
+        esac
+    done
+}
+
+main() {
+    setup_paths
+    parse_command "$@"
+    case "$command_name" in
+        install) perform_install ;;
+        update) perform_update ;;
+        configure)
+            require_root; load_runtime
+            case "$subcommand" in
+                storage) configure_storage "$configure_mode" ;;
+                mail) configure_mail "$configure_mode" ;;
+                search) configure_search "$configure_mode" ;;
+                *) fail "Use configure storage, mail, or search followed by its mode." ;;
+            esac
+            ;;
+        status) print_status ;;
+        rollback) perform_rollback ;;
+    esac
+}
+
+main "$@"

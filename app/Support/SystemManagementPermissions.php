@@ -38,7 +38,7 @@ final class SystemManagementPermissions
             ],
             'mail' => [
                 'view' => 'View:SystemManagementMail',
-                'update' => 'Update:SystemManagementMail',
+                'update' => null,
             ],
             'newsletter' => [
                 'view' => 'View:SystemManagementNewsletter',

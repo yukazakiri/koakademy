@@ -174,25 +174,16 @@ jobs:
       - name: Check shell syntax
         run: |
           sh -n docker/start-container docker/healthcheck docker/pulse-process \
-            docker/run-scripts.sh docker/docker-scripts/*.sh
-          bash -n scripts/install.sh scripts/generate-version-metadata.sh
-          shellcheck scripts/install.sh scripts/generate-version-metadata.sh \
+            docker/run-scripts.sh docker/run.sh docker/docker-scripts/*.sh
+          bash -n scripts/install.sh scripts/koakademy scripts/generate-version-metadata.sh
+          shellcheck scripts/install.sh scripts/koakademy scripts/koakademy-app-entrypoint.sh \
+            scripts/generate-version-metadata.sh \
             tests/Fixtures/installer/docker tests/Fixtures/installer/curl
 
-      - name: Check PowerShell installer syntax
-        shell: pwsh
+      - name: Validate one-line Swarm stack
         run: |
-          $tokens = $null
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path 'scripts/install.ps1'),
-            [ref] $tokens,
-            [ref] $errors
-          ) | Out-Null
-          if ($errors.Count -gt 0) {
-            $errors | ForEach-Object { Write-Error $_.Message }
-            exit 1
-          }
+          docker compose --env-file tests/Fixtures/installer/swarm-stack.env \
+            -f scripts/swarm-stack.yml config --quiet
 
   workflow-security:
     name: Workflow security

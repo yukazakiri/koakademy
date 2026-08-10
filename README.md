@@ -113,18 +113,12 @@ A Laravel application with a React portal layer, packaged for self-hosting rathe
 
 ## Quick start
 
-The supported production installer needs Docker. It creates a single-node Docker Swarm when needed, deploys KoAkademy with PostgreSQL, Redis, Gotenberg, and either local RustFS or external S3-compatible storage, runs migrations, checks `/up`, then prints the one-time `/setup` URL.
+The supported production installer is Linux-only. It installs Docker when needed, creates a single-node Swarm, deploys Caddy HTTPS with PostgreSQL, Redis, Gotenberg, and a private FrankenPHP application, then opens the one-time `/setup` wizard.
 
 **Linux**
 
 ```sh
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/yukazakiri/koakademy/master/scripts/install.sh)"
-```
-
-**Windows (PowerShell)**
-
-```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/yukazakiri/koakademy/master/scripts/install.ps1)))
+curl -fsSL https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh | sudo bash -s -- install --domain school.example
 ```
 
 Visit `/setup` when the installer finishes to create the institution, the first academic period, and the first super administrator. The setup route closes after initialization.
@@ -132,16 +126,16 @@ Visit `/setup` when the installer finishes to create the institution, the first 
 The installer runs privileged remote code. Inspect it first if that is not appropriate for your environment:
 
 ```sh
-curl -fsSLO https://raw.githubusercontent.com/yukazakiri/koakademy/master/scripts/install.sh
+curl -fSLO https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh
 less install.sh
-bash install.sh
+bash install.sh install --domain school.example
 ```
 
 For a manually managed deployment, use [Getting Started](GETTING_STARTED.md). It covers the supported Docker Compose topology, explicit migrations, S3-compatible storage, and the reverse-proxy requirements.
 
 ## Operate it
 
-Run a current stable `vX.Y.Z` image in production; `edge` is an unsupported rolling preview. Put an HTTPS edge in front of the application, restrict exposed ports, keep PostgreSQL and object-storage backups, and test a restore before you need one. Migrations are deliberately an explicit operator action, not something the app performs on startup.
+Run a current stable release in production. Caddy owns ports 80/443; the application, PostgreSQL, Redis, and Gotenberg stay private. Use `sudo koakademy update` for an explicit backed-up release update and `sudo koakademy configure storage|mail|search` for Docker-Secret-backed provider changes.
 
 | Need                                               | Start here                                                                                              |
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |

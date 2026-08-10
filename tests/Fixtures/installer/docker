@@ -1,217 +1,97 @@
 #!/usr/bin/env bash
-
-set -eu
+set -Eeuo pipefail
 
 : "${KOAKADEMY_INSTALLER_TEST_STATE:?}"
 
-mkdir -p \
-    "${KOAKADEMY_INSTALLER_TEST_STATE}/services" \
-    "${KOAKADEMY_INSTALLER_TEST_STATE}/secrets" \
-    "${KOAKADEMY_INSTALLER_TEST_STATE}/configs" \
-    "${KOAKADEMY_INSTALLER_TEST_STATE}/networks" \
-    "${KOAKADEMY_INSTALLER_TEST_STATE}/volumes" \
-    "${KOAKADEMY_INSTALLER_TEST_STATE}/unhealthy"
+state="$KOAKADEMY_INSTALLER_TEST_STATE"
+mkdir -p "$state/services" "$state/secrets" "$state/configs"
+if [[ -n "${KOAKADEMY_INSTALLER_TEST_LEGACY_SERVICE:-}" ]]; then
+    : >"$state/services/${KOAKADEMY_INSTALLER_TEST_LEGACY_SERVICE}"
+fi
+printf '%s\n' "$*" >>"$state/docker.log"
 
-printf '%s\n' "$*" >>"${KOAKADEMY_INSTALLER_TEST_STATE}/docker.log"
-
-object_exists() {
-    test -f "${KOAKADEMY_INSTALLER_TEST_STATE}/$1/$2"
-}
-
-create_object() {
-    : >"${KOAKADEMY_INSTALLER_TEST_STATE}/$1/$2"
-}
-
-service_is_unhealthy() {
-    object_exists unhealthy "$1"
-}
+exists() { [[ -e "$state/$1/$2" ]]; }
+create() { : >"$state/$1/$2"; }
 
 command_name="${1:-}"
 shift || true
 
-case "${command_name}" in
-    version)
-        exit 0
-        ;;
+case "$command_name" in
+    version) exit 0 ;;
     info)
         case "$*" in
             *'{{.OSType}}'*) printf 'linux\n' ;;
             *'{{.Architecture}}'*) printf '%s\n' "${KOAKADEMY_INSTALLER_TEST_ARCHITECTURE:-amd64}" ;;
-            *'{{.Swarm.LocalNodeState}}'*) printf 'active\n' ;;
-            *'{{.Swarm.ControlAvailable}}'*) printf 'true\n' ;;
+            *'{{.Swarm.LocalNodeState}}'*) printf '%s\n' "${KOAKADEMY_INSTALLER_TEST_SWARM_STATE:-active}" ;;
+            *'{{.Swarm.ControlAvailable}}'*) printf '%s\n' "${KOAKADEMY_INSTALLER_TEST_SWARM_MANAGER:-true}" ;;
             *'{{.Name}}'*) printf 'installer-test-manager\n' ;;
             *) exit 1 ;;
         esac
         ;;
-    manifest)
-        test "${1:-}" = "inspect"
-        ;;
-    pull)
-        test -n "${1:-}"
-        ;;
     swarm)
-        test "${1:-}" = "init"
-        create_object networks swarm-initialized
+        [[ "${1:-}" == init ]]
+        create services swarm-initialized
         ;;
     secret|config)
-        object_type="${command_name}s"
-        operation="${1:-}"
+        object="${command_name}s"
+        action="${1:-}"
         shift || true
-
-        if test "${operation}" = "inspect"; then
+        if [[ "$action" == inspect ]]; then
             name="${*: -1}"
-            object_exists "${object_type}" "${name}" || exit 1
-            case "$*" in
-                *com.koakademy.managed-by*) printf 'swarm-installer\n' ;;
-            esac
-            exit 0
+            exists "$object" "$name"
+            exit
         fi
-
-        test "${operation}" = "create"
-        while test "$#" -gt 0; do
-            case "$1" in
-                --label)
-                    shift 2
-                    ;;
-                *)
-                    create_object "${object_type}" "$1"
-                    exit 0
-                    ;;
-            esac
-        done
-        exit 1
+        [[ "$action" == create ]]
+        name="${@: -2:1}"
+        create "$object" "$name"
         ;;
-    network)
-        operation="${1:-}"
-        shift || true
-
-        if test "${operation}" = "inspect"; then
-            name="${*: -1}"
-            object_exists networks "${name}" || exit 1
-            case "$*" in
-                *com.koakademy.managed-by*) printf 'swarm-installer\n' ;;
-                *'{{.Driver}}'*) printf 'overlay\n' ;;
-                *'{{.Scope}}'*) printf 'swarm\n' ;;
-                *'{{.Attachable}}'*) printf 'true\n' ;;
-            esac
-            exit 0
+    stack)
+        [[ "${1:-}" == deploy ]]
+        create services koakademy_postgres
+        create services koakademy_redis
+        create services koakademy_gotenberg
+        create services koakademy_caddy
+        if [[ "${APP_REPLICAS:-1}" != 0 ]]; then
+            create services koakademy_app
         fi
-
-        test "${operation}" = "create"
-        create_object networks "${*: -1}"
         ;;
-    volume)
-        operation="${1:-}"
-        shift || true
-
-        if test "${operation}" = "inspect"; then
-            name="${*: -1}"
-            object_exists volumes "${name}" || exit 1
-            case "$*" in
-                *com.koakademy.managed-by*) printf 'swarm-installer\n' ;;
-            esac
-            exit 0
-        fi
-
-        test "${operation}" = "create"
-        create_object volumes "${*: -1}"
+    ps)
+        printf 'postgres-test-container\n'
+        ;;
+    exec)
+        printf 'fixture-postgres-backup\n'
         ;;
     service)
-        operation="${1:-}"
+        action="${1:-}"
         shift || true
-
-        case "${operation}" in
-            inspect)
-                name="${*: -1}"
-                object_exists services "${name}" || exit 1
-                case "$*" in
-                    *com.koakademy.managed-by*) printf 'swarm-installer\n' ;;
-                    *ContainerSpec.Image*)
-                        case "${name}" in
-                            koakademy-app) printf 'ghcr.io/yukazakiri/koakademy:v1.9.0\n' ;;
-                            koakademy-postgres) printf 'postgres:18-alpine\n' ;;
-                            koakademy-redis) printf 'redis:8-alpine\n' ;;
-                            koakademy-gotenberg) printf 'gotenberg/gotenberg:8\n' ;;
-                            koakademy-rustfs) printf 'rustfs/rustfs:1.0.0-beta.10\n' ;;
-                            *) printf 'alpine:3.22\n' ;;
-                        esac
-                        ;;
-                    *'TargetPort 8000'*) printf '18000\n' ;;
-                    *'TargetPort 9000'*) printf '19000\n' ;;
-                    *ContainerSpec.Env*)
-                        printf 'APP_URL=http://127.0.0.1:18000\n'
-                        printf 'AWS_ENDPOINT=http://koakademy-rustfs:9000\n'
-                        printf 'AWS_BUCKET=koakademy\n'
-                        printf 'AWS_DEFAULT_REGION=us-east-1\n'
-                        printf 'AWS_URL=http://127.0.0.1:19000/koakademy\n'
-                        printf 'AWS_USE_PATH_STYLE_ENDPOINT=true\n'
-                        ;;
-                esac
+        case "$action" in
+            ls)
+                find "$state/services" -maxdepth 1 -type f -printf '%f\n' | grep -v '^swarm-initialized$' || true
                 ;;
             create)
                 name=""
                 previous=""
                 for argument in "$@"; do
-                    if test "${previous}" = "--name"; then
-                        name="${argument}"
-                        break
-                    fi
-                    previous="${argument}"
+                    if [[ "$previous" == --name ]]; then name="$argument"; break; fi
+                    previous="$argument"
                 done
-                test -n "${name}"
-                create_object services "${name}"
-                rm -f -- "${KOAKADEMY_INSTALLER_TEST_STATE}/unhealthy/${name}"
-                ;;
-            ls)
-                shopt -s nullglob
-                for service_path in "${KOAKADEMY_INSTALLER_TEST_STATE}/services/"*; do
-                    name="$(basename "${service_path}")"
-                    if service_is_unhealthy "${name}"; then
-                        printf '%s 0/1\n' "${name}"
-                    else
-                        printf '%s 1/1\n' "${name}"
-                    fi
-                done
-                ;;
-            ps)
-                name="${*: -1}"
-                case "${name}" in
-                    koakademy-*-init|koakademy-migrate)
-                        case "$*" in
-                            *'{{.CurrentState}}'*) printf 'Complete 1 second ago\n' ;;
-                            *'{{.Error}}'*) printf '\n' ;;
-                            *'{{.DesiredState}}'*) printf 'Shutdown\n' ;;
-                        esac
-                        ;;
-                    *)
-                        if service_is_unhealthy "${name}"; then
-                            case "$*" in
-                                *'{{.CurrentState}}'*) printf 'Failed 2 seconds ago\n' ;;
-                                *'{{.Error}}'*) printf 'task failed\n' ;;
-                                *'{{.DesiredState}}'*) printf 'Shutdown\n' ;;
-                            esac
-                        else
-                            case "$*" in
-                                *'{{.CurrentState}}'*) printf 'Running 1 second ago\n' ;;
-                                *'{{.Error}}'*) printf '\n' ;;
-                                *'{{.DesiredState}}'*) printf 'Running\n' ;;
-                            esac
-                        fi
-                        ;;
-                esac
+                [[ -n "$name" ]]
+                create services "$name"
                 ;;
             rm)
-                rm -f -- "${KOAKADEMY_INSTALLER_TEST_STATE}/services/${1:-}"
-                rm -f -- "${KOAKADEMY_INSTALLER_TEST_STATE}/unhealthy/${1:-}"
+                rm -f "$state/services/${1:-}"
                 ;;
-            logs)
+            ps)
+                name="$1"
+                exists services "$name" || exit 1
+                if [[ "$name" == koakademy-migrate-* || "$name" == koakademy-scout-* ]]; then
+                    printf 'Complete\n'
+                else
+                    printf 'Running\n'
+                fi
                 ;;
-            *)
-                exit 1
-                ;;
+            *) exit 1 ;;
         esac
         ;;
-    *)
-        exit 1
-        ;;
+    *) exit 1 ;;
 esac

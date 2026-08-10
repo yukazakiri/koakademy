@@ -126,13 +126,10 @@ export interface SocialiteConfig {
 
 export interface MailConfig {
     driver: string;
-    host: string;
-    port: number;
-    username: string;
-    password: string;
-    encryption: string;
-    password_configured: boolean;
-    api_key_configured: boolean;
+    email_from_address: string;
+    email_from_name: string;
+    delivery_mode: "log" | "external";
+    managed_by: "deployment";
 }
 
 export type NewsletterProviderName = "sequenzy" | "brevo" | "mailchimp";

@@ -47,7 +47,6 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Redirect;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
@@ -744,74 +743,6 @@ final class AdministratorSystemManagementController extends Controller
         return Redirect::back()->with('success', 'Socialite configuration updated and environment synced.');
     }
 
-    public function updateMail(Request $request)
-    {
-        $this->authorize('updateMail', GeneralSetting::class);
-
-        $settings = GeneralSetting::query()->firstOrCreate([], [
-            'site_name' => $this->siteSettings->getAppName(),
-        ]);
-        $validated = $request->validate([
-            'email_from_address' => 'required|email',
-            'email_from_name' => 'required|string|max:255',
-            'driver' => ['required', 'string', Rule::in(['smtp', 'sequenzy', 'mailgun', 'ses'])],
-            'host' => 'nullable|string',
-            'port' => 'nullable|integer',
-            'username' => 'nullable|string',
-            'password' => 'nullable|string|max:2048',
-            'encryption' => 'nullable|string',
-            'sequenzy_api_key' => 'nullable|string|max:2048',
-        ]);
-
-        $existingMailSettings = $settings->email_settings ?? [];
-        $emailSettings = Arr::except($validated, [
-            'email_from_address',
-            'email_from_name',
-            'sequenzy_api_key',
-            'password',
-        ]);
-
-        if (filled($validated['password'] ?? null)) {
-            $emailSettings['password'] = $validated['password'];
-        } elseif (filled($existingMailSettings['password'] ?? null)) {
-            $emailSettings['password'] = $existingMailSettings['password'];
-        }
-
-        $settingsUpdates = [
-            'email_from_address' => $validated['email_from_address'],
-            'email_from_name' => $validated['email_from_name'],
-            'email_settings' => $emailSettings,
-        ];
-
-        if (filled($validated['sequenzy_api_key'] ?? null)) {
-            $settingsUpdates['sequenzy_api_key'] = mb_trim($validated['sequenzy_api_key']);
-        }
-
-        $settings->update($settingsUpdates);
-
-        // Update .env file
-        $envUpdates = [
-            'MAIL_MAILER' => $validated['driver'],
-            'MAIL_HOST' => $validated['host'] ?? null,
-            'MAIL_PORT' => $validated['port'] ?? null,
-            'MAIL_USERNAME' => $validated['username'] ?? null,
-            'MAIL_ENCRYPTION' => $validated['encryption'] ?? null,
-            'MAIL_FROM_ADDRESS' => $validated['email_from_address'],
-            'MAIL_FROM_NAME' => '"'.$validated['email_from_name'].'"',
-        ];
-
-        if (filled($validated['password'] ?? null)) {
-            $envUpdates['MAIL_PASSWORD'] = $validated['password'];
-        }
-
-        $this->updateEnvironmentFile($envUpdates);
-
-        // Clear config cache
-        Artisan::call('config:clear');
-
-        return Redirect::back()->with('success', 'Mail configuration updated successfully.');
-    }
-
     public function updateNewsletter(
         UpdateNewsletterSettingsRequest $request,
         NewsletterSettingsService $newsletterSettings,
@@ -889,54 +820,6 @@ final class AdministratorSystemManagementController extends Controller
         ]);
 
         return Redirect::back()->with('success', 'Legacy enrollment settings updated successfully.');
-    }
-
-    public function sendTestEmail(Request $request)
-    {
-        $this->authorize('updateMail', GeneralSetting::class);
-
-        $validated = $request->validate([
-            'to' => 'required|email',
-            'type' => 'sometimes|string|in:plain,html,markdown,pdf-attachment',
-        ]);
-
-        $to = $validated['to'];
-        $type = $validated['type'] ?? 'html';
-
-        $typeLabels = [
-            'plain' => 'Plain text',
-            'html' => 'HTML',
-            'markdown' => 'Markdown',
-            'pdf-attachment' => 'HTML with PDF attachment',
-        ];
-
-        try {
-            if ($type === 'plain') {
-                $appName = $this->siteSettings->getAppName();
-
-                Mail::raw(
-                    "This is a plain text test email from your {$appName} system configuration.\n\n"
-                    .'Sent at: '.now()->format('Y-m-d H:i:s')."\n"
-                    .'Environment: '.app()->environment()."\n\n"
-                    ."This confirms that your SMTP settings are working correctly.\n\n"
-                    ."Best regards,\n{$appName}",
-                    function ($message) use ($to, $appName): void {
-                        $message->to($to)
-                            ->subject("{$appName} - Plain Text Test Email");
-                    }
-                );
-            } else {
-                Mail::to($to)->send(new \App\Mail\TestMail($type));
-            }
-
-            return response()->json([
-                'message' => ($typeLabels[$type] ?? 'Test').' email sent successfully!',
-            ], 200);
-        } catch (Exception $e) {
-            return response()->json([
-                'message' => 'Failed to send test email: '.$e->getMessage(),
-            ], 500);
-        }
     }
 
     public function updateNotificationChannels(Request $request)
@@ -1080,30 +963,15 @@ final class AdministratorSystemManagementController extends Controller
 
         $socialiteConfig = app(SocialiteProviderService::class)->config();
 
-        // Merge non-sensitive mail defaults with database settings.
-        $storedMailConfig = $settings->email_settings ?? [];
-        $mailConfig = Arr::except($storedMailConfig, ['password', 'sequenzy_api_key']);
-        $mailDefaults = [
+        // Mail transport belongs to the deployment. Do not read historical
+        // database values: immutable Swarm tasks receive credentials as secrets.
+        $finalMailConfig = [
             'driver' => config('mail.default'),
-            'host' => config('mail.mailers.smtp.host'),
-            'port' => config('mail.mailers.smtp.port'),
-            'username' => config('mail.mailers.smtp.username'),
-            'password' => '',
-            'encryption' => config('mail.mailers.smtp.encryption'),
             'email_from_address' => config('mail.from.address'),
             'email_from_name' => config('mail.from.name'),
-            'password_configured' => filled($storedMailConfig['password'] ?? config('mail.mailers.smtp.password')),
-            'api_key_configured' => filled($settings->sequenzy_api_key)
-                || filled(config('services.sequenzy.key'))
-                || filled(config('services.sequenzy.legacy_key')),
+            'delivery_mode' => config('mail.default') === 'log' ? 'log' : 'external',
+            'managed_by' => 'deployment',
         ];
-        $finalMailConfig = array_merge($mailDefaults, $mailConfig);
-        if ($settings->email_from_address) {
-            $finalMailConfig['email_from_address'] = $settings->email_from_address;
-        }
-        if ($settings->email_from_name) {
-            $finalMailConfig['email_from_name'] = $settings->email_from_name;
-        }
 
         $frontendSettings = $settings->toArray();
         $frontendSettings['email_settings'] = Arr::except(
@@ -1224,7 +1092,6 @@ final class AdministratorSystemManagementController extends Controller
                 'analytics' => 'updateAnalytics',
                 'brand' => 'updateBrand',
                 'socialite' => 'updateSocialite',
-                'mail' => 'updateMail',
                 'newsletter' => 'updateNewsletter',
                 'api' => 'updateApi',
                 'notifications' => 'updateNotifications',

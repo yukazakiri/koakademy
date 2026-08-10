@@ -10,9 +10,9 @@ Only the latest stable, non-prerelease release is supported. Development and pre
 
 ## What does the one-line installer change?
 
-It validates an existing Linux Docker engine, initializes Swarm only when inactive, and deploys manager-pinned KoAkademy, PostgreSQL, Redis, Gotenberg, and optional RustFS services. If Swarm is already active, the installer preserves it and requires the current node to be a manager. It does not install Docker, configure TLS, leave a Swarm, or remove unrelated services.
+It installs Docker when needed, initializes Swarm only when inactive, and deploys Caddy, KoAkademy, PostgreSQL, Redis, and Gotenberg on a single VPS. Caddy owns ports 80/443; the remaining services are private on the Swarm overlay. The installer preserves an active manager cluster, never leaves Swarm, and stops before changing a legacy `koakademy-*` deployment.
 
-The Bash and PowerShell commands resolve the tag from the latest published, non-draft, non-prerelease KoAkademy GitHub Release at runtime. Local RustFS resolves the newest stable tag with a published Docker image, or the newest published non-preview beta when no stable tag exists. Resolution fails instead of silently using a mutable `latest` image.
+The Linux command resolves a stable GitHub Release and verifies its checksummed bundle before deploying the immutable GHCR digest in `version.json`. It never selects mutable `latest` or rolling `edge`.
 
 ## Can I use MySQL or SQLite in production?
 
@@ -20,7 +20,7 @@ The prebuilt production image supports PostgreSQL only. SQLite remains the defau
 
 ## Which ports are exposed?
 
-The default Swarm installer publishes KoAkademy on manager host port `8000`. Local RustFS also publishes its S3 API on `9000`; its console remains private. Restrict those ports with a firewall and forward HTTPS traffic from an operator-managed edge.
+The default Swarm installer publishes Caddy only on ports `80` and `443`. KoAkademy, PostgreSQL, Redis, and Gotenberg have no host-published port.
 
 The manual Compose topology publishes only `127.0.0.1:8000`. PostgreSQL, Redis, and Gotenberg are private in both topologies.
 
@@ -42,7 +42,7 @@ KoAkademy uses `spatie/laravel-pdf` with Gotenberg. Gotenberg runs as a private 
 
 ## Is local storage supported for production uploads?
 
-Container-local application storage is not a durable upload store. The installer can deploy local RustFS, which provides S3-compatible object storage on a persistent Docker volume, for evaluation or a backed-up single-node installation. Use redundant external S3-compatible storage when the upload data must survive a host failure.
+Fresh installs use a persistent application volume so setup works without a provider account. It is a single-node starter default, not resilient object storage. Use `sudo koakademy configure storage s3` or `sudo koakademy configure storage r2` before upload data must survive a host failure.
 
 ## Are all routes under `/api` public API contracts?
 

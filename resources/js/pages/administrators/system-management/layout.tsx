@@ -3,23 +3,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import type { User } from "@/types/user";
 import { Head } from "@inertiajs/react";
 import type { LucideIcon } from "lucide-react";
-import {
-    Activity,
-    BarChart3,
-    Bell,
-    Building2,
-    Calculator,
-    FileBadge2,
-    Globe,
-    Hash,
-    List,
-    Lock,
-    Mail,
-    Newspaper,
-    Palette,
-    Share2,
-    Webhook,
-} from "lucide-react";
+import { Activity, BarChart3, Bell, Building2, Calculator, FileBadge2, Globe, Hash, List, Lock, Mail, Palette, Share2, Webhook } from "lucide-react";
 import type { ReactNode } from "react";
 import type { SystemManagementAccess, SystemManagementSectionKey } from "./types";
 
@@ -76,17 +60,10 @@ export const systemManagementNavItems: SystemManagementNavItem[] = [
     },
     {
         key: "mail",
-        label: "Mail Server",
-        description: "Transactional email delivery and SMTP settings.",
+        label: "Deployment Mail",
+        description: "Runtime mail transport managed by the server operator.",
         href: "/administrators/system-management/mail",
         icon: Mail,
-    },
-    {
-        key: "newsletter",
-        label: "Newsletter",
-        description: "Marketing contacts, consent prompts, and provider setup.",
-        href: "/administrators/settings/newsletter",
-        icon: Newspaper,
     },
     {
         key: "api",

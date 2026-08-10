@@ -69,9 +69,6 @@ final class GeneralSettingController extends Controller
             'seo_title' => 'nullable|string|max:255',
             'seo_keywords' => 'nullable|string',
             'seo_metadata' => 'nullable|array',
-            'email_settings' => 'nullable|array',
-            'email_from_address' => 'nullable|email|max:255',
-            'email_from_name' => 'nullable|string|max:255',
             'social_network' => 'nullable|array',
             'more_configs' => 'nullable|array',
             'school_starting_date' => 'nullable|date',
@@ -108,7 +105,7 @@ final class GeneralSettingController extends Controller
         }
 
         try {
-            $setting = GeneralSetting::create($request->all());
+            $setting = GeneralSetting::create($validator->validated());
 
             return response()->json([
                 'message' => 'General settings created successfully',
@@ -175,9 +172,6 @@ final class GeneralSettingController extends Controller
             'seo_title' => 'nullable|string|max:255',
             'seo_keywords' => 'nullable|string',
             'seo_metadata' => 'nullable|array',
-            'email_settings' => 'nullable|array',
-            'email_from_address' => 'nullable|email|max:255',
-            'email_from_name' => 'nullable|string|max:255',
             'social_network' => 'nullable|array',
             'more_configs' => 'nullable|array',
             'school_starting_date' => 'nullable|date',
@@ -214,7 +208,7 @@ final class GeneralSettingController extends Controller
         }
 
         try {
-            $setting->update($request->all());
+            $setting->update($validator->validated());
 
             return response()->json([
                 'message' => 'General settings updated successfully',

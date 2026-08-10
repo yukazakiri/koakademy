@@ -1,144 +1,63 @@
 ---
 title: Releases & Versioning
-description: Release Please, edge and stable container channels, version metadata, recovery, and rollback.
+description: Reviewed stable releases, immutable GHCR images, and installer assets.
 ---
 
 # Releases & Versioning
 
-KoAkademy deliberately separates rolling delivery from stable releases:
+KoAkademy publishes only reviewed stable releases. Delivery has two focused responsibilities: maintain the Release Please pull request after a `master` merge, then publish an image and installer bundle only when that reviewed release is created.
 
-| Source event             | Release activity                 | GHCR and Docker Hub tags                                            |
-| ------------------------ | -------------------------------- | ------------------------------------------------------------------- |
-| Pull request             | None                             | Build validation only; nothing is pushed                            |
-| Merged `master` commit   | None                             | Immutable `sha-<40-character-commit>` and mutable `edge`            |
-| Merged Release Please PR | Draft until publication succeeds | `sha-<commit>`, `edge`, `vX.Y.Z`, `X.Y.Z`, `X.Y`, `X`, and `latest` |
-| Manual version request   | Reviewed Release Please PR       | No rebuild until that release PR is merged                          |
+| Source event | Result |
+| --- | --- |
+| Pull request | CI validation only; no artifacts or credentials |
+| `master` merge | Release Please creates or updates a draft release PR |
+| Merged Release Please PR | Exact `vX.Y.Z` tag, multi-architecture GHCR image, checksummed installer bundle, published GitHub Release |
 
-Both registries receive the same `linux/amd64` and `linux/arm64` manifest:
+There is no rolling `edge`, `latest`, Docker Hub mirror, mutable major/minor alias, or manual version override in the supported release path. Production deployments resolve the GitHub Release asset and use its immutable GHCR digest.
 
-- `ghcr.io/yukazakiri/koakademy`
-- `yukazaki/koakademy`
+## Release flow
 
-KoAkademy publishes two image variants under the same delivery pipeline. The default image serves the application with nginx and PHP-FPM; a FrankenPHP variant runs the same code through Laravel Octane and is tagged with a `-franken` suffix on every channel: `sha-<commit>-franken`, `edge-franken`, `vX.Y.Z-franken`, `X.Y.Z-franken`, `X.Y-franken`, `X-franken`, and `latest-franken`. Both variants share the same version metadata and are built, verified, and promoted identically.
+Release Please reads Conventional Commit titles from merged work and opens a reviewed PR. Merging that PR updates `CHANGELOG.md`, `.release-please-manifest.json`, and the tracked `version.json` version, creates the exact `vX.Y.Z` tag, and creates a draft GitHub Release.
 
-Use an exact `vX.Y.Z` image in production. `latest` is a convenience alias for the newest verified stable release. `edge` is unsupported rolling software and may change after every successfully delivered `master` commit. The historical `dev-latest` and `v*-dev.*` tags and prereleases remain available but are frozen.
+The same Delivery run then:
 
-## Pull requests and version selection
+1. Checks out the tag's immutable commit and verifies its version metadata.
+2. Builds the FrankenPHP image for `linux/amd64` and `linux/arm64`.
+3. Pushes `ghcr.io/yukazakiri/koakademy:sha-<commit>` and `:vX.Y.Z`.
+4. Verifies the release tag resolves to the built digest and contains both architectures.
+5. Publishes BuildKit SBOM/provenance and GitHub attestation.
+6. Rewrites the release `version.json` to the digest, checksums the installer bundle, uploads it, and publishes the draft release.
 
-Pull request titles use Conventional Commits because squash merging makes that title the commit Release Please evaluates. A metadata-only workflow automatically normalizes a plain-language title from its topic, description, labels, and changed-file names; maintainers must review the inferred type, scope, and breaking marker before merge:
-
-| PR title prefix                                   | Proposed SemVer change |
-| ------------------------------------------------- | ---------------------- |
-| `fix:`                                            | Patch                  |
-| `feat:`                                           | Minor                  |
-| `feat!:`, `fix!:`, or a `BREAKING CHANGE:` footer | Major                  |
-| `docs:`, `chore:`, `ci:`, `test:`, and similar    | Patch                  |
-
-Examples:
-
-```text
-fix(installer): preserve an existing Swarm
-feat(enrollments): add fee overrides
-feat(api)!: replace the student verification response
-chore(release): release 1.12.0
-```
-
-The repository uses squash merge only, linear history, and the stable `CI / required` check. Release Please is initialized from `v1.11.0`; later historical `-dev` tags are not release boundaries. The first generated release PR is expected to propose `1.12.0` from the feature commits after that stable boundary, and remains subject to maintainer review.
-
-An exact Release Please metadata-only pull request takes the fast CI path: it validates the manifest version, tracked version, title, changelog entry, and allowed three-file change set without rerunning the application suite. Any unexpected file falls back to full CI.
-
-## Trusted delivery
-
-`delivery.yml` is triggered directly by a push to `master`, but its privileged path runs only when all of these are true:
-
-- the event is `push`;
-- the ref is exactly `refs/heads/master`;
-- the event repository exactly matches this repository;
-- the immutable event `after` SHA matches the workflow SHA.
-
-No checkout or secret access occurs before that trust decision. Pull-request CI is not repeated after merge, and administrators remain able to use the repository's existing branch-protection bypass. Every supported Conventional Commit type creates or updates one reviewed Release Please PR: breaking commits propose a major version, features propose a minor version, and all other visible types—including `fix`, `ci`, `docs`, `test`, and `chore`—propose a patch. Delivery performs the only multi-architecture build for every `master` commit, verifies it, and moves `edge` only if that commit is still the current branch head.
-
-When the release PR is merged, Release Please:
-
-1. updates `CHANGELOG.md`, `.release-please-manifest.json`, and only the `version` field in tracked `version.json`;
-2. force-creates the strict `vX.Y.Z` tag;
-3. creates a draft GitHub Release.
-
-Delivery then generates runtime build metadata without committing it, builds and pushes immutable SHA tags for both image variants to both registries, verifies identical digests and both architectures, generates BuildKit SBOM/provenance records plus GitHub provenance attestations, and only then promotes release aliases. Every automatic delivery promotes the same verified image to `edge`; a stable release commit therefore updates both `edge` and its stable aliases without a duplicate build. Exact SemVer aliases are immutable. Major, minor, and `latest` aliases move only when the recovered or newly released version is the newest applicable stable tag.
-
-The draft is published and marked latest only after container verification, alias promotion, release asset upload, and checksums all succeed. Immutable SHA references remain the audit and rollback source of truth.
-
-## Version metadata
-
-The tracked `version.json` records the latest stable source version. Release Please changes only its `version` field. During delivery, `scripts/generate-version-metadata.sh` creates the image-specific file in the runner, including:
-
-- stable version or edge SemVer build identity;
-- immutable image reference;
-- full commit;
-- UTC build timestamp;
-- Actions run URL;
-- `stable` or `edge` channel.
-
-That generated file is copied into the image but never committed back to `master`. A stable copy is also attached to the GitHub Release. This prevents delivery reruns from creating bot metadata commits.
+The exact SemVer image tag and its digest are the deployment contract. Do not deploy a mutable alias.
 
 ## Stable release assets
 
-Every stable GitHub Release contains:
+Every release contains:
 
-- `version.json`
-- `compose.production.yaml`
-- `.env.production.example`
-- `install.sh`
-- `install.ps1`
+- `version.json` with the immutable GHCR image digest
+- `install.sh` and `koakademy`
+- `swarm-stack.yml`, `Caddyfile`, and `koakademy-app-entrypoint.sh`
+- `compose.production.yaml` and `.env.production.example`
 - `SHA256SUMS`
 
-Verify an asset after download with:
+Verify downloaded files before executing them:
 
 ```sh
 sha256sum --check SHA256SUMS
 ```
 
-## Required configuration
+## Required GitHub configuration
 
-| Setting                | Location and purpose                                                                                                                                                                      |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RELEASE_PLEASE_TOKEN` | `release-automation` environment secret containing a dedicated fine-grained repository token with Contents, Pull requests, and Issues read/write; do not reuse `PROJECT_AUTOMATION_TOKEN` |
-| `DOCKERHUB_IMAGE`      | Repository variable, currently `yukazaki/koakademy`                                                                                                                                       |
-| `DOCKERHUB_USERNAME`   | Repository or `container-publishing` environment secret                                                                                                                                   |
-| `DOCKERHUB_TOKEN`      | Repository or `container-publishing` environment secret                                                                                                                                   |
-| `release-automation`   | GitHub environment used by the Release Please job                                                                                                                                         |
-| `container-publishing` | GitHub environment used by registry publication                                                                                                                                           |
+| Setting | Purpose |
+| --- | --- |
+| `RELEASE_PLEASE_TOKEN` | Fine-grained token with Contents, Pull requests, and Issues read/write for Release Please |
+| `release-automation` | Protected environment for Release Please |
+| `container-publishing` | Protected environment for GHCR publishing and release assets |
 
-Docker Hub is mandatory, not an optional mirror. The built-in GitHub token publishes GHCR packages and GitHub attestations. `RELEASE_PLEASE_TOKEN` must be fine-grained and restricted to this repository.
-Both privileged environments accept deployments from protected branches only, so a manual run cannot select an unreviewed workflow ref.
+The built-in GitHub token publishes the repository's GHCR package, attestations, and release assets. Keep both environments limited to protected branches.
 
-Create `RELEASE_PLEASE_TOKEN` from **GitHub profile → Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**:
+## Recovery and rollback
 
-1. Set the resource owner to `yukazakiri` and select only `koakademy`.
-2. Set repository permissions **Contents**, **Pull requests**, and **Issues** to **Read and write**. Leave every other permission at its default.
-3. Choose a finite expiration and generate the token. Copy it immediately; GitHub does not show it again.
-4. Open **koakademy → Settings → Environments → release-automation → Environment secrets**, create `RELEASE_PLEASE_TOKEN`, and paste the token value.
+Delivery deliberately does not rebuild old releases or move image tags. If a published release has a registry or asset incident, investigate and repair it during a maintenance window with the exact tag and digest; do not make a new build overwrite an immutable tag.
 
-Never paste the token into a workflow, issue, pull request, command history, or repository file. Rotate it before expiration and rerun the failed Delivery job after replacement.
-
-## Manual release and recovery dispatch
-
-Use **Actions → Delivery → Run workflow** from the `master` branch and provide exactly one input:
-
-- Set **version** to a new strict `X.Y.Z` version to create or update a reviewed Release Please PR at that exact version. The requested version must be newer than the latest stable tag. This metadata-only request does not rebuild a container; merge the resulting release PR to run the normal verified stable publication.
-- Set **tag** to an existing strict `vX.Y.Z` tag to recover its publication. The workflow rejects prerelease, missing, malformed, or invented tags and never creates or moves a Git tag during recovery. It may rebuild a missing immutable SHA image, recreate a missing draft for the existing tag, re-upload assets, and finalize publication.
-
-Recovery of an older stable version never rolls back `latest`, a major alias, or a minor alias past a newer matching stable version. If an immutable SemVer tag already points to another digest, recovery fails instead of moving it.
-
-## Verification and rollback
-
-Before announcing a release, check both registries anonymously:
-
-```sh
-docker buildx imagetools inspect ghcr.io/yukazakiri/koakademy:vX.Y.Z
-docker buildx imagetools inspect yukazaki/koakademy:vX.Y.Z
-```
-
-Confirm `linux/amd64` and `linux/arm64` are present and the top-level digests match. Smoke-test the production Compose contract and `/up`, then exercise login, queues, uploads, and one PDF render.
-
-Rollback by selecting the previous reviewed exact `vX.Y.Z` tag, never by guessing the former value of `latest` or `edge`. Read that release's migration notes first; if the earlier application cannot read the migrated schema, restore the matching database backup and image together.
+Application rollback uses the prior exact image recorded by `sudo koakademy update`. It never reverses database migrations automatically. Read release notes and restore the matching database backup when prior code cannot use the migrated schema.

@@ -42,7 +42,7 @@ case "$command_name" in
             exit
         fi
         [[ "$action" == create ]]
-        name="${@: -2:1}"
+        name="${*: -2:1}"
         create "$object" "$name"
         ;;
     stack)

@@ -8,10 +8,10 @@ load_required_secret() {
     secret_path="$2"
     value="$(cat "$secret_path")"
 
-    [ -n "$value" ] && [ "$value" != "$placeholder" ] || {
+    if [ -z "$value" ] || [ "$value" = "$placeholder" ]; then
         printf 'Required Docker secret %s is not configured.\n' "$variable_name" >&2
         exit 1
-    }
+    fi
 
     export "$variable_name=$value"
 }

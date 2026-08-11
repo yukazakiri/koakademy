@@ -63,9 +63,10 @@ validate_release_tag() {
 
 validate_domain() {
     local value="$1"
-    [[ "$value" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] &&
-        [[ "$value" != *..* ]] && [[ "$value" != *://* ]] && [[ "$value" != */* ]] ||
+    if ! [[ "$value" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] ||
+        [[ "$value" == *..* ]] || [[ "$value" == *://* ]] || [[ "$value" == */* ]]; then
         fail "Domain must be a hostname without a protocol, port, or path."
+    fi
 }
 
 validate_url() {
@@ -125,6 +126,8 @@ load_runtime() {
         fail "Refusing a runtime file readable by other users."
     # shellcheck disable=SC1090
     source "$runtime_file"
+    # Populated by the sourced runtime file.
+    # shellcheck disable=SC2153
     release_directory="$RELEASE_DIRECTORY"
 }
 
@@ -463,6 +466,8 @@ perform_install() {
     if [[ -f "$runtime_file" ]]; then
         load_runtime
         [[ "${INSTALLATION_COMPLETE:-false}" != true ]] || fail "KoAkademy is already installed. Use update or configure."
+        # Populated by the sourced runtime file.
+        # shellcheck disable=SC2153
         release_tag="$RELEASE_TAG"
         domain="$KOAKADEMY_DOMAIN"
         resuming=true

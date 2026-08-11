@@ -11,14 +11,18 @@ return new class extends Migration
     public function up(): void
     {
         if (Schema::hasTable('student_transactions') && Schema::hasColumn('student_transactions', 'amount')) {
-            Schema::table('student_transactions', function (Blueprint $table): void {
-                $table->decimal('amount', 12, 2)->change();
+            $amountIsNullable = $this->columnIsNullable('student_transactions', 'amount');
+
+            Schema::table('student_transactions', function (Blueprint $table) use ($amountIsNullable): void {
+                $table->decimal('amount', 12, 2)->nullable($amountIsNullable)->change();
             });
         }
 
         if (Schema::hasTable('student_tuition') && Schema::hasColumn('student_tuition', 'paid')) {
-            Schema::table('student_tuition', function (Blueprint $table): void {
-                $table->decimal('paid', 12, 2)->default(0)->change();
+            $paidIsNullable = $this->columnIsNullable('student_tuition', 'paid');
+
+            Schema::table('student_tuition', function (Blueprint $table) use ($paidIsNullable): void {
+                $table->decimal('paid', 12, 2)->nullable($paidIsNullable)->default(0)->change();
             });
         }
 
@@ -45,4 +49,12 @@ return new class extends Migration
      * to integers would silently discard recorded centavos.
      */
     public function down(): void {}
+
+    private function columnIsNullable(string $table, string $column): bool
+    {
+        $metadata = collect(Schema::getColumns($table))
+            ->firstWhere('name', $column);
+
+        return (bool) ($metadata['nullable'] ?? false);
+    }
 };

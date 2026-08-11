@@ -33,6 +33,43 @@ const HOUR_END = 19;
 const CELL_H = 52;
 const SNAP_MINUTES = 15;
 
+type CollegeSubjectOption = {
+    id: number;
+    label: string;
+    code: string;
+    title: string;
+    course_id: number;
+    course_code: string | null;
+    academic_year: number | null;
+    semester: string | null;
+};
+
+type CreatedClassItem = {
+    id: number;
+    subject_code: string;
+    subject_title: string;
+    section: string;
+    grade_level: string | null;
+    year_levels: string[];
+    course_year_levels: Record<string, string[]>;
+    classification: string;
+    faculty_id: string | null;
+    faculty_name: string | null;
+    room_name: string | null;
+    courses: string;
+    course_ids: number[];
+    student_count: number;
+    schedules: Array<{
+        id: number;
+        day_of_week: string;
+        start_time: string;
+        end_time: string;
+        time_range: string;
+        room: string | null;
+        room_id: number | null;
+    }>;
+};
+
 const PALETTES = [
     {
         accent: "border-l-rose-500",
@@ -93,13 +130,6 @@ function buildSubjectCodeFromSubjectOptions(selectedValues: string[], options: A
         .map((option) => option.code)
         .filter((code) => code.trim().length > 0)
         .join(", ");
-}
-
-function parseDelimitedCodes(input: string): string[] {
-    return input
-        .split(",")
-        .map((item) => item.trim())
-        .filter((item) => item.length > 0);
 }
 
 function fmtTime(t: string): string {
@@ -167,12 +197,12 @@ export default function CreateClassDialog({
         end_time: string;
         time_range: string;
     }>;
-    onClassCreated: (classItem: any) => void;
+    onClassCreated: (classItem: CreatedClassItem) => void;
 }) {
     const [activeTab, setActiveTab] = React.useState("details");
     const [isSubmitting, setIsSubmitting] = React.useState(false);
 
-    const [collegeSubjectOptions, setCollegeSubjectOptions] = React.useState<Array<{ id: number; label: string; code: string; title: string }>>([]);
+    const [collegeSubjectOptions, setCollegeSubjectOptions] = React.useState<CollegeSubjectOption[]>([]);
     const [collegeSubjectsLoading, setCollegeSubjectsLoading] = React.useState(false);
     const [shsStrandOptions, setShsStrandOptions] = React.useState<Array<{ id: string | number; label: string }>>([]);
     const [shsStrandsLoading, setShsStrandsLoading] = React.useState(false);
@@ -181,7 +211,7 @@ export default function CreateClassDialog({
     const [subjectCodeTouched, setSubjectCodeTouched] = React.useState(false);
 
     const [selectedBlockIndex, setSelectedBlockIndex] = React.useState<number | null>(null);
-    const [hoveredBlockIndex, setHoveredBlockIndex] = React.useState<number | null>(null);
+    const [, setHoveredBlockIndex] = React.useState<number | null>(null);
 
     const [resizing, setResizing] = React.useState<{
         blockId: string;
@@ -304,7 +334,7 @@ export default function CreateClassDialog({
         setCollegeSubjectsLoading(true);
         try {
             const response = await fetch(route("administrators.classes.options.subjects", { course_ids: courseIds }));
-            const data = (await response.json()) as { data: Array<{ id: number; label: string; code: string; title: string }> };
+            const data = (await response.json()) as { data: CollegeSubjectOption[] };
             setCollegeSubjectOptions(data.data);
         } finally {
             setCollegeSubjectsLoading(false);
@@ -326,6 +356,28 @@ export default function CreateClassDialog({
             setShsStrandsLoading(false);
         }
     };
+
+    const selectedCurriculumYears = React.useMemo(() => {
+        const selectedIds = new Set(form.data.subject_ids);
+
+        return Array.from(
+            new Set(
+                collegeSubjectOptions
+                    .filter((subject) => selectedIds.has(subject.id) && subject.academic_year !== null)
+                    .map((subject) => subject.academic_year as number),
+            ),
+        ).sort((a, b) => a - b);
+    }, [collegeSubjectOptions, form.data.subject_ids]);
+
+    const selectedSubjectsAreResolved = React.useMemo(() => {
+        const selectedIds = new Set(form.data.subject_ids);
+        const selectedSubjects = collegeSubjectOptions.filter((subject) => selectedIds.has(subject.id));
+
+        return selectedSubjects.length === form.data.subject_ids.length && selectedSubjects.every((subject) => subject.academic_year !== null);
+    }, [collegeSubjectOptions, form.data.subject_ids]);
+
+    const unanimousCurriculumYear = selectedSubjectsAreResolved && selectedCurriculumYears.length === 1 ? selectedCurriculumYears[0] : null;
+    const spansCurriculumYears = selectedCurriculumYears.length > 1;
 
     const loadShsSubjects = async (strandId: number | null) => {
         if (!strandId) {
@@ -413,15 +465,6 @@ export default function CreateClassDialog({
             room_id: primaryRoomId,
         }));
         form.setData("schedules", [...form.data.schedules, ...newBlocks]);
-    };
-
-    const autoAssignRooms = () => {
-        if (options.rooms.length === 0 || form.data.schedules.length === 0) return;
-        form.setData(
-            "schedules",
-            form.data.schedules.map((s, i) => ({ ...s, room_id: options.rooms[i % options.rooms.length].id })),
-        );
-        toast.success("Rooms auto-assigned");
     };
 
     const handleDragMove = (event: DragMoveEvent) => {
@@ -767,7 +810,9 @@ export default function CreateClassDialog({
                                                                 options={collegeSubjectOptions.map((subject) => ({
                                                                     value: String(subject.id),
                                                                     label: `${subject.code} — ${subject.title}`,
-                                                                    description: subject.label,
+                                                                    description: `${subject.course_code ?? "Program"} · ${
+                                                                        subject.academic_year ? `Year ${subject.academic_year}` : "Year unresolved"
+                                                                    }${subject.semester ? ` · Semester ${subject.semester}` : ""}`,
                                                                     searchText: `${subject.code} ${subject.title} ${subject.label}`,
                                                                 }))}
                                                                 selected={form.data.subject_ids.map(String)}
@@ -776,6 +821,25 @@ export default function CreateClassDialog({
                                                                     const subjectIds = values.map(Number);
                                                                     form.setData("subject_ids", subjectIds);
                                                                     form.setData("subject_id", subjectIds[0] ?? null);
+                                                                    const selectedSubjects = collegeSubjectOptions.filter((subject) =>
+                                                                        subjectIds.includes(subject.id),
+                                                                    );
+                                                                    const years = Array.from(
+                                                                        new Set(
+                                                                            selectedSubjects
+                                                                                .map((subject) => subject.academic_year)
+                                                                                .filter((year): year is number => year !== null),
+                                                                        ),
+                                                                    ).sort((a, b) => a - b);
+                                                                    const allResolved =
+                                                                        selectedSubjects.length === subjectIds.length &&
+                                                                        selectedSubjects.every((subject) => subject.academic_year !== null);
+
+                                                                    if (allResolved && years.length === 1) {
+                                                                        form.setData("academic_year", years[0]);
+                                                                    } else if (years.length > 1 && !years.includes(form.data.academic_year)) {
+                                                                        form.setData("academic_year", years[0]);
+                                                                    }
                                                                     if (!subjectCodeTouched) {
                                                                         const computed = buildSubjectCodeFromSubjectOptions(
                                                                             values,
@@ -814,17 +878,32 @@ export default function CreateClassDialog({
                                                                     key={year}
                                                                     type="button"
                                                                     onClick={() => form.setData("academic_year", year)}
+                                                                    disabled={
+                                                                        unanimousCurriculumYear !== null ||
+                                                                        (spansCurriculumYears && !selectedCurriculumYears.includes(year))
+                                                                    }
                                                                     className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                                                                         form.data.academic_year === year
                                                                             ? "border-primary bg-primary text-primary-foreground"
                                                                             : "border-border bg-background text-muted-foreground hover:bg-muted"
-                                                                    }`}
+                                                                    } disabled:cursor-not-allowed disabled:opacity-45`}
                                                                 >
                                                                     {year}
                                                                     {year === 1 ? "st" : year === 2 ? "nd" : year === 3 ? "rd" : "th"} Year
                                                                 </button>
                                                             ))}
                                                         </div>
+                                                        {unanimousCurriculumYear !== null ? (
+                                                            <p className="text-muted-foreground text-xs">
+                                                                Set automatically from the selected subjects’ curriculum placement.
+                                                            </p>
+                                                        ) : spansCurriculumYears ? (
+                                                            <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-100">
+                                                                This shared class spans curriculum years {selectedCurriculumYears.join(" and ")}. Each
+                                                                program will use its subject-specific year; choose one of those years only as the
+                                                                legacy fallback.
+                                                            </div>
+                                                        ) : null}
                                                     </div>
                                                 </>
                                             ) : (
@@ -1191,7 +1270,6 @@ export default function CreateClassDialog({
                                                             onBlockClick={setSelectedBlockIndex}
                                                             onBlockHover={setHoveredBlockIndex}
                                                             blockHasConflict={blockHasConflict}
-                                                            getBlockConflicts={getBlockConflicts}
                                                             onAddBlock={(time) =>
                                                                 addScheduleBlock(day, time, minutesToTime(parseTimeToMinutes(time)! + 120))
                                                             }
@@ -1437,7 +1515,7 @@ export default function CreateClassDialog({
                                     <div className="space-y-2">
                                         <Label className="text-sm font-medium">Schedule Blocks ({form.data.schedules.length})</Label>
                                         <div className="space-y-1.5">
-                                            {form.data.schedules.map((block, i) => {
+                                            {form.data.schedules.map((block) => {
                                                 const hasConflict = blockHasConflict(block);
                                                 const room = options.rooms.find((r) => r.id === block.room_id);
                                                 return (
@@ -1500,7 +1578,6 @@ function DayColumn({
     onBlockClick,
     onBlockHover,
     blockHasConflict,
-    getBlockConflicts,
     onAddBlock,
     dragPreview,
     onResizeStart,
@@ -1514,13 +1591,6 @@ function DayColumn({
     onBlockClick: (index: number) => void;
     onBlockHover: (index: number | null) => void;
     blockHasConflict: (block: { id: string; day_of_week: string; start_time: string; end_time: string; room_id: number | null }) => boolean;
-    getBlockConflicts: (block: {
-        id: string;
-        day_of_week: string;
-        start_time: string;
-        end_time: string;
-        room_id: number | null;
-    }) => Array<{ type: "room" | "faculty"; existing: any }>;
     onAddBlock: (time: string) => void;
     dragPreview: { dayIdx: number; startMin: number; duration: number; blockId: string } | null;
     onResizeStart: (blockId: string, edge: "top" | "bottom", initialY: number, originalStartMin: number, originalEndMin: number) => void;
@@ -1599,7 +1669,6 @@ function DayColumn({
                     <DraggableScheduleBlock
                         key={block.id}
                         block={block}
-                        globalIndex={globalIndex}
                         style={{ top, height: Math.max(height - 2, 24), left: 2, right: 2 }}
                         hasConflict={hasConflict}
                         palette={pal}
@@ -1617,7 +1686,6 @@ function DayColumn({
 
 function DraggableScheduleBlock({
     block,
-    globalIndex,
     style,
     hasConflict,
     palette,
@@ -1628,7 +1696,6 @@ function DraggableScheduleBlock({
     onDuplicate,
 }: {
     block: { id: string; day_of_week: string; start_time: string; end_time: string; room_id: number | null };
-    globalIndex: number;
     style: React.CSSProperties;
     hasConflict: boolean;
     palette: ReturnType<typeof getPalette>;

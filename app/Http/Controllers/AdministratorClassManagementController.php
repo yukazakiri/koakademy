@@ -19,6 +19,7 @@ use App\Models\ShsTrack;
 use App\Models\StrandSubject;
 use App\Models\Subject;
 use App\Models\User;
+use App\Services\ClassCurriculumPlacementService;
 use App\Services\ClassScheduleChangeNotificationService;
 use App\Services\GeneralSettingsService;
 use Exception;
@@ -34,8 +35,11 @@ use Maatwebsite\Excel\Facades\Excel;
 
 final class AdministratorClassManagementController extends Controller
 {
-    public function index(Request $request, GeneralSettingsService $generalSettingsService): Response
-    {
+    public function index(
+        Request $request,
+        GeneralSettingsService $generalSettingsService,
+        ClassCurriculumPlacementService $curriculumPlacement,
+    ): Response {
         $filters = [
             'search' => $this->nullableString($request->input('search')),
             'classification' => $this->nullableString($request->input('classification')),
@@ -106,7 +110,7 @@ final class AdministratorClassManagementController extends Controller
             ->orderByDesc('id');
 
         $classesCollection = $classesQuery->get()
-            ->filter(function (Classes $class) use ($filters, $courseCodeById): bool {
+            ->filter(function (Classes $class) use ($filters, $courseCodeById, $curriculumPlacement): bool {
                 $subject = $class->subjects->first();
 
                 if (! $subject) {
@@ -139,8 +143,18 @@ final class AdministratorClassManagementController extends Controller
                     return false;
                 }
 
-                if ($filters['academic_year'] && (int) $class->academic_year !== $filters['academic_year']) {
-                    return false;
+                if ($filters['academic_year']) {
+                    $years = $filters['course_id']
+                        ? $curriculumPlacement->yearsForCourse($class, $filters['course_id'])
+                        : $curriculumPlacement->yearsForClass($class);
+
+                    if ($years === []) {
+                        $years = [(int) $class->academic_year];
+                    }
+
+                    if (! in_array($filters['academic_year'], $years, true)) {
+                        return false;
+                    }
                 }
 
                 if ($filters['grade_level'] && $class->grade_level !== $filters['grade_level']) {
@@ -382,7 +396,7 @@ final class AdministratorClassManagementController extends Controller
         ]);
     }
 
-    public function store(StoreClassRequest $request): \Illuminate\Http\RedirectResponse
+    public function store(StoreClassRequest $request, ClassCurriculumPlacementService $curriculumPlacement): \Illuminate\Http\RedirectResponse
     {
         $validated = $request->validated();
 
@@ -412,6 +426,8 @@ final class AdministratorClassManagementController extends Controller
 
         if ($classification === 'college') {
             unset($validated['subject_code_shs'], $validated['shs_track_id'], $validated['shs_strand_id'], $validated['grade_level']);
+
+            $validated = $curriculumPlacement->normalizeCollegeAttributes($validated);
 
             $subjectIds = Arr::wrap($validated['subject_ids'] ?? []);
 
@@ -448,8 +464,11 @@ final class AdministratorClassManagementController extends Controller
         ]);
     }
 
-    public function update(UpdateClassRequest $request, Classes $class): \Illuminate\Http\RedirectResponse
-    {
+    public function update(
+        UpdateClassRequest $request,
+        Classes $class,
+        ClassCurriculumPlacementService $curriculumPlacement,
+    ): \Illuminate\Http\RedirectResponse {
         $validated = $request->validated();
         $scheduleChangeNotifications = app(ClassScheduleChangeNotificationService::class);
         $oldScheduleSnapshot = null;
@@ -488,14 +507,18 @@ final class AdministratorClassManagementController extends Controller
             unset($validated['subject_code_shs']);
         }
 
-        if ($classification === 'college' && isset($validated['subject_ids']) && is_array($validated['subject_ids']) && $validated['subject_ids'] !== []) {
-            $validated['subject_id'] = (int) $validated['subject_ids'][0];
+        if ($classification === 'college') {
+            $validated = $curriculumPlacement->normalizeCollegeAttributes($validated, $class);
 
-            $codes = Subject::query()->whereIn('id', $validated['subject_ids'])->pluck('code')->filter()->unique()->values();
-            $generatedCode = $codes->implode(', ');
+            if (isset($validated['subject_ids']) && is_array($validated['subject_ids']) && $validated['subject_ids'] !== []) {
+                $validated['subject_id'] = (int) $validated['subject_ids'][0];
 
-            if (! isset($validated['subject_code']) || ! is_string($validated['subject_code']) || mb_trim($validated['subject_code']) === '') {
-                $validated['subject_code'] = $generatedCode;
+                $codes = Subject::query()->whereIn('id', $validated['subject_ids'])->pluck('code')->filter()->unique()->values();
+                $generatedCode = $codes->implode(', ');
+
+                if (! isset($validated['subject_code']) || ! is_string($validated['subject_code']) || mb_trim($validated['subject_code']) === '') {
+                    $validated['subject_code'] = $generatedCode;
+                }
             }
         }
 
@@ -819,11 +842,15 @@ final class AdministratorClassManagementController extends Controller
             return response()->json(['data' => []]);
         }
 
+        $availableCourseIds = Course::query()
+            ->whereIn('id', array_map(intval(...), $courseIds))
+            ->pluck('id');
+
         $subjects = Subject::query()
             ->with('course:id,code,curriculum_year')
-            ->whereIn('course_id', array_map(intval(...), $courseIds))
+            ->whereIn('course_id', $availableCourseIds)
             ->orderBy('code')
-            ->get(['id', 'code', 'title', 'course_id']);
+            ->get(['id', 'code', 'title', 'course_id', 'academic_year', 'semester']);
 
         return response()->json([
             'data' => $subjects->map(fn (Subject $subject): array => [
@@ -838,6 +865,10 @@ final class AdministratorClassManagementController extends Controller
                 ),
                 'code' => $subject->code,
                 'title' => $subject->title,
+                'course_id' => (int) $subject->course_id,
+                'course_code' => $subject->course?->code,
+                'academic_year' => $subject->academic_year ? (int) $subject->academic_year : null,
+                'semester' => $subject->semester ? (string) $subject->semester : null,
             ])->values(),
         ]);
     }

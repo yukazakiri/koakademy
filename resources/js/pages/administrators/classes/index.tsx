@@ -214,8 +214,6 @@ function createActiveFilters(filters: ClassesIndexProps["filters"]): FilterType[
     return activeFilters;
 }
 
-type InertiaGetPayload = NonNullable<Parameters<typeof router.get>[1]>;
-
 function normalizeSemester(semester: string | number): string {
     if (semester === 1 || semester === "1") return "1";
     if (semester === 2 || semester === "2") return "2";
@@ -454,7 +452,18 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
     const [pendingDelete, setPendingDelete] = React.useState<ClassRow | null>(null);
     const [isCompareOpen, setIsCompareOpen] = React.useState(false);
 
-    const [collegeSubjectOptions, setCollegeSubjectOptions] = React.useState<{ id: number; label: string; code: string; title: string }[]>([]);
+    const [collegeSubjectOptions, setCollegeSubjectOptions] = React.useState<
+        {
+            id: number;
+            label: string;
+            code: string;
+            title: string;
+            course_id: number;
+            course_code: string | null;
+            academic_year: number | null;
+            semester: string | null;
+        }[]
+    >([]);
     const [collegeSubjectsLoading, setCollegeSubjectsLoading] = React.useState(false);
 
     const [shsStrandOptions, setShsStrandOptions] = React.useState<EntityOption[]>([]);
@@ -526,7 +535,6 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
     // Debounced server sync for full pagination and ID-based filters
     React.useEffect(() => {
         refreshClasses(search, activeFilters);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [search, activeFilters]);
 
     const parseSortOption = (value: string): { sort: string; direction: "asc" | "desc" } => {
@@ -790,6 +798,39 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
         remove_banner_image: false,
     });
 
+    const editCurriculumYears = React.useMemo(() => {
+        const selectedIds = new Set(editForm.data.subject_ids);
+
+        return Array.from(
+            new Set(
+                collegeSubjectOptions
+                    .filter((subject) => selectedIds.has(subject.id) && subject.academic_year !== null)
+                    .map((subject) => subject.academic_year as number),
+            ),
+        ).sort((a, b) => a - b);
+    }, [collegeSubjectOptions, editForm.data.subject_ids]);
+
+    const editSubjectsAreResolved = React.useMemo(() => {
+        const selectedIds = new Set(editForm.data.subject_ids);
+        const selectedSubjects = collegeSubjectOptions.filter((subject) => selectedIds.has(subject.id));
+
+        return selectedSubjects.length === editForm.data.subject_ids.length && selectedSubjects.every((subject) => subject.academic_year !== null);
+    }, [collegeSubjectOptions, editForm.data.subject_ids]);
+
+    const editUnanimousYear = editSubjectsAreResolved && editCurriculumYears.length === 1 ? editCurriculumYears[0] : null;
+    const editSpansYears = editCurriculumYears.length > 1;
+
+    React.useEffect(() => {
+        if (editUnanimousYear !== null && editForm.data.academic_year !== editUnanimousYear) {
+            editForm.setData("academic_year", editUnanimousYear);
+            return;
+        }
+
+        if (editSpansYears && !editCurriculumYears.includes(editForm.data.academic_year ?? 0)) {
+            editForm.setData("academic_year", editCurriculumYears[0]);
+        }
+    }, [editCurriculumYears, editForm.data.academic_year, editSpansYears, editUnanimousYear]);
+
     React.useEffect(() => {
         if (!isEditOpen || !selected_class) return;
 
@@ -864,7 +905,16 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
                 }),
             );
             const data = (await response.json()) as {
-                data: { id: number; label: string; code: string; title: string }[];
+                data: {
+                    id: number;
+                    label: string;
+                    code: string;
+                    title: string;
+                    course_id: number;
+                    course_code: string | null;
+                    academic_year: number | null;
+                    semester: string | null;
+                }[];
             };
 
             setCollegeSubjectOptions(data.data);
@@ -1493,7 +1543,11 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
                                                                         options={collegeSubjectOptions.map((subject) => ({
                                                                             value: String(subject.id),
                                                                             label: subject.label,
-                                                                            description: subject.title,
+                                                                            description: `${subject.course_code ?? "Program"} · ${
+                                                                                subject.academic_year
+                                                                                    ? `Year ${subject.academic_year}`
+                                                                                    : "Year unresolved"
+                                                                            }${subject.semester ? ` · Semester ${subject.semester}` : ""}`,
                                                                             searchText: `${subject.code} ${subject.title} ${subject.label}`,
                                                                         }))}
                                                                         selected={editForm.data.subject_ids.map(String)}
@@ -1501,6 +1555,23 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
                                                                         onChange={(values) => {
                                                                             const subjectIds = values.map(Number);
                                                                             editForm.setData("subject_ids", subjectIds);
+                                                                            const years = Array.from(
+                                                                                new Set(
+                                                                                    collegeSubjectOptions
+                                                                                        .filter((subject) => subjectIds.includes(subject.id))
+                                                                                        .map((subject) => subject.academic_year)
+                                                                                        .filter((year): year is number => year !== null),
+                                                                                ),
+                                                                            ).sort((a, b) => a - b);
+
+                                                                            if (years.length === 1) {
+                                                                                editForm.setData("academic_year", years[0]);
+                                                                            } else if (
+                                                                                years.length > 1 &&
+                                                                                !years.includes(editForm.data.academic_year ?? 0)
+                                                                            ) {
+                                                                                editForm.setData("academic_year", years[0]);
+                                                                            }
                                                                             if (!subjectCodeTouched) {
                                                                                 const computed = buildSubjectCodeFromSubjectOptions(
                                                                                     values,
@@ -1658,10 +1729,24 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
                                                                             title={`${year} Year`}
                                                                             checked={editForm.data.academic_year === year}
                                                                             onSelect={() => editForm.setData("academic_year", year)}
+                                                                            disabled={
+                                                                                editUnanimousYear !== null ||
+                                                                                (editSpansYears && !editCurriculumYears.includes(year))
+                                                                            }
                                                                             className="min-h-0 px-3 py-3"
                                                                         />
                                                                     ))}
                                                                 </div>
+                                                                {editUnanimousYear !== null ? (
+                                                                    <p className="text-muted-foreground text-xs">
+                                                                        Set automatically from the selected subjects’ curriculum placement.
+                                                                    </p>
+                                                                ) : editSpansYears ? (
+                                                                    <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-100">
+                                                                        This shared class spans curriculum years {editCurriculumYears.join(" and ")}.
+                                                                        Program schedules use each subject’s year; this is only the legacy fallback.
+                                                                    </div>
+                                                                ) : null}
                                                             </div>
                                                         ) : null}
 

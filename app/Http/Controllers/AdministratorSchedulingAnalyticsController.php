@@ -16,6 +16,7 @@ use App\Models\ShsTrack;
 use App\Models\Student;
 use App\Models\Subject;
 use App\Models\User;
+use App\Services\ClassCurriculumPlacementService;
 use App\Services\GeneralSettingsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -27,8 +28,11 @@ use Inertia\Response;
 
 final class AdministratorSchedulingAnalyticsController extends Controller
 {
-    public function index(Request $request, GeneralSettingsService $generalSettingsService): Response|\Illuminate\Http\RedirectResponse
-    {
+    public function index(
+        Request $request,
+        GeneralSettingsService $generalSettingsService,
+        ClassCurriculumPlacementService $curriculumPlacement,
+    ): Response|\Illuminate\Http\RedirectResponse {
         $user = Auth::user();
 
         if (! $user instanceof User) {
@@ -37,7 +41,7 @@ final class AdministratorSchedulingAnalyticsController extends Controller
 
         // Base query for current academic period classes
         $query = Classes::currentAcademicPeriod()
-            ->with(['Subject', 'Faculty', 'Room', 'Schedule.room']);
+            ->with(['Subject', 'subjects', 'Faculty', 'Room', 'Schedule.room']);
 
         $classes = $query->withCount('ClassStudents')->get();
 
@@ -81,20 +85,30 @@ final class AdministratorSchedulingAnalyticsController extends Controller
             ->get(['id', 'first_name', 'last_name', 'department']);
 
         // Process schedule data with normalized year levels
-        $scheduleData = $classes->map(function ($class): array {
+        $scheduleData = $classes->map(function ($class) use ($curriculumPlacement): array {
             $yearLevel = null;
+            $yearLevels = [];
+            $courseYearLevels = [];
             if ($class->classification === 'shs') {
                 $yearLevel = $class->grade_level;
+                $yearLevels = filled($yearLevel) ? [$yearLevel] : [];
             } else {
-                // Assuming college/default
                 $year = (int) $class->academic_year;
-                $yearLevel = match ($year) {
-                    1 => '1st Year',
-                    2 => '2nd Year',
-                    3 => '3rd Year',
-                    4 => '4th Year',
-                    default => $year !== 0 ? "{$year}th Year" : 'N/A',
-                };
+                $yearLevel = $curriculumPlacement->yearLabel($year);
+                $yearLevels = collect($curriculumPlacement->yearsForClass($class))
+                    ->whenEmpty(fn ($years) => $year > 0 ? $years->push($year) : $years)
+                    ->map(fn (int $curriculumYear): string => $curriculumPlacement->yearLabel($curriculumYear))
+                    ->values()
+                    ->all();
+                $courseYearLevels = collect(is_array($class->course_codes) ? $class->course_codes : [])
+                    ->filter(fn (mixed $courseId): bool => is_numeric($courseId))
+                    ->mapWithKeys(fn (mixed $courseId): array => [
+                        (string) ((int) $courseId) => collect($curriculumPlacement->yearsForCourse($class, (int) $courseId))
+                            ->map(fn (int $curriculumYear): string => $curriculumPlacement->yearLabel($curriculumYear))
+                            ->values()
+                            ->all(),
+                    ])
+                    ->all();
             }
 
             return [
@@ -103,6 +117,8 @@ final class AdministratorSchedulingAnalyticsController extends Controller
                 'subject_title' => $class->subject_title,
                 'section' => $class->section,
                 'grade_level' => $yearLevel,
+                'year_levels' => $yearLevels,
+                'course_year_levels' => $courseYearLevels,
                 'classification' => $class->classification,
                 'faculty_id' => $class->faculty_id,
                 'faculty_name' => $class->Faculty ? $class->Faculty->first_name.' '.$class->Faculty->last_name : null,
@@ -123,7 +139,8 @@ final class AdministratorSchedulingAnalyticsController extends Controller
         });
 
         // Get available year levels from the processed data
-        $availableYearLevels = $scheduleData->pluck('grade_level')
+        $availableYearLevels = $scheduleData->pluck('year_levels')
+            ->flatten()
             ->unique()
             ->filter()
             ->sort(function ($a, $b): int {
@@ -414,7 +431,7 @@ final class AdministratorSchedulingAnalyticsController extends Controller
     /**
      * Create a new class with schedules from the scheduling analytics page.
      */
-    public function storeClass(StoreClassRequest $request): JsonResponse
+    public function storeClass(StoreClassRequest $request, ClassCurriculumPlacementService $curriculumPlacement): JsonResponse
     {
         $validated = $request->validated();
 
@@ -439,6 +456,8 @@ final class AdministratorSchedulingAnalyticsController extends Controller
 
         if ($classification === 'college') {
             unset($validated['subject_code_shs'], $validated['shs_track_id'], $validated['shs_strand_id'], $validated['grade_level']);
+
+            $validated = $curriculumPlacement->normalizeCollegeAttributes($validated);
 
             $subjectIds = Arr::wrap($validated['subject_ids'] ?? []);
 
@@ -473,7 +492,7 @@ final class AdministratorSchedulingAnalyticsController extends Controller
             return $class;
         });
 
-        $class->load(['Subject', 'Faculty', 'Room', 'Schedule.room']);
+        $class->load(['Subject', 'subjects', 'Faculty', 'Room', 'Schedule.room']);
         $class->loadCount('ClassStudents');
 
         // Build response in the same shape as schedule_data items
@@ -482,14 +501,27 @@ final class AdministratorSchedulingAnalyticsController extends Controller
             $yearLevel = $class->grade_level;
         } else {
             $year = (int) $class->academic_year;
-            $yearLevel = match ($year) {
-                1 => '1st Year',
-                2 => '2nd Year',
-                3 => '3rd Year',
-                4 => '4th Year',
-                default => $year !== 0 ? "{$year}th Year" : 'N/A',
-            };
+            $yearLevel = $curriculumPlacement->yearLabel($year);
         }
+
+        $yearLevels = $class->classification === 'shs'
+            ? (filled($yearLevel) ? [$yearLevel] : [])
+            : collect($curriculumPlacement->yearsForClass($class))
+                ->whenEmpty(fn ($years) => $year > 0 ? $years->push($year) : $years)
+                ->map(fn (int $curriculumYear): string => $curriculumPlacement->yearLabel($curriculumYear))
+                ->values()
+                ->all();
+        $courseYearLevels = $class->classification === 'shs'
+            ? []
+            : collect(is_array($class->course_codes) ? $class->course_codes : [])
+                ->filter(fn (mixed $courseId): bool => is_numeric($courseId))
+                ->mapWithKeys(fn (mixed $courseId): array => [
+                    (string) ((int) $courseId) => collect($curriculumPlacement->yearsForCourse($class, (int) $courseId))
+                        ->map(fn (int $curriculumYear): string => $curriculumPlacement->yearLabel($curriculumYear))
+                        ->values()
+                        ->all(),
+                ])
+                ->all();
 
         $response = [
             'id' => $class->id,
@@ -497,6 +529,8 @@ final class AdministratorSchedulingAnalyticsController extends Controller
             'subject_title' => $class->subject_title,
             'section' => $class->section,
             'grade_level' => $yearLevel,
+            'year_levels' => $yearLevels,
+            'course_year_levels' => $courseYearLevels,
             'classification' => $class->classification,
             'faculty_id' => $class->faculty_id,
             'faculty_name' => $class->Faculty ? $class->Faculty->first_name.' '.$class->Faculty->last_name : null,

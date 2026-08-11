@@ -2,7 +2,16 @@ export type Classification = "college" | "shs";
 
 export type EntityOption = { id: number | string; label: string };
 export type ValueOption = { value: string; label: string };
-export type SubjectOption = { id: number; label: string; code: string; title?: string };
+export type SubjectOption = {
+    id: number;
+    label: string;
+    code: string;
+    title?: string;
+    course_id: number;
+    course_code: string | null;
+    academic_year: number | null;
+    semester: string | null;
+};
 export type ShsSubjectOption = { code: string; label: string; title?: string };
 
 export type ClassFormOptions = {

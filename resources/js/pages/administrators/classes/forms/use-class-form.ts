@@ -29,7 +29,15 @@ type UseClassFormReturn = {
 type OptionsResponse<T> = { data: T[] };
 
 function isSubjectOption(value: unknown): value is SubjectOption {
-    return typeof value === "object" && value !== null && "id" in value && "label" in value && "code" in value;
+    return (
+        typeof value === "object" &&
+        value !== null &&
+        "id" in value &&
+        "label" in value &&
+        "code" in value &&
+        "course_id" in value &&
+        "academic_year" in value
+    );
 }
 
 function isEntityOption(value: unknown): value is EntityOption {

@@ -12,6 +12,7 @@ use App\Models\Schedule;
 use App\Models\School;
 use App\Models\Subject;
 use App\Models\User;
+use App\Services\CourseScheduleExportService;
 use App\Services\TenantContext;
 use App\Settings\SiteSettings;
 use Spatie\LaravelPdf\Facades\Pdf;
@@ -79,11 +80,13 @@ it('returns an inline branded PDF with current program schedules grouped for pri
         'code' => 'GE-1',
         'title' => 'Understanding the Self',
         'units' => 3,
+        'academic_year' => 1,
     ]);
     $secondYearSubject = Subject::factory()->for($this->course)->create([
         'code' => 'HPC-2',
         'title' => 'Fundamentals in Lodging Operations',
         'units' => 5,
+        'academic_year' => 2,
     ]);
 
     $legacyThirdYearClass = Classes::factory()->create([
@@ -293,4 +296,54 @@ it('returns not found when the program has no current schedules', function (): v
     $this->actingAs($this->admin)
         ->get(portalUrlForAdministrators("/administrators/scheduling-analytics/courses/{$this->course->id}/pdf"))
         ->assertNotFound();
+});
+
+it('places a shared class under each programs matching curriculum year', function (): void {
+    $otherCourse = Course::factory()->create([
+        'school_id' => $this->school->id,
+        'department_id' => $this->department->id,
+        'code' => 'BSBA',
+        'title' => 'Bachelor of Science in Business Administration',
+    ]);
+    $hospitalitySubject = Subject::factory()->for($this->course)->create([
+        'code' => 'FS-HM',
+        'title' => 'Feasibility Study',
+        'academic_year' => 4,
+        'units' => 3,
+    ]);
+    $businessSubject = Subject::factory()->for($otherCourse)->create([
+        'code' => 'FS-BA',
+        'title' => 'Feasibility Study',
+        'academic_year' => 3,
+        'units' => 3,
+    ]);
+    $sharedClass = Classes::factory()->create([
+        'school_id' => $this->school->id,
+        'subject_id' => $hospitalitySubject->id,
+        'subject_ids' => [$hospitalitySubject->id, $businessSubject->id],
+        'subject_code' => 'FS',
+        'academic_year' => 1,
+        'semester' => 1,
+        'school_year' => '2026 - 2027',
+        'course_codes' => [(string) $this->course->id, $otherCourse->id],
+        'section' => 'A',
+        'classification' => 'college',
+    ]);
+    Schedule::factory()->create([
+        'class_id' => $sharedClass->id,
+        'day_of_week' => 'Monday',
+        'start_time' => '08:00:00',
+        'end_time' => '09:00:00',
+    ]);
+
+    $export = app(CourseScheduleExportService::class);
+    $hospitalityGroups = collect($export->build($this->course)['year_groups'])->keyBy('year');
+    $businessGroups = collect($export->build($otherCourse)['year_groups'])->keyBy('year');
+
+    expect($hospitalityGroups->keys()->all())->toBe([4])
+        ->and($hospitalityGroups->get('4')['rows'])->toHaveCount(1)
+        ->and($hospitalityGroups->get('4')['rows'][0]['code'])->toBe('FS-HM')
+        ->and($businessGroups->keys()->all())->toBe([3])
+        ->and($businessGroups->get('3')['rows'])->toHaveCount(1)
+        ->and($businessGroups->get('3')['rows'][0]['code'])->toBe('FS-BA');
 });

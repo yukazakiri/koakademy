@@ -39,6 +39,7 @@ final readonly class CourseScheduleExportService
     public function __construct(
         private GeneralSettingsService $generalSettings,
         private SchoolBrandingService $branding,
+        private ClassCurriculumPlacementService $curriculumPlacement,
     ) {}
 
     /**
@@ -64,8 +65,8 @@ final readonly class CourseScheduleExportService
             })
             ->whereHas('Schedule')
             ->with([
-                'Subject:id,code,title,units',
-                'SubjectByCodeFallback:id,code,title,units',
+                'Subject:id,code,title,units,academic_year,course_id',
+                'subjects:id,code,title,units,academic_year,course_id',
                 'Schedule' => fn ($query) => $query
                     ->select(['id', 'class_id', 'day_of_week', 'start_time', 'end_time', 'room_id'])
                     ->with('room:id,name'),
@@ -74,21 +75,52 @@ final readonly class CourseScheduleExportService
                 'id',
                 'subject_id',
                 'subject_code',
+                'subject_ids',
                 'academic_year',
                 'section',
                 'course_codes',
                 'classification',
             ]);
 
-        $yearGroups = $classes
-            ->groupBy(fn (Classes $class): string => (string) ($class->academic_year ?? 'unknown'))
-            ->map(function (Collection $yearClasses, int|string $year): array {
+        $fallbackSubjects = Subject::query()
+            ->where('course_id', $courseId)
+            ->whereIn('code', $classes->pluck('subject_code')->filter()->unique())
+            ->get(['id', 'code', 'title', 'units', 'academic_year', 'course_id'])
+            ->keyBy('code');
+
+        $rows = $classes->flatMap(function (Classes $class) use ($courseId, $fallbackSubjects): array {
+            $subjects = $this->curriculumPlacement->subjectsForCourse($class, $courseId);
+
+            if ($subjects->isEmpty() && filled($class->subject_code)) {
+                $legacySubject = $fallbackSubjects->get($class->subject_code);
+
+                if ($legacySubject instanceof Subject) {
+                    $subjects = collect([$legacySubject]);
+                }
+            }
+
+            if ($subjects->isEmpty()) {
+                return $this->rowsForClass($class, null, $this->resolvedYear(null, $class));
+            }
+
+            return $subjects
+                ->flatMap(fn (Subject $subject): array => $this->rowsForClass(
+                    $class,
+                    $subject,
+                    $this->resolvedYear($subject, $class),
+                ))
+                ->all();
+        });
+
+        $yearGroups = $rows
+            ->groupBy('_year')
+            ->map(function (Collection $yearRows, int|string $year): array {
                 $normalizedYear = (string) $year;
 
                 return [
                     'year' => $normalizedYear,
                     'label' => $this->yearLabel($normalizedYear),
-                    'rows' => $this->rowsForYear($yearClasses),
+                    'rows' => $this->rowsForYear($yearRows),
                 ];
             })
             ->sort(fn (array $first, array $second): int => $this->yearSortValue($first['year']) <=> $this->yearSortValue($second['year']))
@@ -129,13 +161,12 @@ final readonly class CourseScheduleExportService
     }
 
     /**
-     * @param  Collection<int, Classes>  $classes
+     * @param  Collection<int, array{code: string, title: string, section: string, units: int|null, day: string, time: string, room: string, _year: string, _day_order: int, _start_minutes: int}>  $rows
      * @return list<array{code: string, title: string, section: string, units: int|null, day: string, time: string, room: string}>
      */
-    private function rowsForYear(Collection $classes): array
+    private function rowsForYear(Collection $rows): array
     {
-        return $classes
-            ->flatMap(fn (Classes $class): array => $this->rowsForClass($class))
+        return $rows
             ->sort(function (array $first, array $second): int {
                 return strnatcasecmp($first['code'], $second['code'])
                     ?: strnatcasecmp($first['section'], $second['section'])
@@ -143,7 +174,7 @@ final readonly class CourseScheduleExportService
                     ?: $first['_start_minutes'] <=> $second['_start_minutes'];
             })
             ->map(function (array $row): array {
-                unset($row['_day_order'], $row['_start_minutes']);
+                unset($row['_year'], $row['_day_order'], $row['_start_minutes']);
 
                 return $row;
             })
@@ -152,19 +183,17 @@ final readonly class CourseScheduleExportService
     }
 
     /**
-     * @return list<array{code: string, title: string, section: string, units: int|null, day: string, time: string, room: string, _day_order: int, _start_minutes: int}>
+     * @return list<array{code: string, title: string, section: string, units: int|null, day: string, time: string, room: string, _year: string, _day_order: int, _start_minutes: int}>
      */
-    private function rowsForClass(Classes $class): array
+    private function rowsForClass(Classes $class, ?Subject $subject, string $year): array
     {
-        $subject = $class->Subject ?? $class->SubjectByCodeFallback;
-
         return $class->Schedule
             ->groupBy(fn (Schedule $schedule): string => implode('|', [
                 $schedule->start_time->format('H:i'),
                 $schedule->end_time->format('H:i'),
                 (string) ($schedule->room_id ?? 'none'),
             ]))
-            ->map(function (Collection $meetings) use ($class, $subject): array {
+            ->map(function (Collection $meetings) use ($class, $subject, $year): array {
                 /** @var Schedule $firstMeeting */
                 $firstMeeting = $meetings->first();
                 $days = $meetings
@@ -182,12 +211,24 @@ final readonly class CourseScheduleExportService
                     'day' => $days->map(fn (string $day): string => self::DAY_ABBREVIATIONS[$day] ?? Str::upper($day))->implode(''),
                     'time' => $firstMeeting->start_time->format('g:i A').' – '.$firstMeeting->end_time->format('g:i A'),
                     'room' => $firstMeeting->room?->name ?: '—',
+                    '_year' => $year,
                     '_day_order' => $days->map(fn (string $day): int => self::DAY_ORDER[$day] ?? 99)->min() ?? 99,
                     '_start_minutes' => ((int) $firstMeeting->start_time->format('H') * 60) + (int) $firstMeeting->start_time->format('i'),
                 ];
             })
             ->values()
             ->all();
+    }
+
+    private function resolvedYear(?Subject $subject, Classes $class): string
+    {
+        $subjectYear = (int) ($subject?->academic_year ?? 0);
+
+        if ($subjectYear > 0) {
+            return (string) $subjectYear;
+        }
+
+        return filled($class->academic_year) ? (string) $class->academic_year : 'unknown';
     }
 
     private function subjectCode(Classes $class, mixed $subject): string

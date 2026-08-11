@@ -147,6 +147,28 @@ export function ClassWizard({ semester, school_year, options, mode = "create", c
     }, [collegeSubjects, form.data.classification, form.data.course_codes.length, form.data.subject_ids.length]);
 
     useEffect(() => {
+        if (form.data.classification !== "college" || form.data.subject_ids.length === 0) {
+            return;
+        }
+
+        const selectedSubjects = collegeSubjects.filter((subject) => form.data.subject_ids.includes(subject.id));
+        const years = Array.from(
+            new Set(selectedSubjects.map((subject) => subject.academic_year).filter((year): year is number => year !== null)),
+        ).sort((a, b) => a - b);
+        const allResolved =
+            selectedSubjects.length === form.data.subject_ids.length && selectedSubjects.every((subject) => subject.academic_year !== null);
+
+        if (allResolved && years.length === 1 && form.data.academic_year !== years[0]) {
+            applyDataChange({ academic_year: years[0] });
+            return;
+        }
+
+        if (years.length > 1 && !years.includes(form.data.academic_year)) {
+            applyDataChange({ academic_year: years[0] });
+        }
+    }, [collegeSubjects, form.data.academic_year, form.data.classification, form.data.subject_ids]);
+
+    useEffect(() => {
         if (isEditing) {
             return;
         }

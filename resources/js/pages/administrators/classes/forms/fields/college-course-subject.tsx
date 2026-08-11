@@ -50,8 +50,20 @@ export function CollegeCourseSubject({
     const subjectOptions = subjects.map((subject) => ({
         label: subject.label,
         value: String(subject.id),
+        description: `${subject.course_code ?? "Program"} · ${subject.academic_year ? `Year ${subject.academic_year}` : "Year unresolved"}${
+            subject.semester ? ` · Semester ${subject.semester}` : ""
+        }`,
         searchText: `${subject.code} ${subject.label}`,
     }));
+
+    const selectedSubjects = subjects.filter((subject) => selectedSubjectIds.includes(subject.id));
+    const curriculumYears = Array.from(
+        new Set(selectedSubjects.map((subject) => subject.academic_year).filter((year): year is number => year !== null)),
+    ).sort((a, b) => a - b);
+    const allSubjectsResolved =
+        selectedSubjects.length === selectedSubjectIds.length && selectedSubjects.every((subject) => subject.academic_year !== null);
+    const unanimousYear = allSubjectsResolved && curriculumYears.length === 1 ? curriculumYears[0] : null;
+    const spansYears = curriculumYears.length > 1;
 
     const handleSubjectChange = (values: string[]): void => {
         const nextSubjectIds = toNumbers(values);
@@ -111,18 +123,30 @@ export function CollegeCourseSubject({
 
             <div className="space-y-2">
                 <Label>Academic year</Label>
-                <Select value={String(academicYear)} onValueChange={(value) => onAcademicYearChange(Number(value))}>
+                <Select value={String(academicYear)} onValueChange={(value) => onAcademicYearChange(Number(value))} disabled={unanimousYear !== null}>
                     <SelectTrigger className="w-full">
                         <SelectValue placeholder="Choose academic year" />
                     </SelectTrigger>
                     <SelectContent>
                         {academicYears.map((year) => (
-                            <SelectItem key={year.value} value={year.value}>
+                            <SelectItem
+                                key={year.value}
+                                value={year.value}
+                                disabled={unanimousYear !== null || (spansYears && !curriculumYears.includes(Number(year.value)))}
+                            >
                                 {year.label}
                             </SelectItem>
                         ))}
                     </SelectContent>
                 </Select>
+                {unanimousYear !== null ? (
+                    <p className="text-muted-foreground text-sm">Set automatically from the selected subjects’ curriculum placement.</p>
+                ) : spansYears ? (
+                    <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-100">
+                        This shared class spans curriculum years {curriculumYears.join(" and ")}. Program schedules use each subject’s year; this
+                        selection is only the legacy fallback.
+                    </div>
+                ) : null}
             </div>
         </div>
     );

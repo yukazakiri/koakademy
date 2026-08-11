@@ -12,7 +12,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
+import {
+    ContextMenu,
+    ContextMenuContent,
+    ContextMenuItem,
+    ContextMenuLabel,
+    ContextMenuSeparator,
+    ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -83,6 +90,8 @@ type ClassScheduleData = {
     subject_title: string;
     section: string;
     grade_level: string | null;
+    year_levels: string[];
+    course_year_levels: Record<string, string[]>;
     faculty_id?: string | null;
     faculty_name: string | null;
     room_name: string | null;
@@ -454,15 +463,19 @@ function DroppableDay({ dayIdx, children, isOver }: { dayIdx: number; children: 
 
 function ClassDetailsDialog({
     classItem,
+    activeCourseId,
     open,
     onOpenChange,
 }: {
     classItem: ClassScheduleData | null;
+    activeCourseId: string;
     open: boolean;
     onOpenChange: (o: boolean) => void;
 }) {
     if (!classItem) return null;
     const pal = getPalette(classItem.subject_code);
+    const displayedYearLevels =
+        activeCourseId === "all" ? classItem.year_levels : (classItem.course_year_levels?.[activeCourseId] ?? classItem.year_levels);
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="bg-background text-foreground border-border sm:max-w-[480px]">
@@ -481,7 +494,7 @@ function ClassDetailsDialog({
                     <div className="grid grid-cols-2 gap-4">
                         <InfoField icon={<Users className="h-4 w-4" />} label="Section" value={classItem.section} />
                         <InfoField icon={<GraduationCap className="h-4 w-4" />} label="Course" value={classItem.courses || "N/A"} />
-                        <InfoField label="Year Level" value={classItem.grade_level || "N/A"} />
+                        <InfoField label="Year Level" value={displayedYearLevels.join(", ") || classItem.grade_level || "N/A"} />
                         <InfoField label="Students" value={`${classItem.student_count} Enrolled`} />
                         <div className="col-span-2">
                             <InfoField icon={<UserIcon className="h-4 w-4" />} label="Faculty" value={classItem.faculty_name || "TBA"} />
@@ -626,7 +639,7 @@ function WeeklyTimetable({
             editMode && onResizeStart && schedId ? (
                 <>
                     <div
-                        className="absolute top-0 right-0 left-0 z-50 flex h-3.5 cursor-ns-resize items-center justify-center rounded-t-md opacity-0 transition-opacity hover:bg-black/10 group-hover:opacity-100 dark:hover:bg-white/10"
+                        className="absolute top-0 right-0 left-0 z-50 flex h-3.5 cursor-ns-resize items-center justify-center rounded-t-md opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/10 dark:hover:bg-white/10"
                         onPointerDown={(e) => {
                             e.stopPropagation();
                             onResizeStart(schedId, "top", e.clientY, parseMinutes(b.sched.start_time), parseMinutes(b.sched.end_time));
@@ -638,7 +651,7 @@ function WeeklyTimetable({
                         <div className="bg-foreground/35 h-1 w-8 rounded-full" />
                     </div>
                     <div
-                        className="absolute right-0 bottom-0 left-0 z-50 flex h-3.5 cursor-ns-resize items-center justify-center rounded-b-md opacity-0 transition-opacity hover:bg-black/10 group-hover:opacity-100 dark:hover:bg-white/10"
+                        className="absolute right-0 bottom-0 left-0 z-50 flex h-3.5 cursor-ns-resize items-center justify-center rounded-b-md opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/10 dark:hover:bg-white/10"
                         onPointerDown={(e) => {
                             e.stopPropagation();
                             onResizeStart(schedId, "bottom", e.clientY, parseMinutes(b.sched.start_time), parseMinutes(b.sched.end_time));
@@ -760,58 +773,60 @@ function WeeklyTimetable({
         return (
             <ContextMenu key={`${b.cls.id}-${i}`}>
                 <Tooltip>
-                <TooltipTrigger asChild>
-                    <ContextMenuTrigger asChild>{scheduleButton}</ContextMenuTrigger>
-                </TooltipTrigger>
-                <TooltipContent
-                    side="right"
-                    className="bg-popover text-popover-foreground border-border max-w-[260px] space-y-2 border p-3 shadow-md"
-                >
-                    <div>
-                        <div className="font-bold">{b.cls.subject_title}</div>
-                        <div className="text-muted-foreground text-xs">{b.cls.subject_title}</div>
-                    </div>
-                    <div className="grid gap-0.5">
-                        <div className="text-muted-foreground text-xs">
-                            Section: <span className="text-foreground font-medium">{b.cls.section}</span>
+                    <TooltipTrigger asChild>
+                        <ContextMenuTrigger asChild>{scheduleButton}</ContextMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent
+                        side="right"
+                        className="bg-popover text-popover-foreground border-border max-w-[260px] space-y-2 border p-3 shadow-md"
+                    >
+                        <div>
+                            <div className="font-bold">{b.cls.subject_title}</div>
+                            <div className="text-muted-foreground text-xs">{b.cls.subject_title}</div>
                         </div>
-                        <div className="text-muted-foreground text-xs">
-                            Time: <span className="text-foreground font-medium">{b.sched.time_range}</span>
-                        </div>
-                        {b.sched.room && (
+                        <div className="grid gap-0.5">
                             <div className="text-muted-foreground text-xs">
-                                Room: <span className="text-foreground font-medium">{b.sched.room}</span>
+                                Section: <span className="text-foreground font-medium">{b.cls.section}</span>
+                            </div>
+                            <div className="text-muted-foreground text-xs">
+                                Time: <span className="text-foreground font-medium">{b.sched.time_range}</span>
+                            </div>
+                            {b.sched.room && (
+                                <div className="text-muted-foreground text-xs">
+                                    Room: <span className="text-foreground font-medium">{b.sched.room}</span>
+                                </div>
+                            )}
+                            <div className="text-muted-foreground text-xs">
+                                Faculty: <span className="text-foreground font-medium">{b.cls.faculty_name || "TBA"}</span>
+                            </div>
+                        </div>
+                        {hasConflict && (
+                            <div className="mt-2 rounded border border-red-200 bg-red-50 p-2 dark:border-red-900/50 dark:bg-red-950/30">
+                                <div className="mb-1 flex items-center gap-1 text-xs font-semibold text-red-600 dark:text-red-400">
+                                    <AlertTriangle className="h-3 w-3" /> Conflicts
+                                </div>
+                                <ul className="grid gap-1">
+                                    {classConflicts.map((c, idx) => {
+                                        const otherClass =
+                                            c.class_1.subject_code === b.cls.subject_code && c.class_1.section === b.cls.section
+                                                ? c.class_2
+                                                : c.class_1;
+                                        return (
+                                            <li key={idx} className="text-muted-foreground flex gap-1.5 text-xs">
+                                                <span className="mt-0.5 text-red-500">•</span>
+                                                <span>
+                                                    <span className="font-medium text-red-600 dark:text-red-400">
+                                                        {otherClass.subject_code} ({otherClass.section})
+                                                    </span>{" "}
+                                                    — Same {c.conflict_type === "room" ? "Room" : "Faculty"}
+                                                </span>
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
                             </div>
                         )}
-                        <div className="text-muted-foreground text-xs">
-                            Faculty: <span className="text-foreground font-medium">{b.cls.faculty_name || "TBA"}</span>
-                        </div>
-                    </div>
-                    {hasConflict && (
-                        <div className="mt-2 rounded border border-red-200 bg-red-50 p-2 dark:border-red-900/50 dark:bg-red-950/30">
-                            <div className="mb-1 flex items-center gap-1 text-xs font-semibold text-red-600 dark:text-red-400">
-                                <AlertTriangle className="h-3 w-3" /> Conflicts
-                            </div>
-                            <ul className="grid gap-1">
-                                {classConflicts.map((c, idx) => {
-                                    const otherClass =
-                                        c.class_1.subject_code === b.cls.subject_code && c.class_1.section === b.cls.section ? c.class_2 : c.class_1;
-                                    return (
-                                        <li key={idx} className="text-muted-foreground flex gap-1.5 text-xs">
-                                            <span className="mt-0.5 text-red-500">•</span>
-                                            <span>
-                                                <span className="font-medium text-red-600 dark:text-red-400">
-                                                    {otherClass.subject_code} ({otherClass.section})
-                                                </span>{" "}
-                                                — Same {c.conflict_type === "room" ? "Room" : "Faculty"}
-                                            </span>
-                                        </li>
-                                    );
-                                })}
-                            </ul>
-                        </div>
-                    )}
-                </TooltipContent>
+                    </TooltipContent>
                 </Tooltip>
                 <ContextMenuContent className="w-52">
                     <ContextMenuLabel className="truncate">{b.cls.subject_code}</ContextMenuLabel>
@@ -1799,7 +1814,13 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
         if (courseFilter !== "all") {
             d = d.filter((c) => c.course_ids?.some((cid) => String(cid) === courseFilter));
         }
-        if (yearFilter !== "all") d = d.filter((c) => c.grade_level === yearFilter);
+        if (yearFilter !== "all") {
+            d = d.filter((c) => {
+                const yearLevels = courseFilter === "all" ? c.year_levels : (c.course_year_levels?.[courseFilter] ?? c.year_levels);
+
+                return yearLevels.includes(yearFilter);
+            });
+        }
         if (sectionFilter !== "all") d = d.filter((c) => c.section === sectionFilter);
         if (roomFilter !== "all") {
             const id = parseInt(roomFilter);
@@ -2144,7 +2165,12 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
                 onSave={saveScheduleConfiguration}
             />
 
-            <ClassDetailsDialog classItem={selectedClass} open={!!selectedClass} onOpenChange={(o) => !o && setSelectedClass(null)} />
+            <ClassDetailsDialog
+                classItem={selectedClass}
+                activeCourseId={courseFilter}
+                open={!!selectedClass}
+                onOpenChange={(o) => !o && setSelectedClass(null)}
+            />
 
             <ScheduleExportDialog
                 open={exportDialogOpen}

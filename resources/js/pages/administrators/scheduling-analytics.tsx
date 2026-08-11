@@ -50,6 +50,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { route } from "ziggy-js";
 import CreateClassDialog from "./components/create-class-dialog";
+import ScheduleExportDialog from "./components/schedule-export-dialog";
 import SchedulingConflictsPanel from "./components/scheduling-conflicts-panel";
 import SchedulingFiltersBar from "./components/scheduling-filters-bar";
 import SchedulingHeader from "./components/scheduling-header";
@@ -1136,6 +1137,7 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
     const [facultyFilter, setFacultyFilter] = React.useState("all");
 
     const [createDialogOpen, setCreateDialogOpen] = React.useState(false);
+    const [exportDialogOpen, setExportDialogOpen] = React.useState(false);
 
     // Student search state
     const [studentQuery, setStudentQuery] = React.useState("");
@@ -1851,6 +1853,7 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
                 {/* ── Header ── */}
                 <SchedulingHeader
                     onCreateClass={() => setCreateDialogOpen(true)}
+                    onExport={() => setExportDialogOpen(true)}
                     onSync={() => router.reload({ only: ["schedule_data", "stats", "filters"] })}
                 />
 
@@ -2142,6 +2145,13 @@ export default function SchedulingAnalytics({ user, schedule_data, stats, filter
             />
 
             <ClassDetailsDialog classItem={selectedClass} open={!!selectedClass} onOpenChange={(o) => !o && setSelectedClass(null)} />
+
+            <ScheduleExportDialog
+                open={exportDialogOpen}
+                onOpenChange={setExportDialogOpen}
+                courses={filters.available_courses}
+                initialCourseId={courseFilter === "all" ? null : Number(courseFilter)}
+            />
 
             {/* Move Confirmation Dialog */}
             <AlertDialog open={!!pendingMove} onOpenChange={(o) => !o && cancelMove()}>

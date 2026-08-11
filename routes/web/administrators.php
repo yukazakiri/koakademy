@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\AdministratorAuditLogController;
 use App\Http\Controllers\AdministratorClassManagementController;
+use App\Http\Controllers\AdministratorCourseSchedulePdfController;
 use App\Http\Controllers\AdministratorCurriculumManagementController;
 use App\Http\Controllers\AdministratorEnrollmentDiscountController;
 use App\Http\Controllers\AdministratorEnrollmentManagementController;
@@ -294,6 +295,7 @@ Route::middleware(['auth', 'administrators.only'])
 
         // Scheduling Analytics
         Route::get('/scheduling-analytics', [AdministratorSchedulingAnalyticsController::class, 'index'])->name('scheduling-analytics.index');
+        Route::get('/scheduling-analytics/courses/{course}/pdf', AdministratorCourseSchedulePdfController::class)->name('scheduling-analytics.courses.pdf');
         Route::get('/scheduling-analytics/students/search', [AdministratorSchedulingAnalyticsController::class, 'searchStudents'])->name('scheduling-analytics.students.search');
         Route::get('/scheduling-analytics/students/{studentId}/schedule', [AdministratorSchedulingAnalyticsController::class, 'getStudentSchedule'])->name('scheduling-analytics.students.schedule');
         Route::patch('/scheduling-analytics/schedules/{schedule}', [AdministratorSchedulingAnalyticsController::class, 'updateSchedule'])->name('scheduling-analytics.schedules.update');

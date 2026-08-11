@@ -249,9 +249,11 @@ it('returns an inline branded PDF with current program schedules grouped for pri
 
     $viewData = $generatedPdf->viewData;
     $groups = collect($viewData['year_groups'])->keyBy('year');
-    $firstYearRows = collect($groups->get('1')['rows']);
-    $secondYearRows = collect($groups->get('2')['rows']);
-    $thirdYearRows = collect($groups->get('3')['rows']);
+    $firstYearSections = collect($groups->get('1')['section_groups'])->keyBy('section');
+    $firstYearSectionARows = collect($firstYearSections->get('A')['rows']);
+    $firstYearSectionBRows = collect($firstYearSections->get('B')['rows']);
+    $secondYearRows = collect($groups->get('2')['section_groups'][0]['rows']);
+    $thirdYearRows = collect($groups->get('3')['section_groups'][0]['rows']);
 
     expect($viewData['school']['name'])->toBe('Data Center College of the Philippines')
         ->and($viewData['school']['address'])->toBe('118 Bonifacio Street, Baguio City')
@@ -263,20 +265,25 @@ it('returns an inline branded PDF with current program schedules grouped for pri
         ->and($groups->get('1')['label'])->toBe('FIRST YEAR')
         ->and($groups->get('2')['label'])->toBe('SECOND YEAR')
         ->and($groups->get('3')['label'])->toBe('THIRD YEAR')
-        ->and($firstYearRows)->toHaveCount(3)
-        ->and($firstYearRows->pluck('day')->all())->toBe(['MWF', 'T', 'MWF'])
-        ->and($firstYearRows->firstWhere('day', 'MWF')['time'])->toBe('8:00 AM – 9:00 AM')
-        ->and($firstYearRows->firstWhere('day', 'MWF')['room'])->toBe('501')
-        ->and($firstYearRows->firstWhere('day', 'T')['room'])->toBe('—')
-        ->and($firstYearRows->first()['section'])->toBe('A')
-        ->and($firstYearRows->first()['units'])->toBe(3)
-        ->and($firstYearRows->where('section', 'B'))->toHaveCount(1)
+        ->and($groups->get('1')['show_section_labels'])->toBeTrue()
+        ->and($firstYearSections->keys()->all())->toBe(['A', 'B'])
+        ->and($firstYearSectionARows)->toHaveCount(2)
+        ->and($firstYearSectionBRows)->toHaveCount(1)
+        ->and($firstYearSectionARows->pluck('schedule')->all())->toBe([
+            '8:00 AM – 9:00 AM MWF',
+            '1:00 PM – 2:30 PM T',
+        ])
+        ->and($firstYearSectionARows->first()['room'])->toBe('501')
+        ->and($firstYearSectionARows->first()['face_to_face'])->toBe('MONDAY, WEDNESDAY, FRIDAY')
+        ->and($firstYearSectionARows->last()['room'])->toBe('—')
+        ->and($firstYearSectionARows->first()['units'])->toBe(3)
         ->and($secondYearRows)->toHaveCount(1)
-        ->and($secondYearRows->first()['day'])->toBe('TTH')
-        ->and($secondYearRows->first()['section'])->toBe('B')
+        ->and($secondYearRows->first()['schedule'])->toBe('10:00 AM – 11:00 AM TTH')
+        ->and($secondYearRows->first()['face_to_face'])->toBe('TUESDAY, THURSDAY')
         ->and($secondYearRows->first()['units'])->toBe(5)
         ->and($thirdYearRows)->toHaveCount(1)
         ->and($thirdYearRows->first()['code'])->toBe('LEGACY-1')
+        ->and($thirdYearRows->first()['title'])->toBe('—')
         ->and($thirdYearRows->first()['units'])->toBeNull();
 
     $html = $generatedPdf->getHtml();
@@ -284,7 +291,11 @@ it('returns an inline branded PDF with current program schedules grouped for pri
     expect($html)->toContain('Bachelor of Science in Hospitality Management')
         ->and($html)->toContain('Course Code')
         ->and($html)->toContain('Descriptive Title')
+        ->and($html)->toContain('SECTION A')
+        ->and($html)->toContain('SECTION B')
+        ->and($html)->toContain('Face to Face Classes')
         ->and($html)->toContain('—')
+        ->and($html)->not->toContain('class="section-column"')
         ->and($html)->not->toContain('OTHER-101')
         ->and($html)->not->toContain('OLD-101')
         ->and($html)->not->toContain('REMOTE-101');
@@ -341,9 +352,71 @@ it('places a shared class under each programs matching curriculum year', functio
     $businessGroups = collect($export->build($otherCourse)['year_groups'])->keyBy('year');
 
     expect($hospitalityGroups->keys()->all())->toBe([4])
-        ->and($hospitalityGroups->get('4')['rows'])->toHaveCount(1)
-        ->and($hospitalityGroups->get('4')['rows'][0]['code'])->toBe('FS-HM')
+        ->and($hospitalityGroups->get('4')['section_groups'][0]['rows'])->toHaveCount(1)
+        ->and($hospitalityGroups->get('4')['section_groups'][0]['rows'][0]['code'])->toBe('FS-HM')
         ->and($businessGroups->keys()->all())->toBe([3])
-        ->and($businessGroups->get('3')['rows'])->toHaveCount(1)
-        ->and($businessGroups->get('3')['rows'][0]['code'])->toBe('FS-BA');
+        ->and($businessGroups->get('3')['section_groups'][0]['rows'])->toHaveCount(1)
+        ->and($businessGroups->get('3')['section_groups'][0]['rows'][0]['code'])->toBe('FS-BA');
+});
+
+it('resolves duplicated legacy subject codes from authoritative linked subjects and separates sections', function (): void {
+    $businessNonAbm = Course::factory()->create([
+        'school_id' => $this->school->id,
+        'department_id' => $this->department->id,
+        'code' => 'BSBA NON-ABM',
+    ]);
+    $hospitalityNonAbm = Course::factory()->create([
+        'school_id' => $this->school->id,
+        'department_id' => $this->department->id,
+        'code' => 'BSHM NON-ABM',
+    ]);
+    $businessFinance = Subject::factory()->for($businessNonAbm)->create([
+        'code' => 'BFIN 1',
+        'title' => 'Business Finance for BSBA',
+        'units' => 3,
+        'academic_year' => 1,
+    ]);
+    $hospitalityBusinessFinance = Subject::factory()->for($hospitalityNonAbm)->create([
+        'code' => 'BFIN  1',
+        'title' => ' Business Finance ',
+        'units' => 3,
+        'academic_year' => 1,
+    ]);
+
+    foreach (['A', 'B'] as $section) {
+        $class = Classes::factory()->create([
+            'school_id' => $this->school->id,
+            'subject_id' => $businessFinance->id,
+            'subject_ids' => [$businessFinance->id, $hospitalityBusinessFinance->id, $businessFinance->id],
+            'subject_code' => $section === 'A' ? ' BFIN 1, bfin 1 ' : 'BFIN 1',
+            'academic_year' => 1,
+            'semester' => 1,
+            'school_year' => '2026 - 2027',
+            'course_codes' => [$this->course->id],
+            'section' => $section,
+            'classification' => 'college',
+        ]);
+        Schedule::factory()->create([
+            'class_id' => $class->id,
+            'day_of_week' => 'Friday',
+            'start_time' => $section === 'A' ? '14:30:00' : '10:30:00',
+            'end_time' => $section === 'A' ? '16:00:00' : '12:00:00',
+        ]);
+    }
+
+    $groups = collect(app(CourseScheduleExportService::class)->build($this->course)['year_groups'])->keyBy('year');
+    $sections = collect($groups->get('1')['section_groups'])->keyBy('section');
+
+    expect($groups->get('1')['show_section_labels'])->toBeTrue()
+        ->and($sections->keys()->all())->toBe(['A', 'B'])
+        ->and($sections->get('A')['rows'])->toHaveCount(1)
+        ->and($sections->get('B')['rows'])->toHaveCount(1)
+        ->and($sections->get('A')['rows'][0])->toMatchArray([
+            'code' => 'BFIN 1',
+            'title' => 'Business Finance',
+            'units' => 3,
+            'schedule' => '2:30 PM – 4:00 PM F',
+            'face_to_face' => 'FRIDAY',
+        ])
+        ->and($sections->get('B')['rows'][0]['title'])->toBe('Business Finance');
 });

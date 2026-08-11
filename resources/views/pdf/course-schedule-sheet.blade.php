@@ -9,74 +9,62 @@
             size: A4 portrait;
         }
 
+        * {
+            box-sizing: border-box;
+        }
+
         html {
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
         }
 
-        * {
-            box-sizing: border-box;
-        }
-
         body {
             margin: 0;
             color: #111111;
-            font-family: "Times New Roman", Times, serif;
-            font-size: 8.5pt;
-            line-height: 1.15;
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 7.5pt;
+            line-height: 1.08;
         }
 
-        .institution-header {
-            position: relative;
-            min-height: 54px;
-            margin-bottom: 8px;
-            padding: 0 62px;
+        .document-header {
+            margin: 0 0 11px;
             text-align: center;
+            text-transform: uppercase;
         }
 
-        .institution-logo {
-            position: absolute;
-            top: 0;
-            left: 6px;
-            width: 52px;
-            max-height: 52px;
-            object-fit: contain;
+        .institution-name,
+        .program-title,
+        .academic-period,
+        .semester {
+            margin: 0;
+            font-weight: 700;
         }
 
         .institution-name {
-            margin: 0 0 2px;
-            font-size: 11pt;
-            font-weight: 700;
-        }
-
-        .institution-meta {
-            margin: 1px 0;
-            font-size: 7.7pt;
-            font-style: italic;
-        }
-
-        .document-heading {
-            margin-bottom: 8px;
-            text-align: center;
+            font-size: 10pt;
         }
 
         .program-title {
-            margin: 0;
-            font-size: 10.5pt;
-            font-weight: 700;
-            text-decoration: underline;
-            text-transform: uppercase;
+            margin-top: 2px;
+            font-size: 9.5pt;
         }
 
         .academic-period {
-            margin: 2px 0 0;
+            margin-top: 2px;
             font-size: 9pt;
-            font-weight: 700;
-            text-transform: uppercase;
+        }
+
+        .semester {
+            margin-top: 1px;
+            font-size: 7.5pt;
         }
 
         .year-group {
-            margin-bottom: 8px;
+            margin-bottom: 10px;
+        }
+
+        .section-group + .section-group {
+            margin-top: 9px;
         }
 
         table {
@@ -96,136 +84,134 @@
 
         th,
         td {
-            border: 0.7px solid #111111;
-            padding: 2.5px 4px;
+            border: 0.65px solid #242424;
+            padding: 2px 3px;
             vertical-align: middle;
         }
 
-        .year-band th {
-            background: #e97825;
-            color: #111111;
-            font-size: 8pt;
+        .year-band th,
+        .section-band th {
+            background: #f2f2f0;
             font-weight: 700;
-            letter-spacing: 0.2px;
-            text-align: left;
+            letter-spacing: 0.15px;
+            text-align: center;
             text-transform: uppercase;
         }
 
+        .year-band th {
+            padding: 3px;
+            font-size: 8.4pt;
+        }
+
+        .section-band th {
+            padding: 2.5px;
+            font-size: 8pt;
+        }
+
         .column-headings th {
-            background: #f5a15e;
-            font-size: 7.4pt;
+            background: #fafafa;
+            font-size: 7pt;
             font-weight: 700;
             text-align: center;
             text-transform: uppercase;
         }
 
         tbody td {
-            font-size: 7.7pt;
+            font-size: 7.2pt;
         }
 
         .code-column {
-            width: 13%;
+            width: 14%;
         }
 
         .title-column {
-            width: 31%;
-        }
-
-        .section-column {
-            width: 9%;
+            width: 34%;
         }
 
         .units-column {
             width: 7%;
         }
 
-        .day-column {
-            width: 9%;
-        }
-
-        .time-column {
-            width: 18%;
+        .schedule-column {
+            width: 20%;
         }
 
         .room-column {
-            width: 13%;
+            width: 9%;
+        }
+
+        .face-to-face-column {
+            width: 16%;
         }
 
         .center {
             text-align: center;
         }
 
-        .time,
-        .units {
+        .units,
+        .schedule {
             font-variant-numeric: tabular-nums;
+        }
+
+        .schedule {
             white-space: nowrap;
         }
     </style>
 </head>
 
 <body>
-    <header class="institution-header">
-        @if (!empty($school["logo"]))
-            <img src="{{ $school["logo"] }}" alt="{{ $school["name"] }} logo" class="institution-logo">
-        @endif
-
+    <header class="document-header">
         <h1 class="institution-name">{{ $school["name"] }}</h1>
-
-        @if (!empty($school["address"]))
-            <p class="institution-meta">{{ $school["address"] }}</p>
-        @endif
-
-        @if (!empty($school["phone"]) || !empty($school["email"]))
-            <p class="institution-meta">
-                @if (!empty($school["phone"]))
-                    Tel: {{ $school["phone"] }}
-                @endif
-                @if (!empty($school["phone"]) && !empty($school["email"]))
-                    &nbsp;&middot;&nbsp;
-                @endif
-                @if (!empty($school["email"]))
-                    {{ $school["email"] }}
-                @endif
-            </p>
-        @endif
-    </header>
-
-    <section class="document-heading">
         <h2 class="program-title">{{ $course["title"] }}</h2>
-        <p class="academic-period">{{ $semester_label }} &middot; AY {{ $school_year }}</p>
-    </section>
+        <p class="academic-period">Academic Year {{ str_replace(" ", "", $school_year) }}</p>
+        <p class="semester">{{ $semester_label }}</p>
+    </header>
 
     @foreach ($year_groups as $group)
         <section class="year-group">
-            <table>
-                <thead>
-                    <tr class="year-band">
-                        <th colspan="7">{{ $group["label"] }}</th>
-                    </tr>
-                    <tr class="column-headings">
-                        <th class="code-column">Course Code</th>
-                        <th class="title-column">Descriptive Title</th>
-                        <th class="section-column">Section</th>
-                        <th class="units-column">Units</th>
-                        <th class="day-column">Day</th>
-                        <th class="time-column">Time</th>
-                        <th class="room-column">Room</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach ($group["rows"] as $row)
-                        <tr>
-                            <td>{{ $row["code"] }}</td>
-                            <td>{{ $row["title"] }}</td>
-                            <td class="center">{{ $row["section"] }}</td>
-                            <td class="center units">{{ $row["units"] ?? "—" }}</td>
-                            <td class="center">{{ $row["day"] }}</td>
-                            <td class="center time">{{ $row["time"] }}</td>
-                            <td class="center">{{ $row["room"] }}</td>
-                        </tr>
-                    @endforeach
-                </tbody>
-            </table>
+            @foreach ($group["section_groups"] as $section)
+                <div class="section-group">
+                    <table>
+                        <thead>
+                            @if ($loop->first)
+                                <tr class="year-band">
+                                    <th colspan="6">
+                                        {{ $group["label"] }}
+                                        @if ($loop->parent->first)
+                                            {{ str_replace(" ", "", $school_year) }}
+                                        @endif
+                                    </th>
+                                </tr>
+                            @endif
+                            @if ($group["show_section_labels"])
+                                <tr class="section-band">
+                                    <th colspan="6">{{ $section["label"] }}</th>
+                                </tr>
+                            @endif
+                            <tr class="column-headings">
+                                <th class="code-column">Course Code</th>
+                                <th class="title-column">Descriptive Title</th>
+                                <th class="units-column">Units</th>
+                                <th class="schedule-column">Schedule</th>
+                                <th class="room-column">Room</th>
+                                <th class="face-to-face-column">Face to Face Classes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($section["rows"] as $row)
+                                <tr>
+                                    <td>{{ $row["code"] }}</td>
+                                    <td>{{ $row["title"] }}</td>
+                                    <td class="center units">{{ $row["units"] ?? "—" }}</td>
+                                    <td class="center schedule">{{ $row["schedule"] }}</td>
+                                    <td class="center">{{ $row["room"] }}</td>
+                                    <td class="center">{{ $row["face_to_face"] }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endforeach
         </section>
     @endforeach
 </body>

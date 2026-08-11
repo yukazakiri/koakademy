@@ -30,3 +30,30 @@ The reference and final dark implementation were reviewed together at the same d
 3. Existing dashboard SVG sizing warnings and background 400/403 data requests were visible in the QA account before and behind the modal. Severity: P3, unrelated to this modal; no newsletter-dialog console error was introduced.
 
 final result: passed
+
+# Program schedule PDF design QA
+
+## Visual sources
+
+- Reference: `/home/misadmin/.codex/attachments/7b858b16-cc47-40d7-bf79-cc02d60b92ff/codex-clipboard-9be9ead9-35e7-4509-8419-491f99bc5f9a.png`
+- Rendered implementation: `/tmp/koakademy-schedule-pdf-qa/bsba-sectioned-schedule-page.png`
+- Rendered continuation page: `/tmp/koakademy-schedule-pdf-qa/bsba-sectioned-schedule-page-2.png`
+
+The reference and rendered implementation were reviewed together. The implementation preserves the centered institutional/program/academic-year heading, thin bordered compact tables, year bands, separate Section A and Section B tables, and the six requested columns: course code, descriptive title, units, schedule, room, and face-to-face classes.
+
+## PDF verification
+
+- Driver: the configured production Gotenberg service.
+- Data: a read-only render of the current 2026-2027 first-semester BSBA ABM schedule.
+- Output: A4 portrait, 2 pages, with repeating table headers and natural continuation onto page 2.
+- Section A and Section B remain separate and ordered within each year.
+- `BFIN 1` renders once per section as `Business Finance` with 3 units.
+- `BMGMT 1` also resolves through the matching BSBA curriculum instead of falling back to an empty title.
+- The browser-printable PDF retained table borders, neutral year/section bands, and legible page margins.
+
+## Findings and iteration history
+
+1. The first render exposed unresolved `BMGMT 1` titles because equivalent linked subjects had different titles across BSBA and BSHM. Severity: P1. Fixed by preferring linked subjects from the exported program family before accepting an unambiguous cross-program fallback.
+2. The final side-by-side comparison found no remaining P0, P1, or P2 visual differences. The implementation is slightly cleaner than the photographed paper because it is generated directly rather than scanned.
+
+final result: passed

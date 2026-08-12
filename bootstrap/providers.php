@@ -21,7 +21,7 @@ $providers = [
 // production Docker images (see docker/Dockerfile / docker/Dockerfile.franken).
 // Register its provider only when the package is actually present, otherwise
 // booting the application would fatal with a "class not found" error.
-if (class_exists(\Laravel\Horizon\HorizonApplicationServiceProvider::class)) {
+if (class_exists(Laravel\Horizon\HorizonApplicationServiceProvider::class)) {
     $providers[] = App\Providers\HorizonServiceProvider::class;
 }
 

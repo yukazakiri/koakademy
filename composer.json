@@ -49,7 +49,6 @@
         "joaopaulolndev/filament-general-settings": "^3.0",
         "laraowl/client": "^1.0",
         "laravel/framework": "^13.0",
-        "laravel/horizon": "^5.0",
         "laravel/nightwatch": "^1.22",
         "laravel/octane": "^2.13",
         "laravel/pennant": "^1.18",

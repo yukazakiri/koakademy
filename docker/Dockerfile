@@ -31,6 +31,7 @@ RUN mkdir -p \
 # production image. Install it here so it is baked into the container at build
 # time while keeping the source repository's dependencies free of Horizon.
 RUN composer require laravel/horizon:^5.0 \
+    --update-no-dev \
     --no-scripts \
     --no-interaction \
     --no-ansi \

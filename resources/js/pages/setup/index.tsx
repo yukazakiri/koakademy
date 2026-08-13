@@ -16,8 +16,11 @@ import {
     BookOpen,
     Building2,
     CalendarDays,
+    CheckCircle2,
     ChevronLeft,
     ChevronRight,
+    ClipboardList,
+    ExternalLink,
     Eye,
     EyeOff,
     GraduationCap,
@@ -25,10 +28,10 @@ import {
     Loader2,
     Palette,
     Rocket,
+    Search,
     ShieldCheck,
     Sparkles,
     ToggleRight,
-    Upload,
     UserCircle,
 } from "lucide-react";
 import React, { useState } from "react";
@@ -37,9 +40,11 @@ import { toast } from "sonner";
 const STEPS = [
     { label: "Administrator", description: "Super Admin Account", icon: UserCircle, required: true },
     { label: "Institution", description: "School & Campus Profile", icon: Building2, required: true },
+    { label: "Curriculum", description: "CHED · DepEd · TESDA", icon: BookOpen, required: false },
     { label: "Academic Period", description: "School Year & Semester", icon: GraduationCap, required: true },
     { label: "Brand & Appearance", description: "Theme, Currency & Identity", icon: Palette, required: false },
     { label: "Feature Toggles", description: "Modules & Capabilities", icon: ToggleRight, required: false },
+    { label: "Review & Finish", description: "Summary & Confirm", icon: ClipboardList, required: true },
 ];
 
 const slideVariants = {
@@ -93,7 +98,99 @@ const SCHOOL_LEVELS = [
         label: "Elementary / Grade School",
         description: "Elementary or grade school operations.",
     },
+    {
+        value: "technical_vocational",
+        label: "TESDA / Technical-Vocational Institute",
+        description: "Technical and vocational education and training (TVET) programs under TESDA.",
+    },
 ];
+
+/* ── Curriculum catalog types (passed from SetupController) ── */
+
+type SchoolLevelOption = {
+    value: string;
+    label: string;
+    description: string;
+};
+
+type FrameworkOption = {
+    value: string;
+    label: string;
+    authority: string;
+    description: string;
+    reference: string;
+    school_levels: string[];
+    source_url: string | null;
+};
+
+type ChedProgram = {
+    code: string;
+    title: string;
+    description: string;
+    units: number;
+    year_level: number;
+    type: string;
+    reference: string;
+    verified: boolean;
+    source_url: string | null;
+    department_code: string | null;
+    department_name: string | null;
+};
+
+type ChedCluster = {
+    key: string;
+    label: string;
+    department_code: string;
+    department_name: string;
+    programs: ChedProgram[];
+};
+
+type ShsStrand = { key: string; name: string; description: string };
+type ShsTrack = { key: string; name: string; description: string; strands: ShsStrand[] };
+
+type TesdaQualification = {
+    code: string;
+    title: string;
+    nc_level: number;
+    pqf_level: number;
+    diploma: boolean;
+    superseded: boolean;
+    description: string;
+    reference: string;
+    source_url: string | null;
+};
+
+type TesdaSector = {
+    key: string;
+    label: string;
+    department_code: string;
+    department_name: string;
+    qualifications: TesdaQualification[];
+};
+
+type MatatagPhase = { sy: string; grades: string[]; status: string };
+
+type CalendarPreset = {
+    key: string;
+    label: string;
+    starts: string;
+    ends: string;
+    terms: number;
+    note: string;
+    source: string;
+    estimated: boolean;
+};
+
+type CurriculumCatalog = {
+    as_of: string;
+    school_levels: SchoolLevelOption[];
+    frameworks: FrameworkOption[];
+    ched: ChedCluster[];
+    shs: { legacy: ShsTrack[]; revised: ShsTrack[] };
+    tesda: TesdaSector[];
+    matatag: { phases: MatatagPhase[]; learning_areas: Record<string, string[]> };
+    calendars: CalendarPreset[];
+};
 
 /* ── Stable field components defined OUTSIDE the page component ── */
 
@@ -335,17 +432,131 @@ function StepHeader({
     );
 }
 
+/* ── Curriculum step components ── */
+
+function AuthorityBadge({ authority }: { authority: string }) {
+    const styles: Record<string, string> = {
+        CHED: "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300",
+        DepEd: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300",
+        TESDA: "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900 dark:bg-violet-950 dark:text-violet-300",
+    };
+
+    return (
+        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase ${styles[authority] ?? ""}`}>
+            {authority}
+        </span>
+    );
+}
+
+function FrameworkCard({
+    framework,
+    selected,
+    onSelect,
+}: {
+    framework: FrameworkOption;
+    selected: boolean;
+    onSelect: () => void;
+}) {
+    return (
+        <div
+            role="button"
+            tabIndex={0}
+            onClick={onSelect}
+            onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onSelect();
+                }
+            }}
+            aria-pressed={selected}
+            className={[
+                "flex w-full cursor-pointer flex-col gap-2 rounded-xl border p-4 text-left transition-all",
+                selected
+                    ? "border-primary bg-primary/5 ring-primary ring-2"
+                    : "border-border bg-background hover:border-primary/40 hover:bg-muted/40",
+            ].join(" ")}
+        >
+            <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                    <span className="text-foreground text-sm font-semibold">{framework.label}</span>
+                    <AuthorityBadge authority={framework.authority} />
+                </div>
+                {selected && <CheckCircle2 className="text-primary h-4 w-4 shrink-0" />}
+            </div>
+            <p className="text-muted-foreground text-xs leading-relaxed">{framework.description}</p>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+                <span className="text-muted-foreground">
+                    Reference: <span className="text-foreground/80 font-medium">{framework.reference}</span>
+                </span>
+                {framework.source_url && (
+                    <a
+                        href={framework.source_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-primary hover:text-primary/80 inline-flex items-center gap-0.5 font-medium"
+                    >
+                        Source <ExternalLink className="h-3 w-3" />
+                    </a>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function ProgramRow({
+    code,
+    title,
+    meta,
+    hint,
+    checked,
+    onToggle,
+}: {
+    code: string;
+    title: string;
+    meta: string;
+    hint?: string;
+    checked: boolean;
+    onToggle: () => void;
+}) {
+    return (
+        <label
+            className={[
+                "flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors",
+                checked ? "border-primary/60 bg-primary/5" : "border-border bg-background hover:border-primary/30",
+            ].join(" ")}
+        >
+            <Checkbox
+                checked={checked}
+                onCheckedChange={onToggle}
+                className="mt-0.5 scale-110"
+            />
+            <span className="min-w-0 flex-1">
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <span className="text-foreground text-sm font-medium">{title}</span>
+                    <span className="text-muted-foreground font-mono text-[10px]">{code}</span>
+                </span>
+                <span className="text-muted-foreground mt-0.5 block text-xs">{meta}</span>
+                {hint && <span className="text-amber-600 dark:text-amber-400 mt-0.5 block text-[11px]">{hint}</span>}
+            </span>
+        </label>
+    );
+}
+
 /* ── Page ── */
 
 export default function Setup() {
-    const { meta, branding } = usePage().props as any;
+    const { meta, branding, catalog } = usePage().props as { meta?: { appName?: string }; branding?: { logo?: string | null }; catalog?: CurriculumCatalog };
     const appName = meta?.appName || "Platform";
     const logoUrl = branding?.logo || null;
+    const catalogData: CurriculumCatalog | undefined = catalog;
+    const schoolLevelOptions: SchoolLevelOption[] = catalogData?.school_levels ?? SCHOOL_LEVELS;
 
     const [step, setStep] = useState(1);
     const [direction, setDirection] = useState(1);
     const [showSplash, setShowSplash] = useState(true);
     const [logoPreview, setLogoPreview] = useState<string | null>(null);
+    const [programSearch, setProgramSearch] = useState("");
 
     const goToStep = (next: number) => {
         setDirection(next > step ? 1 : -1);
@@ -368,12 +579,16 @@ export default function Setup() {
         school_location: "",
         dean_name: "",
         dean_email: "",
-        // Step 3: Academic Period
+        // Step 3: Curriculum & Programs
+        curriculum_framework: "",
+        programs: [] as string[],
+        seed_strand_subjects: false,
+        // Step 4: Academic Period
         school_starting_date: "",
         school_ending_date: "",
         semester: "1",
         curriculum_year: "",
-        // Step 4: Brand & Appearance
+        // Step 5: Brand & Appearance
         site_name: "",
         site_description: "",
         theme_color: "#0f172a",
@@ -381,7 +596,7 @@ export default function Setup() {
         support_email: "",
         support_phone: "",
         logo: null as File | null,
-        // Step 5: Feature Toggles
+        // Step 6: Feature Toggles
         school_portal_enabled: true,
         online_enrollment_enabled: true,
         enable_clearance_check: true,
@@ -424,7 +639,72 @@ export default function Setup() {
         goToStep(3);
     };
 
+    /* ── Curriculum helpers ── */
+
+    const frameworks = (catalogData?.frameworks ?? []).filter((f) => f.school_levels.includes(data.school_level));
+    const currentFramework = frameworks.find((f) => f.value === data.curriculum_framework) ?? null;
+
+    const selectFramework = (value: string) => {
+        setData("curriculum_framework", data.curriculum_framework === value ? "" : value);
+        setData("programs", []);
+        setProgramSearch("");
+    };
+
+    const toggleProgram = (code: string) => {
+        setData("programs", data.programs.includes(code) ? data.programs.filter((c) => c !== code) : [...data.programs, code]);
+    };
+
+    const togglePrograms = (codes: string[]) => {
+        const allSelected = codes.every((c) => data.programs.includes(c));
+        const merged = new Set(data.programs);
+        codes.forEach((c) => (allSelected ? merged.delete(c) : merged.add(c)));
+        setData("programs", Array.from(merged));
+    };
+
+    const selectedProgramTitles = (): string[] => {
+        const titles: string[] = [];
+        if (currentFramework?.value === "ched_psg") {
+            for (const cluster of catalogData?.ched ?? []) {
+                for (const program of cluster.programs) {
+                    if (data.programs.includes(program.code)) titles.push(`${program.code} — ${program.title}`);
+                }
+            }
+        } else if (currentFramework?.value === "tesda_tr") {
+            for (const sector of catalogData?.tesda ?? []) {
+                for (const qualification of sector.qualifications) {
+                    if (data.programs.includes(qualification.code)) titles.push(`${qualification.code} — ${qualification.title}`);
+                }
+            }
+        } else if (currentFramework?.value === "deped_shs_k12" || currentFramework?.value === "deped_shs_revised") {
+            const tracks = currentFramework?.value === "deped_shs_revised" ? catalogData?.shs.revised : catalogData?.shs.legacy;
+            for (const track of tracks ?? []) {
+                for (const strand of track.strands) {
+                    if (data.programs.includes(`${track.key}:${strand.key}`)) titles.push(`${track.name} · ${strand.name}`);
+                }
+            }
+        }
+        return titles;
+    };
+
+    const schoolLevelLabel = schoolLevelOptions.find((l) => l.value === data.school_level)?.label ?? data.school_level;
+
+    const enabledToggles: string[] = [];
+    if (data.school_portal_enabled) enabledToggles.push("Student Portal");
+    if (data.online_enrollment_enabled) enabledToggles.push("Online Enrollment");
+    if (data.enable_clearance_check) enabledToggles.push("Clearance Check");
+    if (data.enable_signatures) enabledToggles.push("Digital Signatures");
+    if (data.enable_qr_codes) enabledToggles.push("QR Codes");
+    if (data.enable_public_transactions) enabledToggles.push("Public Transactions");
+    if (data.enable_support_page) enabledToggles.push("Support Page");
+    if (data.inventory_module_enabled) enabledToggles.push("Inventory Module");
+    if (data.library_module_enabled) enabledToggles.push("Library Module");
+
     const handleNextStep3 = () => {
+        clearErrors();
+        goToStep(4);
+    };
+
+    const handleNextStep4 = () => {
         clearErrors();
         const errs: string[] = [];
         if (!data.school_starting_date) errs.push("Please set the school year start date.");
@@ -436,7 +716,7 @@ export default function Setup() {
             errs.forEach((e) => toast.error(e));
             return;
         }
-        goToStep(4);
+        goToStep(5);
     };
 
     const submit = (e: React.FormEvent) => {
@@ -449,15 +729,13 @@ export default function Setup() {
                 toast.error("Please correct the errors and try again.");
                 if (errs.admin_name || errs.admin_email || errs.admin_password) goToStep(1);
                 else if (errs.school_name || errs.school_code || errs.school_level || errs.school_email) goToStep(2);
-                else if (errs.school_starting_date || errs.school_ending_date || errs.semester) goToStep(3);
+                else if (errs.curriculum_framework || errs.programs) goToStep(3);
+                else if (errs.school_starting_date || errs.school_ending_date || errs.semester) goToStep(4);
             },
         });
     };
 
     const hasErrors = Object.keys(errors).length > 0;
-
-    const requiredStepsComplete = step >= 4;
-    const currentStepConfig = STEPS[step - 1];
 
     if (showSplash) {
         return (
@@ -502,6 +780,8 @@ export default function Setup() {
                             <span>Administrator</span>
                             <span className="bg-border h-px w-8" aria-hidden />
                             <span>Institution</span>
+                            <span className="bg-border h-px w-8" aria-hidden />
+                            <span>Curriculum</span>
                             <span className="bg-border h-px w-8" aria-hidden />
                             <span>Academic Period</span>
                             <span className="bg-border h-px w-8" aria-hidden />
@@ -622,15 +902,16 @@ export default function Setup() {
                     </motion.div>
 
                     {/* Skip hint */}
-                    {step >= 4 && (
+                    {step >= 5 && (
                         <motion.div
                             initial={{ opacity: 0, y: 8 }}
                             animate={{ opacity: 1, y: 0 }}
                             className="border-primary/20 bg-primary/5 hidden rounded-lg border p-3 md:block"
                         >
                             <p className="text-muted-foreground text-xs leading-relaxed">
-                                Steps <strong className="text-foreground">4</strong> & <strong className="text-foreground">5</strong> are{" "}
-                                <span className="text-primary font-medium">optional</span>. You can configure them later from System Management.
+                                Steps <strong className="text-foreground">3</strong>, <strong className="text-foreground">5</strong> &{" "}
+                                <strong className="text-foreground">6</strong> are <span className="text-primary font-medium">optional</span>.
+                                You can configure them later from System Management.
                             </p>
                         </motion.div>
                     )}
@@ -808,7 +1089,7 @@ export default function Setup() {
                                                             <span className="text-destructive ml-0.5">*</span>
                                                         </Label>
                                                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                                            {SCHOOL_LEVELS.map((level) => {
+                                                            {schoolLevelOptions.map((level) => {
                                                                 const selected = data.school_level === level.value;
 
                                                                 return (
@@ -926,14 +1207,14 @@ export default function Setup() {
                                                     onClick={handleNextStep2}
                                                     className="group bg-primary text-primary-foreground hover:bg-primary/90 h-11 w-full px-8 sm:w-auto"
                                                 >
-                                                    Continue to Academic Period
+                                                    Continue to Curriculum
                                                     <ChevronRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                                                 </Button>
                                             </div>
                                         </motion.div>
                                     )}
 
-                                    {/* ── STEP 3: Academic Period ── */}
+                                    {/* ── STEP 3: Curriculum & Programs ── */}
                                     {step === 3 && (
                                         <motion.div
                                             key="step3"
@@ -947,10 +1228,305 @@ export default function Setup() {
                                             <StepHeader
                                                 stepNumber={3}
                                                 totalSteps={STEPS.length}
+                                                icon={<BookOpen className="h-4 w-4" />}
+                                                title="Curriculum & Programs"
+                                                description="Align your programs with the latest CHED, DepEd, and TESDA curriculum frameworks. Program structures are pre-created for you."
+                                                onBack={() => goToStep(2)}
+                                                optional
+                                            />
+
+                                            <div className="space-y-5">
+                                                {/* Framework selection */}
+                                                <div className="space-y-3">
+                                                    <div className="flex items-center gap-2 border-b pb-2">
+                                                        <ShieldCheck className="text-muted-foreground h-4 w-4" />
+                                                        <h3 className="text-foreground text-sm font-medium">Regulatory Framework</h3>
+                                                    </div>
+                                                    {frameworks.length === 0 ? (
+                                                        <div className="border-border bg-muted/50 rounded-lg border p-4">
+                                                            <p className="text-muted-foreground text-xs leading-relaxed">
+                                                                No curriculum framework applies to the selected institution level. You can skip this step and
+                                                                configure programs later from <span className="text-foreground font-medium">Curriculum & Classes</span>.
+                                                            </p>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                                                            {frameworks.map((framework) => (
+                                                                <FrameworkCard
+                                                                    key={framework.value}
+                                                                    framework={framework}
+                                                                    selected={data.curriculum_framework === framework.value}
+                                                                    onSelect={() => selectFramework(framework.value)}
+                                                                />
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                    {catalogData && (
+                                                        <p className="text-muted-foreground text-[11px]">
+                                                            Catalog researched as of <span className="text-foreground/70 font-medium">{catalogData.as_of}</span>.
+                                                            Unverified issuances are flagged for review.
+                                                        </p>
+                                                    )}
+                                                </div>
+
+                                                {currentFramework?.value === "ched_psg" && (
+                                                    <div className="space-y-3">
+                                                        <div className="flex items-center justify-between gap-2 border-b pb-2">
+                                                            <div className="flex items-center gap-2">
+                                                                <BookOpen className="text-muted-foreground h-4 w-4" />
+                                                                <h3 className="text-foreground text-sm font-medium">Degree & Diploma Programs</h3>
+                                                            </div>
+                                                            <Badge variant="outline" className="border-primary/30 text-primary text-[10px]">
+                                                                {data.programs.length} selected
+                                                            </Badge>
+                                                        </div>
+                                                        <div className="relative">
+                                                            <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
+                                                            <Input
+                                                                value={programSearch}
+                                                                onChange={(e) => setProgramSearch(e.target.value)}
+                                                                placeholder="Search programs (e.g. Nursing, IT, Accountancy)…"
+                                                                className="border-border bg-background text-foreground placeholder:text-muted-foreground/60 focus-visible:ring-primary h-11 pl-9"
+                                                            />
+                                                        </div>
+                                                        <div className="space-y-4">
+                                                            {(catalogData?.ched ?? []).map((cluster) => {
+                                                                const filtered = cluster.programs.filter(
+                                                                    (p) =>
+                                                                        !programSearch ||
+                                                                        p.title.toLowerCase().includes(programSearch.toLowerCase()) ||
+                                                                        p.code.toLowerCase().includes(programSearch.toLowerCase()),
+                                                                );
+                                                                if (filtered.length === 0) return null;
+                                                                return (
+                                                                    <div key={cluster.key} className="space-y-2">
+                                                                        <div className="flex items-center justify-between">
+                                                                            <p className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+                                                                                {cluster.label}
+                                                                            </p>
+                                                                            <Button
+                                                                                type="button"
+                                                                                variant="ghost"
+                                                                                size="sm"
+                                                                                onClick={() => togglePrograms(filtered.map((p) => p.code))}
+                                                                                className="text-primary h-7 px-2 text-xs"
+                                                                            >
+                                                                                {filtered.every((p) => data.programs.includes(p.code)) ? "Deselect all" : "Select all"}
+                                                                            </Button>
+                                                                        </div>
+                                                                        <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+                                                                            {filtered.map((program) => (
+                                                                                <ProgramRow
+                                                                                    key={program.code}
+                                                                                    code={program.code}
+                                                                                    title={program.title}
+                                                                                    meta={`${program.units} units · ${program.year_level}-year · ${program.reference}`}
+                                                                                    hint={program.verified ? undefined : "Issuance number not yet verified — confirm with CHED."}
+                                                                                    checked={data.programs.includes(program.code)}
+                                                                                    onToggle={() => toggleProgram(program.code)}
+                                                                                />
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {currentFramework?.value === "tesda_tr" && (
+                                                    <div className="space-y-3">
+                                                        <div className="flex items-center justify-between gap-2 border-b pb-2">
+                                                            <div className="flex items-center gap-2">
+                                                                <ToggleRight className="text-muted-foreground h-4 w-4" />
+                                                                <h3 className="text-foreground text-sm font-medium">TVET Qualifications (NC I-IV)</h3>
+                                                            </div>
+                                                            <Badge variant="outline" className="border-primary/30 text-primary text-[10px]">
+                                                                {data.programs.length} selected
+                                                            </Badge>
+                                                        </div>
+                                                        <div className="space-y-4">
+                                                            {(catalogData?.tesda ?? []).map((sector) => (
+                                                                <div key={sector.key} className="space-y-2">
+                                                                    <div className="flex items-center justify-between">
+                                                                        <p className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{sector.label}</p>
+                                                                        <Button
+                                                                            type="button"
+                                                                            variant="ghost"
+                                                                            size="sm"
+                                                                            onClick={() => togglePrograms(sector.qualifications.map((q) => q.code))}
+                                                                            className="text-primary h-7 px-2 text-xs"
+                                                                        >
+                                                                            {sector.qualifications.every((q) => data.programs.includes(q.code)) ? "Deselect all" : "Select all"}
+                                                                        </Button>
+                                                                    </div>
+                                                                    <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+                                                                        {sector.qualifications.map((q) => (
+                                                                            <ProgramRow
+                                                                                key={q.code}
+                                                                                code={q.code}
+                                                                                title={q.title}
+                                                                                meta={q.diploma ? `TESDA Diploma · PQF Level ${q.pqf_level}` : `NC ${q.nc_level} · PQF Level ${q.pqf_level} · ${q.reference}`}
+                                                                                hint={q.superseded ? "Superseded TR — a newer Training Regulation exists." : undefined}
+                                                                                checked={data.programs.includes(q.code)}
+                                                                                onToggle={() => toggleProgram(q.code)}
+                                                                            />
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {(currentFramework?.value === "deped_shs_k12" || currentFramework?.value === "deped_shs_revised") && (
+                                                    <div className="space-y-3">
+                                                        <div className="flex items-center justify-between gap-2 border-b pb-2">
+                                                            <div className="flex items-center gap-2">
+                                                                <GraduationCap className="text-muted-foreground h-4 w-4" />
+                                                                <h3 className="text-foreground text-sm font-medium">Tracks & Strands</h3>
+                                                            </div>
+                                                            <Badge variant="outline" className="border-primary/30 text-primary text-[10px]">
+                                                                {data.programs.length} selected
+                                                            </Badge>
+                                                        </div>
+                                                        <div className="space-y-4">
+                                                            {(currentFramework?.value === "deped_shs_revised" ? catalogData?.shs.revised : catalogData?.shs.legacy)?.map((track) => (
+                                                                <div key={track.key} className="border-border rounded-xl border p-4">
+                                                                    <div className="flex items-start justify-between gap-3">
+                                                                        <div className="space-y-1">
+                                                                            <p className="text-foreground text-sm font-semibold">{track.name}</p>
+                                                                            <p className="text-muted-foreground text-xs leading-relaxed">{track.description}</p>
+                                                                        </div>
+                                                                        <Button
+                                                                            type="button"
+                                                                            variant="ghost"
+                                                                            size="sm"
+                                                                            onClick={() => togglePrograms(track.strands.map((s) => `${track.key}:${s.key}`))}
+                                                                            className="text-primary h-7 shrink-0 px-2 text-xs"
+                                                                        >
+                                                                            {track.strands.every((s) => data.programs.includes(`${track.key}:${s.key}`)) ? "Deselect" : "Select all"}
+                                                                        </Button>
+                                                                    </div>
+                                                                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                                                        {track.strands.map((strand) => (
+                                                                            <ProgramRow
+                                                                                key={`${track.key}:${strand.key}`}
+                                                                                code={`${track.key}:${strand.key}`}
+                                                                                title={strand.name}
+                                                                                meta={strand.description}
+                                                                                checked={data.programs.includes(`${track.key}:${strand.key}`)}
+                                                                                onToggle={() => toggleProgram(`${track.key}:${strand.key}`)}
+                                                                            />
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                        <div className="border-border bg-muted/50 flex items-center justify-between gap-4 rounded-lg border p-4">
+                                                            <div className="space-y-0.5">
+                                                                <Label htmlFor="seed_strand_subjects" className="text-foreground cursor-pointer text-sm font-medium">
+                                                                    Preload SHS core subjects
+                                                                </Label>
+                                                                <p className="text-muted-foreground text-xs leading-relaxed">
+                                                                    Adds the standard 15 core + applied subjects (e.g., Oral Communication, General Mathematics) to
+                                                                    each selected strand.
+                                                                </p>
+                                                            </div>
+                                                            <Switch
+                                                                id="seed_strand_subjects"
+                                                                checked={data.seed_strand_subjects}
+                                                                onCheckedChange={(v) => setData("seed_strand_subjects", v)}
+                                                                className="shrink-0 scale-125"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {currentFramework?.value === "deped_matatag" && (
+                                                    <div className="space-y-4">
+                                                        <div className="flex items-center gap-2 border-b pb-2">
+                                                            <CalendarDays className="text-muted-foreground h-4 w-4" />
+                                                            <h3 className="text-foreground text-sm font-medium">MATATAG Rollout Timeline</h3>
+                                                        </div>
+                                                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                                                            {(catalogData?.matatag.phases ?? []).map((phase) => (
+                                                                <div key={phase.sy} className="border-border bg-muted/40 rounded-lg border p-3">
+                                                                    <p className="text-foreground text-sm font-semibold">{phase.sy}</p>
+                                                                    <p className="text-primary mt-0.5 text-xs font-medium">{phase.grades.join(", ")}</p>
+                                                                    <p className="text-muted-foreground mt-1 text-[11px]">{phase.status}</p>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <p className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">Learning Areas per Grade Band</p>
+                                                            <div className="space-y-2">
+                                                                {Object.entries(catalogData?.matatag.learning_areas ?? {}).map(([band, areas]) => (
+                                                                    <div key={band} className="border-border rounded-lg border p-3">
+                                                                        <p className="text-muted-foreground text-[11px] font-medium uppercase">{band.replaceAll("_", " ")}</p>
+                                                                        <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                                                            {areas.map((area) => (
+                                                                                <Badge key={area} variant="outline" className="text-foreground/80 text-[10px]">
+                                                                                    {area}
+                                                                                </Badge>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                        <div className="border-border bg-muted/50 rounded-lg border p-4">
+                                                            <p className="text-muted-foreground text-xs leading-relaxed">
+                                                                The MATATAG framework is recorded on your institution for grade-band configuration. GMRC, Values
+                                                                Education, and Makabansa are reflected in the learning areas above; Mother Tongue is now used as a
+                                                                medium of instruction rather than a separate subject.
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="flex items-center justify-between gap-3 pt-2">
+                                                <Button type="button" variant="outline" onClick={() => goToStep(2)} className="h-11">
+                                                    <ChevronLeft className="mr-1 h-4 w-4" /> Back
+                                                </Button>
+                                                <div className="flex gap-2">
+                                                    <Button type="button" variant="ghost" onClick={() => goToStep(4)} className="text-muted-foreground h-11">
+                                                        Skip for now
+                                                    </Button>
+                                                    <Button
+                                                        type="button"
+                                                        onClick={handleNextStep3}
+                                                        className="group bg-primary text-primary-foreground hover:bg-primary/90 h-11 px-8"
+                                                    >
+                                                        {data.programs.length > 0
+                                                            ? `Continue (${data.programs.length} selected)`
+                                                            : "Continue to Academic Period"}
+                                                        <ChevronRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        </motion.div>
+                                    )}
+
+                                    {/* ── STEP 4: Academic Period ── */}
+                                    {step === 4 && (
+                                        <motion.div
+                                            key="step4"
+                                            custom={direction}
+                                            variants={slideVariants}
+                                            initial="hidden"
+                                            animate="visible"
+                                            exit="exit"
+                                            className="space-y-6 p-6 md:p-10"
+                                        >
+                                            <StepHeader
+                                                stepNumber={4}
+                                                totalSteps={STEPS.length}
                                                 icon={<GraduationCap className="h-4 w-4" />}
                                                 title="Academic Period"
                                                 description="Set the current school year, semester, and curriculum year to seed GeneralSettings."
-                                                onBack={() => goToStep(2)}
+                                                onBack={() => goToStep(3)}
                                             />
 
                                             <div className="space-y-4">
@@ -986,6 +1562,34 @@ export default function Setup() {
                                                         </motion.p>
                                                     )}
                                                 </div>
+
+                                                {/* Calendar presets */}
+                                                {(catalogData?.calendars ?? []).length > 0 && (
+                                                    <div className="space-y-2">
+                                                        <p className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+                                                            Official Calendar Presets
+                                                        </p>
+                                                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                                            {(catalogData?.calendars ?? []).map((preset) => (
+                                                                <button
+                                                                    key={preset.key}
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setData("school_starting_date", preset.starts);
+                                                                        setData("school_ending_date", preset.ends);
+                                                                        setData("semester", "1");
+                                                                        setData("curriculum_year", `${new Date(preset.starts).getFullYear()}-${new Date(preset.ends).getFullYear()}`);
+                                                                    }}
+                                                                    className="border-border hover:border-primary/50 bg-muted/40 hover:bg-muted/60 flex flex-col gap-1 rounded-lg border p-3 text-left transition-colors"
+                                                                >
+                                                                    <span className="text-foreground text-sm font-medium">{preset.label}</span>
+                                                                    <span className="text-muted-foreground text-[11px] leading-relaxed">{preset.note}</span>
+                                                                    <span className="text-primary text-[11px] font-medium">{preset.source}</span>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
 
                                                 {/* Curriculum year preview */}
                                                 {data.school_starting_date && data.school_ending_date && (
@@ -1049,7 +1653,7 @@ export default function Setup() {
                                                 <Button
                                                     type="button"
                                                     variant="outline"
-                                                    onClick={() => goToStep(2)}
+                                                    onClick={() => goToStep(3)}
                                                     className="h-11"
                                                 >
                                                     <ChevronLeft className="mr-1 h-4 w-4" /> Back
@@ -1058,7 +1662,7 @@ export default function Setup() {
                                                     <Button
                                                         type="button"
                                                         variant="ghost"
-                                                        onClick={() => goToStep(4)}
+                                                        onClick={() => goToStep(7)}
                                                         className="text-muted-foreground h-11"
                                                     >
                                                         Skip optional steps
@@ -1066,7 +1670,7 @@ export default function Setup() {
                                                     </Button>
                                                     <Button
                                                         type="button"
-                                                        onClick={handleNextStep3}
+                                                        onClick={handleNextStep4}
                                                         className="group bg-primary text-primary-foreground hover:bg-primary/90 h-11 px-8"
                                                     >
                                                         Continue
@@ -1077,10 +1681,10 @@ export default function Setup() {
                                         </motion.div>
                                     )}
 
-                                    {/* ── STEP 4: Brand & Appearance ── */}
-                                    {step === 4 && (
+                                    {/* ── STEP 5: Brand & Appearance ── */}
+                                    {step === 5 && (
                                         <motion.div
-                                            key="step4"
+                                            key="step5"
                                             custom={direction}
                                             variants={slideVariants}
                                             initial="hidden"
@@ -1089,12 +1693,12 @@ export default function Setup() {
                                             className="space-y-6 p-6 md:p-10"
                                         >
                                             <StepHeader
-                                                stepNumber={4}
+                                                stepNumber={5}
                                                 totalSteps={STEPS.length}
                                                 icon={<Palette className="h-4 w-4" />}
                                                 title="Brand & Appearance"
                                                 description="Customize the visual identity and currency for your platform. Configurable later from System Management."
-                                                onBack={() => goToStep(3)}
+                                                onBack={() => goToStep(4)}
                                                 optional
                                             />
 
@@ -1281,16 +1885,16 @@ export default function Setup() {
                                             </div>
 
                                             <div className="flex items-center justify-between gap-3 pt-2">
-                                                <Button type="button" variant="outline" onClick={() => goToStep(3)} className="h-11">
+                                                <Button type="button" variant="outline" onClick={() => goToStep(4)} className="h-11">
                                                     <ChevronLeft className="mr-1 h-4 w-4" /> Back
                                                 </Button>
                                                 <div className="flex gap-2">
-                                                    <Button type="button" variant="ghost" onClick={() => goToStep(5)} className="text-muted-foreground h-11">
+                                                    <Button type="button" variant="ghost" onClick={() => goToStep(6)} className="text-muted-foreground h-11">
                                                         Skip for now
                                                     </Button>
                                                     <Button
                                                         type="button"
-                                                        onClick={() => goToStep(5)}
+                                                        onClick={() => goToStep(6)}
                                                         className="group bg-primary text-primary-foreground hover:bg-primary/90 h-11 px-8"
                                                     >
                                                         Continue to Features
@@ -1301,10 +1905,10 @@ export default function Setup() {
                                         </motion.div>
                                     )}
 
-                                    {/* ── STEP 5: Feature Toggles ── */}
-                                    {step === 5 && (
+                                    {/* ── STEP 6: Feature Toggles ── */}
+                                    {step === 6 && (
                                         <motion.div
-                                            key="step5"
+                                            key="step6"
                                             custom={direction}
                                             variants={slideVariants}
                                             initial="hidden"
@@ -1313,12 +1917,12 @@ export default function Setup() {
                                             className="space-y-6 p-6 md:p-10"
                                         >
                                             <StepHeader
-                                                stepNumber={5}
+                                                stepNumber={6}
                                                 totalSteps={STEPS.length}
                                                 icon={<ToggleRight className="h-4 w-4" />}
                                                 title="Feature Toggles"
                                                 description="Enable or disable platform modules. All can be reconfigured later from System Management."
-                                                onBack={() => goToStep(4)}
+                                                onBack={() => goToStep(5)}
                                                 optional
                                             />
 
@@ -1441,6 +2045,192 @@ export default function Setup() {
                                                         onCheckedChange={(v) => setData("enable_faculty_transfer_email_notifications", v)}
                                                         icon={<AlertCircle className="h-4 w-4" />}
                                                     />
+                                                </div>
+                                            </div>
+
+                                            {/* Continue to review */}
+                                            <div className="space-y-3 pt-2">
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <Button type="button" variant="outline" onClick={() => goToStep(5)} className="h-11">
+                                                        <ChevronLeft className="mr-1 h-4 w-4" /> Back
+                                                    </Button>
+                                                    <Button
+                                                        type="button"
+                                                        onClick={() => goToStep(7)}
+                                                        className="group bg-primary text-primary-foreground hover:bg-primary/90 h-11 px-8"
+                                                    >
+                                                        Continue to Review
+                                                        <ChevronRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        </motion.div>
+                                    )}
+
+                                    {/* ── STEP 7: Review & Finish ── */}
+                                    {step === 7 && (
+                                        <motion.div
+                                            key="step7"
+                                            custom={direction}
+                                            variants={slideVariants}
+                                            initial="hidden"
+                                            animate="visible"
+                                            exit="exit"
+                                            className="space-y-6 p-6 md:p-10"
+                                        >
+                                            <StepHeader
+                                                stepNumber={7}
+                                                totalSteps={STEPS.length}
+                                                icon={<ClipboardList className="h-4 w-4" />}
+                                                title="Review & Finish"
+                                                description="Confirm the details below. Everything can still be adjusted later from System Management."
+                                                onBack={() => goToStep(6)}
+                                            />
+
+                                            <div className="space-y-4">
+                                                <div className="border-border rounded-lg border p-4">
+                                                    <div className="flex items-center gap-2 border-b pb-2">
+                                                        <UserCircle className="text-muted-foreground h-4 w-4" />
+                                                        <h3 className="text-foreground text-sm font-medium">Administrator</h3>
+                                                    </div>
+                                                    <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-2">
+                                                        <div>
+                                                            <dt className="text-muted-foreground text-xs">Full Name</dt>
+                                                            <dd className="text-foreground font-medium">{data.admin_name || "—"}</dd>
+                                                        </div>
+                                                        <div>
+                                                            <dt className="text-muted-foreground text-xs">Email Address</dt>
+                                                            <dd className="text-foreground font-medium">{data.admin_email || "—"}</dd>
+                                                        </div>
+                                                    </dl>
+                                                </div>
+
+                                                <div className="border-border rounded-lg border p-4">
+                                                    <div className="flex items-center gap-2 border-b pb-2">
+                                                        <Building2 className="text-muted-foreground h-4 w-4" />
+                                                        <h3 className="text-foreground text-sm font-medium">Institution</h3>
+                                                    </div>
+                                                    <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-2">
+                                                        <div>
+                                                            <dt className="text-muted-foreground text-xs">Name</dt>
+                                                            <dd className="text-foreground font-medium">{data.school_name || "—"}</dd>
+                                                        </div>
+                                                        <div>
+                                                            <dt className="text-muted-foreground text-xs">Code</dt>
+                                                            <dd className="text-foreground font-medium">{data.school_code || "—"}</dd>
+                                                        </div>
+                                                        <div>
+                                                            <dt className="text-muted-foreground text-xs">School Level</dt>
+                                                            <dd className="text-foreground font-medium">{schoolLevelLabel}</dd>
+                                                        </div>
+                                                        <div>
+                                                            <dt className="text-muted-foreground text-xs">Location</dt>
+                                                            <dd className="text-foreground font-medium">{data.school_location || "—"}</dd>
+                                                        </div>
+                                                    </dl>
+                                                </div>
+
+                                                <div className="border-border rounded-lg border p-4">
+                                                    <div className="flex items-center gap-2 border-b pb-2">
+                                                        <BookOpen className="text-muted-foreground h-4 w-4" />
+                                                        <h3 className="text-foreground text-sm font-medium">Curriculum & Programs</h3>
+                                                    </div>
+                                                    {currentFramework ? (
+                                                        <div className="mt-2 space-y-1.5 text-sm">
+                                                            <p className="text-foreground flex items-center gap-2 font-medium">
+                                                                {currentFramework.label} <AuthorityBadge authority={currentFramework.authority} />
+                                                            </p>
+                                                            <p className="text-muted-foreground text-xs">Reference: {currentFramework.reference}</p>
+                                                            {data.programs.length > 0 ? (
+                                                                <div className="flex flex-wrap gap-1.5 pt-1">
+                                                                    {selectedProgramTitles().map((title) => (
+                                                                        <Badge key={title} variant="outline" className="text-foreground/80 text-[10px]">
+                                                                            {title}
+                                                                        </Badge>
+                                                                    ))}
+                                                                </div>
+                                                            ) : (
+                                                                <p className="text-muted-foreground text-xs">No programs selected — you can add them later.</p>
+                                                            )}
+                                                            {data.seed_strand_subjects && (
+                                                                <p className="text-primary text-xs font-medium">SHS core subjects will be preloaded for each selected strand.</p>
+                                                            )}
+                                                        </div>
+                                                    ) : (
+                                                        <p className="text-muted-foreground mt-2 text-xs">Skipped — curriculum can be configured later from Curriculum & Classes.</p>
+                                                    )}
+                                                </div>
+
+                                                <div className="border-border rounded-lg border p-4">
+                                                    <div className="flex items-center gap-2 border-b pb-2">
+                                                        <CalendarDays className="text-muted-foreground h-4 w-4" />
+                                                        <h3 className="text-foreground text-sm font-medium">Academic Period</h3>
+                                                    </div>
+                                                    <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-2">
+                                                        <div>
+                                                            <dt className="text-muted-foreground text-xs">School Year Start</dt>
+                                                            <dd className="text-foreground font-medium">{data.school_starting_date || "—"}</dd>
+                                                        </div>
+                                                        <div>
+                                                            <dt className="text-muted-foreground text-xs">School Year End</dt>
+                                                            <dd className="text-foreground font-medium">{data.school_ending_date || "—"}</dd>
+                                                        </div>
+                                                        <div>
+                                                            <dt className="text-muted-foreground text-xs">Semester / Term</dt>
+                                                            <dd className="text-foreground font-medium">
+                                                                {data.semester === "1" ? "1st Semester" : data.semester === "2" ? "2nd Semester" : data.semester === "3" ? "Summer / Midyear" : "—"}
+                                                            </dd>
+                                                        </div>
+                                                        <div>
+                                                            <dt className="text-muted-foreground text-xs">Curriculum Year</dt>
+                                                            <dd className="text-foreground font-medium">{data.curriculum_year || "—"}</dd>
+                                                        </div>
+                                                    </dl>
+                                                </div>
+
+                                                <div className="border-border rounded-lg border p-4">
+                                                    <div className="flex items-center gap-2 border-b pb-2">
+                                                        <Palette className="text-muted-foreground h-4 w-4" />
+                                                        <h3 className="text-foreground text-sm font-medium">Brand & Appearance</h3>
+                                                    </div>
+                                                    <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-2">
+                                                        <div>
+                                                            <dt className="text-muted-foreground text-xs">Site Name</dt>
+                                                            <dd className="text-foreground font-medium">{data.site_name || data.school_name || "—"}</dd>
+                                                        </div>
+                                                        <div>
+                                                            <dt className="text-muted-foreground text-xs">Currency</dt>
+                                                            <dd className="text-foreground font-medium">{data.currency}</dd>
+                                                        </div>
+                                                        <div>
+                                                            <dt className="text-muted-foreground text-xs">Theme Color</dt>
+                                                            <dd className="flex items-center gap-2 font-medium">
+                                                                <span className="border-border inline-block h-4 w-4 rounded-full border" style={{ backgroundColor: data.theme_color }} />
+                                                                <span className="text-foreground">{data.theme_color}</span>
+                                                            </dd>
+                                                        </div>
+                                                        <div>
+                                                            <dt className="text-muted-foreground text-xs">Logo</dt>
+                                                            <dd className="text-foreground font-medium">{logoPreview ? "Uploaded" : "—"}</dd>
+                                                        </div>
+                                                    </dl>
+                                                </div>
+
+                                                <div className="border-border rounded-lg border p-4">
+                                                    <div className="flex items-center gap-2 border-b pb-2">
+                                                        <ToggleRight className="text-muted-foreground h-4 w-4" />
+                                                        <h3 className="text-foreground text-sm font-medium">Feature Toggles</h3>
+                                                    </div>
+                                                    <div className="mt-2 flex flex-wrap gap-1.5">
+                                                        {enabledToggles.map((toggle) => (
+                                                            <Badge key={toggle} variant="outline" className="border-primary/30 text-primary text-[10px]">
+                                                                {toggle}
+                                                            </Badge>
+                                                        ))}
+                                                        {enabledToggles.length === 0 && (
+                                                            <p className="text-muted-foreground text-xs">All modules disabled — enable them later from System Management.</p>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
 

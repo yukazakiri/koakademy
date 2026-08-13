@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Enums\CurriculumFramework;
 use App\Enums\SchoolLevel;
 use App\Enums\UserRole;
 use App\Models\GeneralSetting;
 use App\Models\School;
 use App\Models\User;
+use App\Services\CurriculumBootstrapService;
 use App\Services\LogoConversionService;
 use App\Settings\SiteSettings;
+use App\Support\PhilippineCurriculumCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -19,6 +22,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Spatie\Permission\Models\Role;
 
@@ -57,7 +61,24 @@ final class SetupController extends Controller
             return redirect()->route('login');
         }
 
-        return Inertia::render('setup/index');
+        return Inertia::render('setup/index', [
+            'catalog' => [
+                'as_of' => PhilippineCurriculumCatalog::AS_OF,
+                'school_levels' => SchoolLevel::optionsForFrontend(),
+                'frameworks' => CurriculumFramework::optionsForFrontend(),
+                'ched' => PhilippineCurriculumCatalog::chedClusters(),
+                'shs' => [
+                    'legacy' => PhilippineCurriculumCatalog::shsTracksLegacy(),
+                    'revised' => PhilippineCurriculumCatalog::shsTracksRevised(),
+                ],
+                'tesda' => PhilippineCurriculumCatalog::tesdaSectors(),
+                'matatag' => [
+                    'phases' => PhilippineCurriculumCatalog::matatagPhases(),
+                    'learning_areas' => PhilippineCurriculumCatalog::matatagLearningAreas(),
+                ],
+                'calendars' => PhilippineCurriculumCatalog::calendarPresets(),
+            ],
+        ]);
     }
 
     /**
@@ -97,6 +118,12 @@ final class SetupController extends Controller
             'school_ending_date' => ['required', 'date', 'after:school_starting_date'],
             'semester' => ['required', 'in:1,2,3'],
             'curriculum_year' => ['nullable', 'string', 'max:20'],
+            // Step 3b: Curriculum & Programs (recommended)
+            'curriculum_framework' => ['nullable', Rule::enum(CurriculumFramework::class)],
+            'curriculum_reference' => ['nullable', 'string', 'max:255'],
+            'programs' => ['nullable', 'array', 'max:100'],
+            'programs.*' => ['string', 'max:50'],
+            'seed_strand_subjects' => ['nullable', 'boolean'],
             // Step 4: Brand & Appearance (optional)
             'site_name' => ['nullable', 'string', 'max:255'],
             'site_description' => ['nullable', 'string', 'max:500'],
@@ -119,12 +146,61 @@ final class SetupController extends Controller
             'enable_faculty_transfer_email_notifications' => ['nullable', 'boolean'],
         ]);
 
-        $user = DB::transaction(function () use ($request) {
+        $frameworkValue = $request->input('curriculum_framework');
+        $framework = is_string($frameworkValue) && $frameworkValue !== ''
+            ? CurriculumFramework::from($frameworkValue)
+            : null;
+
+        $schoolLevelValue = $request->input('school_level');
+        $schoolLevel = SchoolLevel::from(is_string($schoolLevelValue) ? $schoolLevelValue : SchoolLevel::HigherEducation->value);
+
+        if ($framework !== null && ! in_array($schoolLevel, $framework->schoolLevels(), true)) {
+            throw ValidationException::withMessages([
+                'curriculum_framework' => 'The selected curriculum framework does not apply to the chosen institution level.',
+            ]);
+        }
+
+        $programs = [];
+
+        foreach ((array) $request->input('programs') as $programCode) {
+            if (is_string($programCode) && $programCode !== '') {
+                $programs[] = $programCode;
+            }
+        }
+
+        if ($framework !== null) {
+            $allowed = PhilippineCurriculumCatalog::validProgramCodes($framework);
+            $invalid = array_values(array_diff($programs, $allowed));
+
+            if ($invalid !== []) {
+                throw ValidationException::withMessages([
+                    'programs' => 'One or more selected programs are not part of the chosen curriculum framework.',
+                ]);
+            }
+        }
+
+        $curriculumYearValue = $request->input('curriculum_year');
+        $startValue = $request->input('school_starting_date');
+        $endValue = $request->input('school_ending_date');
+        $curriculumYear = is_string($curriculumYearValue) && $curriculumYearValue !== ''
+            ? $curriculumYearValue
+            : ($framework === CurriculumFramework::DepedMatatag
+                ? '2026-2027'
+                : Carbon::parse(is_string($startValue) ? $startValue : 'today')->format('Y').'-'.Carbon::parse(is_string($endValue) ? $endValue : 'today')->format('Y'));
+
+        $curriculumReferenceValue = $request->input('curriculum_reference');
+        $curriculumReference = is_string($curriculumReferenceValue) && $curriculumReferenceValue !== ''
+            ? $curriculumReferenceValue
+            : $framework?->getReference();
+
+        $user = DB::transaction(function () use ($request, $framework, $programs, $curriculumYear, $curriculumReference) {
             // Create the School
             $school = School::create([
                 'name' => $request->input('school_name'),
                 'code' => $request->input('school_code'),
                 'school_level' => $request->input('school_level'),
+                'curriculum_framework' => $framework?->value,
+                'curriculum_reference' => $curriculumReference,
                 'description' => $request->input('school_description'),
                 'email' => $request->input('school_email'),
                 'phone' => $request->input('school_phone'),
@@ -145,9 +221,7 @@ final class SetupController extends Controller
             $generalSetting->school_starting_date = $request->input('school_starting_date');
             $generalSetting->school_ending_date = $request->input('school_ending_date');
             $generalSetting->semester = (int) $request->input('semester');
-            $generalSetting->curriculum_year = $request->filled('curriculum_year')
-                ? $request->input('curriculum_year')
-                : Carbon::parse($request->input('school_starting_date'))->format('Y').'-'.Carbon::parse($request->input('school_ending_date'))->format('Y');
+            $generalSetting->curriculum_year = $curriculumYear;
             $generalSetting->school_portal_enabled = $request->boolean('school_portal_enabled', true);
             $generalSetting->online_enrollment_enabled = $request->boolean('online_enrollment_enabled', true);
             $generalSetting->enable_clearance_check = $request->boolean('enable_clearance_check', true);
@@ -161,6 +235,17 @@ final class SetupController extends Controller
             $generalSetting->enable_faculty_transfer_email_notifications = $request->boolean('enable_faculty_transfer_email_notifications', true);
             $generalSetting->is_setup = true;
             $generalSetting->save();
+
+            // Create the curriculum structure selected in the wizard.
+            if ($framework !== null) {
+                app(CurriculumBootstrapService::class)->bootstrap(
+                    school: $school,
+                    framework: $framework,
+                    programCodes: $programs,
+                    curriculumYear: $curriculumYear,
+                    seedStrandSubjects: $request->boolean('seed_strand_subjects'),
+                );
+            }
 
             // Process logo upload — generates favicon, PWA icons, OG image
             if ($request->hasFile('logo')) {

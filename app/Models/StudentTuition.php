@@ -19,6 +19,9 @@ use Override;
 /**
  * Class StudentTuition
  *
+ * @property int|null $adjusted_by_user_id
+ * @property \Illuminate\Support\Carbon|null $adjusted_at
+ * @property string|null $adjustment_note
  * @property-read StudentEnrollment|null $enrollment
  * @property-read EnrollmentDiscount|null $enrollmentDiscount
  * @property-read string $formatted_discount
@@ -69,6 +72,9 @@ final class StudentTuition extends Model
         'downpayment',
         'overall_tuition',
         'paid',
+        'adjustment_note',
+        'adjusted_by_user_id',
+        'adjusted_at',
     ];
 
     public function student()
@@ -238,6 +244,8 @@ final class StudentTuition extends Model
             'downpayment' => 'float',
             'overall_tuition' => 'float',
             'paid' => 'float',
+            'adjusted_by_user_id' => 'integer',
+            'adjusted_at' => 'datetime',
             'created_at' => 'datetime',
             'updated_at' => 'date',
             'deleted_at' => 'datetime',

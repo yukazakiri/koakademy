@@ -183,6 +183,11 @@ COPY --chown=${USER}:${USER} --from=vendor /app/vendor ./vendor
 COPY --chown=${USER}:${USER} --from=build-assets /app/public/build ./public/build
 COPY --chown=${USER}:${USER} . .
 
+# R2 uses Laravel's S3 filesystem driver. Keep its adapter in the production
+# image so storage-backed branding and uploads cannot turn page rendering into
+# a runtime 500.
+RUN php -r 'class_exists(\League\Flysystem\AwsS3V3\PortableVisibilityConverter::class) || exit(1);'
+
 # The delivery workflow generates version-franken.json containing this image's
 # immutable reference. Local builds fall back to the tracked version.json.
 RUN if [ -f version-franken.json ]; then \

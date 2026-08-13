@@ -14,12 +14,12 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { router, useForm } from "@inertiajs/react";
+import { router, useForm, usePage } from "@inertiajs/react";
 import axios from "axios";
 import { ArrowRightLeft, BookOpen, CheckCircle, ChevronRight, ShieldCheck } from "lucide-react";
 import { type FormEvent, useMemo, useState } from "react";
 import { toast } from "sonner";
-import type { StudentDetail, StudentOptions } from "../types";
+import type { Branding, StudentDetail, StudentOptions } from "../types";
 
 declare const route: any;
 
@@ -691,13 +691,36 @@ export function RetryEnrollmentDialog({ open, onOpenChange, student, options }: 
 }
 
 export function UpdateTuitionDialog({ open, onOpenChange, student }: DialogProps) {
+    const { props } = usePage<{ branding?: Branding }>();
+    const currency = props.branding?.currency || "PHP";
+    const symbol = currency === "USD" ? "$" : "₱";
+
     const { data, setData, patch, processing, errors, reset } = useForm({
         total_lectures: student.tuition?.total_lectures.replace(/[^0-9.]/g, "") || 0,
         total_laboratory: student.tuition?.total_laboratory.replace(/[^0-9.]/g, "") || 0,
         total_miscelaneous_fees: student.tuition?.total_miscelaneous_fees.replace(/[^0-9.]/g, "") || 3500,
         downpayment: student.tuition?.downpayment.replace(/[^0-9.]/g, "") || 0,
         discount: student.tuition?.discount.replace(/[^0-9.]/g, "") || 0,
+        adjustment_note: student.tuition?.adjustment_note || "",
     });
+
+    const toNumber = (value: string | number): number => {
+        const parsed = typeof value === "string" ? Number.parseFloat(value) : value;
+        return Number.isFinite(parsed) ? parsed : 0;
+    };
+
+    const lecture = toNumber(data.total_lectures);
+    const laboratory = toNumber(data.total_laboratory);
+    const miscellaneous = toNumber(data.total_miscelaneous_fees);
+    const downpayment = toNumber(data.downpayment);
+    const discount = toNumber(data.discount);
+
+    const totalTuition = lecture + laboratory;
+    const overallTuition = (totalTuition + miscellaneous) * (1 - discount / 100);
+    const balanceDue = Math.max(0, overallTuition - downpayment);
+
+    const formatAmount = (value: number) =>
+        `${symbol} ${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
     const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -705,7 +728,9 @@ export function UpdateTuitionDialog({ open, onOpenChange, student }: DialogProps
             preserveScroll: true,
             onSuccess: () => {
                 onOpenChange(false);
-                toast.success("Tuition updated");
+                toast.success("Tuition adjusted", {
+                    description: "The student has been notified about their updated Statement of Account.",
+                });
                 reset();
             },
             onError: () => toast.error("Failed to update tuition"),
@@ -716,8 +741,10 @@ export function UpdateTuitionDialog({ open, onOpenChange, student }: DialogProps
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-[500px]">
                 <DialogHeader>
-                    <DialogTitle>Manage Tuition</DialogTitle>
-                    <DialogDescription>Update fees for current semester.</DialogDescription>
+                    <DialogTitle>Adjust Tuition</DialogTitle>
+                    <DialogDescription>
+                        Update the fees for the current semester. The student will be notified in-app and by email.
+                    </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
@@ -758,12 +785,50 @@ export function UpdateTuitionDialog({ open, onOpenChange, student }: DialogProps
                             {errors.discount && <span className="text-destructive text-xs">{errors.discount}</span>}
                         </div>
                     </div>
+                    <div className="space-y-2">
+                        <Label>Adjustment Note (optional)</Label>
+                        <Textarea
+                            value={data.adjustment_note}
+                            onChange={(event) => setData("adjustment_note", event.target.value)}
+                            placeholder="e.g. Corrected laboratory fees for CHM 101"
+                            rows={2}
+                        />
+                        {errors.adjustment_note && <span className="text-destructive text-xs">{errors.adjustment_note}</span>}
+                    </div>
+
+                    <div className="bg-muted/50 space-y-2 rounded-md border p-4">
+                        <p className="text-xs font-semibold tracking-wider uppercase">Assessment Preview</p>
+                        <div className="space-y-1 text-sm">
+                            <div className="flex items-center justify-between">
+                                <span className="text-muted-foreground">Total Tuition (Lecture + Lab)</span>
+                                <span className="font-medium">
+                                    {student.tuition?.total_tuition ? `${student.tuition.total_tuition} → ` : ""}
+                                    {formatAmount(totalTuition)}
+                                </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <span className="text-muted-foreground">Overall Tuition (after discount)</span>
+                                <span className="font-medium">
+                                    {student.tuition?.overall_tuition ? `${student.tuition.overall_tuition} → ` : ""}
+                                    {formatAmount(overallTuition)}
+                                </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <span className="text-muted-foreground">Balance Due</span>
+                                <span className="font-medium">
+                                    {student.tuition?.total_balance ? `${student.tuition.total_balance} → ` : ""}
+                                    {formatAmount(balanceDue)}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
                     <DialogFooter>
                         <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                             Cancel
                         </Button>
                         <Button type="submit" disabled={processing}>
-                            Save Tuition
+                            Save Tuition Adjustment
                         </Button>
                     </DialogFooter>
                 </form>

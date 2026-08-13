@@ -11,6 +11,7 @@ it('has expected values', function (SchoolLevel $level, string $expectedValue): 
     [SchoolLevel::JuniorHigh, 'junior_high'],
     [SchoolLevel::SeniorHigh, 'senior_high'],
     [SchoolLevel::Elementary, 'elementary'],
+    [SchoolLevel::TechnicalVocational, 'technical_vocational'],
 ]);
 
 it('returns select options', function (): void {
@@ -19,5 +20,6 @@ it('returns select options', function (): void {
         'junior_high' => 'Middle School / Junior High School',
         'senior_high' => 'Senior High School',
         'elementary' => 'Elementary / Grade School',
+        'technical_vocational' => 'TESDA / Technical-Vocational Institute',
     ]);
 });

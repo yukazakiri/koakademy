@@ -59,6 +59,17 @@ export function DataTable<TData, TValue>({
     const [rowSelection, setRowSelection] = React.useState({});
     const [internalLoading, setInternalLoading] = React.useState(false);
 
+    // Client-side pagination state (used when no routeName is provided).
+    const [clientPagination, setClientPagination] = React.useState<{
+        pageIndex: number;
+        pageSize: number;
+    }>(() => {
+        const raw = (filters as Record<string, unknown>)?.per_page;
+        const size = [10, 20, 30, 40, 50].includes(Number(raw)) ? Number(raw) : 10;
+
+        return { pageIndex: 0, pageSize: size };
+    });
+
     const showLoading = isLoading || internalLoading;
 
     const visitTable = React.useCallback(
@@ -89,6 +100,14 @@ export function DataTable<TData, TValue>({
             setSorting([{ id: sort, desc: direction === "desc" }]);
         }
     }, [isServerSide]);
+
+    // Resolve the effective pagination state for both server and client modes.
+    const resolvedPagination = isServerSide
+        ? {
+              pageIndex: pagination ? pagination.current_page - 1 : 0,
+              pageSize: pagination ? pagination.per_page : 10,
+          }
+        : clientPagination;
 
     const table = useReactTable({
         data,
@@ -133,18 +152,13 @@ export function DataTable<TData, TValue>({
                       });
                   }
               }
-            : undefined,
+            : setClientPagination,
         state: {
             sorting,
             columnFilters,
             columnVisibility,
             rowSelection,
-            ...(isServerSide && {
-                pagination: {
-                    pageIndex: pagination ? pagination.current_page - 1 : 0,
-                    pageSize: pagination ? pagination.per_page : 10,
-                },
-            }),
+            pagination: resolvedPagination,
         },
     });
 

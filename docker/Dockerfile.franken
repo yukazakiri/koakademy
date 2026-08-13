@@ -26,6 +26,18 @@ RUN mkdir -p \
     storage/framework/testing \
     storage/logs \
     bootstrap/cache
+
+# Horizon is not a project dependency (see composer.json) but is required by the
+# production image. Install it here so it is baked into the container at build
+# time while keeping the source repository's dependencies free of Horizon.
+RUN composer require laravel/horizon:^5.0 \
+    --update-no-dev \
+    --no-scripts \
+    --no-interaction \
+    --no-ansi \
+    --no-progress \
+    --ignore-platform-reqs
+
 RUN composer dump-autoload --optimize --classmap-authoritative --no-dev --no-scripts
 
 # -----------------------------------------------------------------------------

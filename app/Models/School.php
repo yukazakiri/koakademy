@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\CurriculumFramework;
 use App\Enums\SchoolLevel;
 use Database\Factories\SchoolFactory;
 use Illuminate\Database\Eloquent\Builder;
@@ -20,6 +21,8 @@ use Override;
  * @property string $name
  * @property string $code
  * @property SchoolLevel|null $school_level
+ * @property string|null $curriculum_framework
+ * @property string|null $curriculum_reference
  * @property string|null $description
  * @property string|null $dean_name
  * @property string|null $dean_email
@@ -72,6 +75,8 @@ final class School extends Model
         'name',
         'code',
         'school_level',
+        'curriculum_framework',
+        'curriculum_reference',
         'description',
         'dean_name',
         'dean_email',
@@ -273,6 +278,7 @@ final class School extends Model
     {
         return [
             'school_level' => SchoolLevel::class,
+            'curriculum_framework' => CurriculumFramework::class,
             'is_active' => 'boolean',
             'metadata' => 'array',
             'created_at' => 'datetime',

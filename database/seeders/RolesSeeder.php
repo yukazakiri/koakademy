@@ -370,7 +370,7 @@ final class RolesSeeder extends Seeder
     {
         return $this->filterPermissions($all, [
             'Student',
-            'ViewTuitionFees', 'ManageTuitionFees',
+            'view_tuition_fees', 'manage_tuition_fees',
             'ProcessPayments', 'ViewPayments',
             'View:Announcement', 'View:Event',
             'ViewDashboard',
@@ -381,7 +381,7 @@ final class RolesSeeder extends Seeder
     {
         return $this->filterPermissions($all, [
             'Student',
-            'ViewTuitionFees', 'ManageTuitionFees',
+            'view_tuition_fees', 'manage_tuition_fees',
             'ViewPayments', 'ProcessPayments',
             'View:Announcement', 'View:Event',
             'ViewDashboard', 'GenerateReports',
@@ -392,7 +392,7 @@ final class RolesSeeder extends Seeder
     {
         return $this->filterPermissions($all, [
             'Student',
-            'ViewTuitionFees', 'ManageTuitionFees',
+            'view_tuition_fees', 'manage_tuition_fees',
             'ProcessPayments', 'ViewPayments',
             'View:Announcement', 'View:Event',
             'ViewDashboard', 'GenerateReports', 'ExportData',

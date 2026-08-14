@@ -31,6 +31,7 @@ import {
     IconHelp,
     IconHistory,
     IconMedicalCross,
+    IconReceipt,
     IconReportAnalytics,
     IconSchool,
     IconServer,
@@ -468,6 +469,15 @@ export const ADMIN_ROUTES: AdminRoute[] = [
         section: "finance",
         requiredPermission: "View:Cashier",
         allowedRoles: [...SYSTEM_ADMIN_ROLES, ...FINANCE_ROLES, UserRole.Cashier],
+    },
+    {
+        id: "admin-tuition-adjustments",
+        title: "Tuition Adjustments",
+        icon: <IconReceipt className="size-4" />,
+        link: "/administrators/finance/tuition-adjustments",
+        section: "finance",
+        requiredPermission: "view_tuition_fees",
+        allowedRoles: [...SYSTEM_ADMIN_ROLES, ...FINANCE_ROLES],
     },
     {
         id: "admin-financial-reports",

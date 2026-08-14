@@ -34,7 +34,6 @@ use App\Models\Subject;
 use App\Models\SubjectEnrollment;
 use App\Models\User;
 use App\Notifications\StatementOfAccountAdjustedNotification;
-use App\Services\EnrollmentBillingService;
 use App\Services\GeneralSettingsService;
 use App\Services\IdentifierGenerator;
 use App\Services\StudentIdUpdateService;
@@ -1822,73 +1821,9 @@ final class AdministratorStudentManagementController extends Controller
 
     public function updateTuition(Request $request, Student $student): RedirectResponse
     {
-        $validated = $request->validate([
-            'total_lectures' => ['required', 'numeric', 'min:0'],
-            'total_laboratory' => ['required', 'numeric', 'min:0'],
-            'total_miscelaneous_fees' => ['required', 'numeric', 'min:0'],
-            'downpayment' => ['required', 'numeric', 'min:0'],
-            'discount' => ['required', 'numeric', 'min:0', 'max:100'],
-            'adjustment_note' => ['nullable', 'string', 'max:500'],
-        ]);
+        abort_unless($request->user()?->can('manage_tuition_fees'), 403);
 
-        $settings = app(GeneralSettingsService::class);
-        $currentSchoolYear = $settings->getCurrentSchoolYearString();
-        $currentSemester = $settings->getCurrentSemester();
-
-        // Resolve the tuition record the same way the Tuition tab does: prefer the
-        // record linked to the current-period enrollment so the admin edits the
-        // same Statement of Account that is displayed on the page.
-        $enrollment = StudentEnrollment::withTrashed()
-            ->where('student_id', (string) $student->id)
-            ->where('school_year', $currentSchoolYear)
-            ->where('semester', $currentSemester)
-            ->first();
-
-        $tuition = $enrollment?->studentTuition()->withTrashed()->first() ?? $student->getOrCreateCurrentTuition();
-
-        if ($tuition->enrollment_id === null && $enrollment instanceof StudentEnrollment) {
-            $tuition->enrollment_id = $enrollment->id;
-            $tuition->save();
-        }
-
-        $before = $this->tuitionAdjustmentSnapshot($tuition);
-
-        $totalTuition = (float) $validated['total_lectures'] + (float) $validated['total_laboratory'];
-        $overallTuition = $totalTuition + (float) $validated['total_miscelaneous_fees'];
-
-        $discountAmount = $overallTuition * ((float) $validated['discount'] / 100);
-        $overallTuitionAfterDiscount = $overallTuition - $discountAmount;
-
-        DB::transaction(function () use ($request, $tuition, $validated, $totalTuition, $overallTuitionAfterDiscount, $enrollment): void {
-            $tuition->forceFill([
-                'total_lectures' => (float) $validated['total_lectures'],
-                'total_laboratory' => (float) $validated['total_laboratory'],
-                'total_miscelaneous_fees' => (float) $validated['total_miscelaneous_fees'],
-                'total_tuition' => $totalTuition,
-                'overall_tuition' => $overallTuitionAfterDiscount,
-                'downpayment' => (float) $validated['downpayment'],
-                'discount' => (float) $validated['discount'],
-                'adjustment_note' => $validated['adjustment_note'] ?? null,
-                'adjusted_by_user_id' => $request->user()?->id,
-                'adjusted_at' => now(),
-            ])->save();
-
-            // Recalculate the balance and status from actual payments.
-            app(EnrollmentBillingService::class)->syncTuitionBalance($tuition, (float) $validated['downpayment']);
-
-            // Keep the enrollment-side tuition total in sync with the adjusted fees.
-            if ($enrollment instanceof StudentEnrollment) {
-                $enrollment->forceFill([
-                    'downpayment' => (float) $validated['downpayment'],
-                ])->save();
-            }
-        });
-
-        $after = $this->tuitionAdjustmentSnapshot($tuition->refresh());
-
-        $this->notifyStatementOfAccountAdjustment($student, $tuition, $before, $after, $request->user());
-
-        return back()->with('success', 'Tuition updated successfully. The student has been notified of the Statement of Account adjustment.');
+        return redirect()->route('administrators.finance.tuition-adjustments.index', ['student' => $student->id]);
     }
 
     public function updateSignature(Request $request, Student $student): RedirectResponse

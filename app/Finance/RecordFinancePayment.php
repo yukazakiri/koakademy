@@ -253,8 +253,13 @@ final readonly class RecordFinancePayment
                 continue;
             }
 
-            $tuition->paid = round((float) $tuition->paid + $amount, 2);
-            $tuition->save();
+            // Adjusted accounts keep the audited opening paid amount immutable.
+            // Newly verified cashier payments are added by EnrollmentBillingService
+            // from the stored verified-payment baseline.
+            if ($tuition->paid_transaction_baseline === null) {
+                $tuition->paid = round((float) $tuition->paid + $amount, 2);
+                $tuition->save();
+            }
             $this->billing->syncTuitionBalance($tuition);
         }
 

@@ -10,6 +10,7 @@ import {
     Bell,
     Building2,
     Calculator,
+    CalendarClock,
     Check,
     FileBadge2,
     Globe,
@@ -124,6 +125,15 @@ export const systemSettingsItems: SystemSettingsItem[] = [
         href: "/administrators/system-management/finance-documents",
         keywords: ["finance", "receipt", "invoice", "billing", "document"],
         icon: FileBadge2,
+    },
+    {
+        key: "tuition_payment_schedule",
+        group: "academic_operations",
+        label: "Tuition Payment Schedule",
+        description: "Configure installment percentages, rounding, and remainder rules by student type.",
+        href: "/administrators/system-management/tuition-payment-schedule",
+        keywords: ["tuition", "installments", "prelim", "midterm", "finals", "rounding"],
+        icon: CalendarClock,
     },
     {
         key: "brand",

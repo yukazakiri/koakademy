@@ -15,7 +15,7 @@ final class EnrollmentBillingService
     public function toSummaryArray(StudentTuition $tuition, float $additionalFeesTotal = 0.0): array
     {
         $totalPaid = $this->totalPaid($tuition);
-        $balanceDue = $this->balanceDue($tuition, $totalPaid);
+        $position = $this->accountPosition($tuition, $totalPaid);
 
         return [
             'id' => $tuition->id,
@@ -28,8 +28,8 @@ final class EnrollmentBillingService
             'downpayment' => (float) $tuition->downpayment,
             'required_downpayment' => (float) $tuition->downpayment,
             'overall_tuition' => (float) $tuition->overall_tuition,
-            'total_balance' => $balanceDue,
-            'balance_due' => $balanceDue,
+            'total_balance' => $position['balance_due'],
+            ...$position,
             'total_paid' => $totalPaid,
             'status' => $this->paymentStatus($tuition, $totalPaid),
         ];
@@ -37,7 +37,23 @@ final class EnrollmentBillingService
 
     public function totalPaid(StudentTuition $tuition): float
     {
-        $manualPaid = (float) ($tuition->getRawOriginal('paid') ?? 0);
+        $openingPaid = (float) ($tuition->getRawOriginal('paid') ?? 0);
+        $verifiedPaid = $this->verifiedPaid($tuition);
+        $verifiedBaseline = $tuition->getRawOriginal('paid_transaction_baseline');
+
+        if ($verifiedBaseline !== null) {
+            return round(
+                max($openingPaid, (float) $verifiedBaseline)
+                + max(0, $verifiedPaid - (float) $verifiedBaseline),
+                2,
+            );
+        }
+
+        return max($openingPaid, $verifiedPaid);
+    }
+
+    public function verifiedPaid(StudentTuition $tuition): float
+    {
         $enrollment = $tuition->relationLoaded('enrollment')
             ? $tuition->enrollment
             : $tuition->enrollment()->first();
@@ -52,26 +68,26 @@ final class EnrollmentBillingService
                     fn (StudentTransaction $link): float => (float) $link->amount,
                 );
 
-                return max($manualPaid, (float) $linkedPaid);
+                return (float) $linkedPaid;
             }
             if ($enrollment->workflow_runtime === StudentEnrollment::WorkflowRuntimePolicyV1) {
-                return $manualPaid;
+                return 0.0;
             }
         }
 
         $student = $this->resolveStudent($tuition);
         if (! $student instanceof Student) {
-            return $manualPaid;
+            return 0.0;
         }
 
         $schoolYear = $this->normalizeSchoolYear($tuition->school_year);
         if ($schoolYear === null) {
-            return $manualPaid;
+            return 0.0;
         }
 
         $semester = (int) $tuition->semester;
         if (! in_array($semester, [1, 2], true)) {
-            return $manualPaid;
+            return 0.0;
         }
 
         $transactionPaid = (float) $student->Transaction()
@@ -80,14 +96,29 @@ final class EnrollmentBillingService
             ->get()
             ->sum(fn (Transaction $transaction): float => $this->tuitionPaymentFromSettlements($transaction));
 
-        return max($manualPaid, $transactionPaid);
+        return $transactionPaid;
+    }
+
+    public function signedBalance(StudentTuition $tuition, ?float $totalPaid = null): float
+    {
+        return round((float) $tuition->overall_tuition - ($totalPaid ?? $this->totalPaid($tuition)), 2);
+    }
+
+    /** @return array{signed_balance: float, balance_due: float, credit: float} */
+    public function accountPosition(StudentTuition $tuition, ?float $totalPaid = null): array
+    {
+        $signed = $this->signedBalance($tuition, $totalPaid);
+
+        return [
+            'signed_balance' => $signed,
+            'balance_due' => max(0, $signed),
+            'credit' => max(0, -$signed),
+        ];
     }
 
     public function balanceDue(StudentTuition $tuition, ?float $totalPaid = null): float
     {
-        $paid = $totalPaid ?? $this->totalPaid($tuition);
-
-        return max(0.0, (float) $tuition->overall_tuition - $paid);
+        return $this->accountPosition($tuition, $totalPaid)['balance_due'];
     }
 
     public function paymentStatus(StudentTuition $tuition, ?float $totalPaid = null): string

@@ -1,4 +1,5 @@
 import { reviewRequirement, transition as transitionEnrollment } from "@/actions/App/Http/Controllers/AdministratorEnrollmentPolicyController";
+import { index as tuitionAdjustments } from "@/actions/App/Http/Controllers/AdministratorTuitionAdjustmentController";
 import AdminLayout from "@/components/administrators/admin-layout";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -80,7 +81,7 @@ interface EnrollmentData {
     school_year: string;
     semester: number;
     academic_year: number;
-    signature: any;
+    signature: unknown;
     student: {
         id: number;
         full_name: string;
@@ -215,6 +216,7 @@ interface PageProps {
         can_verify_head: boolean;
         can_verify_cashier: boolean;
         is_super_admin: boolean;
+        can_manage_tuition: boolean;
         can_advance_pipeline: boolean;
         can_review_requirements: boolean;
     };
@@ -1041,8 +1043,18 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                                             <div className="space-y-2">
                                                 <div className="mb-2 flex items-center justify-between">
                                                     <h4 className="text-sm font-semibold">Breakdown</h4>
-                                                    {auth.is_super_admin && (
-                                                        <EditTuitionDialog enrollmentId={enrollment.id} tuition={enrollment.tuition} />
+                                                    {auth.can_manage_tuition && (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="text-muted-foreground hover:text-foreground h-6 w-6"
+                                                            aria-label="Open tuition adjustment workspace"
+                                                            onClick={() =>
+                                                                router.visit(tuitionAdjustments.url({ query: { enrollment: enrollment.id } }))
+                                                            }
+                                                        >
+                                                            <Pencil className="h-3 w-3" />
+                                                        </Button>
                                                     )}
                                                 </div>
                                                 <div className="flex justify-between text-sm">
@@ -1336,120 +1348,8 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
 
 // --- Subcomponents ---
 
-function EditTuitionDialog({ enrollmentId, tuition }: { enrollmentId: number; tuition: any }) {
-    const { data, setData, patch, processing, errors, reset } = useForm({
-        total_lectures: tuition?.total_lectures || 0,
-        total_laboratory: tuition?.total_laboratory || 0,
-        total_miscelaneous_fees: tuition?.total_miscelaneous_fees || 0,
-        discount: tuition?.discount || 0,
-        paid: tuition?.total_paid || 0,
-    });
-    const [open, setOpen] = useState(false);
-
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        // @ts-ignore
-        patch(route("administrators.enrollments.tuition.update", enrollmentId), {
-            onSuccess: () => {
-                setOpen(false);
-                toast.success("Tuition updated");
-            },
-            onError: () => toast.error("Failed to update tuition"),
-        });
-    };
-
-    return (
-        <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground h-6 w-6">
-                    <Pencil className="h-3 w-3" />
-                </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px]">
-                <DialogHeader>
-                    <DialogTitle>Edit Tuition Details</DialogTitle>
-                    <DialogDescription>Modify tuition fees, discounts, and total paid amount.</DialogDescription>
-                </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-4 py-4">
-                    <div className="grid gap-2">
-                        <Label htmlFor="lectures">Tuition Fee (Lectures)</Label>
-                        <Input
-                            id="lectures"
-                            type="number"
-                            step="0.01"
-                            value={data.total_lectures}
-                            onChange={(e) => setData("total_lectures", parseFloat(e.target.value))}
-                            required
-                        />
-                        {errors.total_lectures && <p className="text-xs text-red-500">{errors.total_lectures}</p>}
-                    </div>
-                    <div className="grid gap-2">
-                        <Label htmlFor="laboratory">Laboratory Fee</Label>
-                        <Input
-                            id="laboratory"
-                            type="number"
-                            step="0.01"
-                            value={data.total_laboratory}
-                            onChange={(e) => setData("total_laboratory", parseFloat(e.target.value))}
-                            required
-                        />
-                        {errors.total_laboratory && <p className="text-xs text-red-500">{errors.total_laboratory}</p>}
-                    </div>
-                    <div className="grid gap-2">
-                        <Label htmlFor="misc">Miscellaneous Fee</Label>
-                        <Input
-                            id="misc"
-                            type="number"
-                            step="0.01"
-                            value={data.total_miscelaneous_fees}
-                            onChange={(e) => setData("total_miscelaneous_fees", parseFloat(e.target.value))}
-                            required
-                        />
-                        {errors.total_miscelaneous_fees && <p className="text-xs text-red-500">{errors.total_miscelaneous_fees}</p>}
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="grid gap-2">
-                            <Label htmlFor="discount">Discount (%)</Label>
-                            <Input
-                                id="discount"
-                                type="number"
-                                min="0"
-                                max="100"
-                                value={data.discount}
-                                onChange={(e) => setData("discount", parseInt(e.target.value))}
-                                required
-                            />
-                            {errors.discount && <p className="text-xs text-red-500">{errors.discount}</p>}
-                        </div>
-                        <div className="grid gap-2">
-                            <Label htmlFor="paid">Total Paid Override</Label>
-                            <Input
-                                id="paid"
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                value={data.paid}
-                                onChange={(e) => setData("paid", parseFloat(e.target.value))}
-                            />
-                            {errors.paid && <p className="text-xs text-red-500">{errors.paid}</p>}
-                        </div>
-                    </div>
-                    <DialogFooter>
-                        <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
-                            Cancel
-                        </Button>
-                        <Button type="submit" disabled={processing}>
-                            Save Changes
-                        </Button>
-                    </DialogFooter>
-                </form>
-            </DialogContent>
-        </Dialog>
-    );
-}
-
-function EditTransactionDialog({ enrollmentId, transaction }: { enrollmentId: number; transaction: any }) {
-    const { data, setData, patch, processing, errors, reset } = useForm({
+function EditTransactionDialog({ enrollmentId, transaction }: { enrollmentId: number; transaction: EnrollmentData["transactions"][number] }) {
+    const { data, setData, patch, processing, errors } = useForm({
         amount: transaction.amount || transaction.total_amount || 0,
         invoicenumber: transaction.invoicenumber || "",
     });
@@ -1457,7 +1357,6 @@ function EditTransactionDialog({ enrollmentId, transaction }: { enrollmentId: nu
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        // @ts-ignore
         patch(route("administrators.enrollments.transactions.update", [enrollmentId, transaction.id]), {
             onSuccess: () => {
                 setOpen(false);
@@ -1534,7 +1433,7 @@ function VerifyCashierDialog({
     allowedPaymentMethods = [],
 }: {
     enrollmentId: number;
-    tuition: any;
+    tuition: EnrollmentData["tuition"];
     additionalFees: EnrollmentData["additional_fees"];
     label?: string;
     requiresReason?: boolean;

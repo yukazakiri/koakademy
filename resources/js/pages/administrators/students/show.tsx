@@ -1,3 +1,4 @@
+import { index as tuitionAdjustments } from "@/actions/App/Http/Controllers/AdministratorTuitionAdjustmentController";
 import AdminLayout from "@/components/administrators/admin-layout";
 import {
     AlertDialog,
@@ -11,7 +12,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
-import { Head, Link, router, useForm, usePage } from "@inertiajs/react";
+import { Head, Link, router, useForm } from "@inertiajs/react";
 import { FileText, Trash2 } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -34,11 +35,10 @@ import {
     UndoIdDialog,
     UpdateIdDialog,
     UpdateStatusDialog,
-    UpdateTuitionDialog,
 } from "./components/student-action-dialogs";
-import type { Branding, PrintOption, StudentShowProps, SubjectEnrollmentFormData } from "./types";
+import type { PrintOption, StudentShowProps, SubjectEnrollmentFormData } from "./types";
 
-declare let route: any;
+declare const route: (name: string, params?: Record<string, unknown> | string | number | Array<string | number>) => string;
 
 function classificationBadgeVariant(classification: string | null | undefined): "info-light" | "success-light" | "warning-light" {
     if (classification === "credited") {
@@ -53,10 +53,6 @@ function classificationBadgeVariant(classification: string | null | undefined): 
 }
 
 export default function AdministratorStudentShow({ user, student, options }: StudentShowProps) {
-    const { props } = usePage<{ branding?: Branding }>();
-    const currency = props.branding?.currency || "PHP";
-    const zeroString = currency === "USD" ? "$ 0.00" : "₱ 0.00";
-
     const [hoveredSubject, setHoveredSubject] = useState<string | null>(null);
     const [selectedSubject, setSelectedSubject] = useState<ChecklistSubject | null>(null);
     const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<number | "new" | null>(null);
@@ -264,7 +260,6 @@ export default function AdministratorStudentShow({ user, student, options }: Stu
             {actionDialog === "retryEnrollment" && (
                 <RetryEnrollmentDialog open={true} onOpenChange={() => setActionDialog(null)} student={student} options={options} />
             )}
-            {actionDialog === "updateTuition" && <UpdateTuitionDialog open={true} onOpenChange={() => setActionDialog(null)} student={student} />}
             {actionDialog === "clearance" && <ManageClearanceDialog open={true} onOpenChange={() => setActionDialog(null)} student={student} />}
 
             <StudentDeleteDialogs student={student} action={studentDeleteAction} onClose={() => setStudentDeleteAction(null)} />
@@ -322,7 +317,11 @@ export default function AdministratorStudentShow({ user, student, options }: Stu
                     <div className="space-y-6 md:col-span-3">
                         <StudentDetailsCard student={student} />
 
-                        <StudentTabs student={student} options={options} onAdjustTuition={() => setActionDialog("updateTuition")} />
+                        <StudentTabs
+                            student={student}
+                            options={options}
+                            onAdjustTuition={() => router.visit(tuitionAdjustments.url({ query: { student: student.id } }))}
+                        />
 
                         <AcademicScheduleDashboard
                             student={student}

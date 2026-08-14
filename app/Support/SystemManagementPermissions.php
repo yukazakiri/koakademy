@@ -56,6 +56,10 @@ final class SystemManagementPermissions
                 'view' => 'View:SystemManagementFinanceDocuments',
                 'update' => 'Update:SystemManagementFinanceDocuments',
             ],
+            'tuition_payment_schedule' => [
+                'view' => 'View:SystemManagementTuitionPaymentSchedule',
+                'update' => 'Update:SystemManagementTuitionPaymentSchedule',
+            ],
             'grading' => [
                 'view' => 'View:SystemManagementGrading',
                 'update' => 'Update:SystemManagementGrading',

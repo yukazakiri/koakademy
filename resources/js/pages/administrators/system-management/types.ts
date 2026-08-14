@@ -13,6 +13,7 @@ export type SystemManagementSectionKey =
     | "api"
     | "notifications"
     | "finance_documents"
+    | "tuition_payment_schedule"
     | "grading"
     | "identifiers"
     | "pulse";
@@ -149,6 +150,19 @@ export interface FinanceDocumentSettings {
     require_paper_or_reference: boolean;
     manual_invoices_enabled: boolean;
     mail_delivery_available: boolean;
+}
+
+export interface TuitionPaymentScheduleProfile {
+    enabled: boolean;
+    percentages: { prelim: number; midterm: number; finals: number };
+    rounding_increment: number;
+    rounding_mode: "nearest" | "down" | "up";
+    rounded_terms: Array<"prelim" | "midterm" | "finals">;
+    remainder_term: "prelim" | "midterm" | "finals";
+}
+
+export interface TuitionPaymentScheduleSettings {
+    profiles: Record<"college" | "shs" | "tesda" | "dhrt", TuitionPaymentScheduleProfile>;
 }
 
 export type EnrollmentPipelineActionType = "standard" | "department_verification" | "cashier_verification";
@@ -373,6 +387,7 @@ export interface SystemManagementPageProps {
     available_roles: string[];
     notification_channels: NotificationChannelConfig;
     finance_document_settings: FinanceDocumentSettings;
+    tuition_payment_schedule_settings: TuitionPaymentScheduleSettings;
     third_party_services: ThirdPartyServicesConfig;
     access: SystemManagementAccess;
     system_semester?: number | null;

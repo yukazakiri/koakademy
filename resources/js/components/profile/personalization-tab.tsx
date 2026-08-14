@@ -7,7 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { themes, type ColorTheme } from "@/conf/themes";
 import { useTheme } from "@/hooks/use-theme";
 import { useForm } from "@inertiajs/react";
-import { Check, Grid2X2, Laptop, LayoutGrid, Monitor, Moon, Paintbrush, ReceiptText, Save, Sun } from "lucide-react";
+import { Check, Columns3, Grid2X2, Laptop, LayoutList, Monitor, Moon, Paintbrush, ReceiptText, Save, Sun } from "lucide-react";
 import { useEffect } from "react";
 import { toast } from "sonner";
 
@@ -28,6 +28,9 @@ type PersonalizationTabProps = {
     paymentWorkspace?: PaymentWorkspacePreference | null;
     paymentWorkspaceUrl?: string | null;
     paymentMethods?: PaymentMethodOption[];
+    canConfigureTuitionAdjustmentWorkspace?: boolean;
+    tuitionAdjustmentWorkspace?: { layout: "inspector" | "staged" } | null;
+    tuitionAdjustmentWorkspaceUrl?: string | null;
 };
 
 const fallbackPaymentWorkspace: PaymentWorkspacePreference = {
@@ -42,13 +45,21 @@ export function PersonalizationTab({
     paymentWorkspace,
     paymentWorkspaceUrl,
     paymentMethods = [],
+    canConfigureTuitionAdjustmentWorkspace = false,
+    tuitionAdjustmentWorkspace,
+    tuitionAdjustmentWorkspaceUrl,
 }: PersonalizationTabProps) {
     const { theme, setThemeWithViewTransition, colorTheme, setColorTheme } = useTheme();
     const workspaceForm = useForm<PaymentWorkspacePreference>(paymentWorkspace ?? fallbackPaymentWorkspace);
+    const tuitionWorkspaceForm = useForm<{ layout: "inspector" | "staged" }>(tuitionAdjustmentWorkspace ?? { layout: "inspector" });
 
     useEffect(() => {
         workspaceForm.setData(paymentWorkspace ?? fallbackPaymentWorkspace);
     }, [paymentWorkspace]);
+
+    useEffect(() => {
+        tuitionWorkspaceForm.setData(tuitionAdjustmentWorkspace ?? { layout: "inspector" });
+    }, [tuitionAdjustmentWorkspace]);
 
     const savePaymentWorkspace = () => {
         if (!paymentWorkspaceUrl) return;
@@ -71,11 +82,13 @@ export function PersonalizationTab({
                 </CardHeader>
                 <CardContent>
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                        {([
-                            { value: "light", label: "Light", icon: Sun },
-                            { value: "dark", label: "Dark", icon: Moon },
-                            { value: "system", label: "System", icon: Laptop },
-                        ] as const).map((mode) => (
+                        {(
+                            [
+                                { value: "light", label: "Light", icon: Sun },
+                                { value: "dark", label: "Dark", icon: Moon },
+                                { value: "system", label: "System", icon: Laptop },
+                            ] as const
+                        ).map((mode) => (
                             <button
                                 key={mode.value}
                                 type="button"
@@ -140,7 +153,9 @@ export function PersonalizationTab({
                                                 : "border-muted hover:border-primary/50 hover:bg-muted/50"
                                         }`}
                                     >
-                                        <workspace.icon className={`mt-0.5 h-5 w-5 ${workspaceForm.data.layout === workspace.value ? "text-primary" : "text-muted-foreground"}`} />
+                                        <workspace.icon
+                                            className={`mt-0.5 h-5 w-5 ${workspaceForm.data.layout === workspace.value ? "text-primary" : "text-muted-foreground"}`}
+                                        />
                                         <span className="space-y-1">
                                             <span className="block font-medium">{workspace.title}</span>
                                             <span className="text-muted-foreground block text-sm leading-5">{workspace.description}</span>
@@ -154,7 +169,10 @@ export function PersonalizationTab({
                         <div className="grid gap-5 md:grid-cols-3">
                             <div className="space-y-2">
                                 <Label htmlFor="payment-workspace-density">Workspace density</Label>
-                                <Select value={workspaceForm.data.density} onValueChange={(value) => workspaceForm.setData("density", value as PaymentWorkspacePreference["density"])}>
+                                <Select
+                                    value={workspaceForm.data.density}
+                                    onValueChange={(value) => workspaceForm.setData("density", value as PaymentWorkspacePreference["density"])}
+                                >
                                     <SelectTrigger id="payment-workspace-density">
                                         <SelectValue />
                                     </SelectTrigger>
@@ -170,7 +188,9 @@ export function PersonalizationTab({
                                 <Label htmlFor="payment-workspace-history">Payment history</Label>
                                 <Select
                                     value={workspaceForm.data.history_visibility}
-                                    onValueChange={(value) => workspaceForm.setData("history_visibility", value as PaymentWorkspacePreference["history_visibility"])}
+                                    onValueChange={(value) =>
+                                        workspaceForm.setData("history_visibility", value as PaymentWorkspacePreference["history_visibility"])
+                                    }
                                 >
                                     <SelectTrigger id="payment-workspace-history">
                                         <SelectValue />
@@ -186,7 +206,10 @@ export function PersonalizationTab({
 
                             <div className="space-y-2">
                                 <Label htmlFor="payment-workspace-method">Default payment method</Label>
-                                <Select value={workspaceForm.data.default_payment_method} onValueChange={(value) => workspaceForm.setData("default_payment_method", value)}>
+                                <Select
+                                    value={workspaceForm.data.default_payment_method}
+                                    onValueChange={(value) => workspaceForm.setData("default_payment_method", value)}
+                                >
                                     <SelectTrigger id="payment-workspace-method">
                                         <SelectValue placeholder="Choose a method" />
                                     </SelectTrigger>
@@ -206,6 +229,73 @@ export function PersonalizationTab({
                             <Button type="button" onClick={savePaymentWorkspace} disabled={workspaceForm.processing}>
                                 <Save className="mr-2 h-4 w-4" />
                                 Save finance workspace
+                            </Button>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+
+            {canConfigureTuitionAdjustmentWorkspace && tuitionAdjustmentWorkspaceUrl && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <Columns3 className="h-5 w-5" />
+                            Tuition Adjustments Workspace
+                        </CardTitle>
+                        <CardDescription>
+                            Choose the default review layout for your account. You can still switch layouts inside the workspace.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-5">
+                        <div className="grid gap-3 md:grid-cols-2">
+                            {[
+                                {
+                                    value: "inspector" as const,
+                                    title: "Inspector",
+                                    description: "Keep the selected enrollment, fee breakdown, and notification preview beside the ledger.",
+                                    icon: Columns3,
+                                },
+                                {
+                                    value: "staged" as const,
+                                    title: "Staged table",
+                                    description: "Use the full width for large pasted batches and review details only when needed.",
+                                    icon: LayoutList,
+                                },
+                            ].map((workspace) => (
+                                <button
+                                    key={workspace.value}
+                                    type="button"
+                                    onClick={() => tuitionWorkspaceForm.setData("layout", workspace.value)}
+                                    className={`relative flex items-start gap-3 rounded-xl border p-4 text-left transition-colors ${
+                                        tuitionWorkspaceForm.data.layout === workspace.value
+                                            ? "border-primary bg-primary/5 ring-primary/20 ring-1"
+                                            : "border-muted hover:border-primary/50 hover:bg-muted/50"
+                                    }`}
+                                >
+                                    <workspace.icon
+                                        className={`mt-0.5 h-5 w-5 ${tuitionWorkspaceForm.data.layout === workspace.value ? "text-primary" : "text-muted-foreground"}`}
+                                    />
+                                    <span className="space-y-1">
+                                        <span className="block font-medium">{workspace.title}</span>
+                                        <span className="text-muted-foreground block text-sm leading-5">{workspace.description}</span>
+                                    </span>
+                                    {tuitionWorkspaceForm.data.layout === workspace.value && <Check className="text-primary ml-auto h-4 w-4" />}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="flex justify-end border-t pt-4">
+                            <Button
+                                type="button"
+                                disabled={tuitionWorkspaceForm.processing}
+                                onClick={() =>
+                                    tuitionWorkspaceForm.put(tuitionAdjustmentWorkspaceUrl, {
+                                        preserveScroll: true,
+                                        onSuccess: () => toast.success("Tuition adjustment workspace preference saved."),
+                                    })
+                                }
+                            >
+                                <Save className="mr-2 h-4 w-4" />
+                                Save tuition layout
                             </Button>
                         </div>
                     </CardContent>

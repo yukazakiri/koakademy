@@ -53,6 +53,7 @@
         "laravel/telescope": "^5.12",
         "laravel/tinker": "^3.0",
         "laravel/wayfinder": "^0.1.12",
+        "league/flysystem-aws-s3-v3": "^3.35",
         "maatwebsite/excel": "4.x-dev",
         "mansoor/filament-versionable": "5.x-dev",
         "marcelweidum/filament-passkeys": "^4.0.5",

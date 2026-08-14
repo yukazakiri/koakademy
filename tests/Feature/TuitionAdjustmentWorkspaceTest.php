@@ -62,7 +62,7 @@ function tuitionAdjustmentEnrollment(float $total = 14950, float $paid = 0): arr
 
 it('shows the tuition adjustment workspace only with tuition permission', function (): void {
     $authorized = tuitionAdjustmentUser();
-    tuitionAdjustmentEnrollment();
+    ['student' => $student] = tuitionAdjustmentEnrollment();
 
     $this->actingAs($authorized)
         ->get(portalUrlForAdministrators('/administrators/finance/tuition-adjustments?school_year=2026%20-%202027&semester=1'))
@@ -70,6 +70,7 @@ it('shows the tuition adjustment workspace only with tuition permission', functi
         ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
             ->component('administrators/finance/tuition-adjustments')
             ->has('rows', 1)
+            ->where('rows.0.student_number', (string) $student->student_id)
             ->where('rows.0.total_fees', 14950)
             ->where('rows.0.installments.0.amount', 4500)
             ->where('workspace_layout', 'inspector')

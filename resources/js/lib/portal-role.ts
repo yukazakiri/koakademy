@@ -21,8 +21,8 @@ export const FACULTY_PORTAL_ROLES = ["professor", "associate_professor", "assist
 
 export const STUDENT_PORTAL_ROLES = ["student", "graduate_student", "shs_student"] as const;
 
-export function normalizePortalRole(role?: string | null): string {
-    return role?.toLowerCase() ?? "";
+export function normalizePortalRole(role?: unknown): string {
+    return String(role ?? "").toLowerCase();
 }
 
 export function isAdministratorPortalRole(role?: string | null): boolean {

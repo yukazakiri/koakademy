@@ -31,6 +31,21 @@ final class AuthServiceProvider extends ServiceProvider
     {
         $this->registerPolicies();
 
+        Gate::before(function (User $user): ?bool {
+            if (in_array($user->role, [UserRole::SuperAdmin, UserRole::Developer], true)) {
+                return true;
+            }
+
+            $superAdminRoleName = (string) config(
+                'filament-shield.super_admin.name',
+                UserRole::SuperAdmin->value,
+            );
+
+            return $user->hasAnyRole([$superAdminRoleName, UserRole::Developer->value])
+                ? true
+                : null;
+        });
+
         // Define gates for account management
         Gate::define('view-any-accounts', fn ($user) => $user->is_admin ?? false);
         Gate::define('view-accounts', fn ($user) => $user->is_admin ?? false);

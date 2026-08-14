@@ -81,6 +81,19 @@ it('shows the tuition adjustment workspace only with tuition permission', functi
         ->assertForbidden();
 });
 
+it('allows an enum-only super admin to use the tuition adjustment workspace', function (): void {
+    $superAdmin = User::factory()->create(['role' => UserRole::SuperAdmin]);
+    tuitionAdjustmentEnrollment();
+
+    $this->actingAs($superAdmin)
+        ->get(portalUrlForAdministrators('/administrators/finance/tuition-adjustments?school_year=2026%20-%202027&semester=1'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->component('administrators/finance/tuition-adjustments')
+            ->has('rows', 1)
+        );
+});
+
 it('records a reconciled adjustment, installments, audit, and student notifications', function (): void {
     Notification::fake();
     $actor = tuitionAdjustmentUser();

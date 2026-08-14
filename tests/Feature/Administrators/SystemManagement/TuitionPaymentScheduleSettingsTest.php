@@ -31,6 +31,27 @@ it('stores validated payment schedule profiles for authorized administrators', f
         ->toMatchArray($profile);
 });
 
+it('allows an enum-only super admin to update payment schedule profiles', function (): void {
+    $user = User::factory()->create(['role' => UserRole::SuperAdmin]);
+    $profile = [
+        'enabled' => true,
+        'percentages' => ['prelim' => 30, 'midterm' => 30, 'finals' => 40],
+        'rounding_increment' => 100,
+        'rounding_mode' => 'nearest',
+        'rounded_terms' => ['prelim', 'midterm'],
+        'remainder_term' => 'finals',
+    ];
+
+    $this->actingAs($user)
+        ->put(portalUrlForAdministrators('/administrators/system-management/tuition-payment-schedule'), [
+            'profiles' => ['college' => $profile],
+        ])
+        ->assertRedirect();
+
+    expect(GeneralSetting::query()->firstOrFail()->more_configs['tuition_payment_schedule']['profiles']['college'])
+        ->toMatchArray($profile);
+});
+
 it('rejects percentages that do not total one hundred', function (): void {
     $user = User::factory()->create(['role' => UserRole::Admin]);
     Permission::findOrCreate('Update:SystemManagementTuitionPaymentSchedule', 'web');

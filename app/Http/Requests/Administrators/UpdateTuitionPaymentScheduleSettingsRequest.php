@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\Administrators;
 
 use App\Enums\StudentType;
+use App\Models\GeneralSetting;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -13,7 +14,7 @@ final class UpdateTuitionPaymentScheduleSettingsRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->can('Update:SystemManagementTuitionPaymentSchedule') ?? false;
+        return $this->user()?->can('updateTuitionPaymentSchedule', GeneralSetting::class) ?? false;
     }
 
     public function rules(): array

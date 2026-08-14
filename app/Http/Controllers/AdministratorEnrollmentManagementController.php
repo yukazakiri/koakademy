@@ -631,6 +631,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                     )
                 ),
                 'is_super_admin' => Auth::user()->hasRole('super_admin'),
+                'can_manage_tuition' => Auth::user()->can('manage_tuition_fees'),
                 'can_advance_pipeline' => $this->enrollmentPipelineService->canUserAdvanceToNextStep(Auth::user(), $enrollment->status),
                 'can_review_requirements' => Auth::user()->can('Update:StudentEnrollment') || Auth::user()->hasRole('super_admin'),
             ],
@@ -1063,53 +1064,11 @@ final class AdministratorEnrollmentManagementController extends Controller
 
     public function updateTuition(Request $request, StudentEnrollment $enrollment): RedirectResponse
     {
-        $validated = $request->validate([
-            'total_lectures' => ['required', 'numeric', 'min:0'],
-            'total_laboratory' => ['required', 'numeric', 'min:0'],
-            'total_miscelaneous_fees' => ['required', 'numeric', 'min:0'],
-            'discount' => ['required', 'integer', 'min:0', 'max:100'],
-            'paid' => ['nullable', 'numeric', 'min:0'],
+        abort_unless($request->user()?->can('manage_tuition_fees'), 403);
+
+        return redirect()->route('administrators.finance.tuition-adjustments.index', [
+            'enrollment' => $enrollment->getKey(),
         ]);
-
-        $tuition = $enrollment->studentTuition;
-
-        if (! $tuition) {
-            return back()->with('flash', ['error' => 'Tuition record not found.']);
-        }
-
-        try {
-            DB::transaction(function () use ($tuition, $validated, $enrollment): void {
-                $lecture = (float) $validated['total_lectures'];
-                $laboratory = (float) $validated['total_laboratory'];
-                $misc = (float) $validated['total_miscelaneous_fees'];
-                $discountPercent = (int) $validated['discount'];
-                $paid = isset($validated['paid']) ? (float) $validated['paid'] : null;
-
-                $tuition->total_lectures = $lecture;
-                $tuition->total_laboratory = $laboratory;
-                $tuition->total_miscelaneous_fees = $misc;
-                $tuition->discount = $discountPercent;
-                $tuition->total_tuition = $lecture + $laboratory;
-
-                if ($paid !== null) {
-                    $tuition->paid = $paid;
-                }
-
-                // Recalculate overall tuition
-                // overall = total_tuition + misc + additional_fees
-                $additionalFees = $enrollment->additionalFees()->sum('amount');
-                $overall = $tuition->total_tuition + $misc + $additionalFees;
-                $tuition->overall_tuition = $overall;
-
-                $tuition->save();
-
-                $this->enrollmentBillingService->syncTuitionBalance($tuition);
-            });
-
-            return back()->with('flash', ['success' => 'Tuition details updated successfully.']);
-        } catch (Exception $e) {
-            return back()->with('flash', ['error' => 'Failed to update tuition: '.$e->getMessage()]);
-        }
     }
 
     /**

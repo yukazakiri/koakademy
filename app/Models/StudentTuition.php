@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Override;
 
@@ -71,10 +72,12 @@ final class StudentTuition extends Model
         'discount_id',
         'downpayment',
         'overall_tuition',
+        'assessment_adjustment',
         'paid',
         'adjustment_note',
         'adjusted_by_user_id',
         'adjusted_at',
+        'paid_transaction_baseline',
     ];
 
     public function student()
@@ -99,6 +102,11 @@ final class StudentTuition extends Model
     public function enrollmentDiscount(): BelongsTo
     {
         return $this->belongsTo(EnrollmentDiscount::class, 'discount_id');
+    }
+
+    public function installments(): HasMany
+    {
+        return $this->hasMany(StudentTuitionInstallment::class, 'student_tuition_id')->orderBy('sequence');
     }
 
     /**
@@ -243,9 +251,11 @@ final class StudentTuition extends Model
             'discount_id' => 'integer',
             'downpayment' => 'float',
             'overall_tuition' => 'float',
+            'assessment_adjustment' => 'float',
             'paid' => 'float',
             'adjusted_by_user_id' => 'integer',
             'adjusted_at' => 'datetime',
+            'paid_transaction_baseline' => 'float',
             'created_at' => 'datetime',
             'updated_at' => 'date',
             'deleted_at' => 'datetime',

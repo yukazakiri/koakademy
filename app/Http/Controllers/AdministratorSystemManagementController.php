@@ -20,6 +20,7 @@ use App\Http\Requests\Administrators\UpdateNewsletterSettingsRequest;
 use App\Http\Requests\Administrators\UpdateSchoolLevelRequest;
 use App\Http\Requests\Administrators\UpdateSchoolRequest;
 use App\Http\Requests\Administrators\UpdateSchoolStatusRequest;
+use App\Http\Requests\Administrators\UpdateTuitionPaymentScheduleSettingsRequest;
 use App\Models\Course;
 use App\Models\EnrollmentPolicy;
 use App\Models\EnrollmentPolicyVersion;
@@ -36,6 +37,7 @@ use App\Services\LogoConversionService;
 use App\Services\Newsletter\NewsletterProviderManager;
 use App\Services\Newsletter\NewsletterSettingsService;
 use App\Services\SocialiteProviderService;
+use App\Services\TuitionPaymentScheduleSettingsService;
 use App\Settings\SiteSettings;
 use App\Support\SystemManagementPermissions;
 use Exception;
@@ -317,6 +319,24 @@ final class AdministratorSystemManagementController extends Controller
         ]));
 
         return Redirect::back()->with('success', 'Finance document settings updated successfully.');
+    }
+
+    public function tuitionPaymentSchedule(): Response
+    {
+        return $this->renderSystemManagementPage(
+            'administrators/system-management/tuition-payment-schedule',
+            'tuition_payment_schedule',
+            'viewTuitionPaymentSchedule',
+        );
+    }
+
+    public function updateTuitionPaymentSchedule(
+        UpdateTuitionPaymentScheduleSettingsRequest $request,
+        TuitionPaymentScheduleSettingsService $settings,
+    ): RedirectResponse {
+        $settings->update($request->validated());
+
+        return Redirect::back()->with('success', 'Tuition payment schedule settings updated successfully.');
     }
 
     public function api(): Response
@@ -1064,6 +1084,7 @@ final class AdministratorSystemManagementController extends Controller
                 ],
             ],
             'finance_document_settings' => app(FinanceDocumentSettingsService::class)->get(),
+            'tuition_payment_schedule_settings' => app(TuitionPaymentScheduleSettingsService::class)->get(),
             'third_party_services' => $settings->more_configs['third_party_services'] ?? $thirdPartyServices,
             'branding' => [
                 'app_name' => $this->siteSettings->app_name,
@@ -1106,6 +1127,7 @@ final class AdministratorSystemManagementController extends Controller
                 'api' => 'updateApi',
                 'notifications' => 'updateNotifications',
                 'finance_documents' => 'updateFinanceDocuments',
+                'tuition_payment_schedule' => 'updateTuitionPaymentSchedule',
                 'grading' => 'updateGrading',
                 'identifiers' => 'updateIdentifiers',
                 default => 'viewAny',
@@ -1123,6 +1145,7 @@ final class AdministratorSystemManagementController extends Controller
                 'api' => 'viewApi',
                 'notifications' => 'viewNotifications',
                 'finance_documents' => 'viewFinanceDocuments',
+                'tuition_payment_schedule' => 'viewTuitionPaymentSchedule',
                 'grading' => 'viewGrading',
                 'identifiers' => 'viewIdentifiers',
                 'pulse' => 'viewPulse',

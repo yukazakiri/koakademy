@@ -1,3 +1,4 @@
+import { index as tuitionAdjustments } from "@/actions/App/Http/Controllers/AdministratorTuitionAdjustmentController";
 import { Button } from "@/components/ui/button";
 import {
     DropdownMenu,
@@ -24,13 +25,13 @@ import {
     Zap,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { StudentDetail } from "../types";
+import type { StudentDetail, StudentOptions } from "../types";
 
 declare const route: (name: string, params?: Record<string, unknown> | string | number) => string;
 
 interface StudentActionMenuProps {
     student: StudentDetail;
-    options: any;
+    options: StudentOptions;
     setActionDialog: (dialog: string | null) => void;
     setDeleteAction?: (action: "softDelete" | "forceDelete" | "restore" | null) => void;
 }
@@ -88,7 +89,7 @@ export function StudentActionMenu({ student, options, setActionDialog, setDelete
                 <DropdownMenuSeparator />
                 <DropdownMenuGroup>
                     <DropdownMenuLabel className="text-muted-foreground px-2 py-1 text-xs font-normal">Financial</DropdownMenuLabel>
-                    <DropdownMenuItem onClick={() => setActionDialog("updateTuition")}>
+                    <DropdownMenuItem onClick={() => router.visit(tuitionAdjustments.url({ query: { student: student.id } }))}>
                         <CreditCard className="mr-2 h-4 w-4" /> Manage Tuition
                     </DropdownMenuItem>
                 </DropdownMenuGroup>

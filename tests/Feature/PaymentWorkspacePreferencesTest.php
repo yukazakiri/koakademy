@@ -103,3 +103,22 @@ it('rejects invalid finance workspace preferences and unauthorized updates', fun
         ])
         ->assertForbidden();
 });
+
+it('stores a per-account tuition adjustment layout without changing payment workspace preferences', function (): void {
+    $cashier = User::factory()->create(['role' => UserRole::Cashier]);
+    Permission::findOrCreate('view_tuition_fees', 'web');
+    $cashier->givePermissionTo('view_tuition_fees');
+    $cashier->forceFill([
+        'preferences' => ['finance' => ['payment_workspace' => ['layout' => 'spreadsheet']]],
+    ])->save();
+
+    $this->actingAs($cashier)
+        ->put(portalUrlForAdministrators('/administrators/settings/tuition-adjustment-workspace'), ['layout' => 'staged'])
+        ->assertRedirect();
+
+    expect($cashier->refresh()->preferences)
+        ->toMatchArray(['finance' => [
+            'payment_workspace' => ['layout' => 'spreadsheet'],
+            'tuition_adjustments' => ['layout' => 'staged'],
+        ]]);
+});

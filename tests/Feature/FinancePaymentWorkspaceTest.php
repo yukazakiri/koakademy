@@ -116,6 +116,30 @@ it('records a cents-accurate tuition payment with enrollment and finance ledger 
         ->and((float) AdminTransaction::query()->where('transaction_id', $transaction->id)->sole()->amount)->toBe(25.75);
 });
 
+it('adds later cashier payments after an audited opening paid baseline', function (): void {
+    $cashier = paymentWorkspaceCashier();
+    $student = Student::factory()->create();
+    ['tuition' => $tuition] = paymentWorkspaceTuition($student, 10000);
+
+    $this->actingAs($cashier)
+        ->post(portalUrlForAdministrators('/administrators/finance/payments'), tuitionPaymentPayload($student, $tuition, 3500))
+        ->assertRedirect();
+
+    $tuition->refresh()->forceFill([
+        'paid' => 5000,
+        'paid_transaction_baseline' => 3500,
+    ])->save();
+
+    $this->actingAs($cashier)
+        ->post(portalUrlForAdministrators('/administrators/finance/payments'), tuitionPaymentPayload($student, $tuition, 500))
+        ->assertRedirect();
+
+    $tuition->refresh();
+    expect((float) $tuition->getRawOriginal('paid'))->toBe(5000.0)
+        ->and(app(App\Services\EnrollmentBillingService::class)->totalPaid($tuition))->toBe(5500.0)
+        ->and((float) $tuition->total_balance)->toBe(4500.0);
+});
+
 it('forbids finance ledger endpoints for administrative users without cashier permission', function (): void {
     $administrator = User::factory()->create(['role' => UserRole::Admin]);
 

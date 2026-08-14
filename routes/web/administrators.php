@@ -16,6 +16,7 @@ use App\Http\Controllers\AdministratorRolesController;
 use App\Http\Controllers\AdministratorSchedulingAnalyticsController;
 use App\Http\Controllers\AdministratorStudentDocumentController;
 use App\Http\Controllers\AdministratorStudentManagementController;
+use App\Http\Controllers\AdministratorTuitionAdjustmentController;
 use App\Http\Controllers\AdministratorUserManagementController;
 use App\Http\Controllers\ApiKeyController;
 use App\Http\Controllers\UserSettingController;
@@ -190,6 +191,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::put('/settings/semester', [UserSettingController::class, 'updateSemester'])->name('settings.semester.update');
         Route::put('/settings/school-year', [UserSettingController::class, 'updateSchoolYear'])->name('settings.school-year.update');
         Route::put('/settings/active-school', [UserSettingController::class, 'updateActiveSchool'])->name('settings.active-school.update');
+        Route::put('/settings/tuition-adjustment-workspace', [App\Http\Controllers\ProfileController::class, 'updateTuitionAdjustmentWorkspace'])->name('settings.tuition-adjustment-workspace.update');
 
         // Finance and Billing
         Route::get('/finance', [AdministratorFinanceController::class, 'index'])->name('finance.index');
@@ -204,6 +206,17 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/finance/payments/batch', [AdministratorFinanceController::class, 'storeBatch'])
             ->middleware('throttle:30,1')
             ->name('finance.payments.batch.store');
+        Route::get('/finance/tuition-adjustments', [AdministratorTuitionAdjustmentController::class, 'index'])->name('finance.tuition-adjustments.index');
+        Route::post('/finance/tuition-adjustments/resolve', [AdministratorTuitionAdjustmentController::class, 'resolve'])
+            ->middleware('throttle:120,1')
+            ->name('finance.tuition-adjustments.resolve');
+        Route::post('/finance/tuition-adjustments/batch', [AdministratorTuitionAdjustmentController::class, 'storeBatch'])
+            ->middleware('throttle:30,1')
+            ->name('finance.tuition-adjustments.batch.store');
+        Route::post('/finance/tuition-adjustments/{adjustment}/retry-notification', [AdministratorTuitionAdjustmentController::class, 'retryNotification'])
+            ->whereNumber('adjustment')
+            ->middleware('throttle:12,1')
+            ->name('finance.tuition-adjustments.notifications.retry');
         Route::post('/finance/payments/{transaction}/resend-receipt', [AdministratorFinanceController::class, 'resendReceipt'])->whereNumber('transaction')->middleware('throttle:6,1')->name('finance.payments.resend-receipt');
         Route::get('/finance/documents/{issuance}/download', [AdministratorFinanceController::class, 'downloadFinancialDocument'])->name('finance.documents.download');
         Route::post('/finance/documents/{issuance}/resend', [AdministratorFinanceController::class, 'resendFinancialDocument'])->middleware('throttle:6,1')->name('finance.documents.resend');
@@ -405,6 +418,8 @@ Route::middleware(['auth', 'administrators.only'])
         Route::put('/system-management/notifications', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateNotificationChannels'])->name('system-management.notifications.update');
         Route::get('/system-management/finance-documents', [App\Http\Controllers\AdministratorSystemManagementController::class, 'financeDocuments'])->name('system-management.finance_documents.index');
         Route::put('/system-management/finance-documents', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateFinanceDocuments'])->name('system-management.finance_documents.update');
+        Route::get('/system-management/tuition-payment-schedule', [App\Http\Controllers\AdministratorSystemManagementController::class, 'tuitionPaymentSchedule'])->name('system-management.tuition_payment_schedule.index');
+        Route::put('/system-management/tuition-payment-schedule', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateTuitionPaymentSchedule'])->name('system-management.tuition_payment_schedule.update');
         Route::get('/system-management/grading', [App\Http\Controllers\AdministratorSystemManagementController::class, 'grading'])->name('system-management.grading.index');
         Route::put('/system-management/grading', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateGrading'])->name('system-management.grading.update');
         Route::put('/system-management/identifiers', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateIdentifiers'])->name('system-management.identifiers.update');

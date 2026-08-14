@@ -12,6 +12,7 @@ use App\Features\Toggles\StudentInformationUpdates;
 use App\Http\Requests\ToggleExperimentalFeaturesRequest;
 use App\Http\Requests\UpdatePaymentWorkspacePreferencesRequest;
 use App\Http\Requests\UpdateStudentProfileRequest;
+use App\Http\Requests\UpdateTuitionAdjustmentWorkspacePreferencesRequest;
 use App\Models\ConnectedAccount;
 use App\Models\Faculty;
 use App\Models\GeneralSetting;
@@ -126,6 +127,10 @@ final class ProfileController extends Controller
             && $isAdmin
             && $user instanceof User
             && $user->can('View:Cashier');
+        $canConfigureTuitionAdjustmentWorkspace = $request->is('administrators/*')
+            && $isAdmin
+            && $user instanceof User
+            && $user->can('view_tuition_fees');
 
         $apiTokens = [];
         if ($developerModeEnabled) {
@@ -158,6 +163,13 @@ final class ProfileController extends Controller
                 ? route('administrators.settings.payment-workspace.update', absolute: false)
                 : null,
             'payment_methods' => $canConfigurePaymentWorkspace ? PaymentMethod::options() : [],
+            'can_configure_tuition_adjustment_workspace' => $canConfigureTuitionAdjustmentWorkspace,
+            'tuition_adjustment_workspace' => $canConfigureTuitionAdjustmentWorkspace
+                ? ['layout' => data_get($user->preferences, 'finance.tuition_adjustments.layout', 'inspector')]
+                : null,
+            'tuition_adjustment_workspace_url' => $canConfigureTuitionAdjustmentWorkspace
+                ? route('administrators.settings.tuition-adjustment-workspace.update', absolute: false)
+                : null,
             'id_card' => $idCardData,
             'user' => [
                 'id' => $user->id,
@@ -535,6 +547,20 @@ final class ProfileController extends Controller
 
         return back()->with('flash', [
             'success' => 'Finance workspace preferences saved.',
+        ]);
+    }
+
+    public function updateTuitionAdjustmentWorkspace(UpdateTuitionAdjustmentWorkspacePreferencesRequest $request)
+    {
+        $user = $request->user();
+        abort_unless($user instanceof User, 403);
+
+        $preferences = is_array($user->preferences) ? $user->preferences : [];
+        Arr::set($preferences, 'finance.tuition_adjustments', $request->validated());
+        $user->forceFill(['preferences' => $preferences])->save();
+
+        return back()->with('flash', [
+            'success' => 'Tuition adjustment workspace preference saved.',
         ]);
     }
 

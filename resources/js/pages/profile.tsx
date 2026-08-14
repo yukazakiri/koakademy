@@ -130,6 +130,9 @@ export default function ProfilePage() {
         payment_workspace = null,
         payment_workspace_url = null,
         payment_methods = [],
+        can_configure_tuition_adjustment_workspace = false,
+        tuition_adjustment_workspace = null,
+        tuition_adjustment_workspace_url = null,
         id_card,
         feature_flags,
         featureFlags,
@@ -154,6 +157,9 @@ export default function ProfilePage() {
         } | null;
         payment_workspace_url?: string | null;
         payment_methods?: Array<{ value: string; label: string }>;
+        can_configure_tuition_adjustment_workspace?: boolean;
+        tuition_adjustment_workspace?: { layout: "inspector" | "staged" } | null;
+        tuition_adjustment_workspace_url?: string | null;
         user: {
             id: number;
             name: string;
@@ -916,6 +922,9 @@ export default function ProfilePage() {
                                     paymentWorkspace={payment_workspace}
                                     paymentWorkspaceUrl={payment_workspace_url}
                                     paymentMethods={payment_methods}
+                                    canConfigureTuitionAdjustmentWorkspace={can_configure_tuition_adjustment_workspace}
+                                    tuitionAdjustmentWorkspace={tuition_adjustment_workspace}
+                                    tuitionAdjustmentWorkspaceUrl={tuition_adjustment_workspace_url}
                                 />
                             </TabsContent>
 

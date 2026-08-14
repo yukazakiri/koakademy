@@ -120,6 +120,16 @@ final class GeneralSettingPolicy
         return $this->canUpdateSection($user, 'finance_documents');
     }
 
+    public function viewTuitionPaymentSchedule(User $user): bool
+    {
+        return $this->canViewSection($user, 'tuition_payment_schedule');
+    }
+
+    public function updateTuitionPaymentSchedule(User $user): bool
+    {
+        return $this->canUpdateSection($user, 'tuition_payment_schedule');
+    }
+
     public function viewPulse(User $user): bool
     {
         return $this->canViewSection($user, 'pulse');

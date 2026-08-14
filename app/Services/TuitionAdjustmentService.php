@@ -74,7 +74,7 @@ final readonly class TuitionAdjustmentService
             'enrollment_id' => $enrollment->id,
             'tuition_id' => $tuition->id,
             'student_id' => $enrollment->student->id,
-            'student_number' => $enrollment->student->student_id,
+            'student_number' => (string) $enrollment->student->student_id,
             'student_name' => $enrollment->student->full_name,
             'student_type' => $this->studentTypeValue($enrollment->student->student_type),
             'course' => $enrollment->course?->code ?? $enrollment->student->Course?->code ?? 'N/A',

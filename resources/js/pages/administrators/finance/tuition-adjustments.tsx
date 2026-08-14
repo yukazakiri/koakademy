@@ -93,6 +93,7 @@ type Props = {
 const money = (value: number) => new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(Number(value) || 0);
 const centsEqual = (left: number, right: number) => Math.abs(Number(left) - Number(right)) < 0.009;
 const termAmount = (row: DraftRow, term: Installment["term"]) => Number(row.installments.find((item) => item.term === term)?.amount ?? 0);
+const searchableText = (value: unknown) => String(value ?? "").toLowerCase();
 
 function toDraft(row: TuitionRow): DraftRow {
     return { ...row, clientRowId: crypto.randomUUID(), original: structuredClone(row), status: "unchanged" };
@@ -144,10 +145,10 @@ export default function TuitionAdjustmentsPage(props: Props) {
     const filtered = useMemo(
         () =>
             drafts.filter((row) => {
-                const query = search.toLowerCase();
+                const query = searchableText(search).trim();
                 const rowStatus = validationStatus(row);
                 return (
-                    (!query || row.student_name.toLowerCase().includes(query) || row.student_number.toLowerCase().includes(query)) &&
+                    (!query || searchableText(row.student_name).includes(query) || searchableText(row.student_number).includes(query)) &&
                     (course === "all" || row.course === course) &&
                     (studentType === "all" || row.student_type === studentType) &&
                     (statusFilter === "all" || rowStatus === statusFilter)

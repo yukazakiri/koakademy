@@ -34,9 +34,10 @@ interface StudentTabsProps {
     options: {
         statuses?: { value: string; label: string }[];
     };
+    onAdjustTuition?: () => void;
 }
 
-export function StudentTabs({ student, options }: StudentTabsProps) {
+export function StudentTabs({ student, options, onAdjustTuition }: StudentTabsProps) {
     const { props } = usePage<{ branding?: Branding }>();
     const flags = useFeatureFlags();
     const currency = props.branding?.currency || "PHP";
@@ -252,7 +253,6 @@ export function StudentTabs({ student, options }: StudentTabsProps) {
                                         onClick={async () => {
                                             const toastId = "soa-pdf-queue";
                                             toast.loading("Queueing SOA PDF...", { id: toastId });
-
                                             try {
                                                 const response = await fetch(soaPrintUrl as string, {
                                                     method: "GET",
@@ -283,6 +283,12 @@ export function StudentTabs({ student, options }: StudentTabsProps) {
                                         <Printer className="h-3.5 w-3.5" />
                                         Print SOA
                                     </Button>
+                                    {onAdjustTuition && (
+                                        <Button variant="default" size="sm" className="h-8 gap-2" onClick={onAdjustTuition}>
+                                            <Banknote className="h-3.5 w-3.5" />
+                                            Adjust Tuition
+                                        </Button>
+                                    )}
                                 </div>
                             </div>
 

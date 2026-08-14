@@ -10,6 +10,7 @@ use App\Enums\ScholarshipType;
 use App\Enums\StudentStatus;
 use App\Enums\StudentType;
 use App\Enums\SubjectEnrolledEnum;
+use App\Enums\UserRole;
 use App\Http\Requests\Administrators\BulkDeleteStudentRequest;
 use App\Http\Requests\Administrators\BulkEmailStudentsRequest;
 use App\Http\Requests\Administrators\BulkForceDeleteStudentRequest;
@@ -31,6 +32,9 @@ use App\Models\StudentStatusRecord;
 use App\Models\StudentTuition;
 use App\Models\Subject;
 use App\Models\SubjectEnrollment;
+use App\Models\User;
+use App\Notifications\StatementOfAccountAdjustedNotification;
+use App\Services\EnrollmentBillingService;
 use App\Services\GeneralSettingsService;
 use App\Services\IdentifierGenerator;
 use App\Services\StudentIdUpdateService;
@@ -46,6 +50,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -629,6 +634,8 @@ final class AdministratorStudentManagementController extends Controller
                 'payment_status' => $tuition->payment_status,
                 'payment_progress' => $tuition->payment_progress,
                 'status_class' => $tuition->status_class,
+                'adjustment_note' => $tuition->adjustment_note,
+                'adjusted_at' => $tuition->adjusted_at?->format('M j, Y g:i A'),
             ];
         }
 
@@ -1821,9 +1828,30 @@ final class AdministratorStudentManagementController extends Controller
             'total_miscelaneous_fees' => ['required', 'numeric', 'min:0'],
             'downpayment' => ['required', 'numeric', 'min:0'],
             'discount' => ['required', 'numeric', 'min:0', 'max:100'],
+            'adjustment_note' => ['nullable', 'string', 'max:500'],
         ]);
 
-        $tuition = $student->getOrCreateCurrentTuition();
+        $settings = app(GeneralSettingsService::class);
+        $currentSchoolYear = $settings->getCurrentSchoolYearString();
+        $currentSemester = $settings->getCurrentSemester();
+
+        // Resolve the tuition record the same way the Tuition tab does: prefer the
+        // record linked to the current-period enrollment so the admin edits the
+        // same Statement of Account that is displayed on the page.
+        $enrollment = StudentEnrollment::withTrashed()
+            ->where('student_id', (string) $student->id)
+            ->where('school_year', $currentSchoolYear)
+            ->where('semester', $currentSemester)
+            ->first();
+
+        $tuition = $enrollment?->studentTuition()->withTrashed()->first() ?? $student->getOrCreateCurrentTuition();
+
+        if ($tuition->enrollment_id === null && $enrollment instanceof StudentEnrollment) {
+            $tuition->enrollment_id = $enrollment->id;
+            $tuition->save();
+        }
+
+        $before = $this->tuitionAdjustmentSnapshot($tuition);
 
         $totalTuition = (float) $validated['total_lectures'] + (float) $validated['total_laboratory'];
         $overallTuition = $totalTuition + (float) $validated['total_miscelaneous_fees'];
@@ -1831,21 +1859,36 @@ final class AdministratorStudentManagementController extends Controller
         $discountAmount = $overallTuition * ((float) $validated['discount'] / 100);
         $overallTuitionAfterDiscount = $overallTuition - $discountAmount;
 
-        $totalBalance = $overallTuitionAfterDiscount - (float) $validated['downpayment'];
+        DB::transaction(function () use ($request, $tuition, $validated, $totalTuition, $overallTuitionAfterDiscount, $enrollment): void {
+            $tuition->forceFill([
+                'total_lectures' => (float) $validated['total_lectures'],
+                'total_laboratory' => (float) $validated['total_laboratory'],
+                'total_miscelaneous_fees' => (float) $validated['total_miscelaneous_fees'],
+                'total_tuition' => $totalTuition,
+                'overall_tuition' => $overallTuitionAfterDiscount,
+                'downpayment' => (float) $validated['downpayment'],
+                'discount' => (float) $validated['discount'],
+                'adjustment_note' => $validated['adjustment_note'] ?? null,
+                'adjusted_by_user_id' => $request->user()?->id,
+                'adjusted_at' => now(),
+            ])->save();
 
-        $tuition->update([
-            'total_lectures' => $validated['total_lectures'],
-            'total_laboratory' => $validated['total_laboratory'],
-            'total_miscelaneous_fees' => $validated['total_miscelaneous_fees'],
-            'total_tuition' => $totalTuition,
-            'overall_tuition' => $overallTuitionAfterDiscount,
-            'downpayment' => $validated['downpayment'],
-            'discount' => $validated['discount'],
-            'total_balance' => $totalBalance,
-            'status' => $totalBalance <= 0 ? 'paid' : 'pending',
-        ]);
+            // Recalculate the balance and status from actual payments.
+            app(EnrollmentBillingService::class)->syncTuitionBalance($tuition, (float) $validated['downpayment']);
 
-        return back()->with('success', 'Tuition updated successfully.');
+            // Keep the enrollment-side tuition total in sync with the adjusted fees.
+            if ($enrollment instanceof StudentEnrollment) {
+                $enrollment->forceFill([
+                    'downpayment' => (float) $validated['downpayment'],
+                ])->save();
+            }
+        });
+
+        $after = $this->tuitionAdjustmentSnapshot($tuition->refresh());
+
+        $this->notifyStatementOfAccountAdjustment($student, $tuition, $before, $after, $request->user());
+
+        return back()->with('success', 'Tuition updated successfully. The student has been notified of the Statement of Account adjustment.');
     }
 
     public function updateSignature(Request $request, Student $student): RedirectResponse
@@ -2226,6 +2269,91 @@ final class AdministratorStudentManagementController extends Controller
         } catch (Exception $e) {
             return back()->with('error', 'Failed to delete student: '.$e->getMessage());
         }
+    }
+
+    /**
+     * @return array<string, float>
+     */
+    private function tuitionAdjustmentSnapshot(StudentTuition $tuition): array
+    {
+        return [
+            'total_lectures' => (float) $tuition->total_lectures,
+            'total_laboratory' => (float) $tuition->total_laboratory,
+            'total_miscelaneous_fees' => (float) $tuition->total_miscelaneous_fees,
+            'discount' => (float) $tuition->discount,
+            'downpayment' => (float) $tuition->downpayment,
+            'total_tuition' => (float) $tuition->total_tuition,
+            'overall_tuition' => (float) $tuition->overall_tuition,
+            'total_balance' => (float) $tuition->total_balance,
+        ];
+    }
+
+    /**
+     * Notify the student (in-app when a portal account is linked, and always by
+     * email) that their Statement of Account has been adjusted.
+     *
+     * @param  array<string, float>  $before
+     * @param  array<string, float>  $after
+     */
+    private function notifyStatementOfAccountAdjustment(
+        Student $student,
+        StudentTuition $tuition,
+        array $before,
+        array $after,
+        ?User $actor,
+    ): void {
+        $notification = new StatementOfAccountAdjustedNotification(
+            studentId: (int) $student->id,
+            studentName: (string) ($student->full_name ?? $student->name ?? $student->first_name ?? 'Student'),
+            schoolYear: (string) $tuition->school_year,
+            semester: (int) $tuition->semester,
+            before: $before,
+            after: $after,
+            adjustmentNote: $tuition->adjustment_note,
+            changedByUserId: $actor?->id,
+            changedByName: $actor?->name,
+        );
+
+        $portalUser = $this->resolveStudentPortalUser($student);
+
+        if ($portalUser instanceof User) {
+            // In-app notification plus email through the portal account.
+            $portalUser->notify($notification);
+
+            return;
+        }
+
+        if (is_string($student->email) && mb_trim($student->email) !== '') {
+            Notification::route('mail', $student->email)->notify($notification);
+        }
+    }
+
+    /**
+     * Resolve the portal account linked to a student record using the same
+     * matching rules as other student notification services.
+     */
+    private function resolveStudentPortalUser(Student $student): ?User
+    {
+        $email = is_string($student->email) ? mb_strtolower(mb_trim($student->email)) : null;
+
+        return User::query()
+            ->whereIn('role', [
+                UserRole::Student->value,
+                UserRole::GraduateStudent->value,
+                UserRole::ShsStudent->value,
+            ])
+            ->where(function ($query) use ($student, $email): void {
+                if ($student->user_id !== null) {
+                    $query->orWhere('id', (int) $student->user_id);
+                }
+
+                if ($email !== null && $email !== '') {
+                    $query->orWhereRaw('LOWER(email) = ?', [$email]);
+                }
+
+                $query->orWhere('record_id', (string) $student->id);
+            })
+            ->first();
     }
 
     /**

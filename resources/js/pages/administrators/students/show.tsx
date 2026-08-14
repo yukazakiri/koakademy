@@ -322,7 +322,7 @@ export default function AdministratorStudentShow({ user, student, options }: Stu
                     <div className="space-y-6 md:col-span-3">
                         <StudentDetailsCard student={student} />
 
-                        <StudentTabs student={student} options={options} />
+                        <StudentTabs student={student} options={options} onAdjustTuition={() => setActionDialog("updateTuition")} />
 
                         <AcademicScheduleDashboard
                             student={student}

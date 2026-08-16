@@ -19,6 +19,7 @@ type EnrollmentsCardProps = {
     enrollmentsData: EnrollmentRow[];
     enrollmentColumns: ColumnDef<EnrollmentRow, unknown>[];
     sortOption: string;
+    scopeControl?: ReactNode;
     filterControl: ReactNode;
     resetControl: ReactNode;
     onSearchChange: (value: string) => void;
@@ -34,6 +35,7 @@ export function EnrollmentsCard({
     enrollmentsData,
     enrollmentColumns,
     sortOption,
+    scopeControl,
     filterControl,
     resetControl,
     onSearchChange,
@@ -65,12 +67,14 @@ export function EnrollmentsCard({
                 </div>
             </CardHeader>
             <CardContent className="space-y-4">
-                <div className="bg-card flex flex-col justify-between gap-4 rounded-lg border p-4 shadow-sm sm:flex-row sm:items-center">
-                    <div className="relative max-w-md flex-1">
+                {scopeControl ? <div className="border-b pb-3">{scopeControl}</div> : null}
+
+                <div className="bg-muted/20 flex flex-col justify-between gap-3 rounded-lg border p-2.5 lg:flex-row lg:items-center">
+                    <div className="relative min-w-0 flex-1">
                         <Search className="text-muted-foreground absolute top-2.5 left-2.5 h-4 w-4" />
                         <Input
-                            placeholder="Search by name, ID, or course..."
-                            className="bg-background pl-9"
+                            placeholder="Search by student name, ID, course, or status..."
+                            className="bg-background h-9 pl-9"
                             value={enrollmentSearch}
                             onChange={(e) => onSearchChange(e.target.value)}
                         />

@@ -1,5 +1,3 @@
-import { generateBulkAssessments } from "@/actions/App/Http/Controllers/AdministratorEnrollmentManagementController";
-import { ACTIVE_JOBS_REFRESH_EVENT } from "@/components/active-jobs-notification";
 import AdminLayout from "@/components/administrators/admin-layout";
 import PTabs10 from "@/components/p-tabs-10";
 import { Filters, type FilterFieldConfig, type Filter as FilterType } from "@/components/reui/filters";
@@ -7,19 +5,28 @@ import { SemesterSelector } from "@/components/semester-selector";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import type { ComboboxOption } from "@/components/ui/combobox";
 import { Head, Link, router, usePage } from "@inertiajs/react";
-import axios from "axios";
-import { BookOpen, Building2, ChevronRight, CreditCard, Filter, GraduationCap, RotateCcw, Settings2, UserPlus, Users } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+    AlertTriangle,
+    BookOpen,
+    Building2,
+    ChevronRight,
+    CircleCheckBig,
+    Filter,
+    GraduationCap,
+    History,
+    RotateCcw,
+    Settings2,
+    UserPlus,
+    Users,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { route } from "ziggy-js";
-import { EnrollmentAnalyticsSection } from "./analytics-section";
 import { createColumns, type EnrollmentRow } from "./columns";
-import { BulkReportsDialog, DeleteEnrollmentDialog, ForceDeleteEnrollmentDialog, RestoreEnrollmentDialog } from "./enrollment-dialogs";
+import { DeleteEnrollmentDialog, ForceDeleteEnrollmentDialog, RestoreEnrollmentDialog } from "./enrollment-dialogs";
 import { EnrollmentsCard } from "./enrollments-card";
-import { ReportsSection } from "./reports-section";
-import type { Branding, BulkReportFilters, EnrollmentManagementProps, ReportFilters } from "./types";
+import type { Branding, EnrollmentManagementProps } from "./types";
 
 function createInitialEnrollmentFilters(filters: EnrollmentManagementProps["filters"]): FilterType[] {
     const initialFilters: FilterType[] = [];
@@ -141,18 +148,9 @@ export default function AdministratorEnrollmentsIndex({
     analytics,
     filters,
     enrollment_pipeline,
-    assessment_export_options,
 }: EnrollmentManagementProps) {
     const { props } = usePage<{ branding?: Branding }>();
     const currency = props.branding?.currency || "PHP";
-
-    const formatMoney = (value: number | null | undefined): string => {
-        if (value === null || value === undefined) return "—";
-        return new Intl.NumberFormat(currency === "USD" ? "en-US" : "en-PH", {
-            style: "currency",
-            currency: currency,
-        }).format(value);
-    };
 
     const [enrollmentSearch, setEnrollmentSearch] = useState(filters.search || "");
     const [activeFilters, setActiveFilters] = useState<FilterType[]>(() => createInitialEnrollmentFilters(filters));
@@ -163,33 +161,6 @@ export default function AdministratorEnrollmentsIndex({
     const [forceDeleteEnrollment, setForceDeleteEnrollment] = useState<EnrollmentRow | null>(null);
     const [restoreEnrollment, setRestoreEnrollment] = useState<EnrollmentRow | null>(null);
     const [isEnrollmentDeleting, setIsEnrollmentDeleting] = useState(false);
-
-    // Bulk Reports dialog state
-    const [isBulkReportsOpen, setIsBulkReportsOpen] = useState(false);
-    const [bulkReportFilters, setBulkReportFilters] = useState<BulkReportFilters>({
-        course_id: null,
-        year_level: null,
-        student_limit: null,
-        include_deleted: false,
-    });
-    const [isGeneratingBulkReport, setIsGeneratingBulkReport] = useState(false);
-
-    // Enrollment Report state (inline card-based flow)
-    const [activeReportCard, setActiveReportCard] = useState<string | null>(null);
-    const [reportType, setReportType] = useState<string>("enrolled_by_course");
-    const [reportFilters, setReportFilters] = useState<ReportFilters>({
-        course_filter: "all",
-        subject_filter: "all",
-        department_filter: "all",
-        year_level_filter: "all",
-        status_filter: "active",
-    });
-    const [isLoadingReport, setIsLoadingReport] = useState(false);
-    const [availableSubjects, setAvailableSubjects] = useState<
-        { id: number; code: string; title: string; units: number; label: string; enrolled_count: number; class_count: number; sections: string[] }[]
-    >([]);
-    const [availableCourses, setAvailableCourses] = useState<{ id: number; code: string; title: string; department: string; label: string }[]>([]);
-    const [isLoadingFilterOptions, setIsLoadingFilterOptions] = useState(false);
 
     useEffect(() => {
         setEnrollmentSearch(filters.search || "");
@@ -245,17 +216,23 @@ export default function AdministratorEnrollmentsIndex({
     }, [activeFilters, enrollmentSearch, enrollmentsData, sortOption]);
 
     const stats = useMemo(() => {
-        const totalTuition = visibleEnrollments.reduce((sum, e) => sum + (e.tuition?.overall || 0), 0);
         const activeEnrollments = visibleEnrollments.filter((enrollment) => !enrollment.is_trashed).length;
+        const completedEnrollments = visibleEnrollments.filter(
+            (enrollment) => !enrollment.is_trashed && enrollment.status === enrollment_pipeline.cashier_verified_status,
+        ).length;
+        const workflowExceptions = visibleEnrollments.filter(
+            (enrollment) => enrollment.is_trashed || enrollment.status !== enrollment_pipeline.cashier_verified_status,
+        ).length;
 
         return {
             applicants: applicantsCount,
             enrolled: visibleEnrollments.length,
             active: activeEnrollments,
             deleted: visibleEnrollments.length - activeEnrollments,
-            tuition: totalTuition,
+            completed: completedEnrollments,
+            exceptions: workflowExceptions,
         };
-    }, [applicantsCount, visibleEnrollments]);
+    }, [applicantsCount, enrollment_pipeline.cashier_verified_status, visibleEnrollments]);
 
     const handleEnrollmentClick = (enrollment: EnrollmentRow) => {
         router.visit(route("administrators.enrollments.show", enrollment.id));
@@ -317,153 +294,6 @@ export default function AdministratorEnrollmentsIndex({
                 },
             },
         );
-    };
-
-    // Handle bulk assessment generation
-    const handleGenerateBulkAssessments = async () => {
-        setIsGeneratingBulkReport(true);
-        const queueToastId = "bulk-assessment-queue";
-        toast.loading("Queueing bulk assessment export...", { id: queueToastId });
-
-        try {
-            const response = await axios.post<{ id: string; status: string; stage: string; message: string }>(
-                generateBulkAssessments.url(),
-                bulkReportFilters,
-            );
-
-            toast.success(response.data.message, { id: queueToastId });
-            window.dispatchEvent(new Event(ACTIVE_JOBS_REFRESH_EVENT));
-            setIsBulkReportsOpen(false);
-            setBulkReportFilters({
-                course_id: null,
-                year_level: null,
-                student_limit: null,
-                include_deleted: false,
-            });
-        } catch (error) {
-            const message = axios.isAxiosError<{ message?: string }>(error) ? error.response?.data?.message : null;
-
-            toast.error(message || "Failed to queue bulk assessment generation.", { id: queueToastId });
-        } finally {
-            setIsGeneratingBulkReport(false);
-        }
-    };
-
-    const handleOpenBulkReports = () => {
-        const activeCourseId = getActiveFilterValue(activeFilters, "course_filter");
-
-        setBulkReportFilters((currentFilters) => ({
-            ...currentFilters,
-            course_id: activeCourseId === "all" ? null : Number(activeCourseId),
-        }));
-        setIsBulkReportsOpen(true);
-    };
-
-    // Fetch filter options for enrollment reports
-    const fetchReportFilterOptions = useCallback(async () => {
-        setIsLoadingFilterOptions(true);
-        try {
-            const [subjectsRes, coursesRes] = await Promise.all([
-                fetch(route("administrators.enrollments.reports.subject-options")),
-                fetch(route("administrators.enrollments.reports.course-options")),
-            ]);
-            if (subjectsRes.ok) {
-                const data = await subjectsRes.json();
-                setAvailableSubjects(data.subjects || []);
-            }
-            if (coursesRes.ok) {
-                const data = await coursesRes.json();
-                setAvailableCourses(data.courses || []);
-            }
-        } catch (error) {
-            console.error("Failed to fetch report filter options:", error);
-        } finally {
-            setIsLoadingFilterOptions(false);
-        }
-    }, []);
-
-    const handleReportCardClick = (type: string) => {
-        if (activeReportCard === type) {
-            setActiveReportCard(null);
-            return;
-        }
-        setActiveReportCard(type);
-        setReportType(type);
-        setReportFilters({
-            course_filter: "all",
-            subject_filter: "all",
-            department_filter: "all",
-            year_level_filter: "all",
-            status_filter: "active",
-        });
-        fetchReportFilterOptions();
-    };
-
-    const subjectComboboxOptions = useMemo<ComboboxOption[]>(() => {
-        return [
-            { label: "All Subjects", value: "all", description: "Include all subjects with active classes" },
-            ...availableSubjects.map((subject) => ({
-                label: `${subject.code} - ${subject.title}`,
-                value: String(subject.id),
-                description: `${subject.enrolled_count} enrolled | ${subject.class_count} class${subject.class_count !== 1 ? "es" : ""} (${subject.sections.join(", ")})`,
-                searchText: `${subject.code} ${subject.title} ${subject.sections.join(" ")}`,
-            })),
-        ];
-    }, [availableSubjects]);
-
-    const courseComboboxOptions = useMemo<ComboboxOption[]>(() => {
-        return [
-            { label: "All Courses", value: "all", description: "Include all courses" },
-            ...availableCourses.map((course) => ({
-                label: `${course.code} - ${course.title}`,
-                value: course.code,
-                description: course.department,
-                searchText: `${course.code} ${course.title} ${course.department}`,
-            })),
-        ];
-    }, [availableCourses]);
-
-    const handleGenerateReport = async () => {
-        setIsLoadingReport(true);
-        try {
-            const params = new URLSearchParams({
-                report_type: reportType,
-                ...reportFilters,
-            });
-
-            const url = route("administrators.enrollments.reports.preview-pdf") + `?${params.toString()}`;
-            const response = await fetch(url, {
-                method: "GET",
-                headers: {
-                    Accept: "application/json",
-                },
-            });
-            const payload = (await response.json().catch(() => ({}))) as { message?: string; error?: string };
-
-            if (!response.ok) {
-                toast.error(payload.error || payload.message || "Failed to queue PDF preview report.");
-                return;
-            }
-
-            toast.success(payload.message || "PDF preview queued. You will be notified when the file is ready.");
-
-            setActiveReportCard(null);
-        } catch (error) {
-            console.error("Failed to generate report:", error);
-            toast.error("Failed to queue PDF preview. Please try again.");
-        } finally {
-            setIsLoadingReport(false);
-        }
-    };
-
-    const handleExportExcel = () => {
-        const params = new URLSearchParams({
-            report_type: reportType,
-            ...reportFilters,
-            format: "excel",
-        });
-        const url = route("administrators.enrollments.reports.export") + `?${params.toString()}`;
-        window.open(url, "_blank", "noopener");
     };
 
     // Create enrollment columns with action handlers
@@ -557,223 +387,174 @@ export default function AdministratorEnrollmentsIndex({
     );
 
     return (
-        <AdminLayout user={user} title="Enrollments">
-            <Head title="Administrators • Enrollments" />
+        <AdminLayout user={user} title="Enrollment Records">
+            <Head title="Administrators • Enrollment Records" />
 
-            <div className="space-y-8 pb-10">
-                {/* Header Section */}
-                <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-6 pb-10">
+                <header className="flex flex-col gap-4 border-b pb-6 sm:flex-row sm:items-end sm:justify-between">
                     <div className="space-y-1">
-                        <h2 className="text-foreground text-3xl font-bold tracking-tight">Enrolled Students</h2>
-                        <p className="text-muted-foreground">
-                            Real-time insights and management for {filters.currentSchoolYear} - {(filters.currentSchoolYear ?? 0) + 1}.
+                        <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.16em] uppercase">Admissions & Enrollment</p>
+                        <h1 className="text-2xl font-semibold tracking-tight">Enrollment Records</h1>
+                        <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed">
+                            Process applicant handoffs and maintain current-semester enrollment workflow records.
                         </p>
                     </div>
                     {workflow_setup_required ? (
-                        <Link
-                            href={route("administrators.system-management.index")}
-                            className={buttonVariants({ className: "bg-primary text-primary-foreground hover:bg-primary/90 gap-2" })}
-                        >
-                            <Settings2 className="h-4 w-4" />
-                            Configure Workflow
+                        <Link href={route("administrators.system-management.index")} className={buttonVariants({ className: "gap-2" })}>
+                            <Settings2 className="size-4" aria-hidden="true" />
+                            Configure workflow
                         </Link>
                     ) : (
-                        <div className="flex items-center gap-3">
+                        <div className="flex flex-wrap items-center gap-3">
                             <SemesterSelector {...filters} />
-                            <Link
-                                href={route("administrators.enrollments.create")}
-                                className={buttonVariants({
-                                    className: "bg-primary text-primary-foreground hover:bg-primary/90 hidden gap-2 sm:flex",
-                                })}
-                            >
-                                <UserPlus className="h-4 w-4" />
-                                New Enrollment
+                            <Link href={route("administrators.enrollments.create")} className={buttonVariants({ className: "gap-2" })}>
+                                <UserPlus className="size-4" aria-hidden="true" />
+                                New enrollment
                             </Link>
                         </div>
                     )}
-                </div>
+                </header>
 
                 {workflow_setup_required ? (
-                    <Card className="border-amber-200 bg-amber-50/70 dark:border-amber-900/40 dark:bg-amber-950/20">
+                    <Card className="border-amber-300/70 bg-amber-50/70 dark:border-amber-900/50 dark:bg-amber-950/20">
                         <CardHeader>
-                            <CardTitle>Enrollment Workflow Setup Required</CardTitle>
+                            <CardTitle className="flex items-center gap-2">
+                                <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                                Enrollment workflow setup required
+                            </CardTitle>
                             <CardDescription>
-                                Enrollment Management is locked until you configure an enrollment workflow in System Settings.
+                                Enrollment operations remain locked until entry, completion, and role assignments are configured.
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                            <p className="text-muted-foreground text-sm">
-                                Define at least one step, choose entry/completion steps, and assign allowed roles before using enrollment tools.
+                            <p className="text-muted-foreground max-w-2xl text-sm">
+                                Define at least one workflow step and assign the roles responsible for moving students through enrollment.
                             </p>
                             <Link href={route("administrators.system-management.index")} className={buttonVariants({ className: "gap-2" })}>
-                                <Settings2 className="h-4 w-4" />
-                                Open System Settings
+                                <Settings2 className="size-4" aria-hidden="true" />
+                                Open system settings
                             </Link>
                         </CardContent>
                     </Card>
                 ) : (
                     <>
-                        {/* Metrics Grid */}
-                        <div className="grid gap-6 md:grid-cols-3">
-                            {/* Card 1 */}
-                            <div className="bg-card ring-border relative overflow-hidden rounded-2xl p-6 shadow-sm ring-1 transition-all hover:shadow-md">
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <p className="text-muted-foreground text-sm font-medium">Pending Applicants</p>
-                                        <div className="mt-2 flex items-baseline gap-2">
-                                            <span className="text-foreground text-4xl font-bold">{stats.applicants}</span>
-                                            <span className="text-muted-foreground text-sm font-medium">students</span>
+                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                            {[
+                                {
+                                    label: "Pending applicants",
+                                    value: stats.applicants,
+                                    detail: "Awaiting registrar handoff",
+                                    icon: UserPlus,
+                                    tone: "text-blue-600 dark:text-blue-400",
+                                },
+                                {
+                                    label: "Active enrollments",
+                                    value: stats.active,
+                                    detail: "Current-semester records",
+                                    icon: Users,
+                                    tone: "text-emerald-600 dark:text-emerald-400",
+                                },
+                                {
+                                    label: "Workflow exceptions",
+                                    value: stats.exceptions,
+                                    detail: stats.exceptions > 0 ? "Requires operational review" : "No exceptions detected",
+                                    icon: AlertTriangle,
+                                    tone: "text-amber-600 dark:text-amber-400",
+                                },
+                                {
+                                    label: "Recently completed",
+                                    value: stats.completed,
+                                    detail: "Reached final workflow status",
+                                    icon: History,
+                                    tone: "text-muted-foreground",
+                                },
+                            ].map((metric) => (
+                                <Card key={metric.label} size="sm" className="gap-0 py-0">
+                                    <CardContent className="flex items-center justify-between gap-4 p-4">
+                                        <div className="min-w-0">
+                                            <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">{metric.label}</p>
+                                            <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{metric.value}</p>
+                                            <p className="text-muted-foreground mt-1 truncate text-xs">{metric.detail}</p>
                                         </div>
-                                    </div>
-                                    <div className="rounded-xl bg-blue-100 p-3 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400">
-                                        <UserPlus className="h-6 w-6" />
-                                    </div>
-                                </div>
-                                <div className="text-muted-foreground mt-4 flex items-center gap-2 text-xs font-medium">
-                                    <Link
-                                        href={route("administrators.enrollments.applicants")}
-                                        className="flex items-center text-blue-600 dark:text-blue-400"
-                                    >
-                                        View applicants
-                                        <ChevronRight className="h-3 w-3" />
-                                    </Link>
-                                </div>
-                            </div>
-
-                            {/* Card 2 */}
-                            <div className="bg-card ring-border relative overflow-hidden rounded-2xl p-6 shadow-sm ring-1 transition-all hover:shadow-md">
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <p className="text-muted-foreground text-sm font-medium">Total Enrolled</p>
-                                        <div className="mt-2 flex items-baseline gap-2">
-                                            <span className="text-foreground text-4xl font-bold">{stats.enrolled}</span>
-                                            <span className="text-muted-foreground text-sm font-medium">students</span>
+                                        <div className="bg-muted/60 flex size-10 shrink-0 items-center justify-center rounded-lg">
+                                            <metric.icon className={`size-5 ${metric.tone}`} aria-hidden="true" />
                                         </div>
-                                    </div>
-                                    <div className="rounded-xl bg-emerald-100 p-3 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-400">
-                                        <Users className="h-6 w-6" />
-                                    </div>
-                                </div>
-                                <div className="mt-4 flex items-center gap-3 text-xs">
-                                    <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-                                        <span className="font-semibold">{stats.active}</span> active
-                                    </span>
-                                    <span className="text-muted-foreground">•</span>
-                                    <span className="flex items-center gap-1 text-red-600 dark:text-red-400">
-                                        <span className="font-semibold">{stats.deleted}</span> deleted
-                                    </span>
-                                </div>
-                            </div>
-
-                            {/* Card 3 */}
-                            <div className="bg-card ring-border relative overflow-hidden rounded-2xl p-6 shadow-sm ring-1 transition-all hover:shadow-md">
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <p className="text-muted-foreground text-sm font-medium">Tuition Revenue</p>
-                                        <div className="mt-2 flex items-baseline gap-2">
-                                            <span className="text-foreground text-3xl font-bold">{formatMoney(stats.tuition)}</span>
-                                            <span className="text-muted-foreground ml-1 text-xs">(Page View)</span>
-                                        </div>
-                                    </div>
-                                    <div className="rounded-xl bg-purple-100 p-3 text-purple-600 dark:bg-purple-900/50 dark:text-purple-400">
-                                        <CreditCard className="h-6 w-6" />
-                                    </div>
-                                </div>
-                                <div className="text-muted-foreground mt-4 text-xs">Projected for current semester (visible records)</div>
-                            </div>
+                                    </CardContent>
+                                </Card>
+                            ))}
                         </div>
 
-                        {/* Enrollments Section */}
-                        <div className="flex flex-col gap-4">
-                            <PTabs10 value={departmentFilter} onValueChange={handleDepartmentFilterChange} tabs={departmentTabs} />
+                        {stats.applicants > 0 && (
+                            <div className="flex flex-col gap-3 rounded-lg border border-blue-200/70 bg-blue-50/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-blue-900/50 dark:bg-blue-950/20">
+                                <div className="flex items-center gap-3">
+                                    <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300">
+                                        <CircleCheckBig className="size-4" aria-hidden="true" />
+                                    </div>
+                                    <p className="text-sm text-blue-950 dark:text-blue-100">
+                                        <span className="font-semibold">
+                                            {stats.applicants} applicant{stats.applicants === 1 ? "" : "s"}
+                                        </span>{" "}
+                                        available for admissions review and enrollment handoff.
+                                    </p>
+                                </div>
+                                <Link
+                                    href={route("administrators.enrollments.applicants")}
+                                    className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:text-blue-900 dark:text-blue-300 dark:hover:text-blue-100"
+                                >
+                                    Review applicants
+                                    <ChevronRight className="size-3.5" aria-hidden="true" />
+                                </Link>
+                            </div>
+                        )}
 
-                            <EnrollmentsCard
-                                filament={filament}
-                                enrollmentsTotal={enrollmentsTotal}
-                                enrollmentSearch={enrollmentSearch}
-                                hasActiveFilters={!!hasActiveFilters}
-                                enrollmentsData={visibleEnrollments}
-                                enrollmentColumns={enrollmentColumns}
-                                sortOption={sortOption}
-                                filterControl={
-                                    <Filters
-                                        fields={filterFields}
-                                        filters={activeFilters}
-                                        onChange={setActiveFilters}
-                                        trigger={
-                                            <Button variant="outline" className="relative gap-2" size="sm">
-                                                <Filter className="h-4 w-4" />
-                                                Filters
-                                                {activeFilters.length > 0 && (
-                                                    <Badge variant="secondary" className="ml-1 h-5 min-w-5 rounded-full px-1.5 text-xs">
-                                                        {activeFilters.length}
-                                                    </Badge>
-                                                )}
-                                            </Button>
-                                        }
-                                    />
-                                }
-                                resetControl={
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={clearFilters}
-                                        className="text-muted-foreground hover:text-foreground h-8 px-2"
-                                    >
-                                        <RotateCcw className="mr-2 h-3.5 w-3.5" />
-                                        Reset
-                                    </Button>
-                                }
-                                onSearchChange={handleEnrollmentSearchChange}
-                                onSortChange={setSortOption}
-                                onRowClick={handleEnrollmentClick}
-                            />
-                        </div>
+                        <EnrollmentsCard
+                            filament={filament}
+                            enrollmentsTotal={enrollmentsTotal}
+                            enrollmentSearch={enrollmentSearch}
+                            hasActiveFilters={!!hasActiveFilters}
+                            enrollmentsData={visibleEnrollments}
+                            enrollmentColumns={enrollmentColumns}
+                            sortOption={sortOption}
+                            scopeControl={<PTabs10 value={departmentFilter} onValueChange={handleDepartmentFilterChange} tabs={departmentTabs} />}
+                            filterControl={
+                                <Filters
+                                    fields={filterFields}
+                                    filters={activeFilters}
+                                    onChange={setActiveFilters}
+                                    trigger={
+                                        <Button variant="outline" className="relative gap-2" size="sm">
+                                            <Filter className="size-4" aria-hidden="true" />
+                                            Filters
+                                            {activeFilters.length > 0 && (
+                                                <Badge variant="secondary" className="ml-1 h-5 min-w-5 rounded-full px-1.5 text-xs">
+                                                    {activeFilters.length}
+                                                </Badge>
+                                            )}
+                                        </Button>
+                                    }
+                                />
+                            }
+                            resetControl={
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={clearFilters}
+                                    className="text-muted-foreground hover:text-foreground h-8 px-2"
+                                >
+                                    <RotateCcw className="size-3.5" aria-hidden="true" />
+                                    Reset
+                                </Button>
+                            }
+                            onSearchChange={handleEnrollmentSearchChange}
+                            onSortChange={setSortOption}
+                            onRowClick={handleEnrollmentClick}
+                        />
                     </>
                 )}
             </div>
 
             {!workflow_setup_required && (
                 <>
-                    {/* Comprehensive Analytics Section */}
-                    <EnrollmentAnalyticsSection
-                        analytics={analytics}
-                        filters={filters}
-                        stats={stats}
-                        enrollmentsData={visibleEnrollments}
-                        enrollmentsTotal={visibleEnrollments.length}
-                        formatMoney={formatMoney}
-                    />
-
-                    {/* Reports Section */}
-                    <ReportsSection
-                        activeReportCard={activeReportCard}
-                        reportFilters={reportFilters}
-                        courseComboboxOptions={courseComboboxOptions}
-                        subjectComboboxOptions={subjectComboboxOptions}
-                        isLoadingFilterOptions={isLoadingFilterOptions}
-                        isLoadingReport={isLoadingReport}
-                        onOpenBulkReports={handleOpenBulkReports}
-                        onReportCardClick={handleReportCardClick}
-                        onReportFiltersChange={setReportFilters}
-                        onCancelInlineFilters={() => setActiveReportCard(null)}
-                        onGenerateReport={handleGenerateReport}
-                        onExportExcel={handleExportExcel}
-                    />
-
-                    {/* Bulk Assessments Export Dialog */}
-                    <BulkReportsDialog
-                        open={isBulkReportsOpen}
-                        onOpenChange={setIsBulkReportsOpen}
-                        filters={bulkReportFilters}
-                        onFiltersChange={setBulkReportFilters}
-                        isGenerating={isGeneratingBulkReport}
-                        onGenerate={handleGenerateBulkAssessments}
-                        courseOptions={enrollmentCourseOptions}
-                        studentLimitOptions={assessment_export_options.student_limits}
-                    />
-
-                    {/* Delete Enrollment Confirmation Dialog */}
                     <DeleteEnrollmentDialog
                         open={!!deleteEnrollment}
                         enrollment={deleteEnrollment}
@@ -781,8 +562,6 @@ export default function AdministratorEnrollmentsIndex({
                         onOpenChange={(open) => !open && setDeleteEnrollment(null)}
                         onConfirm={handleDeleteEnrollment}
                     />
-
-                    {/* Force Delete Enrollment Confirmation Dialog */}
                     <ForceDeleteEnrollmentDialog
                         open={!!forceDeleteEnrollment}
                         enrollment={forceDeleteEnrollment}
@@ -790,8 +569,6 @@ export default function AdministratorEnrollmentsIndex({
                         onOpenChange={(open) => !open && setForceDeleteEnrollment(null)}
                         onConfirm={handleForceDeleteEnrollment}
                     />
-
-                    {/* Restore Enrollment Confirmation Dialog */}
                     <RestoreEnrollmentDialog
                         open={!!restoreEnrollment}
                         enrollment={restoreEnrollment}

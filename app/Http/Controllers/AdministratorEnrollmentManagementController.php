@@ -2199,7 +2199,7 @@ final class AdministratorEnrollmentManagementController extends Controller
             ->where('school_year', $schoolYearString)
             ->where('semester', $semester)
             ->whereHas('course')
-            ->with('course:id,code,title,department_id')
+            ->with('course.department:id,code')
             ->select('course_id')
             ->distinct()
             ->get()

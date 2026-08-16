@@ -307,19 +307,19 @@ export const ADMIN_ROUTES: AdminRoute[] = [
     // ============================================
     {
         id: "admin-students",
-        title: "Student Directory",
+        title: "Student Records",
         icon: <IconUser className="size-4" />,
         link: "/administrators/students",
         section: "student_services",
         requiredPermission: "ViewAny:Student",
         subs: [
             {
-                title: "Students",
+                title: "Student Directory",
                 link: "/administrators/students",
                 icon: <IconUsers className="size-4" />,
             },
             {
-                title: "Documents",
+                title: "Student Documents",
                 link: "/administrators/students/documents",
                 icon: <IconFileDescription className="size-4" />,
             },
@@ -335,21 +335,42 @@ export const ADMIN_ROUTES: AdminRoute[] = [
     },
     {
         id: "admin-enrollments",
-        title: "Admisions",
+        title: "Admissions & Enrollment",
         icon: <IconChecklist className="size-4" />,
-        link: "/administrators/enrollments",
+        link: "/administrators/enrollments/applicants",
         section: "student_services",
         requiredPermission: "ViewAny:StudentEnrollment",
         subs: [
             {
-                title: "Enrollments",
-                link: "/administrators/enrollments",
-                icon: <IconUsers className="size-4" />,
-            },
-            {
                 title: "Applicants",
                 link: "/administrators/enrollments/applicants",
                 icon: <IconUserPlus className="size-4" />,
+            },
+            {
+                title: "Enrollment Records",
+                link: "/administrators/enrollments",
+                icon: <IconUsers className="size-4" />,
+            },
+        ],
+        allowedRoles: [...SYSTEM_ADMIN_ROLES, UserRole.Registrar, UserRole.AssistantRegistrar, ...FINANCE_ROLES, UserRole.DepartmentHead],
+    },
+    {
+        id: "admin-registrar-insights",
+        title: "Insights",
+        icon: <IconChartBar className="size-4" />,
+        link: "/administrators/registrar/analytics",
+        section: "student_services",
+        requiredPermission: "ViewAny:StudentEnrollment",
+        subs: [
+            {
+                title: "Registrar Analytics",
+                link: "/administrators/registrar/analytics",
+                icon: <IconReportAnalytics className="size-4" />,
+            },
+            {
+                title: "Registrar Reports",
+                link: "/administrators/registrar/reports",
+                icon: <IconFileAnalytics className="size-4" />,
             },
         ],
         allowedRoles: [...SYSTEM_ADMIN_ROLES, UserRole.Registrar, UserRole.AssistantRegistrar, ...FINANCE_ROLES, UserRole.DepartmentHead],

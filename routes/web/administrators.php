@@ -12,6 +12,7 @@ use App\Http\Controllers\AdministratorEnrollmentPolicyController;
 use App\Http\Controllers\AdministratorFacultyManagementController;
 use App\Http\Controllers\AdministratorFinanceController;
 use App\Http\Controllers\AdministratorGlobalSearchController;
+use App\Http\Controllers\AdministratorRegistrarInsightsController;
 use App\Http\Controllers\AdministratorRolesController;
 use App\Http\Controllers\AdministratorSchedulingAnalyticsController;
 use App\Http\Controllers\AdministratorStudentDocumentController;
@@ -127,6 +128,8 @@ Route::middleware(['auth', 'administrators.only'])
 
         Route::get('/enrollments', [AdministratorEnrollmentManagementController::class, 'index'])->name('enrollments.index');
         Route::get('/enrollments/applicants', [AdministratorEnrollmentManagementController::class, 'applicants'])->name('enrollments.applicants');
+        Route::get('/registrar/analytics', [AdministratorRegistrarInsightsController::class, 'analytics'])->name('registrar.analytics.index');
+        Route::get('/registrar/reports', [AdministratorRegistrarInsightsController::class, 'reports'])->name('registrar.reports.index');
         Route::get('/enrollments/create', [AdministratorEnrollmentManagementController::class, 'create'])->name('enrollments.create');
         Route::post('/enrollments', [AdministratorEnrollmentManagementController::class, 'store'])->name('enrollments.store');
         Route::post('/enrollments/discounts', [AdministratorEnrollmentDiscountController::class, 'store'])->name('enrollments.discounts.store');

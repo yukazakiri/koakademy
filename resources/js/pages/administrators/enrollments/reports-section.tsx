@@ -1,12 +1,22 @@
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { Download, Eye, FileSpreadsheet, FileText, GraduationCap, Loader2, Users, X } from "lucide-react";
-import type { Dispatch, SetStateAction } from "react";
+import { ClipboardList, Download, Eye, FileClock, FileSpreadsheet, FileText, GraduationCap, Loader2, Search, Users } from "lucide-react";
+import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import type { ReportFilters } from "./types";
+
+export type RecentReportOutput = {
+    id: string;
+    name: string;
+    format: "PDF" | "Excel" | "PDF bundle";
+    status: "Queued" | "Opened";
+    createdAt: string;
+};
 
 type ReportsSectionProps = {
     activeReportCard: string | null;
@@ -15,6 +25,7 @@ type ReportsSectionProps = {
     subjectComboboxOptions: ComboboxOption[];
     isLoadingFilterOptions: boolean;
     isLoadingReport: boolean;
+    recentOutputs: RecentReportOutput[];
     onOpenBulkReports: () => void;
     onReportCardClick: (type: string) => void;
     onReportFiltersChange: Dispatch<SetStateAction<ReportFilters>>;
@@ -23,6 +34,46 @@ type ReportsSectionProps = {
     onExportExcel: () => void;
 };
 
+const REPORT_GROUPS = [
+    {
+        label: "Student Lists",
+        items: [
+            {
+                type: "enrolled_by_course",
+                title: "Master enrollment list",
+                description: "Students grouped by course, department, and year level.",
+                icon: Users,
+            },
+            {
+                type: "enrolled_by_subject",
+                title: "Students by subject",
+                description: "Official subject roster for active classes.",
+                icon: GraduationCap,
+            },
+        ],
+    },
+    {
+        label: "Enrollment Summaries",
+        items: [
+            {
+                type: "enrollment_summary",
+                title: "Enrollment summary",
+                description: "Aggregated counts by department, course, and year.",
+                icon: ClipboardList,
+            },
+        ],
+    },
+] as const;
+
+function reportTitle(reportType: string | null): string {
+    for (const group of REPORT_GROUPS) {
+        const report = group.items.find((item) => item.type === reportType);
+        if (report) return report.title;
+    }
+
+    return "Select a report";
+}
+
 export function ReportsSection({
     activeReportCard,
     reportFilters,
@@ -30,6 +81,7 @@ export function ReportsSection({
     subjectComboboxOptions,
     isLoadingFilterOptions,
     isLoadingReport,
+    recentOutputs,
     onOpenBulkReports,
     onReportCardClick,
     onReportFiltersChange,
@@ -37,229 +89,339 @@ export function ReportsSection({
     onGenerateReport,
     onExportExcel,
 }: ReportsSectionProps) {
+    const [catalogSearch, setCatalogSearch] = useState("");
+    const normalizedSearch = catalogSearch.trim().toLowerCase();
+
+    const visibleGroups = useMemo(
+        () =>
+            REPORT_GROUPS.map((group) => ({
+                ...group,
+                items: group.items.filter(
+                    (item) => !normalizedSearch || `${item.title} ${item.description}`.toLowerCase().includes(normalizedSearch),
+                ),
+            })).filter((group) => group.items.length > 0),
+        [normalizedSearch],
+    );
+
+    const selectedTitle = reportTitle(activeReportCard);
+    const selectedCourse = courseComboboxOptions.find((option) => option.value === reportFilters.course_filter)?.label ?? "All courses";
+    const selectedSubject = subjectComboboxOptions.find((option) => option.value === reportFilters.subject_filter)?.label ?? "All subjects";
+    const includedFilters = [
+        activeReportCard === "enrolled_by_subject" ? selectedSubject : selectedCourse,
+        reportFilters.department_filter === "all" ? "All departments" : reportFilters.department_filter,
+        reportFilters.year_level_filter === "all" ? "All year levels" : `Year ${reportFilters.year_level_filter}`,
+        reportFilters.status_filter === "active" ? "Active records only" : "Active and deleted records",
+    ];
+
     return (
-        <Card className="border-dashed">
-            <CardHeader>
-                <div className="flex items-center justify-between">
-                    <div>
-                        <CardTitle className="flex items-center gap-2">
-                            <FileText className="h-5 w-5" />
-                            Reports & Exports
-                        </CardTitle>
-                        <CardDescription>Select a report type, apply filters, then open a direct landscape PDF preview</CardDescription>
-                    </div>
-                    <Button onClick={onOpenBulkReports}>
-                        <Download className="mr-2 h-4 w-4" />
-                        Bulk Export Assessments
-                    </Button>
-                </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-3">
-                    {/* Enrolled Students by Course Card */}
-                    <button
-                        type="button"
-                        onClick={() => onReportCardClick("enrolled_by_course")}
-                        className={cn(
-                            "cursor-pointer rounded-lg border p-4 text-left transition-all",
-                            activeReportCard === "enrolled_by_course"
-                                ? "border-primary bg-primary/5 ring-primary/20 ring-2"
-                                : "bg-muted/30 hover:bg-muted/50",
+        <div className="space-y-6">
+            <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+                <Card className="h-fit">
+                    <CardHeader className="gap-3">
+                        <div>
+                            <CardTitle>Report catalog</CardTitle>
+                            <CardDescription>Choose an official registrar output to configure.</CardDescription>
+                        </div>
+                        <div className="relative">
+                            <Search className="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2" aria-hidden="true" />
+                            <Input
+                                value={catalogSearch}
+                                onChange={(event) => setCatalogSearch(event.target.value)}
+                                placeholder="Find a report..."
+                                className="pl-8"
+                            />
+                        </div>
+                    </CardHeader>
+                    <CardContent className="space-y-5">
+                        {visibleGroups.length === 0 ? (
+                            <p className="text-muted-foreground rounded-lg border border-dashed px-3 py-6 text-center text-sm">
+                                No matching reports.
+                            </p>
+                        ) : (
+                            visibleGroups.map((group) => (
+                                <section key={group.label} className="space-y-2">
+                                    <h3 className="text-muted-foreground px-1 text-[10px] font-semibold tracking-[0.14em] uppercase">
+                                        {group.label}
+                                    </h3>
+                                    <div className="space-y-1.5">
+                                        {group.items.map((item) => (
+                                            <button
+                                                key={item.type}
+                                                type="button"
+                                                onClick={() => onReportCardClick(item.type)}
+                                                className={cn(
+                                                    "focus-visible:ring-ring flex w-full items-start gap-3 rounded-lg border px-3 py-3 text-left transition-colors outline-none focus-visible:ring-2",
+                                                    activeReportCard === item.type
+                                                        ? "border-primary/30 bg-primary/7"
+                                                        : "hover:border-border hover:bg-muted/45 border-transparent",
+                                                )}
+                                            >
+                                                <div
+                                                    className={cn(
+                                                        "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md",
+                                                        activeReportCard === item.type
+                                                            ? "bg-primary text-primary-foreground"
+                                                            : "bg-muted text-muted-foreground",
+                                                    )}
+                                                >
+                                                    <item.icon className="size-4" aria-hidden="true" />
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <p className="text-sm font-semibold">{item.title}</p>
+                                                    <p className="text-muted-foreground mt-0.5 text-xs leading-relaxed">{item.description}</p>
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </section>
+                            ))
                         )}
-                    >
-                        <div className="flex items-center gap-3">
-                            <div className={cn("rounded-lg p-2", activeReportCard === "enrolled_by_course" ? "bg-primary/20" : "bg-primary/10")}>
-                                <Users className="text-primary h-5 w-5" />
-                            </div>
-                            <div>
-                                <p className="font-medium">Enrolled Students List</p>
-                                <p className="text-muted-foreground text-xs">Students enrolled by course, department, or year level</p>
-                            </div>
-                        </div>
-                    </button>
 
-                    {/* Students by Subject Card */}
-                    <button
-                        type="button"
-                        onClick={() => onReportCardClick("enrolled_by_subject")}
-                        className={cn(
-                            "cursor-pointer rounded-lg border p-4 text-left transition-all",
-                            activeReportCard === "enrolled_by_subject"
-                                ? "border-primary bg-primary/5 ring-primary/20 ring-2"
-                                : "bg-muted/30 hover:bg-muted/50",
-                        )}
-                    >
-                        <div className="flex items-center gap-3">
-                            <div className={cn("rounded-lg p-2", activeReportCard === "enrolled_by_subject" ? "bg-primary/20" : "bg-primary/10")}>
-                                <GraduationCap className="text-primary h-5 w-5" />
-                            </div>
-                            <div>
-                                <p className="font-medium">Students by Subject</p>
-                                <p className="text-muted-foreground text-xs">List of students enrolled in a specific subject</p>
-                            </div>
-                        </div>
-                    </button>
-
-                    {/* Enrollment Summary Card */}
-                    <button
-                        type="button"
-                        onClick={() => onReportCardClick("enrollment_summary")}
-                        className={cn(
-                            "cursor-pointer rounded-lg border p-4 text-left transition-all",
-                            activeReportCard === "enrollment_summary"
-                                ? "border-primary bg-primary/5 ring-primary/20 ring-2"
-                                : "bg-muted/30 hover:bg-muted/50",
-                        )}
-                    >
-                        <div className="flex items-center gap-3">
-                            <div className={cn("rounded-lg p-2", activeReportCard === "enrollment_summary" ? "bg-primary/20" : "bg-primary/10")}>
-                                <FileText className="text-primary h-5 w-5" />
-                            </div>
-                            <div>
-                                <p className="font-medium">Enrollment Summary</p>
-                                <p className="text-muted-foreground text-xs">Summary statistics by department, course, and year</p>
-                            </div>
-                        </div>
-                    </button>
-                </div>
-
-                {/* Inline Filter Panel - shown when a report card is active */}
-                {activeReportCard && (
-                    <div className="bg-muted/20 animate-in fade-in slide-in-from-top-2 rounded-lg border p-5 duration-200">
-                        <div className="mb-4 flex items-center justify-between">
-                            <div>
-                                <h4 className="text-sm font-semibold">
-                                    {activeReportCard === "enrolled_by_course" && "Configure: Enrolled Students List"}
-                                    {activeReportCard === "enrolled_by_subject" && "Configure: Students by Subject"}
-                                    {activeReportCard === "enrollment_summary" && "Configure: Enrollment Summary"}
-                                </h4>
-                                <p className="text-muted-foreground text-xs">Adjust filters below, then open the PDF preview in a new tab.</p>
-                            </div>
-                            <Button variant="ghost" size="sm" onClick={onCancelInlineFilters}>
-                                <X className="h-4 w-4" />
-                            </Button>
-                        </div>
-
-                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                            {/* Course Filter - for enrolled_by_course */}
-                            {activeReportCard === "enrolled_by_course" && (
-                                <Combobox
-                                    label="Course"
-                                    options={courseComboboxOptions}
-                                    value={reportFilters.course_filter}
-                                    onValueChange={(value) => onReportFiltersChange((prev) => ({ ...prev, course_filter: value }))}
-                                    placeholder="Select course..."
-                                    searchPlaceholder="Search courses..."
-                                    emptyText={isLoadingFilterOptions ? "Loading courses..." : "No courses found."}
-                                    disabled={isLoadingFilterOptions}
-                                />
-                            )}
-
-                            {/* Subject Filter - for enrolled_by_subject (searchable Combobox) */}
-                            {activeReportCard === "enrolled_by_subject" && (
-                                <div className="sm:col-span-2 lg:col-span-2">
-                                    <Combobox
-                                        label="Subject"
-                                        required
-                                        options={subjectComboboxOptions}
-                                        value={reportFilters.subject_filter}
-                                        onValueChange={(value) => onReportFiltersChange((prev) => ({ ...prev, subject_filter: value }))}
-                                        placeholder="Search and select a subject..."
-                                        searchPlaceholder="Type to search subjects by code or title..."
-                                        emptyText={isLoadingFilterOptions ? "Loading subjects..." : "No subjects with active classes found."}
-                                        disabled={isLoadingFilterOptions}
-                                    />
+                        <section className="space-y-2 border-t pt-4">
+                            <h3 className="text-muted-foreground px-1 text-[10px] font-semibold tracking-[0.14em] uppercase">
+                                Official Documents & Assessments
+                            </h3>
+                            <button
+                                type="button"
+                                onClick={onOpenBulkReports}
+                                className="hover:bg-muted/45 focus-visible:ring-ring hover:border-border flex w-full items-start gap-3 rounded-lg border border-transparent px-3 py-3 text-left transition-colors outline-none focus-visible:ring-2"
+                            >
+                                <div className="bg-muted text-muted-foreground mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md">
+                                    <Download className="size-4" aria-hidden="true" />
                                 </div>
-                            )}
-
-                            {/* Department Filter - for enrolled_by_course and enrollment_summary */}
-                            {(activeReportCard === "enrolled_by_course" || activeReportCard === "enrollment_summary") && (
-                                <div className="space-y-2">
-                                    <Label className="text-sm font-medium">Department</Label>
-                                    <Select
-                                        value={reportFilters.department_filter}
-                                        onValueChange={(value) => onReportFiltersChange((prev) => ({ ...prev, department_filter: value }))}
-                                    >
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select department" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="all">All Departments</SelectItem>
-                                            <SelectItem value="IT">IT</SelectItem>
-                                            <SelectItem value="HM">HM</SelectItem>
-                                            <SelectItem value="BA">BA</SelectItem>
-                                            <SelectItem value="TESDA">TESDA</SelectItem>
-                                        </SelectContent>
-                                    </Select>
+                                <div>
+                                    <p className="text-sm font-semibold">Bulk assessment export</p>
+                                    <p className="text-muted-foreground mt-0.5 text-xs leading-relaxed">
+                                        Queue assessment PDFs for a scoped student group.
+                                    </p>
                                 </div>
-                            )}
+                            </button>
+                        </section>
+                    </CardContent>
+                </Card>
 
-                            {/* Year Level Filter - for enrolled_by_course */}
-                            {activeReportCard === "enrolled_by_course" && (
-                                <div className="space-y-2">
-                                    <Label className="text-sm font-medium">Year Level</Label>
-                                    <Select
-                                        value={reportFilters.year_level_filter}
-                                        onValueChange={(value) => onReportFiltersChange((prev) => ({ ...prev, year_level_filter: value }))}
-                                    >
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select year level" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="all">All Year Levels</SelectItem>
-                                            <SelectItem value="1">1st Year</SelectItem>
-                                            <SelectItem value="2">2nd Year</SelectItem>
-                                            <SelectItem value="3">3rd Year</SelectItem>
-                                            <SelectItem value="4">4th Year</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            )}
-
-                            {/* Status Filter - for all report types */}
-                            <div className="space-y-2">
-                                <Label className="text-sm font-medium">Student Status</Label>
-                                <Select
-                                    value={reportFilters.status_filter}
-                                    onValueChange={(value) => onReportFiltersChange((prev) => ({ ...prev, status_filter: value }))}
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select status" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="active">Active Only</SelectItem>
-                                        <SelectItem value="all">Include Deleted</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        </div>
-
-                        {/* Generate Button */}
-                        <div className="mt-5 flex items-center justify-end gap-3">
-                            <Button variant="ghost" size="sm" onClick={onCancelInlineFilters} disabled={isLoadingReport}>
-                                Cancel
-                            </Button>
-                            <Button variant="outline" size="sm" onClick={onExportExcel} disabled={isLoadingReport || isLoadingFilterOptions}>
-                                <FileSpreadsheet className="mr-2 h-4 w-4" />
-                                Export Excel
-                            </Button>
-                            <Button onClick={onGenerateReport} disabled={isLoadingReport}>
-                                {isLoadingReport ? (
-                                    <>
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        Generating...
-                                    </>
-                                ) : (
-                                    <>
-                                        <Eye className="mr-2 h-4 w-4" />
-                                        Preview PDF
-                                    </>
+                <Card className="min-w-0">
+                    <CardHeader className="flex-row items-start justify-between gap-4 border-b">
+                        <div>
+                            <div className="mb-1.5 flex items-center gap-2">
+                                <CardTitle>{selectedTitle}</CardTitle>
+                                {activeReportCard && (
+                                    <Badge variant="outline" className="text-emerald-700 dark:text-emerald-400">
+                                        Data ready
+                                    </Badge>
                                 )}
-                            </Button>
+                            </div>
+                            <CardDescription>Configure included records and choose the output format.</CardDescription>
                         </div>
-                    </div>
-                )}
-            </CardContent>
-        </Card>
+                        <FileText className="text-muted-foreground size-5" aria-hidden="true" />
+                    </CardHeader>
+                    <CardContent className="space-y-6 pt-5">
+                        {!activeReportCard ? (
+                            <div className="flex min-h-72 flex-col items-center justify-center rounded-lg border border-dashed text-center">
+                                <FileText className="text-muted-foreground/50 size-9" aria-hidden="true" />
+                                <p className="mt-3 text-sm font-semibold">Choose a report from the catalog</p>
+                                <p className="text-muted-foreground mt-1 max-w-sm text-xs">
+                                    Its available filters and output options will appear here.
+                                </p>
+                            </div>
+                        ) : (
+                            <>
+                                <section className="space-y-3">
+                                    <div>
+                                        <h3 className="text-sm font-semibold">Report scope</h3>
+                                        <p className="text-muted-foreground text-xs">Filters are applied to the active semester and school year.</p>
+                                    </div>
+                                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                                        {activeReportCard === "enrolled_by_course" && (
+                                            <Combobox
+                                                label="Course"
+                                                options={courseComboboxOptions}
+                                                value={reportFilters.course_filter}
+                                                onValueChange={(value) =>
+                                                    onReportFiltersChange((previous) => ({ ...previous, course_filter: value }))
+                                                }
+                                                placeholder="Select course..."
+                                                searchPlaceholder="Search courses..."
+                                                emptyText={isLoadingFilterOptions ? "Loading courses..." : "No courses found."}
+                                                disabled={isLoadingFilterOptions}
+                                            />
+                                        )}
+
+                                        {activeReportCard === "enrolled_by_subject" && (
+                                            <div className="sm:col-span-2">
+                                                <Combobox
+                                                    label="Subject"
+                                                    required
+                                                    options={subjectComboboxOptions}
+                                                    value={reportFilters.subject_filter}
+                                                    onValueChange={(value) =>
+                                                        onReportFiltersChange((previous) => ({ ...previous, subject_filter: value }))
+                                                    }
+                                                    placeholder="Search and select a subject..."
+                                                    searchPlaceholder="Search by subject code or title..."
+                                                    emptyText={isLoadingFilterOptions ? "Loading subjects..." : "No active subjects found."}
+                                                    disabled={isLoadingFilterOptions}
+                                                />
+                                            </div>
+                                        )}
+
+                                        {(activeReportCard === "enrolled_by_course" || activeReportCard === "enrollment_summary") && (
+                                            <div className="space-y-2">
+                                                <Label>Department</Label>
+                                                <Select
+                                                    value={reportFilters.department_filter}
+                                                    onValueChange={(value) =>
+                                                        onReportFiltersChange((previous) => ({ ...previous, department_filter: value }))
+                                                    }
+                                                >
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Select department" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="all">All Departments</SelectItem>
+                                                        <SelectItem value="IT">IT</SelectItem>
+                                                        <SelectItem value="HM">HM</SelectItem>
+                                                        <SelectItem value="BA">BA</SelectItem>
+                                                        <SelectItem value="TESDA">TESDA</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                        )}
+
+                                        {activeReportCard === "enrolled_by_course" && (
+                                            <div className="space-y-2">
+                                                <Label>Year level</Label>
+                                                <Select
+                                                    value={reportFilters.year_level_filter}
+                                                    onValueChange={(value) =>
+                                                        onReportFiltersChange((previous) => ({ ...previous, year_level_filter: value }))
+                                                    }
+                                                >
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Select year level" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="all">All Year Levels</SelectItem>
+                                                        {[1, 2, 3, 4].map((year) => (
+                                                            <SelectItem key={year} value={String(year)}>
+                                                                Year {year}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                        )}
+
+                                        <div className="space-y-2">
+                                            <Label>Enrollment status</Label>
+                                            <Select
+                                                value={reportFilters.status_filter}
+                                                onValueChange={(value) =>
+                                                    onReportFiltersChange((previous) => ({ ...previous, status_filter: value }))
+                                                }
+                                            >
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Select status" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="active">Active Only</SelectItem>
+                                                    <SelectItem value="all">Include Deleted</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                    </div>
+                                </section>
+
+                                <section className="bg-muted/30 rounded-lg border p-4">
+                                    <h3 className="text-sm font-semibold">Included in this output</h3>
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                        {includedFilters.map((filter) => (
+                                            <Badge key={filter} variant="secondary">
+                                                {filter}
+                                            </Badge>
+                                        ))}
+                                    </div>
+                                    <p className="text-muted-foreground mt-3 text-xs leading-relaxed">
+                                        {selectedTitle} for the active academic period. PDF previews are generated asynchronously; Excel exports open
+                                        immediately.
+                                    </p>
+                                </section>
+
+                                <section className="flex flex-col gap-3 border-t pt-5 sm:flex-row sm:items-center sm:justify-between">
+                                    <div>
+                                        <p className="text-sm font-semibold">Output options</p>
+                                        <p className="text-muted-foreground text-xs">Choose a preview-ready PDF or spreadsheet export.</p>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        <Button variant="ghost" size="sm" onClick={onCancelInlineFilters} disabled={isLoadingReport}>
+                                            Reset filters
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={onExportExcel}
+                                            disabled={isLoadingReport || isLoadingFilterOptions}
+                                        >
+                                            <FileSpreadsheet className="size-4" aria-hidden="true" />
+                                            Export Excel
+                                        </Button>
+                                        <Button size="sm" onClick={onGenerateReport} disabled={isLoadingReport || isLoadingFilterOptions}>
+                                            {isLoadingReport ? (
+                                                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                                            ) : (
+                                                <Eye className="size-4" aria-hidden="true" />
+                                            )}
+                                            {isLoadingReport ? "Queueing preview..." : "Preview PDF"}
+                                        </Button>
+                                    </div>
+                                </section>
+                            </>
+                        )}
+                    </CardContent>
+                </Card>
+            </div>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                        <FileClock className="size-4" aria-hidden="true" /> Recent outputs
+                    </CardTitle>
+                    <CardDescription>
+                        Reports initiated during this browser session. Completed files are delivered through notifications.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    {recentOutputs.length === 0 ? (
+                        <div className="rounded-lg border border-dashed px-4 py-8 text-center">
+                            <p className="text-sm font-medium">No reports generated in this session</p>
+                            <p className="text-muted-foreground mt-1 text-xs">Select a report above to create the first output.</p>
+                        </div>
+                    ) : (
+                        <div className="divide-y rounded-lg border">
+                            {recentOutputs.map((output) => (
+                                <div key={output.id} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="bg-muted flex size-9 items-center justify-center rounded-md">
+                                            {output.format === "Excel" ? (
+                                                <FileSpreadsheet className="size-4" aria-hidden="true" />
+                                            ) : (
+                                                <FileText className="size-4" aria-hidden="true" />
+                                            )}
+                                        </div>
+                                        <div>
+                                            <p className="text-sm font-semibold">{output.name}</p>
+                                            <p className="text-muted-foreground text-xs">
+                                                {output.format} · {output.createdAt}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <Badge variant={output.status === "Queued" ? "secondary" : "outline"}>{output.status}</Badge>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+        </div>
     );
 }

@@ -32,8 +32,8 @@ import {
     Filter,
     GraduationCap,
     HelpCircle,
-    LayoutGrid,
     Layers,
+    LayoutGrid,
     List,
     Loader2,
     MapPin,
@@ -572,144 +572,160 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
     };
 
     return (
-        <AdminLayout user={user} title="Students">
-            <Head title="Administrators • Students" />
+        <AdminLayout user={user} title="Student Directory">
+            <Head title="Administrators • Student Directory" />
 
             <div className="flex flex-col gap-6">
-                {/* Header & Stats */}
-                <div className="flex flex-col gap-4">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <header className="flex flex-col gap-4 border-b pb-6 sm:flex-row sm:items-end sm:justify-between">
+                    <div className="space-y-1">
+                        <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.16em] uppercase">Student Records</p>
+                        <h1 className="text-2xl font-semibold tracking-tight">Student Directory</h1>
+                        <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed">
+                            Find, review, and maintain authoritative student records across the institution.
+                        </p>
+                    </div>
+                    <Link href={route("administrators.students.create")} className={buttonVariants({ className: "gap-2" })}>
+                        <Plus className="size-4" aria-hidden="true" />
+                        Create student
+                    </Link>
+                </header>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    {[
+                        {
+                            label: "Total records",
+                            value: stats.total_students,
+                            detail: "All student profiles",
+                            icon: Users,
+                            tone: "text-primary",
+                        },
+                        {
+                            label: "Currently enrolled",
+                            value: stats.total_enrolled,
+                            detail: "Active academic period",
+                            icon: UserCheck,
+                            tone: "text-emerald-600 dark:text-emerald-400",
+                        },
+                        {
+                            label: "Applicants",
+                            value: stats.total_applicants,
+                            detail: "Awaiting admissions processing",
+                            icon: UserPlus,
+                            tone: "text-amber-600 dark:text-amber-400",
+                        },
+                        {
+                            label: "Graduated",
+                            value: stats.total_graduated,
+                            detail: "Completed student records",
+                            icon: GraduationCap,
+                            tone: "text-blue-600 dark:text-blue-400",
+                        },
+                    ].map((metric) => (
+                        <Card key={metric.label} size="sm" className="gap-0 py-0">
+                            <CardContent className="flex items-center justify-between gap-4 p-4">
+                                <div className="min-w-0">
+                                    <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">{metric.label}</p>
+                                    <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{metric.value}</p>
+                                    <p className="text-muted-foreground mt-1 truncate text-xs">{metric.detail}</p>
+                                </div>
+                                <div className="bg-muted/60 flex size-10 shrink-0 items-center justify-center rounded-lg">
+                                    <metric.icon className={`size-5 ${metric.tone}`} aria-hidden="true" />
+                                </div>
+                            </CardContent>
+                        </Card>
+                    ))}
+                </div>
+
+                <Card size="sm" className="gap-3 py-3">
+                    <CardHeader className="flex-row items-center justify-between gap-4 px-3">
                         <div>
-                            <h2 className="text-3xl font-bold tracking-tight">Students</h2>
-                            <p className="text-muted-foreground">Manage and monitor student records, enrollment, and status.</p>
+                            <p className="text-sm font-semibold">Student records</p>
+                            <p className="text-muted-foreground text-xs">
+                                Showing {visiblePagination.from}–{visiblePagination.to} of {visiblePagination.total} matching records
+                            </p>
                         </div>
-                        <div className="flex gap-2">
-                            <Link href={route("administrators.students.create")} className={buttonVariants({ className: "gap-2" })}>
-                                <Plus className="h-4 w-4" />
-                                Create Student
-                            </Link>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                        <Card>
-                            <CardContent className="flex items-center gap-4 p-6">
-                                <div className="bg-primary/10 rounded-full p-3">
-                                    <Users className="text-primary h-6 w-6" />
-                                </div>
-                                <div>
-                                    <p className="text-muted-foreground text-sm font-medium">Total Students</p>
-                                    <h3 className="text-2xl font-bold">{stats.total_students}</h3>
-                                </div>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardContent className="flex items-center gap-4 p-6">
-                                <div className="rounded-full bg-green-100 p-3 dark:bg-green-900/30">
-                                    <UserCheck className="h-6 w-6 text-green-600 dark:text-green-400" />
-                                </div>
-                                <div>
-                                    <p className="text-muted-foreground text-sm font-medium">Enrolled</p>
-                                    <h3 className="text-2xl font-bold">{stats.total_enrolled}</h3>
-                                </div>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardContent className="flex items-center gap-4 p-6">
-                                <div className="rounded-full bg-yellow-100 p-3 dark:bg-yellow-900/30">
-                                    <UserPlus className="h-6 w-6 text-yellow-600 dark:text-yellow-400" />
-                                </div>
-                                <div>
-                                    <p className="text-muted-foreground text-sm font-medium">Applicants</p>
-                                    <h3 className="text-2xl font-bold">{stats.total_applicants}</h3>
-                                </div>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardContent className="flex items-center gap-4 p-6">
-                                <div className="rounded-full bg-blue-100 p-3 dark:bg-blue-900/30">
-                                    <GraduationCap className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                                </div>
-                                <div>
-                                    <p className="text-muted-foreground text-sm font-medium">Graduated</p>
-                                    <h3 className="text-2xl font-bold">{stats.total_graduated}</h3>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    </div>
-                </div>
-
-                {/* Control Bar */}
-                <div className="bg-card flex flex-col justify-between gap-4 rounded-lg border p-4 shadow-sm sm:flex-row sm:items-center">
-                    <div className="relative max-w-md flex-1">
-                        <Search className="text-muted-foreground absolute top-2.5 left-2.5 h-4 w-4" />
-                        <Input
-                            placeholder="Search by name, ID..."
-                            className="bg-background pl-8"
-                            value={search}
-                            onChange={(e) => {
-                                const nextSearch = e.target.value;
-
-                                setSearch(nextSearch);
-                                refreshStudents(nextSearch, activeFilters);
-                            }}
-                        />
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                        <Select value={sortOption} onValueChange={handleSortChange}>
-                            <SelectTrigger className="h-8 w-[180px]">
-                                <SelectValue placeholder="Sort students" />
-                            </SelectTrigger>
-                            <SelectContent align="end">
-                                <SelectItem value="created_at:desc">Latest added</SelectItem>
-                                <SelectItem value="created_at:asc">Oldest added</SelectItem>
-                                <SelectItem value="name:asc">Name A-Z</SelectItem>
-                                <SelectItem value="name:desc">Name Z-A</SelectItem>
-                                <SelectItem value="student_id:asc">Student ID ascending</SelectItem>
-                                <SelectItem value="student_id:desc">Student ID descending</SelectItem>
-                            </SelectContent>
-                        </Select>
-
-                        <Filters
-                            fields={filterFields}
-                            filters={activeFilters}
-                            onChange={handleFiltersChange}
-                            trigger={
-                                <Button variant="outline" className="relative gap-2" size="sm">
-                                    <Filter className="h-4 w-4" />
-                                    Filters
-                                    {activeFilters.length > 0 && (
-                                        <Badge variant="secondary" className="ml-1 h-5 min-w-5 rounded-full px-1.5 text-xs">
-                                            {activeFilters.length}
-                                        </Badge>
-                                    )}
-                                </Button>
-                            }
-                        />
-
                         {activeFilters.length > 0 && (
-                            <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground hover:text-foreground h-8 px-2">
-                                <RotateCcw className="mr-2 h-3.5 w-3.5" />
-                                Reset
-                            </Button>
+                            <Badge variant="secondary">
+                                {activeFilters.length} active filter{activeFilters.length === 1 ? "" : "s"}
+                            </Badge>
                         )}
+                    </CardHeader>
+                    <CardContent className="px-3">
+                        <div className="bg-muted/20 flex flex-col justify-between gap-3 rounded-lg border p-2.5 lg:flex-row lg:items-center">
+                            <div className="relative min-w-0 flex-1">
+                                <Search className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" aria-hidden="true" />
+                                <Input
+                                    placeholder="Search by student name, ID, course, or status..."
+                                    className="bg-background h-9 pl-9"
+                                    value={search}
+                                    onChange={(event) => {
+                                        const nextSearch = event.target.value;
+                                        setSearch(nextSearch);
+                                        refreshStudents(nextSearch, activeFilters);
+                                    }}
+                                />
+                            </div>
 
-                        <Separator orientation="vertical" className="mx-1 h-8" />
+                            <div className="flex flex-wrap items-center gap-2">
+                                <Select value={sortOption} onValueChange={handleSortChange}>
+                                    <SelectTrigger className="h-8 w-[180px]">
+                                        <SelectValue placeholder="Sort students" />
+                                    </SelectTrigger>
+                                    <SelectContent align="end">
+                                        <SelectItem value="created_at:desc">Latest added</SelectItem>
+                                        <SelectItem value="created_at:asc">Oldest added</SelectItem>
+                                        <SelectItem value="name:asc">Name A-Z</SelectItem>
+                                        <SelectItem value="name:desc">Name Z-A</SelectItem>
+                                        <SelectItem value="student_id:asc">Student ID ascending</SelectItem>
+                                        <SelectItem value="student_id:desc">Student ID descending</SelectItem>
+                                    </SelectContent>
+                                </Select>
 
-                        <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as "list" | "grid")}>
-                            <TabsList className="grid w-full grid-cols-2">
-                                <TabsTrigger value="list" title="List View">
-                                    <List className="h-4 w-4" />
-                                </TabsTrigger>
-                                <TabsTrigger value="grid" title="Grid View">
-                                    <LayoutGrid className="h-4 w-4" />
-                                </TabsTrigger>
-                            </TabsList>
-                        </Tabs>
-                    </div>
-                </div>
+                                <Filters
+                                    fields={filterFields}
+                                    filters={activeFilters}
+                                    onChange={handleFiltersChange}
+                                    trigger={
+                                        <Button variant="outline" className="relative gap-2" size="sm">
+                                            <Filter className="size-4" aria-hidden="true" />
+                                            Filters
+                                            {activeFilters.length > 0 && (
+                                                <Badge variant="secondary" className="ml-1 h-5 min-w-5 rounded-full px-1.5 text-xs">
+                                                    {activeFilters.length}
+                                                </Badge>
+                                            )}
+                                        </Button>
+                                    }
+                                />
 
+                                {activeFilters.length > 0 && (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={clearFilters}
+                                        className="text-muted-foreground hover:text-foreground h-8 px-2"
+                                    >
+                                        <RotateCcw className="size-3.5" aria-hidden="true" />
+                                        Reset
+                                    </Button>
+                                )}
+
+                                <Separator orientation="vertical" className="mx-1 hidden h-8 sm:block" />
+
+                                <Tabs value={viewMode} onValueChange={(value) => setViewMode(value as "list" | "grid")}>
+                                    <TabsList className="grid grid-cols-2">
+                                        <TabsTrigger value="list" title="List view" aria-label="List view">
+                                            <List className="size-4" aria-hidden="true" />
+                                        </TabsTrigger>
+                                        <TabsTrigger value="grid" title="Grid view" aria-label="Grid view">
+                                            <LayoutGrid className="size-4" aria-hidden="true" />
+                                        </TabsTrigger>
+                                    </TabsList>
+                                </Tabs>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
                 {/* Content */}
                 <Tabs value={viewMode} className="w-full">
                     <TabsContent value="list" className="mt-0">

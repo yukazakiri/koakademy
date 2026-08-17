@@ -50,6 +50,9 @@ final class RegistrarAnalyticsService
                     ->where('semester', $previousSemester)
                     ->where('status', '!=', $pendingStatus)
                     ->count(),
+                'total_all_time_enrollments' => StudentEnrollment::query()
+                    ->withTrashed()
+                    ->count(),
                 'by_department' => (clone $currentSemesterQuery)
                     ->where('student_enrollment.status', '!=', $pendingStatus)
                     ->join('courses', DB::raw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT)'), '=', 'courses.id')
@@ -58,28 +61,53 @@ final class RegistrarAnalyticsService
                     ->groupByRaw('TRIM(departments.code)')
                     ->get(),
                 'by_year_level' => (clone $currentSemesterQuery)
-                    ->where('status', '!=', $pendingStatus)
+                    ->where('student_enrollment.status', '!=', $pendingStatus)
                     ->selectRaw('academic_year as year_level, count(*) as count')
                     ->groupBy('academic_year')
                     ->get(),
-                'trashed_count' => StudentEnrollment::query()
-                    ->onlyTrashed()
-                    ->where('school_year', $currentSchoolYearString)
-                    ->where('semester', $currentSemester)
-                    ->count(),
-                'active_count' => StudentEnrollment::query()
-                    ->where('school_year', $currentSchoolYearString)
-                    ->where('semester', $currentSemester)
-                    ->count(),
+                'by_student_type' => (clone $currentSemesterQuery)
+                    ->where('student_enrollment.status', '!=', $pendingStatus)
+                    ->join('students', 'student_enrollment.student_id', '=', 'students.id')
+                    ->selectRaw('students.student_type, count(*) as count')
+                    ->groupBy('students.student_type')
+                    ->get(),
+                'by_gender' => (clone $currentSemesterQuery)
+                    ->where('student_enrollment.status', '!=', $pendingStatus)
+                    ->join('students', 'student_enrollment.student_id', '=', 'students.id')
+                    ->selectRaw('LOWER(students.gender) as gender, count(*) as count')
+                    ->groupBy('students.gender')
+                    ->get(),
+                'by_course' => (clone $currentSemesterQuery)
+                    ->where('student_enrollment.status', '!=', $pendingStatus)
+                    ->join('courses', DB::raw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT)'), '=', 'courses.id')
+                    ->selectRaw('courses.code as course_code, courses.title as course_title, count(*) as count')
+                    ->groupBy('courses.code', 'courses.title')
+                    ->orderByDesc('count')
+                    ->limit(20)
+                    ->get(),
                 'by_status' => (clone $currentSemesterQuery)
                     ->selectRaw('status, count(*) as count')
                     ->groupBy('status')
+                    ->get(),
+                'trashed_count' => (clone $currentSemesterQuery)->onlyTrashed()->count(),
+                'active_count' => (clone $currentSemesterQuery)->whereNull('deleted_at')->count(),
+                'daily_trend' => (clone $currentSemesterQuery)
+                    ->selectRaw('DATE(created_at) as date, count(*) as count')
+                    ->groupByRaw('DATE(created_at)')
+                    ->orderBy('date')
+                    ->get(),
+                'by_submission_channel' => (clone $currentSemesterQuery)
+                    ->selectRaw("COALESCE(NULLIF(submission_channel, ''), 'direct') as channel, count(*) as count")
+                    ->groupBy('submission_channel')
                     ->get(),
             ],
             'applicantsCount' => Student::query()
                 ->withTrashed()
                 ->where('status', StudentStatus::Applicant)
                 ->count(),
+            'total_students' => Student::query()->withTrashed()->count(),
+            'total_college_students' => Student::query()->withTrashed()->where('student_type', 'college')->count(),
+            'total_shs_students' => Student::query()->withTrashed()->where('student_type', 'shs')->count(),
             'quality' => [
                 'missing_department_count' => (clone $currentSemesterQuery)
                     ->leftJoin('courses', DB::raw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT)'), '=', 'courses.id')
@@ -89,6 +117,15 @@ final class RegistrarAnalyticsService
                 'missing_course_count' => (clone $currentSemesterQuery)
                     ->leftJoin('courses', DB::raw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT)'), '=', 'courses.id')
                     ->whereNull('courses.id')
+                    ->count(),
+                'missing_student_record_count' => (clone $currentSemesterQuery)
+                    ->leftJoin('students', 'student_enrollment.student_id', '=', 'students.id')
+                    ->whereNull('students.id')
+                    ->count(),
+                'without_gender_count' => (clone $currentSemesterQuery)
+                    ->where('student_enrollment.status', '!=', $pendingStatus)
+                    ->join('students', 'student_enrollment.student_id', '=', 'students.id')
+                    ->whereNull('students.gender')
                     ->count(),
             ],
             'filters' => $this->semesterContext(),

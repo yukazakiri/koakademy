@@ -129,6 +129,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/enrollments', [AdministratorEnrollmentManagementController::class, 'index'])->name('enrollments.index');
         Route::get('/enrollments/applicants', [AdministratorEnrollmentManagementController::class, 'applicants'])->name('enrollments.applicants');
         Route::get('/registrar/analytics', [AdministratorRegistrarInsightsController::class, 'analytics'])->name('registrar.analytics.index');
+        Route::get('/registrar/analytics/export', [AdministratorRegistrarInsightsController::class, 'export'])->name('registrar.analytics.export');
         Route::get('/registrar/reports', [AdministratorRegistrarInsightsController::class, 'reports'])->name('registrar.reports.index');
         Route::get('/enrollments/create', [AdministratorEnrollmentManagementController::class, 'create'])->name('enrollments.create');
         Route::post('/enrollments', [AdministratorEnrollmentManagementController::class, 'store'])->name('enrollments.store');

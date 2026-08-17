@@ -116,4 +116,38 @@ it('forbids registrar insights without enrollment visibility permission', functi
     $this->actingAs($user)
         ->get(route('administrators.registrar.reports.index'))
         ->assertForbidden();
+
+    $this->actingAs($user)
+        ->get(route('administrators.registrar.analytics.export'))
+        ->assertForbidden();
+});
+
+it('exports registrar analytics as an excel workbook', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Registrar]);
+    $user->givePermissionTo('ViewAny:StudentEnrollment');
+
+    $department = Department::factory()->create(['code' => 'IT']);
+    $course = Course::factory()->create([
+        'code' => 'BSIT',
+        'department_id' => $department->id,
+    ]);
+    $student = Student::factory()->create([
+        'course_id' => $course->id,
+        'gender' => 'Male',
+        'student_type' => 'college',
+    ]);
+
+    StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'school_year' => '2024 - 2025',
+        'semester' => 1,
+        'academic_year' => 1,
+        'status' => 'Enrolled',
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('administrators.registrar.analytics.export'))
+        ->assertSuccessful()
+        ->assertHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 });

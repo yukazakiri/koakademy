@@ -25,6 +25,12 @@ Schedule::command('assessment-exports:maintain')
     ->onOneServer()
     ->withoutOverlapping();
 
+Schedule::command('telescope:prune --hours=24')
+    ->daily()
+    ->environments(['production'])
+    ->onOneServer()
+    ->withoutOverlapping();
+
 Schedule::command('migrate:fresh --seed --force')
     ->daily()
     ->environments(['demo'])

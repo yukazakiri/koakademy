@@ -21,7 +21,7 @@ ss -ltnp '( sport = :80 or sport = :443 )'
 docker service logs --tail=200 koakademy_caddy
 ```
 
-The installer fails rather than overwriting legacy `koakademy-*` services. Follow [Deployment](DEPLOYMENT.md#legacy-swarm-migration) on a fresh host or during a planned migration window.
+The installer fails rather than overwriting legacy `koakademy-*` services. Follow [Deployment](./deployment/#legacy-swarm-migration) on a fresh host or during a planned migration window.
 
 ## App does not become healthy
 

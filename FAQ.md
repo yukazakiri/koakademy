@@ -1,0 +1,61 @@
+# FAQ
+
+## Is KoAkademy production ready?
+
+KoAkademy is a production-capable beta. It provides a hardened reference topology, health endpoint, migrations, tests, and operator docs. Each institution remains responsible for staging, capacity planning, backups, monitoring, privacy, security review, and recovery exercises.
+
+## Which release is supported?
+
+Only the latest stable, non-prerelease release is supported. Development and prerelease images are for evaluation. Read the changelog and release notes before upgrading.
+
+## What does the one-line installer change?
+
+It installs Docker when needed, initializes Swarm only when inactive, and deploys Caddy, KoAkademy, PostgreSQL, Redis, and Gotenberg on a single VPS. Caddy owns ports 80/443; the remaining services are private on the Swarm overlay. The installer preserves an active manager cluster, never leaves Swarm, and stops before changing a legacy `koakademy-*` deployment.
+
+The Linux command resolves a stable GitHub Release and verifies its checksummed bundle before deploying the immutable GHCR digest in `version.json`. It never selects mutable `latest` or rolling `edge`.
+
+## Can I use MySQL or SQLite in production?
+
+The prebuilt production image supports PostgreSQL only. SQLite remains the default lightweight option for native development and automated tests. Other databases are not part of the supported production contract.
+
+## Which ports are exposed?
+
+The default Swarm installer publishes Caddy only on ports `80` and `443`. KoAkademy, PostgreSQL, Redis, and Gotenberg have no host-published port.
+
+The manual Compose topology publishes only `127.0.0.1:8000`. PostgreSQL, Redis, and Gotenberg are private in both topologies.
+
+## Can portal and admin use separate subdomains?
+
+Yes, as an advanced option. The supported default uses one hostname with `/admin`. For split hosts, configure `APP_URL`, `PORTAL_HOST`, `ADMIN_HOST`, certificates, proxy routes, cookie scope, and cross-host behavior together.
+
+## How do I create the first administrator?
+
+Run migrations, start the app, then open `/setup`. The one-time wizard creates the institution and first super administrator, and can pre-create CHED-aligned degree programs, DepEd SHS tracks and strands, TESDA NC qualifications, or record the DepEd MATATAG framework from a built-in, research-backed catalog. It becomes forbidden after setup. Do not use `make:filament-user` for initial installation.
+
+## Does KoAkademy run migrations automatically?
+
+Not in the supported production flow. `RUN_MIGRATIONS=false` is the default. Operators run `php artisan migrate --force` explicitly during installation and upgrades after taking a backup and reviewing release notes.
+
+## Which PDF library and renderer are used?
+
+KoAkademy uses `spatie/laravel-pdf` with Gotenberg. Gotenberg runs as a private production service. DOMPDF is not installed and is not a fallback.
+
+## Is local storage supported for production uploads?
+
+Fresh installs use a persistent application volume so setup works without a provider account. It is a single-node starter default, not resilient object storage. Use `sudo koakademy configure storage s3` or `sudo koakademy configure storage r2` before upload data must survive a host failure.
+
+## Are all routes under `/api` public API contracts?
+
+No. The documented beta contract intentionally includes only public settings, authenticated settings, and authenticated student verification. Other internal routes may change without public compatibility guarantees.
+
+## How should vulnerabilities be reported?
+
+Use a private GitHub Security Advisory as described in [SECURITY.md](SECURITY.md). Do not include exploit details or sensitive institutional data in a public issue.
+
+## Is hosted support or an SLA included?
+
+No support SLA, compliance certification, uptime guarantee, or compatibility guarantee is offered. Community issues and pull requests are handled as maintainer capacity allows.
+
+## Why is there no Code of Conduct?
+
+The maintainers have not adopted one yet. Choosing and enforcing a Code of Conduct is explicitly deferred as a maintainer governance decision.

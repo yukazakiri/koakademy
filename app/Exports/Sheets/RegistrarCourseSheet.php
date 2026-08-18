@@ -55,6 +55,7 @@ final readonly class RegistrarCourseSheet implements FromArray, ShouldAutoSize, 
     {
         return [AfterSheet::class => function (AfterSheet $event): void {
             $sheet = $event->sheet;
+            $sheet->insertNewRow(1, 1);
             $sheet->mergeCells('A1:E1');
             $sheet->setCellValue('A1', 'TOP COURSES BY ENROLLMENT');
             $sheet->getStyle('A1')->getFont()->setSize(14)->setBold(true);

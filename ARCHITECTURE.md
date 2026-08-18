@@ -1,0 +1,30 @@
+# Architecture
+
+KoAkademy is a modular Laravel monolith packaged as a FrankenPHP image. Inertia React portals, Filament administration, jobs, and scheduled work share the same application and authorization model.
+
+## Supported production runtime
+
+```text
+Browser
+  -> Caddy HTTPS on ports 80/443
+  -> private FrankenPHP application service
+       -> PostgreSQL: durable source of record
+       -> Redis: sessions, queues, cache
+       -> Gotenberg: PDF rendering
+       -> persistent app volume or external S3/R2
+       -> optional external SMTP/Sequenzy and Meilisearch
+```
+
+The one-line installer deploys that topology as a single-node Swarm. Caddy is the only public service. Database, Redis, Gotenberg, and application ports are private to the overlay. Local volumes make this a simple single-node design, not multi-node high availability.
+
+Docker Secrets are the infrastructure credential boundary. The app loads secrets at task start; provider changes redeploy FrankenPHP because persistent workers retain booted configuration. The web application reports mail status but never has Docker socket authority or writes provider credentials.
+
+## Application boundaries
+
+- HTTP/UI translates routes, middleware, Inertia pages, and Filament resources into authorized workflows.
+- Application services, actions, jobs, policies, and settings coordinate use cases.
+- Eloquent models, migrations, enums, and constraints own durable data.
+- Laravel adapters integrate storage, mail, queues, search, PDF rendering, and external APIs.
+- Optional modules extend the monolith while sharing authentication and deployment lifecycle.
+
+Production migrations are explicit release jobs. Application startup never migrates the database, and rollback never assumes database migrations can be safely reversed.

@@ -55,6 +55,7 @@ final readonly class RegistrarYearLevelSheet implements FromArray, ShouldAutoSiz
     {
         return [AfterSheet::class => function (AfterSheet $event): void {
             $sheet = $event->sheet;
+            $sheet->insertNewRow(1, 1);
             $sheet->mergeCells('A1:C1');
             $sheet->setCellValue('A1', 'ENROLLMENT BY YEAR LEVEL');
             $sheet->getStyle('A1')->getFont()->setSize(14)->setBold(true);

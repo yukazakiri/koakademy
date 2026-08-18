@@ -58,6 +58,7 @@ final readonly class RegistrarGenderSheet implements FromArray, ShouldAutoSize, 
     {
         return [AfterSheet::class => function (AfterSheet $event): void {
             $sheet = $event->sheet;
+            $sheet->insertNewRow(1, 1);
             $sheet->mergeCells('A1:C1');
             $sheet->setCellValue('A1', 'ENROLLMENT GENDER DISTRIBUTION');
             $sheet->getStyle('A1')->getFont()->setSize(14)->setBold(true);

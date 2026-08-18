@@ -1,4 +1,4 @@
-# Getting Started
+# Installation
 
 KoAkademy runs as a self-managed Linux service. The default path is a single-node Docker Swarm with Caddy HTTPS, PostgreSQL, Redis, Gotenberg, and a private FrankenPHP application service.
 
@@ -64,7 +64,7 @@ bash install.sh install --domain school.example
 
 ## Existing Swarm installation
 
-The new installer deliberately refuses a host that still has legacy `koakademy-*` services. It makes no changes and points to the [legacy Swarm migration guide](DEPLOYMENT.md#legacy-swarm-migration). Back up PostgreSQL and storage, migrate during a maintenance window, and do not run the two topologies against the same data volumes.
+The new installer deliberately refuses a host that still has legacy `koakademy-*` services. It makes no changes and points to the [legacy Swarm migration guide](./deployment/#legacy-swarm-migration). Back up PostgreSQL and storage, migrate during a maintenance window, and do not run the two topologies against the same data volumes.
 
 ## Manual Docker Compose installation
 

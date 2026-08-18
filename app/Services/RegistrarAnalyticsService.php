@@ -37,18 +37,18 @@ final class RegistrarAnalyticsService
         return [
             'analytics' => [
                 'current_semester_count' => (clone $currentSemesterQuery)
-                    ->where('status', '!=', $pendingStatus)
+                    ->where('student_enrollment.status', '!=', $pendingStatus)
                     ->count(),
                 'current_school_year_count' => StudentEnrollment::query()
                     ->withTrashed()
                     ->where('school_year', $currentSchoolYearString)
-                    ->where('status', '!=', $pendingStatus)
+                    ->where('student_enrollment.status', '!=', $pendingStatus)
                     ->count(),
                 'previous_semester_count' => StudentEnrollment::query()
                     ->withTrashed()
                     ->where('school_year', $previousSchoolYearString)
                     ->where('semester', $previousSemester)
-                    ->where('status', '!=', $pendingStatus)
+                    ->where('student_enrollment.status', '!=', $pendingStatus)
                     ->count(),
                 'total_all_time_enrollments' => StudentEnrollment::query()
                     ->withTrashed()
@@ -114,12 +114,12 @@ final class RegistrarAnalyticsService
                     ->groupBy('submission_channel')
                     ->get(),
                 'conversion_rate' => $this->computeConversionRate(
-                    $currentSemesterQuery, $pendingStatus, $currentSemesterQuery->where('status', '!=', $pendingStatus)->count()
+                    $currentSemesterQuery, $pendingStatus, $currentSemesterQuery->where('student_enrollment.status', '!=', $pendingStatus)->count()
                 ),
             ],
             'applicantsCount' => Student::query()
                 ->withTrashed()
-                ->where('status', StudentStatus::Applicant)
+                ->where('student_enrollment.status', StudentStatus::Applicant)
                 ->count(),
             'total_students' => Student::query()->withTrashed()->count(),
             'total_college_students' => Student::query()->withTrashed()->where('student_type', 'college')->count(),
@@ -173,7 +173,7 @@ final class RegistrarAnalyticsService
      */
     private function computeConversionRate($query, string $pendingStatus, int $enrolledCount): float
     {
-        $applicants = (clone $query)->where('status', $pendingStatus)->count();
+        $applicants = (clone $query)->where('student_enrollment.status', $pendingStatus)->count();
         $total = $enrolledCount + $applicants;
 
         return $total > 0 ? round(($enrolledCount / $total) * 100, 1) : 0;

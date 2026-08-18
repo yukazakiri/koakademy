@@ -33,6 +33,7 @@ final readonly class RegistrarAnalyticsExport implements Export, WithMultipleShe
             new Sheets\RegistrarCourseSheet($this->analytics),
             new Sheets\RegistrarQualitySheet($this->analytics),
             new Sheets\RegistrarTrendSheet($this->analytics),
+            new Sheets\RegistrarMonthlyTrendSheet($this->analytics),
         ];
     }
 }

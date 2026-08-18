@@ -2,7 +2,6 @@ import AdminLayout from "@/components/administrators/admin-layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { SemesterSelector, type SemesterSelectorProps } from "@/components/semester-selector";
 import { Head } from "@inertiajs/react";
 import {
@@ -11,6 +10,10 @@ import {
     School, TrendingUp, Users, UserCheck, UsersRound,
 } from "lucide-react";
 import { useMemo } from "react";
+import {
+    Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, XAxis, YAxis,
+} from "recharts";
+import { ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 
 type AnalyticsItem = { [key: string]: unknown; count?: number };
 type TrendItem = { date: string; count: number };
@@ -45,6 +48,13 @@ function formatDelta(n: number): string {
     return n.toLocaleString();
 }
 
+
+const CHART_COLORS = [
+    'hsl(212 96% 53%)', 'hsl(142 76% 36%)', 'hsl(45 93% 48%)',
+    'hsl(326 100% 60%)', 'hsl(271 81% 56%)', 'hsl(0 84% 60%)',
+    'hsl(187 85% 43%)', 'hsl(32 95% 53%)', 'hsl(160 84% 39%)',
+    'hsl(200 18% 46%)',
+];
 export default function RegistrarAnalytics({
     user, analytics, applicantsCount, total_students,
     total_college_students, total_shs_students, quality, filters, generatedAt,
@@ -130,6 +140,16 @@ export default function RegistrarAnalytics({
         () => Math.max(1, ...(analytics?.daily_trend ?? []).map((d) => Number(d.count ?? 0))),
         [analytics?.daily_trend]);
 
+    const dailyTrendChartData = useMemo(() =>
+        (analytics?.daily_trend ?? []).slice(-30).map((d) => ({
+            date: d.date?.slice(5) ?? d.date, value: Number(d.count ?? 0),
+        })), [analytics?.daily_trend]);
+
+    const monthlyTrendChartData = useMemo(() =>
+        (analytics?.monthly_trend ?? []).map((d) => ({
+            month: d.date?.slice(0, 7) ?? "", value: Number(d.count ?? 0),
+        })), [analytics?.monthly_trend]);
+
     const statusTotal = statusData.reduce((s, i) => s + i.value, 0);
     const qualityIssues = [
         { label: "Missing Department", value: quality.missing_department_count,
@@ -141,6 +161,28 @@ export default function RegistrarAnalytics({
         { label: "Without Gender Data", value: quality.without_gender_count,
           tone: quality.without_gender_count > 0 ? ("warn" as const) : ("ok" as const) },
     ];
+
+    // Chart color configs
+    const deptConfig: ChartConfig = Object.fromEntries(
+        departmentData.map((d, i) => [d.name, { label: d.name, color: CHART_COLORS[i % CHART_COLORS.length] }])
+    );
+    const genderConfig: ChartConfig = {
+        Male: { label: "Male", color: "hsl(212 96% 53%)" },
+        Female: { label: "Female", color: "hsl(326 100% 60%)" },
+        Unspecified: { label: "Unspecified", color: "hsl(200 18% 46%)" },
+        male: { label: "Male", color: "hsl(212 96% 53%)" },
+        female: { label: "Female", color: "hsl(326 100% 60%)" },
+    };
+    const typeConfig: ChartConfig = {
+        College: { label: "College", color: "hsl(212 96% 53%)" },
+        SHS: { label: "SHS", color: "hsl(142 76% 36%)" },
+        TESDA: { label: "TESDA", color: "hsl(45 93% 48%)" },
+        DHRT: { label: "DHRT", color: "hsl(271 81% 56%)" },
+    };
+    const statusConfig: ChartConfig = Object.fromEntries(
+        statusData.map((s, i) => [s.name, { label: s.name, color: CHART_COLORS[i % CHART_COLORS.length] }])
+    );
+    const trendConfig: ChartConfig = { value: { label: "Enrollments", color: "hsl(212 96% 53%)" } };
 
     return (
         <AdminLayout user={user} title="Registrar Analytics">
@@ -239,29 +281,23 @@ export default function RegistrarAnalytics({
                             </CardTitle>
                             <CardDescription>Distribution across academic departments.</CardDescription>
                         </CardHeader>
-                        <CardContent>
+                        <CardContent className="pt-0">
                             {departmentData.length === 0 ? (
                                 <p className="text-muted-foreground py-8 text-center text-sm">No department data available.</p>
                             ) : (
-                                <div className="space-y-3">
-                                    {departmentData.map((dept) => (
-                                        <div key={dept.name} className="flex items-center gap-3 rounded-lg border px-3 py-2.5">
-                                            <div className="bg-primary/10 text-primary flex size-9 shrink-0 items-center justify-center rounded-md text-xs font-bold">
-                                                {dept.name.slice(0, 3)}
-                                            </div>
-                                            <div className="min-w-0 flex-1">
-                                                <div className="flex items-center justify-between gap-2">
-                                                    <p className="text-sm font-medium truncate">{dept.name}</p>
-                                                    <span className="font-mono text-sm font-semibold tabular-nums shrink-0">
-                                                        {dept.value.toLocaleString()}
-                                                    </span>
-                                                </div>
-                                                <Progress value={dept.percentage} className="mt-1.5 h-1.5" />
-                                                <p className="text-muted-foreground text-xs">{dept.percentage}%</p>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
+                                <ChartContainer config={deptConfig} className="aspect-auto h-[280px] w-full">
+                                    <BarChart data={departmentData} layout="vertical" margin={{ top: 0, right: 40, left: 50, bottom: 0 }}>
+                                        <CartesianGrid horizontal={false} strokeDasharray="3 3" />
+                                        <XAxis type="number" tickLine={false} axisLine={false} tickMargin={4} fontSize={11} />
+                                        <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} width={60} />
+                                        <ChartTooltip content={<ChartTooltipContent />} />
+                                        <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={28}>
+                                            {departmentData.map((_, i) => (
+                                                <Cell key={`cell-${i}`} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                                            ))}
+                                        </Bar>
+                                    </BarChart>
+                                </ChartContainer>
                             )}
                         </CardContent>
                     </Card>
@@ -272,29 +308,23 @@ export default function RegistrarAnalytics({
                             </CardTitle>
                             <CardDescription>Distribution across academic years.</CardDescription>
                         </CardHeader>
-                        <CardContent>
+                        <CardContent className="pt-0">
                             {yearLevelData.length === 0 ? (
                                 <p className="text-muted-foreground py-8 text-center text-sm">No year-level data available.</p>
                             ) : (
-                                <div className="space-y-3">
-                                    {yearLevelData.map((year) => (
-                                        <div key={year.name} className="flex items-center gap-3 rounded-lg border px-3 py-2.5">
-                                            <div className="bg-primary/10 text-primary flex size-9 shrink-0 items-center justify-center rounded-md">
-                                                <GraduationCap className="size-4" />
-                                            </div>
-                                            <div className="min-w-0 flex-1">
-                                                <div className="flex items-center justify-between gap-2">
-                                                    <p className="text-sm font-medium">{year.name}</p>
-                                                    <span className="font-mono text-sm font-semibold tabular-nums shrink-0">
-                                                        {year.value.toLocaleString()}
-                                                    </span>
-                                                </div>
-                                                <Progress value={year.percentage} className="mt-1.5 h-1.5" />
-                                                <p className="text-muted-foreground text-xs">{year.percentage}%</p>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
+                                <ChartContainer config={{}} className="aspect-auto h-[240px] w-full">
+                                    <BarChart data={yearLevelData} margin={{ top: 0, right: 10, left: 10, bottom: 0 }}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                        <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={6} fontSize={11} />
+                                        <YAxis tickLine={false} axisLine={false} tickMargin={4} fontSize={11} />
+                                        <ChartTooltip content={<ChartTooltipContent />} />
+                                        <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={48}>
+                                            {yearLevelData.map((_, i) => (
+                                                <Cell key={`cell-${i}`} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                                            ))}
+                                        </Bar>
+                                    </BarChart>
+                                </ChartContainer>
                             )}
                         </CardContent>
                     </Card>
@@ -308,29 +338,20 @@ export default function RegistrarAnalytics({
                             </CardTitle>
                             <CardDescription>Enrollment breakdown by gender.</CardDescription>
                         </CardHeader>
-                        <CardContent>
+                        <CardContent className="flex items-center justify-center pt-0">
                             {genderData.length === 0 ? (
                                 <p className="text-muted-foreground py-8 text-center text-sm">No gender data available.</p>
                             ) : (
-                                <div className="space-y-3">
-                                    {genderData.map((g) => (
-                                        <div key={g.name} className="flex items-center gap-3 rounded-lg border px-3 py-2.5">
-                                            <div className="bg-primary/10 text-primary flex size-9 shrink-0 items-center justify-center rounded-md text-xs font-bold uppercase">
-                                                {g.name.slice(0, 1)}
-                                            </div>
-                                            <div className="min-w-0 flex-1">
-                                                <div className="flex items-center justify-between gap-2">
-                                                    <p className="text-sm font-medium">{g.name}</p>
-                                                    <span className="font-mono text-sm font-semibold tabular-nums shrink-0">
-                                                        {g.value.toLocaleString()}
-                                                    </span>
-                                                </div>
-                                                <Progress value={g.percentage} className="mt-1.5 h-1.5" />
-                                                <p className="text-muted-foreground text-xs">{g.percentage}%</p>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
+                                <ChartContainer config={genderConfig} className="aspect-square h-[250px]">
+                                    <PieChart>
+                                        <Pie data={genderData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={90} paddingAngle={2}>
+                                            {genderData.map((entry) => (
+                                                <Cell key={entry.name} fill={genderConfig[entry.name]?.color ?? CHART_COLORS[2]} />
+                                            ))}
+                                        </Pie>
+                                        <ChartTooltip content={<ChartTooltipContent nameKey="name" />} />
+                                    </PieChart>
+                                </ChartContainer>
                             )}
                         </CardContent>
                     </Card>
@@ -341,29 +362,20 @@ export default function RegistrarAnalytics({
                             </CardTitle>
                             <CardDescription>College, SHS, TESDA, and DHRT breakdown.</CardDescription>
                         </CardHeader>
-                        <CardContent>
+                        <CardContent className="flex items-center justify-center pt-0">
                             {typeData.length === 0 ? (
                                 <p className="text-muted-foreground py-8 text-center text-sm">No type data available.</p>
                             ) : (
-                                <div className="space-y-3">
-                                    {typeData.map((t) => (
-                                        <div key={t.name} className="flex items-center gap-3 rounded-lg border px-3 py-2.5">
-                                            <div className="bg-primary/10 text-primary flex size-9 shrink-0 items-center justify-center rounded-md text-xs font-bold">
-                                                {t.name.slice(0, 3)}
-                                            </div>
-                                            <div className="min-w-0 flex-1">
-                                                <div className="flex items-center justify-between gap-2">
-                                                    <p className="text-sm font-medium">{t.name}</p>
-                                                    <span className="font-mono text-sm font-semibold tabular-nums shrink-0">
-                                                        {t.value.toLocaleString()}
-                                                    </span>
-                                                </div>
-                                                <Progress value={t.percentage} className="mt-1.5 h-1.5" />
-                                                <p className="text-muted-foreground text-xs">{t.percentage}%</p>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
+                                <ChartContainer config={typeConfig} className="aspect-square h-[250px]">
+                                    <PieChart>
+                                        <Pie data={typeData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={90} paddingAngle={2}>
+                                            {typeData.map((entry) => (
+                                                <Cell key={entry.name} fill={typeConfig[entry.name]?.color ?? CHART_COLORS[4]} />
+                                            ))}
+                                        </Pie>
+                                        <ChartTooltip content={<ChartTooltipContent nameKey="name" />} />
+                                    </PieChart>
+                                </ChartContainer>
                             )}
                         </CardContent>
                     </Card>
@@ -377,32 +389,23 @@ export default function RegistrarAnalytics({
                             </CardTitle>
                             <CardDescription>Workflow status breakdown for the current semester.</CardDescription>
                         </CardHeader>
-                        <CardContent>
+                        <CardContent className="pt-0">
                             {statusData.length === 0 ? (
                                 <p className="text-muted-foreground py-8 text-center text-sm">No status data available.</p>
                             ) : (
-                                <div className="space-y-3">
-                                    {statusData.map((s) => {
-                                        const sp = pct(s.value, statusTotal);
-                                        return (
-                                            <div key={s.name} className="flex items-center gap-3 rounded-lg border px-3 py-2.5">
-                                                <div className="bg-primary/10 text-primary flex size-9 shrink-0 items-center justify-center rounded-md text-[10px] font-bold uppercase">
-                                                    {s.name.slice(0, 3)}
-                                                </div>
-                                                <div className="min-w-0 flex-1">
-                                                    <div className="flex items-center justify-between gap-2">
-                                                        <p className="text-sm font-medium">{s.name}</p>
-                                                        <span className="font-mono text-sm font-semibold tabular-nums shrink-0">
-                                                            {s.value.toLocaleString()}
-                                                        </span>
-                                                    </div>
-                                                    <Progress value={sp} className="mt-1.5 h-1.5" />
-                                                    <p className="text-muted-foreground text-xs">{sp}%</p>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
+                                <ChartContainer config={statusConfig} className="aspect-auto h-[260px] w-full">
+                                    <BarChart data={statusData} layout="vertical" margin={{ top: 0, right: 30, left: 60, bottom: 0 }}>
+                                        <CartesianGrid horizontal={false} strokeDasharray="3 3" />
+                                        <XAxis type="number" tickLine={false} axisLine={false} tickMargin={4} fontSize={11} />
+                                        <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} width={70} />
+                                        <ChartTooltip content={<ChartTooltipContent />} />
+                                        <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={28}>
+                                            {statusData.map((_, i) => (
+                                                <Cell key={`cell-${i}`} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                                            ))}
+                                        </Bar>
+                                    </BarChart>
+                                </ChartContainer>
                             )}
                         </CardContent>
                     </Card>
@@ -445,25 +448,19 @@ export default function RegistrarAnalytics({
                         </CardTitle>
                         <CardDescription>New enrollments per day for the current semester (last 30 days).</CardDescription>
                     </CardHeader>
-                    <CardContent>
+                    <CardContent className="pt-0">
                         {(analytics?.daily_trend ?? []).length === 0 ? (
                             <p className="text-muted-foreground py-8 text-center text-sm">No daily trend data available.</p>
                         ) : (
-                            <div className="max-h-72 space-y-1.5 overflow-y-auto">
-                                {(analytics?.daily_trend ?? []).slice(-30).map((day) => (
-                                    <div key={day.date} className="flex items-center gap-3">
-                                        <span className="text-muted-foreground w-24 shrink-0 text-xs tabular-nums">
-                                            {day.date}
-                                        </span>
-                                        <div className="min-w-0 flex-1">
-                                            <Progress value={pct(Number(day.count ?? 0), dailyTrendMax)} className="h-2" />
-                                        </div>
-                                        <span className="font-mono text-xs font-semibold tabular-nums w-12 shrink-0 text-right">
-                                            {Number(day.count ?? 0).toLocaleString()}
-                                        </span>
-                                    </div>
-                                ))}
-                            </div>
+                            <ChartContainer config={trendConfig} className="aspect-auto h-[250px] w-full">
+                                <BarChart data={dailyTrendChartData} margin={{ top: 0, right: 10, left: 10, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                    <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={4} fontSize={10} angle={-45} textAnchor="end" interval="preserveStartEnd" />
+                                    <YAxis tickLine={false} axisLine={false} tickMargin={4} fontSize={11} allowDecimals={false} />
+                                    <ChartTooltip content={<ChartTooltipContent />} />
+                                    <Bar dataKey="value" fill="hsl(212 96% 53%)" radius={[4, 4, 0, 0]} maxBarSize={20} />
+                                </BarChart>
+                            </ChartContainer>
                         )}
                     </CardContent>
                 </Card>

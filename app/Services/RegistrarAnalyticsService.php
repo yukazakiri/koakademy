@@ -113,28 +113,28 @@ final class RegistrarAnalyticsService
             'total_college_students' => Student::query()->withTrashed()->where('student_type', 'college')->count(),
             'total_shs_students' => Student::query()->withTrashed()->where('student_type', 'shs')->count(),
             'quality' => [
-                    'missing_department_count' => (clone $currentSemesterQuery)
-                        ->leftJoin('courses', DB::raw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT)'), '=', 'courses.id')
-                        ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
-                        ->whereNull('departments.id')
-                        ->count(),
-                    'missing_course_count' => (clone $currentSemesterQuery)
-                        ->leftJoin('courses', DB::raw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT)'), '=', 'courses.id')
-                        ->whereNull('courses.id')
-                        ->count(),
-                    'missing_student_record_count' => (clone $currentSemesterQuery)
-                        ->leftJoin('students', function ($join): void {
-                            $join->whereRaw('CAST(student_enrollment.student_id AS BIGINT) = students.id');
-                        })
-                        ->whereNull('students.id')
-                        ->count(),
-                    'without_gender_count' => (clone $currentSemesterQuery)
-                        ->where('student_enrollment.status', '!=', $pendingStatus)
-                        ->join('students', function ($join): void {
-                            $join->whereRaw('CAST(student_enrollment.student_id AS BIGINT) = students.id');
-                        })
-                        ->whereNull('students.gender')
-                        ->count(),
+                'missing_department_count' => (clone $currentSemesterQuery)
+                    ->leftJoin('courses', DB::raw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT)'), '=', 'courses.id')
+                    ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
+                    ->whereNull('departments.id')
+                    ->count(),
+                'missing_course_count' => (clone $currentSemesterQuery)
+                    ->leftJoin('courses', DB::raw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT)'), '=', 'courses.id')
+                    ->whereNull('courses.id')
+                    ->count(),
+                'missing_student_record_count' => (clone $currentSemesterQuery)
+                    ->leftJoin('students', function ($join): void {
+                        $join->whereRaw('CAST(student_enrollment.student_id AS BIGINT) = students.id');
+                    })
+                    ->whereNull('students.id')
+                    ->count(),
+                'without_gender_count' => (clone $currentSemesterQuery)
+                    ->where('student_enrollment.status', '!=', $pendingStatus)
+                    ->join('students', function ($join): void {
+                        $join->whereRaw('CAST(student_enrollment.student_id AS BIGINT) = students.id');
+                    })
+                    ->whereNull('students.gender')
+                    ->count(),
             ],
             'filters' => $this->semesterContext(),
             'generatedAt' => now()->toIso8601String(),

@@ -110,7 +110,9 @@ return [
             'database' => env(
                 'PULSE_DB_DATABASE',
                 env('DB_CONNECTION', 'sqlite') === 'sqlite'
-                    ? database_path('pulse.sqlite')
+                    // On SQLite, reuse the primary database so Pulse tables live
+                    // alongside the app tables instead of a missing pulse.sqlite.
+                    ? database_path('database.sqlite')
                     : ((string) env('DB_DATABASE', 'laravel')).'_pulse'
             ),
             'username' => env('PULSE_DB_USERNAME', env('DB_USERNAME', 'root')),

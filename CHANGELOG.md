@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.1](https://github.com/yukazakiri/koakademy/compare/v1.19.0...v1.19.1) (2026-08-19)
+
+
+### Bug Fixes
+
+* **delivery:** drop removed install.ps1 from stable release assets ([f9fbabf](https://github.com/yukazakiri/koakademy/commit/f9fbabf9f950861ed0ffb387bd16a03ae3ccb494))
+
 ## [1.19.0](https://github.com/yukazakiri/koakademy/compare/v1.18.0...v1.19.0) (2026-08-19)
 
 

@@ -81,6 +81,27 @@ final class RegistrarAnalyticsService
                     ->selectRaw('LOWER(students.gender) as gender, count(*) as count')
                     ->groupByRaw('LOWER(students.gender)')
                     ->get(),
+                'by_gender_course' => (clone $currentSemesterQuery)
+                    ->where('student_enrollment.status', '!=', $pendingStatus)
+                    ->join('students', function ($join): void {
+                        $join->whereRaw('CAST(student_enrollment.student_id AS BIGINT) = students.id');
+                    })
+                    ->join('courses', DB::raw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT)'), '=', 'courses.id')
+                    ->selectRaw('LOWER(students.gender) as gender, courses.code as course_code, courses.title as course_title, count(*) as count')
+                    ->groupByRaw('LOWER(students.gender)')
+                    ->groupBy('courses.code', 'courses.title')
+                    ->orderBy('courses.code')
+                    ->get(),
+                'by_gender_year_level' => (clone $currentSemesterQuery)
+                    ->where('student_enrollment.status', '!=', $pendingStatus)
+                    ->join('students', function ($join): void {
+                        $join->whereRaw('CAST(student_enrollment.student_id AS BIGINT) = students.id');
+                    })
+                    ->selectRaw('LOWER(students.gender) as gender, student_enrollment.academic_year as year_level, count(*) as count')
+                    ->groupByRaw('LOWER(students.gender)')
+                    ->groupBy('student_enrollment.academic_year')
+                    ->orderBy('student_enrollment.academic_year')
+                    ->get(),
                 'by_course' => (clone $currentSemesterQuery)
                     ->where('student_enrollment.status', '!=', $pendingStatus)
                     ->join('courses', DB::raw('CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), \'\') AS BIGINT)'), '=', 'courses.id')

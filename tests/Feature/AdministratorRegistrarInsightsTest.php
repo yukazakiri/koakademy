@@ -121,7 +121,6 @@ it('forbids registrar insights without enrollment visibility permission', functi
         ->get(route('administrators.registrar.analytics.export'))
         ->assertForbidden();
 });
-
 it('exports registrar analytics as an excel workbook', function (): void {
     $user = User::factory()->create(['role' => UserRole::Registrar]);
     $user->givePermissionTo('ViewAny:StudentEnrollment');
@@ -150,4 +149,67 @@ it('exports registrar analytics as an excel workbook', function (): void {
         ->get(route('administrators.registrar.analytics.export'))
         ->assertSuccessful()
         ->assertHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+});
+
+it('reports gender breakdown by course and year level in analytics', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Registrar]);
+    $user->givePermissionTo('ViewAny:StudentEnrollment');
+
+    $it = Department::factory()->create(['code' => 'IT']);
+    $courseBsit = Course::factory()->create(['code' => 'BSIT', 'department_id' => $it->id]);
+    $courseBscs = Course::factory()->create(['code' => 'BSCS', 'department_id' => $it->id]);
+
+    $makeStudent = fn (Course $course, string $gender, int $year) => tap(
+        Student::factory()->create(['course_id' => $course->id, 'gender' => $gender]),
+        fn (Student $s) => StudentEnrollment::factory()->create([
+            'student_id' => $s->id,
+            'course_id' => $course->id,
+            'school_year' => '2024 - 2025',
+            'semester' => 1,
+            'academic_year' => $year,
+            'status' => 'Enrolled',
+        ])
+    );
+
+    $makeStudent($courseBsit, 'Male', 1);
+    $makeStudent($courseBscs, 'Male', 2);
+    $makeStudent($courseBsit, 'Female', 1);
+
+    $response = $this->actingAs($user)
+        ->get(route('administrators.registrar.analytics.index'))
+        ->assertSuccessful();
+
+    $analytics = json_decode($response->getContent(), true)['page']['props']['analytics'];
+
+    // Gender × Course pivot: male BSIT, male BSCS, female BSIT
+    expect($analytics['by_gender_course'])->toHaveCount(3);
+    collect($analytics['by_gender_course'])
+        ->map(fn ($row) => [...$row, 'key' => $row['gender'].':'.$row['course_code']])
+        ->each(function ($row): void {
+            if ($row['key'] === 'male:BSIT') {
+                expect($row['count'])->toBe(1);
+            }
+            if ($row['key'] === 'male:BSCS') {
+                expect($row['count'])->toBe(1);
+            }
+            if ($row['key'] === 'female:BSIT') {
+                expect($row['count'])->toBe(1);
+            }
+        });
+
+    // Gender × Year Level pivot: male yr1, male yr2, female yr1
+    expect($analytics['by_gender_year_level'])->toHaveCount(3);
+    collect($analytics['by_gender_year_level'])
+        ->map(fn ($row) => [...$row, 'key' => $row['gender'].':'.$row['year_level']])
+        ->each(function ($row): void {
+            if ($row['key'] === 'male:1') {
+                expect($row['count'])->toBe(1);
+            }
+            if ($row['key'] === 'male:2') {
+                expect($row['count'])->toBe(1);
+            }
+            if ($row['key'] === 'female:1') {
+                expect($row['count'])->toBe(1);
+            }
+        });
 });

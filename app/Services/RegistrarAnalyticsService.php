@@ -105,8 +105,8 @@ final class RegistrarAnalyticsService
                     ->orderBy('date')
                     ->get(),
                 'monthly_trend' => (clone $currentSemesterQuery)
-                    ->selectRaw('SUBSTR(created_at, 1, 7) as date, count(*) as count')
-                    ->groupByRaw('SUBSTR(created_at, 1, 7)')
+                    ->selectRaw('SUBSTR(CAST(created_at AS TEXT), 1, 7) as date, count(*) as count')
+                    ->groupByRaw('SUBSTR(CAST(created_at AS TEXT), 1, 7)')
                     ->orderBy('date')
                     ->get(),
                 'by_submission_channel' => (clone $currentSemesterQuery)

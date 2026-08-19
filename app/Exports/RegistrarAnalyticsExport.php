@@ -25,6 +25,7 @@ final readonly class RegistrarAnalyticsExport implements Export, WithMultipleShe
     {
         return [
             new Sheets\RegistrarSummarySheet($this->analytics, $this->filters),
+            new Sheets\RegistrarEnrollmentDetailSheet($this->analytics),
             new Sheets\RegistrarStatusSheet($this->analytics),
             new Sheets\RegistrarDepartmentSheet($this->analytics),
             new Sheets\RegistrarYearLevelSheet($this->analytics),

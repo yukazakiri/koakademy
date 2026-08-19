@@ -79,7 +79,7 @@ final class RegistrarAnalyticsService
                         $join->whereRaw('CAST(student_enrollment.student_id AS BIGINT) = students.id');
                     })
                     ->selectRaw('LOWER(students.gender) as gender, count(*) as count')
-                    ->groupBy('students.gender')
+                    ->groupByRaw('LOWER(students.gender)')
                     ->get(),
                 'by_course' => (clone $currentSemesterQuery)
                     ->where('student_enrollment.status', '!=', $pendingStatus)
@@ -112,6 +112,17 @@ final class RegistrarAnalyticsService
                 'by_submission_channel' => (clone $currentSemesterQuery)
                     ->selectRaw("COALESCE(NULLIF(submission_channel, ''), 'direct') as channel, count(*) as count")
                     ->groupBy('submission_channel')
+                    ->get(),
+                'detailed_enrollments' => (clone $currentSemesterQuery)
+                    ->where('student_enrollment.status', '!=', $pendingStatus)
+                    ->leftJoin('students', function ($join): void {
+                        $join->whereRaw('CAST(student_enrollment.student_id AS BIGINT) = students.id');
+                    })
+                    ->leftJoin('courses', DB::raw("CAST(NULLIF(CAST(student_enrollment.course_id AS TEXT), '') AS BIGINT)"), '=', 'courses.id')
+                    ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
+                    ->selectRaw('students.student_id as student_reference, students.first_name, students.last_name, students.middle_name, students.suffix, TRIM(students.gender) as gender, students.student_type, courses.code as course_code, courses.title as course_title, TRIM(departments.code) as department, student_enrollment.academic_year as year_level, student_enrollment.status, student_enrollment.created_at')
+                    ->orderBy('departments.code')
+                    ->orderBy('students.last_name')
                     ->get(),
                 'conversion_rate' => $this->computeConversionRate(
                     $currentSemesterQuery, $pendingStatus, (clone $currentSemesterQuery)->where('student_enrollment.status', '!=', $pendingStatus)->count()

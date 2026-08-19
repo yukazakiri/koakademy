@@ -114,12 +114,12 @@ final class RegistrarAnalyticsService
                     ->groupBy('submission_channel')
                     ->get(),
                 'conversion_rate' => $this->computeConversionRate(
-                    $currentSemesterQuery, $pendingStatus, $currentSemesterQuery->where('student_enrollment.status', '!=', $pendingStatus)->count()
+                    $currentSemesterQuery, $pendingStatus, (clone $currentSemesterQuery)->where('student_enrollment.status', '!=', $pendingStatus)->count()
                 ),
             ],
             'applicantsCount' => Student::query()
                 ->withTrashed()
-                ->where('student_enrollment.status', StudentStatus::Applicant)
+                ->where('status', StudentStatus::Applicant)
                 ->count(),
             'total_students' => Student::query()->withTrashed()->count(),
             'total_college_students' => Student::query()->withTrashed()->where('student_type', 'college')->count(),

@@ -1,5 +1,58 @@
 # Changelog
 
+## [1.19.0](https://github.com/yukazakiri/koakademy/compare/v1.18.0...v1.19.0) (2026-08-19)
+
+
+### Features
+
+* **deployment:** add release-backed Swarm installer ([#155](https://github.com/yukazakiri/koakademy/issues/155)) ([8a80b9e](https://github.com/yukazakiri/koakademy/commit/8a80b9ec9cec1b8908b7fbf81b9ef2802156f148))
+* **finance:** add configurable payment workspaces ([#161](https://github.com/yukazakiri/koakademy/issues/161)) ([127d2ff](https://github.com/yukazakiri/koakademy/commit/127d2ff0b26d85b2eec20195b740db899e91a144))
+* **finance:** add configurable payment workspaces ([#162](https://github.com/yukazakiri/koakademy/issues/162)) ([27a8ffa](https://github.com/yukazakiri/koakademy/commit/27a8ffa3b9cd580427095eb1ae29e062cf6951d2))
+* **finance:** add configurable tuition adjustment workspace ([#172](https://github.com/yukazakiri/koakademy/issues/172)) ([2ccba4e](https://github.com/yukazakiri/koakademy/commit/2ccba4ebfcbe4da0cc9214b50e400656d44d087a))
+* **registrar:** add shadcn Recharts visualizations and more detailed analytics ([#180](https://github.com/yukazakiri/koakademy/issues/180)) ([6d4c9fc](https://github.com/yukazakiri/koakademy/commit/6d4c9fcb7b834d0f6db93891f1d0bbca3343f3c7))
+* **registrar:** cross-tab gender breakdown by course and year level in excel export ([#184](https://github.com/yukazakiri/koakademy/issues/184)) ([f2f376f](https://github.com/yukazakiri/koakademy/commit/f2f376f899ca1418daf5908e9e6035827aa17a9b))
+* **registrar:** detailed per-record breakdown in analytics excel export ([#183](https://github.com/yukazakiri/koakademy/issues/183)) ([a198148](https://github.com/yukazakiri/koakademy/commit/a19814870cc4a5adc06ce02fcd994da3a17f3212))
+* **registrar:** expand and redesign registrar analytics with excel export ([#179](https://github.com/yukazakiri/koakademy/issues/179)) ([7f375c5](https://github.com/yukazakiri/koakademy/commit/7f375c5e5151abdccc47f4d96093846d4f0bd5eb))
+* **registrar:** redesign admin operations ([#175](https://github.com/yukazakiri/koakademy/issues/175)) ([67e2534](https://github.com/yukazakiri/koakademy/commit/67e253460a82e475d2af0907bb8243cac647838b))
+* **settings:** redesign system settings workspace ([#157](https://github.com/yukazakiri/koakademy/issues/157)) ([171b8e4](https://github.com/yukazakiri/koakademy/commit/171b8e4bdaafdf3c1a8e3363b64f758f53696040))
+* **setup:** revamp setup wizard with CHED, DepEd, and TESDA-aligned curriculum ([#171](https://github.com/yukazakiri/koakademy/issues/171)) ([f2bc882](https://github.com/yukazakiri/koakademy/commit/f2bc882456c5fa4b56f70a7509da75a5b151022f))
+* **students:** allow admins to adjust tuition fees with notifications ([#169](https://github.com/yukazakiri/koakademy/issues/169)) ([f93b906](https://github.com/yukazakiri/koakademy/commit/f93b906842a91622d2aa559ae9c6aae3169ac136))
+
+
+### Bug Fixes
+
+* **auth:** honor system admin tuition access ([#173](https://github.com/yukazakiri/koakademy/issues/173)) ([47b3976](https://github.com/yukazakiri/koakademy/commit/47b39769f2db619ac78e2c82de0043fb926613c8))
+* **classes:** wire client-side table pagination ([#167](https://github.com/yukazakiri/koakademy/issues/167)) ([5de4a8a](https://github.com/yukazakiri/koakademy/commit/5de4a8ae2657397d9d3c2a735894819287640ad7))
+* **delivery:** restore rolling image publication ([061fcc2](https://github.com/yukazakiri/koakademy/commit/061fcc27dca9549eeb52061a6436d54b63bf1861))
+* **docker:** load Composer autoloader before S3 adapter check ([b79098e](https://github.com/yukazakiri/koakademy/commit/b79098e1c99ebf0dead5e49fbad2d9a618f624e5))
+* **finance:** normalize tuition student search ([#174](https://github.com/yukazakiri/koakademy/issues/174)) ([12efd08](https://github.com/yukazakiri/koakademy/commit/12efd08300c33d4b7c49116bdfa2c8c5120a5fe0))
+* improve fresh-install developer setup ([#185](https://github.com/yukazakiri/koakademy/issues/185)) ([6b68b51](https://github.com/yukazakiri/koakademy/commit/6b68b511aca8b764d387686384678c1e10d50f34))
+* make class years curriculum-aware and unblock finance migration ([#164](https://github.com/yukazakiri/koakademy/issues/164)) ([60b57aa](https://github.com/yukazakiri/koakademy/commit/60b57aa157311010334665d7183145e2796c1e23))
+* **registrar:** cast created_at to TEXT for PostgreSQL SUBSTR compatibility ([#182](https://github.com/yukazakiri/koakademy/issues/182)) ([252c8b6](https://github.com/yukazakiri/koakademy/commit/252c8b6e198ee6d8ec9d871824ec5c4835d8080d))
+* **release:** gitHub release changelog timeline ([#160](https://github.com/yukazakiri/koakademy/issues/160)) ([db6f445](https://github.com/yukazakiri/koakademy/commit/db6f44563ae5b982b1e84dbfa9b23b123a0553ca))
+* sectioned program schedule PDF formatting ([#165](https://github.com/yukazakiri/koakademy/issues/165)) ([6f24145](https://github.com/yukazakiri/koakademy/commit/6f24145f83b7102bcbb767fb255e93e651e8d385))
+* **storage:** require S3 adapter in runtime images ([#170](https://github.com/yukazakiri/koakademy/issues/170)) ([6324079](https://github.com/yukazakiri/koakademy/commit/632407958f8c62a293169db209e70fdf59a46759))
+* **telescope:** prune stale entries daily ([#177](https://github.com/yukazakiri/koakademy/issues/177)) ([995734f](https://github.com/yukazakiri/koakademy/commit/995734fa9cd224ce30b3aae50fe5f3b0ef56b789))
+
+
+### Build System
+
+* **deps:** bump actions/attest from 4.2.1 to 4.2.2 in the github-actions group ([#158](https://github.com/yukazakiri/koakademy/issues/158)) ([2550dca](https://github.com/yukazakiri/koakademy/commit/2550dca3d640c5bf45344430663903822ab68e01))
+* **deps:** bump dunglas/frankenphp from `4b0713d` to `ee14233` in /docker in the docker-base-images group ([#176](https://github.com/yukazakiri/koakademy/issues/176)) ([163f132](https://github.com/yukazakiri/koakademy/commit/163f132d9f453904e5590a3d62a3545d4073f999))
+* **deps:** bump the docker-base-images group in /docker with 2 updates ([#159](https://github.com/yukazakiri/koakademy/issues/159)) ([4bfaf6d](https://github.com/yukazakiri/koakademy/commit/4bfaf6d94e55adbee7d67cdd716425acaec5f9c5))
+* **deps:** remove unused composer dependencies ([#168](https://github.com/yukazakiri/koakademy/issues/168)) ([96fd55a](https://github.com/yukazakiri/koakademy/commit/96fd55ac7ae341775240047ea381cfb1227c94fa))
+* **docker:** install horizon at image build instead of a project dep ([#166](https://github.com/yukazakiri/koakademy/issues/166)) ([3551dcd](https://github.com/yukazakiri/koakademy/commit/3551dcd81754ccc6010b970965ac7270f1c9bc16))
+
+
+### Documentation
+
+* **docs:** remove generated helpers, local configs, and stale root docs ([#178](https://github.com/yukazakiri/koakademy/issues/178)) ([ae4ce6d](https://github.com/yukazakiri/koakademy/commit/ae4ce6df553c9e8b0cb515981ff7831fb7852daa))
+
+
+### Tests
+
+* add printable program schedule PDF export ([#163](https://github.com/yukazakiri/koakademy/issues/163)) ([b2523c5](https://github.com/yukazakiri/koakademy/commit/b2523c5e4b33d99f83cee1e87db2118927cab106))
+
 ## [1.18.0](https://github.com/yukazakiri/koakademy/compare/v1.17.0...v1.18.0) (2026-08-08)
 
 

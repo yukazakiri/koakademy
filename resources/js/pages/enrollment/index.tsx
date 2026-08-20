@@ -304,10 +304,6 @@ const contactsSchema = z
                     .string()
                     .min(1, "Emergency contact phone is required")
                     .regex(/^\d+$/, "Phone number must contain only numbers"),
-            })
-            .refine((value) => [value.facebook, value.twitter, value.instagram, value.linkedin].some((v) => v.trim().length > 0), {
-                message: "At least one social media link is required",
-                path: ["facebook"],
             }),
         parents: z.object({
             father_contact: z.string().min(10, "Father contact number is required").regex(/^\d+$/, "Phone number must contain only numbers"),
@@ -3168,13 +3164,11 @@ export default function EnrollmentCreate({
                                             <CardContent className="space-y-4 p-4 sm:p-6">
                                                 <div className="mb-1 flex items-center gap-2">
                                                     <User className="text-primary h-5 w-5" />
-                                                    <h3 className="text-base font-semibold">Social Media</h3>
+                                                    <h3 className="text-base font-semibold">Social Media (optional)</h3>
                                                 </div>
                                                 <div className="grid gap-3 sm:grid-cols-2">
                                                     <div className="space-y-1.5">
-                                                        <Label className="text-sm">
-                                                            Facebook <span className="text-destructive">*</span>
-                                                        </Label>
+                                                        <Label className="text-sm">Facebook</Label>
                                                         <Input
                                                             value={data.contacts.facebook}
                                                             onChange={(e) => setData("contacts", { ...data.contacts, facebook: e.target.value })}
@@ -3182,9 +3176,7 @@ export default function EnrollmentCreate({
                                                         />
                                                     </div>
                                                     <div className="space-y-1.5">
-                                                        <Label className="text-sm">
-                                                            Instagram <span className="text-destructive">*</span>
-                                                        </Label>
+                                                        <Label className="text-sm">Instagram</Label>
                                                         <Input
                                                             value={data.contacts.instagram}
                                                             onChange={(e) => setData("contacts", { ...data.contacts, instagram: e.target.value })}
@@ -3192,9 +3184,7 @@ export default function EnrollmentCreate({
                                                         />
                                                     </div>
                                                     <div className="space-y-1.5">
-                                                        <Label className="text-sm">
-                                                            Twitter / X <span className="text-destructive">*</span>
-                                                        </Label>
+                                                        <Label className="text-sm">Twitter / X</Label>
                                                         <Input
                                                             value={data.contacts.twitter}
                                                             onChange={(e) => setData("contacts", { ...data.contacts, twitter: e.target.value })}
@@ -3202,9 +3192,7 @@ export default function EnrollmentCreate({
                                                         />
                                                     </div>
                                                     <div className="space-y-1.5">
-                                                        <Label className="text-sm">
-                                                            LinkedIn <span className="text-destructive">*</span>
-                                                        </Label>
+                                                        <Label className="text-sm">LinkedIn</Label>
                                                         <Input
                                                             value={data.contacts.linkedin}
                                                             onChange={(e) => setData("contacts", { ...data.contacts, linkedin: e.target.value })}

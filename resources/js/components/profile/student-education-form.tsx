@@ -12,6 +12,12 @@ type EducationData = {
     high_school_year_graduated: string;
     senior_high_school: string;
     senior_high_year_graduated: string;
+    college_school: string;
+    college_course: string;
+    college_year_graduated: string;
+    vocational_school: string;
+    vocational_course: string;
+    vocational_year_graduated: string;
 };
 
 interface StudentEducationFormProps {
@@ -121,6 +127,60 @@ export function StudentEducationForm({ studentForm, onSubmit, schoolOptionsEndpo
                             </section>
                         );
                     })}
+
+                    <section className="border-border/70 space-y-4 border-t pt-6">
+                        <div>
+                            <h3 className="text-sm font-semibold">College or transferee history</h3>
+                            <p className="text-muted-foreground mt-1 text-sm">Optional — complete this only if you attended another college.</p>
+                        </div>
+                        <div className="grid gap-4 md:grid-cols-2">
+                            {(
+                                [
+                                    ["college_school", "Previous college"],
+                                    ["college_course", "Previous course"],
+                                    ["college_year_graduated", "Year graduated or last attended"],
+                                ] as const
+                            ).map(([key, label]) => (
+                                <div key={key} className="space-y-2">
+                                    <Label htmlFor={key}>{label}</Label>
+                                    <Input
+                                        id={key}
+                                        value={studentForm.data.education[key]}
+                                        onChange={(event) => updateEducation(key, event.target.value)}
+                                        aria-invalid={Boolean(errorFor(`education.${key}`))}
+                                    />
+                                    <FieldError message={errorFor(`education.${key}`)} />
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+
+                    <section className="border-border/70 space-y-4 border-t pt-6">
+                        <div>
+                            <h3 className="text-sm font-semibold">Vocational education</h3>
+                            <p className="text-muted-foreground mt-1 text-sm">Optional — include relevant technical or vocational training.</p>
+                        </div>
+                        <div className="grid gap-4 md:grid-cols-2">
+                            {(
+                                [
+                                    ["vocational_school", "Vocational school"],
+                                    ["vocational_course", "Course taken"],
+                                    ["vocational_year_graduated", "Year graduated"],
+                                ] as const
+                            ).map(([key, label]) => (
+                                <div key={key} className="space-y-2">
+                                    <Label htmlFor={key}>{label}</Label>
+                                    <Input
+                                        id={key}
+                                        value={studentForm.data.education[key]}
+                                        onChange={(event) => updateEducation(key, event.target.value)}
+                                        aria-invalid={Boolean(errorFor(`education.${key}`))}
+                                    />
+                                    <FieldError message={errorFor(`education.${key}`)} />
+                                </div>
+                            ))}
+                        </div>
+                    </section>
 
                     <div className="flex justify-end">
                         <Button type="submit" disabled={studentForm.processing} className="rounded-lg">

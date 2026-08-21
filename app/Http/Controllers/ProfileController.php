@@ -22,6 +22,7 @@ use App\Services\DigitalIdCardService;
 use App\Services\FeatureToggleRegistry;
 use App\Services\StudentProfileCompletionService;
 use App\Services\StudentSchoolOptionService;
+use App\Settings\SiteSettings;
 use Endroid\QrCode\Builder\Builder;
 use Endroid\QrCode\Encoding\Encoding;
 use Endroid\QrCode\ErrorCorrectionLevel;
@@ -58,7 +59,7 @@ final class ProfileController extends Controller
         $faculty = Faculty::where('email', $user->email)->first();
         // Get student information if exists
         $student = Student::where('user_id', $user->id)
-            ->with(['studentContactsInfo', 'studentEducationInfo', 'studentParentInfo', 'Course'])
+            ->with(['studentContactsInfo', 'studentEducationInfo', 'studentParentInfo', 'personalInfo', 'Course'])
             ->first();
 
         $connectedAccounts = [
@@ -204,6 +205,8 @@ final class ProfileController extends Controller
                 'student_information_updates' => $studentInformationUpdatesEnabled,
             ],
             'student_profile_completion' => $studentProfileCompletion,
+            'income_modes' => $this->profileIncomeModes(),
+            'default_income_mode' => (string) config('income_brackets.default_mode', 'annual'),
             'api_tokens' => $apiTokens,
             'sessions' => $this->getSessions($request),
             'faculty' => $faculty ? [
@@ -249,6 +252,26 @@ final class ProfileController extends Controller
                 'contacts' => $this->studentProfileContacts($student),
                 'education' => $this->studentProfileEducation($student),
                 'parents' => $this->studentProfileParents($student),
+                'personal_info' => $this->studentProfilePersonalInfo($student),
+                'ethnicity' => $student->ethnicity,
+                'city_of_origin' => $student->city_of_origin,
+                'province_of_origin' => $student->province_of_origin,
+                'region_of_origin' => $student->region_of_origin,
+                'is_indigenous_person' => $student->is_indigenous_person,
+                'indigenous_group' => $student->indigenous_group,
+                'is_pwd' => $student->is_pwd,
+                'pwd_type' => $student->pwd_type,
+                'is_solo_parent' => $student->is_solo_parent,
+                'is_senior_citizen' => $student->is_senior_citizen,
+                'is_magna_carta' => $student->is_magna_carta,
+                'is_underprivileged' => $student->is_underprivileged,
+                'is_first_generation' => $student->is_first_generation,
+                'income_bracket_mode' => $student->income_bracket_mode,
+                'use_same_parent_income' => $student->use_same_parent_income,
+                'family_income_bracket' => $student->family_income_bracket,
+                'father_income_bracket' => $student->father_income_bracket,
+                'mother_income_bracket' => $student->mother_income_bracket,
+                'profile_reporting_confirmed_at' => $student->profile_reporting_confirmed_at?->toIso8601String(),
             ] : null,
             'endpoints' => $this->getEndpoints($request),
         ]);
@@ -597,9 +620,31 @@ final class ProfileController extends Controller
             'emergency_contact' => $validated['emergency_contact'] ?? null,
             'birth_date' => $validated['birth_date'] ?? null,
             'gender' => $validated['gender'] ?? null,
+            'ethnicity' => $validated['ethnicity'] ?? null,
+            'city_of_origin' => $validated['city_of_origin'] ?? null,
+            'province_of_origin' => $validated['province_of_origin'] ?? null,
+            'region_of_origin' => $validated['region_of_origin'] ?? null,
+            'is_indigenous_person' => $validated['is_indigenous_person'] ?? false,
+            'indigenous_group' => ($validated['is_indigenous_person'] ?? false) ? ($validated['indigenous_group'] ?? null) : null,
+            'is_pwd' => $validated['is_pwd'] ?? false,
+            'pwd_type' => ($validated['is_pwd'] ?? false) ? ($validated['pwd_type'] ?? null) : null,
+            'is_solo_parent' => $validated['is_solo_parent'] ?? false,
+            'is_senior_citizen' => $validated['is_senior_citizen'] ?? false,
+            'is_magna_carta' => $validated['is_magna_carta'] ?? false,
+            'is_underprivileged' => $validated['is_underprivileged'] ?? false,
+            'is_first_generation' => $validated['is_first_generation'] ?? false,
+            'income_bracket_mode' => $validated['income_bracket_mode'] ?? config('income_brackets.default_mode', 'annual'),
+            'use_same_parent_income' => $validated['use_same_parent_income'] ?? true,
+            'family_income_bracket' => ($validated['use_same_parent_income'] ?? true) ? ($validated['family_income_bracket'] ?? null) : null,
+            'father_income_bracket' => ($validated['use_same_parent_income'] ?? true) ? null : ($validated['father_income_bracket'] ?? null),
+            'mother_income_bracket' => ($validated['use_same_parent_income'] ?? true) ? null : ($validated['mother_income_bracket'] ?? null),
         ]);
 
         $emailChanged = $student->wasChanged('email');
+
+        if ($request->boolean('reporting_confirmed')) {
+            $student->forceFill(['profile_reporting_confirmed_at' => now()])->save();
+        }
 
         $this->syncStudentProfileRelations($student, $validated);
 
@@ -839,6 +884,9 @@ final class ProfileController extends Controller
             'emergency_contact_phone' => $contacts->emergency_contact_phone,
             'emergency_contact_relationship' => $contacts->emergency_contact_relationship,
             'facebook' => $contacts->facebook ?? $contacts->facebook_contact,
+            'twitter' => $contacts->twitter,
+            'instagram' => $contacts->instagram,
+            'linkedin' => $contacts->linkedin,
             'personal_contact' => $contacts->personal_contact,
         ];
     }
@@ -861,6 +909,12 @@ final class ProfileController extends Controller
             'high_school_year_graduated' => $education->high_school_year_graduated ?? $education->junior_high_graduation_year,
             'senior_high_school' => $education->senior_high_school ?? $education->senior_high_name,
             'senior_high_year_graduated' => $education->senior_high_year_graduated ?? $education->senior_high_graduate_year,
+            'college_school' => $education->college_school,
+            'college_course' => $education->college_course,
+            'college_year_graduated' => $education->college_year_graduated,
+            'vocational_school' => $education->vocational_school,
+            'vocational_course' => $education->vocational_course,
+            'vocational_year_graduated' => $education->vocational_year_graduated,
         ];
     }
 
@@ -878,6 +932,38 @@ final class ProfileController extends Controller
         return [
             'father_name' => $parents->father_name ?? $parents->fathers_name,
             'mother_name' => $parents->mother_name ?? $parents->mothers_name,
+            'father_occupation' => $parents->father_occupation,
+            'father_contact' => $parents->father_contact,
+            'father_email' => $parents->father_email,
+            'mother_occupation' => $parents->mother_occupation,
+            'mother_contact' => $parents->mother_contact,
+            'mother_email' => $parents->mother_email,
+            'guardian_name' => $parents->guardian_name,
+            'guardian_relationship' => $parents->guardian_relationship,
+            'guardian_contact' => $parents->guardian_contact,
+            'guardian_email' => $parents->guardian_email,
+            'family_address' => $parents->family_address,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function studentProfilePersonalInfo(Student $student): ?array
+    {
+        $personalInfo = $student->personalInfo;
+
+        if (! $personalInfo) {
+            return null;
+        }
+
+        return [
+            'birthplace' => $personalInfo->birthplace ?? $personalInfo->place_of_birth,
+            'citizenship' => $personalInfo->citizenship,
+            'weight' => $personalInfo->weight,
+            'height' => $personalInfo->height,
+            'current_address' => $personalInfo->current_adress,
+            'permanent_address' => $personalInfo->permanent_address,
         ];
     }
 
@@ -916,7 +1002,17 @@ final class ProfileController extends Controller
             $student->student_parent_info = $studentParentInfoId;
         }
 
-        if ($student->isDirty(['student_contact_id', 'student_education_id', 'student_parent_info'])) {
+        $studentPersonalInfoId = $this->upsertProfileRelatedRecord(
+            'students_personal_info',
+            $student->student_personal_id,
+            $this->studentPersonalInfoAttributes($validated),
+        );
+
+        if ($studentPersonalInfoId !== null) {
+            $student->student_personal_id = $studentPersonalInfoId;
+        }
+
+        if ($student->isDirty(['student_contact_id', 'student_education_id', 'student_parent_info', 'student_personal_id'])) {
             $student->save();
         }
     }
@@ -1001,6 +1097,9 @@ final class ProfileController extends Controller
             'personal_contact' => $contactData['personal_contact'] ?? null,
             'facebook_contact' => $contactData['facebook'] ?? null,
             'facebook' => $contactData['facebook'] ?? null,
+            'twitter' => $contactData['twitter'] ?? null,
+            'instagram' => $contactData['instagram'] ?? null,
+            'linkedin' => $contactData['linkedin'] ?? null,
             'emergency_contact_name' => $contactData['emergency_contact_name'] ?? null,
             'emergency_contact_phone' => $contactData['emergency_contact_phone'] ?? null,
             'emergency_contact_address' => $validated['emergency_contact'] ?? null,
@@ -1028,6 +1127,12 @@ final class ProfileController extends Controller
             'senior_high_name' => $educationData['senior_high_school'] ?? null,
             'senior_high_year_graduated' => $educationData['senior_high_year_graduated'] ?? null,
             'senior_high_graduate_year' => $educationData['senior_high_year_graduated'] ?? null,
+            'college_school' => $educationData['college_school'] ?? null,
+            'college_course' => $educationData['college_course'] ?? null,
+            'college_year_graduated' => $educationData['college_year_graduated'] ?? null,
+            'vocational_school' => $educationData['vocational_school'] ?? null,
+            'vocational_course' => $educationData['vocational_course'] ?? null,
+            'vocational_year_graduated' => $educationData['vocational_year_graduated'] ?? null,
         ];
     }
 
@@ -1044,7 +1149,65 @@ final class ProfileController extends Controller
             'fathers_name' => $parentData['father_name'] ?? null,
             'mother_name' => $parentData['mother_name'] ?? null,
             'mothers_name' => $parentData['mother_name'] ?? null,
+            'father_occupation' => $parentData['father_occupation'] ?? null,
+            'father_contact' => $parentData['father_contact'] ?? null,
+            'father_email' => $parentData['father_email'] ?? null,
+            'mother_occupation' => $parentData['mother_occupation'] ?? null,
+            'mother_contact' => $parentData['mother_contact'] ?? null,
+            'mother_email' => $parentData['mother_email'] ?? null,
+            'guardian_name' => $parentData['guardian_name'] ?? null,
+            'guardian_relationship' => $parentData['guardian_relationship'] ?? null,
+            'guardian_contact' => $parentData['guardian_contact'] ?? null,
+            'guardian_email' => $parentData['guardian_email'] ?? null,
+            'family_address' => $parentData['family_address'] ?? null,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @return array<string, mixed>
+     */
+    private function studentPersonalInfoAttributes(array $validated): array
+    {
+        $personalInfo = $validated['personal_info'] ?? [];
+
+        return [
+            'birthplace' => $personalInfo['birthplace'] ?? null,
+            'place_of_birth' => $personalInfo['birthplace'] ?? null,
+            'citizenship' => $personalInfo['citizenship'] ?? null,
+            'weight' => $personalInfo['weight'] ?? null,
+            'height' => $personalInfo['height'] ?? null,
+            'current_adress' => $personalInfo['current_address'] ?? null,
+            'permanent_address' => $personalInfo['permanent_address'] ?? null,
+        ];
+    }
+
+    /**
+     * @return array<int, array{value: string, label: string, brackets: array<int, array{value: string, label: string}>}>
+     */
+    private function profileIncomeModes(): array
+    {
+        $currency = app(SiteSettings::class)->getCurrency();
+        $symbol = $currency === 'PHP' ? '₱' : ($currency === 'USD' ? '$' : $currency);
+
+        return collect(config('income_brackets.modes', []))
+            ->map(function (array $modeConfig, string $modeKey) use ($symbol): array {
+                $brackets = collect($modeConfig['brackets'] ?? [])
+                    ->map(fn (array $bracket, string $key): array => [
+                        'value' => $key,
+                        'label' => str_replace('{symbol}', $symbol, (string) ($bracket['label'] ?? '')),
+                    ])
+                    ->values()
+                    ->all();
+
+                return [
+                    'value' => $modeKey,
+                    'label' => (string) ($modeConfig['label'] ?? $modeKey),
+                    'brackets' => $brackets,
+                ];
+            })
+            ->values()
+            ->all();
     }
 
     /**

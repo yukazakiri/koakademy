@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useTheme } from "@/hooks/use-theme";
 import { Head, Link, router, useForm, usePage } from "@inertiajs/react";
 import { motion } from "framer-motion";
-import { ArrowLeft, BookOpen, Contact, GraduationCap, Palette, Plug, QrCode, Share2, User } from "lucide-react";
+import { ArrowLeft, BookOpen, CheckCircle2, Contact, GraduationCap, ListChecks, Palette, Plug, QrCode, Share2, User, X } from "lucide-react";
 
 import { toast } from "sonner";
 
@@ -29,6 +29,7 @@ import {
     StudentContactsForm,
     StudentDetailsForm,
     StudentEducationForm,
+    StudentReportingForm,
 } from "@/components/profile";
 
 type ConnectedAccount = {
@@ -75,7 +76,7 @@ const dashboardPanelClass = "border-border/60 bg-card/75 rounded-lg shadow-sm";
 type StudentProfileMissingItem = {
     key: string;
     label: string;
-    section: "student" | "contacts" | "education";
+    section: "personal" | "family" | "education" | "reporting";
     example?: string;
 };
 
@@ -86,7 +87,7 @@ type StudentProfileCompletion = {
     missing: StudentProfileMissingItem[];
 };
 
-type StudentProfileTab = "basic" | "student" | "contacts" | "education";
+type StudentProfileTab = "basic" | "personal" | "family" | "education" | "reporting";
 
 const normalizeStudentGender = (gender?: string | null): string => {
     const normalizedGender = (gender ?? "")
@@ -100,19 +101,95 @@ const normalizeStudentGender = (gender?: string | null): string => {
 const tabForStudentFormErrors = (errors: Record<string, string>): StudentProfileTab => {
     const errorKeys = Object.keys(errors);
 
-    if (errorKeys.some((key) => !key.includes("."))) {
-        return "student";
-    }
-
     if (errorKeys.some((key) => key.startsWith("contacts.") || key.startsWith("parents."))) {
-        return "contacts";
+        return "family";
     }
 
     if (errorKeys.some((key) => key.startsWith("education."))) {
         return "education";
     }
 
-    return "student";
+    if (
+        errorKeys.some((key) =>
+            [
+                "ethnicity",
+                "city_of_origin",
+                "province_of_origin",
+                "region_of_origin",
+                "is_",
+                "income_",
+                "family_income",
+                "father_income",
+                "mother_income",
+                "indigenous_",
+                "pwd_",
+            ].some((prefix) => key.startsWith(prefix)),
+        )
+    ) {
+        return "reporting";
+    }
+
+    return "personal";
+};
+
+type GuidedStudentFormData = {
+    contacts: Record<string, string>;
+    education: Record<string, string>;
+    parents: Record<string, string>;
+    personal_info: Record<string, string>;
+    use_same_parent_income: boolean;
+    family_income_bracket: string;
+    father_income_bracket: string;
+    mother_income_bracket: string;
+    [key: string]: unknown;
+};
+
+const guidedFieldElementId = (key: string, data: GuidedStudentFormData): string => {
+    const directIds: Record<string, string> = {
+        first_name: "student_first_name",
+        last_name: "student_last_name",
+        email: "student_email",
+        phone: "student_phone",
+        address: "student_address",
+        birth_date: "student_birth_date",
+        gender: "student_gender",
+        civil_status: "civil_status",
+        nationality: "nationality",
+        religion: "religion",
+        ethnicity: "ethnicity",
+        city_of_origin: "city_of_origin",
+        province_of_origin: "province_of_origin",
+        region_of_origin: "region_of_origin",
+        profile_reporting_confirmed_at: "reporting-confirmation",
+    };
+
+    if (key === "income_bracket") {
+        if (data.use_same_parent_income) return "family_income_bracket";
+
+        return data.father_income_bracket.trim() ? "mother_income_bracket" : "father_income_bracket";
+    }
+
+    if (key.startsWith("personal_info.")) return `student_${key.split(".")[1]}`;
+    if (key.startsWith("contacts.") || key.startsWith("parents.") || key.startsWith("education.")) return key.split(".")[1];
+
+    return directIds[key] ?? key;
+};
+
+const isGuidedFieldComplete = (key: string, data: GuidedStudentFormData, reportingConfirmed: boolean): boolean => {
+    if (key === "profile_reporting_confirmed_at") return reportingConfirmed;
+    if (key === "income_bracket") {
+        return data.use_same_parent_income
+            ? data.family_income_bracket.trim() !== ""
+            : data.father_income_bracket.trim() !== "" && data.mother_income_bracket.trim() !== "";
+    }
+
+    const value = key.split(".").reduce<unknown>((current, segment) => {
+        if (current && typeof current === "object") return (current as Record<string, unknown>)[segment];
+
+        return undefined;
+    }, data);
+
+    return typeof value === "string" ? value.trim() !== "" : Boolean(value);
 };
 
 export default function ProfilePage() {
@@ -137,6 +214,8 @@ export default function ProfilePage() {
         feature_flags,
         featureFlags,
         student_profile_completion,
+        income_modes = [],
+        default_income_mode = "annual",
         branding,
     } = usePage<{
         id_card: {
@@ -219,6 +298,9 @@ export default function ProfilePage() {
                 emergency_contact_phone?: string;
                 emergency_contact_relationship?: string;
                 facebook?: string;
+                twitter?: string;
+                instagram?: string;
+                linkedin?: string;
                 personal_contact?: string;
             };
             education?: {
@@ -228,11 +310,55 @@ export default function ProfilePage() {
                 high_school_year_graduated?: string;
                 senior_high_school?: string;
                 senior_high_year_graduated?: string;
+                college_school?: string;
+                college_course?: string;
+                college_year_graduated?: string;
+                vocational_school?: string;
+                vocational_course?: string;
+                vocational_year_graduated?: string;
             };
             parents?: {
                 father_name?: string;
+                father_occupation?: string;
+                father_contact?: string;
+                father_email?: string;
                 mother_name?: string;
+                mother_occupation?: string;
+                mother_contact?: string;
+                mother_email?: string;
+                guardian_name?: string;
+                guardian_relationship?: string;
+                guardian_contact?: string;
+                guardian_email?: string;
+                family_address?: string;
             };
+            personal_info?: {
+                birthplace?: string;
+                citizenship?: string;
+                weight?: number | string;
+                height?: number | string;
+                current_address?: string;
+                permanent_address?: string;
+            };
+            ethnicity?: string;
+            city_of_origin?: string;
+            province_of_origin?: string;
+            region_of_origin?: string;
+            is_indigenous_person?: boolean;
+            indigenous_group?: string;
+            is_pwd?: boolean;
+            pwd_type?: string;
+            is_solo_parent?: boolean;
+            is_senior_citizen?: boolean;
+            is_magna_carta?: boolean;
+            is_underprivileged?: boolean;
+            is_first_generation?: boolean;
+            income_bracket_mode?: string;
+            use_same_parent_income?: boolean;
+            family_income_bracket?: string;
+            father_income_bracket?: string;
+            mother_income_bracket?: string;
+            profile_reporting_confirmed_at?: string;
             formatted_academic_year?: string;
         };
         sessions: Array<{
@@ -252,6 +378,8 @@ export default function ProfilePage() {
             studentInformationUpdates?: boolean;
         };
         student_profile_completion?: StudentProfileCompletion;
+        income_modes?: Array<{ value: string; label: string; brackets: Array<{ value: string; label: string }> }>;
+        default_income_mode?: string;
         branding?: {
             defaultCountryCode?: string;
         };
@@ -282,12 +410,14 @@ export default function ProfilePage() {
     const initialStudentTab: StudentProfileTab = !studentInformationUpdatesEnabled
         ? "basic"
         : typeof window !== "undefined" && window.location.hash === "#student-contacts"
-          ? "contacts"
+          ? "family"
           : typeof window !== "undefined" && window.location.hash === "#student-education"
             ? "education"
-            : typeof window !== "undefined" && window.location.hash === "#student-information"
-              ? "student"
-              : "basic";
+            : typeof window !== "undefined" && window.location.hash === "#student-reporting"
+              ? "reporting"
+              : typeof window !== "undefined" && ["#student-information", "#student-personal"].includes(window.location.hash)
+                ? "personal"
+                : "basic";
     const [studentProfileTab, setStudentProfileTab] = useState(initialStudentTab);
 
     const paths = {
@@ -340,7 +470,7 @@ export default function ProfilePage() {
         age: faculty?.age || undefined,
     });
 
-    const studentForm = useForm({
+    const initialStudentFormData = {
         first_name: student?.first_name || "",
         last_name: student?.last_name || "",
         middle_name: student?.middle_name || "",
@@ -358,6 +488,9 @@ export default function ProfilePage() {
             emergency_contact_phone: student?.contacts?.emergency_contact_phone || "",
             emergency_contact_relationship: student?.contacts?.emergency_contact_relationship || "",
             facebook: student?.contacts?.facebook || "",
+            twitter: student?.contacts?.twitter || "",
+            instagram: student?.contacts?.instagram || "",
+            linkedin: student?.contacts?.linkedin || "",
             personal_contact: student?.contacts?.personal_contact || "",
         },
         education: {
@@ -367,16 +500,69 @@ export default function ProfilePage() {
             high_school_year_graduated: student?.education?.high_school_year_graduated || "",
             senior_high_school: student?.education?.senior_high_school || "",
             senior_high_year_graduated: student?.education?.senior_high_year_graduated || "",
+            college_school: student?.education?.college_school || "",
+            college_course: student?.education?.college_course || "",
+            college_year_graduated: student?.education?.college_year_graduated || "",
+            vocational_school: student?.education?.vocational_school || "",
+            vocational_course: student?.education?.vocational_course || "",
+            vocational_year_graduated: student?.education?.vocational_year_graduated || "",
         },
         parents: {
             father_name: student?.parents?.father_name || "",
+            father_occupation: student?.parents?.father_occupation || "",
+            father_contact: student?.parents?.father_contact || "",
+            father_email: student?.parents?.father_email || "",
             mother_name: student?.parents?.mother_name || "",
+            mother_occupation: student?.parents?.mother_occupation || "",
+            mother_contact: student?.parents?.mother_contact || "",
+            mother_email: student?.parents?.mother_email || "",
+            guardian_name: student?.parents?.guardian_name || "",
+            guardian_relationship: student?.parents?.guardian_relationship || "",
+            guardian_contact: student?.parents?.guardian_contact || "",
+            guardian_email: student?.parents?.guardian_email || "",
+            family_address: student?.parents?.family_address || "",
         },
-    });
+        personal_info: {
+            birthplace: student?.personal_info?.birthplace || "",
+            citizenship: student?.personal_info?.citizenship || "",
+            weight: `${student?.personal_info?.weight ?? ""}`,
+            height: `${student?.personal_info?.height ?? ""}`,
+            current_address: student?.personal_info?.current_address || "",
+            permanent_address: student?.personal_info?.permanent_address || "",
+        },
+        ethnicity: student?.ethnicity || "",
+        city_of_origin: student?.city_of_origin || "",
+        province_of_origin: student?.province_of_origin || "",
+        region_of_origin: student?.region_of_origin || "",
+        is_indigenous_person: student?.is_indigenous_person ?? false,
+        indigenous_group: student?.indigenous_group || "",
+        is_pwd: student?.is_pwd ?? false,
+        pwd_type: student?.pwd_type || "",
+        is_solo_parent: student?.is_solo_parent ?? false,
+        is_senior_citizen: student?.is_senior_citizen ?? false,
+        is_magna_carta: student?.is_magna_carta ?? false,
+        is_underprivileged: student?.is_underprivileged ?? false,
+        is_first_generation: student?.is_first_generation ?? false,
+        income_bracket_mode: student?.income_bracket_mode || default_income_mode,
+        use_same_parent_income: student?.use_same_parent_income ?? true,
+        family_income_bracket: student?.family_income_bracket || "",
+        father_income_bracket: student?.father_income_bracket || "",
+        mother_income_bracket: student?.mother_income_bracket || "",
+        reporting_confirmed: false,
+    };
+
+    const studentForm = useForm(initialStudentFormData);
 
     const avatarInputRef = useRef<HTMLInputElement | null>(null);
     const [avatarPreview, setAvatarPreview] = useState<string | undefined>(user.avatar_url);
     const [hasChanges, setHasChanges] = useState(false);
+    const [profileGuidanceActive, setProfileGuidanceActive] = useState(
+        () => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("guided") === "1",
+    );
+    const [guidedFieldKey, setGuidedFieldKey] = useState<string | null>(null);
+    const [guidanceFocusVersion, setGuidanceFocusVersion] = useState(0);
+    const [reportingConfirmed, setReportingConfirmed] = useState(Boolean(student?.profile_reporting_confirmed_at));
+    const studentFormDataRef = useRef<GuidedStudentFormData>(studentForm.data);
 
     const courses = (facultyForm.data.courses_taught || "")
         .split(",")
@@ -413,6 +599,82 @@ export default function ProfilePage() {
     const profileCompletion = isStudent ? (student_profile_completion?.percentage ?? 0) : accountProfileCompletion;
     const missingStudentItems = student_profile_completion?.missing ?? [];
     const missingBySection = (section: StudentProfileMissingItem["section"]) => missingStudentItems.filter((item) => item.section === section).length;
+    const guidedPendingItems = missingStudentItems.filter((item) => !isGuidedFieldComplete(item.key, studentForm.data, reportingConfirmed));
+    const guidedField = missingStudentItems.find((item) => item.key === guidedFieldKey) ?? guidedPendingItems[0] ?? null;
+
+    const pendingGuidanceItems = () =>
+        missingStudentItems.filter((item) => !isGuidedFieldComplete(item.key, studentFormDataRef.current, reportingConfirmed));
+
+    const finishProfileGuidance = () => {
+        setProfileGuidanceActive(false);
+        setGuidedFieldKey(null);
+        document.querySelectorAll<HTMLElement>("[data-profile-guidance-target='true']").forEach((element) => {
+            element.removeAttribute("data-profile-guidance-target");
+            element.classList.remove("ring-2", "ring-amber-400", "ring-offset-2", "ring-offset-background");
+        });
+
+        if (typeof window !== "undefined") {
+            const hash = window.location.hash;
+            window.history.replaceState(null, "", `${window.location.pathname}${hash}`);
+        }
+    };
+
+    const advanceProfileGuidance = () => {
+        const nextField = pendingGuidanceItems()[0] ?? null;
+        if (nextField?.key === guidedFieldKey) {
+            setGuidanceFocusVersion((version) => version + 1);
+        } else {
+            setGuidedFieldKey(nextField?.key ?? null);
+        }
+    };
+
+    const handleProfileGuidanceBlur = (event: React.FocusEvent<HTMLDivElement>) => {
+        if (!profileGuidanceActive || !guidedFieldKey) return;
+
+        const fieldId = (event.target as HTMLElement).id;
+        if (fieldId !== guidedFieldElementId(guidedFieldKey, studentFormDataRef.current)) return;
+
+        window.setTimeout(() => {
+            if (isGuidedFieldComplete(guidedFieldKey, studentFormDataRef.current, reportingConfirmed)) {
+                advanceProfileGuidance();
+            }
+        }, 100);
+    };
+
+    useEffect(() => {
+        studentFormDataRef.current = studentForm.data;
+    }, [studentForm.data]);
+
+    useEffect(() => {
+        if (!profileGuidanceActive) return;
+
+        const pendingItems = pendingGuidanceItems();
+        setGuidedFieldKey((current) => (current && pendingItems.some((item) => item.key === current) ? current : (pendingItems[0]?.key ?? null)));
+    }, [profileGuidanceActive, student_profile_completion, reportingConfirmed]);
+
+    useEffect(() => {
+        if (!profileGuidanceActive || !guidedField) return;
+
+        setStudentProfileTab(guidedField.section);
+
+        const targetId = guidedFieldElementId(guidedField.key, studentFormDataRef.current);
+        const focusTimer = window.setTimeout(() => {
+            document.querySelectorAll<HTMLElement>("[data-profile-guidance-target='true']").forEach((element) => {
+                element.removeAttribute("data-profile-guidance-target");
+                element.classList.remove("ring-2", "ring-amber-400", "ring-offset-2", "ring-offset-background");
+            });
+
+            const target = document.getElementById(targetId);
+            if (!target) return;
+
+            target.setAttribute("data-profile-guidance-target", "true");
+            target.classList.add("ring-2", "ring-amber-400", "ring-offset-2", "ring-offset-background");
+            target.scrollIntoView({ behavior: "smooth", block: "center" });
+            window.setTimeout(() => target.focus({ preventScroll: true }), 250);
+        }, 120);
+
+        return () => window.clearTimeout(focusTimer);
+    }, [guidedFieldKey, guidanceFocusVersion, profileGuidanceActive]);
 
     useEffect(() => {
         if (!userForm.data.avatar) {
@@ -450,32 +712,7 @@ export default function ProfilePage() {
             facultyForm.data.gender !== (faculty?.gender || "") ||
             facultyForm.data.age !== (faculty?.age || undefined);
 
-        const hasStudentChanges =
-            studentForm.data.first_name !== (student?.first_name || "") ||
-            studentForm.data.last_name !== (student?.last_name || "") ||
-            studentForm.data.middle_name !== (student?.middle_name || "") ||
-            studentForm.data.email !== (student?.email || user.email || "") ||
-            studentForm.data.phone !== (student?.phone || "") ||
-            studentForm.data.address !== (student?.address || "") ||
-            studentForm.data.civil_status !== (student?.civil_status || "") ||
-            studentForm.data.nationality !== (student?.nationality || "") ||
-            studentForm.data.religion !== (student?.religion || "") ||
-            studentForm.data.emergency_contact !== (student?.emergency_contact || "") ||
-            studentForm.data.birth_date !== (student?.birth_date || "") ||
-            studentForm.data.gender !== normalizeStudentGender(student?.gender) ||
-            studentForm.data.contacts.emergency_contact_name !== (student?.contacts?.emergency_contact_name || "") ||
-            studentForm.data.contacts.emergency_contact_phone !== (student?.contacts?.emergency_contact_phone || "") ||
-            studentForm.data.contacts.emergency_contact_relationship !== (student?.contacts?.emergency_contact_relationship || "") ||
-            studentForm.data.contacts.facebook !== (student?.contacts?.facebook || "") ||
-            studentForm.data.contacts.personal_contact !== (student?.contacts?.personal_contact || "") ||
-            studentForm.data.education.elementary_school !== (student?.education?.elementary_school || "") ||
-            studentForm.data.education.elementary_year_graduated !== (student?.education?.elementary_year_graduated || "") ||
-            studentForm.data.education.high_school !== (student?.education?.high_school || "") ||
-            studentForm.data.education.high_school_year_graduated !== (student?.education?.high_school_year_graduated || "") ||
-            studentForm.data.education.senior_high_school !== (student?.education?.senior_high_school || "") ||
-            studentForm.data.education.senior_high_year_graduated !== (student?.education?.senior_high_year_graduated || "") ||
-            studentForm.data.parents.father_name !== (student?.parents?.father_name || "") ||
-            studentForm.data.parents.mother_name !== (student?.parents?.mother_name || "");
+        const hasStudentChanges = JSON.stringify(studentForm.data) !== JSON.stringify(initialStudentFormData);
 
         setHasChanges(hasUserChanges || hasFacultyChanges || hasStudentChanges);
     }, [userForm.data, facultyForm.data, studentForm.data, user, faculty, student]);
@@ -485,12 +722,14 @@ export default function ProfilePage() {
         const hash = window.location.hash;
         if (!hash) return;
         const targetId = hash.replace("#", "");
-        if (targetId === "student-information") {
-            setStudentProfileTab("student");
+        if (targetId === "student-information" || targetId === "student-personal") {
+            setStudentProfileTab("personal");
         } else if (targetId === "student-contacts") {
-            setStudentProfileTab("contacts");
+            setStudentProfileTab("family");
         } else if (targetId === "student-education") {
             setStudentProfileTab("education");
+        } else if (targetId === "student-reporting") {
+            setStudentProfileTab("reporting");
         }
 
         window.setTimeout(() => {
@@ -554,10 +793,17 @@ export default function ProfilePage() {
 
     const handleStudentSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        studentForm.transform((data) => ({
+            ...data,
+            reporting_confirmed: studentProfileTab === "reporting",
+        }));
         studentForm.put(paths.student_update, {
             onSuccess: () => {
                 toast.success("Student information updated successfully!");
                 setHasChanges(false);
+                if (studentProfileTab === "reporting") {
+                    setReportingConfirmed(true);
+                }
                 router.visit(window.location.pathname, {
                     replace: true,
                     preserveScroll: true,
@@ -572,7 +818,13 @@ export default function ProfilePage() {
                 if (typeof window !== "undefined") {
                     window.setTimeout(() => {
                         const targetId =
-                            errorTab === "contacts" ? "student-contacts" : errorTab === "education" ? "student-education" : "student-information";
+                            errorTab === "family"
+                                ? "student-contacts"
+                                : errorTab === "education"
+                                  ? "student-education"
+                                  : errorTab === "reporting"
+                                    ? "student-reporting"
+                                    : "student-personal";
 
                         document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth", block: "start" });
                     }, 50);
@@ -724,7 +976,12 @@ export default function ProfilePage() {
                                     className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_20rem] xl:gap-5"
                                 >
                                     <motion.div variants={itemVariants} className="min-w-0">
-                                        <Tabs value={studentProfileTab} onValueChange={setStudentProfileTab} className="flex flex-col gap-4">
+                                        <Tabs
+                                            value={studentProfileTab}
+                                            onValueChange={setStudentProfileTab}
+                                            onBlurCapture={handleProfileGuidanceBlur}
+                                            className="flex flex-col gap-4"
+                                        >
                                             {isStudent && (
                                                 <Card className={dashboardPanelClass}>
                                                     <CardContent className="space-y-3 p-3">
@@ -746,7 +1003,7 @@ export default function ProfilePage() {
                                                                 Cruz, Mother, Davao City, and 2024.
                                                             </p>
                                                         </div>
-                                                        <TabsList className="bg-muted/20 grid h-auto w-full grid-cols-2 gap-1 rounded-lg p-1 sm:grid-cols-4">
+                                                        <TabsList className="bg-muted/20 grid h-auto w-full grid-cols-2 gap-1 rounded-lg p-1 sm:grid-cols-5">
                                                             <TabsTrigger value="basic" className="min-w-0 rounded-lg px-2 py-2 text-xs sm:text-sm">
                                                                 <User className="mr-1.5 h-4 w-4 shrink-0" />
                                                                 Basic
@@ -754,32 +1011,32 @@ export default function ProfilePage() {
                                                             {studentInformationUpdatesEnabled && (
                                                                 <>
                                                                     <TabsTrigger
-                                                                        value="student"
+                                                                        value="personal"
                                                                         className="min-w-0 rounded-lg px-2 py-2 text-xs sm:text-sm"
                                                                     >
                                                                         <GraduationCap className="mr-1.5 h-4 w-4 shrink-0" />
-                                                                        <span className="truncate">Student</span>
-                                                                        {missingBySection("student") > 0 && (
+                                                                        <span className="truncate">Personal</span>
+                                                                        {missingBySection("personal") > 0 && (
                                                                             <Badge
                                                                                 variant="secondary"
                                                                                 className="ml-1.5 h-5 rounded-full px-1.5 text-[10px]"
                                                                             >
-                                                                                {missingBySection("student")}
+                                                                                {missingBySection("personal")}
                                                                             </Badge>
                                                                         )}
                                                                     </TabsTrigger>
                                                                     <TabsTrigger
-                                                                        value="contacts"
+                                                                        value="family"
                                                                         className="min-w-0 rounded-lg px-2 py-2 text-xs sm:text-sm"
                                                                     >
                                                                         <Contact className="mr-1.5 h-4 w-4 shrink-0" />
-                                                                        <span className="truncate">Contacts</span>
-                                                                        {missingBySection("contacts") > 0 && (
+                                                                        <span className="truncate">Family</span>
+                                                                        {missingBySection("family") > 0 && (
                                                                             <Badge
                                                                                 variant="secondary"
                                                                                 className="ml-1.5 h-5 rounded-full px-1.5 text-[10px]"
                                                                             >
-                                                                                {missingBySection("contacts")}
+                                                                                {missingBySection("family")}
                                                                             </Badge>
                                                                         )}
                                                                     </TabsTrigger>
@@ -798,9 +1055,73 @@ export default function ProfilePage() {
                                                                             </Badge>
                                                                         )}
                                                                     </TabsTrigger>
+                                                                    <TabsTrigger
+                                                                        value="reporting"
+                                                                        className="min-w-0 rounded-lg px-2 py-2 text-xs sm:text-sm"
+                                                                    >
+                                                                        <BookOpen className="mr-1.5 h-4 w-4 shrink-0" />
+                                                                        <span className="truncate">Reporting</span>
+                                                                        {missingBySection("reporting") > 0 && (
+                                                                            <Badge
+                                                                                variant="secondary"
+                                                                                className="ml-1.5 h-5 rounded-full px-1.5 text-[10px]"
+                                                                            >
+                                                                                {missingBySection("reporting")}
+                                                                            </Badge>
+                                                                        )}
+                                                                    </TabsTrigger>
                                                                 </>
                                                             )}
                                                         </TabsList>
+                                                    </CardContent>
+                                                </Card>
+                                            )}
+
+                                            {isStudent && studentInformationUpdatesEnabled && profileGuidanceActive && (
+                                                <Card className="border-amber-500/30 bg-amber-500/5 shadow-sm" aria-live="polite" aria-atomic="true">
+                                                    <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
+                                                        <div className="flex min-w-0 items-start gap-3">
+                                                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300">
+                                                                {guidedField ? (
+                                                                    <ListChecks className="h-4 w-4" />
+                                                                ) : (
+                                                                    <CheckCircle2 className="h-4 w-4" />
+                                                                )}
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                {guidedField ? (
+                                                                    <>
+                                                                        <p className="text-sm font-semibold">Guided profile completion</p>
+                                                                        <p className="text-muted-foreground mt-0.5 text-sm">
+                                                                            Step {missingStudentItems.length - guidedPendingItems.length + 1} of{" "}
+                                                                            {missingStudentItems.length}: complete{" "}
+                                                                            <span className="text-foreground font-medium">{guidedField.label}</span>.
+                                                                        </p>
+                                                                        <p className="text-muted-foreground mt-1 text-xs">
+                                                                            When you leave a completed field, we&apos;ll take you to the next required
+                                                                            item.
+                                                                        </p>
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <p className="text-sm font-semibold">Profile guidance complete</p>
+                                                                        <p className="text-muted-foreground mt-0.5 text-sm">
+                                                                            All required profile details have been completed.
+                                                                        </p>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="shrink-0"
+                                                            onClick={finishProfileGuidance}
+                                                        >
+                                                            <X className="mr-1.5 h-4 w-4" />
+                                                            Exit guidance
+                                                        </Button>
                                                     </CardContent>
                                                 </Card>
                                             )}
@@ -840,7 +1161,7 @@ export default function ProfilePage() {
 
                                             {isStudent && studentInformationUpdatesEnabled && (
                                                 <>
-                                                    <TabsContent value="student" className="mt-0 min-w-0 outline-none">
+                                                    <TabsContent value="personal" className="mt-0 min-w-0 outline-none">
                                                         <StudentDetailsForm
                                                             studentForm={{
                                                                 data: studentForm.data,
@@ -852,7 +1173,7 @@ export default function ProfilePage() {
                                                             defaultCountryCode={branding?.defaultCountryCode}
                                                         />
                                                     </TabsContent>
-                                                    <TabsContent value="contacts" className="mt-0 min-w-0 outline-none">
+                                                    <TabsContent value="family" className="mt-0 min-w-0 outline-none">
                                                         <StudentContactsForm
                                                             studentForm={{
                                                                 data: studentForm.data,
@@ -874,6 +1195,18 @@ export default function ProfilePage() {
                                                             }}
                                                             onSubmit={handleStudentSubmit}
                                                             schoolOptionsEndpoint={paths.school_options}
+                                                        />
+                                                    </TabsContent>
+                                                    <TabsContent value="reporting" className="mt-0 min-w-0 outline-none">
+                                                        <StudentReportingForm
+                                                            studentForm={{
+                                                                data: studentForm.data,
+                                                                setData: studentForm.setData,
+                                                                errors: studentForm.errors,
+                                                                processing: studentForm.processing,
+                                                            }}
+                                                            incomeModes={income_modes}
+                                                            onSubmit={handleStudentSubmit}
                                                         />
                                                     </TabsContent>
                                                 </>

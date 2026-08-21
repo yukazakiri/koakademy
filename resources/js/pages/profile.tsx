@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useTheme } from "@/hooks/use-theme";
 import { Head, Link, router, useForm, usePage } from "@inertiajs/react";
 import { motion } from "framer-motion";
-import { ArrowLeft, BookOpen, Contact, GraduationCap, Palette, Plug, QrCode, Share2, User } from "lucide-react";
+import { ArrowLeft, BookOpen, CheckCircle2, Contact, GraduationCap, ListChecks, Palette, Plug, QrCode, Share2, User, X } from "lucide-react";
 
 import { toast } from "sonner";
 
@@ -130,6 +130,66 @@ const tabForStudentFormErrors = (errors: Record<string, string>): StudentProfile
     }
 
     return "personal";
+};
+
+type GuidedStudentFormData = {
+    contacts: Record<string, string>;
+    education: Record<string, string>;
+    parents: Record<string, string>;
+    personal_info: Record<string, string>;
+    use_same_parent_income: boolean;
+    family_income_bracket: string;
+    father_income_bracket: string;
+    mother_income_bracket: string;
+    [key: string]: unknown;
+};
+
+const guidedFieldElementId = (key: string, data: GuidedStudentFormData): string => {
+    const directIds: Record<string, string> = {
+        first_name: "student_first_name",
+        last_name: "student_last_name",
+        email: "student_email",
+        phone: "student_phone",
+        address: "student_address",
+        birth_date: "student_birth_date",
+        gender: "student_gender",
+        civil_status: "civil_status",
+        nationality: "nationality",
+        religion: "religion",
+        ethnicity: "ethnicity",
+        city_of_origin: "city_of_origin",
+        province_of_origin: "province_of_origin",
+        region_of_origin: "region_of_origin",
+        profile_reporting_confirmed_at: "reporting-confirmation",
+    };
+
+    if (key === "income_bracket") {
+        if (data.use_same_parent_income) return "family_income_bracket";
+
+        return data.father_income_bracket.trim() ? "mother_income_bracket" : "father_income_bracket";
+    }
+
+    if (key.startsWith("personal_info.")) return `student_${key.split(".")[1]}`;
+    if (key.startsWith("contacts.") || key.startsWith("parents.") || key.startsWith("education.")) return key.split(".")[1];
+
+    return directIds[key] ?? key;
+};
+
+const isGuidedFieldComplete = (key: string, data: GuidedStudentFormData, reportingConfirmed: boolean): boolean => {
+    if (key === "profile_reporting_confirmed_at") return reportingConfirmed;
+    if (key === "income_bracket") {
+        return data.use_same_parent_income
+            ? data.family_income_bracket.trim() !== ""
+            : data.father_income_bracket.trim() !== "" && data.mother_income_bracket.trim() !== "";
+    }
+
+    const value = key.split(".").reduce<unknown>((current, segment) => {
+        if (current && typeof current === "object") return (current as Record<string, unknown>)[segment];
+
+        return undefined;
+    }, data);
+
+    return typeof value === "string" ? value.trim() !== "" : Boolean(value);
 };
 
 export default function ProfilePage() {
@@ -496,6 +556,13 @@ export default function ProfilePage() {
     const avatarInputRef = useRef<HTMLInputElement | null>(null);
     const [avatarPreview, setAvatarPreview] = useState<string | undefined>(user.avatar_url);
     const [hasChanges, setHasChanges] = useState(false);
+    const [profileGuidanceActive, setProfileGuidanceActive] = useState(
+        () => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("guided") === "1",
+    );
+    const [guidedFieldKey, setGuidedFieldKey] = useState<string | null>(null);
+    const [guidanceFocusVersion, setGuidanceFocusVersion] = useState(0);
+    const [reportingConfirmed, setReportingConfirmed] = useState(Boolean(student?.profile_reporting_confirmed_at));
+    const studentFormDataRef = useRef<GuidedStudentFormData>(studentForm.data);
 
     const courses = (facultyForm.data.courses_taught || "")
         .split(",")
@@ -532,6 +599,82 @@ export default function ProfilePage() {
     const profileCompletion = isStudent ? (student_profile_completion?.percentage ?? 0) : accountProfileCompletion;
     const missingStudentItems = student_profile_completion?.missing ?? [];
     const missingBySection = (section: StudentProfileMissingItem["section"]) => missingStudentItems.filter((item) => item.section === section).length;
+    const guidedPendingItems = missingStudentItems.filter((item) => !isGuidedFieldComplete(item.key, studentForm.data, reportingConfirmed));
+    const guidedField = missingStudentItems.find((item) => item.key === guidedFieldKey) ?? guidedPendingItems[0] ?? null;
+
+    const pendingGuidanceItems = () =>
+        missingStudentItems.filter((item) => !isGuidedFieldComplete(item.key, studentFormDataRef.current, reportingConfirmed));
+
+    const finishProfileGuidance = () => {
+        setProfileGuidanceActive(false);
+        setGuidedFieldKey(null);
+        document.querySelectorAll<HTMLElement>("[data-profile-guidance-target='true']").forEach((element) => {
+            element.removeAttribute("data-profile-guidance-target");
+            element.classList.remove("ring-2", "ring-amber-400", "ring-offset-2", "ring-offset-background");
+        });
+
+        if (typeof window !== "undefined") {
+            const hash = window.location.hash;
+            window.history.replaceState(null, "", `${window.location.pathname}${hash}`);
+        }
+    };
+
+    const advanceProfileGuidance = () => {
+        const nextField = pendingGuidanceItems()[0] ?? null;
+        if (nextField?.key === guidedFieldKey) {
+            setGuidanceFocusVersion((version) => version + 1);
+        } else {
+            setGuidedFieldKey(nextField?.key ?? null);
+        }
+    };
+
+    const handleProfileGuidanceBlur = (event: React.FocusEvent<HTMLDivElement>) => {
+        if (!profileGuidanceActive || !guidedFieldKey) return;
+
+        const fieldId = (event.target as HTMLElement).id;
+        if (fieldId !== guidedFieldElementId(guidedFieldKey, studentFormDataRef.current)) return;
+
+        window.setTimeout(() => {
+            if (isGuidedFieldComplete(guidedFieldKey, studentFormDataRef.current, reportingConfirmed)) {
+                advanceProfileGuidance();
+            }
+        }, 100);
+    };
+
+    useEffect(() => {
+        studentFormDataRef.current = studentForm.data;
+    }, [studentForm.data]);
+
+    useEffect(() => {
+        if (!profileGuidanceActive) return;
+
+        const pendingItems = pendingGuidanceItems();
+        setGuidedFieldKey((current) => (current && pendingItems.some((item) => item.key === current) ? current : (pendingItems[0]?.key ?? null)));
+    }, [profileGuidanceActive, student_profile_completion, reportingConfirmed]);
+
+    useEffect(() => {
+        if (!profileGuidanceActive || !guidedField) return;
+
+        setStudentProfileTab(guidedField.section);
+
+        const targetId = guidedFieldElementId(guidedField.key, studentFormDataRef.current);
+        const focusTimer = window.setTimeout(() => {
+            document.querySelectorAll<HTMLElement>("[data-profile-guidance-target='true']").forEach((element) => {
+                element.removeAttribute("data-profile-guidance-target");
+                element.classList.remove("ring-2", "ring-amber-400", "ring-offset-2", "ring-offset-background");
+            });
+
+            const target = document.getElementById(targetId);
+            if (!target) return;
+
+            target.setAttribute("data-profile-guidance-target", "true");
+            target.classList.add("ring-2", "ring-amber-400", "ring-offset-2", "ring-offset-background");
+            target.scrollIntoView({ behavior: "smooth", block: "center" });
+            window.setTimeout(() => target.focus({ preventScroll: true }), 250);
+        }, 120);
+
+        return () => window.clearTimeout(focusTimer);
+    }, [guidedFieldKey, guidanceFocusVersion, profileGuidanceActive]);
 
     useEffect(() => {
         if (!userForm.data.avatar) {
@@ -658,6 +801,9 @@ export default function ProfilePage() {
             onSuccess: () => {
                 toast.success("Student information updated successfully!");
                 setHasChanges(false);
+                if (studentProfileTab === "reporting") {
+                    setReportingConfirmed(true);
+                }
                 router.visit(window.location.pathname, {
                     replace: true,
                     preserveScroll: true,
@@ -830,7 +976,12 @@ export default function ProfilePage() {
                                     className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_20rem] xl:gap-5"
                                 >
                                     <motion.div variants={itemVariants} className="min-w-0">
-                                        <Tabs value={studentProfileTab} onValueChange={setStudentProfileTab} className="flex flex-col gap-4">
+                                        <Tabs
+                                            value={studentProfileTab}
+                                            onValueChange={setStudentProfileTab}
+                                            onBlurCapture={handleProfileGuidanceBlur}
+                                            className="flex flex-col gap-4"
+                                        >
                                             {isStudent && (
                                                 <Card className={dashboardPanelClass}>
                                                     <CardContent className="space-y-3 p-3">
@@ -922,6 +1073,55 @@ export default function ProfilePage() {
                                                                 </>
                                                             )}
                                                         </TabsList>
+                                                    </CardContent>
+                                                </Card>
+                                            )}
+
+                                            {isStudent && studentInformationUpdatesEnabled && profileGuidanceActive && (
+                                                <Card className="border-amber-500/30 bg-amber-500/5 shadow-sm" aria-live="polite" aria-atomic="true">
+                                                    <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
+                                                        <div className="flex min-w-0 items-start gap-3">
+                                                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300">
+                                                                {guidedField ? (
+                                                                    <ListChecks className="h-4 w-4" />
+                                                                ) : (
+                                                                    <CheckCircle2 className="h-4 w-4" />
+                                                                )}
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                {guidedField ? (
+                                                                    <>
+                                                                        <p className="text-sm font-semibold">Guided profile completion</p>
+                                                                        <p className="text-muted-foreground mt-0.5 text-sm">
+                                                                            Step {missingStudentItems.length - guidedPendingItems.length + 1} of{" "}
+                                                                            {missingStudentItems.length}: complete{" "}
+                                                                            <span className="text-foreground font-medium">{guidedField.label}</span>.
+                                                                        </p>
+                                                                        <p className="text-muted-foreground mt-1 text-xs">
+                                                                            When you leave a completed field, we&apos;ll take you to the next required
+                                                                            item.
+                                                                        </p>
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <p className="text-sm font-semibold">Profile guidance complete</p>
+                                                                        <p className="text-muted-foreground mt-0.5 text-sm">
+                                                                            All required profile details have been completed.
+                                                                        </p>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="shrink-0"
+                                                            onClick={finishProfileGuidance}
+                                                        >
+                                                            <X className="mr-1.5 h-4 w-4" />
+                                                            Exit guidance
+                                                        </Button>
                                                     </CardContent>
                                                 </Card>
                                             )}

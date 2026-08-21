@@ -10,7 +10,6 @@ use App\Features\Toggles\StudentInformationUpdates;
 use App\Features\Toggles\StudentSignaturePad;
 use App\Models\GeneralSetting;
 use App\Models\School;
-use App\Models\Student;
 use App\Models\User;
 use App\Services\AnalyticsSettingsService;
 use App\Services\FacultyClassShareService;
@@ -22,7 +21,6 @@ use App\Services\OnboardingShareService;
 use App\Services\SettingsShareService;
 use App\Services\SocialiteProviderService;
 use App\Services\StudentClassShareService;
-use App\Services\StudentProfileCompletionService;
 use App\Support\AdministratorSidebarCounts;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
@@ -59,7 +57,6 @@ final class HandleInertiaRequests extends Middleware
         $onboardingService = app(OnboardingShareService::class);
         $facultyClassService = app(FacultyClassShareService::class);
         $studentClassService = app(StudentClassShareService::class);
-        $studentProfileCompletionService = app(StudentProfileCompletionService::class);
         $announcementService = app(AnnouncementDataService::class);
         $analyticsService = app(AnalyticsSettingsService::class);
         $moduleAdminNavigationService = app(ModuleAdminNavigationService::class);
@@ -121,8 +118,6 @@ final class HandleInertiaRequests extends Middleware
                     request: $request,
                     user: $user,
                     announcementService: $announcementService,
-                    studentProfileCompletionService: $studentProfileCompletionService,
-                    studentInformationUpdatesEnabled: $studentInformationUpdatesEnabled,
                 ),
             ]
         );
@@ -163,54 +158,11 @@ final class HandleInertiaRequests extends Middleware
         Request $request,
         ?User $user,
         AnnouncementDataService $announcementService,
-        StudentProfileCompletionService $studentProfileCompletionService,
-        bool $studentInformationUpdatesEnabled,
     ): array {
-        $announcements = $announcementService->getSharedBannerAnnouncements(
+        return $announcementService->getSharedBannerAnnouncements(
             user: $user,
             location: $this->resolveAnnouncementLocation($request),
         );
-
-        if (! $studentInformationUpdatesEnabled || ! $user?->isStudentRole()) {
-            return $announcements;
-        }
-
-        $student = Student::query()
-            ->where('user_id', $user->id)
-            ->with(['studentContactsInfo', 'studentEducationInfo', 'studentParentInfo'])
-            ->first();
-
-        $completion = $studentProfileCompletionService->summarize($student);
-
-        if ($completion['missing'] === []) {
-            return $announcements;
-        }
-
-        $missingLabels = collect($completion['missing'])
-            ->take(3)
-            ->pluck('label')
-            ->implode(', ');
-        $extraCount = max(0, count($completion['missing']) - 3);
-        $extraText = $extraCount > 0 ? ', and '.$extraCount.' more' : '';
-        $section = $completion['missing'][0]['section'] ?? 'personal';
-
-        $announcements[] = [
-            'id' => -1001,
-            'title' => 'Complete your student information',
-            'content' => "Some important details are missing: {$missingLabels}{$extraText}.",
-            'type' => 'warning',
-            'priority' => 'high',
-            'display_mode' => 'banner',
-            'requires_acknowledgment' => false,
-            'non_dismissible' => true,
-            'link' => "/student/profile#student-{$section}",
-            'action_label' => 'Complete student information',
-            'is_active' => true,
-            'starts_at' => null,
-            'ends_at' => null,
-        ];
-
-        return $announcements;
     }
 
     /**

@@ -442,7 +442,7 @@ it('returns student profile completion data for incomplete information', functio
     );
 });
 
-it('shares a non-dismissible completion banner when important student information is missing', function (): void {
+it('does not duplicate incomplete profile guidance as a shared announcement', function (): void {
     $this->student->update([
         'phone' => null,
         'address' => null,
@@ -455,28 +455,7 @@ it('shares a non-dismissible completion banner when important student informatio
 
     $response->assertSuccessful();
     $response->assertInertia(fn ($page) => $page
-        ->where('announcements.0.title', 'Complete your student information')
-        ->where('announcements.0.action_label', 'Complete student information')
-        ->where('announcements.0.link', '/student/profile#student-personal')
-        ->where('announcements.0.non_dismissible', true)
-    );
-});
-
-it('does not share the completion banner when student information updates are inactive', function (): void {
-    Feature::deactivateForEveryone(StudentInformationUpdates::class);
-
-    $this->student->update([
-        'phone' => null,
-        'address' => null,
-        'emergency_contact' => null,
-    ]);
-
-    $response = $this
-        ->actingAs($this->user)
-        ->get(route('student.profile'));
-
-    $response->assertSuccessful();
-    $response->assertInertia(fn ($page) => $page
+        ->where('student_profile_completion.missing.0.label', 'Phone number')
         ->has('announcements', 0)
     );
 });

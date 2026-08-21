@@ -78,7 +78,7 @@ it('shares an actionable profile completion prompt for students with missing rep
         ->assertOk()
         ->assertInertia(fn (Assert $page): Assert => $page
             ->component('student/dashboard')
-            ->where('profile_completion_prompt.link', '/student/profile#student-personal')
+            ->where('profile_completion_prompt.link', '/student/profile?guided=1#student-personal')
             ->where('profile_completion_prompt.missing.0.label', 'Phone number')
         );
 });

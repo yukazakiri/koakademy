@@ -264,7 +264,7 @@ export function StudentReportingForm({ studentForm, incomeModes, onSubmit }: Stu
                     </div>
 
                     <div className="flex justify-end">
-                        <Button type="submit" disabled={studentForm.processing} className="rounded-lg">
+                        <Button id="reporting-confirmation" type="submit" disabled={studentForm.processing} className="rounded-lg">
                             <Save className="mr-2 h-4 w-4" />
                             {studentForm.processing ? "Saving..." : "Save reporting information"}
                         </Button>

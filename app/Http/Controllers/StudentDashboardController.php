@@ -142,7 +142,7 @@ final class StudentDashboardController extends Controller
         return [
             ...$completion,
             'missing' => array_slice($completion['missing'], 0, 3),
-            'link' => "/student/profile#student-{$section}",
+            'link' => "/student/profile?guided=1#student-{$section}",
         ];
     }
 

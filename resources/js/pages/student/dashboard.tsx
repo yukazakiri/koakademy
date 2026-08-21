@@ -123,13 +123,13 @@ function ProfileCompletionPrompt({ prompt }: { prompt: NonNullable<StudentDashbo
                                 </Badge>
                             </div>
                             <p className="text-muted-foreground mt-1 text-sm leading-relaxed">
-                                Your school needs a few details for services and reporting: {missingLabels}.
+                                We&apos;ll guide you through the remaining details for services and reporting: {missingLabels}.
                             </p>
                         </div>
                     </div>
                     <Button asChild className="shrink-0">
                         <Link href={prompt.link}>
-                            Complete profile
+                            Start guided completion
                             <ArrowRight className="ml-2 h-4 w-4" />
                         </Link>
                     </Button>

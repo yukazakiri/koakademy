@@ -212,6 +212,15 @@ Route::middleware(['auth', 'administrators.only'])
             ->middleware('throttle:30,1')
             ->name('finance.payments.batch.store');
         Route::get('/finance/tuition-adjustments', [AdministratorTuitionAdjustmentController::class, 'index'])->name('finance.tuition-adjustments.index');
+        Route::get('/finance/tuition-adjustments/template', [AdministratorTuitionAdjustmentController::class, 'downloadTemplate'])->name('finance.tuition-adjustments.template');
+        Route::post('/finance/tuition-adjustments/imports', [AdministratorTuitionAdjustmentController::class, 'storeSpreadsheetImport'])
+            ->middleware('throttle:30,1')
+            ->name('finance.tuition-adjustments.imports.store');
+        Route::get('/finance/tuition-adjustments/imports/{spreadsheetImport}', [AdministratorTuitionAdjustmentController::class, 'showSpreadsheetImport'])
+            ->name('finance.tuition-adjustments.imports.show');
+        Route::post('/finance/tuition-adjustments/imports/{spreadsheetImport}/confirm', [AdministratorTuitionAdjustmentController::class, 'confirmSpreadsheetImport'])
+            ->middleware('throttle:30,1')
+            ->name('finance.tuition-adjustments.imports.confirm');
         Route::get('/finance/tuition-update-requests', [AdministratorTuitionUpdateRequestController::class, 'index'])->name('finance.tuition-update-requests.index');
         Route::get('/finance/tuition-update-requests/{tuitionUpdateRequest}', [AdministratorTuitionUpdateRequestController::class, 'show'])->whereNumber('tuitionUpdateRequest')->name('finance.tuition-update-requests.show');
         Route::post('/finance/tuition-update-requests/{tuitionUpdateRequest}/claim', [AdministratorTuitionUpdateRequestController::class, 'claim'])->whereNumber('tuitionUpdateRequest')->middleware('throttle:30,1')->name('finance.tuition-update-requests.claim');

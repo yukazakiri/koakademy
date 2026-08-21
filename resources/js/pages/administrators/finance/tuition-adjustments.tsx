@@ -1,4 +1,4 @@
-import { resolve, storeBatch } from "@/actions/App/Http/Controllers/AdministratorTuitionAdjustmentController";
+import { downloadTemplate, resolve, storeBatch, storeSpreadsheetImport } from "@/actions/App/Http/Controllers/AdministratorTuitionAdjustmentController";
 import AdminLayout from "@/components/administrators/admin-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { User } from "@/types/user";
-import { Head, Link, router } from "@inertiajs/react";
+import { Head, Link, router, useForm } from "@inertiajs/react";
 import axios from "axios";
 import {
     AlertTriangle,
@@ -31,7 +31,7 @@ import {
     Settings2,
     UserRound,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 type Installment = { term: "prelim" | "midterm" | "finals"; amount: number; percentage?: number; source?: string };
@@ -140,6 +140,12 @@ export default function TuitionAdjustmentsPage(props: Props) {
     const [pasteText, setPasteText] = useState("");
     const [resolving, setResolving] = useState(false);
     const [applying, setApplying] = useState(false);
+    const spreadsheetInput = useRef<HTMLInputElement>(null);
+    const spreadsheetImport = useForm<{ file: File | null; school_year: string; semester: number }>({
+        file: null,
+        school_year: props.filters.school_year,
+        semester: props.filters.semester,
+    });
 
     const selected = drafts.find((row) => row.enrollment_id === selectedId) ?? drafts[0] ?? null;
     const filtered = useMemo(
@@ -308,6 +314,12 @@ export default function TuitionAdjustmentsPage(props: Props) {
         }
     }
 
+    function uploadSpreadsheet(file: File | null) {
+        if (!file) return;
+        spreadsheetImport.setData({ file, school_year: props.filters.school_year, semester: props.filters.semester });
+        spreadsheetImport.post(storeSpreadsheetImport.url(), { forceFormData: true });
+    }
+
     return (
         <AdminLayout user={props.user} title="Tuition Adjustments">
             <Head title="Finance · Tuition Adjustments" />
@@ -362,7 +374,28 @@ export default function TuitionAdjustmentsPage(props: Props) {
                             <ClipboardPaste className="size-4" /> Paste from Excel
                         </Button>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
+                        <Button variant="outline" asChild>
+                            <a href={downloadTemplate.url()}>
+                                <FileSpreadsheet className="size-4" /> Download template
+                            </a>
+                        </Button>
+                        {props.can_manage && (
+                            <>
+                                <input
+                                    ref={spreadsheetInput}
+                                    type="file"
+                                    accept="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx"
+                                    className="hidden"
+                                    onChange={(event) => uploadSpreadsheet(event.target.files?.[0] ?? null)}
+                                />
+                                <Button variant="outline" disabled={spreadsheetImport.processing} onClick={() => spreadsheetInput.current?.click()}>
+                                    {spreadsheetImport.processing ? <Loader2 className="size-4 animate-spin" /> : <FileSpreadsheet className="size-4" />}
+                                    Upload template
+                                </Button>
+                            </>
+                        )}
+                        {spreadsheetImport.errors.file && <p className="text-destructive self-center text-sm">{spreadsheetImport.errors.file}</p>}
                         <div className="bg-muted/50 flex rounded-lg border p-1">
                             <Button size="sm" variant={layout === "inspector" ? "secondary" : "ghost"} onClick={() => setLayout("inspector")}>
                                 <Columns3 className="size-4" /> Inspector

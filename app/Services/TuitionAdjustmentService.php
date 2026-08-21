@@ -183,7 +183,7 @@ final readonly class TuitionAdjustmentService
                     'client_row_id' => $clientRowId,
                     'idempotency_key' => $idempotencyKey,
                     'source' => $source,
-                    'reason' => $reason,
+                    'reason' => mb_trim((string) ($row['reason'] ?? $reason)),
                     'before_snapshot' => $before,
                     'after_snapshot' => $after,
                     'configuration_snapshot' => $profile,

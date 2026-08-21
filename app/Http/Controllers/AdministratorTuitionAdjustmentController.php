@@ -5,22 +5,30 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Enums\StudentType;
+use App\Exports\TuitionAdjustmentSpreadsheetTemplateExport;
+use App\Http\Requests\Administrators\ConfirmTuitionAdjustmentSpreadsheetImportRequest;
 use App\Http\Requests\Administrators\ResolveTuitionAdjustmentRowsRequest;
 use App\Http\Requests\Administrators\StoreTuitionAdjustmentBatchRequest;
+use App\Http\Requests\Administrators\StoreTuitionAdjustmentSpreadsheetImportRequest;
 use App\Models\Course;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\TuitionAdjustment;
+use App\Models\TuitionAdjustmentSpreadsheetImport;
 use App\Models\User;
 use App\Services\GeneralSettingsService;
 use App\Services\TuitionAdjustmentNotificationService;
 use App\Services\TuitionAdjustmentService;
+use App\Services\TuitionAdjustmentSpreadsheetImportService;
 use App\Services\TuitionPaymentScheduleSettingsService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
+use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 final class AdministratorTuitionAdjustmentController extends Controller
 {
@@ -113,6 +121,68 @@ final class AdministratorTuitionAdjustmentController extends Controller
             rows: $validated['rows'],
             source: $validated['source'] ?? 'workspace',
         ));
+    }
+
+    public function downloadTemplate(Request $request): BinaryFileResponse
+    {
+        abort_unless($request->user()?->can('view_tuition_fees'), 403);
+
+        return Excel::download(new TuitionAdjustmentSpreadsheetTemplateExport, 'tuition-adjustment-template.xlsx');
+    }
+
+    public function storeSpreadsheetImport(StoreTuitionAdjustmentSpreadsheetImportRequest $request, TuitionAdjustmentSpreadsheetImportService $imports): RedirectResponse
+    {
+        $user = $request->user();
+        abort_unless($user instanceof User, 403);
+        $validated = $request->validated();
+        $import = $imports->stage($user, $validated['file'], $validated['school_year'], $validated['semester']);
+
+        return redirect()->route('administrators.finance.tuition-adjustments.imports.show', $import)
+            ->with('success', 'Spreadsheet uploaded. Review valid rows before confirming tuition changes.');
+    }
+
+    public function showSpreadsheetImport(Request $request, TuitionAdjustmentSpreadsheetImport $spreadsheetImport): Response
+    {
+        abort_unless($request->user()?->can('manage_tuition_fees'), 403);
+        $spreadsheetImport->load([
+            'uploader:id,name', 'confirmer:id,name',
+            'rows' => fn ($query) => $query->with(['adjustment:id,source,reason'])->orderBy('row_number'),
+        ]);
+
+        return Inertia::render('administrators/finance/tuition-adjustment-spreadsheet-import', [
+            'user' => $request->user(),
+            'import' => [
+                'id' => $spreadsheetImport->public_id,
+                'filename' => $spreadsheetImport->original_filename,
+                'school_year' => $spreadsheetImport->school_year,
+                'semester' => $spreadsheetImport->semester,
+                'status' => $spreadsheetImport->status,
+                'counts' => [
+                    'ready' => $spreadsheetImport->ready_count, 'invalid' => $spreadsheetImport->invalid_count,
+                    'applied' => $spreadsheetImport->applied_count, 'rejected' => $spreadsheetImport->rejected_count,
+                ],
+                'uploaded_at' => $spreadsheetImport->created_at?->toIso8601String(),
+                'confirmed_at' => $spreadsheetImport->confirmed_at?->toIso8601String(),
+                'uploader' => $spreadsheetImport->uploader?->only(['id', 'name']),
+                'confirmer' => $spreadsheetImport->confirmer?->only(['id', 'name']),
+                'rows' => $spreadsheetImport->rows->map(fn ($row): array => [
+                    'id' => $row->id, 'row_number' => $row->row_number, 'student_number' => $row->student_number,
+                    'status' => $row->status, 'input' => $row->input, 'canonical' => $row->canonical_snapshot,
+                    'proposal' => $row->proposal, 'errors' => $row->errors ?? [], 'result' => $row->result,
+                ])->values(),
+            ],
+            'can_confirm' => $spreadsheetImport->status === 'review' && ($request->user()?->can('manage_tuition_fees') ?? false),
+        ]);
+    }
+
+    public function confirmSpreadsheetImport(ConfirmTuitionAdjustmentSpreadsheetImportRequest $request, TuitionAdjustmentSpreadsheetImport $spreadsheetImport, TuitionAdjustmentSpreadsheetImportService $imports): RedirectResponse
+    {
+        $user = $request->user();
+        abort_unless($user instanceof User, 403);
+        $imports->confirm($spreadsheetImport, $user);
+
+        return redirect()->route('administrators.finance.tuition-adjustments.imports.show', $spreadsheetImport)
+            ->with('success', 'Valid spreadsheet rows were confirmed and applied.');
     }
 
     public function retryNotification(Request $request, TuitionAdjustment $adjustment): JsonResponse

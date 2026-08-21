@@ -22,6 +22,14 @@ type StudentDetailsData = {
     religion: string;
     address: string;
     emergency_contact: string;
+    personal_info: {
+        birthplace: string;
+        citizenship: string;
+        weight: string;
+        height: string;
+        current_address: string;
+        permanent_address: string;
+    };
 };
 
 interface StudentDetailsFormProps {
@@ -80,6 +88,9 @@ function FieldError({ message }: { message?: string }) {
 
 export function StudentDetailsForm({ studentForm, onSubmit, defaultCountryCode }: StudentDetailsFormProps) {
     const student = studentForm.data;
+    const updatePersonalInfo = (key: keyof StudentDetailsData["personal_info"], value: string) => {
+        studentForm.setData("personal_info", { ...student.personal_info, [key]: value });
+    };
     const knownCivilStatus = civilStatuses.find(([value]) => value === student.civil_status.toLowerCase());
     const selectedCivilStatus = knownCivilStatus?.[0] ?? student.civil_status;
     const civilStatusOptions: ReadonlyArray<readonly [string, string]> =
@@ -241,6 +252,81 @@ export function StudentDetailsForm({ studentForm, onSubmit, defaultCountryCode }
                                 />
                             </InputGroup>
                             <FieldError message={studentForm.errors.address} />
+                        </div>
+
+                        <div className="border-border/70 border-t pt-5 md:col-span-2 lg:col-span-3">
+                            <p className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">Personal record</p>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="student_birthplace">Birthplace</Label>
+                            <Input
+                                id="student_birthplace"
+                                value={student.personal_info.birthplace}
+                                onChange={(event) => updatePersonalInfo("birthplace", event.target.value)}
+                                placeholder="City, province"
+                                aria-invalid={Boolean(studentForm.errors["personal_info.birthplace"])}
+                            />
+                            <FieldError message={studentForm.errors["personal_info.birthplace"]} />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="student_citizenship">Citizenship</Label>
+                            <Input
+                                id="student_citizenship"
+                                value={student.personal_info.citizenship}
+                                onChange={(event) => updatePersonalInfo("citizenship", event.target.value)}
+                                placeholder="e.g. Filipino"
+                                aria-invalid={Boolean(studentForm.errors["personal_info.citizenship"])}
+                            />
+                            <FieldError message={studentForm.errors["personal_info.citizenship"]} />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="student_height">Height (cm)</Label>
+                            <Input
+                                id="student_height"
+                                type="number"
+                                min="1"
+                                step="0.01"
+                                value={student.personal_info.height}
+                                onChange={(event) => updatePersonalInfo("height", event.target.value)}
+                                aria-invalid={Boolean(studentForm.errors["personal_info.height"])}
+                            />
+                            <FieldError message={studentForm.errors["personal_info.height"]} />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="student_weight">Weight (kg)</Label>
+                            <Input
+                                id="student_weight"
+                                type="number"
+                                min="1"
+                                step="0.01"
+                                value={student.personal_info.weight}
+                                onChange={(event) => updatePersonalInfo("weight", event.target.value)}
+                                aria-invalid={Boolean(studentForm.errors["personal_info.weight"])}
+                            />
+                            <FieldError message={studentForm.errors["personal_info.weight"]} />
+                        </div>
+                        <div className="space-y-2 md:col-span-2 lg:col-span-3">
+                            <Label htmlFor="student_current_address">Current address</Label>
+                            <Input
+                                id="student_current_address"
+                                value={student.personal_info.current_address}
+                                onChange={(event) => updatePersonalInfo("current_address", event.target.value)}
+                                placeholder="Where you currently reside"
+                                aria-invalid={Boolean(studentForm.errors["personal_info.current_address"])}
+                            />
+                            <FieldError message={studentForm.errors["personal_info.current_address"]} />
+                        </div>
+                        <div className="space-y-2 md:col-span-2 lg:col-span-3">
+                            <Label htmlFor="student_permanent_address">Permanent address</Label>
+                            <Input
+                                id="student_permanent_address"
+                                value={student.personal_info.permanent_address}
+                                onChange={(event) => updatePersonalInfo("permanent_address", event.target.value)}
+                                placeholder="Home address if different from current address"
+                                aria-invalid={Boolean(studentForm.errors["personal_info.permanent_address"])}
+                            />
+                            <FieldError message={studentForm.errors["personal_info.permanent_address"]} />
                         </div>
 
                         <div className="space-y-2 md:col-span-2 lg:col-span-3">

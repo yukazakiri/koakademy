@@ -192,6 +192,7 @@ final class HandleInertiaRequests extends Middleware
             ->implode(', ');
         $extraCount = max(0, count($completion['missing']) - 3);
         $extraText = $extraCount > 0 ? ', and '.$extraCount.' more' : '';
+        $section = $completion['missing'][0]['section'] ?? 'personal';
 
         $announcements[] = [
             'id' => -1001,
@@ -202,7 +203,7 @@ final class HandleInertiaRequests extends Middleware
             'display_mode' => 'banner',
             'requires_acknowledgment' => false,
             'non_dismissible' => true,
-            'link' => '/student/profile#student-information',
+            'link' => "/student/profile#student-{$section}",
             'action_label' => 'Complete student information',
             'is_active' => true,
             'starts_at' => null,

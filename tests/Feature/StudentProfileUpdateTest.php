@@ -156,15 +156,58 @@ it('can update student profile information', function (): void {
                 'emergency_contact_relationship' => 'Mother',
                 'facebook' => 'Mariane Jimenez',
                 'personal_contact' => '+63 09511564252',
+                'twitter' => 'https://x.com/student',
+                'instagram' => 'https://instagram.com/student',
+                'linkedin' => 'https://linkedin.com/in/student',
             ],
             'education' => [
                 'elementary_school' => 'Elementary School',
                 'elementary_year_graduated' => '2012',
+                'college_school' => 'Previous College',
+                'college_course' => 'BSIT',
+                'college_year_graduated' => '2023',
+                'vocational_school' => 'Technical Institute',
+                'vocational_course' => 'Computer Systems',
+                'vocational_year_graduated' => '2024',
             ],
             'parents' => [
                 'father_name' => 'Father Name',
+                'father_occupation' => 'Engineer',
+                'father_contact' => '+63 912 111 1111',
+                'father_email' => 'father@example.com',
                 'mother_name' => 'Mother Name',
+                'mother_occupation' => 'Teacher',
+                'mother_contact' => '+63 912 222 2222',
+                'mother_email' => 'mother@example.com',
+                'guardian_name' => 'Guardian Name',
+                'guardian_relationship' => 'Aunt',
+                'guardian_contact' => '+63 912 333 3333',
+                'guardian_email' => 'guardian@example.com',
+                'family_address' => 'Family Address',
             ],
+            'personal_info' => [
+                'birthplace' => 'Davao City',
+                'citizenship' => 'Filipino',
+                'height' => '170',
+                'weight' => '65',
+                'current_address' => 'Current Address',
+                'permanent_address' => 'Permanent Address',
+            ],
+            'ethnicity' => 'Cebuano',
+            'city_of_origin' => 'Davao City',
+            'province_of_origin' => 'Davao del Sur',
+            'region_of_origin' => 'Region XI',
+            'is_indigenous_person' => false,
+            'is_pwd' => false,
+            'is_solo_parent' => false,
+            'is_senior_citizen' => false,
+            'is_magna_carta' => false,
+            'is_underprivileged' => false,
+            'is_first_generation' => true,
+            'income_bracket_mode' => 'annual',
+            'use_same_parent_income' => true,
+            'family_income_bracket' => 'below_250k',
+            'reporting_confirmed' => true,
         ]);
 
     $response->assertRedirect();
@@ -205,6 +248,13 @@ it('can update student profile information', function (): void {
     $motherColumn = Schema::hasColumn('student_parents_info', 'mothers_name') ? 'mothers_name' : 'mother_name';
     expect($this->student->studentParentInfo->{$fatherColumn})->toBe('Father Name');
     expect($this->student->studentParentInfo->{$motherColumn})->toBe('Mother Name');
+    expect($this->student->studentParentInfo->guardian_name)->toBe('Guardian Name');
+    expect($this->student->studentEducationInfo->college_school)->toBe('Previous College');
+    expect($this->student->studentContactsInfo->twitter)->toBe('https://x.com/student');
+    expect($this->student->personalInfo?->birthplace ?? $this->student->personalInfo?->place_of_birth)->toBe('Davao City');
+    expect($this->student->ethnicity)->toBe('Cebuano');
+    expect($this->student->family_income_bracket)->toBe('below_250k');
+    expect($this->student->profile_reporting_confirmed_at)->not->toBeNull();
 
     // Check if user email is also updated
     $this->user->refresh();
@@ -306,6 +356,58 @@ it('validates required fields when updating student details', function (): void 
     $response->assertSessionHasErrors(['first_name', 'last_name', 'email']);
 });
 
+it('validates reporting details that depend on a selected support group or income split', function (): void {
+    $response = $this
+        ->actingAs($this->user)
+        ->put(route('student.profile.student.update'), [
+            'first_name' => $this->student->first_name,
+            'last_name' => $this->student->last_name,
+            'email' => $this->student->email,
+            'is_indigenous_person' => true,
+            'is_pwd' => true,
+            'income_bracket_mode' => 'annual',
+            'use_same_parent_income' => false,
+        ]);
+
+    $response->assertSessionHasErrors([
+        'indigenous_group',
+        'pwd_type',
+        'father_income_bracket',
+        'mother_income_bracket',
+    ]);
+});
+
+it('clears dependent reporting details when the related category no longer applies', function (): void {
+    $this->student->update([
+        'is_indigenous_person' => true,
+        'indigenous_group' => 'Manobo',
+        'is_pwd' => true,
+        'pwd_type' => 'Visual Disability',
+    ]);
+
+    $this
+        ->actingAs($this->user)
+        ->put(route('student.profile.student.update'), [
+            'first_name' => $this->student->first_name,
+            'middle_name' => $this->student->middle_name,
+            'last_name' => $this->student->last_name,
+            'email' => $this->student->email,
+            'phone' => $this->student->phone,
+            'address' => $this->student->address,
+            'birth_date' => $this->student->birth_date->format('Y-m-d'),
+            'gender' => $this->student->gender,
+            'is_indigenous_person' => false,
+            'is_pwd' => false,
+        ])
+        ->assertRedirect()
+        ->assertSessionDoesntHaveErrors();
+
+    $this->student->refresh();
+
+    expect($this->student->indigenous_group)->toBeNull()
+        ->and($this->student->pwd_type)->toBeNull();
+});
+
 it('returns student data when student record exists', function (): void {
     $response = $this
         ->actingAs($this->user)
@@ -334,8 +436,7 @@ it('returns student profile completion data for incomplete information', functio
 
     $response->assertSuccessful();
     $response->assertInertia(fn ($page) => $page
-        ->where('student_profile_completion.total', 22)
-        ->where('student_profile_completion.completed', 7)
+        ->where('student_profile_completion.total', 33)
         ->where('student_profile_completion.missing.0.label', 'Phone number')
         ->where('student_profile_completion.missing.0.example', '+63 912 345 6789')
     );
@@ -356,7 +457,7 @@ it('shares a non-dismissible completion banner when important student informatio
     $response->assertInertia(fn ($page) => $page
         ->where('announcements.0.title', 'Complete your student information')
         ->where('announcements.0.action_label', 'Complete student information')
-        ->where('announcements.0.link', '/student/profile#student-information')
+        ->where('announcements.0.link', '/student/profile#student-personal')
         ->where('announcements.0.non_dismissible', true)
     );
 });
@@ -391,6 +492,7 @@ it('does not share the completion banner when important student information is c
             'address' => 'Davao City, Davao del Sur',
             'civil_status' => 'single',
             'nationality' => 'Filipino',
+            'religion' => 'Roman Catholic',
             'emergency_contact' => 'Maria Dela Cruz - 09123456789',
             'birth_date' => '2000-01-01',
             'gender' => 'male',
@@ -411,7 +513,24 @@ it('does not share the completion banner when important student information is c
             'parents' => [
                 'father_name' => 'Pedro Dela Cruz',
                 'mother_name' => 'Maria Dela Cruz',
+                'guardian_name' => 'Maria Dela Cruz',
+                'guardian_relationship' => 'Mother',
+                'guardian_contact' => '+63 912 345 6789',
             ],
+            'personal_info' => [
+                'birthplace' => 'Davao City',
+                'citizenship' => 'Filipino',
+                'current_address' => 'Davao City, Davao del Sur',
+                'permanent_address' => 'Davao City, Davao del Sur',
+            ],
+            'ethnicity' => 'Cebuano',
+            'city_of_origin' => 'Davao City',
+            'province_of_origin' => 'Davao del Sur',
+            'region_of_origin' => 'Region XI',
+            'income_bracket_mode' => 'annual',
+            'use_same_parent_income' => true,
+            'family_income_bracket' => 'below_250k',
+            'reporting_confirmed' => true,
         ]);
 
     $response->assertRedirect();

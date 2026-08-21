@@ -22,7 +22,7 @@ final class StudentProfileCompletionService
             ];
         }
 
-        $student->loadMissing(['studentContactsInfo', 'studentEducationInfo', 'studentParentInfo']);
+        $student->loadMissing(['studentContactsInfo', 'studentEducationInfo', 'studentParentInfo', 'personalInfo']);
 
         $fields = $this->fields($student);
         $missing = collect($fields)
@@ -56,29 +56,45 @@ final class StudentProfileCompletionService
         $education = $student->studentEducationInfo;
         $parents = $student->studentParentInfo;
 
+        $personalInfo = $student->personalInfo;
+        $incomeValue = $student->use_same_parent_income
+            ? $student->family_income_bracket
+            : ($this->filled($student->father_income_bracket) && $this->filled($student->mother_income_bracket));
+
         return [
-            ['key' => 'first_name', 'label' => 'First name', 'section' => 'student', 'value' => $student->first_name, 'example' => 'Juan'],
-            ['key' => 'last_name', 'label' => 'Last name', 'section' => 'student', 'value' => $student->last_name, 'example' => 'Dela Cruz'],
-            ['key' => 'email', 'label' => 'Student email', 'section' => 'student', 'value' => $student->email, 'example' => 'juan@example.com'],
-            ['key' => 'phone', 'label' => 'Phone number', 'section' => 'student', 'value' => $student->phone, 'example' => '+63 912 345 6789'],
-            ['key' => 'address', 'label' => 'Home address', 'section' => 'student', 'value' => $student->address, 'example' => 'Davao City, Davao del Sur'],
-            ['key' => 'birth_date', 'label' => 'Birth date', 'section' => 'student', 'value' => $student->birth_date],
-            ['key' => 'gender', 'label' => 'Gender', 'section' => 'student', 'value' => $student->gender],
-            ['key' => 'civil_status', 'label' => 'Civil status', 'section' => 'student', 'value' => $student->civil_status],
-            ['key' => 'nationality', 'label' => 'Nationality', 'section' => 'student', 'value' => $student->nationality, 'example' => 'Filipino'],
-            ['key' => 'emergency_contact', 'label' => 'Emergency contact summary', 'section' => 'student', 'value' => $student->emergency_contact, 'example' => 'Juan Dela Cruz - 09123456789'],
-            ['key' => 'contacts.emergency_contact_name', 'label' => 'Emergency contact name', 'section' => 'contacts', 'value' => $contacts?->emergency_contact_name, 'example' => 'Maria Dela Cruz'],
-            ['key' => 'contacts.emergency_contact_phone', 'label' => 'Emergency contact phone', 'section' => 'contacts', 'value' => $contacts?->emergency_contact_phone, 'example' => '09123456789'],
-            ['key' => 'contacts.emergency_contact_relationship', 'label' => 'Emergency contact relationship', 'section' => 'contacts', 'value' => $contacts?->emergency_contact_relationship, 'example' => 'Mother'],
-            ['key' => 'contacts.personal_contact', 'label' => 'Personal contact', 'section' => 'contacts', 'value' => $contacts?->personal_contact, 'example' => '+63 912 345 6789'],
-            ['key' => 'parents.father_name', 'label' => 'Father name', 'section' => 'contacts', 'value' => $parents?->father_name ?? $parents?->fathers_name, 'example' => 'Pedro Dela Cruz'],
-            ['key' => 'parents.mother_name', 'label' => 'Mother name', 'section' => 'contacts', 'value' => $parents?->mother_name ?? $parents?->mothers_name, 'example' => 'Maria Dela Cruz'],
+            ['key' => 'first_name', 'label' => 'First name', 'section' => 'personal', 'value' => $student->first_name, 'example' => 'Juan'],
+            ['key' => 'last_name', 'label' => 'Last name', 'section' => 'personal', 'value' => $student->last_name, 'example' => 'Dela Cruz'],
+            ['key' => 'email', 'label' => 'Student email', 'section' => 'personal', 'value' => $student->email, 'example' => 'juan@example.com'],
+            ['key' => 'phone', 'label' => 'Phone number', 'section' => 'personal', 'value' => $student->phone, 'example' => '+63 912 345 6789'],
+            ['key' => 'address', 'label' => 'Home address', 'section' => 'personal', 'value' => $student->address, 'example' => 'Davao City, Davao del Sur'],
+            ['key' => 'birth_date', 'label' => 'Birth date', 'section' => 'personal', 'value' => $student->birth_date],
+            ['key' => 'gender', 'label' => 'Gender', 'section' => 'personal', 'value' => $student->gender],
+            ['key' => 'civil_status', 'label' => 'Civil status', 'section' => 'personal', 'value' => $student->civil_status],
+            ['key' => 'nationality', 'label' => 'Nationality', 'section' => 'personal', 'value' => $student->nationality, 'example' => 'Filipino'],
+            ['key' => 'religion', 'label' => 'Religion', 'section' => 'personal', 'value' => $student->religion],
+            ['key' => 'personal_info.birthplace', 'label' => 'Birthplace', 'section' => 'personal', 'value' => $personalInfo?->birthplace ?? $personalInfo?->place_of_birth],
+            ['key' => 'personal_info.citizenship', 'label' => 'Citizenship', 'section' => 'personal', 'value' => $personalInfo?->citizenship],
+            ['key' => 'personal_info.current_address', 'label' => 'Current address', 'section' => 'personal', 'value' => $personalInfo?->current_adress],
+            ['key' => 'personal_info.permanent_address', 'label' => 'Permanent address', 'section' => 'personal', 'value' => $personalInfo?->permanent_address],
+            ['key' => 'contacts.emergency_contact_name', 'label' => 'Emergency contact name', 'section' => 'family', 'value' => $contacts?->emergency_contact_name, 'example' => 'Maria Dela Cruz'],
+            ['key' => 'contacts.emergency_contact_phone', 'label' => 'Emergency contact phone', 'section' => 'family', 'value' => $contacts?->emergency_contact_phone, 'example' => '09123456789'],
+            ['key' => 'contacts.emergency_contact_relationship', 'label' => 'Emergency contact relationship', 'section' => 'family', 'value' => $contacts?->emergency_contact_relationship, 'example' => 'Mother'],
+            ['key' => 'contacts.personal_contact', 'label' => 'Personal contact', 'section' => 'family', 'value' => $contacts?->personal_contact, 'example' => '+63 912 345 6789'],
+            ['key' => 'parents.guardian_name', 'label' => 'Guardian name', 'section' => 'family', 'value' => $parents?->guardian_name, 'example' => 'Maria Dela Cruz'],
+            ['key' => 'parents.guardian_relationship', 'label' => 'Guardian relationship', 'section' => 'family', 'value' => $parents?->guardian_relationship, 'example' => 'Mother'],
+            ['key' => 'parents.guardian_contact', 'label' => 'Guardian contact', 'section' => 'family', 'value' => $parents?->guardian_contact, 'example' => '+63 912 345 6789'],
             ['key' => 'education.elementary_school', 'label' => 'Elementary school', 'section' => 'education', 'value' => $education?->elementary_school],
             ['key' => 'education.elementary_year_graduated', 'label' => 'Elementary year graduated', 'section' => 'education', 'value' => $education?->elementary_year_graduated ?? $education?->elementary_graduate_year, 'example' => '2016'],
             ['key' => 'education.high_school', 'label' => 'High school', 'section' => 'education', 'value' => $education?->high_school ?? $education?->junior_high_school_name],
             ['key' => 'education.high_school_year_graduated', 'label' => 'High school year graduated', 'section' => 'education', 'value' => $education?->high_school_year_graduated ?? $education?->junior_high_graduation_year, 'example' => '2020'],
             ['key' => 'education.senior_high_school', 'label' => 'Senior high school', 'section' => 'education', 'value' => $education?->senior_high_school ?? $education?->senior_high_name],
             ['key' => 'education.senior_high_year_graduated', 'label' => 'Senior high year graduated', 'section' => 'education', 'value' => $education?->senior_high_year_graduated ?? $education?->senior_high_graduate_year, 'example' => '2022'],
+            ['key' => 'ethnicity', 'label' => 'Ethnicity', 'section' => 'reporting', 'value' => $student->ethnicity],
+            ['key' => 'city_of_origin', 'label' => 'City of origin', 'section' => 'reporting', 'value' => $student->city_of_origin],
+            ['key' => 'province_of_origin', 'label' => 'Province of origin', 'section' => 'reporting', 'value' => $student->province_of_origin],
+            ['key' => 'region_of_origin', 'label' => 'Region of origin', 'section' => 'reporting', 'value' => $student->region_of_origin],
+            ['key' => 'income_bracket', 'label' => 'Household income bracket', 'section' => 'reporting', 'value' => $incomeValue],
+            ['key' => 'profile_reporting_confirmed_at', 'label' => 'Reporting information review', 'section' => 'reporting', 'value' => $student->profile_reporting_confirmed_at],
         ];
     }
 

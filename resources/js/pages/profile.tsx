@@ -29,6 +29,7 @@ import {
     StudentContactsForm,
     StudentDetailsForm,
     StudentEducationForm,
+    StudentReportingForm,
 } from "@/components/profile";
 
 type ConnectedAccount = {
@@ -75,7 +76,7 @@ const dashboardPanelClass = "border-border/60 bg-card/75 rounded-lg shadow-sm";
 type StudentProfileMissingItem = {
     key: string;
     label: string;
-    section: "student" | "contacts" | "education";
+    section: "personal" | "family" | "education" | "reporting";
     example?: string;
 };
 
@@ -86,7 +87,7 @@ type StudentProfileCompletion = {
     missing: StudentProfileMissingItem[];
 };
 
-type StudentProfileTab = "basic" | "student" | "contacts" | "education";
+type StudentProfileTab = "basic" | "personal" | "family" | "education" | "reporting";
 
 const normalizeStudentGender = (gender?: string | null): string => {
     const normalizedGender = (gender ?? "")
@@ -100,19 +101,35 @@ const normalizeStudentGender = (gender?: string | null): string => {
 const tabForStudentFormErrors = (errors: Record<string, string>): StudentProfileTab => {
     const errorKeys = Object.keys(errors);
 
-    if (errorKeys.some((key) => !key.includes("."))) {
-        return "student";
-    }
-
     if (errorKeys.some((key) => key.startsWith("contacts.") || key.startsWith("parents."))) {
-        return "contacts";
+        return "family";
     }
 
     if (errorKeys.some((key) => key.startsWith("education."))) {
         return "education";
     }
 
-    return "student";
+    if (
+        errorKeys.some((key) =>
+            [
+                "ethnicity",
+                "city_of_origin",
+                "province_of_origin",
+                "region_of_origin",
+                "is_",
+                "income_",
+                "family_income",
+                "father_income",
+                "mother_income",
+                "indigenous_",
+                "pwd_",
+            ].some((prefix) => key.startsWith(prefix)),
+        )
+    ) {
+        return "reporting";
+    }
+
+    return "personal";
 };
 
 export default function ProfilePage() {
@@ -137,6 +154,8 @@ export default function ProfilePage() {
         feature_flags,
         featureFlags,
         student_profile_completion,
+        income_modes = [],
+        default_income_mode = "annual",
         branding,
     } = usePage<{
         id_card: {
@@ -219,6 +238,9 @@ export default function ProfilePage() {
                 emergency_contact_phone?: string;
                 emergency_contact_relationship?: string;
                 facebook?: string;
+                twitter?: string;
+                instagram?: string;
+                linkedin?: string;
                 personal_contact?: string;
             };
             education?: {
@@ -228,11 +250,55 @@ export default function ProfilePage() {
                 high_school_year_graduated?: string;
                 senior_high_school?: string;
                 senior_high_year_graduated?: string;
+                college_school?: string;
+                college_course?: string;
+                college_year_graduated?: string;
+                vocational_school?: string;
+                vocational_course?: string;
+                vocational_year_graduated?: string;
             };
             parents?: {
                 father_name?: string;
+                father_occupation?: string;
+                father_contact?: string;
+                father_email?: string;
                 mother_name?: string;
+                mother_occupation?: string;
+                mother_contact?: string;
+                mother_email?: string;
+                guardian_name?: string;
+                guardian_relationship?: string;
+                guardian_contact?: string;
+                guardian_email?: string;
+                family_address?: string;
             };
+            personal_info?: {
+                birthplace?: string;
+                citizenship?: string;
+                weight?: number | string;
+                height?: number | string;
+                current_address?: string;
+                permanent_address?: string;
+            };
+            ethnicity?: string;
+            city_of_origin?: string;
+            province_of_origin?: string;
+            region_of_origin?: string;
+            is_indigenous_person?: boolean;
+            indigenous_group?: string;
+            is_pwd?: boolean;
+            pwd_type?: string;
+            is_solo_parent?: boolean;
+            is_senior_citizen?: boolean;
+            is_magna_carta?: boolean;
+            is_underprivileged?: boolean;
+            is_first_generation?: boolean;
+            income_bracket_mode?: string;
+            use_same_parent_income?: boolean;
+            family_income_bracket?: string;
+            father_income_bracket?: string;
+            mother_income_bracket?: string;
+            profile_reporting_confirmed_at?: string;
             formatted_academic_year?: string;
         };
         sessions: Array<{
@@ -252,6 +318,8 @@ export default function ProfilePage() {
             studentInformationUpdates?: boolean;
         };
         student_profile_completion?: StudentProfileCompletion;
+        income_modes?: Array<{ value: string; label: string; brackets: Array<{ value: string; label: string }> }>;
+        default_income_mode?: string;
         branding?: {
             defaultCountryCode?: string;
         };
@@ -282,12 +350,14 @@ export default function ProfilePage() {
     const initialStudentTab: StudentProfileTab = !studentInformationUpdatesEnabled
         ? "basic"
         : typeof window !== "undefined" && window.location.hash === "#student-contacts"
-          ? "contacts"
+          ? "family"
           : typeof window !== "undefined" && window.location.hash === "#student-education"
             ? "education"
-            : typeof window !== "undefined" && window.location.hash === "#student-information"
-              ? "student"
-              : "basic";
+            : typeof window !== "undefined" && window.location.hash === "#student-reporting"
+              ? "reporting"
+              : typeof window !== "undefined" && ["#student-information", "#student-personal"].includes(window.location.hash)
+                ? "personal"
+                : "basic";
     const [studentProfileTab, setStudentProfileTab] = useState(initialStudentTab);
 
     const paths = {
@@ -340,7 +410,7 @@ export default function ProfilePage() {
         age: faculty?.age || undefined,
     });
 
-    const studentForm = useForm({
+    const initialStudentFormData = {
         first_name: student?.first_name || "",
         last_name: student?.last_name || "",
         middle_name: student?.middle_name || "",
@@ -358,6 +428,9 @@ export default function ProfilePage() {
             emergency_contact_phone: student?.contacts?.emergency_contact_phone || "",
             emergency_contact_relationship: student?.contacts?.emergency_contact_relationship || "",
             facebook: student?.contacts?.facebook || "",
+            twitter: student?.contacts?.twitter || "",
+            instagram: student?.contacts?.instagram || "",
+            linkedin: student?.contacts?.linkedin || "",
             personal_contact: student?.contacts?.personal_contact || "",
         },
         education: {
@@ -367,12 +440,58 @@ export default function ProfilePage() {
             high_school_year_graduated: student?.education?.high_school_year_graduated || "",
             senior_high_school: student?.education?.senior_high_school || "",
             senior_high_year_graduated: student?.education?.senior_high_year_graduated || "",
+            college_school: student?.education?.college_school || "",
+            college_course: student?.education?.college_course || "",
+            college_year_graduated: student?.education?.college_year_graduated || "",
+            vocational_school: student?.education?.vocational_school || "",
+            vocational_course: student?.education?.vocational_course || "",
+            vocational_year_graduated: student?.education?.vocational_year_graduated || "",
         },
         parents: {
             father_name: student?.parents?.father_name || "",
+            father_occupation: student?.parents?.father_occupation || "",
+            father_contact: student?.parents?.father_contact || "",
+            father_email: student?.parents?.father_email || "",
             mother_name: student?.parents?.mother_name || "",
+            mother_occupation: student?.parents?.mother_occupation || "",
+            mother_contact: student?.parents?.mother_contact || "",
+            mother_email: student?.parents?.mother_email || "",
+            guardian_name: student?.parents?.guardian_name || "",
+            guardian_relationship: student?.parents?.guardian_relationship || "",
+            guardian_contact: student?.parents?.guardian_contact || "",
+            guardian_email: student?.parents?.guardian_email || "",
+            family_address: student?.parents?.family_address || "",
         },
-    });
+        personal_info: {
+            birthplace: student?.personal_info?.birthplace || "",
+            citizenship: student?.personal_info?.citizenship || "",
+            weight: `${student?.personal_info?.weight ?? ""}`,
+            height: `${student?.personal_info?.height ?? ""}`,
+            current_address: student?.personal_info?.current_address || "",
+            permanent_address: student?.personal_info?.permanent_address || "",
+        },
+        ethnicity: student?.ethnicity || "",
+        city_of_origin: student?.city_of_origin || "",
+        province_of_origin: student?.province_of_origin || "",
+        region_of_origin: student?.region_of_origin || "",
+        is_indigenous_person: student?.is_indigenous_person ?? false,
+        indigenous_group: student?.indigenous_group || "",
+        is_pwd: student?.is_pwd ?? false,
+        pwd_type: student?.pwd_type || "",
+        is_solo_parent: student?.is_solo_parent ?? false,
+        is_senior_citizen: student?.is_senior_citizen ?? false,
+        is_magna_carta: student?.is_magna_carta ?? false,
+        is_underprivileged: student?.is_underprivileged ?? false,
+        is_first_generation: student?.is_first_generation ?? false,
+        income_bracket_mode: student?.income_bracket_mode || default_income_mode,
+        use_same_parent_income: student?.use_same_parent_income ?? true,
+        family_income_bracket: student?.family_income_bracket || "",
+        father_income_bracket: student?.father_income_bracket || "",
+        mother_income_bracket: student?.mother_income_bracket || "",
+        reporting_confirmed: false,
+    };
+
+    const studentForm = useForm(initialStudentFormData);
 
     const avatarInputRef = useRef<HTMLInputElement | null>(null);
     const [avatarPreview, setAvatarPreview] = useState<string | undefined>(user.avatar_url);
@@ -450,32 +569,7 @@ export default function ProfilePage() {
             facultyForm.data.gender !== (faculty?.gender || "") ||
             facultyForm.data.age !== (faculty?.age || undefined);
 
-        const hasStudentChanges =
-            studentForm.data.first_name !== (student?.first_name || "") ||
-            studentForm.data.last_name !== (student?.last_name || "") ||
-            studentForm.data.middle_name !== (student?.middle_name || "") ||
-            studentForm.data.email !== (student?.email || user.email || "") ||
-            studentForm.data.phone !== (student?.phone || "") ||
-            studentForm.data.address !== (student?.address || "") ||
-            studentForm.data.civil_status !== (student?.civil_status || "") ||
-            studentForm.data.nationality !== (student?.nationality || "") ||
-            studentForm.data.religion !== (student?.religion || "") ||
-            studentForm.data.emergency_contact !== (student?.emergency_contact || "") ||
-            studentForm.data.birth_date !== (student?.birth_date || "") ||
-            studentForm.data.gender !== normalizeStudentGender(student?.gender) ||
-            studentForm.data.contacts.emergency_contact_name !== (student?.contacts?.emergency_contact_name || "") ||
-            studentForm.data.contacts.emergency_contact_phone !== (student?.contacts?.emergency_contact_phone || "") ||
-            studentForm.data.contacts.emergency_contact_relationship !== (student?.contacts?.emergency_contact_relationship || "") ||
-            studentForm.data.contacts.facebook !== (student?.contacts?.facebook || "") ||
-            studentForm.data.contacts.personal_contact !== (student?.contacts?.personal_contact || "") ||
-            studentForm.data.education.elementary_school !== (student?.education?.elementary_school || "") ||
-            studentForm.data.education.elementary_year_graduated !== (student?.education?.elementary_year_graduated || "") ||
-            studentForm.data.education.high_school !== (student?.education?.high_school || "") ||
-            studentForm.data.education.high_school_year_graduated !== (student?.education?.high_school_year_graduated || "") ||
-            studentForm.data.education.senior_high_school !== (student?.education?.senior_high_school || "") ||
-            studentForm.data.education.senior_high_year_graduated !== (student?.education?.senior_high_year_graduated || "") ||
-            studentForm.data.parents.father_name !== (student?.parents?.father_name || "") ||
-            studentForm.data.parents.mother_name !== (student?.parents?.mother_name || "");
+        const hasStudentChanges = JSON.stringify(studentForm.data) !== JSON.stringify(initialStudentFormData);
 
         setHasChanges(hasUserChanges || hasFacultyChanges || hasStudentChanges);
     }, [userForm.data, facultyForm.data, studentForm.data, user, faculty, student]);
@@ -485,12 +579,14 @@ export default function ProfilePage() {
         const hash = window.location.hash;
         if (!hash) return;
         const targetId = hash.replace("#", "");
-        if (targetId === "student-information") {
-            setStudentProfileTab("student");
+        if (targetId === "student-information" || targetId === "student-personal") {
+            setStudentProfileTab("personal");
         } else if (targetId === "student-contacts") {
-            setStudentProfileTab("contacts");
+            setStudentProfileTab("family");
         } else if (targetId === "student-education") {
             setStudentProfileTab("education");
+        } else if (targetId === "student-reporting") {
+            setStudentProfileTab("reporting");
         }
 
         window.setTimeout(() => {
@@ -554,6 +650,10 @@ export default function ProfilePage() {
 
     const handleStudentSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        studentForm.transform((data) => ({
+            ...data,
+            reporting_confirmed: studentProfileTab === "reporting",
+        }));
         studentForm.put(paths.student_update, {
             onSuccess: () => {
                 toast.success("Student information updated successfully!");
@@ -572,7 +672,13 @@ export default function ProfilePage() {
                 if (typeof window !== "undefined") {
                     window.setTimeout(() => {
                         const targetId =
-                            errorTab === "contacts" ? "student-contacts" : errorTab === "education" ? "student-education" : "student-information";
+                            errorTab === "family"
+                                ? "student-contacts"
+                                : errorTab === "education"
+                                  ? "student-education"
+                                  : errorTab === "reporting"
+                                    ? "student-reporting"
+                                    : "student-personal";
 
                         document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth", block: "start" });
                     }, 50);
@@ -746,7 +852,7 @@ export default function ProfilePage() {
                                                                 Cruz, Mother, Davao City, and 2024.
                                                             </p>
                                                         </div>
-                                                        <TabsList className="bg-muted/20 grid h-auto w-full grid-cols-2 gap-1 rounded-lg p-1 sm:grid-cols-4">
+                                                        <TabsList className="bg-muted/20 grid h-auto w-full grid-cols-2 gap-1 rounded-lg p-1 sm:grid-cols-5">
                                                             <TabsTrigger value="basic" className="min-w-0 rounded-lg px-2 py-2 text-xs sm:text-sm">
                                                                 <User className="mr-1.5 h-4 w-4 shrink-0" />
                                                                 Basic
@@ -754,32 +860,32 @@ export default function ProfilePage() {
                                                             {studentInformationUpdatesEnabled && (
                                                                 <>
                                                                     <TabsTrigger
-                                                                        value="student"
+                                                                        value="personal"
                                                                         className="min-w-0 rounded-lg px-2 py-2 text-xs sm:text-sm"
                                                                     >
                                                                         <GraduationCap className="mr-1.5 h-4 w-4 shrink-0" />
-                                                                        <span className="truncate">Student</span>
-                                                                        {missingBySection("student") > 0 && (
+                                                                        <span className="truncate">Personal</span>
+                                                                        {missingBySection("personal") > 0 && (
                                                                             <Badge
                                                                                 variant="secondary"
                                                                                 className="ml-1.5 h-5 rounded-full px-1.5 text-[10px]"
                                                                             >
-                                                                                {missingBySection("student")}
+                                                                                {missingBySection("personal")}
                                                                             </Badge>
                                                                         )}
                                                                     </TabsTrigger>
                                                                     <TabsTrigger
-                                                                        value="contacts"
+                                                                        value="family"
                                                                         className="min-w-0 rounded-lg px-2 py-2 text-xs sm:text-sm"
                                                                     >
                                                                         <Contact className="mr-1.5 h-4 w-4 shrink-0" />
-                                                                        <span className="truncate">Contacts</span>
-                                                                        {missingBySection("contacts") > 0 && (
+                                                                        <span className="truncate">Family</span>
+                                                                        {missingBySection("family") > 0 && (
                                                                             <Badge
                                                                                 variant="secondary"
                                                                                 className="ml-1.5 h-5 rounded-full px-1.5 text-[10px]"
                                                                             >
-                                                                                {missingBySection("contacts")}
+                                                                                {missingBySection("family")}
                                                                             </Badge>
                                                                         )}
                                                                     </TabsTrigger>
@@ -795,6 +901,21 @@ export default function ProfilePage() {
                                                                                 className="ml-1.5 h-5 rounded-full px-1.5 text-[10px]"
                                                                             >
                                                                                 {missingBySection("education")}
+                                                                            </Badge>
+                                                                        )}
+                                                                    </TabsTrigger>
+                                                                    <TabsTrigger
+                                                                        value="reporting"
+                                                                        className="min-w-0 rounded-lg px-2 py-2 text-xs sm:text-sm"
+                                                                    >
+                                                                        <BookOpen className="mr-1.5 h-4 w-4 shrink-0" />
+                                                                        <span className="truncate">Reporting</span>
+                                                                        {missingBySection("reporting") > 0 && (
+                                                                            <Badge
+                                                                                variant="secondary"
+                                                                                className="ml-1.5 h-5 rounded-full px-1.5 text-[10px]"
+                                                                            >
+                                                                                {missingBySection("reporting")}
                                                                             </Badge>
                                                                         )}
                                                                     </TabsTrigger>
@@ -840,7 +961,7 @@ export default function ProfilePage() {
 
                                             {isStudent && studentInformationUpdatesEnabled && (
                                                 <>
-                                                    <TabsContent value="student" className="mt-0 min-w-0 outline-none">
+                                                    <TabsContent value="personal" className="mt-0 min-w-0 outline-none">
                                                         <StudentDetailsForm
                                                             studentForm={{
                                                                 data: studentForm.data,
@@ -852,7 +973,7 @@ export default function ProfilePage() {
                                                             defaultCountryCode={branding?.defaultCountryCode}
                                                         />
                                                     </TabsContent>
-                                                    <TabsContent value="contacts" className="mt-0 min-w-0 outline-none">
+                                                    <TabsContent value="family" className="mt-0 min-w-0 outline-none">
                                                         <StudentContactsForm
                                                             studentForm={{
                                                                 data: studentForm.data,
@@ -874,6 +995,18 @@ export default function ProfilePage() {
                                                             }}
                                                             onSubmit={handleStudentSubmit}
                                                             schoolOptionsEndpoint={paths.school_options}
+                                                        />
+                                                    </TabsContent>
+                                                    <TabsContent value="reporting" className="mt-0 min-w-0 outline-none">
+                                                        <StudentReportingForm
+                                                            studentForm={{
+                                                                data: studentForm.data,
+                                                                setData: studentForm.setData,
+                                                                errors: studentForm.errors,
+                                                                processing: studentForm.processing,
+                                                            }}
+                                                            incomeModes={income_modes}
+                                                            onSubmit={handleStudentSubmit}
                                                         />
                                                     </TabsContent>
                                                 </>

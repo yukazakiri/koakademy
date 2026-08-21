@@ -12,3 +12,4 @@ export { SecuritySection } from "./security-section";
 export { StudentContactsForm } from "./student-contacts-form";
 export { StudentDetailsForm } from "./student-details-form";
 export { StudentEducationForm } from "./student-education-form";
+export { StudentReportingForm } from "./student-reporting-form";

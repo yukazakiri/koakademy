@@ -11,7 +11,18 @@ import { Link2, Save, User } from "lucide-react";
 
 type ParentData = {
     father_name: string;
+    father_occupation: string;
+    father_contact: string;
+    father_email: string;
     mother_name: string;
+    mother_occupation: string;
+    mother_contact: string;
+    mother_email: string;
+    guardian_name: string;
+    guardian_relationship: string;
+    guardian_contact: string;
+    guardian_email: string;
+    family_address: string;
 };
 
 type ContactData = {
@@ -19,6 +30,9 @@ type ContactData = {
     emergency_contact_phone: string;
     emergency_contact_relationship: string;
     facebook: string;
+    twitter: string;
+    instagram: string;
+    linkedin: string;
     personal_contact: string;
 };
 
@@ -97,7 +111,115 @@ export function StudentContactsForm({ studentForm, onSubmit, defaultCountryCode 
                             />
                             <FieldError message={errorFor("parents.mother_name")} />
                         </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="father_occupation">Father&apos;s occupation</Label>
+                            <Input
+                                id="father_occupation"
+                                value={studentForm.data.parents.father_occupation}
+                                onChange={(event) => updateParents("father_occupation", event.target.value)}
+                            />
+                            <FieldError message={errorFor("parents.father_occupation")} />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="father_contact">Father&apos;s contact</Label>
+                            <PhoneInput
+                                id="father_contact"
+                                value={studentForm.data.parents.father_contact}
+                                onChange={(value) => updateParents("father_contact", value)}
+                                defaultCountryCode={defaultCountryCode}
+                            />
+                            <FieldError message={errorFor("parents.father_contact")} />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="father_email">Father&apos;s email</Label>
+                            <Input
+                                id="father_email"
+                                type="email"
+                                value={studentForm.data.parents.father_email}
+                                onChange={(event) => updateParents("father_email", event.target.value)}
+                            />
+                            <FieldError message={errorFor("parents.father_email")} />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="mother_occupation">Mother&apos;s occupation</Label>
+                            <Input
+                                id="mother_occupation"
+                                value={studentForm.data.parents.mother_occupation}
+                                onChange={(event) => updateParents("mother_occupation", event.target.value)}
+                            />
+                            <FieldError message={errorFor("parents.mother_occupation")} />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="mother_contact">Mother&apos;s contact</Label>
+                            <PhoneInput
+                                id="mother_contact"
+                                value={studentForm.data.parents.mother_contact}
+                                onChange={(value) => updateParents("mother_contact", value)}
+                                defaultCountryCode={defaultCountryCode}
+                            />
+                            <FieldError message={errorFor("parents.mother_contact")} />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="mother_email">Mother&apos;s email</Label>
+                            <Input
+                                id="mother_email"
+                                type="email"
+                                value={studentForm.data.parents.mother_email}
+                                onChange={(event) => updateParents("mother_email", event.target.value)}
+                            />
+                            <FieldError message={errorFor("parents.mother_email")} />
+                        </div>
                     </div>
+
+                    <Separator />
+
+                    <section className="space-y-4">
+                        <div>
+                            <h3 className="text-sm font-semibold">Guardian</h3>
+                            <p className="text-muted-foreground mt-1 text-sm">The school will use this person when it needs to reach your family.</p>
+                        </div>
+                        <div className="grid gap-4 md:grid-cols-2">
+                            {(
+                                [
+                                    ["guardian_name", "Guardian name", "text"],
+                                    ["guardian_relationship", "Relationship", "text"],
+                                    ["guardian_email", "Guardian email", "email"],
+                                ] as const
+                            ).map(([key, label, type]) => (
+                                <div key={key} className="space-y-2">
+                                    <Label htmlFor={key}>{label}</Label>
+                                    <Input
+                                        id={key}
+                                        type={type}
+                                        value={studentForm.data.parents[key]}
+                                        onChange={(event) => updateParents(key, event.target.value)}
+                                        aria-invalid={Boolean(errorFor(`parents.${key}`))}
+                                    />
+                                    <FieldError message={errorFor(`parents.${key}`)} />
+                                </div>
+                            ))}
+                            <div className="space-y-2">
+                                <Label htmlFor="guardian_contact">Guardian contact</Label>
+                                <PhoneInput
+                                    id="guardian_contact"
+                                    value={studentForm.data.parents.guardian_contact}
+                                    onChange={(value) => updateParents("guardian_contact", value)}
+                                    defaultCountryCode={defaultCountryCode}
+                                />
+                                <FieldError message={errorFor("parents.guardian_contact")} />
+                            </div>
+                            <div className="space-y-2 md:col-span-2">
+                                <Label htmlFor="family_address">Family address</Label>
+                                <Input
+                                    id="family_address"
+                                    value={studentForm.data.parents.family_address}
+                                    onChange={(event) => updateParents("family_address", event.target.value)}
+                                    aria-invalid={Boolean(errorFor("parents.family_address"))}
+                                />
+                                <FieldError message={errorFor("parents.family_address")} />
+                            </div>
+                        </div>
+                    </section>
 
                     <Separator />
 
@@ -169,6 +291,25 @@ export function StudentContactsForm({ studentForm, onSubmit, defaultCountryCode 
                             </InputGroup>
                             <FieldError message={errorFor("contacts.facebook")} />
                         </div>
+                        {(
+                            [
+                                ["twitter", "X / Twitter profile"],
+                                ["instagram", "Instagram profile"],
+                                ["linkedin", "LinkedIn profile"],
+                            ] as const
+                        ).map(([key, label]) => (
+                            <div key={key} className="space-y-2">
+                                <Label htmlFor={key}>{label}</Label>
+                                <Input
+                                    id={key}
+                                    type="url"
+                                    value={studentForm.data.contacts[key]}
+                                    onChange={(event) => updateContacts(key, event.target.value)}
+                                    aria-invalid={Boolean(errorFor(`contacts.${key}`))}
+                                />
+                                <FieldError message={errorFor(`contacts.${key}`)} />
+                            </div>
+                        ))}
                     </div>
 
                     <div className="flex justify-end">

@@ -4,15 +4,18 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Features\Toggles\StudentInformationUpdates;
 use App\Models\GeneralSetting;
 use App\Models\Student;
 use App\Models\User;
 use App\Services\DigitalIdCardService;
 use App\Services\GeneralSettingsService;
+use App\Services\StudentProfileCompletionService;
 use DateTimeInterface;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use Laravel\Pennant\Feature;
 use Modules\Announcement\Services\AnnouncementDataService;
 
 final class StudentDashboardController extends Controller
@@ -102,6 +105,7 @@ final class StudentDashboardController extends Controller
         $idCardData = $idCardService->generateIdCardForUser($user);
 
         $isNewStudentUser = $user->isNewToOnboarding('student');
+        $profileCompletionPrompt = $this->profileCompletionPrompt($user, $student);
 
         return Inertia::render('student/dashboard', [
             'user' => [
@@ -114,7 +118,32 @@ final class StudentDashboardController extends Controller
             'student_data' => $studentData,
             'id_card' => $idCardData,
             'is_new_user' => $isNewStudentUser,
+            'profile_completion_prompt' => $profileCompletionPrompt,
         ]);
+    }
+
+    /**
+     * @return array{total: int, completed: int, percentage: int, missing: array<int, array{key: string, label: string, section: string, example?: string}>, link: string}|null
+     */
+    private function profileCompletionPrompt(User $user, ?Student $student): ?array
+    {
+        if (! Feature::for($user)->active(StudentInformationUpdates::class) || ! $student || $student->user_id !== $user->id) {
+            return null;
+        }
+
+        $completion = app(StudentProfileCompletionService::class)->summarize($student);
+
+        if ($completion['missing'] === []) {
+            return null;
+        }
+
+        $section = $completion['missing'][0]['section'] ?? 'personal';
+
+        return [
+            ...$completion,
+            'missing' => array_slice($completion['missing'], 0, 3),
+            'link' => "/student/profile#student-{$section}",
+        ];
     }
 
     /**

@@ -23,6 +23,7 @@ import {
     BookOpen,
     Calendar,
     CheckCircle2,
+    CircleAlert,
     Clock,
     CreditCard,
     Eye,
@@ -92,6 +93,50 @@ interface StudentDashboardProps {
         qr_code: string;
         is_valid: boolean;
     } | null;
+    profile_completion_prompt: {
+        total: number;
+        completed: number;
+        percentage: number;
+        missing: Array<{ key: string; label: string; section: string; example?: string }>;
+        link: string;
+    } | null;
+}
+
+function ProfileCompletionPrompt({ prompt }: { prompt: NonNullable<StudentDashboardProps["profile_completion_prompt"]> }) {
+    const missingLabels = prompt.missing.map((item) => item.label).join(", ");
+
+    return (
+        <section className="mx-auto w-full max-w-7xl px-4 pt-4 md:px-6 md:pt-6" aria-labelledby="profile-completion-title">
+            <Card className="via-card to-card border-amber-500/25 bg-gradient-to-r from-amber-500/10 shadow-sm">
+                <CardContent className="flex flex-col gap-4 p-4 sm:p-5 md:flex-row md:items-center md:justify-between">
+                    <div className="flex min-w-0 gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300">
+                            <CircleAlert className="h-5 w-5" aria-hidden="true" />
+                        </div>
+                        <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <h2 id="profile-completion-title" className="text-sm font-semibold">
+                                    Complete your student profile
+                                </h2>
+                                <Badge variant="secondary" className="rounded-full">
+                                    {prompt.completed}/{prompt.total} complete
+                                </Badge>
+                            </div>
+                            <p className="text-muted-foreground mt-1 text-sm leading-relaxed">
+                                Your school needs a few details for services and reporting: {missingLabels}.
+                            </p>
+                        </div>
+                    </div>
+                    <Button asChild className="shrink-0">
+                        <Link href={prompt.link}>
+                            Complete profile
+                            <ArrowRight className="ml-2 h-4 w-4" />
+                        </Link>
+                    </Button>
+                </CardContent>
+            </Card>
+        </section>
+    );
 }
 
 interface ScheduleSegment {
@@ -201,11 +246,11 @@ function getShortName(name: string): string {
 
     const prefixes = ["Dr.", "Mr.", "Mrs.", "Ms.", "Prof.", "Rev.", "Fr.", "Sr.", "St."];
     const parts = name.split(" ");
-    
+
     if (parts.length > 1 && prefixes.includes(parts[0])) {
         return parts[1];
     }
-    
+
     return parts[0] || name;
 }
 
@@ -415,9 +460,7 @@ function CourseCard({ classItem, index }: { classItem: ClassInfo; index: number 
                     </div>
                     <div className="text-right">
                         <p className="text-muted-foreground text-[10px] font-semibold tracking-wide uppercase">Average</p>
-                        <p className={cn("mt-1 font-mono text-lg font-semibold tabular-nums", averageTone)}>
-                            {average ?? "—"}
-                        </p>
+                        <p className={cn("mt-1 font-mono text-lg font-semibold tabular-nums", averageTone)}>{average ?? "—"}</p>
                     </div>
                 </div>
             </CardContent>
@@ -434,7 +477,7 @@ function MobileQuickActions() {
     ];
 
     return (
-        <section className="md:hidden px-1">
+        <section className="px-1 md:hidden">
             <div className="grid grid-cols-4 gap-4">
                 {actions.map((action) => {
                     const Icon = action.icon;
@@ -444,7 +487,7 @@ function MobileQuickActions() {
                             <div
                                 className={cn(
                                     "flex h-12 w-12 items-center justify-center rounded-2xl shadow-sm transition-all duration-200 group-active:scale-90",
-                                    "bg-card border-border/40 border group-hover:border-primary/40 group-hover:bg-primary/5",
+                                    "bg-card border-border/40 group-hover:border-primary/40 group-hover:bg-primary/5 border",
                                 )}
                             >
                                 <Icon className="text-primary h-6 w-6" strokeWidth={1.5} />
@@ -480,14 +523,16 @@ function MobileMetricCard({
     const bgTone = tone.split(" ").find((className) => className.startsWith("bg-")) ?? "bg-primary/10";
 
     return (
-        <motion.div
-            whileHover={{ y: -2 }}
-            className="group"
-        >
-            <Card className="border-border/30 bg-card/80 relative overflow-hidden rounded-2xl shadow-sm transition-all duration-200 hover:shadow-md hover:border-border/60">
+        <motion.div whileHover={{ y: -2 }} className="group">
+            <Card className="border-border/30 bg-card/80 hover:border-border/60 relative overflow-hidden rounded-2xl shadow-sm transition-all duration-200 hover:shadow-md">
                 {/* Gradient background accent */}
-                <div className={cn("absolute -right-4 -top-4 h-16 w-16 rounded-full opacity-20 blur-xl transition-all duration-300 group-hover:opacity-30", bgTone)} />
-                
+                <div
+                    className={cn(
+                        "absolute -top-4 -right-4 h-16 w-16 rounded-full opacity-20 blur-xl transition-all duration-300 group-hover:opacity-30",
+                        bgTone,
+                    )}
+                />
+
                 <CardContent className="relative p-4">
                     <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
@@ -509,7 +554,7 @@ function MobileMetricCard({
                                 initial={{ opacity: 0, scale: 0.95 }}
                                 animate={{ opacity: 1, scale: 1 }}
                                 transition={{ duration: 0.2 }}
-                                className="text-foreground mt-1 truncate text-lg font-bold tracking-tight leading-none"
+                                className="text-foreground mt-1 truncate text-lg leading-none font-bold tracking-tight"
                             >
                                 {revealed ? value : "••••••"}
                             </motion.p>
@@ -647,10 +692,10 @@ function MobileStudentDashboard({
 
                 <div className="relative flex items-start justify-between gap-4">
                     <div className="min-w-0 flex-1 pr-2">
-                        <p className="text-foreground/60 text-[10px] font-bold tracking-wider uppercase truncate">{greetingCopy.subline}</p>
-                        <h1 className="text-foreground mt-0.5 text-xl font-bold tracking-tight leading-tight">
+                        <p className="text-foreground/60 truncate text-[10px] font-bold tracking-wider uppercase">{greetingCopy.subline}</p>
+                        <h1 className="text-foreground mt-0.5 text-xl leading-tight font-bold tracking-tight">
                             {greetingCopy.headline},{" "}
-                            <span className="from-primary to-primary/60 bg-gradient-to-r bg-clip-text text-transparent block truncate">
+                            <span className="from-primary to-primary/60 block truncate bg-gradient-to-r bg-clip-text text-transparent">
                                 {getShortName(studentData.student_name)}
                             </span>
                         </h1>
@@ -668,20 +713,16 @@ function MobileStudentDashboard({
 
             <div className="relative z-20 -mt-12 space-y-3 px-3.5 pb-24">
                 <section>
-                    <Card className="border-border/40 bg-card shadow-xl shadow-black/10 overflow-hidden rounded-xl">
+                    <Card className="border-border/40 bg-card overflow-hidden rounded-xl shadow-xl shadow-black/10">
                         <CardContent className="p-3.5">
                             <div className="flex items-center justify-between">
                                 <div>
                                     <p className="text-foreground/50 text-[9px] font-bold tracking-wider uppercase">Enrolled Course</p>
-                                    <p className="text-foreground mt-0.5 text-[13px] font-bold leading-tight">
-                                        {studentData.course || "N/A"}
-                                    </p>
+                                    <p className="text-foreground mt-0.5 text-[13px] leading-tight font-bold">{studentData.course || "N/A"}</p>
                                 </div>
                                 <div className="text-right">
                                     <p className="text-foreground/50 text-[9px] font-bold tracking-wider uppercase">Student ID</p>
-                                    <p className="text-foreground mt-0.5 font-mono text-[13px] font-bold">
-                                        {studentData.student_id}
-                                    </p>
+                                    <p className="text-foreground mt-0.5 font-mono text-[13px] font-bold">{studentData.student_id}</p>
                                 </div>
                             </div>
 
@@ -722,7 +763,7 @@ function MobileStudentDashboard({
                                 {nextClass ? (
                                     <div className="mt-2 space-y-2">
                                         <div className="flex items-start justify-between gap-3">
-                                            <h2 className="text-foreground line-clamp-2 text-base font-bold leading-tight">
+                                            <h2 className="text-foreground line-clamp-2 text-base leading-tight font-bold">
                                                 {nextClass.classItem.subject_title}
                                             </h2>
                                             <Badge variant="outline" className="bg-background/60 shrink-0 font-mono text-[10px]">
@@ -731,11 +772,11 @@ function MobileStudentDashboard({
                                         </div>
                                         <div className="text-foreground/65 flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium">
                                             <span className="flex items-center gap-1.5">
-                                                <Clock className="h-4 w-4 text-primary/70" />
+                                                <Clock className="text-primary/70 h-4 w-4" />
                                                 {nextClass.day}, {nextClass.segment.timeString}
                                             </span>
                                             <span className="flex items-center gap-1.5">
-                                                <MapPin className="h-4 w-4 text-primary/70" />
+                                                <MapPin className="text-primary/70 h-4 w-4" />
                                                 {nextClass.classItem.room}
                                             </span>
                                         </div>
@@ -743,7 +784,7 @@ function MobileStudentDashboard({
                                 ) : (
                                     <div className="mt-3 flex items-center justify-between gap-3">
                                         <div className="flex items-center gap-3">
-                                            <div className="bg-primary/5 flex h-10 w-10 items-center justify-center rounded-full border border-dashed border-primary/30">
+                                            <div className="bg-primary/5 border-primary/30 flex h-10 w-10 items-center justify-center rounded-full border border-dashed">
                                                 <Calendar className="text-primary/40 h-5 w-5" />
                                             </div>
                                             <div>
@@ -751,7 +792,12 @@ function MobileStudentDashboard({
                                                 <p className="text-foreground/45 text-xs font-medium">Enjoy your free time!</p>
                                             </div>
                                         </div>
-                                        <Button asChild variant="secondary" size="sm" className="h-9 shrink-0 rounded-full px-4 text-xs font-bold shadow-none">
+                                        <Button
+                                            asChild
+                                            variant="secondary"
+                                            size="sm"
+                                            className="h-9 shrink-0 rounded-full px-4 text-xs font-bold shadow-none"
+                                        >
                                             <Link href="/student/schedule">Schedule</Link>
                                         </Button>
                                     </div>
@@ -800,18 +846,26 @@ function MobileStudentDashboard({
                                 <Bell className="text-primary h-4 w-4" />
                                 Notice Board
                             </CardTitle>
-                            <Badge variant={urgentAnnouncements > 0 ? "destructive" : "secondary"} className="rounded-full px-2 py-0.5 text-[9px] font-bold">
+                            <Badge
+                                variant={urgentAnnouncements > 0 ? "destructive" : "secondary"}
+                                className="rounded-full px-2 py-0.5 text-[9px] font-bold"
+                            >
                                 {urgentAnnouncements} urgent
                             </Badge>
                         </CardHeader>
                         <CardContent className="space-y-2.5 p-4 pt-1">
                             {visibleAnnouncements.length > 0 ? (
                                 visibleAnnouncements.map((announcement) => (
-                                    <div key={announcement.id} className="border-border/40 bg-background/40 flex gap-3 rounded-xl border p-3.5 transition-colors active:bg-background/60">
+                                    <div
+                                        key={announcement.id}
+                                        className="border-border/40 bg-background/40 active:bg-background/60 flex gap-3 rounded-xl border p-3.5 transition-colors"
+                                    >
                                         <MobileAnnouncementDot type={announcement.type} />
                                         <div className="min-w-0">
                                             <p className="line-clamp-1 text-sm font-bold">{announcement.title}</p>
-                                            <p className="text-muted-foreground mt-1 line-clamp-2 text-xs font-medium leading-relaxed">{announcement.content}</p>
+                                            <p className="text-muted-foreground mt-1 line-clamp-2 text-xs leading-relaxed font-medium">
+                                                {announcement.content}
+                                            </p>
                                         </div>
                                     </div>
                                 ))
@@ -945,7 +999,7 @@ function FallbackIdCard({ user, studentData }: { user: User; studentData: Studen
     );
 }
 
-export default function StudentDashboard({ user, is_new_user, student_data, id_card }: StudentDashboardProps) {
+export default function StudentDashboard({ user, is_new_user, student_data, id_card, profile_completion_prompt }: StudentDashboardProps) {
     const { props } = usePage<{
         branding?: Branding;
         settings?: SemesterSelectorProps;
@@ -1026,6 +1080,7 @@ export default function StudentDashboard({ user, is_new_user, student_data, id_c
 
     const body = (
         <>
+            {profile_completion_prompt && <ProfileCompletionPrompt prompt={profile_completion_prompt} />}
             <MobileStudentDashboard
                 greeting={greeting}
                 studentData={student_data}
@@ -1228,7 +1283,12 @@ export default function StudentDashboard({ user, is_new_user, student_data, id_c
                     </div>
 
                     <aside className="space-y-4">
-                        <motion.div data-tour="id-card" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
+                        <motion.div
+                            data-tour="id-card"
+                            initial={{ opacity: 0, y: 12 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.35 }}
+                        >
                             {id_card ? (
                                 <DigitalIdCard
                                     cardData={id_card.card_data}
@@ -1307,13 +1367,7 @@ export default function StudentDashboard({ user, is_new_user, student_data, id_c
         >
             <Head title="Student Dashboard" />
             {onboardingEnabled ? (
-                <OnboardingProvider
-                    variant="student"
-                    userId={user.id}
-                    checklist={studentChecklist}
-                    totalSteps={4}
-                    enabled={onboardingEnabled}
-                >
+                <OnboardingProvider variant="student" userId={user.id} checklist={studentChecklist} totalSteps={4} enabled={onboardingEnabled}>
                     <OnboardingTour steps={studentTourSteps} />
                     {body}
                 </OnboardingProvider>

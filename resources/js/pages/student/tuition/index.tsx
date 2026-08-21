@@ -289,12 +289,16 @@ export default function TuitionIndex({ auth, tuition, transactions, filters, his
                                             </p>
 
                                             <div className="hidden md:flex">
-                                                <div className="bg-background/45 inline-flex items-center gap-2 rounded-lg border border-amber-300/50 px-3 py-1.5 shadow-sm md:px-4 md:py-2 dark:border-amber-600/30">
+                                                <Link
+                                                    href={tuitionUpdateRequestsIndex.url({ query: filters })}
+                                                    prefetch
+                                                    className="bg-background/45 inline-flex items-center gap-2 rounded-lg border border-amber-300/50 px-3 py-1.5 shadow-sm transition-colors hover:bg-amber-500/15 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 focus-visible:outline-none md:px-4 md:py-2 dark:border-amber-600/30"
+                                                >
                                                     <ShieldAlert className="h-3.5 w-3.5 text-amber-600 md:h-4 md:w-4 dark:text-amber-400" />
                                                     <span className="text-[11px] font-medium text-amber-900 md:text-sm dark:text-amber-100">
                                                         Contact the <span className="font-bold">MIS Administrator</span>
                                                     </span>
-                                                </div>
+                                                </Link>
                                             </div>
                                         </div>
 

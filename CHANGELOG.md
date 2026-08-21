@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.20.0](https://github.com/yukazakiri/koakademy/compare/v1.19.1...v1.20.0) (2026-08-21)
+
+
+### Features
+
+* **finance:** add student tuition update requests ([#191](https://github.com/yukazakiri/koakademy/issues/191)) ([ffe5f8f](https://github.com/yukazakiri/koakademy/commit/ffe5f8ff267b341612962bfebd02c7906b2bd92d))
+* **finance:** add tuition adjustment spreadsheet imports ([#193](https://github.com/yukazakiri/koakademy/issues/193)) ([0b39dfa](https://github.com/yukazakiri/koakademy/commit/0b39dfafd525b755200214fb6780648199d92997))
+* **finance:** clarify tuition adjustment template ([326ac3e](https://github.com/yukazakiri/koakademy/commit/326ac3e012b99f289823658d84ddca8f35cf1e9f))
+* **student-profile:** add reporting completion flow ([#189](https://github.com/yukazakiri/koakademy/issues/189)) ([14b6aee](https://github.com/yukazakiri/koakademy/commit/14b6aee1224bba9199a2bb40431472f584e1efe9))
+* **student-profile:** guide incomplete fields ([#190](https://github.com/yukazakiri/koakademy/issues/190)) ([98e38b6](https://github.com/yukazakiri/koakademy/commit/98e38b60401cdd50fbe9e5a350a5a89b922956af))
+
+
+### Bug Fixes
+
+* **enrollment:** make social links optional ([#187](https://github.com/yukazakiri/koakademy/issues/187)) ([162cb01](https://github.com/yukazakiri/koakademy/commit/162cb01fcb7ca5687d8e6dca8139d650e0216d94))
+* **finance:** load all tuition adjustment rows ([237dcd0](https://github.com/yukazakiri/koakademy/commit/237dcd04015d9ac0b3848577035f890d18c97782))
+* **finance:** support Laravel Excel v4 markers ([4ea46fc](https://github.com/yukazakiri/koakademy/commit/4ea46fc5d8ab89fbdf5a5e46ae6d32e621135ff1))
+* **tuition:** link maintenance notice to issue reporting ([#192](https://github.com/yukazakiri/koakademy/issues/192)) ([bc5a119](https://github.com/yukazakiri/koakademy/commit/bc5a119659533bced97b5020dfbdd26ac15a6497))
+
 ## [1.19.1](https://github.com/yukazakiri/koakademy/compare/v1.19.0...v1.19.1) (2026-08-19)
 
 

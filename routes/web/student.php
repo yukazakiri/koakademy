@@ -8,6 +8,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\StatementOfAccountIssuanceController;
 use App\Http\Controllers\StudentDashboardController;
 use App\Http\Controllers\StudentGlobalSearchController;
+use App\Http\Controllers\StudentTuitionUpdateRequestController;
 use App\Http\Controllers\UserSettingController;
 use Illuminate\Support\Facades\Route;
 use Modules\Announcement\Http\Controllers\PortalAnnouncementController;
@@ -74,6 +75,8 @@ Route::middleware(['auth', 'student.only', 'ensure.feature'])->prefix('student')
     Route::post('/classes/{class}/posts/{post}/submit', [App\Http\Controllers\StudentClassController::class, 'storeSubmission'])->name('classes.posts.submit');
     Route::get('/schedule', App\Http\Controllers\StudentScheduleController::class)->name('schedule');
     Route::get('/tuition', [App\Http\Controllers\StudentTuitionController::class, 'index'])->name('tuition.index');
+    Route::get('/tuition/update-requests', [StudentTuitionUpdateRequestController::class, 'index'])->name('tuition.update-requests.index');
+    Route::post('/tuition/update-requests', [StudentTuitionUpdateRequestController::class, 'store'])->middleware('throttle:12,1')->name('tuition.update-requests.store');
     Route::get('/tuition/soa', [App\Http\Controllers\StudentTuitionController::class, 'soa'])->name('tuition.soa');
     Route::post('/tuition/soa/issuances', [StatementOfAccountIssuanceController::class, 'store'])->name('tuition.soa.issuances.store');
     Route::get('/tuition/soa/issuances/{issuance}', [StatementOfAccountIssuanceController::class, 'show'])->name('tuition.soa.issuances.show');

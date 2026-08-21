@@ -501,6 +501,15 @@ export const ADMIN_ROUTES: AdminRoute[] = [
         allowedRoles: [...SYSTEM_ADMIN_ROLES, ...FINANCE_ROLES],
     },
     {
+        id: "admin-tuition-update-requests",
+        title: "Tuition Update Requests",
+        icon: <IconReceipt className="size-4" />,
+        link: "/administrators/finance/tuition-update-requests",
+        section: "finance",
+        requiredPermission: "view_tuition_fees",
+        allowedRoles: [...SYSTEM_ADMIN_ROLES, ...FINANCE_ROLES],
+    },
+    {
         id: "admin-financial-reports",
         title: "Financial Reports",
         icon: <IconReportAnalytics className="size-4" />,

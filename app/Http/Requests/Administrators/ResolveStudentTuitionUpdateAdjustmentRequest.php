@@ -1,0 +1,23 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Requests\Administrators;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+final class ResolveStudentTuitionUpdateAdjustmentRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return $this->user()?->can('manage_tuition_fees') ?? false;
+    }
+
+    public function rules(): array
+    {
+        return [
+            'tuition_adjustment_id' => ['required', 'integer', 'exists:tuition_adjustments,id'],
+            'resolution_note' => ['required', 'string', 'min:5', 'max:2000'],
+        ];
+    }
+}

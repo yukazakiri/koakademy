@@ -18,6 +18,7 @@ use App\Http\Controllers\AdministratorSchedulingAnalyticsController;
 use App\Http\Controllers\AdministratorStudentDocumentController;
 use App\Http\Controllers\AdministratorStudentManagementController;
 use App\Http\Controllers\AdministratorTuitionAdjustmentController;
+use App\Http\Controllers\AdministratorTuitionUpdateRequestController;
 use App\Http\Controllers\AdministratorUserManagementController;
 use App\Http\Controllers\ApiKeyController;
 use App\Http\Controllers\UserSettingController;
@@ -211,6 +212,12 @@ Route::middleware(['auth', 'administrators.only'])
             ->middleware('throttle:30,1')
             ->name('finance.payments.batch.store');
         Route::get('/finance/tuition-adjustments', [AdministratorTuitionAdjustmentController::class, 'index'])->name('finance.tuition-adjustments.index');
+        Route::get('/finance/tuition-update-requests', [AdministratorTuitionUpdateRequestController::class, 'index'])->name('finance.tuition-update-requests.index');
+        Route::get('/finance/tuition-update-requests/{tuitionUpdateRequest}', [AdministratorTuitionUpdateRequestController::class, 'show'])->whereNumber('tuitionUpdateRequest')->name('finance.tuition-update-requests.show');
+        Route::post('/finance/tuition-update-requests/{tuitionUpdateRequest}/claim', [AdministratorTuitionUpdateRequestController::class, 'claim'])->whereNumber('tuitionUpdateRequest')->middleware('throttle:30,1')->name('finance.tuition-update-requests.claim');
+        Route::post('/finance/tuition-update-requests/{tuitionUpdateRequest}/resolve-payment', [AdministratorTuitionUpdateRequestController::class, 'resolvePayment'])->whereNumber('tuitionUpdateRequest')->middleware('throttle:30,1')->name('finance.tuition-update-requests.resolve-payment');
+        Route::post('/finance/tuition-update-requests/{tuitionUpdateRequest}/resolve-adjustment', [AdministratorTuitionUpdateRequestController::class, 'resolveAdjustment'])->whereNumber('tuitionUpdateRequest')->middleware('throttle:30,1')->name('finance.tuition-update-requests.resolve-adjustment');
+        Route::post('/finance/tuition-update-requests/{tuitionUpdateRequest}/reject', [AdministratorTuitionUpdateRequestController::class, 'reject'])->whereNumber('tuitionUpdateRequest')->middleware('throttle:30,1')->name('finance.tuition-update-requests.reject');
         Route::post('/finance/tuition-adjustments/resolve', [AdministratorTuitionAdjustmentController::class, 'resolve'])
             ->middleware('throttle:120,1')
             ->name('finance.tuition-adjustments.resolve');

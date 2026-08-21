@@ -1,12 +1,13 @@
+import { index as tuitionUpdateRequestsIndex } from "@/actions/App/Http/Controllers/StudentTuitionUpdateRequestController";
 import StudentLayout from "@/components/student/student-layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Head, router, usePage } from "@inertiajs/react";
+import { cn } from "@/lib/utils";
+import { Head, Link, router, usePage } from "@inertiajs/react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
     ArrowRight,
@@ -15,6 +16,7 @@ import {
     CheckCircle2,
     Clock,
     CreditCard,
+    FileQuestion,
     FileText,
     GraduationCap,
     History,
@@ -146,7 +148,7 @@ export default function TuitionIndex({ auth, tuition, transactions, filters, his
             <Head title="Tuition & Fees" />
 
             {/* Mobile Header Background */}
-            <div className="bg-primary/10 md:hidden relative h-[110px] w-full overflow-hidden px-4 pt-5">
+            <div className="bg-primary/10 relative h-[110px] w-full overflow-hidden px-4 pt-5 md:hidden">
                 <div className="bg-primary/20 absolute -top-24 -right-24 h-64 w-64 rounded-full blur-3xl" />
                 <div className="bg-primary/10 absolute -bottom-12 -left-12 h-40 w-40 rounded-full blur-2xl" />
                 <div className="relative">
@@ -161,10 +163,7 @@ export default function TuitionIndex({ auth, tuition, transactions, filters, his
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4, ease: "easeOut" }}
-                className={cn(
-                    "mx-auto flex w-full max-w-7xl flex-col gap-2.5 p-3.5 pb-20 md:gap-6 md:p-6",
-                    "relative z-20 -mt-10 md:mt-0"
-                )}
+                className={cn("mx-auto flex w-full max-w-7xl flex-col gap-2.5 p-3.5 pb-20 md:gap-6 md:p-6", "relative z-20 -mt-10 md:mt-0")}
             >
                 {/* Header */}
                 <Card className={cn(dashboardPanelClass, "relative overflow-hidden")}>
@@ -174,18 +173,20 @@ export default function TuitionIndex({ auth, tuition, transactions, filters, his
 
                     <CardContent className="relative z-10 flex flex-col justify-between gap-3 p-3 md:flex-row md:items-end md:gap-5 md:p-5">
                         <div className="space-y-1.5 md:space-y-2">
-                            <div className="text-primary flex items-center gap-2 font-medium md:flex hidden">
+                            <div className="text-primary flex hidden items-center gap-2 font-medium md:flex">
                                 <Wallet className="h-3.5 w-3.5 md:h-4 md:w-4" />
-                                <span className="text-muted-foreground text-[9px] font-semibold tracking-wide uppercase md:text-[10px]">Student Finance</span>
+                                <span className="text-muted-foreground text-[9px] font-semibold tracking-wide uppercase md:text-[10px]">
+                                    Student Finance
+                                </span>
                             </div>
-                            <h1 className="text-foreground text-xl leading-tight font-bold tracking-tight sm:text-3xl md:text-4xl md:block hidden">
+                            <h1 className="text-foreground hidden text-xl leading-tight font-bold tracking-tight sm:text-3xl md:block md:text-4xl">
                                 Tuition & <span className="from-primary to-primary/60 bg-gradient-to-r bg-clip-text text-transparent">Fees</span>
                             </h1>
                             <p className="text-muted-foreground hidden max-w-xl text-sm sm:block sm:text-base">
                                 Overview of your financial status, assessment breakdown, and payment history for the semester.
                             </p>
-                            
-                            <div className="md:hidden block w-full mb-1">
+
+                            <div className="mb-1 block w-full md:hidden">
                                 <p className="text-foreground/50 text-[10px] font-bold tracking-wider uppercase">Active Academic Period</p>
                             </div>
                         </div>
@@ -239,6 +240,13 @@ export default function TuitionIndex({ auth, tuition, transactions, filters, his
                                     Print SOA
                                 </Button>
                             )}
+                            <Button variant="outline" size="sm" className="rounded-lg shadow-sm" asChild>
+                                <Link href={tuitionUpdateRequestsIndex.url({ query: filters })}>
+                                    <FileQuestion className="mr-2 h-4 w-4" />
+                                    <span className="hidden sm:inline">Report an issue</span>
+                                    <span className="sm:hidden">Report</span>
+                                </Link>
+                            </Button>
                         </div>
                     </CardContent>
                 </Card>
@@ -269,7 +277,9 @@ export default function TuitionIndex({ auth, tuition, transactions, filters, his
                                                 </h3>
                                                 <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/15 px-1.5 py-0.5 md:px-2">
                                                     <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-amber-500 md:h-2 md:w-2" />
-                                                    <span className="text-[10px] font-semibold text-amber-700 md:text-xs dark:text-amber-300">Active</span>
+                                                    <span className="text-[10px] font-semibold text-amber-700 md:text-xs dark:text-amber-300">
+                                                        Active
+                                                    </span>
                                                 </span>
                                             </div>
 
@@ -328,7 +338,7 @@ export default function TuitionIndex({ auth, tuition, transactions, filters, his
 
                                             <div className="space-y-2 sm:space-y-3">
                                                 <div className="flex justify-between text-[10px] font-bold sm:text-sm">
-                                                    <span className="text-foreground/50 uppercase tracking-wider">Payment Status</span>
+                                                    <span className="text-foreground/50 tracking-wider uppercase">Payment Status</span>
                                                     <span className="bg-primary/10 text-primary rounded px-1.5 py-0.5 text-[9px] font-bold sm:px-2 sm:text-xs">
                                                         {tuition.payment_progress}% Paid
                                                     </span>
@@ -349,14 +359,18 @@ export default function TuitionIndex({ auth, tuition, transactions, filters, his
                                                         <CheckCircle2 className="h-2.5 w-2.5 text-emerald-500" />
                                                         <span className="text-[8px] font-bold uppercase sm:text-[10px]">Paid</span>
                                                     </div>
-                                                    <p className="text-foreground mt-0.5 font-mono text-sm font-bold sm:text-lg md:text-xl">{tuition.formatted_total_paid}</p>
+                                                    <p className="text-foreground mt-0.5 font-mono text-sm font-bold sm:text-lg md:text-xl">
+                                                        {tuition.formatted_total_paid}
+                                                    </p>
                                                 </div>
                                                 <div className="border-border/40 bg-background/45 relative overflow-hidden rounded-lg border p-2.5 md:p-4">
                                                     <div className="flex items-center gap-1.5 opacity-60 md:gap-2">
                                                         <Clock className="h-2.5 w-2.5 text-amber-500" />
                                                         <span className="text-[8px] font-bold uppercase sm:text-[10px]">Balance</span>
                                                     </div>
-                                                    <p className="text-foreground mt-0.5 font-mono text-sm font-bold sm:text-lg md:text-xl">{tuition.formatted_total_balance}</p>
+                                                    <p className="text-foreground mt-0.5 font-mono text-sm font-bold sm:text-lg md:text-xl">
+                                                        {tuition.formatted_total_balance}
+                                                    </p>
                                                 </div>
                                             </div>
                                         </div>

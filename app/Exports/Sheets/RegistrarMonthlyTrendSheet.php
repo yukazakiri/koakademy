@@ -34,7 +34,7 @@ final readonly class RegistrarMonthlyTrendSheet implements FromArray, ShouldAuto
         $cumulative = 0;
         foreach ($items as $item) {
             $cumulative += (int) ($item['count'] ?? 0);
-            $rows[] = [$item['date'] ?? '', $item['count'] ?? 0, $cumulative];
+            $rows[] = [$item['month'] ?? '', $item['count'] ?? 0, $cumulative];
         }
 
         return $rows;

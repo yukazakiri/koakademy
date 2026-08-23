@@ -29,7 +29,7 @@ final readonly class RegistrarGenderYearLevelSheet implements FromArray, ShouldA
 
     public function array(): array
     {
-        $items = $this->normalize($this->analytics['by_gender_year_level'] ?? []);
+        $items = $this->normalize($this->analytics['gender_by_year_level'] ?? []);
 
         // Build a pivot: year level -> [gender => count]
         $pivot = [];
@@ -71,7 +71,7 @@ final readonly class RegistrarGenderYearLevelSheet implements FromArray, ShouldA
 
     public function headings(): array
     {
-        return ['Year Level', 'Male', 'Female', 'Unspecified', 'Total', 'Male %', 'Female %'];
+        return ['Year Level', 'Male', 'Female', 'Unspecified', 'Total', 'Male Percentage', 'Female Percentage'];
     }
 
     public function styles(Worksheet $sheet): array
@@ -87,7 +87,7 @@ final readonly class RegistrarGenderYearLevelSheet implements FromArray, ShouldA
             $sheet->mergeCells('A1:G1');
             $sheet->setCellValue('A1', 'GENDER BREAKDOWN BY YEAR LEVEL');
             $sheet->mergeCells('A2:G2');
-            $sheet->setCellValue('A2', 'Male and female enrollment totals for each year level for the current semester.');
+            $sheet->setCellValue('A2', 'Male, female, and unspecified sex enrollment totals for each year level in the selected reporting population.');
             $sheet->getStyle('A1')->getFont()->setSize(14)->setBold(true);
             $sheet->getStyle('A1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
             $sheet->getStyle('A2')->getFont()->setSize(10)->setItalic(true);

@@ -24,18 +24,19 @@ final readonly class RegistrarCourseSheet implements FromArray, ShouldAutoSize, 
 
     public function title(): string
     {
-        return 'Top Courses';
+        return 'Enrollment by Program';
     }
 
     public function array(): array
     {
-        $items = $this->normalize($this->analytics['by_course'] ?? []);
-        $total = array_sum(array_column($items, 'count'));
+        $items = $this->normalize($this->analytics['program_year_matrix'] ?? []);
+        $total = array_sum(array_map(fn (array $item): int => (int) ($item['total'] ?? 0), $items));
         $rows = [];
         $rank = 1;
         foreach ($items as $item) {
-            $pct = $total > 0 ? round((($item['count'] ?? 0) / $total) * 100, 1) : 0;
-            $rows[] = [$rank++, $item['course_code'] ?? 'N/A', $item['course_title'] ?? '', $item['count'] ?? 0, $pct.'%'];
+            $count = (int) ($item['total'] ?? $item['count'] ?? 0);
+            $pct = $total > 0 ? round(($count / $total) * 100, 1) : 0;
+            $rows[] = [$rank++, $item['program_code'] ?? 'Unassigned', $item['program_title'] ?? 'Unassigned program', $count, $pct.'%'];
         }
 
         return $rows;
@@ -43,7 +44,7 @@ final readonly class RegistrarCourseSheet implements FromArray, ShouldAutoSize, 
 
     public function headings(): array
     {
-        return ['Rank', 'Course Code', 'Course Title', 'Enrollments', 'Percentage'];
+        return ['Rank', 'Program Code', 'Program Title', 'Enrollments', 'Percentage'];
     }
 
     public function styles(Worksheet $sheet): array
@@ -57,7 +58,7 @@ final readonly class RegistrarCourseSheet implements FromArray, ShouldAutoSize, 
             $sheet = $event->sheet;
             $sheet->insertNewRowBefore(1, 1);
             $sheet->mergeCells('A1:E1');
-            $sheet->setCellValue('A1', 'TOP COURSES BY ENROLLMENT');
+            $sheet->setCellValue('A1', 'ENROLLMENT BY PROGRAM');
             $sheet->getStyle('A1')->getFont()->setSize(14)->setBold(true);
             $sheet->getStyle('A1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
             $this->applySheetStyle($event, 1, 2);

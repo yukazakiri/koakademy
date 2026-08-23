@@ -62,7 +62,10 @@ final class UserSettingController extends Controller
             abort(403);
         }
 
-        $this->settingsService->updateActiveSchoolId($schoolId);
+        if (! $this->settingsService->updateActiveSchoolId($schoolId)) {
+            return back()->withErrors(['school_id' => 'Unable to save the active school. Please try again.']);
+        }
+
         $this->tenantContext->setCurrentSchoolId($schoolId);
 
         return back()->with('success', 'Active school updated successfully.');

@@ -39,6 +39,7 @@ use App\Services\IdentifierGenerator;
 use App\Services\StudentIdUpdateService;
 use App\Services\StudentSchoolOptionService;
 use App\Settings\SiteSettings;
+use Closure;
 use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -1915,7 +1916,20 @@ final class AdministratorStudentManagementController extends Controller
     {
         $validated = $request->validate([
             'status' => ['required', new \Illuminate\Validation\Rules\Enum(StudentStatus::class)],
-            'graduation_school_year' => ['nullable', 'string', 'regex:/^\\d{4} - \\d{4}$/'],
+            'graduation_school_year' => [
+                'nullable',
+                'string',
+                'regex:/^\\d{4} - \\d{4}$/',
+                function (string $attribute, mixed $value, Closure $fail) use ($request): void {
+                    if ($request->input('status') !== StudentStatus::Graduated->value || ! is_string($value) || ! preg_match('/^(\\d{4}) - (\\d{4})$/', $value, $matches)) {
+                        return;
+                    }
+
+                    if ((int) $matches[2] !== (int) $matches[1] + 1) {
+                        $fail('The graduation academic year must span consecutive years.');
+                    }
+                },
+            ],
             'graduation_semester' => ['nullable', 'integer', 'in:1,2,3'],
         ]);
 

@@ -208,6 +208,42 @@ it('builds the Form B/C matrix and applies shared report filters', function (): 
         );
 });
 
+it('includes pending enrollments when pending is the explicit report status filter', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Registrar]);
+    $user->givePermissionTo('ViewAny:StudentEnrollment');
+
+    $department = Department::factory()->create(['code' => 'IT']);
+    $course = Course::factory()->create(['code' => 'BSIT', 'department_id' => $department->id, 'school_id' => $department->school_id]);
+    $student = Student::factory()->create(['course_id' => $course->id, 'gender' => 'Female', 'school_id' => $department->school_id]);
+
+    StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'school_year' => '2024 - 2025',
+        'semester' => 1,
+        'academic_year' => 1,
+        'intake_category' => 'new_freshman',
+        'status' => 'Pending',
+        'school_id' => $department->school_id,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('administrators.registrar.analytics.index'))
+        ->assertSuccessful()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->where('analytics.current_semester_count', 0)
+        );
+
+    $this->actingAs($user)
+        ->get(route('administrators.registrar.analytics.index', ['status' => 'Pending']))
+        ->assertSuccessful()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->where('analytics.current_semester_count', 1)
+            ->where('analytics.by_status.0.status', 'Pending')
+            ->where('analytics.form_bc_matrix.0.new_freshman_female', 1)
+        );
+});
+
 it('rejects invalid Form B/C report filter values', function (): void {
     $user = User::factory()->create(['role' => UserRole::Registrar]);
     $user->givePermissionTo('ViewAny:StudentEnrollment');

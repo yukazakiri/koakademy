@@ -33,9 +33,9 @@ final class RegistrarAnalyticsService
         $filters = $report['values'];
         $pendingStatus = $this->enrollmentPipelineService->getPendingStatus();
         $base = $this->enrollmentQuery($filters);
-        $reporting = (clone $base)->where('student_enrollment.status', '!=', $pendingStatus);
+        $reporting = $this->reportingPopulation($base, $filters, $pendingStatus);
         $previousFilters = $this->previousPeriodFilters($filters);
-        $previous = $this->enrollmentQuery($previousFilters)->where('student_enrollment.status', '!=', $pendingStatus);
+        $previous = $this->reportingPopulation($this->enrollmentQuery($previousFilters), $previousFilters, $pendingStatus);
 
         $analytics = [
             'current_semester_count' => (clone $reporting)->count(),
@@ -48,8 +48,8 @@ final class RegistrarAnalyticsService
             'by_year_level' => $this->byYearLevel($reporting),
             'by_student_type' => $this->byStudentType($reporting),
             'by_gender' => $this->byGender($reporting),
-            'by_status' => $this->byStatus($base),
-            'pipeline_breakdown' => $this->byStatus($base),
+            'by_status' => $this->byStatus($reporting),
+            'pipeline_breakdown' => $this->byStatus($reporting),
             'daily_trend' => $this->dailyTrend($reporting),
             'by_origin' => $this->groupStudentField($reporting, 'students.region_of_origin', 'origin'),
             'by_scholarship' => $this->groupStudentField($reporting, 'students.scholarship_type', 'scholarship'),
@@ -170,7 +170,13 @@ final class RegistrarAnalyticsService
     {
         $yearFilters = $filters;
         $yearFilters['semester'] = null;
-        $query = $this->enrollmentQuery($yearFilters);
+
+        return $this->reportingPopulation($this->enrollmentQuery($yearFilters), $yearFilters, $pendingStatus);
+    }
+
+    /** @param array<string, int|string|null> $filters */
+    private function reportingPopulation(Builder $query, array $filters, string $pendingStatus): Builder
+    {
         if ($filters['status'] === null) {
             $query->where('student_enrollment.status', '!=', $pendingStatus);
         }

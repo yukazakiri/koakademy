@@ -24,6 +24,18 @@ beforeEach(function (): void {
     School::factory()->create();
 });
 
+it('rejects non-consecutive graduation academic years', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $student = Student::factory()->create();
+
+    actingAs($user)
+        ->patch(route('administrators.students.update-status', $student), [
+            'status' => StudentStatus::Graduated->value,
+            'graduation_school_year' => '2026 - 2028',
+        ])
+        ->assertSessionHasErrors('graduation_school_year');
+});
+
 it('updates an existing historical subject enrollment', function (): void {
     $user = User::factory()->create(['role' => UserRole::Admin]);
     $student = Student::factory()->create();

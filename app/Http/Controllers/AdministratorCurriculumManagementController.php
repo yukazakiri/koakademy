@@ -166,6 +166,7 @@ final class AdministratorCurriculumManagementController extends Controller
                 'code' => $dept->code,
             ]),
             'course_types' => \App\Models\CourseType::query()->select(['id', 'name'])->orderBy('name')->get(),
+            'ched_options' => ChedProgramRules::options(),
         ]);
     }
 

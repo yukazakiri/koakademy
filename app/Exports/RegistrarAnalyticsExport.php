@@ -24,9 +24,11 @@ final readonly class RegistrarAnalyticsExport implements Export, WithMultipleShe
     public function sheets(): array
     {
         return [
+            new Sheets\RegistrarReportContextSheet($this->analytics, $this->filters),
             new Sheets\RegistrarFormBcSheet($this->analytics, $this->filters),
             new Sheets\RegistrarSummarySheet($this->analytics, $this->filters),
-            new Sheets\RegistrarEnrollmentDetailSheet($this->analytics),
+            new Sheets\RegistrarProgramYearLevelSheet($this->analytics, $this->filters),
+            new Sheets\RegistrarEnrollmentDetailSheet($this->analytics, $this->filters),
             new Sheets\RegistrarStatusSheet($this->analytics),
             new Sheets\RegistrarDepartmentSheet($this->analytics),
             new Sheets\RegistrarYearLevelSheet($this->analytics),

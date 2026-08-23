@@ -28,8 +28,7 @@ final readonly class RegistrarFormBcSheet implements FromArray, ShouldAutoSize, 
 
     public function array(): array
     {
-        return collect($this->analytics['form_bc_matrix'] ?? [])->map(function ($row): array {
-            $row = (array) $row;
+        $rows = collect($this->normalize($this->analytics['form_bc_matrix'] ?? []))->map(function (array $row): array {
             $values = [$row['department'] ?? 'Unassigned', $row['program_code'] ?? 'Unassigned', $row['program_title'] ?? ''];
             foreach (['new_freshman_male', 'new_freshman_female', 'continuing_first_year_male', 'continuing_first_year_female'] as $column) {
                 $values[] = (int) ($row[$column] ?? 0);
@@ -43,11 +42,21 @@ final readonly class RegistrarFormBcSheet implements FromArray, ShouldAutoSize, 
 
             return $values;
         })->all();
+
+        $reportedTotal = array_sum(array_map(fn (array $row): int => (int) $row[19], $rows));
+        $selectedTotal = (int) ($this->analytics['current_semester_count'] ?? 0);
+
+        return [
+            ...$rows,
+            $this->summaryRow('Eligible Form B/C total', $reportedTotal),
+            $this->summaryRow('Selected reporting population total', $selectedTotal),
+            $this->summaryRow('Records outside the Form B/C sex and intake categories', $selectedTotal - $reportedTotal),
+        ];
     }
 
     public function headings(): array
     {
-        return ['Department', 'Program Code', 'Program Title', 'New F M', 'New F F', 'Continuing 1st M', 'Continuing 1st F', 'Y2 M', 'Y2 F', 'Y3 M', 'Y3 F', 'Y4 M', 'Y4 F', 'Y5 M', 'Y5 F', 'Y6 M', 'Y6 F', 'Y7 M', 'Y7 F', 'Total'];
+        return ['Department', 'Program Code', 'Program Title', 'New First-Year Students, Male', 'New First-Year Students, Female', 'Continuing First-Year Students, Male', 'Continuing First-Year Students, Female', 'Second-Year Students, Male', 'Second-Year Students, Female', 'Third-Year Students, Male', 'Third-Year Students, Female', 'Fourth-Year Students, Male', 'Fourth-Year Students, Female', 'Fifth-Year Students, Male', 'Fifth-Year Students, Female', 'Sixth-Year Students, Male', 'Sixth-Year Students, Female', 'Seventh-Year Students, Male', 'Seventh-Year Students, Female', 'Eligible Form B/C Total'];
     }
 
     public function styles(Worksheet $sheet): array
@@ -60,10 +69,16 @@ final readonly class RegistrarFormBcSheet implements FromArray, ShouldAutoSize, 
         return [AfterSheet::class => function (AfterSheet $event): void {
             $event->sheet->insertNewRowBefore(1, 2);
             $event->sheet->mergeCells('A1:T1');
-            $event->sheet->setCellValue('A1', 'CHED E-FORM B/C — ENROLMENT CONTROL TOTAL');
+            $event->sheet->setCellValue('A1', 'COMMISSION ON HIGHER EDUCATION FORM B/C — ENROLLMENT CONTROL TOTAL');
             $event->sheet->mergeCells('A2:T2');
-            $event->sheet->setCellValue('A2', 'Report population: '.($this->report['label'] ?? 'Configured current term').'. Unclassified first-year intake is intentionally excluded.');
+            $event->sheet->setCellValue('A2', 'Report period: '.($this->report['label'] ?? 'Configured current term').'. The eligible Form B/C total excludes records without a male or female sex value and unclassified first-year intake records.');
             $this->applySheetStyle($event, 2, 3);
         }];
+    }
+
+    /** @return array<int, string|int> */
+    private function summaryRow(string $label, int $total): array
+    {
+        return [$label, ...array_fill(0, 18, ''), $total];
     }
 }

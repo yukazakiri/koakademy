@@ -36,7 +36,12 @@ trait RegistrarExportStyles
         $sheet = $event->sheet;
 
         for ($i = 1; $i <= $titleRows; $i++) {
-            $sheet->mergeCells("A{$i}:H{$i}");
+            $hasTitleMerge = collect(array_keys($sheet->getMergeCells()))
+                ->contains(fn (string $range): bool => str_starts_with($range, "A{$i}:"));
+
+            if (! $hasTitleMerge) {
+                $sheet->mergeCells("A{$i}:{$sheet->getHighestColumn()}{$i}");
+            }
         }
 
         $sheet->getStyle("A1:A{$titleRows}")->applyFromArray([

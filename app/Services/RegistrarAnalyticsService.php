@@ -36,6 +36,7 @@ final class RegistrarAnalyticsService
         $reporting = $this->reportingPopulation($base, $filters, $pendingStatus);
         $previousFilters = $this->previousPeriodFilters($filters);
         $previous = $this->reportingPopulation($this->enrollmentQuery($previousFilters), $previousFilters, $pendingStatus);
+        $programYearMatrix = $this->programYearLevelMatrix($reporting);
 
         $analytics = [
             'current_semester_count' => (clone $reporting)->count(),
@@ -57,7 +58,11 @@ final class RegistrarAnalyticsService
             'by_attrition' => $this->groupStudentField($reporting, 'students.attrition_category', 'attrition'),
             'by_equity_group' => $this->equityGroups($reporting),
             'form_bc_matrix' => $this->formBcMatrix($reporting),
+            'program_year_matrix' => $programYearMatrix,
+            'gender_by_program' => $this->genderByProgram($reporting),
+            'gender_by_year_level' => $this->genderByYearLevel($reporting),
             'annual_graduates' => $this->annualGraduates($filters),
+            'monthly_trend' => $this->monthlyTrend($reporting),
         ];
 
         if ($includeDetails) {
@@ -101,24 +106,63 @@ final class RegistrarAnalyticsService
             'status' => $requested['status'] ?? null,
         ];
 
+        $options = [
+            'school_years' => collect($this->settingsService->getAvailableSchoolYears())->map(fn ($year): array => [
+                'value' => is_numeric($year) ? ((int) $year).' - '.((int) $year + 1) : (string) $year,
+                'label' => is_numeric($year) ? ((int) $year).' - '.((int) $year + 1) : (string) $year,
+            ])->values()->all(),
+            'semesters' => collect([1, 2, 3])->map(fn (int $semester): array => ['value' => $semester, 'label' => $this->semesterLabel($semester)])->values()->all(),
+            'departments' => Department::query()->orderBy('code')->get(['id', 'code', 'name'])->map(fn (Department $department): array => ['value' => $department->id, 'label' => mb_trim($department->code.' — '.$department->name)])->values()->all(),
+            'programs' => Course::query()->orderBy('code')->get(['id', 'department_id', 'code', 'title'])->map(fn (Course $course): array => ['value' => $course->id, 'department_id' => $course->department_id, 'label' => mb_trim($course->code.' — '.$course->title)])->values()->all(),
+            'year_levels' => collect(range(1, 7))->map(fn (int $year): array => ['value' => $year, 'label' => "Year {$year}"])->values()->all(),
+            'genders' => [['value' => 'male', 'label' => 'Male'], ['value' => 'female', 'label' => 'Female'], ['value' => 'unspecified', 'label' => 'Unspecified']],
+            'student_types' => collect(StudentType::cases())->map(fn (StudentType $type): array => ['value' => $type->value, 'label' => $type->getLabel()])->values()->all(),
+            'intake_categories' => [['value' => 'new_freshman', 'label' => 'New freshman'], ['value' => 'continuing_first_year', 'label' => 'Continuing first-year'], ['value' => 'unclassified', 'label' => 'Unclassified']],
+            'statuses' => collect($this->enrollmentPipelineService->getSteps())->map(fn (array $step): array => ['value' => $step['status'], 'label' => $step['label']])->values()->all(),
+        ];
+
         return [
             'values' => $values,
             'label' => sprintf('%s · %s', $values['school_year'], $this->semesterLabel((int) $values['semester'])),
-            'options' => [
-                'school_years' => collect($this->settingsService->getAvailableSchoolYears())->map(fn ($year): array => [
-                    'value' => is_numeric($year) ? ((int) $year).' - '.((int) $year + 1) : (string) $year,
-                    'label' => is_numeric($year) ? ((int) $year).' - '.((int) $year + 1) : (string) $year,
-                ])->values(),
-                'semesters' => collect([1, 2, 3])->map(fn (int $semester): array => ['value' => $semester, 'label' => $this->semesterLabel($semester)]),
-                'departments' => Department::query()->orderBy('code')->get(['id', 'code', 'name'])->map(fn (Department $department): array => ['value' => $department->id, 'label' => mb_trim($department->code.' — '.$department->name)]),
-                'programs' => Course::query()->orderBy('code')->get(['id', 'department_id', 'code', 'title'])->map(fn (Course $course): array => ['value' => $course->id, 'department_id' => $course->department_id, 'label' => mb_trim($course->code.' — '.$course->title)]),
-                'year_levels' => collect(range(1, 7))->map(fn (int $year): array => ['value' => $year, 'label' => "Year {$year}"]),
-                'genders' => [['value' => 'male', 'label' => 'Male'], ['value' => 'female', 'label' => 'Female'], ['value' => 'unspecified', 'label' => 'Unspecified']],
-                'student_types' => collect(StudentType::cases())->map(fn (StudentType $type): array => ['value' => $type->value, 'label' => $type->getLabel()]),
-                'intake_categories' => [['value' => 'new_freshman', 'label' => 'New freshman'], ['value' => 'continuing_first_year', 'label' => 'Continuing first-year'], ['value' => 'unclassified', 'label' => 'Unclassified']],
-                'statuses' => collect($this->enrollmentPipelineService->getSteps())->map(fn (array $step): array => ['value' => $step['status'], 'label' => $step['label']])->values(),
+            'options' => $options,
+            'context' => [
+                'filters' => $this->reportFilterContext($values, $options),
+                'status_rule' => $values['status'] === null
+                    ? 'Pending enrollment records are excluded unless a specific enrollment status is selected.'
+                    : 'Only enrollment records with the selected status are included.',
+                'form_bc_rule' => 'The Commission on Higher Education Form B/C control total includes students with a recorded male or female sex value. Unclassified first-year intake records remain visible in general analytics but are excluded from the Form B/C first-year categories.',
             ],
         ];
+    }
+
+    /** @param array<string, int|string|null> $values
+     *  @param array<string, array<int, array<string, int|string|null>>> $options
+     *  @return list<array{label: string, value: string}> */
+    private function reportFilterContext(array $values, array $options): array
+    {
+        $filters = [
+            ['label' => 'Academic year', 'value' => (string) $values['school_year']],
+            ['label' => 'Term', 'value' => $this->semesterLabel((int) $values['semester'])],
+        ];
+
+        foreach ([
+            'department_id' => ['Department', 'departments'],
+            'course_id' => ['Program', 'programs'],
+            'academic_year' => ['Year level', 'year_levels'],
+            'gender' => ['Sex', 'genders'],
+            'student_type' => ['Student type', 'student_types'],
+            'intake_category' => ['First-year intake classification', 'intake_categories'],
+            'status' => ['Enrollment status', 'statuses'],
+        ] as $key => [$label, $optionKey]) {
+            if ($values[$key] === null) {
+                continue;
+            }
+
+            $option = collect($options[$optionKey])->first(fn (array $option): bool => (string) $option['value'] === (string) $values[$key]);
+            $filters[] = ['label' => $label, 'value' => (string) ($option['label'] ?? $values[$key])];
+        }
+
+        return $filters;
     }
 
     /** @param array<string, int|string|null> $filters */
@@ -215,6 +259,27 @@ final class RegistrarAnalyticsService
         return (clone $query)->selectRaw('student_enrollment.academic_year as year_level, count(*) as count')->groupBy('student_enrollment.academic_year')->orderBy('student_enrollment.academic_year')->get();
     }
 
+    private function programYearLevelMatrix(Builder $query): mixed
+    {
+        $selects = [
+            "COALESCE(NULLIF(TRIM(departments.code), ''), 'Unassigned') as department",
+            "COALESCE(NULLIF(TRIM(courses.code), ''), 'Unassigned') as program_code",
+            "COALESCE(courses.title, 'Unassigned program') as program_title",
+        ];
+
+        foreach (range(1, 7) as $year) {
+            $selects[] = "SUM(CASE WHEN student_enrollment.academic_year = {$year} THEN 1 ELSE 0 END) as year_{$year}";
+        }
+        $selects[] = 'count(*) as total';
+
+        return (clone $query)
+            ->selectRaw(implode(', ', $selects))
+            ->groupBy('departments.code', 'courses.code', 'courses.title')
+            ->orderBy('departments.code')
+            ->orderBy('courses.code')
+            ->get();
+    }
+
     private function byStudentType(Builder $query): mixed
     {
         return $this->groupStudentField($query, 'students.student_type', 'student_type');
@@ -225,6 +290,26 @@ final class RegistrarAnalyticsService
         return (clone $query)->selectRaw("COALESCE(NULLIF(LOWER(TRIM(students.gender)), ''), 'unspecified') as gender, count(*) as count")->groupByRaw("COALESCE(NULLIF(LOWER(TRIM(students.gender)), ''), 'unspecified')")->orderBy('gender')->get();
     }
 
+    private function genderByProgram(Builder $query): mixed
+    {
+        return (clone $query)
+            ->selectRaw("COALESCE(NULLIF(TRIM(courses.code), ''), 'Unassigned') as program_code, COALESCE(courses.title, 'Unassigned program') as program_title, COALESCE(NULLIF(LOWER(TRIM(students.gender)), ''), 'unspecified') as gender, count(*) as count")
+            ->groupBy('courses.code', 'courses.title', 'students.gender')
+            ->orderBy('courses.code')
+            ->orderBy('students.gender')
+            ->get();
+    }
+
+    private function genderByYearLevel(Builder $query): mixed
+    {
+        return (clone $query)
+            ->selectRaw("student_enrollment.academic_year as year_level, COALESCE(NULLIF(LOWER(TRIM(students.gender)), ''), 'unspecified') as gender, count(*) as count")
+            ->groupBy('student_enrollment.academic_year', 'students.gender')
+            ->orderBy('student_enrollment.academic_year')
+            ->orderBy('students.gender')
+            ->get();
+    }
+
     private function byStatus(Builder $query): mixed
     {
         return (clone $query)->selectRaw('student_enrollment.status, count(*) as count')->groupBy('student_enrollment.status')->orderByDesc('count')->get();
@@ -233,6 +318,21 @@ final class RegistrarAnalyticsService
     private function dailyTrend(Builder $query): mixed
     {
         return (clone $query)->selectRaw('DATE(student_enrollment.created_at) as date, count(*) as count')->groupByRaw('DATE(student_enrollment.created_at)')->orderBy('date')->get();
+    }
+
+    private function monthlyTrend(Builder $query): mixed
+    {
+        $monthExpression = match ($query->getModel()->getConnection()->getDriverName()) {
+            'sqlite' => "strftime('%Y-%m', student_enrollment.created_at)",
+            'mysql' => "DATE_FORMAT(student_enrollment.created_at, '%Y-%m')",
+            default => "TO_CHAR(DATE_TRUNC('month', student_enrollment.created_at), 'YYYY-MM')",
+        };
+
+        return (clone $query)
+            ->selectRaw("{$monthExpression} as month, count(*) as count")
+            ->groupByRaw($monthExpression)
+            ->orderByRaw($monthExpression)
+            ->get();
     }
 
     private function groupStudentField(Builder $query, string $field, string $alias): mixed

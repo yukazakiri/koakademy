@@ -19,8 +19,9 @@ final readonly class RegistrarEnrollmentDetailSheet implements FromArray, Should
 {
     use RegistrarExportStyles;
 
-    /** @param array<string, mixed> $analytics */
-    public function __construct(private array $analytics) {}
+    /** @param array<string, mixed> $analytics
+     *  @param array<string, mixed> $report */
+    public function __construct(private array $analytics, private array $report) {}
 
     public function title(): string
     {
@@ -73,7 +74,7 @@ final readonly class RegistrarEnrollmentDetailSheet implements FromArray, Should
             $sheet->mergeCells('A1:J1');
             $sheet->setCellValue('A1', 'DETAILED ENROLLMENT ROSTER');
             $sheet->mergeCells('A2:J2');
-            $sheet->setCellValue('A2', 'Individual student enrollment records for the current semester — use as the source reference for all breakdown sheets.');
+            $sheet->setCellValue('A2', 'Individual student enrollment records for '.($this->report['label'] ?? 'the selected reporting period').' — use as the source reference for all breakdown sheets.');
             $sheet->getStyle('A1')->getFont()->setSize(14)->setBold(true);
             $sheet->getStyle('A1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
             $sheet->getStyle('A2')->getFont()->setSize(10)->setItalic(true);

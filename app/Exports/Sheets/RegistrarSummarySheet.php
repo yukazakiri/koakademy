@@ -37,18 +37,21 @@ final readonly class RegistrarSummarySheet implements FromArray, ShouldAutoSize,
         $previous = $a['previous_semester_count'] ?? 0;
         $delta = $current - $previous;
         $growth = $previous > 0 ? round(($delta / $previous) * 100, 1) : ($current > 0 ? 100 : 0);
+        $formBcEligibleTotal = (int) collect($a['form_bc_matrix'] ?? [])->sum('total');
 
         return [
             ['REGISTRAR ANALYTICS REPORT'],
-            ['Generated: '.now()->format('F j, Y h:i A').' | '.($f['label'] ?? 'Configured current term')],
+            ['Report period: '.($f['label'] ?? 'Configured current term').' | Generated: '.now()->format('F j, Y h:i A')],
             [''],
             ['METRIC', 'VALUE'],
-            ['Current Semester Enrollments', $current],
-            ['Previous Semester Enrollments', $previous],
-            ['Semester-over-Semester Change', ($delta >= 0 ? '+' : '').$delta.' ('.$growth.'%)'],
-            ['Current School Year Total', $a['current_school_year_count'] ?? 0],
-            ['Active (non-trashed)', $a['active_count'] ?? 0],
-            ['Trashed / Deleted', $a['trashed_count'] ?? 0],
+            ['Selected reporting population', $current],
+            ['Eligible Commission on Higher Education Form B/C total', $formBcEligibleTotal],
+            ['Records outside Form B/C sex and intake categories', $current - $formBcEligibleTotal],
+            ['Previous-term reporting population', $previous],
+            ['Change from previous term', ($delta >= 0 ? '+' : '').$delta.' ('.$growth.'%)'],
+            ['Academic-year reporting population', $a['current_school_year_count'] ?? 0],
+            ['Active records', $a['active_count'] ?? 0],
+            ['Deleted records retained for audit', $a['trashed_count'] ?? 0],
         ];
     }
 

@@ -24,20 +24,20 @@ final readonly class RegistrarGenderCourseSheet implements FromArray, ShouldAuto
 
     public function title(): string
     {
-        return 'Gender by Course';
+        return 'Gender by Program';
     }
 
     public function array(): array
     {
-        $items = $this->normalize($this->analytics['by_gender_course'] ?? []);
+        $items = $this->normalize($this->analytics['gender_by_program'] ?? []);
 
         // Build a pivot: course -> [gender => count]
         $pivot = [];
         foreach ($items as $item) {
-            $course = mb_trim((string) ($item['course_code'] ?? '')) ?: 'Unassigned';
+            $course = mb_trim((string) ($item['program_code'] ?? '')) ?: 'Unassigned';
             $gender = mb_strtolower(mb_trim((string) ($item['gender'] ?? '')));
             $label = $gender === 'male' ? 'Male' : ($gender === 'female' ? 'Female' : 'Unspecified');
-            $pivot[$course]['title'] = $item['course_title'] ?? '';
+            $pivot[$course]['title'] = $item['program_title'] ?? '';
             $pivot[$course][$label] = ($pivot[$course][$label] ?? 0) + (int) ($item['count'] ?? 0);
         }
         ksort($pivot);
@@ -73,7 +73,7 @@ final readonly class RegistrarGenderCourseSheet implements FromArray, ShouldAuto
 
     public function headings(): array
     {
-        return ['Course Code', 'Course Title', 'Male', 'Female', 'Unspecified', 'Total', 'Male %', 'Female %'];
+        return ['Program Code', 'Program Title', 'Male', 'Female', 'Unspecified', 'Total', 'Male Percentage', 'Female Percentage'];
     }
 
     public function styles(Worksheet $sheet): array
@@ -87,9 +87,9 @@ final readonly class RegistrarGenderCourseSheet implements FromArray, ShouldAuto
             $sheet = $event->sheet;
             $sheet->insertNewRowBefore(1, 2);
             $sheet->mergeCells('A1:H1');
-            $sheet->setCellValue('A1', 'GENDER BREAKDOWN BY COURSE');
+            $sheet->setCellValue('A1', 'SEX BREAKDOWN BY PROGRAM');
             $sheet->mergeCells('A2:H2');
-            $sheet->setCellValue('A2', 'Male and female enrollment totals for each course for the current semester.');
+            $sheet->setCellValue('A2', 'Male, female, and unspecified sex enrollment totals for each program in the selected reporting population.');
             $sheet->getStyle('A1')->getFont()->setSize(14)->setBold(true);
             $sheet->getStyle('A1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
             $sheet->getStyle('A2')->getFont()->setSize(10)->setItalic(true);

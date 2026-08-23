@@ -3,13 +3,17 @@
 declare(strict_types=1);
 
 use App\Enums\UserRole;
+use App\Exports\RegistrarAnalyticsExport;
 use App\Models\Course;
 use App\Models\Department;
 use App\Models\GeneralSetting;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\User;
+use App\Services\RegistrarAnalyticsService;
 use Inertia\Testing\AssertableInertia;
+use Maatwebsite\Excel\Facades\Excel;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use Spatie\Permission\Models\Permission;
 
 beforeEach(function (): void {
@@ -86,11 +90,14 @@ it('renders dedicated registrar analytics with aggregate enrollment data', funct
             ->where('analytics.active_count', 1)
             ->where('analytics.by_department.0.department', 'IT')
             ->where('analytics.by_year_level.0.year_level', 1)
+            ->where('analytics.program_year_matrix.0.year_1', 1)
             ->where('quality.missing_department_count', 0)
             ->where('quality.missing_course_count', 0)
             ->where('report.values.school_year', '2024 - 2025')
             ->where('report.values.semester', 1)
+            ->where('report.context.status_rule', 'Pending enrollment records are excluded unless a specific enrollment status is selected.')
             ->has('analytics.form_bc_matrix')
+            ->has('analytics.program_year_matrix')
             ->missing('analytics.detailed_enrollments')
             ->has('generatedAt')
         );
@@ -168,6 +175,113 @@ it('exports registrar analytics as an excel workbook', function (): void {
         ->get(route('administrators.registrar.analytics.export'))
         ->assertSuccessful()
         ->assertHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+});
+
+it('keeps program and year-level workbook breakdowns aligned with the selected reporting population', function (): void {
+    $department = Department::factory()->create(['code' => 'IT']);
+    $bsit = Course::factory()->create(['code' => 'BSIT', 'title' => 'Bachelor of Science in Information Technology', 'department_id' => $department->id, 'school_id' => $department->school_id]);
+    $bscs = Course::factory()->create(['code' => 'BSCS', 'title' => 'Bachelor of Science in Computer Science', 'department_id' => $department->id, 'school_id' => $department->school_id]);
+
+    $enroll = function (Course $course, string $gender, int $year, string $status = 'Enrolled') use ($department): void {
+        $student = Student::factory()->create(['course_id' => $course->id, 'gender' => $gender, 'school_id' => $department->school_id]);
+        StudentEnrollment::factory()->create([
+            'student_id' => $student->id,
+            'course_id' => $course->id,
+            'school_year' => '2024 - 2025',
+            'semester' => 1,
+            'academic_year' => $year,
+            'intake_category' => $year === 1 ? 'new_freshman' : null,
+            'status' => $status,
+            'school_id' => $department->school_id,
+            'created_at' => '2024-08-15 12:00:00',
+            'updated_at' => '2024-08-15 12:00:00',
+        ]);
+    };
+
+    $enroll($bsit, 'Male', 1);
+    $enroll($bsit, 'Female', 2);
+    $enroll($bscs, 'Female', 3);
+    $enroll($bscs, 'Male', 1, 'Pending');
+
+    $report = app(RegistrarAnalyticsService::class)->build([], true);
+    expect($report['analytics']['current_semester_count'])->toBe(3)
+        ->and($report['analytics']['program_year_matrix'])->toHaveCount(2);
+
+    $path = tempnam(sys_get_temp_dir(), 'registrar-analytics-');
+    expect($path)->not->toBeFalse();
+
+    try {
+        file_put_contents($path, Excel::raw(new RegistrarAnalyticsExport($report['analytics'], $report['report']), Maatwebsite\Excel\Excel::XLSX));
+        $workbook = IOFactory::load($path);
+
+        expect($workbook->getSheetNames())->toEqual([
+            'Report Context',
+            'Form B-C Control Total',
+            'Executive Summary',
+            'Program by Year Level',
+            'Enrollment Details',
+            'By Status',
+            'By Department',
+            'By Year Level',
+            'Gender Breakdown',
+            'Gender by Program',
+            'Gender by Year',
+            'By Student Type',
+            'Enrollment by Program',
+            'Data Quality',
+            'Daily Trend',
+            'Monthly Trend',
+        ]);
+
+        $context = $workbook->getSheetByName('Report Context');
+        $formBc = $workbook->getSheetByName('Form B-C Control Total');
+        $matrix = $workbook->getSheetByName('Program by Year Level');
+        $courseSheet = $workbook->getSheetByName('Enrollment by Program');
+        $genderProgram = $workbook->getSheetByName('Gender by Program');
+        $genderYear = $workbook->getSheetByName('Gender by Year');
+        $monthly = $workbook->getSheetByName('Monthly Trend');
+
+        expect($context?->getCell('A1')->getValue())->toBe('REGISTRAR ANALYTICS REPORT CONTEXT')
+            ->and($context?->getCell('A4')->getValue())->toBe('Selected reporting population')
+            ->and($context?->getCell('B4')->getValue())->toBe(3)
+            ->and($matrix?->getCell('D3')->getValue())->toBe('First Year')
+            ->and($matrix?->getCell('J3')->getValue())->toBe('Seventh Year')
+            ->and($matrix?->getCell('K3')->getValue())->toBe('Total')
+            ->and($formBc?->getCell('D3')->getValue())->toBe('New First-Year Students, Male')
+            ->and($formBc?->getCell('K4')->getValue())->toBe(1)
+            ->and($formBc?->getCell('T5')->getValue())->toBe(2)
+            ->and($courseSheet?->getCell('B2')->getValue())->toBe('Program Code')
+            ->and($courseSheet?->getCell('D4')->getValue())->toBe(2)
+            ->and($genderProgram?->getCell('A3')->getValue())->toBe('Program Code')
+            ->and($genderYear?->getCell('F3')->getValue())->toBe('Male Percentage')
+            ->and($monthly?->getCell('A2')->getValue())->toBe('Month')
+            ->and((int) $matrix?->getCell('K6')->getValue())->toBe(3)
+            ->and((int) $genderProgram?->getCell('F6')->getValue())->toBe(3)
+            ->and((int) $genderYear?->getCell('E7')->getValue())->toBe(3)
+            ->and((int) $monthly?->getCell('B3')->getValue())->toBe(3);
+
+        $matrixRows = collect($matrix?->toArray(null, true, true, true) ?? [])->slice(3, 2)->keyBy('B');
+        expect((int) $matrixRows['BSCS']['F'])->toBe(1)
+            ->and((int) $matrixRows['BSIT']['D'])->toBe(1)
+            ->and((int) $matrixRows['BSIT']['E'])->toBe(1)
+            ->and((int) $matrixRows['BSIT']['K'])->toBe(2);
+
+        $pendingReport = app(RegistrarAnalyticsService::class)->build(['status' => 'Pending'], true);
+        file_put_contents($path, Excel::raw(new RegistrarAnalyticsExport($pendingReport['analytics'], $pendingReport['report']), Maatwebsite\Excel\Excel::XLSX));
+        $pendingWorkbook = IOFactory::load($path);
+        $pendingContext = $pendingWorkbook->getSheetByName('Report Context');
+        $pendingMatrix = $pendingWorkbook->getSheetByName('Program by Year Level');
+        $pendingFormBc = $pendingWorkbook->getSheetByName('Form B-C Control Total');
+
+        expect($pendingReport['analytics']['current_semester_count'])->toBe(1)
+            ->and($pendingContext?->getCell('B4')->getValue())->toBe(1)
+            ->and($pendingMatrix?->getCell('D4')->getValue())->toBe(1)
+            ->and($pendingMatrix?->getCell('K5')->getValue())->toBe(1)
+            ->and($pendingFormBc?->getCell('D4')->getValue())->toBe(1)
+            ->and($pendingFormBc?->getCell('T4')->getValue())->toBe(1);
+    } finally {
+        @unlink($path);
+    }
 });
 
 it('builds the Form B/C matrix and applies shared report filters', function (): void {

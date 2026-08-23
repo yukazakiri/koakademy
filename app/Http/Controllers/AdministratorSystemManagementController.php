@@ -36,6 +36,7 @@ use App\Services\IdentifierGenerator;
 use App\Services\LogoConversionService;
 use App\Services\Newsletter\NewsletterProviderManager;
 use App\Services\Newsletter\NewsletterSettingsService;
+use App\Services\RegistrarReportingSettingsService;
 use App\Services\SocialiteProviderService;
 use App\Services\TuitionPaymentScheduleSettingsService;
 use App\Settings\SiteSettings;
@@ -919,7 +920,7 @@ final class AdministratorSystemManagementController extends Controller
         return Redirect::back()->with('success', 'API management settings updated successfully.');
     }
 
-    public function updateAcademicCalendar(Request $request)
+    public function updateAcademicCalendar(Request $request, RegistrarReportingSettingsService $registrarReportingSettings)
     {
         $this->authorize('updateSchool', GeneralSetting::class);
 
@@ -927,10 +928,14 @@ final class AdministratorSystemManagementController extends Controller
             'semester' => ['required', 'integer', 'in:1,2'],
             'school_starting_date' => ['required', 'date'],
             'school_ending_date' => ['required', 'date', 'after_or_equal:school_starting_date'],
+            'maximum_registrar_year_level' => ['nullable', 'integer', 'between:2,7'],
         ]);
 
         $generalSettingsService = app(GeneralSettingsService::class);
         $generalSettingsService->updateGlobalAcademicCalendar($validated);
+        if (array_key_exists('maximum_registrar_year_level', $validated)) {
+            $registrarReportingSettings->updateMaximumYearLevel((int) $validated['maximum_registrar_year_level']);
+        }
 
         return Redirect::back()->with('success', 'Academic calendar defaults updated successfully.');
     }
@@ -1062,6 +1067,7 @@ final class AdministratorSystemManagementController extends Controller
             'system_school_ending_date' => $generalSettingsService->getGlobalSchoolEndingDate()?->format('Y-m-d'),
             'available_semesters' => $generalSettingsService->getAvailableSemesters(),
             'available_school_years' => $generalSettingsService->getAvailableSchoolYears(),
+            'registrar_reporting' => app(RegistrarReportingSettingsService::class)->get(),
             'public_api_url' => url('/api/v1/public/settings'),
             'public_api_fields' => GeneralSettingsService::publicApiFieldDefinitions(),
             'available_roles' => Role::query()->orderBy('name')->pluck('name')->values(),

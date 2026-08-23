@@ -7,6 +7,7 @@ namespace App\Http\Requests;
 use App\Enums\StudentType;
 use App\Models\Course;
 use App\Models\Department;
+use App\Services\RegistrarReportingSettingsService;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -25,7 +26,7 @@ final class RegistrarAnalyticsFilterRequest extends FormRequest
             'semester' => ['nullable', 'integer', Rule::in([1, 2, 3])],
             'department_id' => ['nullable', 'integer'],
             'course_id' => ['nullable', 'integer'],
-            'academic_year' => ['nullable', 'integer', 'between:1,7'],
+            'academic_year' => ['nullable', 'integer', 'between:1,'.app(RegistrarReportingSettingsService::class)->maximumYearLevel()],
             'gender' => ['nullable', 'string', Rule::in(['male', 'female', 'unspecified'])],
             'student_type' => ['nullable', Rule::enum(StudentType::class)],
             'intake_category' => ['nullable', Rule::in(['new_freshman', 'continuing_first_year', 'unclassified'])],

@@ -49,7 +49,7 @@ final readonly class RegistrarGenderYearLevelSheet implements FromArray, ShouldA
             $unspec = (int) ($data['Unspecified'] ?? 0);
             $total = $male + $female + $unspec;
             $rows[] = [
-                'Year '.($year ?: '?'),
+                $year > 0 ? 'Year '.$year : 'Unclassified or Other Year Level',
                 $male, $female, $unspec, $total,
                 $total > 0 ? round(($male / $total) * 100, 1).'%' : '0%',
                 $total > 0 ? round(($female / $total) * 100, 1).'%' : '0%',

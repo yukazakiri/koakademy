@@ -35,6 +35,7 @@ it('updates global academic calendar defaults', function (): void {
             'semester' => 2,
             'school_starting_date' => '2025-06-01',
             'school_ending_date' => '2026-03-31',
+            'maximum_registrar_year_level' => 4,
         ])
         ->assertRedirect()
         ->assertSessionHas('success');
@@ -44,7 +45,8 @@ it('updates global academic calendar defaults', function (): void {
     expect($settings)->not->toBeNull()
         ->and($settings->semester)->toBe(2)
         ->and($settings->school_starting_date->format('Y-m-d'))->toBe('2025-06-01')
-        ->and($settings->school_ending_date->format('Y-m-d'))->toBe('2026-03-31');
+        ->and($settings->school_ending_date->format('Y-m-d'))->toBe('2026-03-31')
+        ->and(data_get($settings->more_configs, 'registrar_reporting.maximum_year_level'))->toBe(4);
 });
 
 it('validates academic calendar fields', function (): void {
@@ -60,8 +62,9 @@ it('validates academic calendar fields', function (): void {
             'semester' => 3,
             'school_starting_date' => 'invalid-date',
             'school_ending_date' => '2024-01-01',
+            'maximum_registrar_year_level' => 8,
         ])
-        ->assertSessionHasErrors(['semester', 'school_starting_date']);
+        ->assertSessionHasErrors(['semester', 'school_starting_date', 'maximum_registrar_year_level']);
 });
 
 it('validates that ending date is after or equal to starting date', function (): void {

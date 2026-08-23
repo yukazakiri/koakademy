@@ -69,6 +69,7 @@ export default function SystemManagementSchoolPage({
     system_school_starting_date,
     system_school_ending_date,
     available_semesters,
+    registrar_reporting,
 }: SystemManagementPageProps) {
     const [isAddSchoolOpen, setIsAddSchoolOpen] = useState(false);
     const [isEditSchoolOpen, setIsEditSchoolOpen] = useState(false);
@@ -113,6 +114,7 @@ export default function SystemManagementSchoolPage({
         semester: system_semester ?? 1,
         school_starting_date: system_school_starting_date ?? "",
         school_ending_date: system_school_ending_date ?? "",
+        maximum_registrar_year_level: registrar_reporting.maximum_year_level,
     });
 
     useEffect(() => {
@@ -120,8 +122,9 @@ export default function SystemManagementSchoolPage({
             semester: system_semester ?? 1,
             school_starting_date: system_school_starting_date ?? "",
             school_ending_date: system_school_ending_date ?? "",
+            maximum_registrar_year_level: registrar_reporting.maximum_year_level,
         });
-    }, [system_semester, system_school_starting_date, system_school_ending_date]);
+    }, [registrar_reporting.maximum_year_level, system_semester, system_school_starting_date, system_school_ending_date]);
 
     useEffect(() => {
         if (!active_school) {
@@ -554,10 +557,10 @@ export default function SystemManagementSchoolPage({
                                 </div>
                                 <CardTitle className="text-base">Academic Calendar Defaults</CardTitle>
                             </div>
-                            <CardDescription>Configure the system-wide default semester and school year dates.</CardDescription>
+                            <CardDescription>Configure the system-wide default semester, school year dates, and the highest registrar year level shown in reports.</CardDescription>
                         </CardHeader>
                         <CardContent className="p-6">
-                            <div className="grid gap-6 sm:grid-cols-3">
+                            <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
                                 <div className="space-y-2.5">
                                     <Label htmlFor="system_semester" className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
                                         Default Semester
@@ -577,6 +580,21 @@ export default function SystemManagementSchoolPage({
                                             ))}
                                         </SelectContent>
                                     </Select>
+                                </div>
+                                <div className="space-y-2.5">
+                                    <Label htmlFor="maximum_registrar_year_level" className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+                                        Highest Registrar Year Level
+                                    </Label>
+                                    <Input
+                                        id="maximum_registrar_year_level"
+                                        type="number"
+                                        min="2"
+                                        max="7"
+                                        value={academicCalendarForm.data.maximum_registrar_year_level}
+                                        onChange={(event) => academicCalendarForm.setData("maximum_registrar_year_level", Number(event.target.value || 4))}
+                                        className="bg-background"
+                                    />
+                                    <p className="text-muted-foreground text-xs">Reports show Year 1 through this level. The default is Year 4.</p>
                                 </div>
                                 <div className="space-y-2.5">
                                     <Label
@@ -630,7 +648,8 @@ export default function SystemManagementSchoolPage({
                                         (!academicCalendarForm.isDirty &&
                                             academicCalendarForm.data.semester === (system_semester ?? 1) &&
                                             academicCalendarForm.data.school_starting_date === (system_school_starting_date ?? "") &&
-                                            academicCalendarForm.data.school_ending_date === (system_school_ending_date ?? ""))
+                                            academicCalendarForm.data.school_ending_date === (system_school_ending_date ?? "") &&
+                                            academicCalendarForm.data.maximum_registrar_year_level === registrar_reporting.maximum_year_level)
                                     }
                                     className="shadow-sm"
                                 >

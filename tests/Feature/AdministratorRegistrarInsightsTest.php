@@ -95,6 +95,7 @@ it('renders dedicated registrar analytics with aggregate enrollment data', funct
             ->where('quality.missing_course_count', 0)
             ->where('report.values.school_year', '2024 - 2025')
             ->where('report.values.semester', 1)
+            ->where('report.max_year_level', 4)
             ->where('report.context.status_rule', 'Pending enrollment records are excluded unless a specific enrollment status is selected.')
             ->has('analytics.form_bc_matrix')
             ->has('analytics.program_year_matrix')
@@ -245,13 +246,13 @@ it('keeps program and year-level workbook breakdowns aligned with the selected r
         expect($context?->getCell('A1')->getValue())->toBe('REGISTRAR ANALYTICS REPORT CONTEXT')
             ->and($context?->getCell('A4')->getValue())->toBe('Selected reporting population')
             ->and($context?->getCell('B4')->getValue())->toBe(4)
-            ->and($matrix?->getCell('D3')->getValue())->toBe('First Year')
-            ->and($matrix?->getCell('J3')->getValue())->toBe('Seventh Year')
-            ->and($matrix?->getCell('K3')->getValue())->toBe('Unclassified or Other Year Level')
-            ->and($matrix?->getCell('L3')->getValue())->toBe('Total')
+            ->and($matrix?->getCell('D3')->getValue())->toBe('Year 1')
+            ->and($matrix?->getCell('G3')->getValue())->toBe('Year 4')
+            ->and($matrix?->getCell('H3')->getValue())->toBe('Unclassified or Other Year Level')
+            ->and($matrix?->getCell('I3')->getValue())->toBe('Total')
             ->and($formBc?->getCell('D3')->getValue())->toBe('New First-Year Students, Male')
             ->and($formBc?->getCell('K4')->getValue())->toBe(1)
-            ->and($formBc?->getCell('T5')->getValue())->toBe(2)
+            ->and($formBc?->getCell('N5')->getValue())->toBe(2)
             ->and($courseSheet?->getCell('B2')->getValue())->toBe('Program Code')
             ->and($courseSheet?->getCell('B3')->getValue())->toBe('BSIT')
             ->and($courseSheet?->getCell('D3')->getValue())->toBe(3)
@@ -259,7 +260,7 @@ it('keeps program and year-level workbook breakdowns aligned with the selected r
             ->and($genderProgram?->getCell('A3')->getValue())->toBe('Program Code')
             ->and($genderYear?->getCell('F3')->getValue())->toBe('Male Percentage')
             ->and($monthly?->getCell('A2')->getValue())->toBe('Month')
-            ->and((int) $matrix?->getCell('L6')->getValue())->toBe(4)
+            ->and((int) $matrix?->getCell('I6')->getValue())->toBe(4)
             ->and((int) $genderProgram?->getCell('F6')->getValue())->toBe(4)
             ->and((int) $genderYear?->getCell('E8')->getValue())->toBe(4)
             ->and((int) $monthly?->getCell('B3')->getValue())->toBe(4);
@@ -268,8 +269,8 @@ it('keeps program and year-level workbook breakdowns aligned with the selected r
         expect((int) $matrixRows['BSCS']['F'])->toBe(1)
             ->and((int) $matrixRows['BSIT']['D'])->toBe(1)
             ->and((int) $matrixRows['BSIT']['E'])->toBe(1)
-            ->and((int) $matrixRows['BSIT']['K'])->toBe(1)
-            ->and((int) $matrixRows['BSIT']['L'])->toBe(3);
+            ->and((int) $matrixRows['BSIT']['H'])->toBe(1)
+            ->and((int) $matrixRows['BSIT']['I'])->toBe(3);
 
         $pendingReport = app(RegistrarAnalyticsService::class)->build(['status' => 'Pending'], true);
         file_put_contents($path, Excel::raw(new RegistrarAnalyticsExport($pendingReport['analytics'], $pendingReport['report']), Maatwebsite\Excel\Excel::XLSX));
@@ -281,9 +282,30 @@ it('keeps program and year-level workbook breakdowns aligned with the selected r
         expect($pendingReport['analytics']['current_semester_count'])->toBe(1)
             ->and($pendingContext?->getCell('B4')->getValue())->toBe(1)
             ->and($pendingMatrix?->getCell('D4')->getValue())->toBe(1)
-            ->and($pendingMatrix?->getCell('L5')->getValue())->toBe(1)
+            ->and($pendingMatrix?->getCell('I5')->getValue())->toBe(1)
             ->and($pendingFormBc?->getCell('D4')->getValue())->toBe(1)
-            ->and($pendingFormBc?->getCell('T4')->getValue())->toBe(1);
+            ->and($pendingFormBc?->getCell('N4')->getValue())->toBe(1);
+
+        $settings = GeneralSetting::query()->firstOrFail();
+        $moreConfigs = $settings->more_configs;
+        $moreConfigs['registrar_reporting'] = ['maximum_year_level' => 6];
+        $settings->update(['more_configs' => $moreConfigs]);
+        $enroll($bsit, 'Male', 5);
+
+        $expandedReport = app(RegistrarAnalyticsService::class)->build();
+        $expandedProgram = collect($expandedReport['analytics']['program_year_matrix'])->firstWhere('program_code', 'BSIT');
+        $expandedFormBc = collect($expandedReport['analytics']['form_bc_matrix'])->firstWhere('program_code', 'BSIT');
+
+        expect($expandedReport['report']['max_year_level'])->toBe(6)
+            ->and($expandedReport['report']['options']['year_levels'])->toHaveCount(6)
+            ->and((int) $expandedProgram->year_5)->toBe(1)
+            ->and((int) $expandedFormBc->year_5_male)->toBe(1);
+
+        file_put_contents($path, Excel::raw(new RegistrarAnalyticsExport($expandedReport['analytics'], $expandedReport['report']), Maatwebsite\Excel\Excel::XLSX));
+        $expandedWorkbook = IOFactory::load($path);
+
+        expect($expandedWorkbook->getSheetByName('Program by Year Level')?->getCell('I3')->getValue())->toBe('Year 6')
+            ->and($expandedWorkbook->getSheetByName('Form B-C Control Total')?->getCell('P3')->getValue())->toBe('Year 6 Students, Male');
     } finally {
         @unlink($path);
     }

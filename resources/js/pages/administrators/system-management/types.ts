@@ -165,6 +165,10 @@ export interface TuitionPaymentScheduleSettings {
     profiles: Record<"college" | "shs" | "tesda" | "dhrt", TuitionPaymentScheduleProfile>;
 }
 
+export interface RegistrarReportingSettings {
+    maximum_year_level: number;
+}
+
 export type EnrollmentPipelineActionType = "standard" | "department_verification" | "cashier_verification";
 export type EnrollmentPipelineStepAction = "advance_status" | "department_verification" | "cashier_verification";
 
@@ -397,5 +401,6 @@ export interface SystemManagementPageProps {
     system_school_ending_date?: string | null;
     available_semesters?: Record<number, string>;
     available_school_years?: Record<number, string>;
+    registrar_reporting: RegistrarReportingSettings;
     [key: string]: unknown;
 }

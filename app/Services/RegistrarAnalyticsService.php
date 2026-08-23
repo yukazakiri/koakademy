@@ -402,7 +402,7 @@ final class RegistrarAnalyticsService
 
     private function details(Builder $query): mixed
     {
-        return (clone $query)->selectRaw('students.student_id as student_reference, students.first_name, students.last_name, students.middle_name, students.suffix, TRIM(students.gender) as gender, students.student_type, courses.code as course_code, courses.title as course_title, TRIM(departments.code) as department, student_enrollment.academic_year as year_level, student_enrollment.intake_category, student_enrollment.status, student_enrollment.created_at')->orderBy('departments.code')->orderBy('students.last_name')->get();
+        return (clone $query)->selectRaw("students.student_id as student_reference, students.first_name, students.last_name, students.middle_name, students.suffix, TRIM(students.gender) as gender, students.student_type, NULLIF(TRIM(students.religion), '') as religion, NULLIF(TRIM(students.region_of_origin), '') as region_of_origin, NULLIF(TRIM(students.province_of_origin), '') as province_of_origin, NULLIF(TRIM(students.city_of_origin), '') as city_of_origin, courses.code as course_code, courses.title as course_title, TRIM(departments.code) as department, student_enrollment.academic_year as year_level, student_enrollment.intake_category, student_enrollment.status, student_enrollment.created_at")->orderBy('departments.code')->orderBy('students.last_name')->get();
     }
 
     private function quality(Builder $query): array

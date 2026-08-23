@@ -40,6 +40,10 @@ final readonly class RegistrarEnrollmentDetailSheet implements FromArray, Should
                 $name ?: 'Unnamed Student',
                 $item['gender'] ?? '',
                 $item['student_type'] ?? '',
+                $item['religion'] ?? '',
+                $item['region_of_origin'] ?? '',
+                $item['province_of_origin'] ?? '',
+                $item['city_of_origin'] ?? '',
                 $item['department'] ?? 'Unassigned',
                 $item['course_code'] ?? '',
                 $item['course_title'] ?? '',
@@ -56,6 +60,7 @@ final readonly class RegistrarEnrollmentDetailSheet implements FromArray, Should
     {
         return [
             'Student ID', 'Student Name', 'Gender', 'Student Type',
+            'Religion', 'Region of Origin', 'Province of Origin', 'City/Municipality of Origin',
             'Department', 'Course Code', 'Course Title', 'Year Level',
             'Status', 'Enrolled At',
         ];
@@ -71,10 +76,10 @@ final readonly class RegistrarEnrollmentDetailSheet implements FromArray, Should
         return [AfterSheet::class => function (AfterSheet $event): void {
             $sheet = $event->sheet;
             $sheet->insertNewRowBefore(1, 2);
-            $sheet->mergeCells('A1:J1');
+            $sheet->mergeCells('A1:N1');
             $sheet->setCellValue('A1', 'DETAILED ENROLLMENT ROSTER');
-            $sheet->mergeCells('A2:J2');
-            $sheet->setCellValue('A2', 'Individual student enrollment records for '.($this->report['label'] ?? 'the selected reporting period').' — use as the source reference for all breakdown sheets.');
+            $sheet->mergeCells('A2:N2');
+            $sheet->setCellValue('A2', 'Restricted student-level enrollment data for '.($this->report['label'] ?? 'the selected reporting period').', including religion and recorded origin details.');
             $sheet->getStyle('A1')->getFont()->setSize(14)->setBold(true);
             $sheet->getStyle('A1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
             $sheet->getStyle('A2')->getFont()->setSize(10)->setItalic(true);

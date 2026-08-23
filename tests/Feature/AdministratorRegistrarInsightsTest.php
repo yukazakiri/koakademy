@@ -212,6 +212,12 @@ it('exports registrar analytics as an excel workbook', function (): void {
 
 it('exports default program and year-level workbook breakdowns', function (): void {
     ['bsit' => $bsit] = registrarWorkbookFixture();
+    Student::query()->where('course_id', $bsit->id)->orderBy('id')->firstOrFail()->update([
+        'religion' => 'Roman Catholic',
+        'region_of_origin' => 'National Capital Region',
+        'province_of_origin' => 'Metro Manila',
+        'city_of_origin' => 'Manila',
+    ]);
 
     $report = app(RegistrarAnalyticsService::class)->build([], true);
     expect($report['analytics']['current_semester_count'])->toBe(4)
@@ -246,6 +252,7 @@ it('exports default program and year-level workbook breakdowns', function (): vo
         $context = $workbook->getSheetByName('Report Context');
         $formBc = $workbook->getSheetByName('Form B-C Control Total');
         $matrix = $workbook->getSheetByName('Program by Year Level');
+        $details = $workbook->getSheetByName('Enrollment Details');
         $courseSheet = $workbook->getSheetByName('Enrollment by Program');
         $genderProgram = $workbook->getSheetByName('Gender by Program');
         $genderYear = $workbook->getSheetByName('Gender by Year');
@@ -261,6 +268,10 @@ it('exports default program and year-level workbook breakdowns', function (): vo
             ->and($formBc?->getCell('D3')->getValue())->toBe('New First-Year Students, Male')
             ->and($formBc?->getCell('K4')->getValue())->toBe(1)
             ->and($formBc?->getCell('N5')->getValue())->toBe(2)
+            ->and($details?->getCell('E3')->getValue())->toBe('Religion')
+            ->and($details?->getCell('F3')->getValue())->toBe('Region of Origin')
+            ->and($details?->getCell('G3')->getValue())->toBe('Province of Origin')
+            ->and($details?->getCell('H3')->getValue())->toBe('City/Municipality of Origin')
             ->and($courseSheet?->getCell('B2')->getValue())->toBe('Program Code')
             ->and($courseSheet?->getCell('B3')->getValue())->toBe('BSIT')
             ->and($courseSheet?->getCell('D3')->getValue())->toBe(3)
@@ -279,6 +290,12 @@ it('exports default program and year-level workbook breakdowns', function (): vo
             ->and((int) $matrixRows['BSIT']['E'])->toBe(1)
             ->and((int) $matrixRows['BSIT']['H'])->toBe(1)
             ->and((int) $matrixRows['BSIT']['I'])->toBe(3);
+
+        $detailRows = collect($details?->toArray(null, true, true, true) ?? []);
+        expect($detailRows->contains(fn (array $row): bool => ($row['E'] ?? null) === 'Roman Catholic'
+            && ($row['F'] ?? null) === 'National Capital Region'
+            && ($row['G'] ?? null) === 'Metro Manila'
+            && ($row['H'] ?? null) === 'Manila'))->toBeTrue();
 
     } finally {
         @unlink($path);

@@ -59,6 +59,38 @@ beforeEach(function (): void {
     ]);
 });
 
+/** @return array{bsit: Course, enroll: Closure(Course, string, int, string): void} */
+function registrarWorkbookFixture(): array
+{
+    $department = Department::factory()->create(['code' => 'IT']);
+    $bsit = Course::factory()->create(['code' => 'BSIT', 'title' => 'Bachelor of Science in Information Technology', 'department_id' => $department->id, 'school_id' => $department->school_id]);
+    $bscs = Course::factory()->create(['code' => 'BSCS', 'title' => 'Bachelor of Science in Computer Science', 'department_id' => $department->id, 'school_id' => $department->school_id]);
+
+    $enroll = function (Course $course, string $gender, int $year, string $status = 'Enrolled') use ($department): void {
+        $student = Student::factory()->create(['course_id' => $course->id, 'gender' => $gender, 'school_id' => $department->school_id]);
+        StudentEnrollment::factory()->create([
+            'student_id' => $student->id,
+            'course_id' => $course->id,
+            'school_year' => '2024 - 2025',
+            'semester' => 1,
+            'academic_year' => $year,
+            'intake_category' => $year === 1 ? 'new_freshman' : null,
+            'status' => $status,
+            'school_id' => $department->school_id,
+            'created_at' => '2024-08-15 12:00:00',
+            'updated_at' => '2024-08-15 12:00:00',
+        ]);
+    };
+
+    $enroll($bsit, 'Male', 1);
+    $enroll($bsit, 'Female', 2);
+    $enroll($bsit, 'Female', 8);
+    $enroll($bscs, 'Female', 3);
+    $enroll($bscs, 'Male', 1, 'Pending');
+
+    return compact('bsit', 'enroll');
+}
+
 it('renders dedicated registrar analytics with aggregate enrollment data', function (): void {
     $user = User::factory()->create(['role' => UserRole::Registrar]);
     $user->givePermissionTo('ViewAny:StudentEnrollment');
@@ -178,32 +210,8 @@ it('exports registrar analytics as an excel workbook', function (): void {
         ->assertHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 });
 
-it('keeps program and year-level workbook breakdowns aligned with the selected reporting population', function (): void {
-    $department = Department::factory()->create(['code' => 'IT']);
-    $bsit = Course::factory()->create(['code' => 'BSIT', 'title' => 'Bachelor of Science in Information Technology', 'department_id' => $department->id, 'school_id' => $department->school_id]);
-    $bscs = Course::factory()->create(['code' => 'BSCS', 'title' => 'Bachelor of Science in Computer Science', 'department_id' => $department->id, 'school_id' => $department->school_id]);
-
-    $enroll = function (Course $course, string $gender, int $year, string $status = 'Enrolled') use ($department): void {
-        $student = Student::factory()->create(['course_id' => $course->id, 'gender' => $gender, 'school_id' => $department->school_id]);
-        StudentEnrollment::factory()->create([
-            'student_id' => $student->id,
-            'course_id' => $course->id,
-            'school_year' => '2024 - 2025',
-            'semester' => 1,
-            'academic_year' => $year,
-            'intake_category' => $year === 1 ? 'new_freshman' : null,
-            'status' => $status,
-            'school_id' => $department->school_id,
-            'created_at' => '2024-08-15 12:00:00',
-            'updated_at' => '2024-08-15 12:00:00',
-        ]);
-    };
-
-    $enroll($bsit, 'Male', 1);
-    $enroll($bsit, 'Female', 2);
-    $enroll($bsit, 'Female', 8);
-    $enroll($bscs, 'Female', 3);
-    $enroll($bscs, 'Male', 1, 'Pending');
+it('exports default program and year-level workbook breakdowns', function (): void {
+    ['bsit' => $bsit] = registrarWorkbookFixture();
 
     $report = app(RegistrarAnalyticsService::class)->build([], true);
     expect($report['analytics']['current_semester_count'])->toBe(4)
@@ -272,40 +280,58 @@ it('keeps program and year-level workbook breakdowns aligned with the selected r
             ->and((int) $matrixRows['BSIT']['H'])->toBe(1)
             ->and((int) $matrixRows['BSIT']['I'])->toBe(3);
 
-        $pendingReport = app(RegistrarAnalyticsService::class)->build(['status' => 'Pending'], true);
-        file_put_contents($path, Excel::raw(new RegistrarAnalyticsExport($pendingReport['analytics'], $pendingReport['report']), Maatwebsite\Excel\Excel::XLSX));
-        $pendingWorkbook = IOFactory::load($path);
-        $pendingContext = $pendingWorkbook->getSheetByName('Report Context');
-        $pendingMatrix = $pendingWorkbook->getSheetByName('Program by Year Level');
-        $pendingFormBc = $pendingWorkbook->getSheetByName('Form B-C Control Total');
+    } finally {
+        @unlink($path);
+    }
+});
 
-        expect($pendingReport['analytics']['current_semester_count'])->toBe(1)
-            ->and($pendingContext?->getCell('B4')->getValue())->toBe(1)
-            ->and($pendingMatrix?->getCell('D4')->getValue())->toBe(1)
-            ->and($pendingMatrix?->getCell('I5')->getValue())->toBe(1)
-            ->and($pendingFormBc?->getCell('D4')->getValue())->toBe(1)
-            ->and($pendingFormBc?->getCell('N4')->getValue())->toBe(1);
+it('exports Pending status workbook breakdowns from the selected reporting population', function (): void {
+    registrarWorkbookFixture();
 
-        $settings = GeneralSetting::query()->firstOrFail();
-        $moreConfigs = $settings->more_configs;
-        $moreConfigs['registrar_reporting'] = ['maximum_year_level' => 6];
-        $settings->update(['more_configs' => $moreConfigs]);
-        $enroll($bsit, 'Male', 5);
+    $report = app(RegistrarAnalyticsService::class)->build(['status' => 'Pending'], true);
+    $path = tempnam(sys_get_temp_dir(), 'registrar-analytics-');
+    expect($path)->not->toBeFalse();
 
-        $expandedReport = app(RegistrarAnalyticsService::class)->build();
-        $expandedProgram = collect($expandedReport['analytics']['program_year_matrix'])->firstWhere('program_code', 'BSIT');
-        $expandedFormBc = collect($expandedReport['analytics']['form_bc_matrix'])->firstWhere('program_code', 'BSIT');
+    try {
+        file_put_contents($path, Excel::raw(new RegistrarAnalyticsExport($report['analytics'], $report['report']), Maatwebsite\Excel\Excel::XLSX));
+        $workbook = IOFactory::load($path);
 
-        expect($expandedReport['report']['max_year_level'])->toBe(6)
-            ->and($expandedReport['report']['options']['year_levels'])->toHaveCount(6)
-            ->and((int) $expandedProgram->year_5)->toBe(1)
-            ->and((int) $expandedFormBc->year_5_male)->toBe(1);
+        expect($report['analytics']['current_semester_count'])->toBe(1)
+            ->and($workbook->getSheetByName('Report Context')?->getCell('B4')->getValue())->toBe(1)
+            ->and($workbook->getSheetByName('Program by Year Level')?->getCell('D4')->getValue())->toBe(1)
+            ->and($workbook->getSheetByName('Program by Year Level')?->getCell('I5')->getValue())->toBe(1)
+            ->and($workbook->getSheetByName('Form B-C Control Total')?->getCell('D4')->getValue())->toBe(1)
+            ->and($workbook->getSheetByName('Form B-C Control Total')?->getCell('N4')->getValue())->toBe(1);
+    } finally {
+        @unlink($path);
+    }
+});
 
-        file_put_contents($path, Excel::raw(new RegistrarAnalyticsExport($expandedReport['analytics'], $expandedReport['report']), Maatwebsite\Excel\Excel::XLSX));
-        $expandedWorkbook = IOFactory::load($path);
+it('expands workbook year-level columns when the global reporting setting is increased', function (): void {
+    ['bsit' => $bsit, 'enroll' => $enroll] = registrarWorkbookFixture();
 
-        expect($expandedWorkbook->getSheetByName('Program by Year Level')?->getCell('I3')->getValue())->toBe('Year 6')
-            ->and($expandedWorkbook->getSheetByName('Form B-C Control Total')?->getCell('P3')->getValue())->toBe('Year 6 Students, Male');
+    $settings = GeneralSetting::query()->firstOrFail();
+    $moreConfigs = $settings->more_configs;
+    $moreConfigs['registrar_reporting'] = ['maximum_year_level' => 6];
+    $settings->update(['more_configs' => $moreConfigs]);
+    $enroll($bsit, 'Male', 5);
+
+    $report = app(RegistrarAnalyticsService::class)->build();
+    $program = collect($report['analytics']['program_year_matrix'])->firstWhere('program_code', 'BSIT');
+    $formBc = collect($report['analytics']['form_bc_matrix'])->firstWhere('program_code', 'BSIT');
+    $path = tempnam(sys_get_temp_dir(), 'registrar-analytics-');
+    expect($path)->not->toBeFalse();
+
+    try {
+        file_put_contents($path, Excel::raw(new RegistrarAnalyticsExport($report['analytics'], $report['report']), Maatwebsite\Excel\Excel::XLSX));
+        $workbook = IOFactory::load($path);
+
+        expect($report['report']['max_year_level'])->toBe(6)
+            ->and($report['report']['options']['year_levels'])->toHaveCount(6)
+            ->and((int) $program->year_5)->toBe(1)
+            ->and((int) $formBc->year_5_male)->toBe(1)
+            ->and($workbook->getSheetByName('Program by Year Level')?->getCell('I3')->getValue())->toBe('Year 6')
+            ->and($workbook->getSheetByName('Form B-C Control Total')?->getCell('P3')->getValue())->toBe('Year 6 Students, Male');
     } finally {
         @unlink($path);
     }

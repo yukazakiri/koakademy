@@ -933,7 +933,7 @@ final class AdministratorSystemManagementController extends Controller
 
         $generalSettingsService = app(GeneralSettingsService::class);
         $generalSettingsService->updateGlobalAcademicCalendar($validated);
-        if (array_key_exists('maximum_registrar_year_level', $validated)) {
+        if (($validated['maximum_registrar_year_level'] ?? null) !== null) {
             $registrarReportingSettings->updateMaximumYearLevel((int) $validated['maximum_registrar_year_level']);
         }
 

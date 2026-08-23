@@ -11,11 +11,11 @@ final readonly class RegistrarAnalyticsExport implements Export, WithMultipleShe
 {
     /**
      * @param  array<string, mixed>  $analytics
-     * @param  array<string, mixed>  $filters
+     * @param  array<string, mixed>  $report
      */
     public function __construct(
         private array $analytics,
-        private array $filters,
+        private array $report,
     ) {}
 
     /**
@@ -24,11 +24,11 @@ final readonly class RegistrarAnalyticsExport implements Export, WithMultipleShe
     public function sheets(): array
     {
         return [
-            new Sheets\RegistrarReportContextSheet($this->analytics, $this->filters),
-            new Sheets\RegistrarFormBcSheet($this->analytics, $this->filters),
-            new Sheets\RegistrarSummarySheet($this->analytics, $this->filters),
-            new Sheets\RegistrarProgramYearLevelSheet($this->analytics, $this->filters),
-            new Sheets\RegistrarEnrollmentDetailSheet($this->analytics, $this->filters),
+            new Sheets\RegistrarReportContextSheet($this->analytics, $this->report),
+            new Sheets\RegistrarFormBcSheet($this->analytics, $this->report),
+            new Sheets\RegistrarSummarySheet($this->analytics, $this->report),
+            new Sheets\RegistrarProgramYearLevelSheet($this->analytics, $this->report),
+            new Sheets\RegistrarEnrollmentDetailSheet($this->analytics, $this->report),
             new Sheets\RegistrarStatusSheet($this->analytics),
             new Sheets\RegistrarDepartmentSheet($this->analytics),
             new Sheets\RegistrarYearLevelSheet($this->analytics),

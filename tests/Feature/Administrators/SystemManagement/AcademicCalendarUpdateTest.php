@@ -49,6 +49,30 @@ it('updates global academic calendar defaults', function (): void {
         ->and(data_get($settings->more_configs, 'registrar_reporting.maximum_year_level'))->toBe(4);
 });
 
+it('preserves the registrar year-level setting when the optional field is empty', function (): void {
+    $admin = User::factory()->create([
+        'role' => UserRole::Admin,
+        'school_id' => null,
+    ]);
+    grantAcademicCalendarPermission($admin);
+    School::factory()->create();
+    GeneralSetting::factory()->create([
+        'more_configs' => ['registrar_reporting' => ['maximum_year_level' => 6]],
+    ]);
+
+    actingAs($admin)
+        ->put(route('administrators.system-management.academic-calendar.update'), [
+            'semester' => 2,
+            'school_starting_date' => '2025-06-01',
+            'school_ending_date' => '2026-03-31',
+            'maximum_registrar_year_level' => null,
+        ])
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    expect(data_get(GeneralSetting::query()->firstOrFail()->more_configs, 'registrar_reporting.maximum_year_level'))->toBe(6);
+});
+
 it('validates academic calendar fields', function (): void {
     $admin = User::factory()->create([
         'role' => UserRole::Admin,

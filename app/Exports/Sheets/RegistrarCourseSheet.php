@@ -31,6 +31,7 @@ final readonly class RegistrarCourseSheet implements FromArray, ShouldAutoSize, 
     {
         $items = $this->normalize($this->analytics['program_year_matrix'] ?? []);
         $total = array_sum(array_map(fn (array $item): int => (int) ($item['total'] ?? 0), $items));
+        usort($items, fn (array $left, array $right): int => ((int) ($right['total'] ?? $right['count'] ?? 0)) <=> ((int) ($left['total'] ?? $left['count'] ?? 0)));
         $rows = [];
         $rank = 1;
         foreach ($items as $item) {

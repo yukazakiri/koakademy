@@ -270,6 +270,7 @@ final class RegistrarAnalyticsService
         foreach (range(1, 7) as $year) {
             $selects[] = "SUM(CASE WHEN student_enrollment.academic_year = {$year} THEN 1 ELSE 0 END) as year_{$year}";
         }
+        $selects[] = 'SUM(CASE WHEN student_enrollment.academic_year IS NULL OR student_enrollment.academic_year NOT BETWEEN 1 AND 7 THEN 1 ELSE 0 END) as unclassified_year_level';
         $selects[] = 'count(*) as total';
 
         return (clone $query)

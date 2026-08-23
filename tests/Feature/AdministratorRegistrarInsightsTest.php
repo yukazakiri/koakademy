@@ -200,11 +200,12 @@ it('keeps program and year-level workbook breakdowns aligned with the selected r
 
     $enroll($bsit, 'Male', 1);
     $enroll($bsit, 'Female', 2);
+    $enroll($bsit, 'Female', 8);
     $enroll($bscs, 'Female', 3);
     $enroll($bscs, 'Male', 1, 'Pending');
 
     $report = app(RegistrarAnalyticsService::class)->build([], true);
-    expect($report['analytics']['current_semester_count'])->toBe(3)
+    expect($report['analytics']['current_semester_count'])->toBe(4)
         ->and($report['analytics']['program_year_matrix'])->toHaveCount(2);
 
     $path = tempnam(sys_get_temp_dir(), 'registrar-analytics-');
@@ -243,28 +244,32 @@ it('keeps program and year-level workbook breakdowns aligned with the selected r
 
         expect($context?->getCell('A1')->getValue())->toBe('REGISTRAR ANALYTICS REPORT CONTEXT')
             ->and($context?->getCell('A4')->getValue())->toBe('Selected reporting population')
-            ->and($context?->getCell('B4')->getValue())->toBe(3)
+            ->and($context?->getCell('B4')->getValue())->toBe(4)
             ->and($matrix?->getCell('D3')->getValue())->toBe('First Year')
             ->and($matrix?->getCell('J3')->getValue())->toBe('Seventh Year')
-            ->and($matrix?->getCell('K3')->getValue())->toBe('Total')
+            ->and($matrix?->getCell('K3')->getValue())->toBe('Unclassified or Other Year Level')
+            ->and($matrix?->getCell('L3')->getValue())->toBe('Total')
             ->and($formBc?->getCell('D3')->getValue())->toBe('New First-Year Students, Male')
             ->and($formBc?->getCell('K4')->getValue())->toBe(1)
             ->and($formBc?->getCell('T5')->getValue())->toBe(2)
             ->and($courseSheet?->getCell('B2')->getValue())->toBe('Program Code')
-            ->and($courseSheet?->getCell('D4')->getValue())->toBe(2)
+            ->and($courseSheet?->getCell('B3')->getValue())->toBe('BSIT')
+            ->and($courseSheet?->getCell('D3')->getValue())->toBe(3)
+            ->and($courseSheet?->getCell('D4')->getValue())->toBe(1)
             ->and($genderProgram?->getCell('A3')->getValue())->toBe('Program Code')
             ->and($genderYear?->getCell('F3')->getValue())->toBe('Male Percentage')
             ->and($monthly?->getCell('A2')->getValue())->toBe('Month')
-            ->and((int) $matrix?->getCell('K6')->getValue())->toBe(3)
-            ->and((int) $genderProgram?->getCell('F6')->getValue())->toBe(3)
-            ->and((int) $genderYear?->getCell('E7')->getValue())->toBe(3)
-            ->and((int) $monthly?->getCell('B3')->getValue())->toBe(3);
+            ->and((int) $matrix?->getCell('L6')->getValue())->toBe(4)
+            ->and((int) $genderProgram?->getCell('F6')->getValue())->toBe(4)
+            ->and((int) $genderYear?->getCell('E8')->getValue())->toBe(4)
+            ->and((int) $monthly?->getCell('B3')->getValue())->toBe(4);
 
         $matrixRows = collect($matrix?->toArray(null, true, true, true) ?? [])->slice(3, 2)->keyBy('B');
         expect((int) $matrixRows['BSCS']['F'])->toBe(1)
             ->and((int) $matrixRows['BSIT']['D'])->toBe(1)
             ->and((int) $matrixRows['BSIT']['E'])->toBe(1)
-            ->and((int) $matrixRows['BSIT']['K'])->toBe(2);
+            ->and((int) $matrixRows['BSIT']['K'])->toBe(1)
+            ->and((int) $matrixRows['BSIT']['L'])->toBe(3);
 
         $pendingReport = app(RegistrarAnalyticsService::class)->build(['status' => 'Pending'], true);
         file_put_contents($path, Excel::raw(new RegistrarAnalyticsExport($pendingReport['analytics'], $pendingReport['report']), Maatwebsite\Excel\Excel::XLSX));
@@ -276,7 +281,7 @@ it('keeps program and year-level workbook breakdowns aligned with the selected r
         expect($pendingReport['analytics']['current_semester_count'])->toBe(1)
             ->and($pendingContext?->getCell('B4')->getValue())->toBe(1)
             ->and($pendingMatrix?->getCell('D4')->getValue())->toBe(1)
-            ->and($pendingMatrix?->getCell('K5')->getValue())->toBe(1)
+            ->and($pendingMatrix?->getCell('L5')->getValue())->toBe(1)
             ->and($pendingFormBc?->getCell('D4')->getValue())->toBe(1)
             ->and($pendingFormBc?->getCell('T4')->getValue())->toBe(1);
     } finally {

@@ -324,6 +324,33 @@ it('exports Pending status workbook breakdowns from the selected reporting popul
     }
 });
 
+it('normalizes mixed-case and whitespace-padded genders in registrar aggregates', function (): void {
+    $department = Department::factory()->create(['code' => 'IT']);
+    $course = Course::factory()->create(['code' => 'BSIT', 'department_id' => $department->id, 'school_id' => $department->school_id]);
+
+    foreach (['Male', ' male ', 'FEMALE', ' female ', ''] as $gender) {
+        $student = Student::factory()->create(['course_id' => $course->id, 'gender' => $gender, 'school_id' => $department->school_id]);
+        StudentEnrollment::factory()->create([
+            'student_id' => $student->id,
+            'course_id' => $course->id,
+            'school_year' => '2024 - 2025',
+            'semester' => 1,
+            'academic_year' => 2,
+            'status' => 'Enrolled',
+            'school_id' => $department->school_id,
+        ]);
+    }
+
+    $report = app(RegistrarAnalyticsService::class)->build();
+    $programRows = collect($report['analytics']['gender_by_program'])->where('program_code', 'BSIT')->values();
+    $yearRows = collect($report['analytics']['gender_by_year_level'])->where('year_level', 2)->values();
+
+    expect($programRows->pluck('gender')->all())->toBe(['female', 'male', 'unspecified'])
+        ->and($programRows->pluck('count', 'gender')->map(fn ($count): int => (int) $count)->all())->toBe(['female' => 2, 'male' => 2, 'unspecified' => 1])
+        ->and($yearRows->pluck('gender')->all())->toBe(['female', 'male', 'unspecified'])
+        ->and($yearRows->pluck('count', 'gender')->map(fn ($count): int => (int) $count)->all())->toBe(['female' => 2, 'male' => 2, 'unspecified' => 1]);
+});
+
 it('expands workbook year-level columns when the global reporting setting is increased', function (): void {
     ['bsit' => $bsit, 'enroll' => $enroll] = registrarWorkbookFixture();
 

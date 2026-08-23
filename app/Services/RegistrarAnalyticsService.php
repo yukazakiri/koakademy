@@ -298,23 +298,26 @@ final class RegistrarAnalyticsService
 
     private function genderByProgram(Builder $query): mixed
     {
+        $gender = "COALESCE(NULLIF(LOWER(TRIM(students.gender)), ''), 'unspecified')";
+
         return (clone $query)
-            ->selectRaw("COALESCE(NULLIF(TRIM(courses.code), ''), 'Unassigned') as program_code, COALESCE(courses.title, 'Unassigned program') as program_title, COALESCE(NULLIF(LOWER(TRIM(students.gender)), ''), 'unspecified') as gender, count(*) as count")
-            ->groupBy('courses.code', 'courses.title', 'students.gender')
+            ->selectRaw("COALESCE(NULLIF(TRIM(courses.code), ''), 'Unassigned') as program_code, COALESCE(courses.title, 'Unassigned program') as program_title, {$gender} as gender, count(*) as count")
+            ->groupByRaw("courses.code, courses.title, {$gender}")
             ->orderBy('courses.code')
-            ->orderBy('students.gender')
+            ->orderByRaw($gender)
             ->get();
     }
 
     private function genderByYearLevel(Builder $query, int $maximumYearLevel): mixed
     {
         $yearLevel = "CASE WHEN student_enrollment.academic_year BETWEEN 1 AND {$maximumYearLevel} THEN student_enrollment.academic_year ELSE 0 END";
+        $gender = "COALESCE(NULLIF(LOWER(TRIM(students.gender)), ''), 'unspecified')";
 
         return (clone $query)
-            ->selectRaw("{$yearLevel} as year_level, COALESCE(NULLIF(LOWER(TRIM(students.gender)), ''), 'unspecified') as gender, count(*) as count")
-            ->groupByRaw("{$yearLevel}, students.gender")
-            ->orderBy('year_level')
-            ->orderBy('students.gender')
+            ->selectRaw("{$yearLevel} as year_level, {$gender} as gender, count(*) as count")
+            ->groupByRaw("{$yearLevel}, {$gender}")
+            ->orderByRaw($yearLevel)
+            ->orderByRaw($gender)
             ->get();
     }
 

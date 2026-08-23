@@ -46,6 +46,7 @@ final class AdministratorRegistrarInsightsController extends Controller
         }
 
         Gate::authorize('viewAny', StudentEnrollment::class);
+        Gate::authorize('exportDetailed', StudentEnrollment::class);
 
         $data = $this->analyticsService->build($request->filters(), includeDetails: true);
 

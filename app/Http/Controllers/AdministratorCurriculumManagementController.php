@@ -13,6 +13,7 @@ use App\Models\Course;
 use App\Models\Department;
 use App\Models\Subject;
 use App\Models\User;
+use App\Support\ChedProgramRules;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -112,6 +113,7 @@ final class AdministratorCurriculumManagementController extends Controller
             ]),
             'versions' => $versions,
             'course_types' => \App\Models\CourseType::query()->select(['id', 'name'])->orderBy('name')->get(),
+            'ched_options' => ChedProgramRules::options(),
         ]);
     }
 

@@ -21,6 +21,11 @@ final class StudentEnrollmentPolicy
         return $authUser->can('View:StudentEnrollment');
     }
 
+    public function exportDetailed(AuthUser $authUser): bool
+    {
+        return $this->view($authUser);
+    }
+
     public function create(AuthUser $authUser): bool
     {
         return $authUser->can('Create:StudentEnrollment');

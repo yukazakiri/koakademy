@@ -406,6 +406,7 @@ final class StudentEnrollmentForm
                         'continuing_first_year' => 'Continuing first-year',
                     ])
                     ->visible(fn (Get $get): bool => (int) $get('academic_year') === 1)
+                    ->dehydratedWhenHidden(true)
                     ->helperText('Leave historical or unverified records blank. They will be surfaced as unclassified in Form B/C reporting.'),
 
                 // Student Info Tab (conditionally visible)

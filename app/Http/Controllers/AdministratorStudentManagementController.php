@@ -1923,23 +1923,26 @@ final class AdministratorStudentManagementController extends Controller
         $currentSchoolYear = $generalSettingsService->getCurrentSchoolYearString();
         $currentSemester = $generalSettingsService->getCurrentSemester();
 
-        StudentStatusRecord::updateOrCreate(
-            [
-                'student_id' => $student->id,
-                'academic_year' => $currentSchoolYear,
-                'semester' => $currentSemester,
-            ],
-            [
-                'status' => $validated['status'],
-            ]
-        );
-
         $studentUpdate = ['status' => $validated['status']];
         if ($validated['status'] === StudentStatus::Graduated->value) {
             $studentUpdate['graduation_school_year'] = $validated['graduation_school_year'] ?? null;
             $studentUpdate['graduation_semester'] = $validated['graduation_semester'] ?? null;
         }
-        $student->update($studentUpdate);
+
+        DB::transaction(function () use ($student, $currentSchoolYear, $currentSemester, $validated, $studentUpdate): void {
+            StudentStatusRecord::updateOrCreate(
+                [
+                    'student_id' => $student->id,
+                    'academic_year' => $currentSchoolYear,
+                    'semester' => $currentSemester,
+                ],
+                [
+                    'status' => $validated['status'],
+                ]
+            );
+
+            $student->update($studentUpdate);
+        });
 
         return back()->with('success', 'Student status updated successfully.');
     }

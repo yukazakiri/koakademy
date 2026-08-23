@@ -6,7 +6,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } f
 import { exportMethod, index as analyticsRoute } from "@/routes/administrators/registrar/analytics";
 import { Head, router } from "@inertiajs/react";
 import { AlertTriangle, FileSpreadsheet, Filter, RefreshCw, RotateCcw, Users } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, XAxis, YAxis } from "recharts";
 
 type Item = Record<string, string | number | null | undefined> & { count?: number };
@@ -57,6 +57,7 @@ function PieView({ data }: { data: { name: string; count: number }[] }) {
 
 export default function RegistrarAnalytics({ user, analytics, quality, report, generatedAt }: Props) {
     const [values, setValues] = useState<FilterValues>(report.values);
+    useEffect(() => setValues(report.values), [report.values]);
     const date = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(generatedAt));
     const chartData = (items: Item[], key: string) => items.map((item) => ({ name: label(item[key]), count: Number(item.count ?? 0) })).sort((a, b) => b.count - a.count);
     const periodTotal = analytics.current_semester_count ?? 0;

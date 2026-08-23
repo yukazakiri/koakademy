@@ -19,6 +19,10 @@ beforeEach(function (): void {
         'name' => 'ViewAny:StudentEnrollment',
         'guard_name' => 'web',
     ]);
+    Permission::firstOrCreate([
+        'name' => 'View:StudentEnrollment',
+        'guard_name' => 'web',
+    ]);
 
     GeneralSetting::factory()->create([
         'school_starting_date' => '2024-08-01',
@@ -134,11 +138,13 @@ it('exports registrar analytics as an excel workbook', function (): void {
     $course = Course::factory()->create([
         'code' => 'BSIT',
         'department_id' => $department->id,
+        'school_id' => $department->school_id,
     ]);
     $student = Student::factory()->create([
         'course_id' => $course->id,
         'gender' => 'Male',
         'student_type' => 'college',
+        'school_id' => $department->school_id,
     ]);
 
     StudentEnrollment::factory()->create([
@@ -147,8 +153,16 @@ it('exports registrar analytics as an excel workbook', function (): void {
         'school_year' => '2024 - 2025',
         'semester' => 1,
         'academic_year' => 1,
+        'intake_category' => 'new_freshman',
         'status' => 'Enrolled',
+        'school_id' => $department->school_id,
     ]);
+
+    $this->actingAs($user)
+        ->get(route('administrators.registrar.analytics.export'))
+        ->assertForbidden();
+
+    $user->givePermissionTo('View:StudentEnrollment');
 
     $this->actingAs($user)
         ->get(route('administrators.registrar.analytics.export'))
@@ -164,7 +178,7 @@ it('builds the Form B/C matrix and applies shared report filters', function (): 
     $courseBsit = Course::factory()->create(['code' => 'BSIT', 'department_id' => $it->id, 'school_id' => $it->school_id]);
     $courseBscs = Course::factory()->create(['code' => 'BSCS', 'department_id' => $it->id, 'school_id' => $it->school_id]);
 
-    $makeStudent = fn (Course $course, string $gender, int $year) => tap(
+    $makeStudent = fn (Course $course, string $gender, int $year, ?string $intakeCategory = null) => tap(
         Student::factory()->create(['course_id' => $course->id, 'gender' => $gender, 'school_id' => $it->school_id]),
         fn (Student $s) => StudentEnrollment::factory()->create([
             'student_id' => $s->id,
@@ -172,12 +186,13 @@ it('builds the Form B/C matrix and applies shared report filters', function (): 
             'school_year' => '2024 - 2025',
             'semester' => 1,
             'academic_year' => $year,
+            'intake_category' => $intakeCategory,
             'status' => 'Enrolled',
             'school_id' => $it->school_id,
         ])
     );
 
-    $makeStudent($courseBsit, 'Male', 1);
+    $makeStudent($courseBsit, 'Male', 1, 'new_freshman');
     $makeStudent($courseBscs, 'Male', 2);
     $makeStudent($courseBsit, 'Female', 1);
 
@@ -188,7 +203,7 @@ it('builds the Form B/C matrix and applies shared report filters', function (): 
             ->where('analytics.current_semester_count', 1)
             ->has('analytics.form_bc_matrix', 1)
             ->where('analytics.form_bc_matrix.0.program_code', 'BSIT')
-            ->where('analytics.form_bc_matrix.0.new_freshman_male', 0)
+            ->where('analytics.form_bc_matrix.0.new_freshman_male', 1)
             ->where('analytics.form_bc_matrix.0.total', 1)
         );
 });

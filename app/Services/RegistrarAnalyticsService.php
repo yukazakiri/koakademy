@@ -66,7 +66,7 @@ final class RegistrarAnalyticsService
 
         return [
             'analytics' => $analytics,
-            'quality' => $this->quality($reporting, $filters),
+            'quality' => $this->quality($reporting),
             'report' => $report,
             'generatedAt' => now()->toIso8601String(),
         ];
@@ -244,17 +244,22 @@ final class RegistrarAnalyticsService
     private function formBcMatrix(Builder $query): mixed
     {
         $selects = ["COALESCE(NULLIF(TRIM(courses.code), ''), 'Unassigned') as program_code", 'courses.title as program_title', "COALESCE(NULLIF(TRIM(departments.code), ''), 'Unassigned') as department"];
-        foreach (['new_freshman' => "student_enrollment.intake_category = 'new_freshman'", 'continuing_first_year' => "student_enrollment.intake_category = 'continuing_first_year'"] as $key => $condition) {
+        $reportedConditions = [];
+        foreach (['new_freshman' => "student_enrollment.academic_year = 1 AND student_enrollment.intake_category = 'new_freshman'", 'continuing_first_year' => "student_enrollment.academic_year = 1 AND student_enrollment.intake_category = 'continuing_first_year'"] as $key => $condition) {
             foreach (['male', 'female'] as $gender) {
-                $selects[] = "SUM(CASE WHEN {$condition} AND LOWER(TRIM(COALESCE(students.gender, ''))) = '{$gender}' THEN 1 ELSE 0 END) as {$key}_{$gender}";
+                $reportedCondition = "{$condition} AND LOWER(TRIM(COALESCE(students.gender, ''))) = '{$gender}'";
+                $selects[] = "SUM(CASE WHEN {$reportedCondition} THEN 1 ELSE 0 END) as {$key}_{$gender}";
+                $reportedConditions[] = $reportedCondition;
             }
         }
         foreach (range(2, 7) as $year) {
             foreach (['male', 'female'] as $gender) {
-                $selects[] = "SUM(CASE WHEN student_enrollment.academic_year = {$year} AND LOWER(TRIM(COALESCE(students.gender, ''))) = '{$gender}' THEN 1 ELSE 0 END) as year_{$year}_{$gender}";
+                $reportedCondition = "student_enrollment.academic_year = {$year} AND LOWER(TRIM(COALESCE(students.gender, ''))) = '{$gender}'";
+                $selects[] = "SUM(CASE WHEN {$reportedCondition} THEN 1 ELSE 0 END) as year_{$year}_{$gender}";
+                $reportedConditions[] = $reportedCondition;
             }
         }
-        $selects[] = 'count(*) as total';
+        $selects[] = 'SUM(CASE WHEN '.implode(' OR ', $reportedConditions).' THEN 1 ELSE 0 END) as total';
 
         return (clone $query)->selectRaw(implode(', ', $selects))->groupBy('courses.code', 'courses.title', 'departments.code')->orderBy('courses.code')->get();
     }
@@ -286,11 +291,10 @@ final class RegistrarAnalyticsService
         return (clone $query)->selectRaw('students.student_id as student_reference, students.first_name, students.last_name, students.middle_name, students.suffix, TRIM(students.gender) as gender, students.student_type, courses.code as course_code, courses.title as course_title, TRIM(departments.code) as department, student_enrollment.academic_year as year_level, student_enrollment.intake_category, student_enrollment.status, student_enrollment.created_at')->orderBy('departments.code')->orderBy('students.last_name')->get();
     }
 
-    /** @param array<string, int|string|null> $filters */
-    private function quality(Builder $query, array $filters): array
+    private function quality(Builder $query): array
     {
-        $graduateMissing = Student::query()->withTrashed()->where('students.status', StudentStatus::Graduated->value)->where(function (Builder $query): void {
-            $query->whereNull('graduation_school_year')->orWhereNull('graduation_semester');
+        $graduateMissing = (clone $query)->where('students.status', StudentStatus::Graduated->value)->where(function (Builder $query): void {
+            $query->whereNull('students.graduation_school_year')->orWhereNull('students.graduation_semester');
         })->count();
 
         return [

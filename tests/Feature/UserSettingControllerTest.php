@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Enums\UserRole;
+use App\Models\School;
 use App\Models\User;
 use App\Models\UserSetting;
 use App\Services\GeneralSettingsService;
@@ -52,4 +53,19 @@ it('semester selector returns empty when not authenticated', function () {
     // Without auth, should return defaults (not crash)
     expect($service->getCurrentSemester())->toBeInt()
         ->and($service->getAvailableSemesters())->not->toBeEmpty();
+});
+
+it('rejects selecting an active school outside the user organization access', function (): void {
+    $accessibleSchool = School::factory()->create();
+    $otherSchool = School::factory()->create();
+    $user = User::factory()->create([
+        'role' => UserRole::Registrar,
+        'school_id' => $accessibleSchool->id,
+    ]);
+
+    actingAs($user)
+        ->put(route('administrators.settings.active-school.update'), ['school_id' => $otherSchool->id])
+        ->assertForbidden();
+
+    expect(UserSetting::query()->where('user_id', $user->id)->value('active_school_id'))->toBeNull();
 });

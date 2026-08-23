@@ -5,14 +5,15 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Services\GeneralSettingsService;
-use Exception;
+use App\Services\TenantContext;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
 final class UserSettingController extends Controller
 {
     public function __construct(
-        private readonly GeneralSettingsService $settingsService
+        private readonly GeneralSettingsService $settingsService,
+        private readonly TenantContext $tenantContext,
     ) {}
 
     public function updateSemester(Request $request): RedirectResponse
@@ -57,14 +58,12 @@ final class UserSettingController extends Controller
         ]);
 
         $schoolId = (int) $validated['school_id'];
-        $this->settingsService->updateActiveSchoolId($schoolId);
-
-        try {
-            $tenantContext = app(\App\Services\TenantContext::class);
-            $tenantContext->setCurrentSchoolId($schoolId);
-        } catch (Exception) {
-            // Ignore if service not available
+        if (! $this->tenantContext->canAccessOrganization($schoolId)) {
+            abort(403);
         }
+
+        $this->settingsService->updateActiveSchoolId($schoolId);
+        $this->tenantContext->setCurrentSchoolId($schoolId);
 
         return back()->with('success', 'Active school updated successfully.');
     }

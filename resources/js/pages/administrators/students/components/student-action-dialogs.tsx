@@ -36,6 +36,8 @@ type DialogWithOptionsProps = DialogProps & {
 export function UpdateStatusDialog({ open, onOpenChange, student, options }: DialogWithOptionsProps) {
     const { data, setData, patch, processing, errors, reset } = useForm({
         status: student.status || "enrolled",
+        graduation_school_year: student.graduation_school_year || "",
+        graduation_semester: student.graduation_semester ? String(student.graduation_semester) : "",
     });
 
     const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -75,6 +77,11 @@ export function UpdateStatusDialog({ open, onOpenChange, student, options }: Dia
                         </Select>
                         {errors.status && <span className="text-destructive text-xs">{errors.status}</span>}
                     </div>
+                    {data.status === "graduated" && <div className="grid grid-cols-2 gap-3 rounded-md border p-3">
+                        <div className="space-y-2"><Label>Graduation academic year</Label><Input value={data.graduation_school_year} placeholder="2026 - 2027" onChange={(event) => setData("graduation_school_year", event.target.value)} />{errors.graduation_school_year && <span className="text-destructive text-xs">{errors.graduation_school_year}</span>}</div>
+                        <div className="space-y-2"><Label>Graduation term</Label><Select value={data.graduation_semester || undefined} onValueChange={(value) => setData("graduation_semester", value)}><SelectTrigger><SelectValue placeholder="Select term" /></SelectTrigger><SelectContent><SelectItem value="1">1st Term</SelectItem><SelectItem value="2">2nd Term</SelectItem><SelectItem value="3">Summer Term</SelectItem></SelectContent></Select>{errors.graduation_semester && <span className="text-destructive text-xs">{errors.graduation_semester}</span>}</div>
+                        <p className="col-span-full text-muted-foreground text-xs">Leave unverified values blank. The Form B/C quality queue will flag the graduate for review rather than infer a period.</p>
+                    </div>}
                     <DialogFooter>
                         <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                             Cancel

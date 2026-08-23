@@ -723,6 +723,8 @@ final class AdministratorStudentManagementController extends Controller
                 'birth_date' => $student->birth_date?->format('F j, Y'),
                 'type' => $studentType instanceof StudentType ? $studentType->value : (is_string($studentType) ? $studentType : null),
                 'status' => $studentStatus instanceof StudentStatus ? $studentStatus->value : (is_string($studentStatus) ? $studentStatus : null),
+                'graduation_school_year' => $student->graduation_school_year,
+                'graduation_semester' => $student->graduation_semester,
                 'academic_year' => $student->formatted_academic_year,
                 'course' => [
                     'id' => $student->Course?->id,
@@ -1913,6 +1915,8 @@ final class AdministratorStudentManagementController extends Controller
     {
         $validated = $request->validate([
             'status' => ['required', new \Illuminate\Validation\Rules\Enum(StudentStatus::class)],
+            'graduation_school_year' => ['nullable', 'string', 'regex:/^\\d{4} - \\d{4}$/'],
+            'graduation_semester' => ['nullable', 'integer', 'in:1,2,3'],
         ]);
 
         $generalSettingsService = app(GeneralSettingsService::class);
@@ -1930,7 +1934,12 @@ final class AdministratorStudentManagementController extends Controller
             ]
         );
 
-        $student->update(['status' => $validated['status']]);
+        $studentUpdate = ['status' => $validated['status']];
+        if ($validated['status'] === StudentStatus::Graduated->value) {
+            $studentUpdate['graduation_school_year'] = $validated['graduation_school_year'] ?? null;
+            $studentUpdate['graduation_semester'] = $validated['graduation_semester'] ?? null;
+        }
+        $student->update($studentUpdate);
 
         return back()->with('success', 'Student status updated successfully.');
     }

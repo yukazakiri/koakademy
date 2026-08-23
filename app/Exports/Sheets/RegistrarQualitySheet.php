@@ -37,6 +37,10 @@ final readonly class RegistrarQualitySheet implements FromArray, ShouldAutoSize,
             ['Missing Course', $q['missing_course_count'] ?? 0, ($q['missing_course_count'] ?? 0) > 0 ? '⚠ Needs Attention' : '✓ OK'],
             ['Missing Student Record', $q['missing_student_record_count'] ?? 0, ($q['missing_student_record_count'] ?? 0) > 0 ? '⚠ Needs Attention' : '✓ OK'],
             ['Without Gender Data', $q['without_gender_count'] ?? 0, ($q['without_gender_count'] ?? 0) > 0 ? '⚠ Needs Attention' : '✓ OK'],
+            ['Unclassified First-Year Intake', $q['unclassified_first_year_intake_count'] ?? 0, ($q['unclassified_first_year_intake_count'] ?? 0) > 0 ? '⚠ Needs Attention' : '✓ OK'],
+            ['Programs Missing Form B/C Metadata', $q['missing_program_metadata_count'] ?? 0, ($q['missing_program_metadata_count'] ?? 0) > 0 ? '⚠ Needs Attention' : '✓ OK'],
+            ['Reporting Confirmation Missing', $q['reporting_confirmation_missing_count'] ?? 0, ($q['reporting_confirmation_missing_count'] ?? 0) > 0 ? '⚠ Needs Attention' : '✓ OK'],
+            ['Graduates Missing Academic Period', $q['missing_graduation_period_count'] ?? 0, ($q['missing_graduation_period_count'] ?? 0) > 0 ? '⚠ Needs Attention' : '✓ OK'],
         ];
     }
 

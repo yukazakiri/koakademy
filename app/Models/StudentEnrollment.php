@@ -87,6 +87,7 @@ final class StudentEnrollment extends Model
         'deduplication_key',
         'submission_channel',
         'submission_idempotency_key',
+        'intake_category',
     ];
 
     #[Override]

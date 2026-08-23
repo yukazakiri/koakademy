@@ -271,6 +271,18 @@ final class AdministratorCurriculumManagementController extends Controller
             'remarks' => $course->remarks,
             'curriculum_year' => $course->curriculum_year,
             'miscelaneous' => $course->miscelaneous,
+            'ched_major' => $course->ched_major,
+            'ched_has_thesis' => $course->ched_has_thesis,
+            'ched_program_status' => $course->ched_program_status,
+            'ched_authority_category' => $course->ched_authority_category,
+            'ched_authority_serial' => $course->ched_authority_serial,
+            'ched_authority_year' => $course->ched_authority_year,
+            'ched_authority_other_program' => $course->ched_authority_other_program,
+            'ched_delivery_mode' => $course->ched_delivery_mode,
+            'ched_normal_length_years' => $course->ched_normal_length_years,
+            'ched_program_credit_units' => $course->ched_program_credit_units,
+            'ched_tuition_per_unit' => $course->ched_tuition_per_unit,
+            'ched_program_fee' => $course->ched_program_fee,
         ];
     }
 

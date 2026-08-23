@@ -91,6 +91,18 @@ final class Course extends Model
         'miscellaneous',
         'miscelaneous',
         'remarks',
+        'ched_major',
+        'ched_has_thesis',
+        'ched_program_status',
+        'ched_authority_category',
+        'ched_authority_serial',
+        'ched_authority_year',
+        'ched_authority_other_program',
+        'ched_delivery_mode',
+        'ched_normal_length_years',
+        'ched_program_credit_units',
+        'ched_tuition_per_unit',
+        'ched_program_fee',
         'is_active',
         'school_id',
     ];
@@ -256,6 +268,12 @@ final class Course extends Model
             'is_active' => 'boolean',
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
+            'ched_has_thesis' => 'boolean',
+            'ched_authority_year' => 'integer',
+            'ched_normal_length_years' => 'decimal:1',
+            'ched_program_credit_units' => 'integer',
+            'ched_tuition_per_unit' => 'decimal:2',
+            'ched_program_fee' => 'decimal:2',
         ];
     }
 

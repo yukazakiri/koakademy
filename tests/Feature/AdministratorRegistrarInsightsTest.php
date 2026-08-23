@@ -59,8 +59,9 @@ it('renders dedicated registrar analytics with aggregate enrollment data', funct
     $course = Course::factory()->create([
         'code' => 'BSIT',
         'department_id' => $department->id,
+        'school_id' => $department->school_id,
     ]);
-    $student = Student::factory()->create(['course_id' => $course->id]);
+    $student = Student::factory()->create(['course_id' => $course->id, 'school_id' => $department->school_id]);
 
     StudentEnrollment::factory()->create([
         'student_id' => $student->id,
@@ -69,6 +70,7 @@ it('renders dedicated registrar analytics with aggregate enrollment data', funct
         'semester' => 1,
         'academic_year' => 1,
         'status' => 'Enrolled',
+        'school_id' => $department->school_id,
     ]);
 
     $this->actingAs($user)
@@ -82,7 +84,10 @@ it('renders dedicated registrar analytics with aggregate enrollment data', funct
             ->where('analytics.by_year_level.0.year_level', 1)
             ->where('quality.missing_department_count', 0)
             ->where('quality.missing_course_count', 0)
-            ->has('filters.availableSemesters')
+            ->where('report.values.school_year', '2024 - 2025')
+            ->where('report.values.semester', 1)
+            ->has('analytics.form_bc_matrix')
+            ->missing('analytics.detailed_enrollments')
             ->has('generatedAt')
         );
 });
@@ -151,16 +156,16 @@ it('exports registrar analytics as an excel workbook', function (): void {
         ->assertHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 });
 
-it('reports gender breakdown by course and year level in analytics', function (): void {
+it('builds the Form B/C matrix and applies shared report filters', function (): void {
     $user = User::factory()->create(['role' => UserRole::Registrar]);
     $user->givePermissionTo('ViewAny:StudentEnrollment');
 
     $it = Department::factory()->create(['code' => 'IT']);
-    $courseBsit = Course::factory()->create(['code' => 'BSIT', 'department_id' => $it->id]);
-    $courseBscs = Course::factory()->create(['code' => 'BSCS', 'department_id' => $it->id]);
+    $courseBsit = Course::factory()->create(['code' => 'BSIT', 'department_id' => $it->id, 'school_id' => $it->school_id]);
+    $courseBscs = Course::factory()->create(['code' => 'BSCS', 'department_id' => $it->id, 'school_id' => $it->school_id]);
 
     $makeStudent = fn (Course $course, string $gender, int $year) => tap(
-        Student::factory()->create(['course_id' => $course->id, 'gender' => $gender]),
+        Student::factory()->create(['course_id' => $course->id, 'gender' => $gender, 'school_id' => $it->school_id]),
         fn (Student $s) => StudentEnrollment::factory()->create([
             'student_id' => $s->id,
             'course_id' => $course->id,
@@ -168,6 +173,7 @@ it('reports gender breakdown by course and year level in analytics', function ()
             'semester' => 1,
             'academic_year' => $year,
             'status' => 'Enrolled',
+            'school_id' => $it->school_id,
         ])
     );
 
@@ -175,41 +181,23 @@ it('reports gender breakdown by course and year level in analytics', function ()
     $makeStudent($courseBscs, 'Male', 2);
     $makeStudent($courseBsit, 'Female', 1);
 
-    $response = $this->actingAs($user)
-        ->get(route('administrators.registrar.analytics.index'))
-        ->assertSuccessful();
+    $this->actingAs($user)
+        ->get(route('administrators.registrar.analytics.index', ['course_id' => $courseBsit->id, 'gender' => 'male']))
+        ->assertSuccessful()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->where('analytics.current_semester_count', 1)
+            ->has('analytics.form_bc_matrix', 1)
+            ->where('analytics.form_bc_matrix.0.program_code', 'BSIT')
+            ->where('analytics.form_bc_matrix.0.new_freshman_male', 0)
+            ->where('analytics.form_bc_matrix.0.total', 1)
+        );
+});
 
-    $analytics = json_decode($response->getContent(), true)['page']['props']['analytics'];
+it('rejects invalid Form B/C report filter values', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Registrar]);
+    $user->givePermissionTo('ViewAny:StudentEnrollment');
 
-    // Gender × Course pivot: male BSIT, male BSCS, female BSIT
-    expect($analytics['by_gender_course'])->toHaveCount(3);
-    collect($analytics['by_gender_course'])
-        ->map(fn ($row) => [...$row, 'key' => $row['gender'].':'.$row['course_code']])
-        ->each(function ($row): void {
-            if ($row['key'] === 'male:BSIT') {
-                expect($row['count'])->toBe(1);
-            }
-            if ($row['key'] === 'male:BSCS') {
-                expect($row['count'])->toBe(1);
-            }
-            if ($row['key'] === 'female:BSIT') {
-                expect($row['count'])->toBe(1);
-            }
-        });
-
-    // Gender × Year Level pivot: male yr1, male yr2, female yr1
-    expect($analytics['by_gender_year_level'])->toHaveCount(3);
-    collect($analytics['by_gender_year_level'])
-        ->map(fn ($row) => [...$row, 'key' => $row['gender'].':'.$row['year_level']])
-        ->each(function ($row): void {
-            if ($row['key'] === 'male:1') {
-                expect($row['count'])->toBe(1);
-            }
-            if ($row['key'] === 'male:2') {
-                expect($row['count'])->toBe(1);
-            }
-            if ($row['key'] === 'female:1') {
-                expect($row['count'])->toBe(1);
-            }
-        });
+    $this->actingAs($user)
+        ->get(route('administrators.registrar.analytics.index', ['semester' => 9]))
+        ->assertSessionHasErrors('semester');
 });

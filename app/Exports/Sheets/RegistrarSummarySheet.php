@@ -40,20 +40,15 @@ final readonly class RegistrarSummarySheet implements FromArray, ShouldAutoSize,
 
         return [
             ['REGISTRAR ANALYTICS REPORT'],
-            ['Generated: '.now()->format('F j, Y h:i A').' | SY '.($f['currentSchoolYear'] ?? '').' Semester '.($f['currentSemester'] ?? '')],
+            ['Generated: '.now()->format('F j, Y h:i A').' | '.($f['label'] ?? 'Configured current term')],
             [''],
             ['METRIC', 'VALUE'],
             ['Current Semester Enrollments', $current],
             ['Previous Semester Enrollments', $previous],
             ['Semester-over-Semester Change', ($delta >= 0 ? '+' : '').$delta.' ('.$growth.'%)'],
             ['Current School Year Total', $a['current_school_year_count'] ?? 0],
-            ['All-Time Total Enrollments', $a['total_all_time_enrollments'] ?? 0],
             ['Active (non-trashed)', $a['active_count'] ?? 0],
             ['Trashed / Deleted', $a['trashed_count'] ?? 0],
-            ['Applicants in System', $a['applicantsCount'] ?? 0],
-            ['Total Students (All-Time)', $a['total_students'] ?? 0],
-            ['College Students', $a['total_college_students'] ?? 0],
-            ['SHS Students', $a['total_shs_students'] ?? 0],
         ];
     }
 

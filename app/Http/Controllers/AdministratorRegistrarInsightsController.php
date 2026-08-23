@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Exports\RegistrarAnalyticsExport;
+use App\Http\Requests\RegistrarAnalyticsFilterRequest;
 use App\Models\StudentEnrollment;
 use App\Models\User;
 use App\Services\RegistrarAnalyticsService;
@@ -20,7 +21,7 @@ final class AdministratorRegistrarInsightsController extends Controller
 {
     public function __construct(private readonly RegistrarAnalyticsService $analyticsService) {}
 
-    public function analytics(Request $request): Response|RedirectResponse
+    public function analytics(RegistrarAnalyticsFilterRequest $request): Response|RedirectResponse
     {
         $user = $request->user();
 
@@ -32,11 +33,11 @@ final class AdministratorRegistrarInsightsController extends Controller
 
         return Inertia::render('administrators/registrar/analytics', [
             'user' => $this->userProps($user),
-            ...$this->analyticsService->build(),
+            ...$this->analyticsService->build($request->filters()),
         ]);
     }
 
-    public function export(Request $request): BinaryFileResponse|RedirectResponse
+    public function export(RegistrarAnalyticsFilterRequest $request): BinaryFileResponse|RedirectResponse
     {
         $user = $request->user();
 
@@ -46,17 +47,10 @@ final class AdministratorRegistrarInsightsController extends Controller
 
         Gate::authorize('viewAny', StudentEnrollment::class);
 
-        $data = $this->analyticsService->build();
+        $data = $this->analyticsService->build($request->filters(), includeDetails: true);
 
-        // The export workbooks read both the analytics breakdowns and a few
-        // top-level reporting metrics; merge them into one payload.
-        $analytics = array_merge($data['analytics'], [
-            'applicantsCount' => $data['applicantsCount'],
-            'total_students' => $data['total_students'],
-            'total_college_students' => $data['total_college_students'],
-            'total_shs_students' => $data['total_shs_students'],
-            'quality' => $data['quality'],
-        ]);
+        $analytics = $data['analytics'];
+        $analytics['quality'] = $data['quality'];
 
         $fileName = sprintf(
             'registrar-analytics-%s.xlsx',
@@ -64,7 +58,7 @@ final class AdministratorRegistrarInsightsController extends Controller
         );
 
         return Excel::download(
-            new RegistrarAnalyticsExport($analytics, $data['filters']),
+            new RegistrarAnalyticsExport($analytics, $data['report']),
             $fileName
         );
     }

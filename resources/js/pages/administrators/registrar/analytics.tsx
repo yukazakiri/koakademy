@@ -2,499 +2,110 @@ import AdminLayout from "@/components/administrators/admin-layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { SemesterSelector, type SemesterSelectorProps } from "@/components/semester-selector";
-import { Head } from "@inertiajs/react";
-import {
-    Activity, AlertTriangle, ArrowDown, ArrowUp, Calendar, ChartNoAxesCombined,
-    CircleCheckBig, DatabaseZap, FileSpreadsheet, GraduationCap, RefreshCw,
-    School, TrendingUp, Users, UserCheck, UsersRound,
-} from "lucide-react";
-import { useMemo } from "react";
-import {
-    Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, XAxis, YAxis,
-} from "recharts";
-import { ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
+import { exportMethod, index as analyticsRoute } from "@/routes/administrators/registrar/analytics";
+import { Head, router } from "@inertiajs/react";
+import { AlertTriangle, FileSpreadsheet, Filter, RefreshCw, RotateCcw, Users } from "lucide-react";
+import { type ReactNode, useState } from "react";
+import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, XAxis, YAxis } from "recharts";
 
-type AnalyticsItem = { [key: string]: unknown; count?: number };
-type TrendItem = { date: string; count: number };
-type CourseItem = { course_code: string; course_title: string; count: number };
-
-type RegistrarAnalyticsProps = {
+type Item = Record<string, string | number | null | undefined> & { count?: number };
+type Option = { value: string | number; label: string; department_id?: number | null };
+type FilterValues = Record<string, string | number | null>;
+type MatrixRow = Record<string, string | number | null | undefined>;
+type Props = {
     user: { name: string; email: string; avatar: string | null; role: string };
     analytics: {
-        current_semester_count: number; current_school_year_count: number;
-        previous_semester_count: number; total_all_time_enrollments: number;
-        by_department: AnalyticsItem[]; by_year_level: AnalyticsItem[];
-        by_student_type: AnalyticsItem[]; by_gender: AnalyticsItem[];
-        by_course: CourseItem[]; by_status: AnalyticsItem[];
-        by_submission_channel: AnalyticsItem[]; trashed_count: number;
-        active_count: number; daily_trend: TrendItem[];
+        current_semester_count: number; current_school_year_count: number; previous_semester_count: number;
+        active_count: number; trashed_count: number; by_department: Item[]; by_program: Item[];
+        by_year_level: Item[]; by_student_type: Item[]; by_gender: Item[]; by_status: Item[];
+        daily_trend: Item[]; by_origin: Item[]; by_scholarship: Item[]; by_income_bracket: Item[];
+        by_attrition: Item[]; by_equity_group: Item[]; form_bc_matrix: MatrixRow[]; annual_graduates: Item[];
     };
-    applicantsCount: number; total_students: number;
-    total_college_students: number; total_shs_students: number;
-    quality: {
-        missing_department_count: number; missing_course_count: number;
-        missing_student_record_count: number; without_gender_count: number;
-    };
-    filters: SemesterSelectorProps; generatedAt: string;
+    quality: Record<string, number>;
+    report: { label: string; values: FilterValues; options: Record<string, Option[]> };
+    generatedAt: string;
 };
 
-function pct(value: number, total: number): number {
-    return total > 0 ? Math.round((value / total) * 100) : 0;
+const COLORS = ["hsl(212 96% 53%)", "hsl(142 76% 36%)", "hsl(45 93% 48%)", "hsl(326 100% 60%)", "hsl(271 81% 56%)", "hsl(0 84% 60%)"];
+const chartConfig: ChartConfig = { count: { label: "Students", color: COLORS[0] } };
+const label = (value: unknown) => String(value ?? "Unspecified").replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+function ChartCard({ title, description, data, children }: { title: string; description: string; data: { name: string; count: number }[]; children: (shown: { name: string; count: number }[]) => ReactNode }) {
+    const [limit, setLimit] = useState<"5" | "10" | "all">("10");
+    const shown = limit === "all" ? data : data.slice(0, Number(limit));
+    return <Card className="min-w-0">
+        <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+            <div><CardTitle className="text-base">{title}</CardTitle><CardDescription>{description}</CardDescription></div>
+            <label className="text-muted-foreground grid gap-1 text-right text-[10px] font-semibold tracking-wide uppercase">Chart view
+                <select aria-label={`${title} chart view`} value={limit} onChange={(event) => setLimit(event.target.value as "5" | "10" | "all")} className="border-input bg-background h-8 rounded-md border px-2 text-xs font-normal normal-case">
+                    <option value="5">Top 5</option><option value="10">Top 10</option><option value="all">All</option>
+                </select>
+            </label>
+        </CardHeader>
+        <CardContent>{shown.length === 0 ? <p className="text-muted-foreground py-12 text-center text-sm">No records match the shared report filters.</p> : children(shown)}</CardContent>
+    </Card>;
 }
 
-function formatDelta(n: number): string {
-    if (n > 0) return `+${n.toLocaleString()}`;
-    return n.toLocaleString();
+function BarView({ data }: { data: { name: string; count: number }[] }) {
+    return <ChartContainer config={chartConfig} className="h-[255px] w-full"><BarChart data={data} layout="vertical" margin={{ left: 4, right: 12 }}><CartesianGrid horizontal={false} /><XAxis type="number" allowDecimals={false} /><YAxis dataKey="name" type="category" width={95} tickLine={false} axisLine={false} /><ChartTooltip content={<ChartTooltipContent />} /><Bar dataKey="count" fill="var(--color-count)" radius={4} /></BarChart></ChartContainer>;
 }
 
+function PieView({ data }: { data: { name: string; count: number }[] }) {
+    return <ChartContainer config={chartConfig} className="h-[255px] w-full"><PieChart><ChartTooltip content={<ChartTooltipContent nameKey="name" />} /><Pie data={data} dataKey="count" nameKey="name" outerRadius={92}>{data.map((item, index) => <Cell key={item.name} fill={COLORS[index % COLORS.length]} />)}</Pie></PieChart></ChartContainer>;
+}
 
-const CHART_COLORS = [
-    'hsl(212 96% 53%)', 'hsl(142 76% 36%)', 'hsl(45 93% 48%)',
-    'hsl(326 100% 60%)', 'hsl(271 81% 56%)', 'hsl(0 84% 60%)',
-    'hsl(187 85% 43%)', 'hsl(32 95% 53%)', 'hsl(160 84% 39%)',
-    'hsl(200 18% 46%)',
-];
-export default function RegistrarAnalytics({
-    user, analytics, applicantsCount, total_students,
-    total_college_students, total_shs_students, quality, filters, generatedAt,
-}: RegistrarAnalyticsProps) {
-    const generatedLabel = new Intl.DateTimeFormat(undefined, {
-        dateStyle: "medium", timeStyle: "short",
-    }).format(new Date(generatedAt));
+export default function RegistrarAnalytics({ user, analytics, quality, report, generatedAt }: Props) {
+    const [values, setValues] = useState<FilterValues>(report.values);
+    const date = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(generatedAt));
+    const chartData = (items: Item[], key: string) => items.map((item) => ({ name: label(item[key]), count: Number(item.count ?? 0) })).sort((a, b) => b.count - a.count);
+    const periodTotal = analytics.current_semester_count ?? 0;
+    const delta = periodTotal - (analytics.previous_semester_count ?? 0);
+    const query = (next: FilterValues) => Object.fromEntries(Object.entries(next).filter(([, value]) => value !== null && value !== ""));
+    const apply = (next: FilterValues) => { setValues(next); router.get(analyticsRoute.url({ query: query(next) }), {}, { preserveScroll: true, preserveState: true, replace: true }); };
+    const programOptions = (report.options.programs ?? []).filter((option) => !values.department_id || String(option.department_id) === String(values.department_id));
+    const qualityItems = [
+        ["Missing program metadata", quality.missing_program_metadata_count], ["Unclassified first-year intake", quality.unclassified_first_year_intake_count],
+        ["Missing reporting confirmation", quality.reporting_confirmation_missing_count], ["Missing graduation period", quality.missing_graduation_period_count],
+        ["Missing gender", quality.without_gender_count], ["Missing course", quality.missing_course_count],
+    ] as const;
+    const matrixColumns = ["new_freshman_male", "new_freshman_female", "continuing_first_year_male", "continuing_first_year_female", ...[2, 3, 4, 5, 6, 7].flatMap((year) => [`year_${year}_male`, `year_${year}_female`])];
 
-    const currentCount = analytics?.current_semester_count ?? 0;
-    const previousCount = analytics?.previous_semester_count ?? 0;
-    const activeCount = analytics?.active_count ?? 0;
-    const trashedCount = analytics?.trashed_count ?? 0;
-    const schoolYearCount = analytics?.current_school_year_count ?? 0;
-    const allTimeCount = analytics?.total_all_time_enrollments ?? 0;
-    const semesterDelta = currentCount - previousCount;
-    const semesterGrowthPct = previousCount > 0
-        ? Math.round((semesterDelta / previousCount) * 100)
-        : currentCount > 0 ? 100 : 0;
+    return <AdminLayout user={user} title="Registrar Analytics">
+        <Head title="Registrar Analytics" />
+        <div className="space-y-6 pb-12">
+            <header className="flex flex-col gap-4 border-b pb-6 xl:flex-row xl:items-end xl:justify-between">
+                <div><p className="text-muted-foreground text-[11px] font-semibold tracking-[.16em] uppercase">CHED Form B/C reporting</p><h1 className="mt-1 text-2xl font-semibold tracking-tight">Current-semester registrar analytics</h1><p className="text-muted-foreground mt-1 max-w-3xl text-sm">Aggregate reporting population for {report.label}. Shared filters apply to every KPI, chart, matrix, and restricted workbook detail sheet.</p></div>
+                <div className="flex items-center gap-2"><span className="text-muted-foreground hidden items-center gap-1 text-xs lg:flex"><RefreshCw className="size-3" />{date}</span><Button asChild size="sm"><a href={exportMethod.url({ query: query(values) })}><FileSpreadsheet className="mr-1.5 size-4" />Export Excel</a></Button></div>
+            </header>
 
-    const statusData = useMemo(() =>
-        (analytics?.by_status ?? [])
-            .map((item) => ({
-                name: String(item.status ?? "Unspecified"),
-                value: Number(item.count ?? 0),
-            }))
-            .sort((a, b) => b.value - a.value),
-    [analytics?.by_status]);
+            <Card className="border-primary/20 bg-primary/[.025]"><CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base"><Filter className="size-4" />Report filters</CardTitle><CardDescription>Changing these URL-backed filters recalculates the authoritative reporting population; chart views below only change what is displayed.</CardDescription></CardHeader><CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                {([['school_year', 'Academic year', report.options.school_years], ['semester', 'Term', report.options.semesters], ['department_id', 'Department', report.options.departments], ['course_id', 'Program', programOptions], ['academic_year', 'Year level', report.options.year_levels], ['gender', 'Sex', report.options.genders], ['student_type', 'Student type', report.options.student_types], ['intake_category', 'First-year intake', report.options.intake_categories], ['status', 'Enrollment status', report.options.statuses]] as const).map(([key, title, options]) => <label key={key} className="grid gap-1 text-xs font-medium">{title}<select value={values[key] ?? ""} onChange={(event) => apply({ ...values, [key]: event.target.value || null, ...(key === 'department_id' ? { course_id: null } : {}) })} className="border-input bg-background h-9 rounded-md border px-2 text-sm"><option value="">All</option>{options.map((option) => <option key={String(option.value)} value={String(option.value)}>{option.label}</option>)}</select></label>)}
+                <div className="flex items-end"><Button variant="outline" className="w-full" onClick={() => apply({})}><RotateCcw className="mr-1.5 size-4" />Reset to current term</Button></div>
+            </CardContent></Card>
 
-    const departmentData = useMemo(() => {
-        const e = (analytics?.by_department ?? []).map((item) => ({
-            name: String(item.department ?? "").trim() || "Unassigned",
-            value: Number(item.count ?? 0),
-        }));
-        const t = e.reduce((s, i) => s + i.value, 0);
-        return e.sort((a, b) => b.value - a.value).map((item) => ({
-            ...item, percentage: pct(item.value, t),
-        }));
-    }, [analytics?.by_department]);
-
-    const yearLevelData = useMemo(() => {
-        const e = (analytics?.by_year_level ?? []).map((item) => ({
-            name: item.year_level ? `Year ${item.year_level}` : "Unassigned",
-            value: Number(item.count ?? 0),
-        }));
-        const t = e.reduce((s, i) => s + i.value, 0);
-        return e.sort((a, b) => a.value - b.value).map((item) => ({
-            ...item, percentage: pct(item.value, t),
-        }));
-    }, [analytics?.by_year_level]);
-
-    const genderData = useMemo(() => {
-        const e = (analytics?.by_gender ?? []).map((item) => ({
-            name: String(item.gender ?? "").trim() || "Unspecified",
-            value: Number(item.count ?? 0),
-        }));
-        const t = e.reduce((s, i) => s + i.value, 0);
-        return e.sort((a, b) => b.value - a.value).map((item) => ({
-            ...item, percentage: pct(item.value, t),
-        }));
-    }, [analytics?.by_gender]);
-
-    const typeData = useMemo(() => {
-        const e = (analytics?.by_student_type ?? []).map((item) => {
-            const r = String(item.student_type ?? "unknown");
-            const l = r === "college" ? "College" : r === "shs" ? "SHS"
-                : r === "tesda" ? "TESDA" : r === "dhrt" ? "DHRT" : r;
-            return { name: l, value: Number(item.count ?? 0) };
-        });
-        const t = e.reduce((s, i) => s + i.value, 0);
-        return e.sort((a, b) => b.value - a.value).map((item) => ({
-            ...item, percentage: pct(item.value, t),
-        }));
-    }, [analytics?.by_student_type]);
-
-    const topCourses = useMemo(() =>
-        (analytics?.by_course ?? []).slice(0, 10).map((item, i) => ({
-            rank: i + 1, code: item.course_code ?? "N/A",
-            title: item.course_title ?? "", value: Number(item.count ?? 0),
-        })),
-    [analytics?.by_course]);
-
-    const dailyTrendMax = useMemo(
-        () => Math.max(1, ...(analytics?.daily_trend ?? []).map((d) => Number(d.count ?? 0))),
-        [analytics?.daily_trend]);
-
-    const dailyTrendChartData = useMemo(() =>
-        (analytics?.daily_trend ?? []).slice(-30).map((d) => ({
-            date: d.date?.slice(5) ?? d.date, value: Number(d.count ?? 0),
-        })), [analytics?.daily_trend]);
-
-    const monthlyTrendChartData = useMemo(() =>
-        (analytics?.monthly_trend ?? []).map((d) => ({
-            month: d.date?.slice(0, 7) ?? "", value: Number(d.count ?? 0),
-        })), [analytics?.monthly_trend]);
-
-    const statusTotal = statusData.reduce((s, i) => s + i.value, 0);
-    const qualityIssues = [
-        { label: "Missing Department", value: quality.missing_department_count,
-          tone: quality.missing_department_count > 0 ? ("warn" as const) : ("ok" as const) },
-        { label: "Missing Course", value: quality.missing_course_count,
-          tone: quality.missing_course_count > 0 ? ("warn" as const) : ("ok" as const) },
-        { label: "Missing Student Record", value: quality.missing_student_record_count,
-          tone: quality.missing_student_record_count > 0 ? ("warn" as const) : ("ok" as const) },
-        { label: "Without Gender Data", value: quality.without_gender_count,
-          tone: quality.without_gender_count > 0 ? ("warn" as const) : ("ok" as const) },
-    ];
-
-    // Chart color configs
-    const deptConfig: ChartConfig = Object.fromEntries(
-        departmentData.map((d, i) => [d.name, { label: d.name, color: CHART_COLORS[i % CHART_COLORS.length] }])
-    );
-    const genderConfig: ChartConfig = {
-        Male: { label: "Male", color: "hsl(212 96% 53%)" },
-        Female: { label: "Female", color: "hsl(326 100% 60%)" },
-        Unspecified: { label: "Unspecified", color: "hsl(200 18% 46%)" },
-        male: { label: "Male", color: "hsl(212 96% 53%)" },
-        female: { label: "Female", color: "hsl(326 100% 60%)" },
-    };
-    const typeConfig: ChartConfig = {
-        College: { label: "College", color: "hsl(212 96% 53%)" },
-        SHS: { label: "SHS", color: "hsl(142 76% 36%)" },
-        TESDA: { label: "TESDA", color: "hsl(45 93% 48%)" },
-        DHRT: { label: "DHRT", color: "hsl(271 81% 56%)" },
-    };
-    const statusConfig: ChartConfig = Object.fromEntries(
-        statusData.map((s, i) => [s.name, { label: s.name, color: CHART_COLORS[i % CHART_COLORS.length] }])
-    );
-    const trendConfig: ChartConfig = { value: { label: "Enrollments", color: "hsl(212 96% 53%)" } };
-
-    return (
-        <AdminLayout user={user} title="Registrar Analytics">
-            <Head title="Administrators • Registrar Analytics" />
-            <div className="space-y-6 pb-12">
-                {/* Header */}
-                <header className="flex flex-col gap-4 border-b pb-6 sm:flex-row sm:items-end sm:justify-between">
-                    <div className="space-y-1">
-                        <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.16em] uppercase">Registrar Insights</p>
-                        <h1 className="text-2xl font-semibold tracking-tight">Analytics &amp; Reporting</h1>
-                        <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed">
-                            Comprehensive enrollment metrics, demographics, and data-quality signals for administrative planning and reporting.
-                        </p>
-                    </div>
-                    <div className="flex flex-col items-start gap-2 sm:items-end">
-                        <SemesterSelector {...filters} />
-                        <div className="flex items-center gap-3">
-                            <p className="text-muted-foreground flex items-center gap-1.5 text-[11px]">
-                                <RefreshCw className="size-3" aria-hidden="true" />
-                                Generated {generatedLabel}
-                            </p>
-                            <Button size="sm" asChild>
-                                <a href="/administrators/registrar/analytics/export" target="_blank" rel="noopener">
-                                    <FileSpreadsheet className="size-4" /> Export Excel
-                                </a>
-                            </Button>
-                        </div>
-                    </div>
-                </header>
-
-                {/* KPI Cards */}
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    <Card>
-                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                            <CardTitle className="text-sm font-medium">Current Semester</CardTitle>
-                            <UsersRound className="text-muted-foreground size-4" />
-                        </CardHeader>
-                        <CardContent>
-                            <div className="text-2xl font-bold">{currentCount.toLocaleString()}</div>
-                            <p className="text-muted-foreground mt-1 flex items-center gap-1 text-xs">
-                                {semesterDelta >= 0 ? (
-                                    <ArrowUp className="size-3 text-emerald-600" />
-                                ) : (
-                                    <ArrowDown className="size-3 text-red-500" />
-                                )}
-                                <span className={semesterDelta >= 0 ? "text-emerald-600" : "text-red-500"}>
-                                    {formatDelta(semesterDelta)} ({semesterGrowthPct}%)
-                                </span>
-                                <span className="ml-1">vs prev semester</span>
-                            </p>
-                        </CardContent>
-                    </Card>
-                    <Card>
-                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                            <CardTitle className="text-sm font-medium">School Year Total</CardTitle>
-                            <School className="text-muted-foreground size-4" />
-                        </CardHeader>
-                        <CardContent>
-                            <div className="text-2xl font-bold">{schoolYearCount.toLocaleString()}</div>
-                            <p className="text-muted-foreground mt-1 text-xs">
-                                Active {activeCount.toLocaleString()} · Trashed {trashedCount.toLocaleString()}
-                            </p>
-                        </CardContent>
-                    </Card>
-                    <Card>
-                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                            <CardTitle className="text-sm font-medium">Applicants</CardTitle>
-                            <UserCheck className="text-muted-foreground size-4" />
-                        </CardHeader>
-                        <CardContent>
-                            <div className="text-2xl font-bold">{applicantsCount.toLocaleString()}</div>
-                            <p className="text-muted-foreground mt-1 text-xs">
-                                {pct(currentCount, currentCount + applicantsCount)}% enrolled
-                            </p>
-                        </CardContent>
-                    </Card>
-                    <Card>
-                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                            <CardTitle className="text-sm font-medium">All-Time Records</CardTitle>
-                            <DatabaseZap className="text-muted-foreground size-4" />
-                        </CardHeader>
-                        <CardContent>
-                            <div className="text-2xl font-bold">{allTimeCount.toLocaleString()}</div>
-                            <p className="text-muted-foreground mt-1 text-xs">
-                                {total_students.toLocaleString()} students · {total_college_students} COL · {total_shs_students} SHS
-                            </p>
-                        </CardContent>
-                    </Card>
-                </div>
-                {/* Dept + Year Level */}
-                <div className="grid gap-6 lg:grid-cols-2">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <School className="size-4" /> Enrollment by Department
-                            </CardTitle>
-                            <CardDescription>Distribution across academic departments.</CardDescription>
-                        </CardHeader>
-                        <CardContent className="pt-0">
-                            {departmentData.length === 0 ? (
-                                <p className="text-muted-foreground py-8 text-center text-sm">No department data available.</p>
-                            ) : (
-                                <ChartContainer config={deptConfig} className="aspect-auto h-[280px] w-full">
-                                    <BarChart data={departmentData} layout="vertical" margin={{ top: 0, right: 40, left: 50, bottom: 0 }}>
-                                        <CartesianGrid horizontal={false} strokeDasharray="3 3" />
-                                        <XAxis type="number" tickLine={false} axisLine={false} tickMargin={4} fontSize={11} />
-                                        <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} width={60} />
-                                        <ChartTooltip content={<ChartTooltipContent />} />
-                                        <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={28}>
-                                            {departmentData.map((_, i) => (
-                                                <Cell key={`cell-${i}`} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                                            ))}
-                                        </Bar>
-                                    </BarChart>
-                                </ChartContainer>
-                            )}
-                        </CardContent>
-                    </Card>
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <GraduationCap className="size-4" /> Enrollment by Year Level
-                            </CardTitle>
-                            <CardDescription>Distribution across academic years.</CardDescription>
-                        </CardHeader>
-                        <CardContent className="pt-0">
-                            {yearLevelData.length === 0 ? (
-                                <p className="text-muted-foreground py-8 text-center text-sm">No year-level data available.</p>
-                            ) : (
-                                <ChartContainer config={{}} className="aspect-auto h-[240px] w-full">
-                                    <BarChart data={yearLevelData} margin={{ top: 0, right: 10, left: 10, bottom: 0 }}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                        <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={6} fontSize={11} />
-                                        <YAxis tickLine={false} axisLine={false} tickMargin={4} fontSize={11} />
-                                        <ChartTooltip content={<ChartTooltipContent />} />
-                                        <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={48}>
-                                            {yearLevelData.map((_, i) => (
-                                                <Cell key={`cell-${i}`} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                                            ))}
-                                        </Bar>
-                                    </BarChart>
-                                </ChartContainer>
-                            )}
-                        </CardContent>
-                    </Card>
-                </div>
-                {/* Gender + Student Type */}
-                <div className="grid gap-6 lg:grid-cols-2">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <Users className="size-4" /> Gender Distribution
-                            </CardTitle>
-                            <CardDescription>Enrollment breakdown by gender.</CardDescription>
-                        </CardHeader>
-                        <CardContent className="flex items-center justify-center pt-0">
-                            {genderData.length === 0 ? (
-                                <p className="text-muted-foreground py-8 text-center text-sm">No gender data available.</p>
-                            ) : (
-                                <ChartContainer config={genderConfig} className="aspect-square h-[250px]">
-                                    <PieChart>
-                                        <Pie data={genderData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={90} paddingAngle={2}>
-                                            {genderData.map((entry) => (
-                                                <Cell key={entry.name} fill={genderConfig[entry.name]?.color ?? CHART_COLORS[2]} />
-                                            ))}
-                                        </Pie>
-                                        <ChartTooltip content={<ChartTooltipContent nameKey="name" />} />
-                                    </PieChart>
-                                </ChartContainer>
-                            )}
-                        </CardContent>
-                    </Card>
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <ChartNoAxesCombined className="size-4" /> Student Type
-                            </CardTitle>
-                            <CardDescription>College, SHS, TESDA, and DHRT breakdown.</CardDescription>
-                        </CardHeader>
-                        <CardContent className="flex items-center justify-center pt-0">
-                            {typeData.length === 0 ? (
-                                <p className="text-muted-foreground py-8 text-center text-sm">No type data available.</p>
-                            ) : (
-                                <ChartContainer config={typeConfig} className="aspect-square h-[250px]">
-                                    <PieChart>
-                                        <Pie data={typeData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={90} paddingAngle={2}>
-                                            {typeData.map((entry) => (
-                                                <Cell key={entry.name} fill={typeConfig[entry.name]?.color ?? CHART_COLORS[4]} />
-                                            ))}
-                                        </Pie>
-                                        <ChartTooltip content={<ChartTooltipContent nameKey="name" />} />
-                                    </PieChart>
-                                </ChartContainer>
-                            )}
-                        </CardContent>
-                    </Card>
-                </div>
-                {/* Status + Top Courses */}
-                <div className="grid gap-6 lg:grid-cols-2">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <Activity className="size-4" /> Enrollment by Status
-                            </CardTitle>
-                            <CardDescription>Workflow status breakdown for the current semester.</CardDescription>
-                        </CardHeader>
-                        <CardContent className="pt-0">
-                            {statusData.length === 0 ? (
-                                <p className="text-muted-foreground py-8 text-center text-sm">No status data available.</p>
-                            ) : (
-                                <ChartContainer config={statusConfig} className="aspect-auto h-[260px] w-full">
-                                    <BarChart data={statusData} layout="vertical" margin={{ top: 0, right: 30, left: 60, bottom: 0 }}>
-                                        <CartesianGrid horizontal={false} strokeDasharray="3 3" />
-                                        <XAxis type="number" tickLine={false} axisLine={false} tickMargin={4} fontSize={11} />
-                                        <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} width={70} />
-                                        <ChartTooltip content={<ChartTooltipContent />} />
-                                        <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={28}>
-                                            {statusData.map((_, i) => (
-                                                <Cell key={`cell-${i}`} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                                            ))}
-                                        </Bar>
-                                    </BarChart>
-                                </ChartContainer>
-                            )}
-                        </CardContent>
-                    </Card>
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <TrendingUp className="size-4" /> Top Courses
-                            </CardTitle>
-                            <CardDescription>Most popular courses by enrollment count.</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            {topCourses.length === 0 ? (
-                                <p className="text-muted-foreground py-8 text-center text-sm">No course data available.</p>
-                            ) : (
-                                <div className="space-y-2">
-                                    {topCourses.map((c) => (
-                                        <div key={c.code} className="flex items-center gap-3 rounded-lg border px-3 py-2">
-                                            <Badge variant="secondary" className="shrink-0 font-mono text-xs">
-                                                #{c.rank}
-                                            </Badge>
-                                            <div className="min-w-0 flex-1">
-                                                <p className="text-sm font-medium truncate">{c.code}</p>
-                                                <p className="text-muted-foreground truncate text-[11px]">{c.title}</p>
-                                            </div>
-                                            <span className="font-mono text-sm font-semibold tabular-nums shrink-0">
-                                                {c.value.toLocaleString()}
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </CardContent>
-                    </Card>
-                </div>
-                {/* Daily Trend */}
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            <Calendar className="size-4" /> Daily Enrollment Trend
-                        </CardTitle>
-                        <CardDescription>New enrollments per day for the current semester (last 30 days).</CardDescription>
-                    </CardHeader>
-                    <CardContent className="pt-0">
-                        {(analytics?.daily_trend ?? []).length === 0 ? (
-                            <p className="text-muted-foreground py-8 text-center text-sm">No daily trend data available.</p>
-                        ) : (
-                            <ChartContainer config={trendConfig} className="aspect-auto h-[250px] w-full">
-                                <BarChart data={dailyTrendChartData} margin={{ top: 0, right: 10, left: 10, bottom: 0 }}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                    <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={4} fontSize={10} angle={-45} textAnchor="end" interval="preserveStartEnd" />
-                                    <YAxis tickLine={false} axisLine={false} tickMargin={4} fontSize={11} allowDecimals={false} />
-                                    <ChartTooltip content={<ChartTooltipContent />} />
-                                    <Bar dataKey="value" fill="hsl(212 96% 53%)" radius={[4, 4, 0, 0]} maxBarSize={20} />
-                                </BarChart>
-                            </ChartContainer>
-                        )}
-                    </CardContent>
-                </Card>
-
-                {/* Data Quality */}
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            <DatabaseZap className="size-4" /> Data Quality &amp; Record Integrity
-                        </CardTitle>
-                        <CardDescription>Exceptions requiring registrar review and cleanup.</CardDescription>
-                    </CardHeader>
-                    <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                        {qualityIssues.map((check) => (
-                            <div key={check.label} className="flex items-start gap-3 rounded-lg border p-3">
-                                {check.tone === "ok" ? (
-                                    <CircleCheckBig className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                                ) : (
-                                    <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                                )}
-                                <div className="min-w-0 flex-1">
-                                    <div className="flex items-center justify-between gap-2">
-                                        <p className="text-sm font-semibold">{check.label}</p>
-                                        <Badge variant={check.value > 0 ? "secondary" : "outline"}>{check.value}</Badge>
-                                    </div>
-                                    <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
-                                        {check.value > 0 ? "Needs attention" : "No issues found"}
-                                    </p>
-                                </div>
-                            </div>
-                        ))}
-                    </CardContent>
-                </Card>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                {[["Form B/C enrollment", periodTotal], ["School-year total", analytics.current_school_year_count], ["Prior-term comparison", analytics.previous_semester_count], ["Active records", analytics.active_count]].map(([title, value], index) => <Card key={String(title)}><CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">{title}</CardTitle><Users className="text-muted-foreground size-4" /></CardHeader><CardContent><div className="text-2xl font-bold">{Number(value ?? 0).toLocaleString()}</div>{index === 2 && <p className="text-muted-foreground mt-1 text-xs">{delta >= 0 ? '+' : ''}{delta.toLocaleString()} vs prior period</p>}{index === 3 && <p className="text-muted-foreground mt-1 text-xs">{analytics.trashed_count ?? 0} deleted records retained for audit</p>}</CardContent></Card>)}
             </div>
-        </AdminLayout>
-    );
+
+            <Card><CardHeader><CardTitle className="text-base">Form B/C enrollment matrix</CardTitle><CardDescription>Program rows with sex-disaggregated new/continuing first-year and Years 2–7 counts. Unknown first-year intake is intentionally excluded from the two compliant buckets.</CardDescription></CardHeader><CardContent className="overflow-x-auto"><table className="w-full min-w-[1250px] text-xs"><thead className="bg-muted/60 text-left"><tr><th className="p-2">Department</th><th className="p-2">Program</th><th className="p-2">New F M/F</th><th className="p-2">Cont. 1st M/F</th>{[2,3,4,5,6,7].map((year) => <th key={year} className="p-2">Y{year} M/F</th>)}<th className="p-2">Total</th></tr></thead><tbody>{analytics.form_bc_matrix.length === 0 ? <tr><td colSpan={10} className="text-muted-foreground p-6 text-center">No programs match the report filters.</td></tr> : analytics.form_bc_matrix.map((row, rowIndex) => <tr key={`${row.program_code}-${rowIndex}`} className="border-b"><td className="p-2">{row.department ?? 'Unassigned'}</td><td className="p-2 font-medium">{row.program_code ?? 'Unassigned'} <span className="text-muted-foreground font-normal">{row.program_title ?? ''}</span></td>{matrixColumns.slice(0, 4).filter((_, index) => index % 2 === 0).map((column) => <td key={column} className="p-2">{Number(row[column] ?? 0)} / {Number(row[column.replace('_male', '_female')] ?? 0)}</td>)}{[2,3,4,5,6,7].map((year) => <td key={year} className="p-2">{Number(row[`year_${year}_male`] ?? 0)} / {Number(row[`year_${year}_female`] ?? 0)}</td>)}<td className="p-2 font-semibold">{Number(row.total ?? 0)}</td></tr>)}</tbody></table></CardContent></Card>
+
+            <div className="grid gap-4 xl:grid-cols-2">
+                <ChartCard title="Program distribution" description="Reported enrollments by program." data={chartData(analytics.by_program, "program")}>{(shown) => <BarView data={shown} />}</ChartCard>
+                <ChartCard title="Department distribution" description="Reported enrollments by department." data={chartData(analytics.by_department, "department")}>{(shown) => <BarView data={shown} />}</ChartCard>
+                <ChartCard title="Sex breakdown" description="Sex values as recorded on student records." data={chartData(analytics.by_gender, "gender")}>{(shown) => <PieView data={shown} />}</ChartCard>
+                <ChartCard title="Year-level breakdown" description="Enrollment-period year level." data={chartData(analytics.by_year_level, "year_level")}>{(shown) => <BarView data={shown} />}</ChartCard>
+                <ChartCard title="Enrollment pipeline" description="All statuses in the shared filtered population." data={chartData(analytics.by_status, "status")}>{(shown) => <BarView data={shown} />}</ChartCard>
+                <ChartCard title="Daily enrollment trend" description="Enrollment records created in the selected term." data={analytics.daily_trend.map((item) => ({ name: String(item.date ?? ""), count: Number(item.count ?? 0) }))}>{(shown) => <BarView data={shown} />}</ChartCard>
+                <ChartCard title="Regional origin" description="Recorded student region of origin." data={chartData(analytics.by_origin, "origin")}>{(shown) => <BarView data={shown} />}</ChartCard>
+                <ChartCard title="Scholarship" description="Recorded scholarship category." data={chartData(analytics.by_scholarship, "scholarship")}>{(shown) => <PieView data={shown} />}</ChartCard>
+                <ChartCard title="Income bracket" description="Recorded family income bracket." data={chartData(analytics.by_income_bracket, "income_bracket")}>{(shown) => <BarView data={shown} />}</ChartCard>
+                <ChartCard title="Equity and support groups" description="Students with recorded equity indicators; categories may overlap." data={chartData(analytics.by_equity_group, "group")}>{(shown) => <BarView data={shown} />}</ChartCard>
+                <ChartCard title="Attrition category" description="Recorded withdrawal or dropout category." data={chartData(analytics.by_attrition, "attrition")}>{(shown) => <BarView data={shown} />}</ChartCard>
+                <ChartCard title="Annual graduates" description="Graduates with a confirmed graduation academic year." data={analytics.annual_graduates.map((item) => ({ name: `${label(item.program)} · ${label(item.gender)}`, count: Number(item.count ?? 0) }))}>{(shown) => <BarView data={shown} />}</ChartCard>
+            </div>
+
+            <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><AlertTriangle className="size-4 text-amber-600" />Reporting-quality queue</CardTitle><CardDescription>Unknown values are surfaced for registrar review rather than being inferred. Dashboard charts remain aggregate-only; student detail is limited to the authorized Excel workbook.</CardDescription></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{qualityItems.map(([title, count]) => <div key={title} className="border-border flex items-center justify-between rounded-lg border p-3"><span className="text-sm">{title}</span><Badge variant={count > 0 ? "destructive" : "secondary"}>{count ?? 0}</Badge></div>)}</CardContent></Card>
+        </div>
+    </AdminLayout>;
 }

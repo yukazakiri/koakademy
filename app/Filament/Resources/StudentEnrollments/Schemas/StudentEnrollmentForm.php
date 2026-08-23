@@ -393,7 +393,20 @@ final class StudentEnrollmentForm
                         '4' => '4th Year',
                     ])
                     ->required()
-                    ->live(),
+                    ->live()
+                    ->afterStateUpdated(function (Set $set, mixed $state): void {
+                        if ((int) $state !== 1) {
+                            $set('intake_category', null);
+                        }
+                    }),
+                Select::make('intake_category')
+                    ->label('First-year intake classification')
+                    ->options([
+                        'new_freshman' => 'New freshman',
+                        'continuing_first_year' => 'Continuing first-year',
+                    ])
+                    ->visible(fn (Get $get): bool => (int) $get('academic_year') === 1)
+                    ->helperText('Leave historical or unverified records blank. They will be surfaced as unclassified in Form B/C reporting.'),
 
                 // Student Info Tab (conditionally visible)
                 Tabs::make('Student Info')

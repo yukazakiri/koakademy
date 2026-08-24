@@ -29,3 +29,8 @@ it('parses explicit trusted proxies without accepting empty entries', function (
         '192.0.2.0/24',
     ])->and(HostingSecurity::trustedProxies('*'))->toBe('*');
 });
+
+it('detects whether an application URL requires HTTPS', function (): void {
+    expect(HostingSecurity::usesHttps('http://127.0.0.1:8000'))->toBeFalse()
+        ->and(HostingSecurity::usesHttps('https://school.example'))->toBeTrue();
+});

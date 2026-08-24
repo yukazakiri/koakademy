@@ -52,6 +52,7 @@ use App\Services\LaravelAssessmentFormPdfRenderer;
 use App\Services\Newsletter\NewsletterSettingsService;
 use App\Services\Newsletter\NewsletterSubscriptionService;
 use App\Services\VersionService;
+use App\Support\HostingSecurity;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
@@ -90,7 +91,7 @@ final class AppServiceProvider extends ServiceProvider
         Passkeys::useUserModel(User::class);
         Passkeys::usePasskeyModel(Passkey::class);
 
-        if (app()->environment('production')) {
+        if (app()->environment('production') && HostingSecurity::usesHttps((string) config('app.url'))) {
             URL::forceScheme('https');
         }
 

@@ -58,6 +58,11 @@ final class HostingSecurity
         )));
     }
 
+    public static function usesHttps(string $url): bool
+    {
+        return mb_strtolower((string) parse_url($url, PHP_URL_SCHEME)) === 'https';
+    }
+
     private static function hostFromUrl(string $url): string
     {
         return (string) (parse_url($url, PHP_URL_HOST) ?: $url);

@@ -35,7 +35,8 @@ schedule_scout_settings_post_start() {
 }
 
 # Production deployment settings
-# RUN_MIGRATIONS: Opt in to migrations on container start (not recommended for production)
+# AUTO_MIGRATE: Run application migrations on container start. Default "true".
+# RUN_MIGRATIONS: Legacy alias used only when AUTO_MIGRATE is not set.
 # PRODUCTION_SEEDERS: Comma-separated list of production-safe seeders to run
 # RUN_DOCKER_SCRIPTS: Set to "true" to run scripts in docker-scripts folder on container start
 # RUN_SCOUT_SETTINGS: Set to "true" to sync Scout index settings after services boot (post-start). Default "true".
@@ -46,7 +47,7 @@ schedule_scout_settings_post_start() {
 # PULSE_AUTO_CREATE_DATABASE: Create a missing PostgreSQL Pulse database. Default "true".
 # PULSE_RUN_MIGRATIONS: Run the Pulse migration against its own connection. Default "true".
 # PULSE_PURGE_ON_START: Drain pending ingest records and clear Pulse storage before boot. Default "true".
-run_migrations=${RUN_MIGRATIONS:-"false"}
+auto_migrate=${AUTO_MIGRATE:-${RUN_MIGRATIONS:-"true"}}
 production_seeders=${PRODUCTION_SEEDERS:-""}
 run_docker_scripts=${RUN_DOCKER_SCRIPTS:-"false"}
 run_scout_settings=${RUN_SCOUT_SETTINGS:-"true"}
@@ -582,7 +583,7 @@ run_production_seeders() {
 }
 
 run_migrations_if_enabled() {
-    if [ "${run_migrations}" != "true" ]; then
+    if ! is_truthy "${auto_migrate}"; then
         echo "Database migrations disabled, skipping."
         return 0
     fi

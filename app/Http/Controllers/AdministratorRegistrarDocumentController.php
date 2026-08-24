@@ -77,7 +77,7 @@ final class AdministratorRegistrarDocumentController extends Controller
             'purpose' => ['nullable', 'string', 'max:160'],
         ]);
 
-        $variant = (string) ($validated['variant'] ?? 'classic');
+        $variant = (string) ($validated['variant'] ?? $this->defaultVariant($validated['template']));
         if (! in_array($variant, $this->variantKeys($validated['template']), true)) {
             throw ValidationException::withMessages(['variant' => 'The selected document format is not available.']);
         }
@@ -93,10 +93,20 @@ final class AdministratorRegistrarDocumentController extends Controller
     private function variantKeys(string $template): array
     {
         return match ($template) {
-            'certificate_of_enrollment' => ['classic', 'institutional', 'compact'],
-            'registration_form' => ['standard', 'advising', 'compact'],
-            'grade_report' => ['official', 'detailed', 'compact'],
+            'certificate_of_enrollment' => ['full_certificate', 'verification_letter', 'units_certificate'],
+            'registration_form' => ['student_copy', 'adviser_copy', 'receipt_copy'],
+            'grade_report' => ['official_record', 'transcript_style', 'grade_slip'],
             default => [],
+        };
+    }
+
+    private function defaultVariant(string $template): string
+    {
+        return match ($template) {
+            'certificate_of_enrollment' => 'full_certificate',
+            'registration_form' => 'student_copy',
+            'grade_report' => 'official_record',
+            default => '',
         };
     }
 

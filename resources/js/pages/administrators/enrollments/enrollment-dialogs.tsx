@@ -26,6 +26,9 @@ type BulkReportsDialogProps = {
     isGenerating: boolean;
     onGenerate: () => void;
     courseOptions: EnrollmentCourseOption[];
+    isLoadingCourses: boolean;
+    courseOptionsError: string | null;
+    onRetryCourses: () => void;
     studentLimitOptions: number[];
 };
 
@@ -37,11 +40,14 @@ export function BulkReportsDialog({
     isGenerating,
     onGenerate,
     courseOptions,
+    isLoadingCourses,
+    courseOptionsError,
+    onRetryCourses,
     studentLimitOptions,
 }: BulkReportsDialogProps) {
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-lg">
+            <DialogContent className="min-w-0 sm:max-w-lg">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <Download className="h-5 w-5" />
@@ -53,9 +59,9 @@ export function BulkReportsDialog({
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="grid gap-4 py-4">
+                <div className="grid min-w-0 gap-4 py-4">
                     {/* Course Filter */}
-                    <div className="space-y-2">
+                    <div className="min-w-0 space-y-2">
                         <Label htmlFor="course-filter">Filter by Course</Label>
                         <Select
                             value={filters.course_id === null ? "all" : String(filters.course_id)}
@@ -66,18 +72,41 @@ export function BulkReportsDialog({
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">All Courses</SelectItem>
+                                {isLoadingCourses && (
+                                    <SelectItem value="courses-loading" disabled>
+                                        Loading courses…
+                                    </SelectItem>
+                                )}
+                                {!isLoadingCourses && courseOptions.length === 0 && (
+                                    <SelectItem value="courses-empty" disabled>
+                                        No courses available
+                                    </SelectItem>
+                                )}
                                 {courseOptions.map((course) => (
-                                    <SelectItem key={course.id} value={String(course.id)}>
-                                        {course.code}
-                                        {course.title ? ` — ${course.title}` : ""}
+                                    <SelectItem key={course.id} value={String(course.id)} className="min-w-0">
+                                        <span className="min-w-0 truncate" title={`${course.code}${course.title ? ` — ${course.title}` : ""}`}>
+                                            {course.code}
+                                            {course.title ? ` — ${course.title}` : ""}
+                                        </span>
                                     </SelectItem>
                                 ))}
                             </SelectContent>
                         </Select>
+                        {courseOptionsError ? (
+                            <div className="text-destructive flex items-center justify-between gap-2 text-xs">
+                                <span>{courseOptionsError}</span>
+                                <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={onRetryCourses}>
+                                    <RotateCcw className="mr-1.5 size-3" />
+                                    Retry
+                                </Button>
+                            </div>
+                        ) : !isLoadingCourses && courseOptions.length === 0 ? (
+                            <p className="text-muted-foreground text-xs">There are no enrolled courses for the current academic period.</p>
+                        ) : null}
                     </div>
 
                     {/* Year Level Filter */}
-                    <div className="space-y-2">
+                    <div className="min-w-0 space-y-2">
                         <Label htmlFor="year-level-filter">Filter by Year Level</Label>
                         <Select
                             value={filters.year_level === null ? "all" : String(filters.year_level)}
@@ -98,7 +127,7 @@ export function BulkReportsDialog({
                     </div>
 
                     {/* Student Limit */}
-                    <div className="space-y-2">
+                    <div className="min-w-0 space-y-2">
                         <Label htmlFor="student-limit">Maximum Students</Label>
                         <Select
                             value={filters.student_limit === null ? "all" : String(filters.student_limit)}

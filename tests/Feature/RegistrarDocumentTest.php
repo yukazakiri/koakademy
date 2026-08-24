@@ -52,11 +52,11 @@ it('builds a student-facing certificate preview from the selected academic perio
         'academic_year' => 1,
     ]);
 
-    $response = $this->actingAs($user)->getJson(portalUrlForAdministrators('/administrators/registrar/documents/preview?template=certificate_of_enrollment&variant=institutional&student_id='.$student->id.'&purpose=Scholarship'));
+    $response = $this->actingAs($user)->getJson(portalUrlForAdministrators('/administrators/registrar/documents/preview?template=certificate_of_enrollment&variant=verification_letter&student_id='.$student->id.'&purpose=Scholarship'));
 
     $response->assertOk()
         ->assertJsonPath('template', 'certificate_of_enrollment')
-        ->assertJsonPath('variant', 'institutional')
+        ->assertJsonPath('variant', 'verification_letter')
         ->assertJsonPath('student.student_number', 20240001)
         ->assertJsonPath('student.course_code', 'BSIT')
         ->assertJsonPath('enrollment.total_units', 3)

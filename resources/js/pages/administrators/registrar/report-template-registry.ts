@@ -4,12 +4,31 @@ import { Award, BarChart3, ClipboardList, FileText, GraduationCap, Users } from 
 export type TemplateKey =
     "certificate_of_enrollment" | "registration_form" | "grade_report" | "enrolled_by_course" | "enrolled_by_subject" | "enrollment_summary";
 
-export type TemplateVariant = {
+export type TemplateFormat = {
     key: string;
     title: string;
     description: string;
-    layout: "classic" | "modern" | "compact" | "statement" | "summary";
-    accent: "ink" | "blue" | "gold" | "slate";
+    structure:
+        | "certificate_subjects"
+        | "certificate_statement"
+        | "certificate_units"
+        | "registration_full"
+        | "registration_advising"
+        | "registration_compact"
+        | "grade_detailed"
+        | "grade_transcript"
+        | "grade_slip"
+        | "roster_full"
+        | "roster_signoff"
+        | "roster_compact"
+        | "subject_attendance"
+        | "subject_faculty"
+        | "subject_student_list"
+        | "summary_breakdown"
+        | "summary_leadership"
+        | "summary_status";
+    includes: string[];
+    orientation: "portrait" | "landscape";
 };
 
 export type TemplateDefinition = {
@@ -20,7 +39,7 @@ export type TemplateDefinition = {
     mode: "student" | "report";
     formats: Array<"PDF" | "XLSX" | "Print">;
     icon: LucideIcon;
-    variants: TemplateVariant[];
+    variants: TemplateFormat[];
     defaultVariant: string;
 };
 
@@ -33,28 +52,31 @@ export const TEMPLATES: TemplateDefinition[] = [
         mode: "student",
         formats: ["PDF", "Print"],
         icon: Award,
-        defaultVariant: "classic",
+        defaultVariant: "full_certificate",
         variants: [
             {
-                key: "classic",
-                title: "Classic registrar",
-                description: "Traditional letterhead with a centered certification statement.",
-                layout: "classic",
-                accent: "ink",
+                key: "full_certificate",
+                title: "Full enrollment certificate",
+                description: "Certification statement followed by the student's current registered subjects and units.",
+                structure: "certificate_subjects",
+                includes: ["Certification statement", "Student details", "Registered subjects", "Total units"],
+                orientation: "portrait",
             },
             {
-                key: "institutional",
-                title: "Institutional letterhead",
-                description: "Formal centered masthead for government, embassy, and employer requests.",
-                layout: "statement",
-                accent: "gold",
+                key: "verification_letter",
+                title: "Enrollment verification letter",
+                description: "A statement-only letter for employers, embassies, scholarship offices, and other third parties.",
+                structure: "certificate_statement",
+                includes: ["Formal verification", "Purpose line", "Period and status", "Registrar signature"],
+                orientation: "portrait",
             },
             {
-                key: "compact",
-                title: "Compact verification",
-                description: "A concise one-page certificate with a small enrollment summary.",
-                layout: "compact",
-                accent: "slate",
+                key: "units_certificate",
+                title: "Enrollment and units certificate",
+                description: "A concise certificate that documents the registered load without the full class schedule.",
+                structure: "certificate_units",
+                includes: ["Certification statement", "Subject and unit list", "Total units", "Registrar signature"],
+                orientation: "portrait",
             },
         ],
     },
@@ -66,28 +88,31 @@ export const TEMPLATES: TemplateDefinition[] = [
         mode: "student",
         formats: ["PDF", "Print"],
         icon: ClipboardList,
-        defaultVariant: "standard",
+        defaultVariant: "student_copy",
         variants: [
             {
-                key: "standard",
-                title: "Standard registration",
-                description: "Balanced subject list for the student's official record.",
-                layout: "classic",
-                accent: "ink",
+                key: "student_copy",
+                title: "Student copy",
+                description: "The complete registration record with section, meeting schedule, and registered units.",
+                structure: "registration_full",
+                includes: ["Complete schedule", "Section", "Subject details", "Total registered units"],
+                orientation: "portrait",
             },
             {
-                key: "advising",
-                title: "Advising worksheet",
-                description: "Roomier schedule columns for advising and signature review.",
-                layout: "modern",
-                accent: "blue",
+                key: "adviser_copy",
+                title: "Adviser review copy",
+                description: "A review sheet with the student's schedule plus adviser and registrar sign-off fields.",
+                structure: "registration_advising",
+                includes: ["Schedule review", "Adviser sign-off", "Registrar sign-off", "Total registered units"],
+                orientation: "portrait",
             },
             {
-                key: "compact",
-                title: "Compact registration",
-                description: "Dense format for quick counter service and filing.",
-                layout: "compact",
-                accent: "slate",
+                key: "receipt_copy",
+                title: "Registration receipt copy",
+                description: "A counter-friendly list of registered subjects, sections, and units for quick release and filing.",
+                structure: "registration_compact",
+                includes: ["Subject list", "Section", "Units", "Registration period"],
+                orientation: "portrait",
             },
         ],
     },
@@ -99,28 +124,31 @@ export const TEMPLATES: TemplateDefinition[] = [
         mode: "student",
         formats: ["PDF", "Print"],
         icon: GraduationCap,
-        defaultVariant: "official",
+        defaultVariant: "official_record",
         variants: [
             {
-                key: "official",
-                title: "Official grade report",
-                description: "Formal term record with signatures and verification status.",
-                layout: "classic",
-                accent: "ink",
+                key: "official_record",
+                title: "Official grade record",
+                description: "The full term record with prelim, midterm, finals, average, and verification status.",
+                structure: "grade_detailed",
+                includes: ["Prelim / midterm / finals", "Average", "Verification status", "Term average"],
+                orientation: "portrait",
             },
             {
-                key: "detailed",
-                title: "Detailed academic record",
-                description: "A clearer hierarchy for prelim, midterm, finals, and averages.",
-                layout: "modern",
-                accent: "blue",
+                key: "transcript_style",
+                title: "Transcript-style record",
+                description: "A cleaner academic record focused on course, units, average, and final status.",
+                structure: "grade_transcript",
+                includes: ["Course and title", "Units", "Final average", "Verification status"],
+                orientation: "portrait",
             },
             {
-                key: "compact",
-                title: "Compact grade slip",
-                description: "A condensed format for quick student pickup and filing.",
-                layout: "compact",
-                accent: "slate",
+                key: "grade_slip",
+                title: "Student grade slip",
+                description: "A condensed pickup copy with the essential subject grades and term average.",
+                structure: "grade_slip",
+                includes: ["Course and title", "Final average", "Term average", "Student copy"],
+                orientation: "portrait",
             },
         ],
     },
@@ -132,28 +160,31 @@ export const TEMPLATES: TemplateDefinition[] = [
         mode: "report",
         formats: ["PDF", "XLSX", "Print"],
         icon: Users,
-        defaultVariant: "standard",
+        defaultVariant: "full_roster",
         variants: [
             {
-                key: "standard",
-                title: "Standard operations",
-                description: "Full-width roster for registrar and department review.",
-                layout: "classic",
-                accent: "ink",
+                key: "full_roster",
+                title: "Full registrar roster",
+                description: "The complete student list with program, department, year level, subject count, and status.",
+                structure: "roster_full",
+                includes: ["Full student details", "Program and department", "Subject count", "Status"],
+                orientation: "landscape",
             },
             {
-                key: "executive",
-                title: "Executive summary",
-                description: "More breathing room and clearer report-level hierarchy.",
-                layout: "summary",
-                accent: "gold",
+                key: "course_signoff",
+                title: "Course sign-off roster",
+                description: "A course-level roster with an acknowledgement column for department or adviser review.",
+                structure: "roster_signoff",
+                includes: ["Student identity", "Program and year", "Review status", "Acknowledgement"],
+                orientation: "landscape",
             },
             {
-                key: "compact",
-                title: "Compact filing copy",
-                description: "Tighter rows for printing and physical filing.",
-                layout: "compact",
-                accent: "slate",
+                key: "compact_roster",
+                title: "Compact filing roster",
+                description: "A reduced roster for recurring filing, circulation, and quick headcount checks.",
+                structure: "roster_compact",
+                includes: ["Student ID", "Full name", "Course", "Year level"],
+                orientation: "landscape",
             },
         ],
     },
@@ -165,28 +196,31 @@ export const TEMPLATES: TemplateDefinition[] = [
         mode: "report",
         formats: ["PDF", "XLSX", "Print"],
         icon: FileText,
-        defaultVariant: "standard",
+        defaultVariant: "attendance_roster",
         variants: [
             {
-                key: "standard",
-                title: "Standard roster",
-                description: "Subject groups with section and student details.",
-                layout: "classic",
-                accent: "ink",
+                key: "attendance_roster",
+                title: "Attendance roster",
+                description: "Subject groups with student identity and a blank signature column for each meeting.",
+                structure: "subject_attendance",
+                includes: ["Subject groups", "Student ID", "Section", "Attendance signature"],
+                orientation: "landscape",
             },
             {
-                key: "faculty",
-                title: "Faculty handout",
-                description: "Readable roster hierarchy for instructors and classrooms.",
-                layout: "modern",
-                accent: "blue",
+                key: "faculty_roster",
+                title: "Faculty class list",
+                description: "A teaching copy that keeps course, year, section, and schedule details visible at a glance.",
+                structure: "subject_faculty",
+                includes: ["Student identity", "Course and year", "Section", "Class schedule"],
+                orientation: "landscape",
             },
             {
-                key: "compact",
-                title: "Compact roster",
-                description: "Dense list for attendance folders and quick reference.",
-                layout: "compact",
-                accent: "slate",
+                key: "student_list",
+                title: "Student list",
+                description: "A simple list of enrolled students for posting, distribution, or classroom reference.",
+                structure: "subject_student_list",
+                includes: ["Student number", "Full name", "Course", "Year level"],
+                orientation: "landscape",
             },
         ],
     },
@@ -198,28 +232,31 @@ export const TEMPLATES: TemplateDefinition[] = [
         mode: "report",
         formats: ["PDF", "XLSX", "Print"],
         icon: BarChart3,
-        defaultVariant: "standard",
+        defaultVariant: "department_breakdown",
         variants: [
             {
-                key: "standard",
-                title: "Standard summary",
-                description: "Balanced tables for regular registrar reporting.",
-                layout: "classic",
-                accent: "ink",
+                key: "department_breakdown",
+                title: "Department breakdown",
+                description: "A detailed summary of enrollment by department, course, year level, and status.",
+                structure: "summary_breakdown",
+                includes: ["Department totals", "Course totals", "Year levels", "Status totals"],
+                orientation: "landscape",
             },
             {
-                key: "executive",
-                title: "Executive dashboard",
-                description: "Summary-first presentation for leadership review.",
-                layout: "summary",
-                accent: "gold",
+                key: "leadership_summary",
+                title: "Leadership summary",
+                description: "A summary-first report with headline enrollment totals and the largest course groups.",
+                structure: "summary_leadership",
+                includes: ["Headline total", "Department totals", "Course ranking", "Decision-ready summary"],
+                orientation: "landscape",
             },
             {
-                key: "compact",
-                title: "Compact summary",
-                description: "Condensed report for recurring filing and circulation.",
-                layout: "compact",
-                accent: "slate",
+                key: "status_summary",
+                title: "Status summary",
+                description: "A concise operational report centered on active, completed, and other enrollment statuses.",
+                structure: "summary_status",
+                includes: ["Total enrolled", "Status counts", "Status percentage", "Period metadata"],
+                orientation: "landscape",
             },
         ],
     },
@@ -231,7 +268,7 @@ export function getTemplateDefinition(key: TemplateKey): TemplateDefinition {
     return TEMPLATES.find((template) => template.key === key) ?? TEMPLATES[0];
 }
 
-export function getTemplateVariant(template: TemplateKey, variantKey?: string): TemplateVariant {
+export function getTemplateVariant(template: TemplateKey, variantKey?: string): TemplateFormat {
     const definition = getTemplateDefinition(template);
 
     return definition.variants.find((variant) => variant.key === variantKey) ?? definition.variants[0];

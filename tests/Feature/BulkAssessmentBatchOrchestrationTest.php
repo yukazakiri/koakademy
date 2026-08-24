@@ -153,6 +153,57 @@ it('snapshots matching enrollments in deterministic order and dispatches one ite
         && collect($batch->jobs)->every(fn ($job): bool => $job instanceof GenerateBulkAssessmentItemJob));
 });
 
+it('limits preparation to the selected course', function (): void {
+    Bus::fake();
+    Event::fake([AssessmentExportProgressed::class]);
+    $school = School::factory()->create();
+    assessmentExportSchoolContext($school);
+    $user = User::factory()->create(['role' => UserRole::Admin, 'school_id' => $school->id]);
+    $courseA = Course::factory()->create(['school_id' => $school->id, 'code' => 'AAA']);
+    $courseB = Course::factory()->create(['school_id' => $school->id, 'code' => 'ZZZ']);
+    $status = app(EnrollmentPipelineService::class)->getCashierVerifiedStatus();
+    $studentA = Student::factory()->create(['school_id' => $school->id, 'course_id' => $courseA->id]);
+    $studentB = Student::factory()->create(['school_id' => $school->id, 'course_id' => $courseB->id]);
+    $enrollmentA = StudentEnrollment::factory()->create([
+        'school_id' => $school->id,
+        'student_id' => $studentA->id,
+        'course_id' => $courseA->id,
+        'status' => $status,
+        'semester' => 1,
+        'school_year' => '2024 - 2025',
+    ]);
+    StudentEnrollment::factory()->create([
+        'school_id' => $school->id,
+        'student_id' => $studentB->id,
+        'course_id' => $courseB->id,
+        'status' => $status,
+        'semester' => 1,
+        'school_year' => '2024 - 2025',
+    ]);
+    $export = createTrackedAssessmentExport($user, $school, [
+        'status' => 'pending',
+        'stage' => 'queued',
+        'filters' => [
+            'course_id' => $courseA->id,
+            'year_level' => null,
+            'student_limit' => null,
+            'include_deleted' => false,
+            'semester' => 1,
+            'school_year' => '2024 - 2025',
+        ],
+    ]);
+
+    (new GenerateBulkAssessmentsJob($export->id))->handle(
+        app(EnrollmentPipelineService::class),
+        app(AssessmentExportCoordinator::class),
+        app(AssessmentExportNotificationService::class),
+    );
+
+    expect($export->items()->orderBy('sequence')->pluck('enrollment_id')->all())
+        ->toBe([$enrollmentA->id]);
+    Bus::assertBatched(fn (PendingBatch $batch): bool => count($batch->jobs) === 1);
+});
+
 it('merges every validated item into one page-verified PDF', function (): void {
     Event::fake([AssessmentExportProgressed::class]);
     config()->set('assessment-exports.disk', 'local');

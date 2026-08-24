@@ -26,8 +26,8 @@ import {
     STUDENT_TEMPLATES,
     TEMPLATES,
     type TemplateDefinition,
+    type TemplateFormat,
     type TemplateKey,
-    type TemplateVariant,
 } from "./report-template-registry";
 type StudentSearchResult = {
     id: number;
@@ -325,7 +325,11 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
     const [availableSubjects, setAvailableSubjects] = useState<Array<{ id: string | number; code: string; title: string; enrolled_count: number }>>(
         [],
     );
-    const [availableCourses, setAvailableCourses] = useState<Array<{ id: number; code: string; title: string; department: string }>>([]);
+    const [availableCourses, setAvailableCourses] = useState<Array<{ id: number; code: string; title: string | null; department: string | null }>>(
+        [],
+    );
+    const [isLoadingAvailableCourses, setIsLoadingAvailableCourses] = useState(false);
+    const [courseOptionsError, setCourseOptionsError] = useState<string | null>(null);
     const [purpose, setPurpose] = useState("Scholarship, employment, or other lawful purpose");
     const [selectedVariants, setSelectedVariants] = useState<Record<TemplateKey, string>>(() => getDefaultTemplateVariants());
     const [variantSettingsFor, setVariantSettingsFor] = useState<TemplateKey | null>(null);
@@ -356,6 +360,32 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
             ),
         [normalizedCatalogSearch],
     );
+
+    const loadCourseOptions = useCallback(async (): Promise<void> => {
+        setIsLoadingAvailableCourses(true);
+        setCourseOptionsError(null);
+
+        try {
+            const response = await fetch(buildUrl("administrators.enrollments.reports.course-options", {}), {
+                headers: { Accept: "application/json" },
+            });
+            const payload = (await response.json().catch(() => ({}))) as {
+                courses?: Array<{ id: number; code: string; title: string | null; department: string | null }>;
+                message?: string;
+            };
+
+            if (!response.ok) {
+                throw new Error(payload.message ?? "Course options could not be loaded.");
+            }
+
+            setAvailableCourses(Array.isArray(payload.courses) ? payload.courses : []);
+        } catch (error) {
+            setAvailableCourses([]);
+            setCourseOptionsError(error instanceof Error ? error.message : "Course options could not be loaded.");
+        } finally {
+            setIsLoadingAvailableCourses(false);
+        }
+    }, []);
 
     const addRecentOutput = useCallback(
         (format: RecentOutput["format"], detail: string) => {
@@ -409,11 +439,8 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
             .then((response) => response.json())
             .then((payload: { subjects?: typeof availableSubjects }) => setAvailableSubjects(payload.subjects ?? []))
             .catch(() => undefined);
-        void fetch(buildUrl("administrators.enrollments.reports.course-options", {}), { headers: { Accept: "application/json" } })
-            .then((response) => response.json())
-            .then((payload: { courses?: typeof availableCourses }) => setAvailableCourses(payload.courses ?? []))
-            .catch(() => undefined);
-    }, []);
+        void loadCourseOptions();
+    }, [loadCourseOptions]);
 
     const handleTemplateSelect = (key: TemplateKey) => {
         const nextVariant = selectedVariants[key] ?? getTemplateDefinition(key).defaultVariant;
@@ -1007,8 +1034,8 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
                                 <div className="bg-muted/30 rounded-xl border p-4">
                                     <p className="text-muted-foreground text-[10px] font-semibold tracking-[0.16em] uppercase">How formats work</p>
                                     <p className="text-muted-foreground mt-2 text-xs leading-5">
-                                        Each format is a reusable variant of the same official document. Add another object to the template registry
-                                        to introduce a new format without changing the catalog or export controls.
+                                        Each format describes a different official output structure. Add another object to the template registry to
+                                        introduce a new format; keep its structure key in the preview and PDF renderers.
                                     </p>
                                 </div>
                                 <div className="grid gap-4 sm:grid-cols-2">
@@ -1027,6 +1054,16 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
                                                     <div>
                                                         <p className="text-sm font-semibold">{variant.title}</p>
                                                         <p className="text-muted-foreground mt-1 text-xs leading-5">{variant.description}</p>
+                                                        <div className="mt-2 flex flex-wrap gap-1">
+                                                            {variant.includes.slice(0, 3).map((item) => (
+                                                                <span
+                                                                    key={item}
+                                                                    className="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-[9px]"
+                                                                >
+                                                                    {item}
+                                                                </span>
+                                                            ))}
+                                                        </div>
                                                     </div>
                                                     <span
                                                         className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border ${isSelected ? "border-primary bg-primary text-primary-foreground" : "border-border"}`}
@@ -1045,87 +1082,107 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
             </Sheet>
             <BulkReportsDialog
                 open={isBulkReportsOpen}
-                onOpenChange={setIsBulkReportsOpen}
+                onOpenChange={(open) => {
+                    setIsBulkReportsOpen(open);
+                    if (open && (availableCourses.length === 0 || courseOptionsError !== null)) {
+                        void loadCourseOptions();
+                    }
+                }}
                 filters={bulkReportFilters}
                 onFiltersChange={setBulkReportFilters}
                 isGenerating={isGeneratingBulkReport}
                 onGenerate={handleGenerateBulkAssessments}
                 courseOptions={availableCourses.map((course) => ({ id: course.id, code: course.code, title: course.title }))}
+                isLoadingCourses={isLoadingAvailableCourses}
+                courseOptionsError={courseOptionsError}
+                onRetryCourses={() => void loadCourseOptions()}
                 studentLimitOptions={assessment_export_options.student_limits}
             />
         </AdminLayout>
     );
 }
 
-function TemplateVariantPreview({ template, variant }: { template: TemplateDefinition; variant: TemplateVariant }) {
-    const accent = {
-        ink: "#1c2733",
-        blue: "#2563eb",
-        gold: "#a16207",
-        slate: "#64748b",
-    }[variant.accent];
-    const isCompact = variant.layout === "compact";
-    const isStatement = variant.layout === "statement";
-    const isSummary = variant.layout === "summary";
+function TemplateVariantPreview({ template, variant }: { template: TemplateDefinition; variant: TemplateFormat }) {
+    const isCertificate = template.key === "certificate_of_enrollment";
+    const isRegistration = template.key === "registration_form";
+    const isGradeReport = template.key === "grade_report";
+    const isStatement = variant.structure === "certificate_statement";
+    const isSummary = variant.structure.startsWith("summary_");
+    const isRoster = variant.structure.startsWith("roster_") || variant.structure.startsWith("subject_");
 
     return (
         <div className="bg-background/90 overflow-hidden rounded-xl border shadow-xs" aria-hidden="true">
-            <div className="h-1" style={{ backgroundColor: accent }} />
-            <div className={`space-y-2 p-3 ${isStatement ? "text-center" : ""}`}>
-                <div className={`flex items-center gap-2 ${isStatement ? "justify-center" : ""}`}>
-                    <div className="size-5 rounded-full" style={{ backgroundColor: `${accent}22` }} />
+            <div className="bg-foreground h-1" />
+            <div className="space-y-2 p-3">
+                <div className="flex items-center gap-2 border-b pb-2">
+                    <div className="bg-muted size-5 rounded-full border" />
                     <div className="flex-1 space-y-1">
-                        <div className="h-1.5 w-2/3 rounded-full" style={{ backgroundColor: `${accent}55` }} />
-                        <div className="bg-muted h-1 w-1/2 rounded-full" />
+                        <div className="bg-foreground/75 h-1.5 w-2/3 rounded-full" />
+                        <div className="bg-muted-foreground/35 h-1 w-1/2 rounded-full" />
                     </div>
+                    <span className="text-muted-foreground text-[8px] uppercase">{variant.orientation}</span>
                 </div>
-                <div className={`space-y-1 ${isStatement ? "flex flex-col items-center" : ""}`}>
-                    <div className="h-2 w-3/5 rounded-full" style={{ backgroundColor: `${accent}cc` }} />
-                    <div className="bg-muted h-1 w-2/5 rounded-full" />
+                <div className="space-y-1">
+                    <div className="bg-foreground/70 mx-auto h-2 w-3/5 rounded-full" />
+                    <div className="bg-muted-foreground/30 mx-auto h-1 w-2/5 rounded-full" />
                 </div>
-                {isSummary ? (
-                    <div className="grid grid-cols-3 gap-1.5">
-                        {["68", "42", "18"].map((value) => (
-                            <div key={value} className="rounded-md border p-1.5 text-center">
-                                <div className="text-[8px] font-semibold" style={{ color: accent }}>
-                                    {value}
-                                </div>
-                                <div className="bg-muted mx-auto mt-1 h-1 w-3/4 rounded-full" />
+                {isStatement ? (
+                    <div className="space-y-2 border p-2">
+                        <div className="bg-muted h-1.5 w-full rounded-full" />
+                        <div className="bg-muted h-1.5 w-4/5 rounded-full" />
+                        <div className="bg-muted h-1.5 w-3/5 rounded-full" />
+                    </div>
+                ) : isSummary ? (
+                    <div className="grid grid-cols-2 gap-1.5">
+                        {["Total", "Department", "Course", "Status"].map((label) => (
+                            <div key={label} className="rounded-md border p-1.5">
+                                <div className="text-[8px] font-semibold">{label}</div>
+                                <div className="bg-muted mt-1 h-1 w-3/4 rounded-full" />
+                            </div>
+                        ))}
+                    </div>
+                ) : isRoster ? (
+                    <div className="space-y-1">
+                        <div className="bg-muted-foreground/30 h-1.5 w-full rounded-full" />
+                        {[1, 2, 3].map((row) => (
+                            <div key={row} className="grid grid-cols-4 gap-1">
+                                <div className="bg-muted h-1.5 rounded-full" />
+                                <div className="bg-muted col-span-2 h-1.5 rounded-full" />
+                                <div className="bg-muted h-1.5 rounded-full" />
                             </div>
                         ))}
                     </div>
                 ) : (
-                    <div className="space-y-1.5">
-                        {(isCompact ? [1, 2, 3] : [1, 2, 3, 4]).map((row) => (
-                            <div key={row} className="flex items-center gap-1.5">
-                                <div className="h-1.5 w-1/5 rounded-full" style={{ backgroundColor: `${accent}66` }} />
-                                <div className="bg-muted h-1.5 flex-1 rounded-full" />
-                                <div className="bg-muted h-1.5 w-1/6 rounded-full" />
+                    <div className="space-y-1">
+                        <div className="grid grid-cols-4 gap-1">
+                            <div className="bg-muted-foreground/30 h-1.5 rounded-full" />
+                            <div className="bg-muted-foreground/30 col-span-2 h-1.5 rounded-full" />
+                            <div className="bg-muted-foreground/30 h-1.5 rounded-full" />
+                        </div>
+                        {[1, 2, 3].map((row) => (
+                            <div key={row} className="grid grid-cols-4 gap-1">
+                                <div className="bg-muted h-1.5 rounded-full" />
+                                <div className="bg-muted col-span-2 h-1.5 rounded-full" />
+                                <div className="bg-muted h-1.5 rounded-full" />
                             </div>
                         ))}
                     </div>
                 )}
-                <div className="flex items-center justify-between border-t pt-2">
-                    <span className="text-muted-foreground text-[8px]">Alexandra Santos · 2025–2026</span>
-                    <span className="text-[8px] font-medium" style={{ color: accent }}>
-                        {template.mode === "student" ? "A4" : "Landscape"}
-                    </span>
+                <div className="text-muted-foreground flex items-center justify-between border-t pt-2 text-[8px]">
+                    <span>Alexandra Santos · 2025–2026</span>
+                    <span>{isCertificate ? "Certificate" : isRegistration ? "Registration" : isGradeReport ? "Grades" : "Report"}</span>
                 </div>
             </div>
         </div>
     );
 }
 
-function OperationalReportPreview({ data, variant }: { data: Record<string, unknown>; variant: TemplateVariant }) {
-    const accent = {
-        ink: "#111827",
-        blue: "#1d4ed8",
-        gold: "#9b6b32",
-        slate: "#64748b",
-    }[variant.accent];
-
+function OperationalReportPreview({ data }: { data: Record<string, unknown>; variant: TemplateFormat }) {
     return (
-        <div className="bg-white" style={{ borderTop: `5px solid ${accent}` }}>
+        <div className="bg-white">
+            <div className="border-b px-5 py-3 text-xs">
+                <span className="font-semibold">Format:</span> {variant.title} · {variant.description}
+            </div>
             <ReportContent data={data} />
         </div>
     );
@@ -1137,14 +1194,12 @@ function StudentDocumentPreview({ data }: { data: StudentDocumentPayload }) {
     const isGradeReport = data.template === "grade_report";
     const isCertificate = data.template === "certificate_of_enrollment";
     const variant = getTemplateVariant(data.template as TemplateKey, data.variant);
-    const accent = {
-        ink: "#17202a",
-        blue: "#1d4ed8",
-        gold: "#9b6b32",
-        slate: "#64748b",
-    }[variant.accent];
-    const isCompact = variant.layout === "compact";
-    const isStatement = variant.layout === "statement";
+    const isStatementCertificate = variant.structure === "certificate_statement";
+    const isUnitsCertificate = variant.structure === "certificate_units";
+    const isAdviserRegistration = variant.structure === "registration_advising";
+    const isCompactRegistration = variant.structure === "registration_compact";
+    const isTranscriptGrade = variant.structure === "grade_transcript";
+    const isGradeSlip = variant.structure === "grade_slip";
     const subjects = isGradeReport
         ? data.grades.subjects.map((subject) => ({ ...subject, section: "", schedule: "", grade: null }))
         : enrollment.subjects.map((subject) => ({ ...subject, prelim: null, midterm: null, finals: null, average: subject.grade, status: "" }));
@@ -1160,15 +1215,13 @@ function StudentDocumentPreview({ data }: { data: StudentDocumentPayload }) {
     };
     return (
         <div
-            className={`registrar-document bg-white text-[10pt] leading-relaxed text-[#17202a] ${isCompact ? "p-4 text-[9pt]" : "p-5 sm:p-8"}`}
-            style={{ fontFamily: "Arial, Helvetica, sans-serif", borderTop: `5px solid ${accent}` }}
+            className={`registrar-document bg-white text-[10pt] leading-relaxed text-[#17202a] ${isGradeSlip ? "p-5 text-[9pt]" : "p-5 sm:p-8"}`}
+            style={{ fontFamily: "Arial, Helvetica, sans-serif", borderTop: "5px solid #17202a" }}
         >
-            <div className={`flex items-center gap-3 border-b-2 pb-3 ${isStatement ? "flex-col text-center" : ""}`} style={{ borderColor: accent }}>
+            <div className="flex items-center gap-3 border-b-2 border-[#17202a] pb-3">
                 {data.school.logo && <img src={data.school.logo} alt="School logo" className="size-12 object-contain" />}
                 <div>
-                    <h3 className="m-0 text-[15pt] font-semibold tracking-[0.08em] uppercase" style={{ color: accent }}>
-                        {data.school.name}
-                    </h3>
+                    <h3 className="m-0 text-[15pt] font-semibold tracking-[0.08em] uppercase">{data.school.name}</h3>
                     <p className="text-muted-foreground m-0 text-xs">{data.school.address}</p>
                     <p className="text-muted-foreground m-0 text-xs">
                         {data.school.contact}
@@ -1177,10 +1230,9 @@ function StudentDocumentPreview({ data }: { data: StudentDocumentPayload }) {
                 </div>
             </div>
             <div className="my-5 text-center">
-                <h2 className="m-0 text-[16pt] font-semibold tracking-[0.08em] uppercase" style={{ color: accent }}>
-                    {data.title}
-                </h2>
+                <h2 className="m-0 text-[16pt] font-semibold tracking-[0.08em] uppercase">{data.title}</h2>
                 <p className="text-muted-foreground m-1 text-xs">{data.subtitle}</p>
+                <p className="text-muted-foreground m-1 text-[10px] uppercase">{variant.title}</p>
             </div>
             <div className="flex justify-between gap-4 border-y border-[#b8c0c7] py-2 text-xs">
                 <span>
@@ -1206,11 +1258,19 @@ function StudentDocumentPreview({ data }: { data: StudentDocumentPayload }) {
                 </p>
             )}
             {data.purpose && isCertificate && (
-                <div className="my-4 border-l-[3px] border-[#9b6b32] bg-[#fbf8f2] p-3 text-sm">
+                <div className="my-4 border border-[#b8c0c7] bg-[#f7f8f9] p-3 text-sm">
                     <strong>Issued for:</strong> {data.purpose}
                 </div>
             )}
-            {!isGradeReport && (
+            {isStatementCertificate && (
+                <div className="my-6 border-y-2 border-[#17202a] px-5 py-7 text-justify text-[11pt]">
+                    This letter certifies that <strong>{student.full_name}</strong>, student number <strong>{student.student_number ?? "—"}</strong>,
+                    is officially enrolled in the <strong>{student.course_code ?? "—"}</strong> program for the{" "}
+                    {enrollment.semester_label.toLowerCase()} of School Year <strong>{enrollment.school_year}</strong>. The student's enrollment
+                    status is recorded as <strong>{enrollment.status}</strong>.
+                </div>
+            )}
+            {!isGradeReport && !isStatementCertificate && (
                 <p className="my-4 text-sm">
                     {isCertificate
                         ? "Current registered subjects:"
@@ -1222,26 +1282,43 @@ function StudentDocumentPreview({ data }: { data: StudentDocumentPayload }) {
                     This report reflects the grades currently recorded for the student in the selected academic period.
                 </p>
             )}
-            {subjects.length > 0 ? (
+            {!isStatementCertificate && subjects.length > 0 ? (
                 <table className="w-full border-collapse text-xs" style={{ borderCollapse: "collapse" }}>
                     <thead>
                         {isGradeReport ? (
-                            <tr>
-                                <th style={headerCellStyle}>Code</th>
-                                <th style={headerCellStyle}>Descriptive title</th>
-                                <th style={{ ...headerCellStyle, ...numberStyle }}>Units</th>
-                                <th style={{ ...headerCellStyle, ...numberStyle }}>Prelim</th>
-                                <th style={{ ...headerCellStyle, ...numberStyle }}>Midterm</th>
-                                <th style={{ ...headerCellStyle, ...numberStyle }}>Finals</th>
-                                <th style={{ ...headerCellStyle, ...numberStyle }}>Average</th>
-                                <th style={headerCellStyle}>Status</th>
-                            </tr>
+                            isTranscriptGrade ? (
+                                <tr>
+                                    <th style={headerCellStyle}>Code</th>
+                                    <th style={headerCellStyle}>Descriptive title</th>
+                                    <th style={{ ...headerCellStyle, ...numberStyle }}>Units</th>
+                                    <th style={{ ...headerCellStyle, ...numberStyle }}>Average</th>
+                                    <th style={headerCellStyle}>Status</th>
+                                </tr>
+                            ) : isGradeSlip ? (
+                                <tr>
+                                    <th style={headerCellStyle}>Code</th>
+                                    <th style={headerCellStyle}>Descriptive title</th>
+                                    <th style={{ ...headerCellStyle, ...numberStyle }}>Average</th>
+                                </tr>
+                            ) : (
+                                <tr>
+                                    <th style={headerCellStyle}>Code</th>
+                                    <th style={headerCellStyle}>Descriptive title</th>
+                                    <th style={{ ...headerCellStyle, ...numberStyle }}>Units</th>
+                                    <th style={{ ...headerCellStyle, ...numberStyle }}>Prelim</th>
+                                    <th style={{ ...headerCellStyle, ...numberStyle }}>Midterm</th>
+                                    <th style={{ ...headerCellStyle, ...numberStyle }}>Finals</th>
+                                    <th style={{ ...headerCellStyle, ...numberStyle }}>Average</th>
+                                    <th style={headerCellStyle}>Status</th>
+                                </tr>
+                            )
                         ) : (
                             <tr>
+                                <th style={{ ...headerCellStyle, ...numberStyle }}>No.</th>
                                 <th style={headerCellStyle}>Code</th>
                                 <th style={headerCellStyle}>Descriptive title</th>
-                                {!isCertificate && <th style={headerCellStyle}>Schedule</th>}
-                                <th style={headerCellStyle}>Section</th>
+                                {!isUnitsCertificate && <th style={headerCellStyle}>Section</th>}
+                                {!isCertificate && !isCompactRegistration && <th style={headerCellStyle}>Schedule</th>}
                                 <th style={{ ...headerCellStyle, ...numberStyle }}>Units</th>
                             </tr>
                         )}
@@ -1249,21 +1326,40 @@ function StudentDocumentPreview({ data }: { data: StudentDocumentPayload }) {
                     <tbody>
                         {subjects.map((subject, index) => (
                             <tr key={`${subject.code}-${index}`}>
-                                <td style={cellStyle}>{subject.code}</td>
-                                <td style={cellStyle}>{subject.title}</td>
                                 {isGradeReport ? (
-                                    <>
-                                        <td style={{ ...cellStyle, ...numberStyle }}>{subject.units}</td>
-                                        <td style={{ ...cellStyle, ...numberStyle }}>{formatGrade(subject.prelim)}</td>
-                                        <td style={{ ...cellStyle, ...numberStyle }}>{formatGrade(subject.midterm)}</td>
-                                        <td style={{ ...cellStyle, ...numberStyle }}>{formatGrade(subject.finals)}</td>
-                                        <td style={{ ...cellStyle, ...numberStyle }}>{formatGrade(subject.average)}</td>
-                                        <td style={cellStyle}>{subject.status}</td>
-                                    </>
+                                    isTranscriptGrade ? (
+                                        <>
+                                            <td style={cellStyle}>{subject.code}</td>
+                                            <td style={cellStyle}>{subject.title}</td>
+                                            <td style={{ ...cellStyle, ...numberStyle }}>{subject.units}</td>
+                                            <td style={{ ...cellStyle, ...numberStyle }}>{formatGrade(subject.average)}</td>
+                                            <td style={cellStyle}>{subject.status}</td>
+                                        </>
+                                    ) : isGradeSlip ? (
+                                        <>
+                                            <td style={cellStyle}>{subject.code}</td>
+                                            <td style={cellStyle}>{subject.title}</td>
+                                            <td style={{ ...cellStyle, ...numberStyle }}>{formatGrade(subject.average)}</td>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <td style={cellStyle}>{subject.code}</td>
+                                            <td style={cellStyle}>{subject.title}</td>
+                                            <td style={{ ...cellStyle, ...numberStyle }}>{subject.units}</td>
+                                            <td style={{ ...cellStyle, ...numberStyle }}>{formatGrade(subject.prelim)}</td>
+                                            <td style={{ ...cellStyle, ...numberStyle }}>{formatGrade(subject.midterm)}</td>
+                                            <td style={{ ...cellStyle, ...numberStyle }}>{formatGrade(subject.finals)}</td>
+                                            <td style={{ ...cellStyle, ...numberStyle }}>{formatGrade(subject.average)}</td>
+                                            <td style={cellStyle}>{subject.status}</td>
+                                        </>
+                                    )
                                 ) : (
                                     <>
-                                        {!isCertificate && <td style={cellStyle}>{subject.schedule}</td>}
-                                        <td style={cellStyle}>{subject.section}</td>
+                                        <td style={{ ...cellStyle, ...numberStyle }}>{index + 1}</td>
+                                        <td style={cellStyle}>{subject.code}</td>
+                                        <td style={cellStyle}>{subject.title}</td>
+                                        {!isUnitsCertificate && <td style={cellStyle}>{subject.section}</td>}
+                                        {!isCertificate && !isCompactRegistration && <td style={cellStyle}>{subject.schedule}</td>}
                                         <td style={{ ...cellStyle, ...numberStyle }}>{subject.units}</td>
                                     </>
                                 )}
@@ -1271,17 +1367,29 @@ function StudentDocumentPreview({ data }: { data: StudentDocumentPayload }) {
                         ))}
                     </tbody>
                 </table>
-            ) : (
+            ) : !isStatementCertificate ? (
                 <div className="text-muted-foreground my-5 border border-dashed p-6 text-center text-sm">
                     No records were found for this academic period.
                 </div>
+            ) : null}
+            {!isStatementCertificate && (
+                <div className="flex justify-end gap-6 border-t-2 border-[#17202a] pt-2 text-sm font-semibold">
+                    <span>{isGradeReport ? "Term average" : "Total units"}</span>
+                    <span>{isGradeReport ? (data.grades.term_average ?? "—") : enrollment.total_units}</span>
+                </div>
             )}
-            <div className="flex justify-end gap-6 border-t-2 border-[#17202a] pt-2 text-sm font-semibold">
-                <span>{isGradeReport ? "Term average" : "Total units"}</span>
-                <span>{isGradeReport ? (data.grades.term_average ?? "—") : enrollment.total_units}</span>
-            </div>
             {isCertificate && (
                 <p className="my-5 text-justify">Issued upon the request of the student for whatever lawful purpose this certification may serve.</p>
+            )}
+            {isAdviserRegistration && (
+                <div className="mt-8 grid grid-cols-2 gap-8 text-center text-xs">
+                    <div className="border-t border-[#17202a] pt-1">
+                        Adviser<span className="text-muted-foreground block">Reviewed and approved</span>
+                    </div>
+                    <div className="border-t border-[#17202a] pt-1">
+                        Registrar<span className="text-muted-foreground block">Registration validated</span>
+                    </div>
+                </div>
             )}
             <div className="mt-14 flex justify-between gap-8 text-center text-xs">
                 <div className="w-2/5 border-t border-[#17202a] pt-1">
@@ -1294,7 +1402,7 @@ function StudentDocumentPreview({ data }: { data: StudentDocumentPayload }) {
             </div>
             <div className="text-muted-foreground mt-6 flex justify-between border-t pt-2 text-[10px]">
                 <span>Generated {data.generated_at}</span>
-                <span>Official registrar document</span>
+                <span>{variant.title}</span>
             </div>
         </div>
     );

@@ -383,6 +383,16 @@ check_redis_connection() {
                 \$redis = new Redis();
                 \$redis->connect(getenv('REDIS_HOST'), (int) getenv('REDIS_PORT'), \$timeout);
 
+                \$password = getenv('REDIS_PASSWORD');
+
+                if (is_string(\$password) && \$password !== '') {
+                    \$username = getenv('REDIS_USERNAME');
+                    \$credentials = is_string(\$username) && \$username !== ''
+                        ? [\$username, \$password]
+                        : \$password;
+                    \$redis->auth(\$credentials);
+                }
+
                 if (\$redis->ping()) {
                     echo 'Redis connection successful.' . PHP_EOL;
                     exit(0);

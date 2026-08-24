@@ -113,3 +113,16 @@ it('gives AUTO_MIGRATE precedence over the legacy migration setting', function (
     expect($enabled['migrations'])->toBe('artisan migrate --force --no-interaction')
         ->and($disabled['migrations'])->toBe('');
 });
+
+it('authenticates before checking a password-protected Redis service', function (): void {
+    $source = file_get_contents(base_path('docker/start-container'));
+
+    expect($source)->not->toBeFalse();
+
+    $authOffset = mb_strpos((string) $source, '\$redis->auth(\$credentials);');
+    $pingOffset = mb_strpos((string) $source, '\$redis->ping()');
+
+    expect($authOffset)->not->toBeFalse()
+        ->and($pingOffset)->not->toBeFalse()
+        ->and($authOffset)->toBeLessThan($pingOffset);
+});

@@ -9,6 +9,7 @@ channel="${1:-stable}"
 }
 
 source_sha="0123456789012345678901234567890123456789"
+previous_source_sha="1111111111111111111111111111111111111111"
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 temporary_directory="$(mktemp -d)"
 state_directory="$temporary_directory/state"
@@ -60,6 +61,14 @@ export PATH="$fixture_bin:$PATH"
 if [[ "$channel" == stable ]]; then
     bash "$bootstrap_directory/install.sh" --stable --domain school.example
 else
+    export KOAKADEMY_INSTALLER_TEST_SOURCE_SHA="$previous_source_sha"
+    export KOAKADEMY_INSTALLER_TEST_FAIL_FIRST_STACK=1
+    if bash "$bootstrap_directory/install.sh" edge; then
+        printf 'Expected the first edge deployment to be interrupted.\n' >&2
+        exit 1
+    fi
+    unset KOAKADEMY_INSTALLER_TEST_FAIL_FIRST_STACK
+    export KOAKADEMY_INSTALLER_TEST_SOURCE_SHA="$source_sha"
     bash "$bootstrap_directory/install.sh" edge
 fi
 
@@ -75,6 +84,8 @@ if [[ "$channel" == edge ]]; then
     grep -Fq 'KOAKADEMY_IMAGE=ghcr.io/yukazakiri/koakademy:edge-frankenphp' \
         "$state_directory/runtime/runtime.env"
     grep -Fq 'swarm-stack-direct.yml' "$state_directory/docker.log"
+    grep -Fq "releases/edge-$source_sha/swarm-stack-direct.yml" \
+        "$state_directory/docker.log"
 fi
 
 printf '%s installer fixture passed.\n' "$channel"

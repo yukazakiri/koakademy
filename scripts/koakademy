@@ -276,10 +276,16 @@ download_asset() {
 
 download_raw_asset() {
     local asset="$1"
-    curl --fail --location --silent --show-error \
+    local temporary
+    temporary="$(mktemp "$release_directory/.${asset}.XXXXXX")"
+    if curl --fail --location --silent --show-error \
         "https://raw.githubusercontent.com/$repository/$source_sha/scripts/$asset" \
-        --output "$release_directory/$asset" ||
-        fail "Could not download edge asset $asset for $source_sha."
+        --output "$temporary"; then
+        mv "$temporary" "$release_directory/$asset"
+        return
+    fi
+    rm -f -- "$temporary"
+    fail "Could not download edge asset $asset for $source_sha."
 }
 
 edge_image() {
@@ -317,9 +323,9 @@ fetch_edge_release() {
     mkdir -p "$release_directory"
 
     for asset in koakademy swarm-stack.yml Caddyfile koakademy-app-entrypoint.sh swarm-stack-direct.yml; do
-        [[ -f "$release_directory/$asset" ]] || download_raw_asset "$asset"
+        download_raw_asset "$asset"
     done
-    [[ -f "$release_directory/version.json" ]] || write_edge_metadata
+    write_edge_metadata
     (cd "$release_directory" && sha256sum \
         koakademy swarm-stack.yml Caddyfile koakademy-app-entrypoint.sh swarm-stack-direct.yml version.json \
         >SHA256SUMS)
@@ -643,8 +649,8 @@ perform_install() {
     image="$(release_image)"
     if [[ "$resuming" == false ]]; then
         write_initial_runtime "$domain" "$image"
+        load_runtime
     fi
-    load_runtime
     ensure_initial_secrets
     ensure_release_configs
     set_runtime RELEASE_TAG "$release_tag"

@@ -47,6 +47,11 @@ case "$command_name" in
         ;;
     stack)
         [[ "${1:-}" == deploy ]]
+        if [[ -n "${KOAKADEMY_INSTALLER_TEST_FAIL_FIRST_STACK:-}" && \
+            ! -f "$state/first-stack-deploy-failed" ]]; then
+            : >"$state/first-stack-deploy-failed"
+            exit 1
+        fi
         create services koakademy_postgres
         create services koakademy_redis
         create services koakademy_gotenberg

@@ -12,9 +12,11 @@ use App\Models\FacultyCustomFieldDefinition;
 use App\Models\FacultyCustomFieldValue;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -43,12 +45,13 @@ final readonly class FacultyBulkImportService
         $schoolId = $this->schoolId();
         $activeDefinitions = $this->definitions->activeForSchool($schoolId);
         $rows = $this->readRows($file, $activeDefinitions->all());
+        $facultyLookups = $this->facultyLookups($rows, $schoolId);
         $checksum = hash_file('sha256', $file->getRealPath());
         if (! is_string($checksum)) {
             throw ValidationException::withMessages(['file' => 'The upload checksum could not be calculated.']);
         }
 
-        return DB::transaction(function () use ($actor, $file, $schoolId, $activeDefinitions, $rows, $checksum): FacultyBulkImport {
+        return DB::transaction(function () use ($actor, $file, $schoolId, $activeDefinitions, $rows, $facultyLookups, $checksum): FacultyBulkImport {
             $import = FacultyBulkImport::query()->create([
                 'public_id' => (string) Str::uuid(),
                 'school_id' => $schoolId,
@@ -60,7 +63,15 @@ final readonly class FacultyBulkImportService
             ]);
             $seenIds = [];
             foreach ($rows as $offset => $input) {
-                $import->rows()->create($this->stageRow($input, $offset + 2, $schoolId, $activeDefinitions->all(), $seenIds));
+                $import->rows()->create($this->stageRow(
+                    $input,
+                    $offset + 2,
+                    $schoolId,
+                    $activeDefinitions->all(),
+                    $facultyLookups['by_faculty_id_number'],
+                    $facultyLookups['by_email'],
+                    $seenIds,
+                ));
             }
             $this->refreshCounts($import);
 
@@ -87,6 +98,9 @@ final readonly class FacultyBulkImportService
             if ($rows->isEmpty()) {
                 throw ValidationException::withMessages(['row_ids' => 'Select at least one ready row to import.']);
             }
+            $this->authorizeRows($actor, $rows);
+            $definitions = $this->definitions->allForSchool($schoolId)->keyBy('key');
+            $this->validateRowsAgainstDefinitions($rows, $definitions);
             $locked->rows()
                 ->where('status', 'ready')
                 ->whereNotIn('id', $rows->pluck('id'))
@@ -96,7 +110,7 @@ final readonly class FacultyBulkImportService
                     'updated_at' => now(),
                 ]);
             foreach ($rows as $row) {
-                $this->apply($row, $schoolId);
+                $this->apply($row, $schoolId, $definitions);
             }
             $locked->forceFill([
                 'confirmed_by_user_id' => $actor->id,
@@ -155,18 +169,27 @@ final readonly class FacultyBulkImportService
     }
 
     /** @param list<FacultyCustomFieldDefinition> $definitions
+     * @param  array<string, list<Faculty>>  $facultiesByFacultyIdNumber
+     * @param  array<string, list<Faculty>>  $facultiesByEmail
      * @param  array<string, true>  $seenIds
      * @return array<string, mixed>
      */
-    private function stageRow(array $input, int $rowNumber, int $schoolId, array $definitions, array &$seenIds): array
-    {
+    private function stageRow(
+        array $input,
+        int $rowNumber,
+        int $schoolId,
+        array $definitions,
+        array $facultiesByFacultyIdNumber,
+        array $facultiesByEmail,
+        array &$seenIds,
+    ): array {
         $errors = [];
         $warnings = $input['_warnings'] ?? [];
         $facultyIdNumber = $this->string($input['faculty_id_number'] ?? null);
         $firstName = $this->string($input['first_name'] ?? null);
         $lastName = $this->string($input['last_name'] ?? null);
         $email = $this->string($input['email'] ?? null);
-        $key = $facultyIdNumber === null ? null : mb_strtolower($facultyIdNumber);
+        $key = $facultyIdNumber === null ? null : $this->normalizedFacultyId($facultyIdNumber);
 
         if ($facultyIdNumber === null) {
             $errors[] = 'Faculty ID Number is required.';
@@ -192,9 +215,9 @@ final readonly class FacultyBulkImportService
         $age = $this->integer($input['age'] ?? null, 'Age', $errors, 16, 120);
         $birthDate = $this->date($input['birth_date'] ?? null, 'Birth Date', $errors);
         $dateEmployed = $this->date($input['date_employed'] ?? null, 'Date Employed', $errors);
-        $existing = $facultyIdNumber === null ? null : Faculty::query()->where('school_id', $schoolId)->whereRaw('lower(faculty_id_number) = ?', [mb_strtolower($facultyIdNumber)])->limit(2)->get();
-        $faculty = $existing?->count() === 1 ? $existing->sole() : null;
-        if ($existing?->count() > 1) {
+        $existing = $facultyIdNumber === null ? [] : ($facultiesByFacultyIdNumber[$key] ?? []);
+        $faculty = count($existing) === 1 ? $existing[0] : null;
+        if (count($existing) > 1) {
             $errors[] = 'Faculty ID Number matches multiple existing faculty records.';
         }
         if ($faculty === null && $email === null && $facultyIdNumber !== null) {
@@ -204,8 +227,8 @@ final readonly class FacultyBulkImportService
             $status = 'active';
         }
         if ($email !== null) {
-            $emailOwner = Faculty::query()->where('email', $email)->first();
-            if ($emailOwner instanceof Faculty && (! $faculty instanceof Faculty || $emailOwner->id !== $faculty->id)) {
+            $emailOwners = $facultiesByEmail[$this->normalizedEmail($email)] ?? [];
+            if (collect($emailOwners)->contains(fn (Faculty $owner): bool => ! $faculty instanceof Faculty || $owner->id !== $faculty->id)) {
                 $errors[] = 'Email is already used by another faculty record.';
             }
         }
@@ -213,14 +236,11 @@ final readonly class FacultyBulkImportService
         $customFields = [];
         foreach ($definitions as $definition) {
             $value = $this->string(Arr::get($input, 'custom_fields.'.$definition->key));
-            if ($definition->is_required && $value === null) {
-                $errors[] = "{$definition->label} is required.";
-            }
-            $this->validateCustomValue($value, $definition, $errors);
             if ($value !== null) {
                 $customFields[$definition->key] = $value;
             }
         }
+        $this->validateCustomFields($customFields, $definitions, $errors);
 
         $payload = [
             'faculty' => [
@@ -260,28 +280,43 @@ final readonly class FacultyBulkImportService
         ];
     }
 
-    private function apply(FacultyBulkImportRow $row, int $schoolId): void
+    /** @param Collection<int, FacultyCustomFieldDefinition> $definitions */
+    private function apply(FacultyBulkImportRow $row, int $schoolId, Collection $definitions): void
     {
         $payload = $row->payload ?? [];
         $attributes = Arr::get($payload, 'faculty', []);
-        $faculty = $row->faculty_id === null ? null : Faculty::query()->whereKey($row->faculty_id)->where('school_id', $schoolId)->lockForUpdate()->first();
-        if (! $faculty instanceof Faculty) {
-            $faculty = Faculty::query()->where('school_id', $schoolId)->where('faculty_id_number', $row->faculty_id_number)->lockForUpdate()->first();
-        }
-        if ($faculty instanceof Faculty) {
+        if ($row->action === 'create') {
+            $conflicts = Faculty::query()
+                ->where('school_id', $schoolId)
+                ->whereRaw('lower(faculty_id_number) = ?', [$this->normalizedFacultyId((string) $row->faculty_id_number)])
+                ->lockForUpdate()
+                ->limit(2)
+                ->get();
+            if ($conflicts->isNotEmpty()) {
+                throw ValidationException::withMessages([
+                    'import' => "Faculty ID Number {$row->faculty_id_number} was created after this import was staged. Restage the file before confirming.",
+                ]);
+            }
+            $faculty = Faculty::query()->create([
+                ...$attributes,
+                'school_id' => $schoolId,
+                'password' => Hash::make(Str::password(48)),
+            ]);
+        } elseif ($row->action === 'update') {
+            $faculty = Faculty::query()->whereKey($row->faculty_id)->where('school_id', $schoolId)->lockForUpdate()->first();
+            if (! $faculty instanceof Faculty) {
+                throw ValidationException::withMessages([
+                    'import' => "Faculty ID Number {$row->faculty_id_number} changed after this import was staged. Restage the file before confirming.",
+                ]);
+            }
             $attributes = array_filter($attributes, fn (mixed $value): bool => $value !== null);
             if (! isset($attributes['email']) || $attributes['email'] === $this->placeholderEmail((string) $row->faculty_id_number)) {
                 $attributes['email'] = $faculty->email;
             }
             $faculty->fill($attributes)->save();
         } else {
-            $faculty = Faculty::query()->create([
-                ...$attributes,
-                'school_id' => $schoolId,
-                'password' => Hash::make(Str::password(48)),
-            ]);
+            throw ValidationException::withMessages(['import' => 'This import row has an unsupported action. Restage the file before confirming.']);
         }
-        $definitions = $this->definitions->activeForSchool($schoolId)->keyBy('key');
         foreach (Arr::get($payload, 'custom_fields', []) as $key => $value) {
             $definition = $definitions->get($key);
             if (! $definition instanceof FacultyCustomFieldDefinition) {
@@ -293,6 +328,107 @@ final readonly class FacultyBulkImportService
             );
         }
         $row->update(['faculty_id' => $faculty->id, 'status' => 'applied', 'result' => ['action' => $row->action]]);
+    }
+
+    /**
+     * @param  Collection<int, FacultyBulkImportRow>  $rows
+     */
+    private function authorizeRows(User $actor, Collection $rows): void
+    {
+        $gate = Gate::forUser($actor);
+        if ($rows->contains(fn (FacultyBulkImportRow $row): bool => $row->action === 'create') && ! $gate->allows('create', Faculty::class)) {
+            abort(403);
+        }
+        if ($rows->contains(fn (FacultyBulkImportRow $row): bool => $row->action === 'update') && ! $gate->allows('update', Faculty::class)) {
+            abort(403);
+        }
+    }
+
+    /**
+     * @param  Collection<int, FacultyBulkImportRow>  $rows
+     * @param  Collection<int, FacultyCustomFieldDefinition>  $definitions
+     */
+    private function validateRowsAgainstDefinitions(Collection $rows, Collection $definitions): void
+    {
+        $messages = [];
+        foreach ($rows as $row) {
+            $payload = $row->payload ?? [];
+            $customFields = Arr::get($payload, 'custom_fields', []);
+            $errors = [];
+            $this->validateCustomFields(is_array($customFields) ? $customFields : [], $definitions, $errors);
+
+            $missingDefinitions = collect($customFields)->keys()->diff($definitions->keys());
+            foreach ($missingDefinitions as $key) {
+                $errors[] = "The {$key} field definition no longer exists.";
+            }
+            if ($errors !== []) {
+                $messages[] = "Row {$row->row_number}: ".implode(' ', $errors);
+            }
+        }
+        if ($messages !== []) {
+            throw ValidationException::withMessages([
+                'import' => 'Faculty field definitions changed after staging. '.implode(' ', $messages).' Restage the file before confirming.',
+            ]);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $customFields
+     * @param  iterable<FacultyCustomFieldDefinition>  $definitions
+     * @param  list<string>  $errors
+     */
+    private function validateCustomFields(array $customFields, iterable $definitions, array &$errors): void
+    {
+        foreach ($definitions as $definition) {
+            $value = $this->string($customFields[$definition->key] ?? null);
+            if ($definition->is_required && $value === null) {
+                $errors[] = "{$definition->label} is required.";
+            }
+            $this->validateCustomValue($value, $definition, $errors);
+        }
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     * @return array{by_faculty_id_number: array<string, list<Faculty>>, by_email: array<string, list<Faculty>>}
+     */
+    private function facultyLookups(array $rows, int $schoolId): array
+    {
+        $facultyIds = [];
+        $emails = [];
+        foreach ($rows as $row) {
+            $facultyId = $this->string($row['faculty_id_number'] ?? null);
+            if ($facultyId === null) {
+                continue;
+            }
+            $facultyIds[$this->normalizedFacultyId($facultyId)] = true;
+            $email = $this->string($row['email'] ?? null) ?? $this->placeholderEmail($facultyId);
+            $emails[$this->normalizedEmail($email)] = true;
+        }
+
+        $byFacultyIdNumber = [];
+        foreach (array_chunk(array_keys($facultyIds), 500) as $ids) {
+            Faculty::query()
+                ->where('school_id', $schoolId)
+                ->whereIn(DB::raw('lower(faculty_id_number)'), $ids)
+                ->get(['id', 'faculty_id_number', 'email'])
+                ->each(function (Faculty $faculty) use (&$byFacultyIdNumber): void {
+                    $byFacultyIdNumber[$this->normalizedFacultyId($faculty->faculty_id_number)][] = $faculty;
+                });
+        }
+
+        $byEmail = [];
+        foreach (array_chunk(array_keys($emails), 500) as $emailBatch) {
+            Faculty::query()
+                ->where('school_id', $schoolId)
+                ->whereIn(DB::raw('lower(email)'), $emailBatch)
+                ->get(['id', 'faculty_id_number', 'email'])
+                ->each(function (Faculty $faculty) use (&$byEmail): void {
+                    $byEmail[$this->normalizedEmail($faculty->email)][] = $faculty;
+                });
+        }
+
+        return ['by_faculty_id_number' => $byFacultyIdNumber, 'by_email' => $byEmail];
     }
 
     /** @param list<FacultyCustomFieldDefinition> $definitions
@@ -478,6 +614,16 @@ final readonly class FacultyBulkImportService
         $local = Str::of($facultyId)->lower()->replaceMatches('/[^a-z0-9]+/', '.')->trim('.')->toString();
 
         return ($local !== '' ? $local : 'faculty')."@{$host}";
+    }
+
+    private function normalizedFacultyId(string $facultyId): string
+    {
+        return mb_strtolower($facultyId);
+    }
+
+    private function normalizedEmail(string $email): string
+    {
+        return mb_strtolower($email);
     }
 
     private function normalizedHeader(string $header): string

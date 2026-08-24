@@ -13,6 +13,7 @@ use App\Services\TenantContext;
 use Illuminate\Http\UploadedFile;
 use Maatwebsite\Excel\Concerns\FromArray;
 use Maatwebsite\Excel\Facades\Excel;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use Spatie\Permission\Models\Permission;
 
 beforeEach(function (): void {
@@ -21,10 +22,11 @@ beforeEach(function (): void {
     }
 });
 
-function facultyImportAdmin(School $school): User
+/** @param list<string> $permissions */
+function facultyImportAdmin(School $school, array $permissions = ['ViewAny:Faculty', 'Create:Faculty', 'Update:Faculty']): User
 {
     $user = User::factory()->create(['school_id' => $school->id, 'role' => UserRole::Admin]);
-    $user->givePermissionTo(['ViewAny:Faculty', 'Create:Faculty', 'Update:Faculty']);
+    $user->givePermissionTo($permissions);
     app(TenantContext::class)->setCurrentSchool($school);
 
     return $user;
@@ -113,6 +115,126 @@ it('updates an existing faculty by ID without replacing a real email with a gene
         ->and($faculty->position)->toBe('Dean');
 });
 
+it('requires the matching faculty permission for each selected import action', function (): void {
+    $school = School::factory()->create();
+    $creator = facultyImportAdmin($school, ['Create:Faculty']);
+    $createUpload = facultyImportWorkbook([
+        ['Faculty ID Number', 'First Name', 'Last Name'],
+        ['FAC-210', 'Grace', 'Hopper'],
+    ]);
+
+    $createResponse = $this->actingAs($creator)->post(route('administrators.faculties.imports.store'), ['file' => $createUpload], ['Accept' => 'application/json'])
+        ->assertCreated();
+    $this->actingAs($creator)->postJson(route('administrators.faculties.imports.confirm', $createResponse->json('import.id')), [
+        'row_ids' => [$createResponse->json('import.rows.0.id')],
+    ])->assertSuccessful();
+
+    $existing = Faculty::factory()->create([
+        'school_id' => $school->id,
+        'faculty_id_number' => 'FAC-211',
+        'first_name' => 'Original',
+        'last_name' => 'Faculty',
+    ]);
+    $updateUpload = facultyImportWorkbook([
+        ['Faculty ID Number', 'First Name', 'Last Name'],
+        ['FAC-211', 'Updated', 'Faculty'],
+    ]);
+    $blockedResponse = $this->actingAs($creator)->post(route('administrators.faculties.imports.store'), ['file' => $updateUpload], ['Accept' => 'application/json'])
+        ->assertCreated()
+        ->assertJsonPath('import.rows.0.action', 'update');
+    $this->actingAs($creator)->postJson(route('administrators.faculties.imports.confirm', $blockedResponse->json('import.id')), [
+        'row_ids' => [$blockedResponse->json('import.rows.0.id')],
+    ])->assertForbidden();
+    expect($existing->refresh()->first_name)->toBe('Original');
+
+    $updater = facultyImportAdmin($school, ['Update:Faculty']);
+    $allowedResponse = $this->actingAs($updater)->post(route('administrators.faculties.imports.store'), ['file' => facultyImportWorkbook([
+        ['Faculty ID Number', 'First Name', 'Last Name'],
+        ['FAC-211', 'Updated', 'Faculty'],
+    ])], ['Accept' => 'application/json'])->assertCreated();
+    $this->actingAs($updater)->postJson(route('administrators.faculties.imports.confirm', $allowedResponse->json('import.id')), [
+        'row_ids' => [$allowedResponse->json('import.rows.0.id')],
+    ])->assertSuccessful();
+    expect($existing->refresh()->first_name)->toBe('Updated');
+});
+
+it('revalidates staged custom fields and still writes values for deactivated definitions', function (): void {
+    $school = School::factory()->create();
+    $admin = facultyImportAdmin($school);
+    $definition = FacultyCustomFieldDefinition::query()->create([
+        'school_id' => $school->id,
+        'key' => 'employment_type',
+        'label' => 'Employment Type',
+        'field_type' => 'select',
+        'options' => ['Permanent'],
+        'is_required' => false,
+        'is_sensitive' => true,
+        'display_order' => 10,
+    ]);
+    $requiredDefinition = FacultyCustomFieldDefinition::query()->create([
+        'school_id' => $school->id,
+        'key' => 'payroll_reference',
+        'label' => 'Payroll Reference',
+        'field_type' => 'text',
+        'is_required' => false,
+        'is_sensitive' => true,
+        'display_order' => 11,
+    ]);
+    $response = $this->actingAs($admin)->post(route('administrators.faculties.imports.store'), ['file' => facultyImportWorkbook([
+        ['Faculty ID Number', 'First Name', 'Last Name', 'Custom: employment_type'],
+        ['FAC-225', 'Dorothy', 'Vaughan', 'Permanent'],
+    ])], ['Accept' => 'application/json'])->assertCreated();
+
+    $definition->update(['options' => ['Contract']]);
+    $route = route('administrators.faculties.imports.confirm', $response->json('import.id'));
+    $rowIds = ['row_ids' => [$response->json('import.rows.0.id')]];
+    $this->actingAs($admin)->postJson($route, $rowIds)
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('import');
+
+    $definition->update(['options' => ['Permanent'], 'field_type' => 'number']);
+    $this->actingAs($admin)->postJson($route, $rowIds)
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('import');
+
+    $definition->update(['field_type' => 'select', 'is_active' => false]);
+    $requiredDefinition->update(['is_required' => true]);
+    $this->actingAs($admin)->postJson($route, $rowIds)
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('import');
+
+    $requiredDefinition->update(['is_required' => false]);
+    $this->actingAs($admin)->postJson($route, $rowIds)->assertSuccessful();
+
+    $faculty = Faculty::query()->where('school_id', $school->id)->where('faculty_id_number', 'FAC-225')->firstOrFail();
+    expect(FacultyCustomFieldValue::query()
+        ->where('faculty_id', $faculty->id)
+        ->where('faculty_custom_field_definition_id', $definition->id)
+        ->value('value'))->toBe('Permanent');
+});
+
+it('requires restaging when a staged create now matches faculty by ID', function (): void {
+    $school = School::factory()->create();
+    $admin = facultyImportAdmin($school);
+    $response = $this->actingAs($admin)->post(route('administrators.faculties.imports.store'), ['file' => facultyImportWorkbook([
+        ['Faculty ID Number', 'First Name', 'Last Name'],
+        ['FAC-230', 'Katherine', 'Johnson'],
+    ])], ['Accept' => 'application/json'])->assertCreated();
+    $existing = Faculty::factory()->create([
+        'school_id' => $school->id,
+        'faculty_id_number' => 'FAC-230',
+        'first_name' => 'Existing',
+        'last_name' => 'Faculty',
+    ]);
+
+    $this->actingAs($admin)->postJson(route('administrators.faculties.imports.confirm', $response->json('import.id')), [
+        'row_ids' => [$response->json('import.rows.0.id')],
+    ])->assertUnprocessable()->assertJsonValidationErrors('import');
+
+    expect($existing->refresh()->first_name)->toBe('Existing')
+        ->and(Faculty::query()->where('school_id', $school->id)->where('faculty_id_number', 'FAC-230')->count())->toBe(1);
+});
+
 it('maps legacy Access-style headers through the editable default aliases', function (): void {
     $school = School::factory()->create();
     $admin = facultyImportAdmin($school);
@@ -189,9 +311,14 @@ it('downloads a template with the school configured custom fields', function ():
         'display_order' => 5,
     ]);
 
-    $this->actingAs($admin)->get(route('administrators.faculties.imports.template'))
+    $response = $this->actingAs($admin)->get(route('administrators.faculties.imports.template'))
         ->assertSuccessful()
         ->assertDownload('faculty-import-template.xlsx');
+    $templatePath = tempnam(sys_get_temp_dir(), 'faculty-import-template-');
+    file_put_contents($templatePath, $response->streamedContent());
+    $headers = IOFactory::load($templatePath)->getActiveSheet()->toArray()[0];
+
+    expect($headers)->toContain('Custom: tax_identifier');
 });
 
 it('allows authorized system administrators to configure tenant faculty fields', function (): void {

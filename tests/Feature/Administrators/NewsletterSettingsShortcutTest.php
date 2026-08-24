@@ -69,11 +69,12 @@ it('keeps the global sidebar focused while the settings workspace retains newsle
         ->toContain('"Update:SystemManagementFinanceDocuments"')
         ->toContain('"View:SystemManagementIdentifiers"')
         ->toContain('"Update:SystemManagementIdentifiers"')
-        ->toContain('title: "Settings"')
-        ->toContain('link: "/administrators/system-management"')
         ->not->toContain('title: "Newsletter Marketing"');
 
-    expect($systemSettingsRoute)->not->toContain('subs:');
+    expect($systemSettingsRoute)
+        ->toContain('title: "Settings"')
+        ->toContain('link: "/administrators/system-management"')
+        ->not->toContain('subs:');
 
     expect($catalog)
         ->toContain('label: "Newsletter"')

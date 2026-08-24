@@ -45,7 +45,7 @@ final class FacultyCustomFieldDefinitionService
     public function ensureDefaults(int $schoolId): void
     {
         foreach (self::DEFAULTS as $index => $definition) {
-            FacultyCustomFieldDefinition::query()->firstOrCreate(
+            FacultyCustomFieldDefinition::query()->createOrFirst(
                 ['school_id' => $schoolId, 'key' => $definition['key']],
                 [
                     'label' => $definition['label'],

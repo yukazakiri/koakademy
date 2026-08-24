@@ -13,7 +13,7 @@ final class ConfirmFacultyBulkImportRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return Gate::allows('update', Faculty::class);
+        return Gate::allows('create', Faculty::class) || Gate::allows('update', Faculty::class);
     }
 
     /** @return array<string, ValidationRule|array<mixed>|string> */

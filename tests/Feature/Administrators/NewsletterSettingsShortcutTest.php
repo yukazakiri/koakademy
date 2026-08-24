@@ -69,7 +69,7 @@ it('keeps the global sidebar focused while the settings workspace retains newsle
         ->toContain('"Update:SystemManagementFinanceDocuments"')
         ->toContain('"View:SystemManagementIdentifiers"')
         ->toContain('"Update:SystemManagementIdentifiers"')
-        ->toContain('title: "System Settings"')
+        ->toContain('title: "Settings"')
         ->toContain('link: "/administrators/system-management"')
         ->not->toContain('title: "Newsletter Marketing"');
 

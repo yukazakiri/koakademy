@@ -15,7 +15,7 @@ final class FacultyBulkImport extends Model
 
     protected $fillable = [
         'public_id', 'school_id', 'uploaded_by_user_id', 'confirmed_by_user_id', 'original_filename',
-        'source_type', 'checksum', 'status', 'ready_count', 'invalid_count', 'applied_count',
+        'source_type', 'checksum', 'field_proposals', 'status', 'ready_count', 'invalid_count', 'applied_count',
         'skipped_count', 'confirmed_at',
     ];
 
@@ -36,6 +36,9 @@ final class FacultyBulkImport extends Model
 
     protected function casts(): array
     {
-        return ['confirmed_at' => 'datetime'];
+        return [
+            'confirmed_at' => 'datetime',
+            'field_proposals' => 'array',
+        ];
     }
 }

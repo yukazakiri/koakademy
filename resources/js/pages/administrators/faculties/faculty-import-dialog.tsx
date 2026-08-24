@@ -7,8 +7,20 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { router } from "@inertiajs/react";
 import axios from "axios";
-import { AlertTriangle, CheckCircle2, ChevronDown, FileSpreadsheet, FileUp, Loader2, ShieldCheck, UserRoundCheck, XCircle } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+    AlertTriangle,
+    CheckCircle2,
+    ChevronDown,
+    FileSpreadsheet,
+    FileUp,
+    Loader2,
+    ShieldCheck,
+    Upload,
+    UserRoundCheck,
+    X,
+    XCircle,
+} from "lucide-react";
+import { useMemo, useRef, useState, type DragEvent } from "react";
 import { toast } from "sonner";
 import { route } from "ziggy-js";
 
@@ -30,6 +42,13 @@ type ImportRow = {
     fields: ImportField[];
 };
 
+type FieldProposal = {
+    key: string;
+    label: string;
+    source_header_aliases: string[];
+    populated_rows: number;
+};
+
 type FacultyImportPreview = {
     id: string;
     status: "review" | "completed";
@@ -40,6 +59,8 @@ type FacultyImportPreview = {
         applied_rows: number;
         skipped_rows: number;
     };
+    field_proposals: FieldProposal[];
+    can_add_field_proposals: boolean;
     rows: ImportRow[];
 };
 
@@ -47,6 +68,12 @@ type PreviewFilter = "all" | "ready" | "invalid";
 
 const acceptedFileTypes =
     ".xlsx,.xls,.mdb,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/x-msaccess";
+
+const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
 
 const errorMessage = (error: unknown): string => {
     if (!axios.isAxiosError(error)) return "The file could not be processed.";
@@ -84,10 +111,13 @@ export function FacultyImportDialog() {
     const [file, setFile] = useState<File | null>(null);
     const [preview, setPreview] = useState<FacultyImportPreview | null>(null);
     const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
+    const [selectedFieldKeys, setSelectedFieldKeys] = useState<string[]>([]);
     const [filter, setFilter] = useState<PreviewFilter>("all");
     const [uploading, setUploading] = useState(false);
     const [confirming, setConfirming] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [isDragging, setIsDragging] = useState(false);
+    const fileInput = useRef<HTMLInputElement>(null);
 
     const shownRows = useMemo(() => {
         if (!preview) return [];
@@ -104,6 +134,7 @@ export function FacultyImportDialog() {
         setFile(null);
         setPreview(null);
         setSelectedRowIds([]);
+        setSelectedFieldKeys([]);
         setFilter("all");
         setError(null);
     };
@@ -112,6 +143,23 @@ export function FacultyImportDialog() {
         if (isBusy) return;
         if (nextOpen && !open) reset();
         setOpen(nextOpen);
+    };
+
+    const chooseFile = (nextFile: File | null) => {
+        if (!nextFile) return;
+        const extension = nextFile.name.split(".").pop()?.toLowerCase();
+        if (!extension || !["xlsx", "xls", "mdb"].includes(extension)) {
+            setError("Choose an Excel (.xlsx or .xls) or Microsoft Access (.mdb) file.");
+            return;
+        }
+        setFile(nextFile);
+        setError(null);
+    };
+
+    const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        setIsDragging(false);
+        chooseFile(event.dataTransfer.files.item(0));
     };
 
     const stageImport = async () => {
@@ -132,6 +180,7 @@ export function FacultyImportDialog() {
             const stagedImport = response.data.import;
             setPreview(stagedImport);
             setSelectedRowIds(stagedImport.rows.filter((row) => row.status === "ready").map((row) => row.id));
+            setSelectedFieldKeys(stagedImport.can_add_field_proposals ? stagedImport.field_proposals.map((field) => field.key) : []);
         } catch (requestError) {
             setError(errorMessage(requestError));
         } finally {
@@ -148,7 +197,7 @@ export function FacultyImportDialog() {
         try {
             const response = await axios.post<{ import: FacultyImportPreview }>(
                 route("administrators.faculties.imports.confirm", preview.id),
-                { row_ids: selectedRowIds },
+                { row_ids: selectedRowIds, create_custom_field_keys: selectedFieldKeys },
                 { headers: { Accept: "application/json" } },
             );
             setPreview(response.data.import);
@@ -171,13 +220,17 @@ export function FacultyImportDialog() {
         );
     };
 
+    const toggleField = (fieldKey: string, checked: boolean) => {
+        setSelectedFieldKeys((current) => (checked ? [...new Set([...current, fieldKey])] : current.filter((key) => key !== fieldKey)));
+    };
+
     return (
         <Dialog open={open} onOpenChange={changeOpen}>
             <Button variant="outline" onClick={() => changeOpen(true)}>
                 <FileUp className="size-4" /> Import faculty
             </Button>
-            <DialogContent className="flex max-h-[92dvh] max-w-[calc(100%-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-6xl">
-                <DialogHeader className="border-border/70 border-b px-6 py-5 pr-12">
+            <DialogContent className="flex h-[min(92dvh,52rem)] max-h-[92dvh] max-w-[calc(100%-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-6xl">
+                <DialogHeader className="border-border/70 shrink-0 border-b px-6 py-5 pr-12">
                     <div className="flex items-center gap-2.5">
                         <span className="flex size-9 items-center justify-center rounded-lg border border-sky-500/20 bg-sky-500/10 text-sky-600">
                             <FileSpreadsheet className="size-4" />
@@ -194,25 +247,77 @@ export function FacultyImportDialog() {
                 </DialogHeader>
 
                 {!preview ? (
-                    <div className="grid min-h-96 place-items-center p-6 sm:p-10">
+                    <div className="min-h-0 flex-1 overflow-y-auto p-6 sm:p-10">
                         <div className="w-full max-w-xl space-y-5">
-                            <label className="border-border bg-muted/20 hover:bg-muted/35 flex cursor-pointer flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-10 text-center transition-colors">
-                                <span className="bg-background flex size-12 items-center justify-center rounded-xl border shadow-xs">
-                                    <FileUp className="text-muted-foreground size-5" />
+                            <div
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => fileInput.current?.click()}
+                                onKeyDown={(event) => {
+                                    if (event.key === "Enter" || event.key === " ") {
+                                        event.preventDefault();
+                                        fileInput.current?.click();
+                                    }
+                                }}
+                                onDragEnter={(event) => {
+                                    event.preventDefault();
+                                    setIsDragging(true);
+                                }}
+                                onDragOver={(event) => event.preventDefault()}
+                                onDragLeave={(event) => {
+                                    if (event.currentTarget === event.target) setIsDragging(false);
+                                }}
+                                onDrop={handleDrop}
+                                className={`group flex cursor-pointer flex-col items-center gap-3 rounded-2xl border border-dashed px-6 py-10 text-center transition-all duration-200 ${
+                                    isDragging
+                                        ? "border-sky-500 bg-sky-500/10 shadow-lg shadow-sky-500/10"
+                                        : "border-border via-muted/20 bg-gradient-to-br from-sky-500/[0.04] to-emerald-500/[0.04] hover:border-sky-500/50 hover:bg-sky-500/[0.07]"
+                                }`}
+                            >
+                                <span
+                                    className={`bg-background flex size-12 items-center justify-center rounded-xl border shadow-xs transition-transform ${isDragging ? "scale-110" : "group-hover:-translate-y-0.5"}`}
+                                >
+                                    {isDragging ? <Upload className="size-5 text-sky-600" /> : <FileUp className="text-muted-foreground size-5" />}
                                 </span>
-                                <span className="font-medium">Choose a faculty import file</span>
+                                <span className="font-medium">{isDragging ? "Drop the file to review it" : "Drop a faculty file here"}</span>
                                 <span className="text-muted-foreground max-w-md text-xs leading-5">
-                                    Supported formats: Excel (.xlsx or .xls) and Microsoft Access (.mdb). Download the template for the current
-                                    configurable faculty fields.
+                                    Or click to choose Excel (.xlsx or .xls) or Microsoft Access (.mdb). The template always includes the current
+                                    configurable fields.
                                 </span>
                                 <Input
+                                    ref={fileInput}
                                     type="file"
                                     accept={acceptedFileTypes}
-                                    className="max-w-sm cursor-pointer"
-                                    onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                                    className="sr-only"
+                                    onChange={(event) => {
+                                        chooseFile(event.target.files?.[0] ?? null);
+                                        event.target.value = "";
+                                    }}
                                 />
-                            </label>
-                            {file ? <p className="text-muted-foreground text-center text-xs">Selected: {file.name}</p> : null}
+                            </div>
+                            {file ? (
+                                <div className="bg-background flex items-center gap-3 rounded-xl border p-3 shadow-xs">
+                                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-700">
+                                        <FileSpreadsheet className="size-4" />
+                                    </span>
+                                    <span className="min-w-0 flex-1 text-left">
+                                        <span className="block truncate text-sm font-medium">{file.name}</span>
+                                        <span className="text-muted-foreground text-xs">{formatFileSize(file.size)} · ready for review</span>
+                                    </span>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        aria-label="Remove selected file"
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            setFile(null);
+                                        }}
+                                    >
+                                        <X className="size-4" />
+                                    </Button>
+                                </div>
+                            ) : null}
                             <Alert className="border-sky-500/20 bg-sky-500/5">
                                 <ShieldCheck />
                                 <AlertTitle>Private field values stay protected</AlertTitle>
@@ -252,6 +357,44 @@ export function FacultyImportDialog() {
                                 </div>
                             ))}
                         </div>
+
+                        {preview.status === "review" && preview.field_proposals.length > 0 ? (
+                            <div className="border-border/70 border-b bg-amber-500/[0.045] px-5 py-4">
+                                <div className="flex gap-3">
+                                    <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-700">
+                                        <AlertTriangle className="size-4" />
+                                    </span>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-sm font-medium">New faculty fields found</p>
+                                        <p className="text-muted-foreground mt-0.5 text-xs leading-5">
+                                            {preview.can_add_field_proposals
+                                                ? "Choose the columns to add as protected optional fields when you confirm. Values remain masked during review."
+                                                : "A System Management administrator can add these columns as configurable protected fields. Standard faculty details can still be imported."}
+                                        </p>
+                                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                                            {preview.field_proposals.map((field) => (
+                                                <label
+                                                    key={field.key}
+                                                    className="bg-background/75 flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs"
+                                                >
+                                                    <Checkbox
+                                                        checked={selectedFieldKeys.includes(field.key)}
+                                                        disabled={!preview.can_add_field_proposals}
+                                                        onCheckedChange={(checked) => toggleField(field.key, checked === true)}
+                                                    />
+                                                    <span className="min-w-0 flex-1">
+                                                        <span className="block truncate font-medium">{field.label}</span>
+                                                        <span className="text-muted-foreground">
+                                                            {field.populated_rows} populated row{field.populated_rows === 1 ? "" : "s"}
+                                                        </span>
+                                                    </span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : null}
 
                         <div className="border-border/70 flex flex-wrap items-center gap-2 border-b px-5 py-3">
                             {(
@@ -358,7 +501,7 @@ export function FacultyImportDialog() {
                     </>
                 )}
 
-                <DialogFooter className="border-border/70 border-t px-6 py-4">
+                <DialogFooter className="border-border/70 shrink-0 border-t px-6 py-4">
                     {preview?.status === "review" && preview.summary.ready_rows > selectedRowIds.length ? (
                         <span className="text-muted-foreground mr-auto self-center text-xs">
                             {preview.summary.ready_rows - selectedRowIds.length} ready row(s) will be skipped.
@@ -375,7 +518,10 @@ export function FacultyImportDialog() {
                     ) : preview.status === "review" ? (
                         <Button disabled={confirming || selectedRowIds.length === 0} onClick={confirmImport}>
                             {confirming ? <Loader2 className="size-4 animate-spin" /> : <UserRoundCheck className="size-4" />}
-                            Confirm {selectedRowIds.length} row{selectedRowIds.length === 1 ? "" : "s"}
+                            {selectedFieldKeys.length > 0
+                                ? `Add ${selectedFieldKeys.length} field${selectedFieldKeys.length === 1 ? "" : "s"} & import`
+                                : "Confirm"}{" "}
+                            {selectedRowIds.length} row{selectedRowIds.length === 1 ? "" : "s"}
                         </Button>
                     ) : (
                         <span className="flex items-center gap-2 self-center text-sm font-medium text-emerald-600">

@@ -9,6 +9,7 @@ use App\Http\Requests\Administrators\ConfirmFacultyBulkImportRequest;
 use App\Http\Requests\Administrators\StoreFacultyBulkImportRequest;
 use App\Models\Faculty;
 use App\Models\FacultyBulkImport;
+use App\Models\GeneralSetting;
 use App\Models\User;
 use App\Services\FacultyBulkImportService;
 use App\Services\FacultyCustomFieldDefinitionService;
@@ -41,7 +42,7 @@ final class AdministratorFacultyImportController extends Controller
         abort_unless($user instanceof User && $file !== null, 422);
         $import = $imports->stage($user, $file);
 
-        return response()->json(['import' => $imports->serialize($import)], 201);
+        return response()->json(['import' => $this->serialize($imports, $import)], 201);
     }
 
     public function confirm(
@@ -53,8 +54,19 @@ final class AdministratorFacultyImportController extends Controller
         abort_unless($user instanceof User, 401);
         /** @var list<int> $rowIds */
         $rowIds = $request->validated('row_ids');
-        $import = $imports->confirm($facultyBulkImport, $user, $rowIds);
+        /** @var list<string> $fieldKeys */
+        $fieldKeys = $request->validated('create_custom_field_keys', []);
+        $import = $imports->confirm($facultyBulkImport, $user, $rowIds, $fieldKeys);
 
-        return response()->json(['import' => $imports->serialize($import)]);
+        return response()->json(['import' => $this->serialize($imports, $import)]);
+    }
+
+    /** @return array<string, mixed> */
+    private function serialize(FacultyBulkImportService $imports, FacultyBulkImport $import): array
+    {
+        return [
+            ...$imports->serialize($import),
+            'can_add_field_proposals' => Gate::allows('updateFacultyFields', GeneralSetting::class),
+        ];
     }
 }

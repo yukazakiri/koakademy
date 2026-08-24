@@ -90,6 +90,63 @@ it('stages, masks, and confirms configurable faculty fields from an Excel import
         ->and($value->getRawOriginal('value'))->not->toBe('NI-1234');
 });
 
+it('adds confirmed unmapped faculty columns as protected configurable fields', function (): void {
+    $school = School::factory()->create();
+    $admin = facultyImportAdmin($school);
+    Permission::findOrCreate('Update:SystemManagementFacultyFields', 'web');
+    $admin->givePermissionTo('Update:SystemManagementFacultyFields');
+    $response = $this->actingAs($admin)->post(route('administrators.faculties.imports.store'), ['file' => facultyImportWorkbook([
+        ['Faculty ID Number', 'First Name', 'Last Name', 'Tax Identifier'],
+        ['FAC-150', 'Katherine', 'Johnson', 'TAX-1234'],
+    ])], ['Accept' => 'application/json'])
+        ->assertCreated()
+        ->assertJsonPath('import.field_proposals.0.key', 'tax_identifier')
+        ->assertJsonPath('import.field_proposals.0.populated_rows', 1)
+        ->assertJsonPath('import.can_add_field_proposals', true);
+
+    $this->actingAs($admin)->postJson(route('administrators.faculties.imports.confirm', $response->json('import.id')), [
+        'row_ids' => [$response->json('import.rows.0.id')],
+        'create_custom_field_keys' => ['tax_identifier'],
+    ])->assertSuccessful();
+
+    $definition = FacultyCustomFieldDefinition::query()
+        ->where('school_id', $school->id)
+        ->where('key', 'tax_identifier')
+        ->firstOrFail();
+    $faculty = Faculty::query()->where('school_id', $school->id)->where('faculty_id_number', 'FAC-150')->firstOrFail();
+
+    expect($definition->field_type)->toBe('text')
+        ->and($definition->is_sensitive)->toBeTrue()
+        ->and($definition->is_required)->toBeFalse()
+        ->and($definition->source_header_aliases)->toContain('tax_identifier')
+        ->and(FacultyCustomFieldValue::query()
+            ->where('faculty_id', $faculty->id)
+            ->where('faculty_custom_field_definition_id', $definition->id)
+            ->value('value'))->toBe('TAX-1234');
+});
+
+it('does not let a faculty-only administrator create proposed custom fields', function (): void {
+    $school = School::factory()->create();
+    $admin = facultyImportAdmin($school);
+    $response = $this->actingAs($admin)->post(route('administrators.faculties.imports.store'), ['file' => facultyImportWorkbook([
+        ['Faculty ID Number', 'First Name', 'Last Name', 'National Insurance'],
+        ['FAC-151', 'Dorothy', 'Vaughan', 'NI-1234'],
+    ])], ['Accept' => 'application/json'])
+        ->assertCreated()
+        ->assertJsonPath('import.can_add_field_proposals', false)
+        ->assertJsonPath('import.field_proposals.0.key', 'national_insurance');
+
+    $this->actingAs($admin)->postJson(route('administrators.faculties.imports.confirm', $response->json('import.id')), [
+        'row_ids' => [$response->json('import.rows.0.id')],
+        'create_custom_field_keys' => ['national_insurance'],
+    ])->assertForbidden();
+
+    expect(FacultyCustomFieldDefinition::query()
+        ->where('school_id', $school->id)
+        ->where('key', 'national_insurance')
+        ->exists())->toBeFalse();
+});
+
 it('updates an existing faculty by ID without replacing a real email with a generated one', function (): void {
     $school = School::factory()->create();
     $admin = facultyImportAdmin($school);

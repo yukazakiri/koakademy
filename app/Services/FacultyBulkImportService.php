@@ -10,6 +10,7 @@ use App\Models\FacultyBulkImport;
 use App\Models\FacultyBulkImportRow;
 use App\Models\FacultyCustomFieldDefinition;
 use App\Models\FacultyCustomFieldValue;
+use App\Models\GeneralSetting;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
@@ -43,15 +44,21 @@ final readonly class FacultyBulkImportService
     public function stage(User $actor, UploadedFile $file): FacultyBulkImport
     {
         $schoolId = $this->schoolId();
-        $activeDefinitions = $this->definitions->activeForSchool($schoolId);
-        $rows = $this->readRows($file, $activeDefinitions->all());
+        $allDefinitions = $this->definitions->allForSchool($schoolId);
+        $activeDefinitions = $allDefinitions->where('is_active', true)->values();
+        $rawRows = $this->readRows($file);
+        $fieldProposals = $this->fieldProposals($rawRows, $allDefinitions->all());
+        $rows = array_map(
+            fn (array $row): array => $this->canonicalizeRow($row, $activeDefinitions->all(), $fieldProposals),
+            $rawRows,
+        );
         $facultyLookups = $this->facultyLookups($rows, $schoolId);
         $checksum = hash_file('sha256', $file->getRealPath());
         if (! is_string($checksum)) {
             throw ValidationException::withMessages(['file' => 'The upload checksum could not be calculated.']);
         }
 
-        return DB::transaction(function () use ($actor, $file, $schoolId, $activeDefinitions, $rows, $facultyLookups, $checksum): FacultyBulkImport {
+        return DB::transaction(function () use ($actor, $file, $schoolId, $activeDefinitions, $fieldProposals, $rows, $facultyLookups, $checksum): FacultyBulkImport {
             $import = FacultyBulkImport::query()->create([
                 'public_id' => (string) Str::uuid(),
                 'school_id' => $schoolId,
@@ -59,6 +66,7 @@ final readonly class FacultyBulkImportService
                 'original_filename' => $file->getClientOriginalName(),
                 'source_type' => $this->sourceType($file),
                 'checksum' => $checksum,
+                'field_proposals' => $fieldProposals,
                 'status' => 'review',
             ]);
             $seenIds = [];
@@ -79,15 +87,18 @@ final readonly class FacultyBulkImportService
         });
     }
 
-    /** @param list<int> $rowIds */
-    public function confirm(FacultyBulkImport $import, User $actor, array $rowIds): FacultyBulkImport
+    /**
+     * @param  list<int>  $rowIds
+     * @param  list<string>  $fieldKeys
+     */
+    public function confirm(FacultyBulkImport $import, User $actor, array $rowIds, array $fieldKeys = []): FacultyBulkImport
     {
         $schoolId = $this->schoolId();
         if ($import->school_id !== $schoolId || $import->uploaded_by_user_id !== $actor->id) {
             abort(404);
         }
 
-        return DB::transaction(function () use ($import, $actor, $rowIds, $schoolId): FacultyBulkImport {
+        return DB::transaction(function () use ($import, $actor, $rowIds, $fieldKeys, $schoolId): FacultyBulkImport {
             $locked = FacultyBulkImport::query()->whereKey($import->id)->where('school_id', $schoolId)->lockForUpdate()->firstOrFail();
             if ($locked->status !== 'review') {
                 throw ValidationException::withMessages([
@@ -99,7 +110,8 @@ final readonly class FacultyBulkImportService
                 throw ValidationException::withMessages(['row_ids' => 'Select at least one ready row to import.']);
             }
             $this->authorizeRows($actor, $rows);
-            $definitions = $this->definitions->allForSchool($schoolId)->keyBy('key');
+            $definitions = $this->createSelectedFieldDefinitions($locked, $actor, $fieldKeys, $schoolId);
+            $this->mergeSelectedCustomFields($rows, $fieldKeys);
             $this->validateRowsAgainstDefinitions($rows, $definitions);
             $locked->rows()
                 ->where('status', 'ready')
@@ -138,6 +150,15 @@ final readonly class FacultyBulkImportService
                 'applied_rows' => $import->applied_count,
                 'skipped_rows' => $import->skipped_count,
             ],
+            'field_proposals' => collect($import->field_proposals ?? [])
+                ->map(fn (array $proposal): array => [
+                    'key' => $proposal['key'],
+                    'label' => $proposal['label'],
+                    'source_header_aliases' => $proposal['source_header_aliases'],
+                    'populated_rows' => $proposal['populated_rows'],
+                ])
+                ->values()
+                ->all(),
             'rows' => $import->rows()->orderBy('row_number')->get()->map(function (FacultyBulkImportRow $row) use ($definitions): array {
                 $payload = $row->payload ?? [];
                 $fields = collect(Arr::get($payload, 'custom_fields', []))->map(function (mixed $value, string $key) use ($definitions): ?array {
@@ -264,6 +285,7 @@ final readonly class FacultyBulkImportService
                 'date_employed' => $dateEmployed,
             ],
             'custom_fields' => $customFields,
+            'unmapped_fields' => $input['unmapped_fields'] ?? [],
         ];
 
         return [
@@ -373,6 +395,79 @@ final readonly class FacultyBulkImportService
     }
 
     /**
+     * @param  list<string>  $fieldKeys
+     * @return Collection<int, FacultyCustomFieldDefinition>
+     */
+    private function createSelectedFieldDefinitions(FacultyBulkImport $import, User $actor, array $fieldKeys, int $schoolId): Collection
+    {
+        $fieldKeys = array_values(array_unique($fieldKeys));
+        $proposals = collect($import->field_proposals ?? [])->keyBy('key');
+        $unknownKeys = array_values(array_diff($fieldKeys, $proposals->keys()->all()));
+        if ($unknownKeys !== []) {
+            throw ValidationException::withMessages([
+                'create_custom_field_keys' => 'One or more selected fields do not belong to this staged import.',
+            ]);
+        }
+        if ($fieldKeys === []) {
+            return $this->definitions->allForSchool($schoolId)->keyBy('key');
+        }
+        if (! Gate::forUser($actor)->allows('updateFacultyFields', GeneralSetting::class)) {
+            abort(403);
+        }
+
+        $displayOrder = (int) FacultyCustomFieldDefinition::query()
+            ->where('school_id', $schoolId)
+            ->max('display_order');
+        foreach ($fieldKeys as $index => $key) {
+            /** @var array{key: string, label: string, source_header_aliases: list<string>, populated_rows: int} $proposal */
+            $proposal = $proposals->get($key);
+            FacultyCustomFieldDefinition::query()->createOrFirst(
+                ['school_id' => $schoolId, 'key' => $proposal['key']],
+                [
+                    'label' => $proposal['label'],
+                    'field_type' => 'text',
+                    'source_header_aliases' => $proposal['source_header_aliases'],
+                    'is_required' => false,
+                    'is_sensitive' => true,
+                    'is_active' => true,
+                    'display_order' => $displayOrder + $index + 1,
+                ],
+            );
+        }
+
+        return $this->definitions->allForSchool($schoolId)->keyBy('key');
+    }
+
+    /**
+     * @param  Collection<int, FacultyBulkImportRow>  $rows
+     * @param  list<string>  $fieldKeys
+     */
+    private function mergeSelectedCustomFields(Collection $rows, array $fieldKeys): void
+    {
+        if ($fieldKeys === []) {
+            return;
+        }
+
+        foreach ($rows as $row) {
+            $payload = $row->payload ?? [];
+            $customFields = Arr::get($payload, 'custom_fields', []);
+            $unmappedFields = Arr::get($payload, 'unmapped_fields', []);
+            if (! is_array($customFields) || ! is_array($unmappedFields)) {
+                continue;
+            }
+            foreach ($fieldKeys as $key) {
+                $value = $this->string($unmappedFields[$key] ?? null);
+                if ($value !== null) {
+                    $customFields[$key] = $value;
+                }
+            }
+            $payload['custom_fields'] = $customFields;
+            $row->payload = $payload;
+            $row->save();
+        }
+    }
+
+    /**
      * @param  array<string, mixed>  $customFields
      * @param  iterable<FacultyCustomFieldDefinition>  $definitions
      * @param  list<string>  $errors
@@ -431,10 +526,8 @@ final readonly class FacultyBulkImportService
         return ['by_faculty_id_number' => $byFacultyIdNumber, 'by_email' => $byEmail];
     }
 
-    /** @param list<FacultyCustomFieldDefinition> $definitions
-     * @return list<array<string, mixed>>
-     */
-    private function readRows(UploadedFile $file, array $definitions): array
+    /** @return list<array<string, mixed>> */
+    private function readRows(UploadedFile $file): array
     {
         $sourceType = $this->sourceType($file);
         $rawRows = $sourceType === 'mdb' ? $this->readMdb($file) : $this->readWorkbook($file);
@@ -445,7 +538,47 @@ final readonly class FacultyBulkImportService
             throw ValidationException::withMessages(['file' => 'An import can contain at most '.self::MAX_ROWS.' rows.']);
         }
 
-        return array_map(fn (array $row): array => $this->canonicalizeRow($row, $definitions), $rawRows);
+        return $rawRows;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     * @param  list<FacultyCustomFieldDefinition>  $definitions
+     * @return list<array{key: string, label: string, source_header_aliases: list<string>, populated_rows: int}>
+     */
+    private function fieldProposals(array $rows, array $definitions): array
+    {
+        $knownHeaders = array_fill_keys([...self::STANDARD_FIELDS, 'id_no', 'address', 'full_name'], true);
+        foreach ($definitions as $definition) {
+            foreach (array_merge(['custom_'.$definition->key, $definition->key], $definition->source_header_aliases ?? []) as $alias) {
+                $knownHeaders[$this->normalizedHeader($alias)] = true;
+            }
+        }
+
+        $proposals = [];
+        foreach ($rows as $row) {
+            foreach ($row as $header => $value) {
+                $normalizedHeader = $this->normalizedHeader((string) $header);
+                if ($normalizedHeader === '' || isset($knownHeaders[$normalizedHeader]) || $this->string($value) === null) {
+                    continue;
+                }
+                $key = $this->proposalKey($normalizedHeader);
+                if (! isset($proposals[$key])) {
+                    $proposals[$key] = [
+                        'key' => $key,
+                        'label' => Str::of($normalizedHeader)->replace('_', ' ')->title()->toString(),
+                        'source_header_aliases' => [$normalizedHeader],
+                        'populated_rows' => 0,
+                    ];
+                }
+                if (! in_array($normalizedHeader, $proposals[$key]['source_header_aliases'], true)) {
+                    $proposals[$key]['source_header_aliases'][] = $normalizedHeader;
+                }
+                $proposals[$key]['populated_rows']++;
+            }
+        }
+
+        return array_values($proposals);
     }
 
     /** @return list<array<string, mixed>> */
@@ -507,10 +640,12 @@ final readonly class FacultyBulkImportService
         return $rows;
     }
 
-    /** @param list<FacultyCustomFieldDefinition> $definitions
+    /**
+     * @param  list<FacultyCustomFieldDefinition>  $definitions
+     * @param  list<array{key: string, label: string, source_header_aliases: list<string>, populated_rows: int}>  $fieldProposals
      * @return array<string, mixed>
      */
-    private function canonicalizeRow(array $row, array $definitions): array
+    private function canonicalizeRow(array $row, array $definitions, array $fieldProposals = []): array
     {
         $normalized = [];
         foreach ($row as $header => $value) {
@@ -537,6 +672,15 @@ final readonly class FacultyBulkImportService
                 $key = $this->normalizedHeader($alias);
                 if (array_key_exists($key, $normalized)) {
                     $result['custom_fields'][$definition->key] = $normalized[$key];
+                    break;
+                }
+            }
+        }
+        $result['unmapped_fields'] = [];
+        foreach ($fieldProposals as $proposal) {
+            foreach ($proposal['source_header_aliases'] as $sourceHeader) {
+                if (array_key_exists($sourceHeader, $normalized)) {
+                    $result['unmapped_fields'][$proposal['key']] = $normalized[$sourceHeader];
                     break;
                 }
             }
@@ -629,6 +773,17 @@ final readonly class FacultyBulkImportService
     private function normalizedHeader(string $header): string
     {
         return Str::of($header)->lower()->replaceMatches('/^custom\s*:\s*/', 'custom_')->snake()->trim('_')->toString();
+    }
+
+    /** @param array<string, mixed> $proposals */
+    private function proposalKey(string $header): string
+    {
+        $key = Str::after($header, 'custom_');
+        if ($key === '' || ! preg_match('/^[a-z]/', $key)) {
+            $key = 'field_'.$key;
+        }
+
+        return mb_substr($key, 0, 100);
     }
 
     private function sourceType(UploadedFile $file): string

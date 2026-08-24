@@ -48,6 +48,11 @@ docker compose --env-file tests/Fixtures/installer/swarm-stack.env \
   -f scripts/swarm-stack.yml config --quiet
 docker compose --env-file tests/Fixtures/installer/swarm-stack.env \
   -f scripts/swarm-stack-direct.yml config --quiet
+set -a
+source tests/Fixtures/installer/swarm-stack.env
+set +a
+docker stack config --compose-file scripts/swarm-stack.yml >/dev/null
+docker stack config --compose-file scripts/swarm-stack-direct.yml >/dev/null
 ```
 
 Run a focused test while iterating:

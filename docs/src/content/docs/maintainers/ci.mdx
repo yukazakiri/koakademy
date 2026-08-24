@@ -42,7 +42,8 @@ bash -n scripts/install.sh scripts/koakademy scripts/check-release-assets.sh \
 shellcheck scripts/install.sh scripts/koakademy scripts/koakademy-app-entrypoint.sh \
   scripts/check-release-assets.sh tests/installer-release.sh \
   tests/Fixtures/installer/docker tests/Fixtures/installer/curl
-bash tests/installer-release.sh
+bash tests/installer-release.sh stable
+bash tests/installer-release.sh edge
 docker compose --env-file tests/Fixtures/installer/swarm-stack.env \
   -f scripts/swarm-stack.yml config --quiet
 ```

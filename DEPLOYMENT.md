@@ -11,31 +11,51 @@ The installer creates one manager-pinned Docker Swarm stack:
 - PostgreSQL, Redis, Caddy state, and app storage use local persistent volumes.
 - Docker Secrets supply application, database, Redis, storage, mail, and Meilisearch credentials.
 
-The installer uses the checksummed `version.json` from the latest stable GitHub Release. Its image value is an immutable GHCR digest. It never deploys `edge` or `latest`.
+The stable installer uses the checksummed `version.json` from the latest stable
+GitHub Release. Its image value is an immutable GHCR digest. Use the separate
+`edge` channel only for staging or development; it follows the current
+unreleased `master` commit and uses the mutable `edge-frankenphp` image.
 
 ## First deployment
 
 Before installation, point the production domain to the VPS and make ports 80/443 available:
 
 ```sh
-curl -fsSL https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh | sudo bash -s -- install --domain school.example
+curl -fsSL https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh | sudo bash -s -- --stable --domain school.example
 ```
 
 The process installs Docker if necessary, initializes Swarm if it is inactive, creates Docker Secrets, starts Caddy and dependencies, runs one migration job, starts the app, and verifies `https://school.example/up`.
 
 Complete `https://school.example/setup`, then check `https://school.example/admin`. The initial local application volume is suitable for a new single node only; configure external S3/R2 and backups before production reliance.
 
+For an unreleased `master` build in staging, use the edge bootstrap:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/yukazakiri/koakademy/master/scripts/install.sh | sudo bash -s -- edge --domain school.example
+```
+
+Edge is not a stable or production-supported release and may change or break
+without notice.
+
 ## Day-two operations
 
 ```sh
 sudo koakademy status
 sudo koakademy update
+sudo koakademy update --stable
+sudo koakademy update --edge
 sudo koakademy configure storage r2
 sudo koakademy configure mail smtp
 sudo koakademy configure search enable
 ```
 
-`update` downloads and verifies the next stable release bundle, creates a custom-format PostgreSQL dump under `/opt/koakademy/backups`, runs release migrations, performs a start-first app rollout, and checks the HTTPS health endpoint.
+`update` follows the installed channel by default. Pass `--stable` to select a
+published release or `--edge` to select the current unreleased `master` build.
+Stable updates download and verify the release bundle; edge updates download
+the matching files from the master commit and use `edge-frankenphp`. Both
+create a custom-format PostgreSQL dump under `/opt/koakademy/backups`, run
+release migrations, perform a start-first app rollout, and check the HTTPS
+health endpoint.
 
 The command retains the preceding image:
 

@@ -17,7 +17,11 @@ Only the latest stable, non-prerelease release is supported. Development and pre
 
 It installs Docker when needed, initializes Swarm only when inactive, and deploys Caddy, KoAkademy, PostgreSQL, Redis, and Gotenberg on a single VPS. Caddy owns ports 80/443; the remaining services are private on the Swarm overlay. The installer preserves an active manager cluster, never leaves Swarm, and stops before changing a legacy `koakademy-*` deployment.
 
-The Linux command resolves a stable GitHub Release and verifies its checksummed bundle before deploying the immutable GHCR digest in `version.json`. It never selects mutable `latest` or rolling `edge`.
+The Linux command uses the explicit `--stable` channel to resolve a published
+GitHub Release, verify its checksummed bundle, and deploy the immutable GHCR
+digest in `version.json`. Use `edge` only for staging or development; it
+resolves the current `master` commit and deploys the mutable
+`ghcr.io/yukazakiri/koakademy:edge-frankenphp` image.
 
 ## Can I use MySQL or SQLite in production?
 

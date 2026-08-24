@@ -181,8 +181,10 @@ jobs:
             scripts/check-release-assets.sh scripts/generate-version-metadata.sh \
             tests/installer-release.sh tests/Fixtures/installer/docker tests/Fixtures/installer/curl
 
-      - name: Exercise release-backed installer
-        run: bash tests/installer-release.sh
+      - name: Exercise stable and edge installers
+        run: |
+          bash tests/installer-release.sh stable
+          bash tests/installer-release.sh edge
 
       - name: Validate one-line Swarm stack
         run: |

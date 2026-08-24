@@ -13,12 +13,25 @@ for argument in "$@"; do
         https://github.com/yukazakiri/koakademy/releases/download/*)
             url="$argument"
             ;;
+        https://raw.githubusercontent.com/yukazakiri/koakademy/*)
+            url="$argument"
+            ;;
     esac
     previous="$argument"
 done
 
 case "$*" in
     *github.com/yukazakiri/koakademy/releases/download/*)
+        test -n "${KOAKADEMY_INSTALLER_TEST_RELEASE_DIR:-}"
+        test -n "$output_file"
+        asset="${url##*/}"
+        cp "$KOAKADEMY_INSTALLER_TEST_RELEASE_DIR/$asset" "$output_file"
+        ;;
+    *api.github.com/repos/yukazakiri/koakademy/commits/master*)
+        printf '{\n  "sha": "%s",\n  "commit": {}\n}\n' \
+            "${KOAKADEMY_INSTALLER_TEST_SOURCE_SHA:-0123456789012345678901234567890123456789}"
+        ;;
+    *raw.githubusercontent.com/yukazakiri/koakademy/*)
         test -n "${KOAKADEMY_INSTALLER_TEST_RELEASE_DIR:-}"
         test -n "$output_file"
         asset="${url##*/}"

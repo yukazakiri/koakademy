@@ -6,8 +6,10 @@ here; this folder only keeps the scripts the project actually runs or ships.
 
 ## Installation
 
-- `install.sh` — small Linux bootstrap that resolves a stable GitHub Release,
-  verifies the operator command, and hands control to it.
+- `install.sh` — small Linux bootstrap that resolves a published stable GitHub
+  Release with `--stable`, or the current unreleased `master` commit with
+  `edge`, verifies/downloads the matching operator command, and hands control
+  to it.
 - `koakademy` — privileged production operator for the single-node Docker Swarm
   deployment. It installs, updates, configures, checks status, and rolls back
   the application.

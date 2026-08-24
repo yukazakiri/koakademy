@@ -13,7 +13,11 @@ KoAkademy publishes only reviewed stable releases. Delivery has two focused resp
 | `master` merge | Release Please creates or updates a draft release PR |
 | Merged Release Please PR | Exact `vX.Y.Z` tag, multi-architecture GHCR image, checksummed installer bundle, published GitHub Release |
 
-There is no rolling `edge`, `latest`, Docker Hub mirror, mutable major/minor alias, or manual version override in the supported release path. Production deployments resolve the GitHub Release asset and use its immutable GHCR digest.
+Stable production releases do not use a rolling `latest` or manual version
+override. Production deployments resolve the GitHub Release asset and use its
+immutable GHCR digest. The separate `edge` channel follows the current
+unreleased `master` commit for staging and development; it is not a stable
+release and uses the mutable `edge-frankenphp` image.
 
 ## Release flow
 

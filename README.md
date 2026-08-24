@@ -136,7 +136,7 @@ The supported production installer is Linux-only. It installs Docker when needed
 **Linux**
 
 ```sh
-curl -fsSL https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh | sudo bash -s -- install --domain school.example
+curl -fsSL https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh | sudo bash -s -- --stable --domain school.example
 ```
 
 Visit `/setup` when the installer finishes to create the institution, the first academic period, and the first super administrator. The setup route closes after initialization.
@@ -146,7 +146,16 @@ The installer runs privileged remote code. Inspect it first if that is not appro
 ```sh
 curl -fSLO https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh
 less install.sh
-sudo bash install.sh install --domain school.example
+sudo bash install.sh --stable --domain school.example
+```
+
+To evaluate the unreleased `master` build, use the edge channel. It resolves
+the current `master` commit, downloads the matching operator and Swarm assets,
+and deploys the mutable `edge-frankenphp` image. This path is for staging and
+development only; it can change or break without a stable release:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/yukazakiri/koakademy/master/scripts/install.sh | sudo bash -s -- edge --domain school.example
 ```
 
 Stable releases publish the bootstrap, operator command, Swarm bundle, runtime

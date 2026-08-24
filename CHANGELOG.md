@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+- Add explicit `--stable` and `edge` installer channels. Stable resolves a
+  checksummed published release; edge follows the current unreleased `master`
+  commit for staging and development.
+
 ## [1.19.1](https://github.com/yukazakiri/koakademy/compare/v1.19.0...v1.19.1) (2026-08-19)
 
 

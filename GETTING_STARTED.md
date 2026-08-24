@@ -19,7 +19,7 @@ Docker does not need to be preinstalled. The installer uses Docker's official in
 Run this with the real public domain:
 
 ```sh
-curl -fsSL https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh | sudo bash -s -- install --domain school.example
+curl -fsSL https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh | sudo bash -s -- --stable --domain school.example
 ```
 
 The command resolves a stable GitHub Release, downloads the checksummed release bundle, deploys its immutable GHCR image digest, and then verifies `https://school.example/up`. It does not use `edge` or `latest`.
@@ -36,6 +36,19 @@ Visit `https://school.example/setup` to create the school and first super admini
 
 The initial filesystem volume is a simplified single-node default, not durable object storage. Configure external S3/R2 and scheduled backups before treating the installation as resilient production infrastructure.
 
+## Unreleased master edge installation
+
+For staging or development, install the current unreleased `master` build:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/yukazakiri/koakademy/master/scripts/install.sh | sudo bash -s -- edge --domain school.example
+```
+
+The edge channel resolves the current `master` commit, downloads its matching
+operator and Swarm assets, and uses the mutable `ghcr.io/yukazakiri/koakademy:edge-frankenphp`
+image. It is not a stable or production-supported release and may change or
+break at any time.
+
 ## Operate the installation
 
 The installer adds a single server command:
@@ -43,6 +56,8 @@ The installer adds a single server command:
 ```sh
 sudo koakademy status
 sudo koakademy update
+sudo koakademy update --stable
+sudo koakademy update --edge
 sudo koakademy configure storage r2
 sudo koakademy configure mail smtp
 sudo koakademy configure search enable
@@ -50,7 +65,14 @@ sudo koakademy configure search enable
 
 Provider credentials are requested without echoing, stored as versioned Docker Secrets, and never written to the application database or container filesystem. Every configuration change redeploys the FrankenPHP service so persistent workers load the new configuration.
 
-`update` creates a PostgreSQL backup under `/opt/koakademy/backups`, runs the target release migrations, deploys the new immutable image, and checks the public health endpoint. It records the previous image for `sudo koakademy rollback`, but rollback never reverses database migrations. Restore the recorded backup when release notes do not guarantee schema compatibility.
+`update` follows the installed channel by default. Pass `--stable` to select a
+published release or `--edge` to select the current unreleased `master` build.
+Stable updates deploy an immutable image; edge updates use the mutable
+`edge-frankenphp` image. Both create a PostgreSQL backup under
+`/opt/koakademy/backups`, run migrations, and check the public health endpoint.
+The previous image is recorded for `sudo koakademy rollback`, but rollback
+never reverses database migrations. Restore the recorded backup when release
+notes do not guarantee schema compatibility.
 
 ## Inspect before running
 
@@ -59,7 +81,7 @@ Running remote privileged code is a trust decision. Download the matching stable
 ```sh
 curl -fSLO https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh
 less install.sh
-sudo bash install.sh install --domain school.example
+sudo bash install.sh --stable --domain school.example
 ```
 
 Each stable release contains the bootstrap, operator command, Swarm bundle,

@@ -10,6 +10,9 @@ readonly OPTIONAL_SECRET_VALUE="__KOAKADEMY_NOT_CONFIGURED__"
 repository="${KOAKADEMY_REPOSITORY:-$REPOSITORY_DEFAULT}"
 root="${KOAKADEMY_ROOT:-/opt/koakademy}"
 release_tag=""
+channel="stable"
+channel_explicit=false
+source_sha=""
 release_directory=""
 runtime_file=""
 command_name=""
@@ -27,8 +30,8 @@ usage() {
 KoAkademy production operator
 
 Usage:
-  koakademy install --domain school.example [--release vX.Y.Z]
-  koakademy update [--release vX.Y.Z]
+  koakademy install --domain school.example [--channel stable|edge] [--release vX.Y.Z]
+  koakademy update [--channel stable|edge] [--release vX.Y.Z]
   koakademy configure storage <local|s3|r2|library-r2>
   koakademy configure mail <log|smtp|sequenzy>
   koakademy configure search <enable|disable>
@@ -59,6 +62,15 @@ require_command() {
 validate_release_tag() {
     [[ "$1" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
         fail "Release tags must use the exact vX.Y.Z form."
+}
+
+validate_source_sha() {
+    [[ "$1" =~ ^[0-9a-f]{40}$ ]] || fail "Source commits must be full lowercase Git SHAs."
+}
+
+validate_repository() {
+    [[ "$repository" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] ||
+        fail "Repository must use owner/name form."
 }
 
 validate_domain() {
@@ -185,6 +197,7 @@ KOAKADEMY_IMAGE=$image
 PREVIOUS_KOAKADEMY_IMAGE=
 APP_REPLICAS=0
 RELEASE_TAG=$release_tag
+RELEASE_CHANNEL=$channel
 RELEASE_DIRECTORY=$release_directory
 INSTALLATION_COMPLETE=false
 EOF
@@ -204,6 +217,21 @@ resolve_latest_release() {
     printf '%s\n' "$tag"
 }
 
+resolve_master_sha() {
+    local response sha
+    if is_test; then
+        sha="${KOAKADEMY_INSTALLER_TEST_SOURCE_SHA:-0123456789012345678901234567890123456789}"
+        validate_source_sha "$sha"
+        printf '%s\n' "$sha"
+        return
+    fi
+    response="$(curl --fail --location --silent --show-error "https://api.github.com/repos/$repository/commits/master")" ||
+        fail "Could not resolve the current KoAkademy master commit."
+    sha="$(sed -nE 's/^[[:space:]]*"sha":[[:space:]]*"([0-9a-f]{40})".*/\1/p' <<<"$response" | head -n 1)"
+    validate_source_sha "$sha"
+    printf '%s\n' "$sha"
+}
+
 download_asset() {
     local asset="$1"
     [[ -f "$release_directory/$asset" ]] && return
@@ -213,8 +241,65 @@ download_asset() {
         fail "Could not download release asset $asset for $release_tag."
 }
 
+download_raw_asset() {
+    local asset="$1"
+    curl --fail --location --silent --show-error \
+        "https://raw.githubusercontent.com/$repository/$source_sha/scripts/$asset" \
+        --output "$release_directory/$asset" ||
+        fail "Could not download edge asset $asset for $source_sha."
+}
+
+edge_image() {
+    if is_test && [[ -n "${KOAKADEMY_INSTALLER_TEST_EDGE_IMAGE:-}" ]]; then
+        printf '%s\n' "$KOAKADEMY_INSTALLER_TEST_EDGE_IMAGE"
+        return
+    fi
+    printf 'ghcr.io/%s:edge-frankenphp\n' "$repository"
+}
+
+write_edge_metadata() {
+    local image
+    image="$(edge_image)"
+    cat >"$release_directory/version.json" <<EOF
+{
+  "version": "edge+sha.$source_sha",
+  "image": "$image",
+  "commit": "$source_sha",
+  "branch": "master",
+  "release_type": "edge",
+  "metadata": {
+    "repository": "$repository",
+    "channel": "edge"
+  }
+}
+EOF
+}
+
+fetch_edge_release() {
+    local asset
+    [[ -n "$source_sha" ]] || source_sha="$(resolve_master_sha)"
+    validate_source_sha "$source_sha"
+    release_tag="edge-$source_sha"
+    release_directory="$root/releases/$release_tag"
+    mkdir -p "$release_directory"
+
+    for asset in koakademy swarm-stack.yml Caddyfile koakademy-app-entrypoint.sh; do
+        [[ -f "$release_directory/$asset" ]] || download_raw_asset "$asset"
+    done
+    [[ -f "$release_directory/version.json" ]] || write_edge_metadata
+    (cd "$release_directory" && sha256sum \
+        koakademy swarm-stack.yml Caddyfile koakademy-app-entrypoint.sh version.json \
+        >SHA256SUMS)
+    (cd "$release_directory" && sha256sum --check SHA256SUMS) ||
+        fail "Edge asset checksum verification failed."
+}
+
 fetch_release() {
     local source_directory asset
+    if [[ "$channel" == edge ]]; then
+        fetch_edge_release
+        return
+    fi
     [[ -n "$release_tag" ]] || release_tag="$(resolve_latest_release)"
     validate_release_tag "$release_tag"
     release_directory="$root/releases/$release_tag"
@@ -238,6 +323,11 @@ fetch_release() {
 release_image() {
     local image
     image="$(sed -nE 's/^[[:space:]]*"image":[[:space:]]*"([^"]+)".*/\1/p' "$release_directory/version.json" | head -n 1)"
+    if [[ "$channel" == edge ]]; then
+        [[ "$image" == "$(edge_image)" ]] || fail "Edge release image must use the current edge-frankenphp alias."
+        printf '%s\n' "$image"
+        return
+    fi
     if is_test && [[ -n "${KOAKADEMY_INSTALLER_TEST_IMAGE:-}" ]]; then
         image="$KOAKADEMY_INSTALLER_TEST_IMAGE"
     fi
@@ -469,6 +559,9 @@ perform_install() {
         # Populated by the sourced runtime file.
         # shellcheck disable=SC2153
         release_tag="$RELEASE_TAG"
+        if [[ "$channel_explicit" != true ]]; then
+            channel="${RELEASE_CHANNEL:-stable}"
+        fi
         domain="$KOAKADEMY_DOMAIN"
         resuming=true
         info "Resuming the incomplete KoAkademy installation for $domain."
@@ -516,6 +609,9 @@ perform_update() {
     local previous image backup
     require_root
     load_runtime
+    if [[ "$channel_explicit" != true ]]; then
+        channel="${RELEASE_CHANNEL:-stable}"
+    fi
     fetch_release
     image="$(release_image)"
     [[ "$image" != "$KOAKADEMY_IMAGE" ]] || { info "KoAkademy $release_tag is already deployed."; return; }
@@ -532,6 +628,7 @@ perform_update() {
     verify_https
     set_runtime KOAKADEMY_IMAGE "$image"
     set_runtime RELEASE_TAG "$release_tag"
+    set_runtime RELEASE_CHANNEL "$channel"
     set_runtime RELEASE_DIRECTORY "$release_directory"
     set_runtime APP_REPLICAS 1
     install_operator_command
@@ -654,8 +751,8 @@ perform_rollback() {
 
 print_status() {
     load_runtime
-    printf 'Domain: %s\nRelease: %s\nImage: %s\nStorage: %s\nMail: %s\nSearch: %s\n' \
-        "$KOAKADEMY_DOMAIN" "$RELEASE_TAG" "$KOAKADEMY_IMAGE" "$FILESYSTEM_DISK" "$MAIL_MAILER" "$SCOUT_DRIVER"
+    printf 'Domain: %s\nChannel: %s\nRelease: %s\nImage: %s\nStorage: %s\nMail: %s\nSearch: %s\n' \
+        "$KOAKADEMY_DOMAIN" "${RELEASE_CHANNEL:-stable}" "$RELEASE_TAG" "$KOAKADEMY_IMAGE" "$FILESYSTEM_DISK" "$MAIL_MAILER" "$SCOUT_DRIVER"
     docker stack services "$STACK_NAME" || true
 }
 
@@ -673,6 +770,10 @@ parse_command() {
     while (( $# > 0 )); do
         case "$1" in
             --release) (( $# >= 2 )) || fail "--release requires a tag."; release_tag="$2"; shift 2 ;;
+            --channel) (( $# >= 2 )) || fail "--channel requires stable or edge."; channel="$2"; channel_explicit=true; [[ "$channel" == stable || "$channel" == edge ]] || fail "Channel must be stable or edge."; shift 2 ;;
+            --stable) channel=stable; channel_explicit=true; shift ;;
+            --edge) channel=edge; channel_explicit=true; shift ;;
+            --source-sha) (( $# >= 2 )) || fail "--source-sha requires a Git SHA."; source_sha="$2"; validate_source_sha "$source_sha"; shift 2 ;;
             --domain) (( $# >= 2 )) || fail "--domain requires a hostname."; KOAKADEMY_DOMAIN="$2"; shift 2 ;;
             --yes) yes=true; shift ;;
             *) fail "Unknown option: $1" ;;
@@ -682,6 +783,7 @@ parse_command() {
 
 main() {
     setup_paths
+    validate_repository
     parse_command "$@"
     case "$command_name" in
         install) perform_install ;;

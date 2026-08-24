@@ -14,6 +14,7 @@ use App\Services\RegistrarAnalyticsService;
 use Inertia\Testing\AssertableInertia;
 use Maatwebsite\Excel\Facades\Excel;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Style\Protection;
 use Spatie\Permission\Models\Permission;
 
 beforeEach(function (): void {
@@ -186,6 +187,7 @@ it('exports registrar analytics as an excel workbook', function (): void {
         'student_type' => 'college',
         'school_id' => $department->school_id,
     ]);
+    $user->update(['school_id' => $department->school_id]);
 
     StudentEnrollment::factory()->create([
         'student_id' => $student->id,
@@ -247,6 +249,8 @@ it('exports default program and year-level workbook breakdowns', function (): vo
             'Data Quality',
             'Daily Trend',
             'Monthly Trend',
+            'Import Metadata',
+            'Import Baseline',
         ]);
 
         $context = $workbook->getSheetByName('Report Context');
@@ -257,6 +261,8 @@ it('exports default program and year-level workbook breakdowns', function (): vo
         $genderProgram = $workbook->getSheetByName('Gender by Program');
         $genderYear = $workbook->getSheetByName('Gender by Year');
         $monthly = $workbook->getSheetByName('Monthly Trend');
+        $metadata = $workbook->getSheetByName('Import Metadata');
+        $baseline = $workbook->getSheetByName('Import Baseline');
 
         expect($context?->getCell('A1')->getValue())->toBe('REGISTRAR ANALYTICS REPORT CONTEXT')
             ->and($context?->getCell('A4')->getValue())->toBe('Selected reporting population')
@@ -268,10 +274,20 @@ it('exports default program and year-level workbook breakdowns', function (): vo
             ->and($formBc?->getCell('D3')->getValue())->toBe('New First-Year Students, Male')
             ->and($formBc?->getCell('K4')->getValue())->toBe(1)
             ->and($formBc?->getCell('N5')->getValue())->toBe(2)
-            ->and($details?->getCell('E3')->getValue())->toBe('Religion')
-            ->and($details?->getCell('F3')->getValue())->toBe('Region of Origin')
-            ->and($details?->getCell('G3')->getValue())->toBe('Province of Origin')
-            ->and($details?->getCell('H3')->getValue())->toBe('City/Municipality of Origin')
+            ->and($details?->getCell('H3')->getValue())->toBe('First-year Intake Classification')
+            ->and($details?->getCell('K3')->getValue())->toBe('First Name')
+            ->and($details?->getCell('U3')->getValue())->toBe('Religion')
+            ->and($details?->getCell('AB3')->getValue())->toBe('Region of Origin')
+            ->and($details?->getCell('AC3')->getValue())->toBe('Province of Origin')
+            ->and($details?->getCell('AD3')->getValue())->toBe('City / Municipality of Origin')
+            ->and($details?->getColumnDimension('A')->getVisible())->toBeFalse()
+            ->and($details?->getFreezePane())->toBe('A4')
+            ->and($details?->getStyle('B4')->getProtection()->getLocked())->toBe(Protection::PROTECTION_PROTECTED)
+            ->and($details?->getStyle('K4')->getProtection()->getLocked())->toBe(Protection::PROTECTION_UNPROTECTED)
+            ->and($details?->getProtection()->getSelectLockedCells())->toBeFalse()
+            ->and($details?->getProtection()->getSelectUnlockedCells())->toBeFalse()
+            ->and($metadata?->getSheetState())->toBe('veryHidden')
+            ->and($baseline?->getSheetState())->toBe('veryHidden')
             ->and($courseSheet?->getCell('B2')->getValue())->toBe('Program Code')
             ->and($courseSheet?->getCell('B3')->getValue())->toBe('BSIT')
             ->and($courseSheet?->getCell('D3')->getValue())->toBe(3)
@@ -292,10 +308,10 @@ it('exports default program and year-level workbook breakdowns', function (): vo
             ->and((int) $matrixRows['BSIT']['I'])->toBe(3);
 
         $detailRows = collect($details?->toArray(null, true, true, true) ?? []);
-        expect($detailRows->contains(fn (array $row): bool => ($row['E'] ?? null) === 'Roman Catholic'
-            && ($row['F'] ?? null) === 'National Capital Region'
-            && ($row['G'] ?? null) === 'Metro Manila'
-            && ($row['H'] ?? null) === 'Manila'))->toBeTrue();
+        expect($detailRows->contains(fn (array $row): bool => ($row['U'] ?? null) === 'Roman Catholic'
+            && ($row['AB'] ?? null) === 'National Capital Region'
+            && ($row['AC'] ?? null) === 'Metro Manila'
+            && ($row['AD'] ?? null) === 'Manila'))->toBeTrue();
 
     } finally {
         @unlink($path);

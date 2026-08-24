@@ -1,4 +1,5 @@
 import AdminLayout from "@/components/administrators/admin-layout";
+import { RegistrarStudentProfileImportDialog } from "@/components/administrators/registrar-student-profile-import-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,6 +35,7 @@ type ChartDatum = { name: string; count: number };
 type CourseTone = { badge: string; dot: string; stripe: string };
 type Props = {
     user: { name: string; email: string; avatar: string | null; role: string };
+    canImportStudentProfiles: boolean;
     analytics: {
         current_semester_count: number;
         current_school_year_count: number;
@@ -280,7 +282,7 @@ function TableSection({ title, description, children }: { title: string; descrip
     );
 }
 
-export default function RegistrarAnalytics({ user, analytics, quality, report, generatedAt }: Props) {
+export default function RegistrarAnalytics({ user, analytics, quality, report, generatedAt, canImportStudentProfiles }: Props) {
     const [values, setValues] = useState<FilterValues>(report.values);
 
     useEffect(() => setValues(report.values), [report.values]);
@@ -351,6 +353,7 @@ export default function RegistrarAnalytics({ user, analytics, quality, report, g
                         <span className="text-muted-foreground mr-1 flex items-center gap-1.5 text-xs">
                             <RefreshCw className="size-3.5" /> Updated {date}
                         </span>
+                        {canImportStudentProfiles ? <RegistrarStudentProfileImportDialog /> : null}
                         <Button asChild size="sm">
                             <a href={exportMethod.url({ query: query(values) })}>
                                 <FileSpreadsheet className="size-4" /> Export Excel

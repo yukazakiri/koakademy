@@ -10,6 +10,7 @@ use App\Models\Course;
 use App\Models\Department;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
+use App\Support\RegistrarStudentProfileWorkbook;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -22,6 +23,7 @@ final class RegistrarAnalyticsService
         private readonly EnrollmentPipelineService $enrollmentPipelineService,
         private readonly GeneralSettingsService $settingsService,
         private readonly RegistrarReportingSettingsService $registrarReportingSettings,
+        private readonly RegistrarStudentProfileWorkbook $profileWorkbook,
     ) {}
 
     /**
@@ -405,7 +407,27 @@ final class RegistrarAnalyticsService
 
     private function details(Builder $query): mixed
     {
-        return (clone $query)->selectRaw("students.student_id as student_reference, students.first_name, students.last_name, students.middle_name, students.suffix, TRIM(students.gender) as gender, students.student_type, NULLIF(TRIM(students.religion), '') as religion, NULLIF(TRIM(students.region_of_origin), '') as region_of_origin, NULLIF(TRIM(students.province_of_origin), '') as province_of_origin, NULLIF(TRIM(students.city_of_origin), '') as city_of_origin, courses.code as course_code, courses.title as course_title, TRIM(departments.code) as department, student_enrollment.academic_year as year_level, student_enrollment.intake_category, student_enrollment.status, student_enrollment.created_at")->orderBy('departments.code')->orderBy('students.last_name')->get();
+        $rows = (clone $query)
+            ->selectRaw('student_enrollment.id as enrollment_record_id, students.id as student_record_id, student_enrollment.school_id, students.student_id as student_reference, students.first_name, students.last_name, students.middle_name, students.suffix, courses.code as course_code, courses.title as course_title, TRIM(departments.code) as department, student_enrollment.academic_year as year_level, student_enrollment.intake_category, student_enrollment.status, student_enrollment.created_at, students.updated_at as student_updated_at, student_enrollment.updated_at as enrollment_updated_at')
+            ->orderBy('departments.code')
+            ->orderBy('students.last_name')
+            ->get();
+
+        $students = Student::query()
+            ->with(['studentContactsInfo', 'studentParentInfo', 'studentEducationInfo', 'personalInfo'])
+            ->whereIn('id', $rows->pluck('student_record_id')->filter()->unique())
+            ->get()
+            ->keyBy('id');
+
+        return $rows->map(function (StudentEnrollment $row) use ($students): array {
+            $data = $row->toArray();
+            $student = $students->get((int) $row->getAttribute('student_record_id'));
+            $data['profile_values'] = $student instanceof Student
+                ? $this->profileWorkbook->profileValues($student)
+                : [];
+
+            return $data;
+        });
     }
 
     private function quality(Builder $query): array

@@ -1,5 +1,59 @@
 # Changelog
 
+## [1.20.0](https://github.com/yukazakiri/koakademy/compare/v1.19.1...v1.20.0) (2026-08-24)
+
+
+### Features
+
+* **faculty:** add configurable fields and bulk imports ([#201](https://github.com/yukazakiri/koakademy/issues/201)) ([b0f128f](https://github.com/yukazakiri/koakademy/commit/b0f128f4f41bf911f24cd78d88b89c6b6ba95a23))
+* **faculty:** improve bulk import review ([#202](https://github.com/yukazakiri/koakademy/issues/202)) ([1921045](https://github.com/yukazakiri/koakademy/commit/192104567b33fbe37a9e5dd2ad710654888a5768))
+* **finance:** add student tuition update requests ([#191](https://github.com/yukazakiri/koakademy/issues/191)) ([ffe5f8f](https://github.com/yukazakiri/koakademy/commit/ffe5f8ff267b341612962bfebd02c7906b2bd92d))
+* **finance:** add tuition adjustment spreadsheet imports ([#193](https://github.com/yukazakiri/koakademy/issues/193)) ([0b39dfa](https://github.com/yukazakiri/koakademy/commit/0b39dfafd525b755200214fb6780648199d92997))
+* **finance:** clarify tuition adjustment template ([326ac3e](https://github.com/yukazakiri/koakademy/commit/326ac3e012b99f289823658d84ddca8f35cf1e9f))
+* **installer:** add stable and edge channels ([882f432](https://github.com/yukazakiri/koakademy/commit/882f43236d7def04ec15d7a238d84098194abd58))
+* **registrar:** add bulk student profile updates ([#197](https://github.com/yukazakiri/koakademy/issues/197)) ([91ad57b](https://github.com/yukazakiri/koakademy/commit/91ad57ba8a106dd6e7c1e0d617e80da6d7f316d2))
+* **registrar:** add CHED Form B/C analytics ([#194](https://github.com/yukazakiri/koakademy/issues/194)) ([03ec616](https://github.com/yukazakiri/koakademy/commit/03ec616c978a2d5a28e09333efbf394db20039c0))
+* **registrar:** add configurable document studio ([#200](https://github.com/yukazakiri/koakademy/issues/200)) ([eb05396](https://github.com/yukazakiri/koakademy/commit/eb05396d6bbf7faceb2f66c41851e1204a9c8fa2))
+* **registrar:** redesign analytics dashboard tables ([f53e3b3](https://github.com/yukazakiri/koakademy/commit/f53e3b3b3a3b570a4c464c7c394e8955175965cd))
+* **student-profile:** add reporting completion flow ([#189](https://github.com/yukazakiri/koakademy/issues/189)) ([14b6aee](https://github.com/yukazakiri/koakademy/commit/14b6aee1224bba9199a2bb40431472f584e1efe9))
+* **student-profile:** guide incomplete fields ([#190](https://github.com/yukazakiri/koakademy/issues/190)) ([98e38b6](https://github.com/yukazakiri/koakademy/commit/98e38b60401cdd50fbe9e5a350a5a89b922956af))
+
+
+### Bug Fixes
+
+* **build:** sync npm lockfile with package manifest ([199b59f](https://github.com/yukazakiri/koakademy/commit/199b59f83a9e853616ec704afe437feacb1758c8))
+* **delivery:** publish complete installer bundle ([4ce8c41](https://github.com/yukazakiri/koakademy/commit/4ce8c41d9788ae657e076abe20be1d7c562db0b9))
+* **docker:** enable automatic migrations by default ([22414f9](https://github.com/yukazakiri/koakademy/commit/22414f91881b74cb70443e8c2cc1f59da2c408c7))
+* **enrollment:** make social links optional ([#187](https://github.com/yukazakiri/koakademy/issues/187)) ([162cb01](https://github.com/yukazakiri/koakademy/commit/162cb01fcb7ca5687d8e6dca8139d650e0216d94))
+* **finance:** load all tuition adjustment rows ([237dcd0](https://github.com/yukazakiri/koakademy/commit/237dcd04015d9ac0b3848577035f890d18c97782))
+* **finance:** support Laravel Excel v4 markers ([4ea46fc](https://github.com/yukazakiri/koakademy/commit/4ea46fc5d8ab89fbdf5a5e46ae6d32e621135ff1))
+* **registrar:** complete analytics exports ([#195](https://github.com/yukazakiri/koakademy/issues/195)) ([5b3463e](https://github.com/yukazakiri/koakademy/commit/5b3463e32b750914b9b611465c081d6067158a61))
+* **registrar:** default analytics to fourth year ([#196](https://github.com/yukazakiri/koakademy/issues/196)) ([d7cae52](https://github.com/yukazakiri/koakademy/commit/d7cae52468d5edcdd9b930289ec08ede2310d0d8))
+* **tuition:** link maintenance notice to issue reporting ([#192](https://github.com/yukazakiri/koakademy/issues/192)) ([bc5a119](https://github.com/yukazakiri/koakademy/commit/bc5a119659533bced97b5020dfbdd26ac15a6497))
+* **ui:** constrain environment indicator labels ([48fffd0](https://github.com/yukazakiri/koakademy/commit/48fffd0529f284656ad0a02a22362c5467079644))
+
+
+### Build System
+
+* **deps:** bump docker/setup-buildx-action from 4.2.0 to 4.3.0 in the github-actions group ([#198](https://github.com/yukazakiri/koakademy/issues/198)) ([7807736](https://github.com/yukazakiri/koakademy/commit/780773627aef4b6efb650300c7b10eed4478c6d7))
+* **deps:** bump dunglas/frankenphp from `ee14233` to `e2fb833` in /docker in the docker-base-images group ([#199](https://github.com/yukazakiri/koakademy/issues/199)) ([1f0f2d6](https://github.com/yukazakiri/koakademy/commit/1f0f2d67e23f1ee3333059d39bcc87c78fd16e98))
+
+
+### Documentation
+
+* rewrite and reorganize README.md ([2083e38](https://github.com/yukazakiri/koakademy/commit/2083e38cf52f43feceefd0a3a63d2f6d21e377db))
+
+
+### Code Refactoring
+
+* **admin:** simplify administrator navigation labels ([e478517](https://github.com/yukazakiri/koakademy/commit/e4785177de8787b5d0ad2f6c10f6f7ea91d5578b))
+
+
+### Maintenance
+
+* **deps:** refresh frontend and PHP lockfiles ([9f06d04](https://github.com/yukazakiri/koakademy/commit/9f06d04502c3a1c4d4bad5eae34979cdbaa0b312))
+* **tests:** remove unrelated unit tests ([d1144ab](https://github.com/yukazakiri/koakademy/commit/d1144abea7000886bb5cecb3edb21eccd0d54e81))
+
 ## [Unreleased]
 
 - Add explicit `--stable` and `edge` installer channels. Stable resolves a

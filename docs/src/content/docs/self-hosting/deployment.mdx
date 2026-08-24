@@ -33,14 +33,16 @@ The process installs Docker if necessary, initializes Swarm if it is inactive, c
 
 Complete `https://school.example/setup`, then check `https://school.example/admin`. The initial local application volume is suitable for a new single node only; configure external S3/R2 and backups before production reliance.
 
-For an unreleased `master` build in staging, use the edge bootstrap:
+For an unreleased `master` build in staging without a domain, use the edge
+bootstrap. It publishes the app directly on port `8000`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yukazakiri/koakademy/master/scripts/install.sh | sudo bash -s -- edge --domain school.example
+curl -fsSL https://raw.githubusercontent.com/yukazakiri/koakademy/master/scripts/install.sh | sudo bash -s -- edge
 ```
 
-Edge is not a stable or production-supported release and may change or break
-without notice.
+Open `http://127.0.0.1:8000/setup`, or pass `--port 8080` to choose another
+port. Edge is not a stable or production-supported release and may change or
+break without notice.
 
 ## Day-two operations
 

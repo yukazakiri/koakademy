@@ -149,17 +149,20 @@ less install.sh
 sudo bash install.sh --stable --domain school.example
 ```
 
-To evaluate the unreleased `master` build, use the edge channel. It resolves
-the current `master` commit, downloads the matching operator and Swarm assets,
-and deploys the mutable `edge-frankenphp` image. This path is for staging and
+To evaluate the unreleased `master` build without a domain, use the edge
+channel. It resolves the current `master` commit, downloads the matching
+operator and Swarm assets, and publishes the app on port `8000` using the
+mutable `edge-frankenphp` image. Open `http://127.0.0.1:8000/setup` after it
+finishes, or choose another port with `--port`. This path is for staging and
 development only; it can change or break without a stable release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yukazakiri/koakademy/master/scripts/install.sh | sudo bash -s -- edge --domain school.example
+curl -fsSL https://raw.githubusercontent.com/yukazakiri/koakademy/master/scripts/install.sh | sudo bash -s -- edge
 ```
 
-Stable releases publish the bootstrap, operator command, Swarm bundle, runtime
-configuration, image metadata, and `SHA256SUMS` together. The installer refuses
+Stable releases publish the bootstrap, operator command, domain-backed and
+direct-port Swarm bundles, runtime configuration, image metadata, and
+`SHA256SUMS` together. The installer refuses
 to continue when the downloaded release assets do not verify as a complete
 bundle.
 

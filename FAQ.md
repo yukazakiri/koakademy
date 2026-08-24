@@ -15,7 +15,8 @@ It installs Docker when needed, initializes Swarm only when inactive, and deploy
 The Linux command uses the explicit `--stable` channel to resolve a published
 GitHub Release, verify its checksummed bundle, and deploy the immutable GHCR
 digest in `version.json`. Use `edge` only for staging or development; it
-resolves the current `master` commit and deploys the mutable
+resolves the current `master` commit, publishes port `8000` when no domain is
+provided, and deploys the mutable
 `ghcr.io/yukazakiri/koakademy:edge-frankenphp` image.
 
 ## Can I use MySQL or SQLite in production?

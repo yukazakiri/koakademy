@@ -13,8 +13,9 @@ here; this folder only keeps the scripts the project actually runs or ships.
 - `koakademy` — privileged production operator for the single-node Docker Swarm
   deployment. It installs, updates, configures, checks status, and rolls back
   the application.
-- `swarm-stack.yml`, `Caddyfile`, and `koakademy-app-entrypoint.sh` — release
-  assets consumed by the operator when it deploys the Swarm topology.
+- `swarm-stack.yml`, `swarm-stack-direct.yml`, `Caddyfile`, and
+  `koakademy-app-entrypoint.sh` — release assets consumed by the operator when
+  it deploys the domain-backed or direct-port Swarm topology.
 - `check-release-assets.sh` — validates that a release bundle contains every
   required asset and that `SHA256SUMS` matches the files.
 

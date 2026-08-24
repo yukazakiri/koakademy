@@ -190,6 +190,8 @@ jobs:
         run: |
           docker compose --env-file tests/Fixtures/installer/swarm-stack.env \
             -f scripts/swarm-stack.yml config --quiet
+          docker compose --env-file tests/Fixtures/installer/swarm-stack.env \
+            -f scripts/swarm-stack-direct.yml config --quiet
 
   workflow-security:
     name: Workflow security

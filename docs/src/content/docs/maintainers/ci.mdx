@@ -46,6 +46,8 @@ bash tests/installer-release.sh stable
 bash tests/installer-release.sh edge
 docker compose --env-file tests/Fixtures/installer/swarm-stack.env \
   -f scripts/swarm-stack.yml config --quiet
+docker compose --env-file tests/Fixtures/installer/swarm-stack.env \
+  -f scripts/swarm-stack-direct.yml config --quiet
 ```
 
 Run a focused test while iterating:

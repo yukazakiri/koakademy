@@ -13,6 +13,9 @@ release_tag=""
 channel="stable"
 channel_explicit=false
 source_sha=""
+direct_access=false
+public_port="8000"
+public_port_explicit=false
 release_directory=""
 runtime_file=""
 command_name=""
@@ -30,8 +33,8 @@ usage() {
 KoAkademy production operator
 
 Usage:
-  koakademy install --domain school.example [--channel stable|edge] [--release vX.Y.Z]
-  koakademy update [--channel stable|edge] [--release vX.Y.Z]
+  koakademy install [--domain school.example] [--port 8000] [--channel stable|edge] [--release vX.Y.Z]
+  koakademy update [--port 8000] [--channel stable|edge] [--release vX.Y.Z]
   koakademy configure storage <local|s3|r2|library-r2>
   koakademy configure mail <log|smtp|sequenzy>
   koakademy configure search <enable|disable>
@@ -66,6 +69,11 @@ validate_release_tag() {
 
 validate_source_sha() {
     [[ "$1" =~ ^[0-9a-f]{40}$ ]] || fail "Source commits must be full lowercase Git SHAs."
+}
+
+validate_port() {
+    [[ "$1" =~ ^[1-9][0-9]{0,4}$ ]] && (( "$1" <= 65535 )) ||
+        fail "Public ports must be between 1 and 65535."
 }
 
 validate_repository() {
@@ -141,6 +149,11 @@ load_runtime() {
     # Populated by the sourced runtime file.
     # shellcheck disable=SC2153
     release_directory="$RELEASE_DIRECTORY"
+    direct_access="${KOAKADEMY_DIRECT_ACCESS:-false}"
+    if [[ "$public_port_explicit" != true ]]; then
+        public_port="${KOAKADEMY_PUBLIC_PORT:-8000}"
+    fi
+    validate_port "$public_port"
 }
 
 set_runtime() {
@@ -160,6 +173,21 @@ set_runtime() {
 write_initial_runtime() {
     local domain="$1"
     local image="$2"
+    local app_url portal_host admin_host trusted_hosts secure_cookie
+
+    if [[ "$direct_access" == true ]]; then
+        app_url="http://127.0.0.1:$public_port"
+        portal_host=localhost
+        admin_host=localhost
+        trusted_hosts="localhost,127.0.0.1"
+        secure_cookie=false
+    else
+        app_url="https://$domain"
+        portal_host="$domain"
+        admin_host="$domain"
+        trusted_hosts=""
+        secure_cookie=true
+    fi
 
     umask 077
     mkdir -p "$root/releases" "$root/backups"
@@ -167,11 +195,16 @@ write_initial_runtime() {
 KOAKADEMY_DOMAIN=$domain
 KOAKADEMY_NODE=$(docker info --format '{{.Name}}')
 APP_NAME=KoAkademy
-APP_URL=https://$domain
+APP_URL=$app_url
+PORTAL_HOST=$portal_host
+ADMIN_HOST=$admin_host
+TRUSTED_HOSTS=$trusted_hosts
+SESSION_SECURE_COOKIE=$secure_cookie
+KOAKADEMY_DIRECT_ACCESS=$direct_access
+KOAKADEMY_PUBLIC_PORT=$public_port
 APP_TIMEZONE=UTC
 APP_LOCALE=en
 APP_FALLBACK_LOCALE=en
-TRUSTED_HOSTS=
 MAIL_MAILER=log
 MAIL_SCHEME=
 MAIL_HOST=
@@ -283,12 +316,12 @@ fetch_edge_release() {
     release_directory="$root/releases/$release_tag"
     mkdir -p "$release_directory"
 
-    for asset in koakademy swarm-stack.yml Caddyfile koakademy-app-entrypoint.sh; do
+    for asset in koakademy swarm-stack.yml Caddyfile koakademy-app-entrypoint.sh swarm-stack-direct.yml; do
         [[ -f "$release_directory/$asset" ]] || download_raw_asset "$asset"
     done
     [[ -f "$release_directory/version.json" ]] || write_edge_metadata
     (cd "$release_directory" && sha256sum \
-        koakademy swarm-stack.yml Caddyfile koakademy-app-entrypoint.sh version.json \
+        koakademy swarm-stack.yml Caddyfile koakademy-app-entrypoint.sh swarm-stack-direct.yml version.json \
         >SHA256SUMS)
     (cd "$release_directory" && sha256sum --check SHA256SUMS) ||
         fail "Edge asset checksum verification failed."
@@ -308,12 +341,13 @@ fetch_release() {
 
     if is_test && [[ -f "$source_directory/swarm-stack.yml" ]]; then
         cp "$source_directory/koakademy" "$source_directory/swarm-stack.yml" \
-            "$source_directory/Caddyfile" "$source_directory/koakademy-app-entrypoint.sh" \
+            "$source_directory/Caddyfile" "$source_directory/swarm-stack-direct.yml" \
+            "$source_directory/koakademy-app-entrypoint.sh" \
             "$source_directory/../version.json" "$release_directory/"
         return
     fi
 
-    for asset in koakademy swarm-stack.yml Caddyfile koakademy-app-entrypoint.sh version.json SHA256SUMS; do
+    for asset in koakademy swarm-stack.yml Caddyfile koakademy-app-entrypoint.sh swarm-stack-direct.yml version.json SHA256SUMS; do
         download_asset "$asset"
     done
     (cd "$release_directory" && sha256sum --check --ignore-missing SHA256SUMS) ||
@@ -373,14 +407,21 @@ ensure_swarm_manager() {
 
 ensure_ports_available() {
     local port
+    local -a ports=(80 443)
+    if [[ "$direct_access" == true ]]; then
+        ports=("$public_port")
+    fi
     if is_test; then
         [[ -z "${KOAKADEMY_INSTALLER_TEST_PORT_CONFLICT:-}" ]] ||
-            fail "Port ${KOAKADEMY_INSTALLER_TEST_PORT_CONFLICT} is already in use. Caddy needs ports 80 and 443."
+            fail "Port ${KOAKADEMY_INSTALLER_TEST_PORT_CONFLICT} is already in use."
         return
     fi
     command -v ss >/dev/null 2>&1 || return
-    for port in 80 443; do
+    for port in "${ports[@]}"; do
         if ss -ltn | awk '{print $4}' | grep -Eq "(:|\\.)$port$"; then
+            if [[ "$direct_access" == true ]]; then
+                fail "Port $port is already in use. Choose another port with --port."
+            fi
             fail "Port $port is already in use. Caddy needs ports 80 and 443."
         fi
     done
@@ -428,26 +469,32 @@ ensure_release_configs() {
     app_hash="$(sha256sum "$release_directory/koakademy-app-entrypoint.sh" | awk '{print substr($1, 1, 12)}')"
     caddy_hash="$(sha256sum "$release_directory/Caddyfile" | awk '{print substr($1, 1, 12)}')"
     APP_ENTRYPOINT_CONFIG="koakademy_app_entrypoint_$app_hash"
-    CADDYFILE_CONFIG="koakademy_caddyfile_$caddy_hash"
     docker config inspect "$APP_ENTRYPOINT_CONFIG" >/dev/null 2>&1 ||
         docker config create --label "$MANAGED_LABEL" "$APP_ENTRYPOINT_CONFIG" "$release_directory/koakademy-app-entrypoint.sh" >/dev/null
-    docker config inspect "$CADDYFILE_CONFIG" >/dev/null 2>&1 ||
-        docker config create --label "$MANAGED_LABEL" "$CADDYFILE_CONFIG" "$release_directory/Caddyfile" >/dev/null
+    if [[ "$direct_access" == true ]]; then
+        CADDYFILE_CONFIG=""
+    else
+        CADDYFILE_CONFIG="koakademy_caddyfile_$caddy_hash"
+        docker config inspect "$CADDYFILE_CONFIG" >/dev/null 2>&1 ||
+            docker config create --label "$MANAGED_LABEL" "$CADDYFILE_CONFIG" "$release_directory/Caddyfile" >/dev/null
+    fi
     set_runtime APP_ENTRYPOINT_CONFIG "$APP_ENTRYPOINT_CONFIG"
     set_runtime CADDYFILE_CONFIG "$CADDYFILE_CONFIG"
 }
 
 deploy_stack() {
     local image_override="${1:-}"
+    local compose_file="$release_directory/swarm-stack.yml"
+    [[ "$direct_access" == true ]] && compose_file="$release_directory/swarm-stack-direct.yml"
     set -a
     # shellcheck disable=SC1090
     source "$runtime_file"
     set +a
     if [[ -n "$image_override" ]]; then
-        KOAKADEMY_IMAGE="$image_override" docker stack deploy --with-registry-auth --prune --compose-file "$release_directory/swarm-stack.yml" "$STACK_NAME"
+        KOAKADEMY_IMAGE="$image_override" docker stack deploy --with-registry-auth --prune --compose-file "$compose_file" "$STACK_NAME"
         return
     fi
-    docker stack deploy --with-registry-auth --prune --compose-file "$release_directory/swarm-stack.yml" "$STACK_NAME"
+    docker stack deploy --with-registry-auth --prune --compose-file "$compose_file" "$STACK_NAME"
 }
 
 wait_for_service() {
@@ -521,6 +568,13 @@ run_app_job() {
 verify_https() {
     local deadline="$((SECONDS + 600))"
     is_test && return
+    if [[ "$direct_access" == true ]]; then
+        while (( SECONDS < deadline )); do
+            curl --fail --silent --show-error "http://127.0.0.1:$public_port/up" >/dev/null && return
+            sleep 5
+        done
+        fail "KoAkademy did not serve http://127.0.0.1:$public_port/up. Check docker service logs koakademy_app."
+    fi
     while (( SECONDS < deadline )); do
         curl --fail --silent --show-error --resolve "$KOAKADEMY_DOMAIN:443:127.0.0.1" "https://$KOAKADEMY_DOMAIN/up" >/dev/null && return
         sleep 5
@@ -567,16 +621,20 @@ perform_install() {
         info "Resuming the incomplete KoAkademy installation for $domain."
     else
         ensure_docker
-        reject_legacy_installation
-        ensure_ports_available
         ensure_swarm_manager
+        reject_legacy_installation
         if [[ -z "${KOAKADEMY_DOMAIN:-}" ]]; then
-            ask KOAKADEMY_DOMAIN "Public HTTPS domain" ""
-            domain="$ANSWER"
+            if [[ "$channel" != edge ]]; then
+                fail "Stable installs require --domain; edge installs without a domain publish http://127.0.0.1:$public_port."
+            fi
+            direct_access=true
+            domain=localhost
         else
             domain="$KOAKADEMY_DOMAIN"
         fi
-        validate_domain "$domain"
+        [[ "$direct_access" == true ]] || validate_domain "$domain"
+        validate_port "$public_port"
+        ensure_ports_available
     fi
     fetch_release
     image="$(release_image)"
@@ -589,7 +647,11 @@ perform_install() {
     set_runtime RELEASE_TAG "$release_tag"
     set_runtime RELEASE_DIRECTORY "$release_directory"
     set_runtime APP_REPLICAS 0
-    info "Deploying PostgreSQL, Redis, Gotenberg, and Caddy."
+    if [[ "$direct_access" == true ]]; then
+        info "Deploying PostgreSQL, Redis, Gotenberg, and KoAkademy on port $public_port."
+    else
+        info "Deploying PostgreSQL, Redis, Gotenberg, and Caddy."
+    fi
     deploy_stack
     wait_for_service "${STACK_NAME}_postgres"
     wait_for_service "${STACK_NAME}_redis"
@@ -602,7 +664,11 @@ perform_install() {
     verify_https
     install_operator_command
     set_runtime INSTALLATION_COMPLETE true
-    info "KoAkademy is ready at https://$KOAKADEMY_DOMAIN/setup"
+    if [[ "$direct_access" == true ]]; then
+        info "KoAkademy is ready at http://127.0.0.1:$public_port/setup"
+    else
+        info "KoAkademy is ready at https://$KOAKADEMY_DOMAIN/setup"
+    fi
 }
 
 perform_update() {
@@ -611,6 +677,10 @@ perform_update() {
     load_runtime
     if [[ "$channel_explicit" != true ]]; then
         channel="${RELEASE_CHANNEL:-stable}"
+    fi
+    if [[ "$direct_access" == true && "$public_port_explicit" == true ]]; then
+        set_runtime KOAKADEMY_PUBLIC_PORT "$public_port"
+        set_runtime APP_URL "http://127.0.0.1:$public_port"
     fi
     fetch_release
     image="$(release_image)"
@@ -751,8 +821,8 @@ perform_rollback() {
 
 print_status() {
     load_runtime
-    printf 'Domain: %s\nChannel: %s\nRelease: %s\nImage: %s\nStorage: %s\nMail: %s\nSearch: %s\n' \
-        "$KOAKADEMY_DOMAIN" "${RELEASE_CHANNEL:-stable}" "$RELEASE_TAG" "$KOAKADEMY_IMAGE" "$FILESYSTEM_DISK" "$MAIL_MAILER" "$SCOUT_DRIVER"
+    printf 'Domain: %s\nChannel: %s\nAccess: %s\nRelease: %s\nImage: %s\nStorage: %s\nMail: %s\nSearch: %s\n' \
+        "$KOAKADEMY_DOMAIN" "${RELEASE_CHANNEL:-stable}" "${APP_URL:-https://$KOAKADEMY_DOMAIN}" "$RELEASE_TAG" "$KOAKADEMY_IMAGE" "$FILESYSTEM_DISK" "$MAIL_MAILER" "$SCOUT_DRIVER"
     docker stack services "$STACK_NAME" || true
 }
 
@@ -774,6 +844,7 @@ parse_command() {
             --stable) channel=stable; channel_explicit=true; shift ;;
             --edge) channel=edge; channel_explicit=true; shift ;;
             --source-sha) (( $# >= 2 )) || fail "--source-sha requires a Git SHA."; source_sha="$2"; validate_source_sha "$source_sha"; shift 2 ;;
+            --port) (( $# >= 2 )) || fail "--port requires a number."; public_port="$2"; public_port_explicit=true; validate_port "$public_port"; shift 2 ;;
             --domain) (( $# >= 2 )) || fail "--domain requires a hostname."; KOAKADEMY_DOMAIN="$2"; shift 2 ;;
             --yes) yes=true; shift ;;
             *) fail "Unknown option: $1" ;;

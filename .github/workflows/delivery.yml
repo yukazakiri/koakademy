@@ -1045,12 +1045,13 @@ jobs:
           mkdir -p release-assets
           cp version.json compose.production.yaml .env.production.example \
             scripts/install.sh scripts/koakademy scripts/swarm-stack.yml \
-            scripts/Caddyfile scripts/koakademy-app-entrypoint.sh release-assets/
+            scripts/swarm-stack-direct.yml scripts/Caddyfile \
+            scripts/koakademy-app-entrypoint.sh release-assets/
           (
             cd release-assets
             LC_ALL=C sha256sum .env.production.example compose.production.yaml \
               install.sh koakademy swarm-stack.yml Caddyfile \
-              koakademy-app-entrypoint.sh version.json > SHA256SUMS
+              swarm-stack-direct.yml koakademy-app-entrypoint.sh version.json > SHA256SUMS
           )
           bash scripts/check-release-assets.sh release-assets
 
@@ -1081,6 +1082,7 @@ jobs:
             release-assets/install.sh \
             release-assets/koakademy \
             release-assets/swarm-stack.yml \
+            release-assets/swarm-stack-direct.yml \
             release-assets/Caddyfile \
             release-assets/koakademy-app-entrypoint.sh \
             release-assets/SHA256SUMS \

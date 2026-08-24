@@ -9,6 +9,7 @@ required_assets=(
     install.sh
     koakademy
     swarm-stack.yml
+    swarm-stack-direct.yml
     Caddyfile
     koakademy-app-entrypoint.sh
     version.json

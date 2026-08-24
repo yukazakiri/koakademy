@@ -43,16 +43,19 @@ The initial filesystem volume is a simplified single-node default, not durable o
 
 ## Unreleased master edge installation
 
-For staging or development, install the current unreleased `master` build:
+For staging or development without a domain, install the current unreleased
+`master` build:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yukazakiri/koakademy/master/scripts/install.sh | sudo bash -s -- edge --domain school.example
+curl -fsSL https://raw.githubusercontent.com/yukazakiri/koakademy/master/scripts/install.sh | sudo bash -s -- edge
 ```
 
 The edge channel resolves the current `master` commit, downloads its matching
-operator and Swarm assets, and uses the mutable `ghcr.io/yukazakiri/koakademy:edge-frankenphp`
-image. It is not a stable or production-supported release and may change or
-break at any time.
+operator and direct-port Swarm assets, publishes the app on port `8000`, and
+uses the mutable `ghcr.io/yukazakiri/koakademy:edge-frankenphp` image. Open
+`http://127.0.0.1:8000/setup`, or pass `--port 8080` to choose another port.
+It is not a stable or production-supported release and may change or break at
+any time.
 
 ## Operate the installation
 

@@ -28,6 +28,7 @@ cp "$repository_root/.env.production.example" \
     "$repository_root/scripts/install.sh" \
     "$repository_root/scripts/koakademy" \
     "$repository_root/scripts/swarm-stack.yml" \
+    "$repository_root/scripts/swarm-stack-direct.yml" \
     "$repository_root/scripts/Caddyfile" \
     "$repository_root/scripts/koakademy-app-entrypoint.sh" \
     "$release_directory/"
@@ -40,7 +41,7 @@ printf '%s\n' '{' \
 
 (cd "$release_directory" && sha256sum \
     .env.production.example compose.production.yaml install.sh koakademy \
-    swarm-stack.yml Caddyfile koakademy-app-entrypoint.sh version.json \
+    swarm-stack.yml swarm-stack-direct.yml Caddyfile koakademy-app-entrypoint.sh version.json \
     >SHA256SUMS)
 
 bash "$repository_root/scripts/check-release-assets.sh" "$release_directory"
@@ -58,7 +59,7 @@ export PATH="$fixture_bin:$PATH"
 if [[ "$channel" == stable ]]; then
     bash "$bootstrap_directory/install.sh" --stable --domain school.example
 else
-    bash "$bootstrap_directory/install.sh" edge --domain school.example
+    bash "$bootstrap_directory/install.sh" edge
 fi
 
 [[ -f "$state_directory/runtime/runtime.env" ]]
@@ -67,8 +68,12 @@ grep -Fq 'INSTALLATION_COMPLETE=true' "$state_directory/runtime/runtime.env"
 grep -Fq "RELEASE_CHANNEL=$channel" "$state_directory/runtime/runtime.env"
 if [[ "$channel" == edge ]]; then
     grep -Fq "RELEASE_TAG=edge-$source_sha" "$state_directory/runtime/runtime.env"
+    grep -Fq 'KOAKADEMY_DIRECT_ACCESS=true' "$state_directory/runtime/runtime.env"
+    grep -Fq 'KOAKADEMY_PUBLIC_PORT=8000' "$state_directory/runtime/runtime.env"
+    grep -Fq 'APP_URL=http://127.0.0.1:8000' "$state_directory/runtime/runtime.env"
     grep -Fq 'KOAKADEMY_IMAGE=ghcr.io/yukazakiri/koakademy:edge-frankenphp' \
         "$state_directory/runtime/runtime.env"
+    grep -Fq 'swarm-stack-direct.yml' "$state_directory/docker.log"
 fi
 
 printf '%s installer fixture passed.\n' "$channel"

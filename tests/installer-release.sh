@@ -23,8 +23,7 @@ trap cleanup EXIT
 
 mkdir -p "$release_directory" "$bootstrap_directory" "$fixture_bin"
 cp "$repository_root/scripts/install.sh" "$bootstrap_directory/install.sh"
-cp "$repository_root/.env.production.example" \
-    "$repository_root/compose.production.yaml" \
+cp "$repository_root/compose.production.yaml" \
     "$repository_root/scripts/install.sh" \
     "$repository_root/scripts/koakademy" \
     "$repository_root/scripts/swarm-stack.yml" \
@@ -32,6 +31,8 @@ cp "$repository_root/.env.production.example" \
     "$repository_root/scripts/Caddyfile" \
     "$repository_root/scripts/koakademy-app-entrypoint.sh" \
     "$release_directory/"
+cp "$repository_root/.env.production.example" \
+    "$release_directory/default.env.production.example"
 
 printf '%s\n' '{' \
     '  "version": "1.0.0",' \
@@ -40,7 +41,7 @@ printf '%s\n' '{' \
     >"$release_directory/version.json"
 
 (cd "$release_directory" && sha256sum \
-    .env.production.example compose.production.yaml install.sh koakademy \
+    default.env.production.example compose.production.yaml install.sh koakademy \
     swarm-stack.yml swarm-stack-direct.yml Caddyfile koakademy-app-entrypoint.sh version.json \
     >SHA256SUMS)
 

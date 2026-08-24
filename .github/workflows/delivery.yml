@@ -1043,13 +1043,14 @@ jobs:
         if: needs.publish.outputs.channel == 'stable'
         run: |
           mkdir -p release-assets
-          cp version.json compose.production.yaml .env.production.example \
+          cp version.json compose.production.yaml \
             scripts/install.sh scripts/koakademy scripts/swarm-stack.yml \
             scripts/swarm-stack-direct.yml scripts/Caddyfile \
             scripts/koakademy-app-entrypoint.sh release-assets/
+          cp .env.production.example release-assets/default.env.production.example
           (
             cd release-assets
-            LC_ALL=C sha256sum .env.production.example compose.production.yaml \
+            LC_ALL=C sha256sum default.env.production.example compose.production.yaml \
               install.sh koakademy swarm-stack.yml Caddyfile \
               swarm-stack-direct.yml koakademy-app-entrypoint.sh version.json > SHA256SUMS
           )
@@ -1078,7 +1079,7 @@ jobs:
           gh release upload "${RELEASE_TAG}" \
             release-assets/version.json \
             release-assets/compose.production.yaml \
-            release-assets/.env.production.example \
+            release-assets/default.env.production.example \
             release-assets/install.sh \
             release-assets/koakademy \
             release-assets/swarm-stack.yml \

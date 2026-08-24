@@ -347,9 +347,12 @@ fetch_release() {
         return
     fi
 
-    for asset in koakademy swarm-stack.yml Caddyfile koakademy-app-entrypoint.sh swarm-stack-direct.yml version.json SHA256SUMS; do
+    for asset in koakademy swarm-stack.yml Caddyfile koakademy-app-entrypoint.sh version.json SHA256SUMS; do
         download_asset "$asset"
     done
+    if [[ "$direct_access" == true ]]; then
+        download_asset swarm-stack-direct.yml
+    fi
     (cd "$release_directory" && sha256sum --check --ignore-missing SHA256SUMS) ||
         fail "Release asset checksum verification failed."
 }

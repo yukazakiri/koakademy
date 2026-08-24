@@ -4,7 +4,7 @@ set -Eeuo pipefail
 
 directory="${1:-release-assets}"
 required_assets=(
-    .env.production.example
+    default.env.production.example
     compose.production.yaml
     install.sh
     koakademy

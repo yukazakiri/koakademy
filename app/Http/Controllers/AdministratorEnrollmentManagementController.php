@@ -17,6 +17,7 @@ use App\Jobs\GenerateEnrollmentReportPreviewPdfJob;
 use App\Jobs\SendClassChangeNotificationJob;
 use App\Models\ClassEnrollment;
 use App\Models\Classes;
+use App\Models\Course;
 use App\Models\EnrollmentDiscount;
 use App\Models\Resource;
 use App\Models\Student;
@@ -34,6 +35,7 @@ use App\Services\EnrollmentBillingService;
 use App\Services\EnrollmentPipelineService;
 use App\Services\EnrollmentService;
 use App\Services\GeneralSettingsService;
+use App\Services\PdfGenerationService;
 use App\Services\QueueAssessmentExportService;
 use App\Services\TenantContext;
 use App\Services\TuitionAdjustmentRecalculationService;
@@ -54,6 +56,7 @@ use Inertia\Inertia;
 use Inertia\Response;
 use Laravel\Pennant\Feature;
 use Maatwebsite\Excel\Facades\Excel;
+use RuntimeException;
 use Spatie\Activitylog\Models\Activity;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Throwable;
@@ -2119,17 +2122,50 @@ final class AdministratorEnrollmentManagementController extends Controller
         ], 202);
     }
 
+    public function enrollmentReportPdf(
+        Request $request,
+        GeneralSettingsService $settingsService,
+        PdfGenerationService $pdfGenerationService,
+    ): BinaryFileResponse {
+        $validated = $this->validateEnrollmentReportFilters($request);
+        $payload = $this->buildEnrollmentReportPayload($validated, $settingsService);
+        $reportType = Str::slug((string) data_get($payload, 'report.type', 'report'));
+        $variant = $this->resolveEnrollmentReportVariant($request->string('variant')->toString());
+        $filename = sprintf('enrollment-report-%s-%s-%s.pdf', $reportType, $variant, now()->format('YmdHis'));
+        $temporaryPath = tempnam(sys_get_temp_dir(), 'enrollment_report_');
+        if ($temporaryPath === false) {
+            throw new RuntimeException('Unable to create a temporary enrollment report file.');
+        }
+
+        $pdfGenerationService->generatePdfFromView('pdf.enrollment-report', ['data' => $payload, 'variant' => $variant], $temporaryPath, [
+            'landscape' => true,
+            'format' => 'A4',
+            'headless' => true,
+            'no-sandbox' => true,
+            'disable-dev-shm-usage' => true,
+            'print-to-pdf-no-header' => true,
+            'disable-gpu' => true,
+            'no-first-run' => true,
+            'disable-extensions' => true,
+            'virtual-time-budget' => 10000,
+        ]);
+
+        return response()->download($temporaryPath, $filename)->deleteFileAfterSend(true);
+    }
+
     public function enrollmentReportExport(Request $request, GeneralSettingsService $settingsService): BinaryFileResponse
     {
         $validated = $this->validateEnrollmentReportFilters($request);
         $payload = $this->buildEnrollmentReportPayload($validated, $settingsService);
         $reportData = $payload['report'];
+        $variant = $this->resolveEnrollmentReportVariant($request->string('variant')->toString());
 
-        [$headings, $rows] = $this->buildEnrollmentReportExportData($reportData);
+        [$headings, $rows] = $this->buildEnrollmentReportExportData($reportData, $variant);
 
         $fileName = sprintf(
-            'enrollment-report-%s-%s.xlsx',
+            'enrollment-report-%s-%s-%s.xlsx',
             Str::slug((string) ($reportData['type'] ?? 'report')),
+            $variant,
             now()->format('Y-m-d_His')
         );
 
@@ -2194,28 +2230,43 @@ final class AdministratorEnrollmentManagementController extends Controller
      */
     public function reportCourseOptions(GeneralSettingsService $settingsService): JsonResponse
     {
-        $schoolYearString = $settingsService->getCurrentSchoolYearString();
+        $schoolYearVariants = $settingsService->getCurrentSchoolYearVariants();
         $semester = $settingsService->getCurrentSemester();
 
-        $courses = StudentEnrollment::query()
-            ->where('school_year', $schoolYearString)
+        $courseIds = StudentEnrollment::query()
+            ->whereIn('school_year', $schoolYearVariants)
             ->where('semester', $semester)
-            ->whereHas('course')
-            ->with('course.department:id,code')
-            ->select('course_id')
+            ->whereNotNull('course_id')
             ->distinct()
-            ->get()
-            ->map(fn (StudentEnrollment $se): array => [
-                'id' => $se->course_id,
-                'code' => $se->course?->code,
-                'title' => $se->course?->title,
-                'department' => $se->course?->department?->code,
-                'label' => $se->course?->code.' - '.$se->course?->title,
+            ->pluck('course_id')
+            ->filter(fn (mixed $courseId): bool => is_numeric($courseId))
+            ->map(fn (mixed $courseId): int => (int) $courseId)
+            ->values();
+
+        $courses = Course::query()
+            ->whereIn('id', $courseIds)
+            ->with('department:id,code')
+            ->get(['id', 'code', 'title', 'department_id'])
+            ->map(fn (Course $course): array => [
+                'id' => $course->id,
+                'code' => $course->code,
+                'title' => $course->title,
+                'department' => $course->department?->code,
+                'label' => $course->code.' - '.$course->title,
             ])
             ->sortBy('code')
             ->values();
 
         return response()->json(['courses' => $courses]);
+    }
+
+    private function resolveEnrollmentReportVariant(string $variant): string
+    {
+        return in_array($variant, [
+            'full_roster', 'course_signoff', 'compact_roster',
+            'attendance_roster', 'faculty_roster', 'student_list',
+            'department_breakdown', 'leadership_summary', 'status_summary',
+        ], true) ? $variant : 'full_roster';
     }
 
     /** @return array<string, mixed> */
@@ -2581,48 +2632,45 @@ final class AdministratorEnrollmentManagementController extends Controller
     /**
      * @return array{0: array<int, string>, 1: array<int, array<int, string|int|float|null>>}
      */
-    private function buildEnrollmentReportExportData(array $reportData): array
+    private function buildEnrollmentReportExportData(array $reportData, string $variant = 'full_roster'): array
     {
         $type = $reportData['type'] ?? '';
 
         if ($type === 'enrolled_by_course') {
-            $headings = ['No.', 'Student ID', 'Full Name', 'Course', 'Department', 'Year Level', 'Subjects', 'Status'];
-            $rows = collect($reportData['students'] ?? [])
-                ->map(fn (array $student): array => [
-                    $student['no'] ?? null,
-                    $student['student_id'] ?? null,
-                    $student['full_name'] ?? null,
-                    $student['course'] ?? null,
-                    $student['department'] ?? null,
-                    isset($student['year_level']) ? 'Year '.$student['year_level'] : null,
-                    $student['subjects_count'] ?? null,
-                    $student['status'] ?? null,
-                ])
-                ->values()
-                ->all();
+            $headings = match ($variant) {
+                'course_signoff' => ['No.', 'Student ID', 'Full Name', 'Course', 'Year Level', 'Status', 'Acknowledgement'],
+                'compact_roster' => ['No.', 'Student ID', 'Full Name', 'Course', 'Year Level'],
+                default => ['No.', 'Student ID', 'Full Name', 'Course', 'Department', 'Year Level', 'Subjects', 'Status'],
+            };
+            $rows = collect($reportData['students'] ?? [])->map(function (array $student) use ($variant): array {
+                $yearLevel = isset($student['year_level']) ? 'Year '.$student['year_level'] : null;
+
+                return match ($variant) {
+                    'course_signoff' => [$student['no'] ?? null, $student['student_id'] ?? null, $student['full_name'] ?? null, $student['course'] ?? null, $yearLevel, $student['status'] ?? null, null],
+                    'compact_roster' => [$student['no'] ?? null, $student['student_id'] ?? null, $student['full_name'] ?? null, $student['course'] ?? null, $yearLevel],
+                    default => [$student['no'] ?? null, $student['student_id'] ?? null, $student['full_name'] ?? null, $student['course'] ?? null, $student['department'] ?? null, $yearLevel, $student['subjects_count'] ?? null, $student['status'] ?? null],
+                };
+            })->values()->all();
 
             return [$headings, $rows];
         }
 
         if ($type === 'enrolled_by_subject') {
-            $headings = ['Subject Code', 'Subject Title', 'Units', 'Total Enrolled', 'No.', 'Student ID', 'Full Name', 'Course', 'Year Level', 'Section', 'Schedule'];
+            $headings = match ($variant) {
+                'attendance_roster' => ['Subject Code', 'Subject Title', 'Units', 'Total Enrolled', 'No.', 'Student ID', 'Full Name', 'Course', 'Section', 'Attendance Signature'],
+                'student_list' => ['Subject Code', 'Subject Title', 'Units', 'Total Enrolled', 'No.', 'Student ID', 'Full Name', 'Course', 'Year Level'],
+                default => ['Subject Code', 'Subject Title', 'Units', 'Total Enrolled', 'No.', 'Student ID', 'Full Name', 'Course', 'Year Level', 'Section', 'Schedule'],
+            };
             $rows = [];
 
             foreach ($reportData['subject_groups'] ?? [] as $group) {
                 foreach ($group['students'] ?? [] as $student) {
-                    $rows[] = [
-                        $group['subject_code'] ?? null,
-                        $group['subject_title'] ?? null,
-                        $group['subject_units'] ?? null,
-                        $group['total_enrolled'] ?? null,
-                        $student['no'] ?? null,
-                        $student['student_id'] ?? null,
-                        $student['full_name'] ?? null,
-                        $student['course'] ?? null,
-                        isset($student['year_level']) ? 'Year '.$student['year_level'] : null,
-                        $student['section'] ?? null,
-                        $student['class_schedule'] ?? null,
-                    ];
+                    $common = [$group['subject_code'] ?? null, $group['subject_title'] ?? null, $group['subject_units'] ?? null, $group['total_enrolled'] ?? null, $student['no'] ?? null, $student['student_id'] ?? null, $student['full_name'] ?? null, $student['course'] ?? null];
+                    $rows[] = match ($variant) {
+                        'attendance_roster' => [...$common, $student['section'] ?? null, null],
+                        'student_list' => [...$common, isset($student['year_level']) ? 'Year '.$student['year_level'] : null],
+                        default => [...$common, isset($student['year_level']) ? 'Year '.$student['year_level'] : null, $student['section'] ?? null, $student['class_schedule'] ?? null],
+                    };
                 }
             }
 
@@ -2635,25 +2683,33 @@ final class AdministratorEnrollmentManagementController extends Controller
             ['Summary', 'Total Enrolled', $totalEnrolled, '100%', null],
         ];
 
-        foreach ($reportData['by_department'] ?? [] as $item) {
-            $percentage = $totalEnrolled > 0 ? round(($item['count'] / $totalEnrolled) * 100, 1).'%' : '0%';
-            $rows[] = ['By Department', $item['department'] ?? 'Unknown', $item['count'] ?? 0, $percentage, null];
+        if ($variant !== 'status_summary') {
+            foreach ($reportData['by_department'] ?? [] as $item) {
+                $percentage = $totalEnrolled > 0 ? round(($item['count'] / $totalEnrolled) * 100, 1).'%' : '0%';
+                $rows[] = ['By Department', $item['department'] ?? 'Unknown', $item['count'] ?? 0, $percentage, null];
+            }
         }
 
-        foreach ($reportData['by_course'] ?? [] as $item) {
-            $percentage = $totalEnrolled > 0 ? round(($item['count'] / $totalEnrolled) * 100, 1).'%' : '0%';
-            $label = mb_trim(($item['course_code'] ?? 'Unknown').' - '.($item['course_title'] ?? 'Unknown'));
-            $rows[] = ['By Course', $label, $item['count'] ?? 0, $percentage, $item['department'] ?? null];
+        if (in_array($variant, ['department_breakdown', 'leadership_summary'], true)) {
+            foreach ($reportData['by_course'] ?? [] as $item) {
+                $percentage = $totalEnrolled > 0 ? round(($item['count'] / $totalEnrolled) * 100, 1).'%' : '0%';
+                $label = mb_trim(($item['course_code'] ?? 'Unknown').' - '.($item['course_title'] ?? 'Unknown'));
+                $rows[] = ['By Course', $label, $item['count'] ?? 0, $percentage, $item['department'] ?? null];
+            }
         }
 
-        foreach ($reportData['by_year_level'] ?? [] as $item) {
-            $percentage = $totalEnrolled > 0 ? round(($item['count'] / $totalEnrolled) * 100, 1).'%' : '0%';
-            $rows[] = ['By Year Level', 'Year '.($item['year_level'] ?? '—'), $item['count'] ?? 0, $percentage, null];
+        if ($variant === 'department_breakdown') {
+            foreach ($reportData['by_year_level'] ?? [] as $item) {
+                $percentage = $totalEnrolled > 0 ? round(($item['count'] / $totalEnrolled) * 100, 1).'%' : '0%';
+                $rows[] = ['By Year Level', 'Year '.($item['year_level'] ?? '—'), $item['count'] ?? 0, $percentage, null];
+            }
         }
 
-        foreach ($reportData['by_status'] ?? [] as $item) {
-            $percentage = $totalEnrolled > 0 ? round(($item['count'] / $totalEnrolled) * 100, 1).'%' : '0%';
-            $rows[] = ['By Status', $item['status'] ?? 'Unknown', $item['count'] ?? 0, $percentage, null];
+        if (in_array($variant, ['department_breakdown', 'status_summary'], true)) {
+            foreach ($reportData['by_status'] ?? [] as $item) {
+                $percentage = $totalEnrolled > 0 ? round(($item['count'] / $totalEnrolled) * 100, 1).'%' : '0%';
+                $rows[] = ['By Status', $item['status'] ?? 'Unknown', $item['count'] ?? 0, $percentage, null];
+            }
         }
 
         return [$headings, $rows];
@@ -2946,7 +3002,7 @@ final class AdministratorEnrollmentManagementController extends Controller
 
         $courseLabel = 'All Courses';
         if (! empty($filters['course_filter']) && $filters['course_filter'] !== 'all') {
-            $course = \App\Models\Course::where('code', $filters['course_filter'])->first();
+            $course = Course::where('code', $filters['course_filter'])->first();
             $courseLabel = $course ? $course->code.' - '.$course->title : $filters['course_filter'];
         }
 

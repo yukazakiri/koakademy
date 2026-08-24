@@ -391,7 +391,10 @@ export default function SmoothSelect({
                 onClick={handleToggle}
                 onKeyDown={handleKeyDown}
             >
-                <span className={cn("flex min-w-0 flex-1 items-center gap-2 text-left", !selectedOption && "text-muted-foreground")}>
+                <span
+                    className={cn("flex min-w-0 flex-1 items-center gap-2 truncate text-left", !selectedOption && "text-muted-foreground")}
+                    title={selectedOption?.textValue}
+                >
                     {renderedValue}
                 </span>
                 <motion.span

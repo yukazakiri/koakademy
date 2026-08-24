@@ -158,15 +158,52 @@
             display: flex;
             justify-content: space-between;
         }
+
+        .format-label {
+            margin: 4px 0 8px;
+            text-align: center;
+            color: #6b7280;
+            font-size: 7.5pt;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+        }
+
+        .headline-total {
+            margin: 12px 0;
+            border: 1px solid #d1d5db;
+            padding: 10px 12px;
+            font-size: 12pt;
+            font-weight: bold;
+        }
+
+        .headline-total small {
+            display: block;
+            color: #6b7280;
+            font-size: 8pt;
+            font-weight: normal;
+            text-transform: uppercase;
+        }
     </style>
 </head>
-<body>
+<body class="format-{{ in_array($variant ?? 'full_roster', ['full_roster', 'course_signoff', 'compact_roster', 'attendance_roster', 'faculty_roster', 'student_list', 'department_breakdown', 'leadership_summary', 'status_summary'], true) ? ($variant ?? 'full_roster') : 'full_roster' }}">
 @php
     /** @var array<string, mixed> $data */
     $report = $data['report'] ?? [];
     $school = $data['school'] ?? [];
     $reportType = (string) ($report['type'] ?? '');
     $filtersApplied = $report['filters_applied'] ?? [];
+    $formatTitles = [
+        'full_roster' => 'Full registrar roster',
+        'course_signoff' => 'Course sign-off roster',
+        'compact_roster' => 'Compact filing roster',
+        'attendance_roster' => 'Attendance roster',
+        'faculty_roster' => 'Faculty class list',
+        'student_list' => 'Student list',
+        'department_breakdown' => 'Department breakdown',
+        'leadership_summary' => 'Leadership summary',
+        'status_summary' => 'Status summary',
+    ];
+    $formatTitle = $formatTitles[$variant ?? 'full_roster'] ?? 'Official report';
 @endphp
 
 <header class="header">
@@ -184,6 +221,7 @@
 
 <div class="report-title">{{ $report['title'] ?? 'Enrollment Report' }}</div>
 <p class="report-subtitle">{{ $report['subtitle'] ?? '' }}</p>
+<div class="format-label">{{ $formatTitle }}</div>
 
 <div class="meta-row">
     <div>
@@ -217,14 +255,14 @@
     <table>
         <thead>
         <tr>
-            <th>No.</th>
-            <th>Student ID</th>
-            <th>Full Name</th>
-            <th>Course</th>
-            <th>Department</th>
-            <th>Year Level</th>
-            <th>Subjects</th>
-            <th>Status</th>
+            <th>No.</th><th>Student ID</th><th>Full Name</th><th>Course</th>
+            @if (($variant ?? '') === 'full_roster')
+                <th>Department</th><th>Year Level</th><th>Subjects</th><th>Status</th>
+            @elseif (($variant ?? '') === 'course_signoff')
+                <th>Year Level</th><th>Status</th><th>Acknowledgement</th>
+            @else
+                <th>Year Level</th>
+            @endif
         </tr>
         </thead>
         <tbody>
@@ -234,14 +272,22 @@
                 <td>{{ $student['student_id'] ?? '—' }}</td>
                 <td>{{ $student['full_name'] ?? '—' }}</td>
                 <td>{{ $student['course'] ?? '—' }}</td>
-                <td>{{ $student['department'] ?? '—' }}</td>
-                <td>{{ ! empty($student['year_level']) ? 'Year '.$student['year_level'] : '—' }}</td>
-                <td>{{ $student['subjects_count'] ?? '—' }}</td>
-                <td>{{ $student['status'] ?? '—' }}</td>
+                @if (($variant ?? '') === 'full_roster')
+                    <td>{{ $student['department'] ?? '—' }}</td>
+                    <td>{{ ! empty($student['year_level']) ? 'Year '.$student['year_level'] : '—' }}</td>
+                    <td>{{ $student['subjects_count'] ?? '—' }}</td>
+                    <td>{{ $student['status'] ?? '—' }}</td>
+                @elseif (($variant ?? '') === 'course_signoff')
+                    <td>{{ ! empty($student['year_level']) ? 'Year '.$student['year_level'] : '—' }}</td>
+                    <td>{{ $student['status'] ?? '—' }}</td>
+                    <td></td>
+                @else
+                    <td>{{ ! empty($student['year_level']) ? 'Year '.$student['year_level'] : '—' }}</td>
+                @endif
             </tr>
         @empty
             <tr>
-                <td colspan="8" class="muted">No students found for the selected filters.</td>
+                <td colspan="{{ ($variant ?? '') === 'full_roster' ? 8 : (($variant ?? '') === 'course_signoff' ? 7 : 5) }}" class="muted">No students found for the selected filters.</td>
             </tr>
         @endforelse
         </tbody>
@@ -265,13 +311,14 @@
             <table>
                 <thead>
                 <tr>
-                    <th>No.</th>
-                    <th>Student ID</th>
-                    <th>Full Name</th>
-                    <th>Course</th>
-                    <th>Year Level</th>
-                    <th>Section</th>
-                    <th>Schedule</th>
+                    <th>No.</th><th>Student ID</th><th>Full Name</th><th>Course</th>
+                    @if (($variant ?? '') === 'faculty_roster')
+                        <th>Year Level</th><th>Section</th><th>Schedule</th>
+                    @elseif (($variant ?? '') === 'attendance_roster')
+                        <th>Section</th><th>Attendance signature</th>
+                    @else
+                        <th>Year Level</th>
+                    @endif
                 </tr>
                 </thead>
                 <tbody>
@@ -281,13 +328,20 @@
                         <td>{{ $student['student_id'] ?? '—' }}</td>
                         <td>{{ $student['full_name'] ?? '—' }}</td>
                         <td>{{ $student['course'] ?? '—' }}</td>
-                        <td>{{ ! empty($student['year_level']) ? 'Year '.$student['year_level'] : '—' }}</td>
-                        <td>{{ $student['section'] ?? '—' }}</td>
-                        <td>{{ $student['class_schedule'] ?? '—' }}</td>
+                        @if (($variant ?? '') === 'faculty_roster')
+                            <td>{{ ! empty($student['year_level']) ? 'Year '.$student['year_level'] : '—' }}</td>
+                            <td>{{ $student['section'] ?? '—' }}</td>
+                            <td>{{ $student['class_schedule'] ?? '—' }}</td>
+                        @elseif (($variant ?? '') === 'attendance_roster')
+                            <td>{{ $student['section'] ?? '—' }}</td>
+                            <td></td>
+                        @else
+                            <td>{{ ! empty($student['year_level']) ? 'Year '.$student['year_level'] : '—' }}</td>
+                        @endif
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="7" class="muted">No students found in this subject group.</td>
+                        <td colspan="{{ ($variant ?? '') === 'faculty_roster' ? 7 : (($variant ?? '') === 'attendance_roster' ? 6 : 5) }}" class="muted">No students found in this subject group.</td>
                     </tr>
                 @endforelse
                 </tbody>
@@ -308,7 +362,11 @@
     @endphp
 
     <p><strong>Total Enrolled:</strong> {{ $total }}</p>
+    @if (($variant ?? '') === 'leadership_summary')
+        <div class="headline-total"><small>Current academic period</small>{{ $total }} enrolled students</div>
+    @endif
 
+    @if (($variant ?? '') !== 'status_summary')
     <div class="section-title">By Department</div>
     <table>
         <thead>
@@ -328,7 +386,9 @@
         @endforeach
         </tbody>
     </table>
+    @endif
 
+    @if (in_array(($variant ?? ''), ['department_breakdown', 'leadership_summary'], true))
     <div class="section-title">By Course</div>
     <table>
         <thead>
@@ -352,7 +412,9 @@
         @endforeach
         </tbody>
     </table>
+    @endif
 
+    @if (($variant ?? '') === 'department_breakdown')
     <div class="section-title">By Year Level</div>
     <table>
         <thead>
@@ -372,7 +434,9 @@
         @endforeach
         </tbody>
     </table>
+    @endif
 
+    @if (in_array(($variant ?? ''), ['department_breakdown', 'status_summary'], true))
     <div class="section-title">By Status</div>
     <table>
         <thead>
@@ -392,6 +456,7 @@
         @endforeach
         </tbody>
     </table>
+    @endif
 @endif
 
 <footer class="footer">

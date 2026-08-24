@@ -120,11 +120,9 @@ final class GenerateBulkAssessmentsJob implements ShouldBeUnique, ShouldQueue
         if (($filters['include_deleted'] ?? false) === true) {
             $query->withTrashed();
         }
-        if (($filters['course_id'] ?? null) !== null) {
-            $query->whereRaw(
-                "CAST(student_enrollment.course_id AS {$textCast}) = ?",
-                [(string) $filters['course_id']],
-            );
+        $courseId = $filters['course_id'] ?? null;
+        if (is_numeric($courseId) && (int) $courseId > 0) {
+            $query->where('export_courses.id', (int) $courseId);
         }
         if (($filters['year_level'] ?? null) !== null) {
             $query->where('student_enrollment.academic_year', (int) $filters['year_level']);

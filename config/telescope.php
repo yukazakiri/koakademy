@@ -61,7 +61,7 @@ return [
 
     'storage' => [
         'database' => [
-            'connection' => env('TELESCOPE_DB_CONNECTION', env('DB_CONNECTION')),
+            'connection' => env('TELESCOPE_DB_CONNECTION', env('DB_CONNECTION', 'sqlite')),
             'chunk' => 1000,
         ],
     ],

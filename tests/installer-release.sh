@@ -78,6 +78,10 @@ fi
 [[ -f "$state_directory/runtime/bin/koakademy" ]]
 grep -Fq 'INSTALLATION_COMPLETE=true' "$state_directory/runtime/runtime.env"
 grep -Fq "RELEASE_CHANNEL=$channel" "$state_directory/runtime/runtime.env"
+grep -Fq -- '--env DB_CONNECTION=pgsql' "$state_directory/docker.log"
+grep -Fq -- '--env DB_HOST=postgres' "$state_directory/docker.log"
+grep -Fq -- '--env REDIS_HOST=redis' "$state_directory/docker.log"
+grep -Fq -- '--env TELESCOPE_ENABLED=false' "$state_directory/docker.log"
 if [[ "$channel" == edge ]]; then
     grep -Fq "RELEASE_TAG=edge-$source_sha" "$state_directory/runtime/runtime.env"
     grep -Fq 'KOAKADEMY_DIRECT_ACCESS=true' "$state_directory/runtime/runtime.env"

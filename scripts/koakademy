@@ -552,6 +552,22 @@ run_app_job() {
         --restart-condition on-failure --restart-max-attempts 3 \
         --constraint "node.hostname==$KOAKADEMY_NODE" --network "${STACK_NAME}_private" \
         --env-file "$runtime_file" \
+        --env APP_ENV=production \
+        --env APP_DEBUG=false \
+        --env DB_CONNECTION=pgsql \
+        --env DB_HOST=postgres \
+        --env DB_PORT=5432 \
+        --env DB_DATABASE=koakademy \
+        --env DB_USERNAME=koakademy \
+        --env REDIS_CLIENT=phpredis \
+        --env REDIS_HOST=redis \
+        --env REDIS_PORT=6379 \
+        --env CACHE_STORE=redis \
+        --env QUEUE_CONNECTION=redis \
+        --env SESSION_DRIVER=redis \
+        --env TELESCOPE_ENABLED=false \
+        --env PULSE_ENABLED=false \
+        --env NIGHTWATCH_ENABLED=false \
         --secret "source=$APP_KEY_SECRET,target=koakademy-app-key" \
         --secret "source=$POSTGRES_PASSWORD_SECRET,target=koakademy-db-password" \
         --secret "source=$REDIS_PASSWORD_SECRET,target=koakademy-redis-password" \

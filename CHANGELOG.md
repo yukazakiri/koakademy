@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.20.1](https://github.com/yukazakiri/koakademy/compare/v1.20.0...v1.20.1) (2026-08-24)
+
+
+### Bug Fixes
+
+* **build:** provide Telescope connection fallback ([4ae32f4](https://github.com/yukazakiri/koakademy/commit/4ae32f4a462a564ea8cfa4f3860eb6e6f91349cf))
+* **delivery:** use public environment release asset name ([9854d2a](https://github.com/yukazakiri/koakademy/commit/9854d2a30406fcd103a3f56b0d7eb69c861e105f))
+* **docker:** authenticate Redis readiness check ([8f7eafb](https://github.com/yukazakiri/koakademy/commit/8f7eafbd757f4bade027ecf2e18dfdf10a9c8146))
+* **installer:** allow edge installs without a domain ([f2f0e46](https://github.com/yukazakiri/koakademy/commit/f2f0e464e56d4105031c23dfccb228ad7e5c11ce))
+* **installer:** preserve HTTP asset URLs in direct mode ([9dc361c](https://github.com/yukazakiri/koakademy/commit/9dc361ce886f77d28e20a5816a901d0fcc82f8e8))
+* **installer:** remove unsupported Swarm stack name ([755c117](https://github.com/yukazakiri/koakademy/commit/755c1170ae9873c35587204810a16f1695fd1f5f))
+* **installer:** repair local mail address on resume ([cb418c8](https://github.com/yukazakiri/koakademy/commit/cb418c86b0e4da48621626a8b1a7f3031f4dc7ba))
+* **installer:** resume with latest edge assets ([7f0997f](https://github.com/yukazakiri/koakademy/commit/7f0997fbb8bdaf14e182f92365ced69bbcf759e9))
+* **installer:** reuse app database for Pulse ([da7807a](https://github.com/yukazakiri/koakademy/commit/da7807a2952663b6a5170c49849341efc55a61e6))
+* **installer:** run jobs against PostgreSQL ([d0820ea](https://github.com/yukazakiri/koakademy/commit/d0820ea87e26ae90dd8af62fc6c92f3d552956e1))
+
 ## [1.20.0](https://github.com/yukazakiri/koakademy/compare/v1.19.1...v1.20.0) (2026-08-24)
 
 

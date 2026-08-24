@@ -34,6 +34,7 @@ use App\Services\EnrollmentBillingService;
 use App\Services\EnrollmentPipelineService;
 use App\Services\EnrollmentService;
 use App\Services\GeneralSettingsService;
+use App\Services\PdfGenerationService;
 use App\Services\QueueAssessmentExportService;
 use App\Services\TenantContext;
 use App\Services\TuitionAdjustmentRecalculationService;
@@ -2119,6 +2120,34 @@ final class AdministratorEnrollmentManagementController extends Controller
         ], 202);
     }
 
+    public function enrollmentReportPdf(
+        Request $request,
+        GeneralSettingsService $settingsService,
+        PdfGenerationService $pdfGenerationService,
+    ): BinaryFileResponse {
+        $validated = $this->validateEnrollmentReportFilters($request);
+        $payload = $this->buildEnrollmentReportPayload($validated, $settingsService);
+        $reportType = Str::slug((string) data_get($payload, 'report.type', 'report'));
+        $variant = $this->resolveEnrollmentReportVariant($request->string('variant')->toString());
+        $filename = sprintf('enrollment-report-%s-%s-%s.pdf', $reportType, $variant, now()->format('YmdHis'));
+        $temporaryPath = tempnam(sys_get_temp_dir(), 'enrollment_report_').'.pdf';
+
+        $pdfGenerationService->generatePdfFromView('pdf.enrollment-report', ['data' => $payload, 'variant' => $variant], $temporaryPath, [
+            'landscape' => true,
+            'format' => 'A4',
+            'headless' => true,
+            'no-sandbox' => true,
+            'disable-dev-shm-usage' => true,
+            'print-to-pdf-no-header' => true,
+            'disable-gpu' => true,
+            'no-first-run' => true,
+            'disable-extensions' => true,
+            'virtual-time-budget' => 10000,
+        ]);
+
+        return response()->download($temporaryPath, $filename)->deleteFileAfterSend(true);
+    }
+
     public function enrollmentReportExport(Request $request, GeneralSettingsService $settingsService): BinaryFileResponse
     {
         $validated = $this->validateEnrollmentReportFilters($request);
@@ -2216,6 +2245,11 @@ final class AdministratorEnrollmentManagementController extends Controller
             ->values();
 
         return response()->json(['courses' => $courses]);
+    }
+
+    private function resolveEnrollmentReportVariant(string $variant): string
+    {
+        return in_array($variant, ['standard', 'executive', 'compact', 'faculty'], true) ? $variant : 'standard';
     }
 
     /** @return array<string, mixed> */

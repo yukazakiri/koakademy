@@ -158,9 +158,40 @@
             display: flex;
             justify-content: space-between;
         }
+
+        body.variant-executive .header {
+            padding-bottom: 12px;
+            border-bottom-color: #9b6b32;
+        }
+
+        body.variant-executive .report-title {
+            color: #9b6b32;
+            font-size: 13pt;
+        }
+
+        body.variant-compact {
+            font-size: 8pt;
+        }
+
+        body.variant-compact table {
+            font-size: 7.2pt;
+        }
+
+        body.variant-compact th,
+        body.variant-compact td {
+            padding: 3px 4px;
+        }
+
+        body.variant-faculty .header {
+            border-bottom-color: #1d4ed8;
+        }
+
+        body.variant-faculty .report-title {
+            color: #1d4ed8;
+        }
     </style>
 </head>
-<body>
+<body class="variant-{{ in_array($variant ?? 'standard', ['standard', 'executive', 'compact', 'faculty'], true) ? ($variant ?? 'standard') : 'standard' }}">
 @php
     /** @var array<string, mixed> $data */
     $report = $data['report'] ?? [];

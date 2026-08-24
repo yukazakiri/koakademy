@@ -12,6 +12,7 @@ use App\Http\Controllers\AdministratorEnrollmentPolicyController;
 use App\Http\Controllers\AdministratorFacultyManagementController;
 use App\Http\Controllers\AdministratorFinanceController;
 use App\Http\Controllers\AdministratorGlobalSearchController;
+use App\Http\Controllers\AdministratorRegistrarDocumentController;
 use App\Http\Controllers\AdministratorRegistrarInsightsController;
 use App\Http\Controllers\AdministratorRolesController;
 use App\Http\Controllers\AdministratorSchedulingAnalyticsController;
@@ -138,6 +139,8 @@ Route::middleware(['auth', 'administrators.only'])
             ->middleware('throttle:10,1')
             ->name('registrar.analytics.student-profile-imports.confirm');
         Route::get('/registrar/reports', [AdministratorRegistrarInsightsController::class, 'reports'])->name('registrar.reports.index');
+        Route::get('/registrar/documents/preview', [AdministratorRegistrarDocumentController::class, 'preview'])->name('registrar.documents.preview');
+        Route::get('/registrar/documents/pdf', [AdministratorRegistrarDocumentController::class, 'pdf'])->name('registrar.documents.pdf');
         Route::get('/enrollments/create', [AdministratorEnrollmentManagementController::class, 'create'])->name('enrollments.create');
         Route::post('/enrollments', [AdministratorEnrollmentManagementController::class, 'store'])->name('enrollments.store');
         Route::post('/enrollments/discounts', [AdministratorEnrollmentDiscountController::class, 'store'])->name('enrollments.discounts.store');
@@ -191,6 +194,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/enrollments/reports/bulk-assessments', [AdministratorEnrollmentManagementController::class, 'generateBulkAssessments'])->name('enrollments.reports.bulk-assessments');
         Route::get('/enrollments/reports/data', [AdministratorEnrollmentManagementController::class, 'enrollmentReportData'])->name('enrollments.reports.data');
         Route::get('/enrollments/reports/preview-pdf', [AdministratorEnrollmentManagementController::class, 'enrollmentReportPreviewPdf'])->name('enrollments.reports.preview-pdf');
+        Route::get('/enrollments/reports/pdf', [AdministratorEnrollmentManagementController::class, 'enrollmentReportPdf'])->name('enrollments.reports.pdf');
         Route::get('/enrollments/reports/export', [AdministratorEnrollmentManagementController::class, 'enrollmentReportExport'])->name('enrollments.reports.export');
         Route::get('/enrollments/reports/subject-options', [AdministratorEnrollmentManagementController::class, 'reportSubjectOptions'])->name('enrollments.reports.subject-options');
         Route::get('/enrollments/reports/course-options', [AdministratorEnrollmentManagementController::class, 'reportCourseOptions'])->name('enrollments.reports.course-options');

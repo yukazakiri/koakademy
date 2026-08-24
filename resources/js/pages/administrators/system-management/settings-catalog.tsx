@@ -13,6 +13,7 @@ import {
     CalendarClock,
     Check,
     FileBadge2,
+    Fingerprint,
     Globe,
     Hash,
     List,
@@ -116,6 +117,15 @@ export const systemSettingsItems: SystemSettingsItem[] = [
         href: "/administrators/system-management/identifiers",
         keywords: ["identifier", "id sequence", "student id", "staff id", "numbering"],
         icon: Hash,
+    },
+    {
+        key: "faculty_fields",
+        group: "academic_operations",
+        label: "Faculty Fields",
+        description: "Define the sensitive staff fields and import headers used by your institution.",
+        href: "/administrators/system-management/faculty-fields",
+        keywords: ["faculty", "employee", "staff", "government id", "tax", "import", "custom fields"],
+        icon: Fingerprint,
     },
     {
         key: "finance_documents",

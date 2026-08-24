@@ -9,6 +9,8 @@ use App\Http\Controllers\AdministratorCurriculumManagementController;
 use App\Http\Controllers\AdministratorEnrollmentDiscountController;
 use App\Http\Controllers\AdministratorEnrollmentManagementController;
 use App\Http\Controllers\AdministratorEnrollmentPolicyController;
+use App\Http\Controllers\AdministratorFacultyCustomFieldController;
+use App\Http\Controllers\AdministratorFacultyImportController;
 use App\Http\Controllers\AdministratorFacultyManagementController;
 use App\Http\Controllers\AdministratorFinanceController;
 use App\Http\Controllers\AdministratorGlobalSearchController;
@@ -345,6 +347,9 @@ Route::middleware(['auth', 'administrators.only'])
         // Faculty Management
         Route::get('/faculties', [AdministratorFacultyManagementController::class, 'index'])->name('faculties.index');
         Route::get('/faculties/create', [AdministratorFacultyManagementController::class, 'create'])->name('faculties.create');
+        Route::get('/faculties/imports/template', [AdministratorFacultyImportController::class, 'downloadTemplate'])->name('faculties.imports.template');
+        Route::post('/faculties/imports', [AdministratorFacultyImportController::class, 'store'])->middleware('throttle:10,1')->name('faculties.imports.store');
+        Route::post('/faculties/imports/{facultyBulkImport}/confirm', [AdministratorFacultyImportController::class, 'confirm'])->middleware('throttle:20,1')->name('faculties.imports.confirm');
         Route::post('/faculties', [AdministratorFacultyManagementController::class, 'store'])->name('faculties.store');
         Route::patch('/faculties/bulk/status', [AdministratorFacultyManagementController::class, 'bulkUpdateStatus'])->name('faculties.bulk.status');
         Route::get('/faculties/{faculty}', [AdministratorFacultyManagementController::class, 'show'])->name('faculties.show');
@@ -412,6 +417,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/system-management/api', [App\Http\Controllers\AdministratorSystemManagementController::class, 'api'])->name('system-management.api.index');
         Route::get('/system-management/pulse', [App\Http\Controllers\AdministratorSystemManagementController::class, 'pulse'])->name('system-management.pulse.index');
         Route::get('/system-management/identifiers', [App\Http\Controllers\AdministratorSystemManagementController::class, 'identifiers'])->name('system-management.identifiers.index');
+        Route::get('/system-management/faculty-fields', [App\Http\Controllers\AdministratorSystemManagementController::class, 'facultyFields'])->name('system-management.faculty-fields.index');
         Route::post('/system-management/school', [App\Http\Controllers\AdministratorSystemManagementController::class, 'storeSchool'])->name('system-management.school.store');
         Route::put('/system-management/school', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateSchool'])->name('system-management.school.update');
         Route::put('/system-management/school-details', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateSchoolDetails'])->name('system-management.school-details.update');
@@ -450,6 +456,9 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/system-management/grading', [App\Http\Controllers\AdministratorSystemManagementController::class, 'grading'])->name('system-management.grading.index');
         Route::put('/system-management/grading', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateGrading'])->name('system-management.grading.update');
         Route::put('/system-management/identifiers', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateIdentifiers'])->name('system-management.identifiers.update');
+        Route::post('/system-management/faculty-fields', [AdministratorFacultyCustomFieldController::class, 'store'])->name('system-management.faculty-fields.store');
+        Route::put('/system-management/faculty-fields/{facultyCustomFieldDefinition}', [AdministratorFacultyCustomFieldController::class, 'update'])->name('system-management.faculty-fields.update');
+        Route::delete('/system-management/faculty-fields/{facultyCustomFieldDefinition}', [AdministratorFacultyCustomFieldController::class, 'destroy'])->name('system-management.faculty-fields.destroy');
 
         // Help Tickets
         Route::get('/help-tickets', [App\Http\Controllers\AdministratorHelpTicketController::class, 'index'])->name('help-tickets.index');

@@ -16,6 +16,7 @@ export type SystemManagementSectionKey =
     | "tuition_payment_schedule"
     | "grading"
     | "identifiers"
+    | "faculty_fields"
     | "pulse";
 
 export interface GradingConfigPayload {
@@ -332,6 +333,22 @@ export interface IdSequenceConfig {
     increment_by: number;
     padding: number | null;
     preview: string;
+}
+
+export type FacultyFieldType = "text" | "date" | "number" | "select";
+
+export interface FacultyFieldDefinition {
+    id: number;
+    key: string;
+    label: string;
+    field_type: FacultyFieldType;
+    is_required: boolean;
+    is_sensitive: boolean;
+    help_text: string | null;
+    options: string[];
+    source_header_aliases: string[];
+    display_order: number;
+    is_active: boolean;
 }
 
 export interface PublicApiFieldDefinition {

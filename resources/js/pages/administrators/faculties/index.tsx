@@ -14,6 +14,7 @@ import {
     BookOpen,
     Building2,
     CheckCircle2,
+    FileSpreadsheet,
     Filter as FilterIcon,
     KeyRound,
     PauseCircle,
@@ -28,6 +29,7 @@ import { useDebouncedCallback } from "use-debounce";
 import { route } from "ziggy-js";
 import { getColumns, type FacultyRow } from "./columns";
 import { DataTable } from "./data-table";
+import { FacultyImportDialog } from "./faculty-import-dialog";
 
 type Segment = {
     value: string;
@@ -394,6 +396,12 @@ export default function AdministratorFacultiesIndex({ user, filament, stats, seg
                     </div>
 
                     <div className="flex flex-wrap gap-2">
+                        <Button asChild variant="outline">
+                            <a href={route("administrators.faculties.imports.template")}>
+                                <FileSpreadsheet className="mr-2 h-4 w-4" /> Download template
+                            </a>
+                        </Button>
+                        <FacultyImportDialog />
                         <Button asChild variant="outline">
                             <a href={filament.faculties.index_url} target="_blank" rel="noreferrer">
                                 Open Filament

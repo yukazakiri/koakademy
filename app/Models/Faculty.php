@@ -72,8 +72,10 @@ final class Faculty extends Authenticatable implements FilamentUser, HasAvatar
         'password',
         'phone_number',
         'department',
+        'position',
         'office_hours',
         'birth_date',
+        'date_employed',
         'address_line1',
         'biography',
         'education',
@@ -164,6 +166,11 @@ final class Faculty extends Authenticatable implements FilamentUser, HasAvatar
         return $this->hasMany(FacultyDeadline::class, 'faculty_id', 'id');
     }
 
+    public function customFieldValues(): HasMany
+    {
+        return $this->hasMany(FacultyCustomFieldValue::class);
+    }
+
     public function portalUser(): HasOne
     {
         return $this->hasOne(User::class, 'email', 'email');
@@ -250,8 +257,10 @@ final class Faculty extends Authenticatable implements FilamentUser, HasAvatar
             'email' => 'string',
             'phone_number' => 'string',
             'department' => 'string',
+            'position' => 'string',
             'office_hours' => 'string',
             'birth_date' => 'datetime',
+            'date_employed' => 'date',
             'address_line1' => 'string',
             'biography' => 'string',
             'education' => 'string',

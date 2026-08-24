@@ -155,6 +155,16 @@ final class GeneralSettingPolicy
         return $this->canUpdateSection($user, 'identifiers');
     }
 
+    public function viewFacultyFields(User $user): bool
+    {
+        return $this->canViewSection($user, 'faculty_fields');
+    }
+
+    public function updateFacultyFields(User $user): bool
+    {
+        return $this->canUpdateSection($user, 'faculty_fields');
+    }
+
     private function canViewSection(User $user, string $section): bool
     {
         if ($this->hasFullSystemManagementAccess($user)) {

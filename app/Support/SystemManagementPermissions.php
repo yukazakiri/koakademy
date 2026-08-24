@@ -68,6 +68,10 @@ final class SystemManagementPermissions
                 'view' => 'View:SystemManagementIdentifiers',
                 'update' => 'Update:SystemManagementIdentifiers',
             ],
+            'faculty_fields' => [
+                'view' => 'View:SystemManagementFacultyFields',
+                'update' => 'Update:SystemManagementFacultyFields',
+            ],
             'pulse' => [
                 'view' => 'View:SystemManagementPulse',
                 'update' => null,

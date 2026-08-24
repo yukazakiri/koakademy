@@ -29,6 +29,7 @@ use App\Models\School;
 use App\Models\User;
 use App\Services\AnalyticsSettingsService;
 use App\Services\EnrollmentPipelineService;
+use App\Services\FacultyCustomFieldDefinitionService;
 use App\Services\FinanceDocumentSettingsService;
 use App\Services\GeneralSettingsService;
 use App\Services\GradingSystemService;
@@ -246,6 +247,33 @@ final class AdministratorSystemManagementController extends Controller
     public function identifiers(): Response
     {
         return $this->renderSystemManagementPage('administrators/system-management/identifiers', 'identifiers', 'viewIdentifiers');
+    }
+
+    public function facultyFields(FacultyCustomFieldDefinitionService $definitions, \App\Services\TenantContext $tenantContext): Response
+    {
+        $this->authorize('viewFacultyFields', GeneralSetting::class);
+
+        $schoolId = $tenantContext->getCurrentSchoolId();
+        abort_if($schoolId === null, 422, 'Choose an active school before configuring faculty fields.');
+
+        return $this->renderSystemManagementPage(
+            'administrators/system-management/faculty-fields',
+            'faculty_fields',
+            'viewFacultyFields',
+            ['field_definitions' => $definitions->allForSchool($schoolId)->map(fn ($definition): array => [
+                'id' => $definition->id,
+                'key' => $definition->key,
+                'label' => $definition->label,
+                'field_type' => $definition->field_type,
+                'help_text' => $definition->help_text,
+                'options' => $definition->options ?? [],
+                'source_header_aliases' => $definition->source_header_aliases ?? [],
+                'is_required' => $definition->is_required,
+                'is_sensitive' => $definition->is_sensitive,
+                'is_active' => $definition->is_active,
+                'display_order' => $definition->display_order,
+            ])->values()->all()],
+        );
     }
 
     public function updateIdentifiers(Request $request, IdentifierGenerator $identifierGenerator): RedirectResponse
@@ -1136,6 +1164,7 @@ final class AdministratorSystemManagementController extends Controller
                 'tuition_payment_schedule' => 'updateTuitionPaymentSchedule',
                 'grading' => 'updateGrading',
                 'identifiers' => 'updateIdentifiers',
+                'faculty_fields' => 'updateFacultyFields',
                 default => 'viewAny',
             }, GeneralSetting::class);
 
@@ -1154,6 +1183,7 @@ final class AdministratorSystemManagementController extends Controller
                 'tuition_payment_schedule' => 'viewTuitionPaymentSchedule',
                 'grading' => 'viewGrading',
                 'identifiers' => 'viewIdentifiers',
+                'faculty_fields' => 'viewFacultyFields',
                 'pulse' => 'viewPulse',
             }, GeneralSetting::class);
 

@@ -26,9 +26,11 @@ export type FacultyFormPayload = {
     email: string;
     phone_number: string | null;
     department: string | null;
+    position: string | null;
     status: string | null;
     gender: string | null;
     birth_date: string | null;
+    date_employed: string | null;
     age: number | null;
     office_hours: string | null;
     address_line1: string | null;
@@ -72,9 +74,11 @@ export function FacultyForm({ mode, defaults, faculty, options }: FacultyFormPro
         middle_name: blankToString(profile?.middle_name),
         email: blankToString(profile?.email),
         department: blankToString(profile?.department),
+        position: blankToString(profile?.position),
         status: blankToString(profile?.status) || "active",
         gender: blankToString(profile?.gender),
         birth_date: blankToString(profile?.birth_date),
+        date_employed: blankToString(profile?.date_employed),
         age: blankToString(profile?.age),
         phone_number: blankToString(profile?.phone_number),
         office_hours: blankToString(profile?.office_hours),
@@ -215,6 +219,16 @@ export function FacultyForm({ mode, defaults, faculty, options }: FacultyFormPro
                                     {errors.department ? <p className="text-sm text-red-500">{errors.department}</p> : null}
                                 </div>
                                 <div className="space-y-2 sm:col-span-2">
+                                    <Label htmlFor="position">Job Title</Label>
+                                    <Input
+                                        id="position"
+                                        value={data.position}
+                                        onChange={(event) => setData("position", event.target.value)}
+                                        placeholder="Professor, Dean, Registrar, etc."
+                                    />
+                                    {errors.position ? <p className="text-sm text-red-500">{errors.position}</p> : null}
+                                </div>
+                                <div className="space-y-2 sm:col-span-2">
                                     <Label htmlFor="photo">{isEdit ? "Update photo" : "Profile photo"}</Label>
                                     <Input
                                         id="photo"
@@ -278,6 +292,16 @@ export function FacultyForm({ mode, defaults, faculty, options }: FacultyFormPro
                                         onChange={(event) => setData("birth_date", event.target.value)}
                                     />
                                     {errors.birth_date ? <p className="text-sm text-red-500">{errors.birth_date}</p> : null}
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="date_employed">Date Employed</Label>
+                                    <Input
+                                        id="date_employed"
+                                        type="date"
+                                        value={data.date_employed}
+                                        onChange={(event) => setData("date_employed", event.target.value)}
+                                    />
+                                    {errors.date_employed ? <p className="text-sm text-red-500">{errors.date_employed}</p> : null}
                                 </div>
                                 <div className="space-y-2">
                                     <Label htmlFor="age">Age</Label>

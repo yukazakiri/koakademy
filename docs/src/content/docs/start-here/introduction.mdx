@@ -14,7 +14,7 @@ KoAkademy is a self-hosted school administration and learning platform. It is a 
         Learn how the domain model, enrollment engine, modules, and portals fit together in **System Internals**.
     </Card>
     <Card title="Contribute" icon="github">
-        Develop with PHP 8.5, Laravel 12, Filament 5, React 19, Inertia, Pest, and the canonical documentation workflow.
+        Develop with PHP 8.5, Laravel 13, Filament 5, React 19, Inertia, Pest 5, and the canonical documentation workflow.
     </Card>
     <Card title="Self-host" icon="server">
         Use the one-line Docker Swarm installer for Caddy HTTPS, KoAkademy, PostgreSQL, Redis, Gotenberg, and optional external S3/R2.
@@ -35,11 +35,11 @@ KoAkademy is a self-hosted school administration and learning platform. It is a 
 
 | Layer | Technology |
 | ----- | ---------- |
-| Backend | PHP 8.5, Laravel 12, nginx + PHP-FPM |
+| Backend | PHP 8.5, Laravel 13, FrankenPHP in the supported production image |
 | Administration | Filament 5 with Shield permissions |
 | Portals | Inertia 3, React 19, Tailwind CSS 4, shadcn/ui |
 | Data | PostgreSQL, Redis (cache, sessions, queues) |
 | Documents | `spatie/laravel-pdf` with Gotenberg |
-| Tests | Pest 4 (parallel, SQLite in-memory) |
+| Tests | Pest 5 (parallel, SQLite in-memory) |
 
 Only the latest stable release is supported. KoAkademy is licensed under GNU AGPL-3.0-or-later.

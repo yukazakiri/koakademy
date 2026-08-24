@@ -146,10 +146,23 @@ The installer runs privileged remote code. Inspect it first if that is not appro
 ```sh
 curl -fSLO https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh
 less install.sh
-bash install.sh install --domain school.example
+sudo bash install.sh install --domain school.example
 ```
 
+Stable releases publish the bootstrap, operator command, Swarm bundle, runtime
+configuration, image metadata, and `SHA256SUMS` together. The installer refuses
+to continue when the downloaded release assets do not verify as a complete
+bundle.
+
 For a manually managed deployment, use [Getting Started](GETTING_STARTED.md). It covers the supported Docker Compose topology, explicit migrations, S3-compatible storage, and the reverse-proxy requirements.
+
+For local development and verification, follow [Development](DEVELOPMENT.md)
+and run the documented checks in [Contributing](CONTRIBUTING.md). The
+documentation and local-link check can be run independently with:
+
+```sh
+npm run docs:check
+```
 
 ## Operate It
 
@@ -173,5 +186,3 @@ Contributions are welcome when they are focused, tested, and safe for self-hosti
 ## License
 
 KoAkademy is licensed under the [GNU AGPL-3.0-or-later](LICENSE.md). If people use a modified version over a network, they must be able to obtain that modified source. The code that handles a school’s records should remain available to the people who depend on it.
-
-

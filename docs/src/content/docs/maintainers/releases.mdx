@@ -28,6 +28,13 @@ The same Delivery run then:
 5. Publishes BuildKit SBOM/provenance and GitHub attestation.
 6. Rewrites the release `version.json` to the digest, checksums the installer bundle, uploads it, and publishes the draft release.
 
+The delivery job validates the complete asset contract before uploading: the
+bootstrap, operator command, Swarm files, Compose fallback, environment example,
+image metadata, and `SHA256SUMS` must all be present and match. Before announcing
+a release, maintainers should download the draft assets on a disposable Linux
+host, verify the checksum manifest, and exercise the installer against a staging
+domain.
+
 The exact SemVer image tag and its digest are the deployment contract. Do not deploy a mutable alias.
 
 ## Stable release assets

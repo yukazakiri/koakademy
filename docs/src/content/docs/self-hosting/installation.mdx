@@ -64,8 +64,12 @@ Running remote privileged code is a trust decision. Download the matching stable
 ```sh
 curl -fSLO https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh
 less install.sh
-bash install.sh install --domain school.example
+sudo bash install.sh install --domain school.example
 ```
+
+Each stable release contains the bootstrap, operator command, Swarm bundle,
+runtime configuration, image metadata, and `SHA256SUMS`. The installer verifies
+the release assets before changing the host.
 
 ## Existing Swarm installation
 

@@ -175,10 +175,14 @@ jobs:
         run: |
           sh -n docker/start-container docker/healthcheck docker/pulse-process \
             docker/run-scripts.sh docker/run.sh docker/docker-scripts/*.sh
-          bash -n scripts/install.sh scripts/koakademy scripts/generate-version-metadata.sh
+          bash -n scripts/install.sh scripts/koakademy scripts/check-release-assets.sh \
+            scripts/generate-version-metadata.sh tests/installer-release.sh
           shellcheck scripts/install.sh scripts/koakademy scripts/koakademy-app-entrypoint.sh \
-            scripts/generate-version-metadata.sh \
-            tests/Fixtures/installer/docker tests/Fixtures/installer/curl
+            scripts/check-release-assets.sh scripts/generate-version-metadata.sh \
+            tests/installer-release.sh tests/Fixtures/installer/docker tests/Fixtures/installer/curl
+
+      - name: Exercise release-backed installer
+        run: bash tests/installer-release.sh
 
       - name: Validate one-line Swarm stack
         run: |

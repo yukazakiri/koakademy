@@ -230,7 +230,9 @@ Notable project changes are recorded here. KoAkademy follows semantic versioning
 
 ### Added
 
-- One-line Bash and PowerShell installers for a default Docker Swarm deployment
+- Release-backed installer asset contract checks and fixture coverage for the
+  complete Linux Swarm release bundle
+- One-line Bash installer for a default Docker Swarm deployment
 - Runtime stable-tag discovery for KoAkademy and optional local RustFS
 - Docker-secret-backed PostgreSQL, Redis, object storage, migration jobs, and first-run health verification
 - Supported production Compose topology with KoAkademy, PostgreSQL, Redis, and Gotenberg
@@ -243,6 +245,8 @@ Notable project changes are recorded here. KoAkademy follows semantic versioning
 
 ### Changed
 
+- Stable installer releases now publish and checksum the operator command and
+  its Swarm runtime assets alongside the bootstrap
 - Self-hosting now defaults to manager-pinned Swarm services with host ports for KoAkademy and optional RustFS; Compose remains the manual path
 - GitHub Pages deployment is paused while the repository is private
 - Production onboarding now uses the real `/setup` wizard

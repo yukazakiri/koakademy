@@ -37,9 +37,12 @@ php artisan test --parallel --compact
 npm run docs:check
 KOAKADEMY_ENV_FILE=.env.production.example \
   docker compose --env-file .env.production.example -f compose.production.yaml config --quiet
-bash -n scripts/install.sh scripts/koakademy scripts/generate-version-metadata.sh
+bash -n scripts/install.sh scripts/koakademy scripts/check-release-assets.sh \
+  scripts/generate-version-metadata.sh tests/installer-release.sh
 shellcheck scripts/install.sh scripts/koakademy scripts/koakademy-app-entrypoint.sh \
+  scripts/check-release-assets.sh tests/installer-release.sh \
   tests/Fixtures/installer/docker tests/Fixtures/installer/curl
+bash tests/installer-release.sh
 docker compose --env-file tests/Fixtures/installer/swarm-stack.env \
   -f scripts/swarm-stack.yml config --quiet
 ```

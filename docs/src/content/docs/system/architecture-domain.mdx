@@ -9,9 +9,11 @@ This page is the map. It explains which moving parts exist, where requests enter
 
 ## Runtime shape
 
-KoAkademy is a **modular monolith**. One Laravel 12 application serves everything — admin panel, portals, public pages, and API — running on **PHP 8.5 with nginx and PHP-FPM** in production. PHP-FPM recycles workers between requests (`pm.max_requests`), and long-lived queue workers (Horizon) keep application state between jobs, so code must not leak mutable state across jobs (worker-safe patterns are expected in contributions).
+KoAkademy is a **modular monolith**. One Laravel 13 application serves everything — admin panel, portals, public pages, and API — running on **PHP 8.5**. The supported production image uses FrankenPHP behind Caddy in the default single-node Swarm topology; long-lived application and queue workers must not leak mutable state across requests or jobs.
 
-The production container image is a multi-stage build (`docker/Dockerfile`): Composer dependencies → Wayfinder route generation → Vite asset build → a `php:8.5-fpm` runtime served by nginx. Supervisord variants in the image run nginx + PHP-FPM, queue workers (via Horizon), scheduler, and Pulse processes.
+The production container images are multi-stage builds (`docker/Dockerfile` and
+`docker/Dockerfile.franken`) that install Composer dependencies, generate
+Wayfinder routes, build Vite assets, and package the runtime processes.
 
 Supporting services are external: **PostgreSQL** (primary data), **Redis** (cache, sessions, queues), **Gotenberg** (PDF rendering), and **S3-compatible object storage** (uploads via media library).
 

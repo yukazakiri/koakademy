@@ -2,10 +2,31 @@
 
 set -eu
 
+output_file=''
+previous=''
+url=''
+for argument in "$@"; do
+    if test "$previous" = '--output'; then
+        output_file="$argument"
+    fi
+    case "$argument" in
+        https://github.com/yukazakiri/koakademy/releases/download/*)
+            url="$argument"
+            ;;
+    esac
+    previous="$argument"
+done
+
 case "$*" in
+    *github.com/yukazakiri/koakademy/releases/download/*)
+        test -n "${KOAKADEMY_INSTALLER_TEST_RELEASE_DIR:-}"
+        test -n "$output_file"
+        asset="${url##*/}"
+        cp "$KOAKADEMY_INSTALLER_TEST_RELEASE_DIR/$asset" "$output_file"
+        ;;
     *api.github.com/repos/yukazakiri/koakademy/releases/latest*)
         if test -n "${KOAKADEMY_INSTALLER_TEST_RELEASE_TAG:-}"; then
-            printf '{"tag_name":"%s","draft":false,"prerelease":false}\n' \
+            printf '{\n  "tag_name": "%s",\n  "draft": false,\n  "prerelease": false\n}\n' \
                 "${KOAKADEMY_INSTALLER_TEST_RELEASE_TAG}"
         fi
         ;;

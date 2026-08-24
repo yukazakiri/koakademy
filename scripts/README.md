@@ -6,10 +6,15 @@ here; this folder only keeps the scripts the project actually runs or ships.
 
 ## Installation
 
-- `install.sh` — supported production installer for Linux (Docker Swarm). Runs
-  `docker compose` against `compose.production.yaml`, provisions services, runs
-  migrations, and prints the one-time `/setup` URL.
-- `install.ps1` — Windows PowerShell equivalent of `install.sh`.
+- `install.sh` — small Linux bootstrap that resolves a stable GitHub Release,
+  verifies the operator command, and hands control to it.
+- `koakademy` — privileged production operator for the single-node Docker Swarm
+  deployment. It installs, updates, configures, checks status, and rolls back
+  the application.
+- `swarm-stack.yml`, `Caddyfile`, and `koakademy-app-entrypoint.sh` — release
+  assets consumed by the operator when it deploys the Swarm topology.
+- `check-release-assets.sh` — validates that a release bundle contains every
+  required asset and that `SHA256SUMS` matches the files.
 
 ## Maintainers
 

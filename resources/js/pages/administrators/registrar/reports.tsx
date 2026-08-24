@@ -16,7 +16,7 @@ import type { BulkReportFilters, EnrollmentManagementProps, ReportFilters } from
 import { Head } from "@inertiajs/react";
 import axios from "axios";
 import { Check, ChevronRight, Download, FileSpreadsheet, FileText, Loader2, Printer, Search, Settings2, Sparkles } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode, type SetStateAction } from "react";
 import { toast } from "sonner";
 import { route } from "ziggy-js";
 import {
@@ -381,7 +381,9 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
             setAvailableCourses(Array.isArray(payload.courses) ? payload.courses : []);
         } catch (error) {
             setAvailableCourses([]);
-            setCourseOptionsError(error instanceof Error ? error.message : "Course options could not be loaded.");
+            const message = error instanceof Error ? error.message : "Course options could not be loaded.";
+            setCourseOptionsError(message);
+            toast.error(message);
         } finally {
             setIsLoadingAvailableCourses(false);
         }
@@ -436,9 +438,13 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
 
     useEffect(() => {
         void fetch(buildUrl("administrators.enrollments.reports.subject-options", {}), { headers: { Accept: "application/json" } })
-            .then((response) => response.json())
+            .then((response) => {
+                if (!response.ok) throw new Error("Subject options could not be loaded.");
+
+                return response.json();
+            })
             .then((payload: { subjects?: typeof availableSubjects }) => setAvailableSubjects(payload.subjects ?? []))
-            .catch(() => undefined);
+            .catch(() => toast.error("Subject options could not be loaded. Please try again."));
         void loadCourseOptions();
     }, [loadCourseOptions]);
 
@@ -457,6 +463,12 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
             setIsSamplePreview(true);
         }
         setVariantSettingsFor(null);
+    };
+
+    const updateReportFilters = (updater: SetStateAction<ReportFilters>) => {
+        setReportFilters(updater);
+        setPreviewData(buildClientPreview(activeTemplate, activeVariant.key, selectedStudent));
+        setIsSamplePreview(true);
     };
 
     const loadPreview = useCallback(async () => {
@@ -809,7 +821,9 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
                                                     label="Course"
                                                     options={courseOptions}
                                                     value={reportFilters.course_filter}
-                                                    onValueChange={(value) => setReportFilters((current) => ({ ...current, course_filter: value }))}
+                                                    onValueChange={(value) =>
+                                                        updateReportFilters((current) => ({ ...current, course_filter: value }))
+                                                    }
                                                     placeholder="All courses"
                                                     searchPlaceholder="Search courses"
                                                 />
@@ -819,7 +833,9 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
                                                     label="Subject"
                                                     options={subjectOptions}
                                                     value={reportFilters.subject_filter}
-                                                    onValueChange={(value) => setReportFilters((current) => ({ ...current, subject_filter: value }))}
+                                                    onValueChange={(value) =>
+                                                        updateReportFilters((current) => ({ ...current, subject_filter: value }))
+                                                    }
                                                     placeholder="All subjects"
                                                     searchPlaceholder="Search subjects"
                                                 />
@@ -830,7 +846,7 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
                                                     <Select
                                                         value={reportFilters.department_filter}
                                                         onValueChange={(value) =>
-                                                            setReportFilters((current) => ({ ...current, department_filter: value }))
+                                                            updateReportFilters((current) => ({ ...current, department_filter: value }))
                                                         }
                                                     >
                                                         <SelectTrigger>
@@ -858,7 +874,7 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
                                                     <Select
                                                         value={reportFilters.year_level_filter}
                                                         onValueChange={(value) =>
-                                                            setReportFilters((current) => ({ ...current, year_level_filter: value }))
+                                                            updateReportFilters((current) => ({ ...current, year_level_filter: value }))
                                                         }
                                                     >
                                                         <SelectTrigger>
@@ -879,7 +895,9 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
                                                 <Label>Enrollment records</Label>
                                                 <Select
                                                     value={reportFilters.status_filter}
-                                                    onValueChange={(value) => setReportFilters((current) => ({ ...current, status_filter: value }))}
+                                                    onValueChange={(value) =>
+                                                        updateReportFilters((current) => ({ ...current, status_filter: value }))
+                                                    }
                                                 >
                                                     <SelectTrigger>
                                                         <SelectValue placeholder="Active only" />

@@ -56,6 +56,7 @@ use Inertia\Inertia;
 use Inertia\Response;
 use Laravel\Pennant\Feature;
 use Maatwebsite\Excel\Facades\Excel;
+use RuntimeException;
 use Spatie\Activitylog\Models\Activity;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Throwable;
@@ -2131,7 +2132,10 @@ final class AdministratorEnrollmentManagementController extends Controller
         $reportType = Str::slug((string) data_get($payload, 'report.type', 'report'));
         $variant = $this->resolveEnrollmentReportVariant($request->string('variant')->toString());
         $filename = sprintf('enrollment-report-%s-%s-%s.pdf', $reportType, $variant, now()->format('YmdHis'));
-        $temporaryPath = tempnam(sys_get_temp_dir(), 'enrollment_report_').'.pdf';
+        $temporaryPath = tempnam(sys_get_temp_dir(), 'enrollment_report_');
+        if ($temporaryPath === false) {
+            throw new RuntimeException('Unable to create a temporary enrollment report file.');
+        }
 
         $pdfGenerationService->generatePdfFromView('pdf.enrollment-report', ['data' => $payload, 'variant' => $variant], $temporaryPath, [
             'landscape' => true,

@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\User;
+use App\Services\EnrollmentPipelineService;
 use App\Services\GeneralSettingsService;
 use App\Services\PdfGenerationService;
 use App\Settings\SiteSettings;
@@ -16,6 +17,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 final class AdministratorRegistrarDocumentController extends Controller
@@ -23,10 +25,13 @@ final class AdministratorRegistrarDocumentController extends Controller
     /**
      * Return the selected registrar document data for the interactive preview.
      */
-    public function preview(Request $request, GeneralSettingsService $settingsService): JsonResponse
-    {
+    public function preview(
+        Request $request,
+        GeneralSettingsService $settingsService,
+        EnrollmentPipelineService $enrollmentPipelineService,
+    ): JsonResponse {
         $validated = $this->validateRequest($request);
-        $payload = $this->buildPayload($validated, $settingsService);
+        $payload = $this->buildPayload($validated, $settingsService, $enrollmentPipelineService);
 
         return response()->json($payload);
     }
@@ -37,15 +42,19 @@ final class AdministratorRegistrarDocumentController extends Controller
     public function pdf(
         Request $request,
         GeneralSettingsService $settingsService,
+        EnrollmentPipelineService $enrollmentPipelineService,
         PdfGenerationService $pdfGenerationService,
     ): BinaryFileResponse {
         $validated = $this->validateRequest($request);
-        $payload = $this->buildPayload($validated, $settingsService);
+        $payload = $this->buildPayload($validated, $settingsService, $enrollmentPipelineService);
         $template = (string) $payload['template'];
         $variant = (string) $payload['variant'];
         $studentNumber = Str::slug((string) data_get($payload, 'student.student_number', 'student'));
         $filename = sprintf('registrar-%s-%s-%s-%s.pdf', $template, $variant, $studentNumber, now()->format('YmdHis'));
-        $temporaryPath = tempnam(sys_get_temp_dir(), 'registrar_document_').'.pdf';
+        $temporaryPath = tempnam(sys_get_temp_dir(), 'registrar_document_');
+        if ($temporaryPath === false) {
+            throw new RuntimeException('Unable to create a temporary registrar document file.');
+        }
 
         $pdfGenerationService->generatePdfFromView('pdf.registrar-document', ['data' => $payload], $temporaryPath, [
             'format' => 'A4',
@@ -68,6 +77,7 @@ final class AdministratorRegistrarDocumentController extends Controller
     private function validateRequest(Request $request): array
     {
         Gate::authorize('viewAny', StudentEnrollment::class);
+        Gate::authorize('exportDetailed', StudentEnrollment::class);
 
         /** @var array{template: string, variant?: string, student_id: int, purpose: string|null} $validated */
         $validated = $request->validate([
@@ -114,27 +124,45 @@ final class AdministratorRegistrarDocumentController extends Controller
      * @param  array{template: string, variant: string, student_id: int, purpose: string|null}  $validated
      * @return array<string, mixed>
      */
-    private function buildPayload(array $validated, GeneralSettingsService $settingsService): array
-    {
+    private function buildPayload(
+        array $validated,
+        GeneralSettingsService $settingsService,
+        EnrollmentPipelineService $enrollmentPipelineService,
+    ): array {
         $student = Student::query()
             ->with('Course.department')
             ->findOrFail($validated['student_id']);
         $schoolYear = $settingsService->getCurrentSchoolYearString();
         $semester = $settingsService->getCurrentSemester();
         $semesterLabel = $settingsService->getAvailableSemesters()[$semester] ?? "Semester {$semester}";
-        $enrollment = StudentEnrollment::query()
+        $enrollmentQuery = StudentEnrollment::query()
+            ->withTrashed()
+            ->where('student_id', $student->id)
+            ->whereIn('school_year', $settingsService->getCurrentSchoolYearVariants())
+            ->where('semester', $semester);
+
+        if ($validated['template'] === 'certificate_of_enrollment') {
+            $enrollmentQuery->where('status', data_get($enrollmentPipelineService->getCompletionStep(), 'status'));
+        }
+
+        $enrollment = $enrollmentQuery
             ->with([
                 'course.department',
                 'subjectsEnrolled.subject',
                 'subjectsEnrolled.class.schedules.room',
             ])
-            ->where('student_id', $student->id)
-            ->whereIn('school_year', $settingsService->getCurrentSchoolYearVariants())
-            ->where('semester', $semester)
             ->latest('id')
             ->first();
+
+        if ($validated['template'] === 'certificate_of_enrollment' && $enrollment === null) {
+            throw ValidationException::withMessages([
+                'student_id' => 'A certificate of enrollment can only be generated for a student with a completed current enrollment.',
+            ]);
+        }
+
         $classEnrollments = $student->classEnrollments()
             ->with(['class.subject', 'class.schedules.room'])
+            ->where('status', true)
             ->whereHas('class', function ($query) use ($settingsService, $semester): void {
                 $query->whereIn('school_year', $settingsService->getCurrentSchoolYearVariants())
                     ->where('semester', $semester);

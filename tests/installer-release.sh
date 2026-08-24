@@ -67,6 +67,8 @@ else
         printf 'Expected the first edge deployment to be interrupted.\n' >&2
         exit 1
     fi
+    sed -i 's/^MAIL_FROM_ADDRESS=.*/MAIL_FROM_ADDRESS=no-reply@localhost/' \
+        "$state_directory/runtime/runtime.env"
     unset KOAKADEMY_INSTALLER_TEST_FAIL_FIRST_STACK
     export KOAKADEMY_INSTALLER_TEST_SOURCE_SHA="$source_sha"
     bash "$bootstrap_directory/install.sh" edge
@@ -81,6 +83,8 @@ if [[ "$channel" == edge ]]; then
     grep -Fq 'KOAKADEMY_DIRECT_ACCESS=true' "$state_directory/runtime/runtime.env"
     grep -Fq 'KOAKADEMY_PUBLIC_PORT=8000' "$state_directory/runtime/runtime.env"
     grep -Fq 'APP_URL=http://127.0.0.1:8000' "$state_directory/runtime/runtime.env"
+    grep -Fq 'MAIL_FROM_ADDRESS=no-reply@koakademy.localhost' \
+        "$state_directory/runtime/runtime.env"
     grep -Fq 'KOAKADEMY_IMAGE=ghcr.io/yukazakiri/koakademy:edge-frankenphp' \
         "$state_directory/runtime/runtime.env"
     grep -Fq 'swarm-stack-direct.yml' "$state_directory/docker.log"

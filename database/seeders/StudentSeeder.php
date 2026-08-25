@@ -93,9 +93,9 @@ final class StudentSeeder extends Seeder
                 'academic_year' => $academicYear,
                 'clearance_status' => fake()->randomElement($clearanceStatuses)->value,
                 'contacts' => json_encode(StudentData::randomContacts()),
-                'region_of_origin' => fake()->randomElement(StudentData::philippineRegions()),
-                'province_of_origin' => fake()->randomElement(StudentData::philippineProvinces()),
-                'city_of_origin' => fake()->randomElement(StudentData::philippineCities()),
+                'region_of_origin' => fake()->randomElement(StudentData::sampleRegions()),
+                'province_of_origin' => fake()->randomElement(StudentData::sampleProvinces()),
+                'city_of_origin' => fake()->randomElement(StudentData::sampleCities()),
                 'is_indigenous_person' => fake()->boolean(10),
                 'indigenous_group' => fake()->boolean(10) ? fake()->randomElement([
                     'Igorot', 'Mangyan', 'Tao', 'Badjao', 'Moro', 'Lumad', 'IP', null, null, null,

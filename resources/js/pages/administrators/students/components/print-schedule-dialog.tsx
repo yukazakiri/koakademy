@@ -502,7 +502,7 @@ tfoot td{background:#f0f0f0;font-weight:700}
 <div class="page">
   <div class="header">
     <h1>${orgName}</h1>
-    <p>Laoag City, Ilocos Norte</p>
+    <p>Sample City, Example Province</p>
     <div class="title">Certificate of Enrollment</div>
   </div>
   <div class="info">
@@ -560,7 +560,7 @@ tfoot td{background:#f0f0f0;font-weight:700}
           ? `
   <div class="header">
     <h1>${orgName}</h1>
-    <p>Laoag City, Ilocos Norte</p>
+    <p>Sample City, Example Province</p>
     <div class="title">Class Schedule</div>
   </div>
   <div class="info">
@@ -636,7 +636,7 @@ tfoot td{background:#f0f0f0;font-weight:700}
 <div class="page">
   <div class="header">
     <h1>${orgName}</h1>
-    <p>Laoag City, Ilocos Norte</p>
+    <p>Sample City, Example Province</p>
     <div class="title">${documentTitle}</div>
   </div>
   <div class="info">

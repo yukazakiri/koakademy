@@ -216,9 +216,9 @@ it('exports default program and year-level workbook breakdowns', function (): vo
     ['bsit' => $bsit] = registrarWorkbookFixture();
     Student::query()->where('course_id', $bsit->id)->orderBy('id')->firstOrFail()->update([
         'religion' => 'Roman Catholic',
-        'region_of_origin' => 'National Capital Region',
-        'province_of_origin' => 'Metro Manila',
-        'city_of_origin' => 'Manila',
+        'region_of_origin' => 'Sample Region',
+        'province_of_origin' => 'Example Province',
+        'city_of_origin' => 'Sample City',
     ]);
 
     $report = app(RegistrarAnalyticsService::class)->build([], true);
@@ -309,9 +309,9 @@ it('exports default program and year-level workbook breakdowns', function (): vo
 
         $detailRows = collect($details?->toArray(null, true, true, true) ?? []);
         expect($detailRows->contains(fn (array $row): bool => ($row['U'] ?? null) === 'Roman Catholic'
-            && ($row['AB'] ?? null) === 'National Capital Region'
-            && ($row['AC'] ?? null) === 'Metro Manila'
-            && ($row['AD'] ?? null) === 'Manila'))->toBeTrue();
+            && ($row['AB'] ?? null) === 'Sample Region'
+            && ($row['AC'] ?? null) === 'Example Province'
+            && ($row['AD'] ?? null) === 'Sample City'))->toBeTrue();
 
     } finally {
         @unlink($path);

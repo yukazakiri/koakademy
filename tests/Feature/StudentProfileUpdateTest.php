@@ -74,7 +74,7 @@ it('returns privacy-safe school options for the student profile', function (): v
     ];
 
     if (Schema::hasColumn('student_education_info', 'elementary_school_address')) {
-        $education['elementary_school_address'] = 'Davao City';
+        $education['elementary_school_address'] = 'Sample City';
     }
 
     DB::table('student_education_info')->insert($education);
@@ -88,7 +88,7 @@ it('returns privacy-safe school options for the student profile', function (): v
 
     $response->assertOk()->assertJsonFragment([
         'name' => 'Privacy Test Academy',
-        'address' => Schema::hasColumn('student_education_info', 'elementary_school_address') ? 'Davao City' : null,
+        'address' => Schema::hasColumn('student_education_info', 'elementary_school_address') ? 'Sample City' : null,
     ]);
 
     expect($response->json('0'))->toHaveKeys(['name', 'address'])
@@ -186,7 +186,7 @@ it('can update student profile information', function (): void {
                 'family_address' => 'Family Address',
             ],
             'personal_info' => [
-                'birthplace' => 'Davao City',
+                'birthplace' => 'Sample City',
                 'citizenship' => 'Filipino',
                 'height' => '170',
                 'weight' => '65',
@@ -194,9 +194,9 @@ it('can update student profile information', function (): void {
                 'permanent_address' => 'Permanent Address',
             ],
             'ethnicity' => 'Cebuano',
-            'city_of_origin' => 'Davao City',
-            'province_of_origin' => 'Davao del Sur',
-            'region_of_origin' => 'Region XI',
+            'city_of_origin' => 'Sample City',
+            'province_of_origin' => 'Example Province',
+            'region_of_origin' => 'Sample Region',
             'is_indigenous_person' => false,
             'is_pwd' => false,
             'is_solo_parent' => false,
@@ -251,7 +251,7 @@ it('can update student profile information', function (): void {
     expect($this->student->studentParentInfo->guardian_name)->toBe('Guardian Name');
     expect($this->student->studentEducationInfo->college_school)->toBe('Previous College');
     expect($this->student->studentContactsInfo->twitter)->toBe('https://x.com/student');
-    expect($this->student->personalInfo?->birthplace ?? $this->student->personalInfo?->place_of_birth)->toBe('Davao City');
+    expect($this->student->personalInfo?->birthplace ?? $this->student->personalInfo?->place_of_birth)->toBe('Sample City');
     expect($this->student->ethnicity)->toBe('Cebuano');
     expect($this->student->family_income_bracket)->toBe('below_250k');
     expect($this->student->profile_reporting_confirmed_at)->not->toBeNull();
@@ -468,7 +468,7 @@ it('does not share the completion banner when important student information is c
             'last_name' => 'Student',
             'email' => 'complete_student@example.com',
             'phone' => '+63 912 345 6789',
-            'address' => 'Davao City, Davao del Sur',
+            'address' => '123 Example Street, Sample City',
             'civil_status' => 'single',
             'nationality' => 'Filipino',
             'religion' => 'Roman Catholic',
@@ -482,11 +482,11 @@ it('does not share the completion banner when important student information is c
                 'personal_contact' => '+63 912 345 6789',
             ],
             'education' => [
-                'elementary_school' => 'Davao Central Elementary School',
+                'elementary_school' => 'Sample Central Elementary School',
                 'elementary_year_graduated' => '2016',
-                'high_school' => 'Davao National High School',
+                'high_school' => 'Sample National High School',
                 'high_school_year_graduated' => '2020',
-                'senior_high_school' => 'Davao Senior High School',
+                'senior_high_school' => 'Sample Senior High School',
                 'senior_high_year_graduated' => '2022',
             ],
             'parents' => [
@@ -497,15 +497,15 @@ it('does not share the completion banner when important student information is c
                 'guardian_contact' => '+63 912 345 6789',
             ],
             'personal_info' => [
-                'birthplace' => 'Davao City',
+                'birthplace' => 'Sample City',
                 'citizenship' => 'Filipino',
-                'current_address' => 'Davao City, Davao del Sur',
-                'permanent_address' => 'Davao City, Davao del Sur',
+                'current_address' => '123 Example Street, Sample City',
+                'permanent_address' => '456 Sample Avenue, Example City',
             ],
             'ethnicity' => 'Cebuano',
-            'city_of_origin' => 'Davao City',
-            'province_of_origin' => 'Davao del Sur',
-            'region_of_origin' => 'Region XI',
+            'city_of_origin' => 'Sample City',
+            'province_of_origin' => 'Example Province',
+            'region_of_origin' => 'Sample Region',
             'income_bracket_mode' => 'annual',
             'use_same_parent_income' => true,
             'family_income_bracket' => 'below_250k',

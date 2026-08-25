@@ -109,7 +109,7 @@ const SAMPLE_SCHOOL = {
     logo: "",
     contact: "(074) 444-5389",
     email: "registrar@koakademy.edu",
-    address: "118 Bonifacio Street · Baguio City",
+    address: "123 Example Street · Sample City",
 };
 
 const SAMPLE_SUBJECTS = [

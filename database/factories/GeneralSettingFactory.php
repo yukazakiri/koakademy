@@ -31,7 +31,7 @@ final class GeneralSettingFactory extends Factory
             'analytics_script' => null,
             'analytics_settings' => [],
             'seo_title' => 'KoAkademy',
-            'seo_keywords' => 'education, college, cabuyao, laguna, philippines',
+            'seo_keywords' => 'education, college, sample campus, example city',
             'seo_metadata' => [
                 'description' => 'KoAkademy Administrative System',
                 'keywords' => ['education', 'college', 'admin'],

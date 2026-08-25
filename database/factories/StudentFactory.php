@@ -66,9 +66,9 @@ final class StudentFactory extends Factory
             'academic_year' => $academicYear,
             'clearance_status' => ClearanceStatus::CLEARED->value,
             'contacts' => json_encode(StudentData::randomContacts()),
-            'region_of_origin' => $this->faker->randomElement(StudentData::philippineRegions()),
-            'province_of_origin' => $this->faker->randomElement(StudentData::philippineProvinces()),
-            'city_of_origin' => $this->faker->randomElement(StudentData::philippineCities()),
+            'region_of_origin' => $this->faker->randomElement(StudentData::sampleRegions()),
+            'province_of_origin' => $this->faker->randomElement(StudentData::sampleProvinces()),
+            'city_of_origin' => $this->faker->randomElement(StudentData::sampleCities()),
             'is_indigenous_person' => $this->faker->boolean(10),
             'indigenous_group' => $this->faker->boolean(10) ? $this->faker->randomElement([
                 'Igorot',

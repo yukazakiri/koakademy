@@ -85,21 +85,21 @@ it('finds senior high autocomplete values from compatible senior high school col
     $hasSeniorHighName = Schema::hasColumn('student_education_info', 'senior_high_name');
 
     insertStudentEducationHistory([
-        ($hasLegacySeniorHighSchool ? 'senior_high_school' : 'senior_high_name') => 'Baguio Legacy Senior High School',
+        ($hasLegacySeniorHighSchool ? 'senior_high_school' : 'senior_high_name') => 'Sample Legacy Senior High School',
     ]);
     insertStudentEducationHistory([
-        ($hasSeniorHighName ? 'senior_high_name' : 'senior_high_school') => 'University of Baguio Senior High',
+        ($hasSeniorHighName ? 'senior_high_name' : 'senior_high_school') => 'Sample University Senior High',
     ]);
 
     $response = actingAs($user)->getJson(route('administrators.students.field-values', [
         'field' => 'senior_high_name',
-        'search' => 'baguio',
+        'search' => 'sample',
     ]));
 
     $response
         ->assertOk()
-        ->assertJsonFragment(['Baguio Legacy Senior High School'])
-        ->assertJsonFragment(['University of Baguio Senior High']);
+        ->assertJsonFragment(['Sample Legacy Senior High School'])
+        ->assertJsonFragment(['Sample University Senior High']);
 });
 
 it('returns school autocomplete options with paired addresses', function (): void {
@@ -109,20 +109,20 @@ it('returns school autocomplete options with paired addresses', function (): voi
         : 'senior_high_school';
 
     insertStudentEducationHistory([
-        $seniorHighColumn => 'Baguio City National High School',
-        'senior_high_address' => 'Governor Pack Road, Baguio City',
+        $seniorHighColumn => 'Sample City National High School',
+        'senior_high_address' => '123 Example Road, Sample City',
     ]);
 
     $response = actingAs($user)->getJson(route('administrators.students.education-school-options', [
         'field' => 'senior_high_name',
-        'search' => 'baguio',
+        'search' => 'sample',
     ]));
 
     $response->assertOk();
 
     if (! Schema::hasColumn('student_education_info', 'senior_high_address')) {
         $response->assertJsonFragment([
-            'name' => 'Baguio City National High School',
+            'name' => 'Sample City National High School',
             'address' => null,
         ]);
 
@@ -130,8 +130,8 @@ it('returns school autocomplete options with paired addresses', function (): voi
     }
 
     $response->assertJsonFragment([
-        'name' => 'Baguio City National High School',
-        'address' => 'Governor Pack Road, Baguio City',
+        'name' => 'Sample City National High School',
+        'address' => '123 Example Road, Sample City',
     ]);
 });
 
@@ -159,7 +159,7 @@ it('stores related student information from the create page', function (): void 
             'mothers_name' => 'Maria Dela Cruz',
             'current_address' => '123 Current Street',
             'permanent_address' => '456 Permanent Street',
-            'birthplace' => 'Manila',
+            'birthplace' => 'Sample City',
             'elementary_school' => 'Sample Elementary School',
             'elementary_graduate_year' => '2016',
             'elementary_school_address' => 'Elementary Address',
@@ -170,9 +170,9 @@ it('stores related student information from the create page', function (): void 
             'senior_high_graduate_year' => '2022',
             'senior_high_address' => 'Senior High Address',
             'ethnicity' => 'Tagalog',
-            'region_of_origin' => 'NCR',
-            'province_of_origin' => 'Metro Manila',
-            'city_of_origin' => 'Manila',
+            'region_of_origin' => 'Sample Region',
+            'province_of_origin' => 'Example Province',
+            'city_of_origin' => 'Sample City',
             'is_indigenous_person' => false,
             'scholarship_type' => 'none',
             'employment_status' => 'not_applicable',
@@ -241,7 +241,7 @@ it('stores related student information from the create page', function (): void 
     $birthplaceColumn = Schema::hasColumn('students_personal_info', 'birthplace') ? 'birthplace' : 'place_of_birth';
 
     expect($personal)->not->toBeNull()
-        ->and($personal->{$birthplaceColumn})->toBe('Manila');
+        ->and($personal->{$birthplaceColumn})->toBe('Sample City');
 
     if (Schema::hasColumn('students_personal_info', 'current_adress')) {
         expect($personal->current_adress)->toBe('123 Current Street');

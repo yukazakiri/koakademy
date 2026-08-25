@@ -66,7 +66,7 @@ final class StudentProfileCompletionService
             ['key' => 'last_name', 'label' => 'Last name', 'section' => 'personal', 'value' => $student->last_name, 'example' => 'Dela Cruz'],
             ['key' => 'email', 'label' => 'Student email', 'section' => 'personal', 'value' => $student->email, 'example' => 'juan@example.com'],
             ['key' => 'phone', 'label' => 'Phone number', 'section' => 'personal', 'value' => $student->phone, 'example' => '+63 912 345 6789'],
-            ['key' => 'address', 'label' => 'Home address', 'section' => 'personal', 'value' => $student->address, 'example' => 'Davao City, Davao del Sur'],
+            ['key' => 'address', 'label' => 'Home address', 'section' => 'personal', 'value' => $student->address, 'example' => '123 Example Street, Sample City'],
             ['key' => 'birth_date', 'label' => 'Birth date', 'section' => 'personal', 'value' => $student->birth_date],
             ['key' => 'gender', 'label' => 'Gender', 'section' => 'personal', 'value' => $student->gender],
             ['key' => 'civil_status', 'label' => 'Civil status', 'section' => 'personal', 'value' => $student->civil_status],

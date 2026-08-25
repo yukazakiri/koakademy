@@ -30,7 +30,7 @@ beforeEach(function (): void {
     ]);
 
     $siteSettings = app(SiteSettings::class);
-    $siteSettings->organization_address = '118 Bonifacio Street, Baguio City';
+    $siteSettings->organization_address = '123 Example Street, Sample City';
     $siteSettings->save();
 
     $this->school = School::factory()->create();
@@ -256,7 +256,7 @@ it('returns an inline branded PDF with current program schedules grouped for pri
     $thirdYearRows = collect($groups->get('3')['section_groups'][0]['rows']);
 
     expect($viewData['school']['name'])->toBe('Data Center College of the Philippines')
-        ->and($viewData['school']['address'])->toBe('118 Bonifacio Street, Baguio City')
+        ->and($viewData['school']['address'])->toBe('123 Example Street, Sample City')
         ->and($viewData['school']['phone'])->toBe('442-4160')
         ->and($viewData['course']['code'])->toBe('BSHM')
         ->and($viewData['semester_label'])->toBe('1st Semester')

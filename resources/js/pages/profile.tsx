@@ -1000,7 +1000,7 @@ export default function ProfilePage() {
                                                             </div>
                                                             <p className="text-muted-foreground mt-1 text-xs leading-relaxed break-words">
                                                                 Keep official contact details clear with examples like +63 912 345 6789, Juan Dela
-                                                                Cruz, Mother, Davao City, and 2024.
+                                                                Cruz, Mother, Sample City, and 2024.
                                                             </p>
                                                         </div>
                                                         <TabsList className="bg-muted/20 grid h-auto w-full grid-cols-2 gap-1 rounded-lg p-1 sm:grid-cols-5">

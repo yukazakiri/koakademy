@@ -79,7 +79,7 @@ final class StudentRelatedTablesSeeder extends Seeder
         // Students Personal Info
         $personalInfos = [
             [
-                'place_of_birth' => 'Manila, Philippines',
+                'place_of_birth' => 'Sample City, Sample Country',
                 'citizenship' => 'Filipino',
                 'blood_type' => 'O+',
                 'height' => 170.50,
@@ -90,7 +90,7 @@ final class StudentRelatedTablesSeeder extends Seeder
                 'special_skills' => 'Web Development, Graphic Design',
             ],
             [
-                'place_of_birth' => 'Quezon City, Philippines',
+                'place_of_birth' => 'Example City, Sample Country',
                 'citizenship' => 'Filipino',
                 'blood_type' => 'A+',
                 'height' => 155.00,
@@ -101,7 +101,7 @@ final class StudentRelatedTablesSeeder extends Seeder
                 'special_skills' => 'Event Planning, Public Speaking',
             ],
             [
-                'place_of_birth' => 'Makati City, Philippines',
+                'place_of_birth' => 'Demo City, Sample Country',
                 'citizenship' => 'Filipino',
                 'blood_type' => 'B+',
                 'height' => 175.00,
@@ -128,7 +128,7 @@ final class StudentRelatedTablesSeeder extends Seeder
                 'mother_occupation' => 'Elementary Teacher',
                 'mother_contact' => '09181234567',
                 'mother_email' => 'jane.doe@email.com',
-                'family_address' => '123 Main Street, Quezon City, Metro Manila',
+                'family_address' => '123 Example Street, Sample City, Example Province',
             ],
             [
                 'father_name' => 'Pedro Santos',
@@ -139,7 +139,7 @@ final class StudentRelatedTablesSeeder extends Seeder
                 'mother_occupation' => 'Registered Nurse',
                 'mother_contact' => '09191234568',
                 'mother_email' => 'carmen.santos@email.com',
-                'family_address' => '456 Oak Avenue, Makati City, Metro Manila',
+                'family_address' => '456 Demo Avenue, Example City, Example Province',
             ],
             [
                 'father_name' => 'Dr. Miguel Garcia',
@@ -150,7 +150,7 @@ final class StudentRelatedTablesSeeder extends Seeder
                 'mother_occupation' => 'Lawyer',
                 'mother_contact' => '09201234569',
                 'mother_email' => 'ana.garcia@email.com',
-                'family_address' => '789 Pine Street, Pasig City, Metro Manila',
+                'family_address' => '789 Sample Road, Demo City, Example Province',
             ],
         ];
 
@@ -161,25 +161,25 @@ final class StudentRelatedTablesSeeder extends Seeder
         // Student Education Info
         $educationInfos = [
             [
-                'elementary_school' => 'Manila Elementary School',
+                'elementary_school' => 'Sample Elementary School',
                 'elementary_year_graduated' => '2015',
-                'high_school' => 'Quezon City High School',
+                'high_school' => 'Sample High School',
                 'high_school_year_graduated' => '2019',
                 'senior_high_school' => 'KoAkademy Senior High School',
                 'senior_high_year_graduated' => '2021',
             ],
             [
-                'elementary_school' => 'Makati Elementary School',
+                'elementary_school' => 'Example Elementary School',
                 'elementary_year_graduated' => '2014',
-                'high_school' => 'Makati Science High School',
+                'high_school' => 'Example Science High School',
                 'high_school_year_graduated' => '2018',
                 'senior_high_school' => 'KoAkademy Senior High School',
                 'senior_high_year_graduated' => '2020',
             ],
             [
-                'elementary_school' => 'Pasig Elementary School',
+                'elementary_school' => 'Demo Elementary School',
                 'elementary_year_graduated' => '2016',
-                'high_school' => 'Pasig Catholic High School',
+                'high_school' => 'Demo Catholic High School',
                 'high_school_year_graduated' => '2020',
                 'senior_high_school' => 'KoAkademy Senior High School',
                 'senior_high_year_graduated' => '2022',

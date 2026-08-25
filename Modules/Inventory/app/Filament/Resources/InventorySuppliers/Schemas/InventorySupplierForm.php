@@ -63,12 +63,12 @@ final class InventorySupplierForm
                         TextInput::make('city')
                             ->label('City')
                             ->maxLength(255)
-                            ->placeholder('e.g., Manila'),
+                            ->placeholder('e.g., Sample City'),
 
                         TextInput::make('state')
                             ->label('State/Province')
                             ->maxLength(255)
-                            ->placeholder('e.g., Metro Manila'),
+                            ->placeholder('e.g., Example Province'),
 
                         TextInput::make('postal_code')
                             ->label('Postal Code')
@@ -78,7 +78,7 @@ final class InventorySupplierForm
                         TextInput::make('country')
                             ->label('Country')
                             ->maxLength(255)
-                            ->placeholder('e.g., Philippines')
+                            ->placeholder('e.g., Sample Country')
                             ->default('Philippines'),
                     ]),
 

@@ -32,7 +32,7 @@ export function ReportContent({ data }: ReportContentProps) {
                     {school?.name || "KoAkademy"}
                 </h1>
                 <div style={{ fontSize: "8pt", color: "#333", marginBottom: 2 }}>
-                    {school?.address || "118 Bonifacio Street, Holyghost Proper, Baguio City"}
+                    {school?.address || "123 Example Street, Sample City"}
                 </div>
                 <div style={{ fontSize: "8pt", color: "#333" }}>
                     Tel: {school?.contact || "444-5389/442-4160"}

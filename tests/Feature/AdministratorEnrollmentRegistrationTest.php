@@ -52,7 +52,7 @@ it('creates a student applicant from the online enrollment form', function (): v
         'religion' => 'Roman Catholic',
         'email' => 'juan.cruz@example.com',
         'phone' => '09171234567',
-        'address' => 'Purok 1, Brgy. Example, Davao City',
+        'address' => '123 Example Street, Sample City',
         'contacts' => [
             'personal_contact' => '09179998888',
             'emergency_contact_name' => 'Maria Cruz',

@@ -83,7 +83,7 @@
         <div class="header">
             <img src="{{ $logo }}" alt="College Logo">
             <h1>{{ app(\App\Settings\SiteSettings::class)->getOrganizationName() }}</h1>
-            <p>{{ app(\App\Settings\SiteSettings::class)->getOrganizationAddress() ?? '118 Bonifacio Street, Holyghost Proper, Baguio City' }}</p>
+            <p>{{ app(\App\Settings\SiteSettings::class)->getOrganizationAddress() ?? '123 Example Street, Sample City' }}</p>
             <p>Tel No. {{ app(\App\Settings\SiteSettings::class)->getSupportPhone() ?? '444-5389/442-4160' }}</p>
         </div>
         <div class="title">
@@ -119,7 +119,7 @@
         <div class="content">
             <p>This certification is issued upon the request of the aforementioned student for NCIP purposes only.</p>
             <p>Issued this {{ \Carbon\Carbon::now()->format('jS') }} day of {{ \Carbon\Carbon::now()->format('F, Y') }}
-                at Baguio City Philippines</p>
+                at Sample City, Example Country</p>
         </div>
         <div class="footer">
             <p>Jocelyn M. Pilacun</p>

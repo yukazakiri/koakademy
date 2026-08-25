@@ -2,6 +2,56 @@
 set -e
 
 container_mode=${CONTAINER_MODE:-"http"}
+
+# Dokploy/Compose environment editors sometimes persist values with their
+# surrounding quotes included (for example, the literal value `"false"`).
+# Normalize the small set of startup/runtime values before Laravel reads them;
+# otherwise `APP_DEBUG="false"` becomes truthy and `AUTO_MIGRATE="true"`
+# fails the strict startup boolean check.
+strip_optional_quotes() {
+    value="$1"
+
+    case "${value}" in
+        \"*\") value=${value#\"}; value=${value%\"} ;;
+        \'*\') value=${value#\'}; value=${value%\'} ;;
+    esac
+
+    printf '%s' "${value}"
+}
+
+normalize_environment_value() {
+    variable_name="$1"
+    variable_value=$(strip_optional_quotes "$2")
+    export "${variable_name}=${variable_value}"
+}
+
+normalize_environment_value APP_ENV "${APP_ENV:-production}"
+normalize_environment_value APP_DEBUG "${APP_DEBUG:-false}"
+
+if [ -n "${DEBUGBAR_ENABLED+x}" ]; then
+    normalize_environment_value DEBUGBAR_ENABLED "${DEBUGBAR_ENABLED}"
+fi
+
+for variable_name in DB_CONNECTION DB_HOST DB_PORT DB_DATABASE DB_USERNAME DB_PASSWORD \
+    CACHE_STORE SESSION_DRIVER \
+    QUEUE_CONNECTION HORIZON_ENABLED REDIS_HOST REDIS_PORT REDIS_PASSWORD \
+    RUN_DOCKER_SCRIPTS RUN_SCOUT_SETTINGS RUN_OPTIMIZE FORCE_OPTIMIZE_CLEAR \
+    SCOUT_AUTO_DETECT RUN_SCOUT_INDEX PULSE_ENABLED PULSE_STORAGE_DRIVER \
+    PULSE_RUN_MIGRATIONS PULSE_AUTO_CREATE_DATABASE PULSE_PURGE_ON_START \
+    TELESCOPE_ENABLED NIGHTWATCH_ENABLED LOG_LEVEL; do
+    eval "variable_value=\${${variable_name}:-}"
+    [ -n "${variable_value}" ] && normalize_environment_value "${variable_name}" "${variable_value}"
+done
+
+if [ -n "${AUTO_MIGRATE+x}" ]; then
+    normalize_environment_value AUTO_MIGRATE "${AUTO_MIGRATE}"
+fi
+
+if [ -n "${RUN_MIGRATIONS+x}" ]; then
+    normalize_environment_value RUN_MIGRATIONS "${RUN_MIGRATIONS}"
+fi
+
+container_mode=$(strip_optional_quotes "${container_mode}")
 app_env=$(printf '%s' "${APP_ENV:-production}" | tr '[:upper:]' '[:lower:]')
 database_connection=$(printf '%s' "${DB_CONNECTION:-}" | tr '[:upper:]' '[:lower:]')
 
@@ -48,6 +98,7 @@ schedule_scout_settings_post_start() {
 # PULSE_RUN_MIGRATIONS: Run the Pulse migration against its own connection. Default "true".
 # PULSE_PURGE_ON_START: Drain pending ingest records and clear Pulse storage before boot. Default "true".
 auto_migrate=${AUTO_MIGRATE:-${RUN_MIGRATIONS:-"true"}}
+auto_migrate=$(strip_optional_quotes "${auto_migrate}")
 production_seeders=${PRODUCTION_SEEDERS:-""}
 run_docker_scripts=${RUN_DOCKER_SCRIPTS:-"false"}
 run_scout_settings=${RUN_SCOUT_SETTINGS:-"true"}

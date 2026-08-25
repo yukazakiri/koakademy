@@ -114,6 +114,13 @@ it('gives AUTO_MIGRATE precedence over the legacy migration setting', function (
         ->and($disabled['migrations'])->toBe('');
 });
 
+it('normalizes Dokploy values that contain surrounding quotes', function (): void {
+    $quoted = runDockerMigrationDecision('"true"', '"false"');
+
+    expect($quoted['migrations'])->toBe('artisan migrate --force --no-interaction')
+        ->and($quoted['output'])->not->toContain('Database migrations disabled, skipping.');
+});
+
 it('authenticates before checking a password-protected Redis service', function (): void {
     $source = file_get_contents(base_path('docker/start-container'));
 

@@ -20,6 +20,7 @@ use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\Subject;
 use App\Models\User;
+use App\Services\CurriculumCapabilityResolver;
 use App\Services\EnrollmentPipelineService;
 use App\Services\EnrollmentService;
 use App\Services\GeneralSettingsService;
@@ -44,7 +45,7 @@ use Throwable;
 
 final class EnrollmentRegistrationController extends Controller
 {
-    public function create(): Response
+    public function create(CurriculumCapabilityResolver $capabilityResolver): Response
     {
         $generalSettings = app(GeneralSettingsService::class)->getGlobalSettingsModel();
         $configuredEnrollmentCourseIds = collect($generalSettings?->enrollment_courses ?? [])
@@ -62,6 +63,36 @@ final class EnrollmentRegistrationController extends Controller
             ]);
         }
 
+        $tesdaCourseFilter = function ($query): void {
+            $query->where(function ($query): void {
+                $query->where('curriculum_kind', 'tesda_qualification')
+                    ->orWhere(function ($legacyQuery): void {
+                        $legacyQuery
+                            ->where(function ($kindQuery): void {
+                                $kindQuery->whereIn('curriculum_kind', ['legacy', ''])->orWhereNull('curriculum_kind');
+                            })
+                            ->whereHas('department', fn ($departmentQuery) => $departmentQuery->whereRaw('UPPER(TRIM(code)) = ?', ['TESDA']));
+                    });
+            });
+        };
+
+        $collegeCourseFilter = function ($query): void {
+            $query->where(function ($query): void {
+                $query->where('curriculum_kind', 'program')
+                    ->orWhere(function ($legacyQuery): void {
+                        $legacyQuery
+                            ->where(function ($kindQuery): void {
+                                $kindQuery->whereIn('curriculum_kind', ['legacy', ''])->orWhereNull('curriculum_kind');
+                            })
+                            ->where(function ($departmentQuery): void {
+                                $departmentQuery
+                                    ->whereNull('department_id')
+                                    ->orWhereHas('department', fn ($query) => $query->whereRaw('UPPER(TRIM(code)) != ?', ['TESDA']));
+                            });
+                    });
+            });
+        };
+
         $courses = Course::query()
             ->where('is_active', true)
             ->with('department')
@@ -69,8 +100,12 @@ final class EnrollmentRegistrationController extends Controller
                 $configuredEnrollmentCourseIds->isNotEmpty(),
                 fn ($query) => $query->whereIn('id', $configuredEnrollmentCourseIds)
             )
-            ->when(! $tesdaEnabled, fn ($q) => $q->whereHas('department', fn ($q) => $q->whereRaw('UPPER(TRIM(code)) != ?', ['TESDA'])))
-            ->when(! $collegeEnabled, fn ($q) => $q->whereHas('department', fn ($q) => $q->whereRaw('UPPER(TRIM(code)) = ?', ['TESDA'])))
+            ->where(function ($query) use ($collegeCourseFilter, $tesdaCourseFilter): void {
+                $collegeCourseFilter($query);
+                $query->orWhere(fn ($query) => $tesdaCourseFilter($query));
+            })
+            ->when(! $tesdaEnabled, fn ($query) => $query->where(fn ($query) => $collegeCourseFilter($query)))
+            ->when(! $collegeEnabled, fn ($query) => $query->where(fn ($query) => $tesdaCourseFilter($query)))
             ->orderBy('title')
             ->get();
 
@@ -119,6 +154,16 @@ final class EnrollmentRegistrationController extends Controller
                 'department' => $course->department?->code,
                 'department_name' => $course->department?->name,
                 'description' => $course->description,
+                'curriculum_kind' => $capabilityResolver->kindForCourse($course),
+                'curriculum_stage' => $course->curriculum_stage,
+                'curriculum_framework' => $course->curriculum_framework,
+                'qualification_level' => $course->qualification_level,
+                'duration_hours' => $course->duration_hours,
+                'tesda_program_type' => $course->tesda_program_type,
+                'duration_years' => $course->duration_years,
+                'internship_hours' => $course->internship_hours,
+                'bundled_qualifications' => $course->bundled_qualifications,
+                'advanced_topics' => $course->advanced_topics,
             ])->all(),
             'flash' => session('flash'),
             'college_enrollment_enabled' => $collegeEnabled,
@@ -130,7 +175,7 @@ final class EnrollmentRegistrationController extends Controller
         ]);
     }
 
-    public function store(StoreEnrollmentRegistrationRequest $request, GeneralSettingsService $settings, EnrollmentWorkflowCoordinator $workflowCoordinator): RedirectResponse
+    public function store(StoreEnrollmentRegistrationRequest $request, GeneralSettingsService $settings, EnrollmentWorkflowCoordinator $workflowCoordinator, CurriculumCapabilityResolver $capabilityResolver): RedirectResponse
     {
         $payload = $request->validated();
         $studentTypeValue = $payload['student_type'] ?? '';
@@ -154,7 +199,20 @@ final class EnrollmentRegistrationController extends Controller
         };
 
         $courseId = (int) $payload['course_id'];
-        $course = Course::query()->findOrFail($courseId);
+        $course = Course::query()->with('department')->findOrFail($courseId);
+        $courseKind = $capabilityResolver->kindForCourse($course);
+
+        if ($studentTypeValue === 'tesda' && $courseKind !== 'tesda_qualification') {
+            return redirect()->back()->with('flash', [
+                'error' => 'TESDA applicants must select a TESDA course/program.',
+            ]);
+        }
+
+        if ($studentTypeValue === 'college' && $courseKind !== 'program') {
+            return redirect()->back()->with('flash', [
+                'error' => 'The selected program is not available for the chosen enrollment path.',
+            ]);
+        }
         if (Feature::active(\App\Features\DynamicEnrollmentPolicies::class)) {
             $compiled = app(EnrollmentPolicyResolver::class)->resolve(new EnrollmentContext(
                 schoolId: $course->school_id === null ? $this->resolveSiteSchoolId() : (int) $course->school_id,
@@ -190,12 +248,6 @@ final class EnrollmentRegistrationController extends Controller
         if ($configuredEnrollmentCourseIds->isNotEmpty() && ! $configuredEnrollmentCourseIds->contains($courseId)) {
             return redirect()->back()->with('flash', [
                 'error' => 'The selected course is currently unavailable for new applicant enrollment.',
-            ]);
-        }
-
-        if ($studentType === StudentType::TESDA && mb_strtoupper(mb_trim((string) ($course->department?->code ?? ''))) !== 'TESDA') {
-            return redirect()->back()->with('flash', [
-                'error' => 'TESDA applicants must select a TESDA course/program.',
             ]);
         }
 

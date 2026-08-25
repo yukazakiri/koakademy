@@ -33,6 +33,53 @@ it('can view enrollment page', function () {
         ->assertInertia(fn (Assert $page) => $page->where('school_name', 'KoAkademy'));
 });
 
+it('lists metadata-based TESDA qualifications without a TESDA department', function (): void {
+    $course = Course::factory()->create([
+        'code' => 'CSS-NC2',
+        'title' => 'Computer System Servicing NC II',
+        'department_id' => null,
+        'curriculum_kind' => 'tesda_qualification',
+        'qualification_level' => 'NC II',
+        'duration_hours' => 280,
+        'is_active' => true,
+    ]);
+
+    $this->get(route('enrollment.create'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page): Assert => $page
+            ->where('courses', fn ($courses): bool => collect($courses)->contains(fn (array $item): bool => $item['id'] === $course->id
+                && $item['curriculum_kind'] === 'tesda_qualification'
+                && $item['qualification_level'] === 'NC II'))
+        );
+});
+
+it('exposes TESDA diploma metadata to public enrollment choices', function (): void {
+    $course = Course::factory()->create([
+        'code' => 'DCA-DIP',
+        'title' => 'Diploma in Culinary Arts',
+        'department_id' => null,
+        'curriculum_kind' => 'tesda_qualification',
+        'tesda_program_type' => 'diploma',
+        'qualification_level' => 'Diploma',
+        'duration_hours' => 1200,
+        'duration_years' => 1,
+        'internship_hours' => 600,
+        'bundled_qualifications' => ['Cookery NC II', 'Bread & Pastry Production NC II'],
+        'advanced_topics' => 'Advanced culinary techniques.',
+        'is_active' => true,
+    ]);
+
+    $this->get(route('enrollment.create'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page): Assert => $page
+            ->where('courses', fn ($courses): bool => collect($courses)->contains(fn (array $item): bool => $item['id'] === $course->id
+                && $item['tesda_program_type'] === 'diploma'
+                && $item['duration_hours'] === 1200
+                && $item['internship_hours'] === 600
+                && $item['bundled_qualifications'] === ['Cookery NC II', 'Bread & Pastry Production NC II']))
+        );
+});
+
 it('uses the configured school name on the enrollment privacy notice', function () {
     School::factory()->inactive()->create(['name' => 'Archived School']);
     School::factory()->create(['name' => 'KoAkademy Main Campus', 'is_active' => true]);

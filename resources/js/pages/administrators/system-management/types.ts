@@ -60,6 +60,18 @@ export interface School {
     is_active: boolean;
 }
 
+export interface CurriculumCapability {
+    id: string;
+    persisted_id: number | null;
+    school_level: string;
+    school_level_label: string;
+    curriculum_framework: string;
+    framework_label: string;
+    reference: string;
+    is_enabled: boolean;
+    is_derived: boolean;
+}
+
 export interface SeoMetadata {
     robots?: string;
     og_image?: string;
@@ -387,6 +399,7 @@ export interface SystemManagementPageProps {
     general_settings: GeneralSettings;
     active_school: School | null;
     schools: School[];
+    curriculum_capabilities?: CurriculumCapability[];
     sanity_config: SanityConfig;
     socialite_config: SocialiteConfig;
     mail_config: MailConfig;

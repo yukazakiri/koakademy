@@ -79,6 +79,31 @@ it('displays active and inactive courses correctly on student create page', func
         );
 });
 
+it('groups metadata-based TESDA qualifications for TESDA student creation', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $course = Course::factory()->create([
+        'code' => 'CSS-NC2',
+        'title' => 'Computer System Servicing NC II',
+        'department_id' => null,
+        'curriculum_kind' => 'tesda_qualification',
+        'qualification_level' => 'NC II',
+        'duration_hours' => 280,
+    ]);
+
+    actingAs($user)
+        ->get(portalUrlForAdministrators('/administrators/students/create'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->where('options.courses', function ($groups) use ($course): bool {
+                $tesdaGroup = collect($groups)->firstWhere('pathway', 'tesda_qualification');
+                $item = collect($tesdaGroup['items'] ?? [])->firstWhere('value', $course->id);
+
+                return ($tesdaGroup['label'] ?? null) === 'TESDA — Technical Qualifications'
+                    && ($item['curriculum_kind'] ?? null) === 'tesda_qualification';
+            })
+        );
+});
+
 it('finds senior high autocomplete values from compatible senior high school columns', function (): void {
     $user = User::factory()->create(['role' => UserRole::Admin]);
     $hasLegacySeniorHighSchool = Schema::hasColumn('student_education_info', 'senior_high_school');

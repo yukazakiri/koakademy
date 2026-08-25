@@ -34,6 +34,7 @@ use App\Models\Subject;
 use App\Models\SubjectEnrollment;
 use App\Models\User;
 use App\Notifications\StatementOfAccountAdjustedNotification;
+use App\Services\CurriculumCapabilityResolver;
 use App\Services\GeneralSettingsService;
 use App\Services\IdentifierGenerator;
 use App\Services\StudentIdUpdateService;
@@ -894,15 +895,15 @@ final class AdministratorStudentManagementController extends Controller
         ], 202);
     }
 
-    public function create(): Response
+    public function create(CurriculumCapabilityResolver $capabilityResolver): Response
     {
         return Inertia::render('administrators/students/create', [
             'user' => $this->getUserProps(),
-            'options' => $this->getFormOptions(),
+            'options' => $this->getFormOptions($capabilityResolver),
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request, CurriculumCapabilityResolver $capabilityResolver): RedirectResponse
     {
         $identifierGenerator = app(IdentifierGenerator::class);
 
@@ -1025,6 +1026,22 @@ final class AdministratorStudentManagementController extends Controller
             'employment_date' => ['nullable', 'date'],
             'employed_by_institution' => ['nullable', 'boolean'],
         ]);
+
+        if (($validated['student_type'] ?? null) === StudentType::TESDA->value && isset($validated['course_id'])) {
+            $course = Course::query()->with('department')->find($validated['course_id']);
+
+            if ($course instanceof Course && ! $capabilityResolver->isTesdaCourse($course)) {
+                return back()->withErrors(['course_id' => 'Select a TESDA qualification for a TESDA student.'])->withInput();
+            }
+        }
+
+        if (($validated['student_type'] ?? null) === StudentType::College->value && isset($validated['course_id'])) {
+            $course = Course::query()->with('department')->find($validated['course_id']);
+
+            if ($course instanceof Course && ! $capabilityResolver->isCollegeCourse($course)) {
+                return back()->withErrors(['course_id' => 'Select a college program for a college student.'])->withInput();
+            }
+        }
 
         if (blank($validated['guardian_name'] ?? null) && filled($validated['emergency_contact_name'] ?? null)) {
             $validated['guardian_name'] = $validated['emergency_contact_name'];
@@ -2650,7 +2667,7 @@ final class AdministratorStudentManagementController extends Controller
             ->all();
     }
 
-    private function getFormOptions(): array
+    private function getFormOptions(CurriculumCapabilityResolver $capabilityResolver): array
     {
         return [
             'types' => collect(StudentType::cases())->map(fn ($s): array => ['value' => $s->value, 'label' => $s->getLabel()])->values()->all(),
@@ -2659,22 +2676,39 @@ final class AdministratorStudentManagementController extends Controller
             'employment_statuses' => collect(EmploymentStatus::cases())->map(fn ($s): array => ['value' => $s->value, 'label' => $s->getLabel()])->values()->all(),
             'attrition_categories' => collect(AttritionCategory::cases())->map(fn ($s): array => ['value' => $s->value, 'label' => $s->getLabel()])->values()->all(),
             'courses' => Course::with('department:id,code,name,is_active')
-                ->get(['id', 'code', 'title', 'is_active', 'department_id'])
+                ->get(['id', 'code', 'title', 'is_active', 'department_id', 'curriculum_kind', 'qualification_level', 'duration_hours', 'tesda_program_type', 'duration_years', 'internship_hours', 'bundled_qualifications'])
                 ->sortBy([['is_active', 'desc'], ['code', 'asc']])
-                ->groupBy(fn (Course $course): string => $course->department?->code ?? 'UNASSIGNED')
+                ->groupBy(function (Course $course) use ($capabilityResolver): string {
+                    if ($capabilityResolver->isTesdaCourse($course)) {
+                        return 'TESDA';
+                    }
+
+                    return $course->department?->code ?? 'UNASSIGNED';
+                })
                 ->sortKeys()
-                ->map(function ($courses, string $departmentCode): array {
+                ->map(function ($courses, string $departmentCode) use ($capabilityResolver): array {
                     $department = $courses->first()->department;
-                    $label = $department
+                    $isTesda = $capabilityResolver->isTesdaCourse($courses->first());
+                    $label = $isTesda
+                        ? 'TESDA — Technical Qualifications'
+                        : ($department
                         ? "{$department->code} — {$department->name}".($department->is_active ? '' : ' (Inactive)')
-                        : 'Unassigned';
+                        : 'Unassigned');
 
                     return [
                         'label' => $label,
+                        'pathway' => $isTesda ? 'tesda_qualification' : 'program',
                         'items' => $courses->map(fn (Course $c): array => [
                             'value' => $c->id,
                             'label' => $c->code.' - '.$c->title.($c->is_active ? '' : ' (Inactive)'),
                             'is_active' => $c->is_active,
+                            'curriculum_kind' => $capabilityResolver->kindForCourse($c),
+                            'qualification_level' => $c->qualification_level,
+                            'duration_hours' => $c->duration_hours,
+                            'tesda_program_type' => $c->tesda_program_type,
+                            'duration_years' => $c->duration_years,
+                            'internship_hours' => $c->internship_hours,
+                            'bundled_qualifications' => $c->bundled_qualifications,
                         ])->values()->all(),
                     ];
                 })

@@ -55,6 +55,16 @@ type Course = {
     department: string | null;
     department_name: string | null;
     description: string | null;
+    curriculum_kind: string;
+    curriculum_stage: string | null;
+    curriculum_framework: string | null;
+    qualification_level: string | null;
+    duration_hours: number | null;
+    tesda_program_type: string | null;
+    duration_years: number | string | null;
+    internship_hours: number | null;
+    bundled_qualifications: string[] | null;
+    advanced_topics: string | null;
 };
 
 type FlashSubject = {
@@ -669,10 +679,16 @@ export default function EnrollmentCreate({
     }, [data.student_type]);
 
     const availableDepartments = useMemo(() => {
-        const deptCodesWithCourses = new Set(courses.map((c) => (c.department ?? "").trim().toUpperCase()));
         if (data.student_type === "tesda") {
-            return departments.filter((dept) => dept.code === "TESDA" && deptCodesWithCourses.has(dept.code.toUpperCase()));
+            return courses.some((course) => course.curriculum_kind === "tesda_qualification")
+                ? [{ code: "TESDA", label: "TESDA Qualifications", description: "TESDA Training Regulations" }]
+                : [];
         }
+        const deptCodesWithCourses = new Set(
+            courses
+                .filter((course) => course.curriculum_kind === "program")
+                .map((course) => (course.department ?? "").trim().toUpperCase()),
+        );
         return departments.filter((dept) => dept.code !== "TESDA" && deptCodesWithCourses.has(dept.code.toUpperCase()));
     }, [data.student_type, departments, courses]);
 
@@ -681,13 +697,13 @@ export default function EnrollmentCreate({
         return courses.filter((course) => {
             const courseDepartment = (course.department ?? "").trim().toUpperCase();
             if (data.student_type === "tesda") {
-                return courseDepartment === "TESDA";
+                return course.curriculum_kind === "tesda_qualification";
             }
             // For college: show all non-TESDA courses if no department selected, otherwise filter by department
             if (normalizedDepartment.length === 0) {
-                return courseDepartment !== "TESDA";
+                return course.curriculum_kind === "program";
             }
-            return courseDepartment === normalizedDepartment;
+            return course.curriculum_kind === "program" && courseDepartment === normalizedDepartment;
         });
     }, [courses, data.department, data.student_type]);
 
@@ -2595,6 +2611,14 @@ export default function EnrollmentCreate({
                                                                         >
                                                                             {course.title}
                                                                         </h4>
+                                                                        {course.curriculum_kind === "tesda_qualification" && (
+                                                                            <Badge
+                                                                                variant="outline"
+                                                                                className="w-fit shrink-0 border-amber-500/30 bg-amber-500/5 text-[10px] text-amber-700 dark:text-amber-300"
+                                                                            >
+                                                                                {course.tesda_program_type === "diploma" ? "Institutional Diploma" : "National Certificate"}
+                                                                            </Badge>
+                                                                        )}
                                                                     </div>
                                                                 </div>
 
@@ -2616,6 +2640,28 @@ export default function EnrollmentCreate({
                                                                                             ? "4-Year Degree Program"
                                                                                             : "Tech-Voc Training"}
                                                                                     </Badge>
+                                                                                    {course.curriculum_kind === "tesda_qualification" && (
+                                                                                        <>
+                                                                                            <Badge variant="outline" className="bg-background border-border/60">
+                                                                                                {course.tesda_program_type === "diploma"
+                                                                                                    ? "Institutional Diploma"
+                                                                                                    : "National Certificate"}
+                                                                                            </Badge>
+                                                                                            <Badge variant="outline" className="bg-background border-border/60">
+                                                                                                {course.qualification_level || "TESDA Qualification"}
+                                                                                            </Badge>
+                                                                                            {course.duration_hours && (
+                                                                                                <Badge variant="outline" className="bg-background border-border/60">
+                                                                                                    {course.duration_hours.toLocaleString()} total hours
+                                                                                                </Badge>
+                                                                                            )}
+                                                                                            {course.tesda_program_type === "diploma" && course.internship_hours && (
+                                                                                                <Badge variant="outline" className="bg-background border-border/60">
+                                                                                                    {course.internship_hours.toLocaleString()} OJT hours
+                                                                                                </Badge>
+                                                                                            )}
+                                                                                        </>
+                                                                                    )}
                                                                                     {course.department_name && (
                                                                                         <Badge
                                                                                             variant="outline"
@@ -2635,6 +2681,16 @@ export default function EnrollmentCreate({
                                                                                     <p className="text-muted-foreground text-sm italic">
                                                                                         No specific description available for this program.
                                                                                     </p>
+                                                                                )}
+
+                                                                                {course.tesda_program_type === "diploma" && (
+                                                                                    <div className="text-muted-foreground space-y-1 text-sm">
+                                                                                        {course.duration_years && <p>Typical duration: {course.duration_years} year(s)</p>}
+                                                                                        {course.bundled_qualifications?.length ? (
+                                                                                            <p>Includes: {course.bundled_qualifications.join(", ")}</p>
+                                                                                        ) : null}
+                                                                                        {course.advanced_topics && <p>Advanced topics: {course.advanced_topics}</p>}
+                                                                                    </div>
                                                                                 )}
 
                                                                                 {/* Next Step Context Note */}

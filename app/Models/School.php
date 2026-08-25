@@ -98,6 +98,11 @@ final class School extends Model
         return $this->hasMany(Department::class, 'school_id', 'id');
     }
 
+    public function curriculumCapabilities(): HasMany
+    {
+        return $this->hasMany(SchoolCurriculumCapability::class);
+    }
+
     /**
      * Get all active departments belonging to this school
      */

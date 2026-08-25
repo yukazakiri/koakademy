@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { update as updateCurriculumCapabilities } from "@/routes/administrators/system-management/schools/curriculum-capabilities";
 import { router, useForm } from "@inertiajs/react";
 import { AlertTriangle, Building2, Calendar, Check, GraduationCap, Loader2, Mail, MapPin, Pencil, Phone, Plus, Save, Trash2 } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
@@ -26,7 +27,7 @@ import { route } from "ziggy-js";
 
 import { submitSystemForm } from "./form-submit";
 import SystemManagementLayout from "./layout";
-import type { School, SystemManagementPageProps } from "./types";
+import type { CurriculumCapability, School, SystemManagementPageProps } from "./types";
 
 interface CreateSchoolFormData {
     name: string;
@@ -56,6 +57,19 @@ const SCHOOL_LEVEL_OPTIONS = [
     { value: "junior_high", label: "Middle School / Junior High School", description: "Middle school or junior high school operations." },
     { value: "senior_high", label: "Senior High School", description: "Senior high school programs, usually grades 11 to 12." },
     { value: "elementary", label: "Elementary / Grade School", description: "Elementary or grade school operations." },
+    {
+        value: "technical_vocational",
+        label: "TESDA / Technical-Vocational",
+        description: "Technical and vocational education and training programs.",
+    },
+];
+
+const CURRICULUM_FRAMEWORKS = [
+    { value: "ched_psg", label: "CHED-aligned degree programs", levels: ["higher_education"] },
+    { value: "deped_matatag", label: "DepEd MATATAG Curriculum", levels: ["elementary", "junior_high"] },
+    { value: "deped_shs_k12", label: "DepEd Senior High (K–12)", levels: ["senior_high"] },
+    { value: "deped_shs_revised", label: "DepEd Revised SHS", levels: ["senior_high"] },
+    { value: "tesda_tr", label: "TESDA Training Regulations", levels: ["higher_education", "technical_vocational"] },
 ];
 
 const schoolLevelLabel = (value?: string | null): string => SCHOOL_LEVEL_OPTIONS.find((option) => option.value === value)?.label ?? "Not configured";
@@ -70,11 +84,13 @@ export default function SystemManagementSchoolPage({
     system_school_ending_date,
     available_semesters,
     registrar_reporting,
+    curriculum_capabilities = [],
 }: SystemManagementPageProps) {
     const [isAddSchoolOpen, setIsAddSchoolOpen] = useState(false);
     const [isEditSchoolOpen, setIsEditSchoolOpen] = useState(false);
     const [editingSchool, setEditingSchool] = useState<School | null>(null);
     const [deletingSchool, setDeletingSchool] = useState<School | null>(null);
+    const [capabilities, setCapabilities] = useState<CurriculumCapability[]>(curriculum_capabilities);
 
     const schoolForm = useForm({ school_id: active_school?.id?.toString() || "" });
     const schoolDetailsForm = useForm<SchoolDetailsFormData>({
@@ -116,6 +132,52 @@ export default function SystemManagementSchoolPage({
         school_ending_date: system_school_ending_date ?? "",
         maximum_registrar_year_level: registrar_reporting.maximum_year_level,
     });
+
+    useEffect(() => {
+        setCapabilities(curriculum_capabilities);
+    }, [curriculum_capabilities]);
+
+    const saveCurriculumCapabilities = (): void => {
+        if (!active_school) {
+            return;
+        }
+
+        router.put(
+            updateCurriculumCapabilities(active_school.id),
+            {
+                capabilities: capabilities.map((capability) => ({
+                    school_level: capability.school_level,
+                    curriculum_framework: capability.curriculum_framework,
+                    curriculum_reference: capability.reference,
+                })),
+            },
+            {
+                preserveScroll: true,
+                onSuccess: () => toast.success("Supported curriculum pathways updated."),
+                onError: () => toast.error("Review the curriculum pathways and try again."),
+            },
+        );
+    };
+
+    const addCurriculumCapability = (): void => {
+        const defaultLevel = active_school?.school_level || "higher_education";
+        const framework = CURRICULUM_FRAMEWORKS.find((option) => option.levels.includes(defaultLevel)) ?? CURRICULUM_FRAMEWORKS[0];
+
+        setCapabilities((current) => [
+            ...current,
+            {
+                id: `new-${Date.now()}`,
+                persisted_id: null,
+                school_level: defaultLevel,
+                school_level_label: schoolLevelLabel(defaultLevel),
+                curriculum_framework: framework.value,
+                framework_label: framework.label,
+                reference: "",
+                is_enabled: true,
+                is_derived: false,
+            },
+        ]);
+    };
 
     useEffect(() => {
         academicCalendarForm.setData({
@@ -548,6 +610,143 @@ export default function SystemManagementSchoolPage({
                         </div>
                     </div>
 
+                    <Card className="border-primary/15 overflow-hidden shadow-sm">
+                        <CardHeader className="bg-primary/[0.03] border-b">
+                            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+                                <div className="space-y-1.5">
+                                    <CardTitle className="text-base">Supported curriculum pathways</CardTitle>
+                                    <CardDescription>
+                                        Enable the education levels and frameworks this school may offer. The curriculum workspace only shows matching
+                                        creation paths.
+                                    </CardDescription>
+                                </div>
+                                <div className="flex gap-2">
+                                    <Button type="button" variant="outline" size="sm" onClick={addCurriculumCapability} disabled={!active_school}>
+                                        <Plus className="mr-1.5 h-3.5 w-3.5" />
+                                        Add pathway
+                                    </Button>
+                                    <Button type="button" size="sm" onClick={saveCurriculumCapabilities} disabled={!active_school}>
+                                        <Save className="mr-1.5 h-3.5 w-3.5" />
+                                        Save pathways
+                                    </Button>
+                                </div>
+                            </div>
+                        </CardHeader>
+                        <CardContent className="p-0">
+                            {capabilities.length === 0 ? (
+                                <p className="text-muted-foreground p-6 text-sm">Add a supported pathway before creating programs for this school.</p>
+                            ) : (
+                                <div className="divide-y">
+                                    {capabilities.map((capability, index) => {
+                                        const frameworkOptions = CURRICULUM_FRAMEWORKS.filter((framework) =>
+                                            framework.levels.includes(capability.school_level),
+                                        );
+
+                                        return (
+                                            <div
+                                                key={capability.id}
+                                                className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.35fr)_auto] md:items-end"
+                                            >
+                                                <div className="space-y-1.5">
+                                                    <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+                                                        Education level
+                                                    </Label>
+                                                    <Select
+                                                        value={capability.school_level}
+                                                        onValueChange={(value) => {
+                                                            const nextFramework = CURRICULUM_FRAMEWORKS.find((framework) =>
+                                                                framework.levels.includes(value ?? ""),
+                                                            );
+                                                            setCapabilities((current) =>
+                                                                current.map((item, itemIndex) =>
+                                                                    itemIndex === index
+                                                                        ? {
+                                                                              ...item,
+                                                                              school_level: value ?? item.school_level,
+                                                                              school_level_label: schoolLevelLabel(value),
+                                                                              curriculum_framework: nextFramework?.value ?? item.curriculum_framework,
+                                                                              framework_label: nextFramework?.label ?? item.framework_label,
+                                                                          }
+                                                                        : item,
+                                                                ),
+                                                            );
+                                                        }}
+                                                    >
+                                                        <SelectTrigger>
+                                                            <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {SCHOOL_LEVEL_OPTIONS.map((option) => (
+                                                                <SelectItem key={option.value} value={option.value}>
+                                                                    {option.label}
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+                                                        Framework
+                                                    </Label>
+                                                    <Select
+                                                        value={capability.curriculum_framework}
+                                                        onValueChange={(value) =>
+                                                            setCapabilities((current) =>
+                                                                current.map((item, itemIndex) =>
+                                                                    itemIndex === index
+                                                                        ? { ...item, curriculum_framework: value ?? item.curriculum_framework }
+                                                                        : item,
+                                                                ),
+                                                            )
+                                                        }
+                                                    >
+                                                        <SelectTrigger>
+                                                            <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {frameworkOptions.map((option) => (
+                                                                <SelectItem key={option.value} value={option.value}>
+                                                                    {option.label}
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+                                                        Reference (optional)
+                                                    </Label>
+                                                    <Input
+                                                        value={capability.reference}
+                                                        onChange={(event) =>
+                                                            setCapabilities((current) =>
+                                                                current.map((item, itemIndex) =>
+                                                                    itemIndex === index ? { ...item, reference: event.target.value } : item,
+                                                                ),
+                                                            )
+                                                        }
+                                                        placeholder="Official policy, TR, or local reference"
+                                                    />
+                                                </div>
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    onClick={() =>
+                                                        setCapabilities((current) => current.filter((_, itemIndex) => itemIndex !== index))
+                                                    }
+                                                    aria-label="Remove pathway"
+                                                >
+                                                    <Trash2 className="text-muted-foreground h-4 w-4" />
+                                                </Button>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+
                     {/* Academic Calendar Defaults */}
                     <Card className="border-muted-foreground/10 shadow-sm">
                         <CardHeader className="bg-muted/30 border-b pb-4">
@@ -557,7 +756,9 @@ export default function SystemManagementSchoolPage({
                                 </div>
                                 <CardTitle className="text-base">Academic Calendar Defaults</CardTitle>
                             </div>
-                            <CardDescription>Configure the system-wide default semester, school year dates, and the highest registrar year level shown in reports.</CardDescription>
+                            <CardDescription>
+                                Configure the system-wide default semester, school year dates, and the highest registrar year level shown in reports.
+                            </CardDescription>
                         </CardHeader>
                         <CardContent className="p-6">
                             <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
@@ -582,7 +783,10 @@ export default function SystemManagementSchoolPage({
                                     </Select>
                                 </div>
                                 <div className="space-y-2.5">
-                                    <Label htmlFor="maximum_registrar_year_level" className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+                                    <Label
+                                        htmlFor="maximum_registrar_year_level"
+                                        className="text-muted-foreground text-xs font-semibold tracking-wider uppercase"
+                                    >
                                         Highest Registrar Year Level
                                     </Label>
                                     <Input
@@ -591,7 +795,9 @@ export default function SystemManagementSchoolPage({
                                         min="2"
                                         max="7"
                                         value={academicCalendarForm.data.maximum_registrar_year_level}
-                                        onChange={(event) => academicCalendarForm.setData("maximum_registrar_year_level", Number(event.target.value || 4))}
+                                        onChange={(event) =>
+                                            academicCalendarForm.setData("maximum_registrar_year_level", Number(event.target.value || 4))
+                                        }
                                         className="bg-background"
                                     />
                                     <p className="text-muted-foreground text-xs">Reports show Year 1 through this level. The default is Year 4.</p>

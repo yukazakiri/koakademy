@@ -17,6 +17,7 @@ use App\Http\Requests\Administrators\UpdateApiManagementRequest;
 use App\Http\Requests\Administrators\UpdateEnrollmentPipelineRequest;
 use App\Http\Requests\Administrators\UpdateFinanceDocumentSettingsRequest;
 use App\Http\Requests\Administrators\UpdateNewsletterSettingsRequest;
+use App\Http\Requests\Administrators\UpdateSchoolCurriculumCapabilitiesRequest;
 use App\Http\Requests\Administrators\UpdateSchoolLevelRequest;
 use App\Http\Requests\Administrators\UpdateSchoolRequest;
 use App\Http\Requests\Administrators\UpdateSchoolStatusRequest;
@@ -26,8 +27,10 @@ use App\Models\EnrollmentPolicy;
 use App\Models\EnrollmentPolicyVersion;
 use App\Models\GeneralSetting;
 use App\Models\School;
+use App\Models\SchoolCurriculumCapability;
 use App\Models\User;
 use App\Services\AnalyticsSettingsService;
+use App\Services\CurriculumCapabilityResolver;
 use App\Services\EnrollmentPipelineService;
 use App\Services\FacultyCustomFieldDefinitionService;
 use App\Services\FinanceDocumentSettingsService;
@@ -474,6 +477,36 @@ final class AdministratorSystemManagementController extends Controller
         app(\App\Services\TenantContext::class)->setCurrentSchoolId($school->id);
 
         return Redirect::back()->with('success', 'Institution school level configured successfully.');
+    }
+
+    public function updateSchoolCurriculumCapabilities(
+        UpdateSchoolCurriculumCapabilitiesRequest $request,
+        School $school,
+    ): RedirectResponse {
+        $validated = $request->validated();
+        $activeCapabilityIds = [];
+
+        foreach ($validated['capabilities'] as $capability) {
+            $model = SchoolCurriculumCapability::query()->updateOrCreate(
+                [
+                    'school_id' => $school->id,
+                    'school_level' => $capability['school_level'],
+                    'curriculum_framework' => $capability['curriculum_framework'],
+                ],
+                [
+                    'curriculum_reference' => $capability['curriculum_reference'] ?? null,
+                    'is_enabled' => true,
+                ],
+            );
+
+            $activeCapabilityIds[] = $model->id;
+        }
+
+        $school->curriculumCapabilities()
+            ->whereNotIn('id', $activeCapabilityIds)
+            ->update(['is_enabled' => false]);
+
+        return Redirect::back()->with('success', 'Supported curriculum pathways updated successfully.');
     }
 
     public function updateSchoolStatus(UpdateSchoolStatusRequest $request, School $school)
@@ -1023,6 +1056,9 @@ final class AdministratorSystemManagementController extends Controller
         }
 
         $schools = School::all();
+        $curriculumCapabilities = $activeSchool instanceof School
+            ? app(CurriculumCapabilityResolver::class)->forSchool($activeSchool)->values()->all()
+            : [];
 
         $socialiteConfig = app(SocialiteProviderService::class)->config();
 
@@ -1064,6 +1100,7 @@ final class AdministratorSystemManagementController extends Controller
             'general_settings' => $frontendSettings,
             'active_school' => $activeSchool,
             'schools' => $schools,
+            'curriculum_capabilities' => $curriculumCapabilities,
             'access' => [
                 'active_section' => $activeSection,
                 'sections' => $this->getSectionAccessMap($user),

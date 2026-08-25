@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Enums\SchoolLevel;
 use App\Enums\SubjectEnrolledEnum;
 use App\Http\Requests\StoreCurriculumProgramRequest;
 use App\Http\Requests\StoreCurriculumSubjectRequest;
@@ -11,13 +12,18 @@ use App\Http\Requests\UpdateCurriculumProgramRequest;
 use App\Http\Requests\UpdateCurriculumSubjectRequest;
 use App\Models\Course;
 use App\Models\Department;
+use App\Models\School;
+use App\Models\ShsTrack;
 use App\Models\Subject;
 use App\Models\User;
+use App\Services\CurriculumCapabilityResolver;
+use App\Services\TenantContext;
 use App\Support\ChedProgramRules;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Redirect;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -70,8 +76,9 @@ final class AdministratorCurriculumManagementController extends Controller
         ]);
     }
 
-    public function programs(): Response
+    public function programs(CurriculumCapabilityResolver $capabilityResolver, TenantContext $tenantContext): Response
     {
+        $school = $this->currentSchool($tenantContext);
         $programs = Course::query()
             ->with(['department:id,name,code', 'courseType:id,name'])
             ->withCount([
@@ -114,6 +121,14 @@ final class AdministratorCurriculumManagementController extends Controller
             'versions' => $versions,
             'course_types' => \App\Models\CourseType::query()->select(['id', 'name'])->orderBy('name')->get(),
             'ched_options' => ChedProgramRules::options(),
+            'school' => $school ? [
+                'id' => $school->id,
+                'name' => $school->name,
+                'school_level' => $school->school_level?->value,
+            ] : null,
+            'capabilities' => $school ? $capabilityResolver->forSchool($school)->values() : [],
+            'catalog_templates' => $this->catalogTemplates(),
+            'shs_pathways' => $this->shsPathways(),
         ]);
     }
 
@@ -170,10 +185,40 @@ final class AdministratorCurriculumManagementController extends Controller
         ]);
     }
 
-    public function storeProgram(StoreCurriculumProgramRequest $request): RedirectResponse
-    {
+    public function storeProgram(
+        StoreCurriculumProgramRequest $request,
+        CurriculumCapabilityResolver $capabilityResolver,
+        TenantContext $tenantContext,
+    ): RedirectResponse {
         $validated = $request->validated();
+        $school = $this->currentSchool($tenantContext);
+        $capability = $school ? $capabilityResolver->find($school, $validated['capability_id'] ?? null) : null;
+
+        if (($validated['capability_id'] ?? null) !== null && $capability === null) {
+            throw ValidationException::withMessages([
+                'capability_id' => 'Choose a curriculum capability that is enabled for the active school.',
+            ]);
+        }
+
+        if ($capability !== null && $validated['curriculum_kind'] !== $this->kindForSchoolLevel($capability['school_level'])) {
+            throw ValidationException::withMessages([
+                'curriculum_kind' => 'The selected pathway type does not match the selected school capability.',
+            ]);
+        }
+
+        unset($validated['capability_id']);
         $validated['is_active'] = true;
+        $validated['description'] ??= '';
+
+        if ($school !== null) {
+            $validated['school_id'] = $school->id;
+        }
+
+        if ($capability !== null) {
+            $validated['school_curriculum_capability_id'] = $capability['persisted_id'];
+            $validated['curriculum_framework'] = $capability['curriculum_framework'];
+            $validated['catalog_reference'] ??= $capability['reference'];
+        }
 
         Course::create($validated);
 
@@ -255,6 +300,16 @@ final class AdministratorCurriculumManagementController extends Controller
             'total_units' => (int) $course->subjects_sum_units,
             'prerequisites_count' => $this->countPrerequisites($course),
             'is_active' => $course->is_active,
+            'curriculum_kind' => $course->curriculum_kind ?? 'legacy',
+            'curriculum_stage' => $course->curriculum_stage,
+            'curriculum_framework' => $course->curriculum_framework,
+            'qualification_level' => $course->qualification_level,
+            'duration_hours' => $course->duration_hours,
+            'tesda_program_type' => $course->tesda_program_type,
+            'duration_years' => $course->duration_years,
+            'internship_hours' => $course->internship_hours,
+            'bundled_qualifications' => $course->bundled_qualifications,
+            'advanced_topics' => $course->advanced_topics,
         ];
     }
 
@@ -286,6 +341,17 @@ final class AdministratorCurriculumManagementController extends Controller
             'ched_program_credit_units' => $course->ched_program_credit_units,
             'ched_tuition_per_unit' => $course->ched_tuition_per_unit,
             'ched_program_fee' => $course->ched_program_fee,
+            'curriculum_kind' => $course->curriculum_kind ?? 'legacy',
+            'curriculum_stage' => $course->curriculum_stage,
+            'curriculum_framework' => $course->curriculum_framework,
+            'catalog_reference' => $course->catalog_reference,
+            'duration_hours' => $course->duration_hours,
+            'qualification_level' => $course->qualification_level,
+            'tesda_program_type' => $course->tesda_program_type,
+            'duration_years' => $course->duration_years,
+            'internship_hours' => $course->internship_hours,
+            'bundled_qualifications' => $course->bundled_qualifications,
+            'advanced_topics' => $course->advanced_topics,
         ];
     }
 
@@ -403,5 +469,52 @@ final class AdministratorCurriculumManagementController extends Controller
                 'role' => $user->role?->getLabel() ?? 'Administrator',
             ],
         ];
+    }
+
+    private function currentSchool(TenantContext $tenantContext): ?School
+    {
+        return $tenantContext->getCurrentSchool()
+            ?? Auth::user()?->school
+            ?? School::query()->orderBy('id')->first();
+    }
+
+    private function kindForSchoolLevel(string $schoolLevel): string
+    {
+        return match (SchoolLevel::from($schoolLevel)) {
+            SchoolLevel::HigherEducation => 'program',
+            SchoolLevel::TechnicalVocational => 'tesda_qualification',
+            SchoolLevel::Elementary, SchoolLevel::JuniorHigh => 'grade_pathway',
+            SchoolLevel::SeniorHigh => 'senior_high_pathway',
+        };
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function catalogTemplates(): array
+    {
+        return [
+            ['framework' => 'ched_psg', 'label' => 'Bachelor of Science in Information Technology', 'kind' => 'program', 'code' => 'BSIT', 'title' => 'Bachelor of Science in Information Technology', 'stage' => null, 'qualification_level' => null, 'duration_hours' => null, 'tesda_program_type' => null, 'duration_years' => null, 'internship_hours' => null, 'bundled_qualifications' => [], 'advanced_topics' => null, 'reference' => 'CHED PSG reference'],
+            ['framework' => 'tesda_tr', 'label' => 'Computer Systems Servicing NC II', 'kind' => 'tesda_qualification', 'code' => 'CSS-NC2', 'title' => 'Computer Systems Servicing NC II', 'stage' => null, 'qualification_level' => 'NC II', 'duration_hours' => 280, 'tesda_program_type' => 'national_certificate', 'duration_years' => null, 'internship_hours' => null, 'bundled_qualifications' => [], 'advanced_topics' => null, 'reference' => 'TESDA Training Regulations'],
+            ['framework' => 'tesda_tr', 'label' => 'Diploma in Culinary Arts (institutional program)', 'kind' => 'tesda_qualification', 'code' => 'DCA-DIP', 'title' => 'Diploma in Culinary Arts', 'stage' => null, 'qualification_level' => 'Diploma', 'duration_hours' => 1200, 'tesda_program_type' => 'diploma', 'duration_years' => 1.0, 'internship_hours' => 600, 'bundled_qualifications' => ['Cookery NC II', 'Bread & Pastry Production NC II'], 'advanced_topics' => 'Advanced culinary techniques, kitchen operations, menu planning, food safety, and hospitality operations.', 'reference' => 'TESDA Training Regulations / institutional program'],
+            ['framework' => 'deped_matatag', 'label' => 'Grade 1 Learning Pathway', 'kind' => 'grade_pathway', 'code' => 'G1', 'title' => 'Grade 1 Learning Pathway', 'stage' => 'Grade 1', 'qualification_level' => null, 'duration_hours' => null, 'tesda_program_type' => null, 'duration_years' => null, 'internship_hours' => null, 'bundled_qualifications' => [], 'advanced_topics' => null, 'reference' => 'DepEd Order No. 010, s. 2024'],
+            ['framework' => 'deped_matatag', 'label' => 'Grade 7 Learning Pathway', 'kind' => 'grade_pathway', 'code' => 'G7', 'title' => 'Grade 7 Learning Pathway', 'stage' => 'Grade 7', 'qualification_level' => null, 'duration_hours' => null, 'tesda_program_type' => null, 'duration_years' => null, 'internship_hours' => null, 'bundled_qualifications' => [], 'advanced_topics' => null, 'reference' => 'DepEd Order No. 010, s. 2024'],
+            ['framework' => 'deped_shs_k12', 'label' => 'Senior High Pathway', 'kind' => 'senior_high_pathway', 'code' => 'SHS', 'title' => 'Senior High Pathway', 'stage' => 'Grade 11', 'qualification_level' => null, 'duration_hours' => null, 'tesda_program_type' => null, 'duration_years' => null, 'internship_hours' => null, 'bundled_qualifications' => [], 'advanced_topics' => null, 'reference' => 'K to 12 SHS Curriculum'],
+        ];
+    }
+
+    /** @return array<int, array{id: int, title: string, strands_count: int, subjects_count: int}> */
+    private function shsPathways(): array
+    {
+        return ShsTrack::query()
+            ->withCount('strands')
+            ->with(['strands' => fn ($query) => $query->withCount('subjects')])
+            ->orderBy('track_name')
+            ->get()
+            ->map(fn (ShsTrack $track): array => [
+                'id' => $track->id,
+                'title' => $track->track_name,
+                'strands_count' => $track->strands_count,
+                'subjects_count' => $track->strands->sum('subjects_count'),
+            ])
+            ->all();
     }
 }

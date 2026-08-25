@@ -27,6 +27,11 @@ use Override;
  * @property string $code
  * @property string $title
  * @property string|null $description
+ * @property string|null $tesda_program_type
+ * @property string|null $duration_years
+ * @property int|null $internship_hours
+ * @property array<int, string>|null $bundled_qualifications
+ * @property string|null $advanced_topics
  * @property int $units
  * @property string|null $lec_per_unit
  * @property string|null $lab_per_unit
@@ -105,6 +110,18 @@ final class Course extends Model
         'ched_program_fee',
         'is_active',
         'school_id',
+        'school_curriculum_capability_id',
+        'curriculum_kind',
+        'curriculum_stage',
+        'curriculum_framework',
+        'catalog_reference',
+        'duration_hours',
+        'qualification_level',
+        'tesda_program_type',
+        'duration_years',
+        'internship_hours',
+        'bundled_qualifications',
+        'advanced_topics',
     ];
 
     #[Override]
@@ -164,6 +181,11 @@ final class Course extends Model
     public function courseType(): BelongsTo
     {
         return $this->belongsTo(CourseType::class);
+    }
+
+    public function schoolCurriculumCapability(): BelongsTo
+    {
+        return $this->belongsTo(SchoolCurriculumCapability::class);
     }
 
     public function subjects()
@@ -274,6 +296,10 @@ final class Course extends Model
             'ched_program_credit_units' => 'integer',
             'ched_tuition_per_unit' => 'decimal:2',
             'ched_program_fee' => 'decimal:2',
+            'duration_hours' => 'integer',
+            'duration_years' => 'decimal:1',
+            'internship_hours' => 'integer',
+            'bundled_qualifications' => 'array',
         ];
     }
 

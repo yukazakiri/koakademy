@@ -1705,6 +1705,36 @@ it('returns the school student_id in the search and details student endpoints', 
         ->and((string) $details['student_id'])->toBe('208323');
 });
 
+it('returns the curriculum pathway when selecting a TESDA applicant for enrollment', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $course = Course::factory()->create([
+        'code' => 'CSS-NC2',
+        'title' => 'Computer System Servicing NC II',
+        'department_id' => null,
+        'curriculum_kind' => 'tesda_qualification',
+        'qualification_level' => 'NC II',
+    ]);
+    $student = Student::factory()->create([
+        'student_type' => 'tesda',
+        'course_id' => $course->id,
+        'student_id' => 208324,
+    ]);
+
+    $detailsResponse = $this->actingAs($user)->getJson(portalUrlForAdministrators(
+        '/administrators/enrollments/api/student-details?student_id='.$student->id
+    ));
+
+    $detailsResponse->assertOk();
+
+    expect($detailsResponse->json())
+        ->toMatchArray([
+            'course_code' => 'CSS-NC2',
+            'course_name' => 'Computer System Servicing NC II',
+            'curriculum_kind' => 'tesda_qualification',
+            'qualification_level' => 'NC II',
+        ]);
+});
+
 it('finds a student in the search endpoint when typing their school student_id', function (): void {
     $user = User::factory()->create(['role' => UserRole::Admin]);
 

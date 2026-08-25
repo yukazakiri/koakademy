@@ -22,7 +22,7 @@ final class SaveEnrollmentRequest extends FormRequest
         return [
             'student_id' => ['required', 'exists:students,id'],
             'semester' => ['required', 'integer', 'in:1,2'],
-            'academic_year' => ['required', 'integer', 'in:1,2,3,4'],
+            'academic_year' => ['required', 'integer', 'in:1,2,3,4,5'],
             'subjects' => ['required', 'array', 'min:1'],
             'subjects.*.subject_id' => ['required', 'exists:subject,id'],
             'subjects.*.class_id' => ['nullable', 'exists:classes,id'],

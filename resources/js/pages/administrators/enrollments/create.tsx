@@ -60,6 +60,14 @@ interface StudentOption {
     email: string;
     course_id: number | null;
     course_code: string | null;
+    course_title?: string | null;
+    curriculum_kind?: string | null;
+    qualification_level?: string | null;
+    tesda_program_type?: string | null;
+    duration_hours?: number | null;
+    duration_years?: number | string | null;
+    internship_hours?: number | null;
+    bundled_qualifications?: string[] | null;
     academic_year: number | null;
     formatted_academic_year: string | null;
     label: string;
@@ -73,6 +81,13 @@ interface StudentDetails {
     course_id: number | null;
     course_code: string | null;
     course_name: string | null;
+    curriculum_kind?: string | null;
+    qualification_level?: string | null;
+    duration_hours?: number | null;
+    tesda_program_type?: string | null;
+    duration_years?: number | string | null;
+    internship_hours?: number | null;
+    bundled_qualifications?: string[] | null;
     academic_year: number | null;
     formatted_academic_year: string | null;
     miscellaneous_fee: number;
@@ -321,6 +336,17 @@ export default function AdministratorEnrollmentCreate({ user, settings, discount
     const [changeReason, setChangeReason] = useState("");
     const [confirmedOverloadClassIds, setConfirmedOverloadClassIds] = useState<number[]>([]);
     const [pendingOverloadConfirmation, setPendingOverloadConfirmation] = useState<PendingOverloadConfirmation | null>(null);
+
+    const isTesdaPathway = selectedStudent?.curriculum_kind === "tesda_qualification";
+    const academicYearOptions = isTesdaPathway
+        ? [
+              ["1", "Training Level 1"],
+              ["2", "Training Level 2"],
+              ["3", "Training Level 3"],
+              ["4", "Training Level 4"],
+              ["5", "Training Level 5"],
+          ]
+        : Object.entries(settings.availableAcademicYears);
 
     // Refs for debouncing
     const studentSearchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -867,8 +893,22 @@ export default function AdministratorEnrollmentCreate({ user, settings, discount
                                             <div className="text-muted-foreground text-xs">
                                                 {selectedStudent?.student_id ? `ID: ${selectedStudent.student_id}` : ""}
                                                 {selectedStudent?.course_code ? ` | ${selectedStudent.course_code}` : ""}
+                                                {selectedStudent?.curriculum_kind === "tesda_qualification" ? " | TESDA" : " | College"}
                                                 {selectedStudent?.formatted_academic_year ? ` | ${selectedStudent.formatted_academic_year}` : ""}
                                             </div>
+                                            {selectedStudent?.course_name && (
+                                                <div className="text-muted-foreground mt-1 text-xs">
+                                                    {selectedStudent.course_name}
+                                                    {selectedStudent.qualification_level ? ` · ${selectedStudent.qualification_level}` : ""}
+                                                    {selectedStudent.tesda_program_type === "diploma" ? " · Institutional Diploma" : ""}
+                                                </div>
+                                            )}
+                                            {selectedStudent?.tesda_program_type === "diploma" && selectedStudent.internship_hours && (
+                                                <div className="text-muted-foreground mt-1 text-xs">
+                                                    {selectedStudent.duration_hours ? `${selectedStudent.duration_hours.toLocaleString()} total hours · ` : ""}
+                                                    {selectedStudent.internship_hours.toLocaleString()} mandatory OJT hours
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 ) : (
@@ -888,8 +928,21 @@ export default function AdministratorEnrollmentCreate({ user, settings, discount
                                                         <div>
                                                             <div className="font-medium">{selectedStudent.full_name}</div>
                                                             <div className="text-muted-foreground text-xs">
-                                                                {selectedStudent.course_code} | {selectedStudent.formatted_academic_year}
+                                                                {selectedStudent.course_code} | {selectedStudent.curriculum_kind === "tesda_qualification" ? "TESDA" : "College"} | {selectedStudent.formatted_academic_year}
                                                             </div>
+                                                            {selectedStudent.course_name && (
+                                                                <div className="text-muted-foreground mt-1 text-xs">
+                                                                    {selectedStudent.course_name}
+                                                                    {selectedStudent.qualification_level ? ` · ${selectedStudent.qualification_level}` : ""}
+                                                                    {selectedStudent.tesda_program_type === "diploma" ? " · Institutional Diploma" : ""}
+                                                                </div>
+                                                            )}
+                                                            {selectedStudent?.tesda_program_type === "diploma" && selectedStudent.internship_hours && (
+                                                                <div className="text-muted-foreground mt-1 text-xs">
+                                                                    {selectedStudent.duration_hours ? `${selectedStudent.duration_hours.toLocaleString()} total hours · ` : ""}
+                                                                    {selectedStudent.internship_hours.toLocaleString()} mandatory OJT hours
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 ) : (
@@ -967,13 +1020,13 @@ export default function AdministratorEnrollmentCreate({ user, settings, discount
                                             </Select>
                                         </div>
                                         <div className="space-y-2">
-                                            <Label>Year Level</Label>
+                                            <Label>{isTesdaPathway ? "Training Level" : "Year Level"}</Label>
                                             <Select value={academicYear} onValueChange={(value) => value && setAcademicYear(value)}>
                                                 <SelectTrigger>
                                                     <SelectValue />
                                                 </SelectTrigger>
                                                 <SelectContent>
-                                                    {Object.entries(settings.availableAcademicYears).map(([value, label]) => (
+                                                    {academicYearOptions.map(([value, label]) => (
                                                         <SelectItem key={value} value={value}>
                                                             {label}
                                                         </SelectItem>
@@ -996,9 +1049,9 @@ export default function AdministratorEnrollmentCreate({ user, settings, discount
                                                 2
                                             </div>
                                             <div>
-                                                <CardTitle className="text-lg">Select Subjects</CardTitle>
+                                                <CardTitle className="text-lg">{isTesdaPathway ? "Select Training Modules" : "Select Subjects"}</CardTitle>
                                                 <CardDescription>
-                                                    Click subjects to add/remove. <Star className="inline h-3 w-3 fill-yellow-500 text-yellow-500" />{" "}
+                                                    Click {isTesdaPathway ? "modules" : "subjects"} to add/remove. <Star className="inline h-3 w-3 fill-yellow-500 text-yellow-500" />{" "}
                                                     = has classes
                                                 </CardDescription>
                                             </div>

@@ -31,6 +31,7 @@ use App\Notifications\ApplicantApprovedForRequirements;
 use App\Services\AssessmentExportPayloadService;
 use App\Services\AssessmentFormDataService;
 use App\Services\ClassScheduleChangeNotificationService;
+use App\Services\CurriculumCapabilityResolver;
 use App\Services\EnrollmentBillingService;
 use App\Services\EnrollmentPipelineService;
 use App\Services\EnrollmentService;
@@ -1536,7 +1537,7 @@ final class AdministratorEnrollmentManagementController extends Controller
      *
      * @return JsonResponse
      */
-    public function searchStudents(Request $request)
+    public function searchStudents(Request $request, CurriculumCapabilityResolver $capabilityResolver)
     {
         $search = $request->input('search', '');
 
@@ -1567,6 +1568,14 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'email' => $student->email,
                 'course_id' => $student->course_id,
                 'course_code' => $student->Course?->code,
+                'course_title' => $student->Course?->title,
+                'curriculum_kind' => $student->Course ? $capabilityResolver->kindForCourse($student->Course) : null,
+                'qualification_level' => $student->Course?->qualification_level,
+                'tesda_program_type' => $student->Course?->tesda_program_type,
+                'duration_hours' => $student->Course?->duration_hours,
+                'duration_years' => $student->Course?->duration_years,
+                'internship_hours' => $student->Course?->internship_hours,
+                'bundled_qualifications' => $student->Course?->bundled_qualifications,
                 'academic_year' => $student->academic_year,
                 'formatted_academic_year' => $student->formatted_academic_year,
                 'label' => sprintf(
@@ -1804,7 +1813,7 @@ final class AdministratorEnrollmentManagementController extends Controller
      *
      * @return JsonResponse
      */
-    public function getStudentDetails(Request $request)
+    public function getStudentDetails(Request $request, CurriculumCapabilityResolver $capabilityResolver)
     {
         $studentId = $request->input('student_id');
 
@@ -1824,7 +1833,14 @@ final class AdministratorEnrollmentManagementController extends Controller
             'email' => $student->email,
             'course_id' => $student->course_id,
             'course_code' => $student->Course?->code,
-            'course_name' => $student->Course?->name,
+            'course_name' => $student->Course?->title,
+            'curriculum_kind' => $student->Course ? $capabilityResolver->kindForCourse($student->Course) : null,
+            'qualification_level' => $student->Course?->qualification_level,
+            'duration_hours' => $student->Course?->duration_hours,
+            'tesda_program_type' => $student->Course?->tesda_program_type,
+            'duration_years' => $student->Course?->duration_years,
+            'internship_hours' => $student->Course?->internship_hours,
+            'bundled_qualifications' => $student->Course?->bundled_qualifications,
             'academic_year' => $student->academic_year,
             'formatted_academic_year' => $student->formatted_academic_year,
             'miscellaneous_fee' => $student->Course?->getMiscellaneousFee() ?? 3500,

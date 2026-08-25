@@ -60,10 +60,18 @@ interface Option {
     value: string | number;
     label: string;
     is_active?: boolean;
+    curriculum_kind?: string;
+    qualification_level?: string | null;
+    duration_hours?: number | null;
+    tesda_program_type?: string | null;
+    duration_years?: number | string | null;
+    internship_hours?: number | null;
+    bundled_qualifications?: string[] | null;
 }
 
 interface CourseGroup {
     label: string;
+    pathway?: string;
     items: ReadonlyArray<Option>;
 }
 
@@ -588,6 +596,7 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
     }, [errors]);
 
     const isSHS = data.student_type === "shs";
+    const isTESDA = data.student_type === "tesda";
     const isGraduated = data.status === "graduated";
     const isWithdrawn = data.status === "withdrawn" || data.status === "dropped";
     const showEmployment =
@@ -823,7 +832,11 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
         return options.income_modes.find((mode) => mode.value === data.income_bracket_mode) ?? options.income_modes[0] ?? null;
     }, [options.income_modes, data.income_bracket_mode]);
 
-    const flatCourses = useMemo<ReadonlyArray<Option>>(() => options.courses.flatMap((group) => group.items), [options.courses]);
+    const visibleCourseGroups = useMemo(
+        () => options.courses.filter((group) => (isTESDA ? group.pathway === "tesda_qualification" : group.pathway !== "tesda_qualification")),
+        [isTESDA, options.courses],
+    );
+    const flatCourses = useMemo<ReadonlyArray<Option>>(() => visibleCourseGroups.flatMap((group) => group.items), [visibleCourseGroups]);
 
     const activeIncomeBrackets = selectedIncomeMode?.brackets ?? [];
 
@@ -901,7 +914,15 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
               { value: "11", label: "Grade 11" },
               { value: "12", label: "Grade 12" },
           ]
-        : [
+        : isTESDA
+          ? [
+                { value: "1", label: "Training Level 1" },
+                { value: "2", label: "Training Level 2" },
+                { value: "3", label: "Training Level 3" },
+                { value: "4", label: "Training Level 4" },
+                { value: "5", label: "Training Level 5" },
+            ]
+          : [
               { value: "1", label: "1st Year" },
               { value: "2", label: "2nd Year" },
               { value: "3", label: "3rd Year" },
@@ -963,6 +984,7 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
 
         setData("lrn", "");
         setData("shs_strand_id", "");
+        setData("course_id", "");
 
         if (data.academic_year === "11" || data.academic_year === "12") {
             setData("academic_year", "1");
@@ -1058,7 +1080,7 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
                         <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
                                 <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Create Student</h1>
-                                <Badge variant="secondary">{isSHS ? "Senior High" : "College / Program"}</Badge>
+                                <Badge variant="secondary">{isSHS ? "Senior High" : isTESDA ? "TESDA Training" : "College / Program"}</Badge>
                                 {!isSHS && data.student_id && <Badge variant="outline">ID {data.student_id}</Badge>}
                                 {hasServerErrors && (
                                     <Badge variant="destructive" className="gap-1">
@@ -1416,14 +1438,16 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
                                             <div className="flex items-center gap-2">
                                                 <FieldLabel htmlFor="course_id">
                                                     <BookOpen className="mr-1 inline h-3.5 w-3.5" />
-                                                    Course <span className="text-destructive">*</span>
+                                                    {isTESDA ? "TESDA Qualification" : "Course / Program"} <span className="text-destructive">*</span>
                                                 </FieldLabel>
                                                 <Tooltip>
                                                     <TooltipTrigger className="inline-flex items-center">
                                                         <HelpCircleIcon className="text-muted-foreground size-3.5" />
                                                     </TooltipTrigger>
                                                     <TooltipContent>
-                                                        The degree program the student is enrolled in. Courses are grouped by department.
+                                                        {isTESDA
+                                                            ? "The TESDA qualification the student is enrolled in."
+                                                            : "The degree program the student is enrolled in. Courses are grouped by department."}
                                                     </TooltipContent>
                                                 </Tooltip>
                                             </div>
@@ -1432,7 +1456,7 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
                                                     <SelectValue placeholder="Select course" />
                                                 </SelectTrigger>
                                                 <SelectContent alignItemWithTrigger={false} className="w-(--anchor-width) max-w-2xl min-w-md">
-                                                    {options.courses.map((group, groupIndex) => (
+                                                    {visibleCourseGroups.map((group, groupIndex) => (
                                                         <SelectGroup key={group.label}>
                                                             <SelectLabel>{group.label}</SelectLabel>
                                                             {group.items.map((course) => (
@@ -1442,6 +1466,13 @@ export default function AdministratorStudentCreate({ user, options }: CreateStud
                                                                     disabled={course.is_active === false}
                                                                 >
                                                                     {course.label}
+                                                                    {course.tesda_program_type === "diploma" && (
+                                                                        <span className="text-muted-foreground ml-1">
+                                                                            · Institutional Diploma
+                                                                            {course.duration_years ? ` · ${course.duration_years} year(s)` : ""}
+                                                                            {course.internship_hours ? ` · ${course.internship_hours} OJT h` : ""}
+                                                                        </span>
+                                                                    )}
                                                                 </SelectItem>
                                                             ))}
                                                             {groupIndex < options.courses.length - 1 && <SelectSeparator />}

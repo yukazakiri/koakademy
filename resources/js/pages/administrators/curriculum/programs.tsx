@@ -1,3 +1,4 @@
+import { storeProgram } from "@/actions/App/Http/Controllers/AdministratorCurriculumManagementController";
 import AdminLayout from "@/components/administrators/admin-layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,17 +24,7 @@ import {
     getSortedRowModel,
     useReactTable,
 } from "@tanstack/react-table";
-import {
-    ArrowUpDown,
-    Book,
-    Calculator,
-    ChevronLeft,
-    GraduationCap,
-    Link2,
-    MoreHorizontal,
-    Plus,
-    Search,
-} from "lucide-react";
+import { ArrowUpDown, Book, Calculator, ChevronLeft, GraduationCap, Link2, MoreHorizontal, Plus, Search } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { route } from "ziggy-js";
 
@@ -56,7 +47,40 @@ interface CurriculumProgramsProps {
     departments: DepartmentOption[];
     course_types: { id: number; name: string }[];
     versions: CurriculumVersion[];
+    school: { id: number; name: string; school_level: string | null } | null;
+    capabilities: CurriculumCapability[];
+    catalog_templates: CatalogTemplate[];
+    shs_pathways: ShsPathway[];
 }
+
+type CurriculumCapability = {
+    id: string;
+    school_level: string;
+    school_level_label: string;
+    curriculum_framework: string;
+    framework_label: string;
+    reference: string;
+    is_derived: boolean;
+};
+
+type CatalogTemplate = {
+    framework: string;
+    label: string;
+    kind: string;
+    code: string;
+    title: string;
+    stage: string | null;
+    qualification_level: string | null;
+    duration_hours: number | null;
+    tesda_program_type: string | null;
+    duration_years: number | null;
+    internship_hours: number | null;
+    bundled_qualifications: string[];
+    advanced_topics: string | null;
+    reference: string;
+};
+
+type ShsPathway = { id: number; title: string; strands_count: number; subjects_count: number };
 
 type ProgramSummary = {
     id: number;
@@ -73,6 +97,16 @@ type ProgramSummary = {
     prerequisites_count: number;
     is_active: boolean;
     updated_at: string | null;
+    curriculum_kind: string;
+    curriculum_stage: string | null;
+    curriculum_framework: string | null;
+    qualification_level: string | null;
+    duration_hours: number | null;
+    tesda_program_type: string | null;
+    duration_years: number | null;
+    internship_hours: number | null;
+    bundled_qualifications: string[];
+    advanced_topics: string | null;
 };
 
 type CurriculumVersion = {
@@ -102,10 +136,33 @@ function getDepartmentColor(code: string): string {
     return departmentBadgeColors[code];
 }
 
-const FieldError = ({ message }: { message?: string }) =>
-    message ? <p className="text-destructive mt-1 text-xs font-medium">{message}</p> : null;
+const FieldError = ({ message }: { message?: string }) => (message ? <p className="text-destructive mt-1 text-xs font-medium">{message}</p> : null);
 
-export default function CurriculumPrograms({ user, stats, programs, departments, course_types }: CurriculumProgramsProps) {
+function capabilityKind(schoolLevel?: string): string {
+    switch (schoolLevel) {
+        case "technical_vocational":
+            return "tesda_qualification";
+        case "elementary":
+        case "junior_high":
+            return "grade_pathway";
+        case "senior_high":
+            return "senior_high_pathway";
+        default:
+            return "program";
+    }
+}
+
+export default function CurriculumPrograms({
+    user,
+    stats,
+    programs,
+    departments,
+    course_types,
+    school,
+    capabilities,
+    catalog_templates,
+    shs_pathways,
+}: CurriculumProgramsProps) {
     const [sorting, setSorting] = useState<SortingState>([]);
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
     const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
@@ -154,7 +211,60 @@ export default function CurriculumPrograms({ user, stats, programs, departments,
         lab_per_unit: "",
         miscelaneous: "",
         remarks: "",
+        capability_id: capabilities[0]?.id ?? "",
+        curriculum_kind: capabilityKind(capabilities[0]?.school_level),
+        curriculum_stage: "",
+        duration_hours: "",
+        qualification_level: "",
+        catalog_reference: "",
+        tesda_program_type: "national_certificate",
+        duration_years: "",
+        internship_hours: "",
+        bundled_qualifications: "",
+        advanced_topics: "",
     });
+
+    const selectedCapability = capabilities.find((capability) => capability.id === createForm.data.capability_id) ?? null;
+    const compatibleTemplates = catalog_templates.filter((template) => template.framework === selectedCapability?.curriculum_framework);
+
+    const selectCapability = (capabilityId: string): void => {
+        const capability = capabilities.find((item) => item.id === capabilityId);
+        createForm.setData({
+            ...createForm.data,
+            capability_id: capabilityId,
+            curriculum_kind: capabilityKind(capability?.school_level),
+            curriculum_stage: "",
+            duration_hours: "",
+            qualification_level: "",
+            catalog_reference: capability?.reference ?? "",
+            tesda_program_type: "national_certificate",
+            duration_years: "",
+            internship_hours: "",
+            bundled_qualifications: "",
+            advanced_topics: "",
+        });
+    };
+
+    const applyTemplate = (code: string): void => {
+        const template = compatibleTemplates.find((item) => item.code === code);
+        if (!template) return;
+
+        createForm.setData({
+            ...createForm.data,
+            code: template.code,
+            title: template.title,
+            curriculum_kind: template.kind,
+            curriculum_stage: template.stage ?? "",
+            qualification_level: template.qualification_level ?? "",
+            duration_hours: template.duration_hours?.toString() ?? "",
+            catalog_reference: template.reference,
+            tesda_program_type: template.tesda_program_type ?? "national_certificate",
+            duration_years: template.duration_years?.toString() ?? "",
+            internship_hours: template.internship_hours?.toString() ?? "",
+            bundled_qualifications: template.bundled_qualifications.join(", "),
+            advanced_topics: template.advanced_topics ?? "",
+        });
+    };
 
     // Pre-fill department when filter is active
     useEffect(() => {
@@ -165,7 +275,7 @@ export default function CurriculumPrograms({ user, stats, programs, departments,
 
     const handleCreateProgram = (e: FormEvent) => {
         e.preventDefault();
-        createForm.post(route("administrators.curriculum.programs.store"), {
+        createForm.post(storeProgram(), {
             preserveScroll: true,
             onSuccess: () => {
                 setIsCreateOpen(false);
@@ -176,11 +286,7 @@ export default function CurriculumPrograms({ user, stats, programs, departments,
     };
 
     const toggleStatus = (program: ProgramSummary) => {
-        router.put(
-            route("administrators.curriculum.programs.toggle-status", program.id),
-            {},
-            { preserveScroll: true },
-        );
+        router.put(route("administrators.curriculum.programs.toggle-status", program.id), {}, { preserveScroll: true });
     };
 
     const columns: ColumnDef<ProgramSummary>[] = useMemo(
@@ -221,10 +327,7 @@ export default function CurriculumPrograms({ user, stats, programs, departments,
                                 {program.title}
                             </span>
                             <div className="mt-0.5 flex flex-wrap gap-1">
-                                <Badge
-                                    variant="secondary"
-                                    className={`h-4 px-1.5 py-0 text-[10px] font-semibold ${getDepartmentColor(deptCode)}`}
-                                >
+                                <Badge variant="secondary" className={`h-4 px-1.5 py-0 text-[10px] font-semibold ${getDepartmentColor(deptCode)}`}>
                                     {deptCode}
                                 </Badge>
                                 {program.curriculum_year && (
@@ -233,8 +336,24 @@ export default function CurriculumPrograms({ user, stats, programs, departments,
                                     </Badge>
                                 )}
                                 {program.course_type_name && (
-                                    <Badge variant="outline" className="h-4 border-primary/20 bg-primary/5 px-1.5 py-0 text-[10px] text-primary">
+                                    <Badge variant="outline" className="border-primary/20 bg-primary/5 text-primary h-4 px-1.5 py-0 text-[10px]">
                                         {program.course_type_name}
+                                    </Badge>
+                                )}
+                                {program.curriculum_kind !== "legacy" && (
+                                    <Badge
+                                        variant="outline"
+                                        className="h-4 border-violet-500/20 bg-violet-500/5 px-1.5 py-0 text-[10px] text-violet-700 dark:text-violet-300"
+                                    >
+                                        {program.curriculum_stage || program.qualification_level || program.curriculum_kind.replace(/_/g, " ")}
+                                    </Badge>
+                                )}
+                                {program.curriculum_kind === "tesda_qualification" && program.tesda_program_type && (
+                                    <Badge
+                                        variant="outline"
+                                        className="h-4 border-amber-500/20 bg-amber-500/5 px-1.5 py-0 text-[10px] text-amber-700 dark:text-amber-300"
+                                    >
+                                        {program.tesda_program_type === "diploma" ? "Institutional Diploma" : "National Certificate"}
                                     </Badge>
                                 )}
                             </div>
@@ -342,8 +461,14 @@ export default function CurriculumPrograms({ user, stats, programs, departments,
                             <div className="space-y-1">
                                 <CardTitle className="text-2xl">Program Directory</CardTitle>
                                 <CardDescription className="max-w-xl text-sm">
-                                    Create, manage, and organize all academic programs across departments.
+                                    Create and organize college, TESDA, elementary, junior high, and senior high pathways from one place.
                                 </CardDescription>
+                                {shs_pathways.length > 0 && (
+                                    <p className="text-muted-foreground text-xs">
+                                        {shs_pathways.length} existing Senior High tracks remain available through their current track and strand
+                                        records.
+                                    </p>
+                                )}
                             </div>
                         </div>
                         <div className="flex flex-wrap items-center gap-3">
@@ -502,16 +627,60 @@ export default function CurriculumPrograms({ user, stats, programs, departments,
                     }
                 }}
             >
-                <DialogContent className="bg-card border shadow-lg sm:max-w-2xl">
+                <DialogContent className="bg-card border shadow-lg sm:max-w-3xl">
                     <DialogHeader className="mb-4 border-b pb-4">
-                        <DialogTitle className="text-xl">Create New Course</DialogTitle>
-                        <DialogDescription>Add a new academic program to the curriculum.</DialogDescription>
+                        <DialogTitle className="text-xl">Add a curriculum pathway</DialogTitle>
+                        <DialogDescription>
+                            Start with a school-supported framework, use a catalog starting point, or create a local pathway from scratch.
+                        </DialogDescription>
                     </DialogHeader>
                     <form className="grid gap-5" onSubmit={handleCreateProgram}>
+                        <div className="bg-muted/30 grid gap-4 rounded-xl border p-4 md:grid-cols-2">
+                            <div className="grid gap-2">
+                                <Label className="text-foreground/80 font-semibold">School capability</Label>
+                                <Select value={createForm.data.capability_id} onValueChange={selectCapability}>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Choose a supported pathway" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {capabilities.map((capability) => (
+                                            <SelectItem key={capability.id} value={capability.id}>
+                                                {capability.school_level_label} · {capability.framework_label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <FieldError message={createForm.errors.capability_id} />
+                            </div>
+                            <div className="grid gap-2">
+                                <Label className="text-foreground/80 font-semibold">Catalog starter (optional)</Label>
+                                <Select onValueChange={applyTemplate} disabled={!selectedCapability || compatibleTemplates.length === 0}>
+                                    <SelectTrigger>
+                                        <SelectValue
+                                            placeholder={selectedCapability ? "Choose a template or start custom" : "Choose a capability first"}
+                                        />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {compatibleTemplates.map((template) => (
+                                            <SelectItem key={template.code} value={template.code}>
+                                                {template.label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
+                        {selectedCapability && (
+                            <div className="flex flex-wrap items-center gap-2 text-xs">
+                                <Badge variant="secondary">{selectedCapability.school_level_label}</Badge>
+                                <Badge variant="outline">{selectedCapability.framework_label}</Badge>
+                                {school && <span className="text-muted-foreground">Adding to {school.name}</span>}
+                            </div>
+                        )}
                         <div className="grid gap-4 md:grid-cols-2">
                             <div className="grid gap-2">
                                 <Label htmlFor="create-code" className="text-foreground/80 font-semibold">
-                                    Program Code
+                                    Pathway Code
                                 </Label>
                                 <Input
                                     id="create-code"
@@ -521,53 +690,61 @@ export default function CurriculumPrograms({ user, stats, programs, departments,
                                 />
                                 <FieldError message={createForm.errors.code} />
                             </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="create-dept" className="text-foreground/80 font-semibold">
-                                    Department
-                                </Label>
-                                <Select
-                                    value={createForm.data.department_id}
-                                    onValueChange={(value) => createForm.setData("department_id", value)}
-                                >
-                                    <SelectTrigger id="create-dept">
-                                        <SelectValue placeholder="Select department" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {departments.map((dept) => (
-                                            <SelectItem key={dept.id} value={String(dept.id)}>
-                                                {dept.code} — {dept.name}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                <FieldError message={createForm.errors.department_id} />
-                            </div>
+                            {createForm.data.curriculum_kind === "program" && (
+                                <div className="grid gap-2">
+                                    <Label htmlFor="create-dept" className="text-foreground/80 font-semibold">
+                                        Department
+                                    </Label>
+                                    <Select
+                                        value={createForm.data.department_id}
+                                        onValueChange={(value) => createForm.setData("department_id", value)}
+                                    >
+                                        <SelectTrigger id="create-dept">
+                                            <SelectValue placeholder="Select department" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {departments.map((dept) => (
+                                                <SelectItem key={dept.id} value={String(dept.id)}>
+                                                    {dept.code} — {dept.name}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <FieldError message={createForm.errors.department_id} />
+                                </div>
+                            )}
                         </div>
                         <div className="grid gap-4 md:grid-cols-2">
-                            <div className="grid gap-2">
-                                <Label htmlFor="create-course-type" className="text-foreground/80 font-semibold">
-                                    Course Type
-                                </Label>
-                                <Select
-                                    value={createForm.data.course_type_id}
-                                    onValueChange={(value) => createForm.setData("course_type_id", value)}
-                                >
-                                    <SelectTrigger id="create-course-type">
-                                        <SelectValue placeholder="Select type" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {course_types.map((type) => (
-                                            <SelectItem key={type.id} value={String(type.id)}>
-                                                {type.name}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                <FieldError message={createForm.errors.course_type_id} />
-                            </div>
+                            {createForm.data.curriculum_kind === "program" && (
+                                <div className="grid gap-2">
+                                    <Label htmlFor="create-course-type" className="text-foreground/80 font-semibold">
+                                        Course Type
+                                    </Label>
+                                    <Select
+                                        value={createForm.data.course_type_id}
+                                        onValueChange={(value) => createForm.setData("course_type_id", value)}
+                                    >
+                                        <SelectTrigger id="create-course-type">
+                                            <SelectValue placeholder="Select type" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {course_types.map((type) => (
+                                                <SelectItem key={type.id} value={String(type.id)}>
+                                                    {type.name}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <FieldError message={createForm.errors.course_type_id} />
+                                </div>
+                            )}
                             <div className="grid gap-2">
                                 <Label htmlFor="create-title" className="text-foreground/80 font-semibold">
-                                    Program Title
+                                    {createForm.data.curriculum_kind === "tesda_qualification"
+                                        ? "Qualification title"
+                                        : createForm.data.curriculum_kind === "grade_pathway"
+                                          ? "Grade pathway title"
+                                          : "Program title"}
                                 </Label>
                                 <Input
                                     id="create-title"
@@ -578,6 +755,114 @@ export default function CurriculumPrograms({ user, stats, programs, departments,
                                 <FieldError message={createForm.errors.title} />
                             </div>
                         </div>
+                        {(createForm.data.curriculum_kind === "grade_pathway" || createForm.data.curriculum_kind === "senior_high_pathway") && (
+                            <div className="grid gap-2">
+                                <Label htmlFor="create-stage" className="text-foreground/80 font-semibold">
+                                    Grade level / stage
+                                </Label>
+                                <Input
+                                    id="create-stage"
+                                    placeholder="e.g. Grade 1, Grade 7, Grade 11"
+                                    value={createForm.data.curriculum_stage}
+                                    onChange={(e) => createForm.setData("curriculum_stage", e.target.value)}
+                                />
+                                <FieldError message={createForm.errors.curriculum_stage} />
+                            </div>
+                        )}
+                        {createForm.data.curriculum_kind === "tesda_qualification" && (
+                            <div className="grid gap-4 md:grid-cols-2">
+                                <div className="grid gap-2">
+                                    <Label htmlFor="create-tesda-type">TESDA program type</Label>
+                                    <Select
+                                        value={createForm.data.tesda_program_type}
+                                        onValueChange={(value) => createForm.setData("tesda_program_type", value)}
+                                    >
+                                        <SelectTrigger id="create-tesda-type">
+                                            <SelectValue placeholder="Select program type" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="national_certificate">National Certificate (NC)</SelectItem>
+                                            <SelectItem value="diploma">Institutional Diploma</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                    <FieldError message={createForm.errors.tesda_program_type} />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="create-qualification">Qualification level</Label>
+                                    <Input
+                                        id="create-qualification"
+                                        placeholder="e.g. NC II or Diploma"
+                                        value={createForm.data.qualification_level}
+                                        onChange={(e) => createForm.setData("qualification_level", e.target.value)}
+                                    />
+                                    <FieldError message={createForm.errors.qualification_level} />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="create-hours">Total program hours</Label>
+                                    <Input
+                                        id="create-hours"
+                                        type="number"
+                                        min="1"
+                                        value={createForm.data.duration_hours}
+                                        onChange={(e) => createForm.setData("duration_hours", e.target.value)}
+                                    />
+                                    <FieldError message={createForm.errors.duration_hours} />
+                                </div>
+                                {createForm.data.tesda_program_type === "diploma" && (
+                                    <>
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="create-duration-years">Typical duration (years)</Label>
+                                            <Input
+                                                id="create-duration-years"
+                                                type="number"
+                                                min="0.5"
+                                                max="10"
+                                                step="0.5"
+                                                placeholder="e.g. 1 or 1.5"
+                                                value={createForm.data.duration_years}
+                                                onChange={(e) => createForm.setData("duration_years", e.target.value)}
+                                            />
+                                            <FieldError message={createForm.errors.duration_years} />
+                                        </div>
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="create-internship-hours">Mandatory OJT / internship hours</Label>
+                                            <Input
+                                                id="create-internship-hours"
+                                                type="number"
+                                                min="0"
+                                                max="65535"
+                                                placeholder="e.g. 600"
+                                                value={createForm.data.internship_hours}
+                                                onChange={(e) => createForm.setData("internship_hours", e.target.value)}
+                                            />
+                                            <FieldError message={createForm.errors.internship_hours} />
+                                        </div>
+                                        <div className="grid gap-2 md:col-span-2">
+                                            <Label htmlFor="create-bundled-qualifications">Bundled TESDA qualifications</Label>
+                                            <Input
+                                                id="create-bundled-qualifications"
+                                                placeholder="e.g. Cookery NC II, Bread & Pastry Production NC II"
+                                                value={createForm.data.bundled_qualifications}
+                                                onChange={(e) => createForm.setData("bundled_qualifications", e.target.value)}
+                                            />
+                                            <p className="text-muted-foreground text-xs">Separate each qualification with a comma.</p>
+                                            <FieldError message={createForm.errors.bundled_qualifications} />
+                                        </div>
+                                        <div className="grid gap-2 md:col-span-2">
+                                            <Label htmlFor="create-advanced-topics">Advanced topics and internship context</Label>
+                                            <Textarea
+                                                id="create-advanced-topics"
+                                                className="min-h-[80px] resize-none"
+                                                placeholder="e.g. Advanced culinary techniques, kitchen operations, menu planning..."
+                                                value={createForm.data.advanced_topics}
+                                                onChange={(e) => createForm.setData("advanced_topics", e.target.value)}
+                                            />
+                                            <FieldError message={createForm.errors.advanced_topics} />
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        )}
                         <div className="grid gap-4 md:grid-cols-2">
                             <div className="grid gap-2">
                                 <Label htmlFor="create-curriculum-year" className="text-foreground/80 font-semibold">
@@ -591,49 +876,53 @@ export default function CurriculumPrograms({ user, stats, programs, departments,
                                 />
                                 <FieldError message={createForm.errors.curriculum_year} />
                             </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="create-misc" className="text-foreground/80 font-semibold">
-                                    Misc Fee (₱)
-                                </Label>
-                                <Input
-                                    id="create-misc"
-                                    type="number"
-                                    min="0"
-                                    placeholder="e.g. 3500"
-                                    value={createForm.data.miscelaneous}
-                                    onChange={(e) => createForm.setData("miscelaneous", e.target.value)}
-                                />
-                                <FieldError message={createForm.errors.miscelaneous} />
-                            </div>
+                            {createForm.data.curriculum_kind === "program" && (
+                                <div className="grid gap-2">
+                                    <Label htmlFor="create-misc" className="text-foreground/80 font-semibold">
+                                        Misc Fee (₱)
+                                    </Label>
+                                    <Input
+                                        id="create-misc"
+                                        type="number"
+                                        min="0"
+                                        placeholder="e.g. 3500"
+                                        value={createForm.data.miscelaneous}
+                                        onChange={(e) => createForm.setData("miscelaneous", e.target.value)}
+                                    />
+                                    <FieldError message={createForm.errors.miscelaneous} />
+                                </div>
+                            )}
                         </div>
-                        <div className="grid gap-4 md:grid-cols-2">
-                            <div className="grid gap-2">
-                                <Label htmlFor="create-lec" className="text-foreground/80 font-semibold">
-                                    Lecture Rate / Unit
-                                </Label>
-                                <Input
-                                    id="create-lec"
-                                    type="number"
-                                    min="0"
-                                    value={createForm.data.lec_per_unit}
-                                    onChange={(e) => createForm.setData("lec_per_unit", e.target.value)}
-                                />
-                                <FieldError message={createForm.errors.lec_per_unit} />
+                        {createForm.data.curriculum_kind === "program" && (
+                            <div className="grid gap-4 md:grid-cols-2">
+                                <div className="grid gap-2">
+                                    <Label htmlFor="create-lec" className="text-foreground/80 font-semibold">
+                                        Lecture Rate / Unit
+                                    </Label>
+                                    <Input
+                                        id="create-lec"
+                                        type="number"
+                                        min="0"
+                                        value={createForm.data.lec_per_unit}
+                                        onChange={(e) => createForm.setData("lec_per_unit", e.target.value)}
+                                    />
+                                    <FieldError message={createForm.errors.lec_per_unit} />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="create-lab" className="text-foreground/80 font-semibold">
+                                        Lab Rate / Unit
+                                    </Label>
+                                    <Input
+                                        id="create-lab"
+                                        type="number"
+                                        min="0"
+                                        value={createForm.data.lab_per_unit}
+                                        onChange={(e) => createForm.setData("lab_per_unit", e.target.value)}
+                                    />
+                                    <FieldError message={createForm.errors.lab_per_unit} />
+                                </div>
                             </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="create-lab" className="text-foreground/80 font-semibold">
-                                    Lab Rate / Unit
-                                </Label>
-                                <Input
-                                    id="create-lab"
-                                    type="number"
-                                    min="0"
-                                    value={createForm.data.lab_per_unit}
-                                    onChange={(e) => createForm.setData("lab_per_unit", e.target.value)}
-                                />
-                                <FieldError message={createForm.errors.lab_per_unit} />
-                            </div>
-                        </div>
+                        )}
                         <div className="grid gap-2">
                             <Label htmlFor="create-description" className="text-foreground/80 font-semibold">
                                 Description
@@ -653,7 +942,7 @@ export default function CurriculumPrograms({ user, stats, programs, departments,
                             </Button>
                             <Button type="submit" disabled={createForm.processing}>
                                 <Plus className="mr-2 size-4" />
-                                Create Course
+                                Create pathway
                             </Button>
                         </DialogFooter>
                     </form>

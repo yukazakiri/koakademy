@@ -14,7 +14,6 @@ import {
     CircleCheckBig,
     Filter,
     GraduationCap,
-    History,
     RotateCcw,
     Settings2,
     UserPlus,
@@ -390,14 +389,24 @@ export default function AdministratorEnrollmentsIndex({
         <AdminLayout user={user} title="Enrollment Records">
             <Head title="Administrators • Enrollment Records" />
 
-            <div className="space-y-6 pb-10">
-                <header className="flex flex-col gap-4 border-b pb-6 sm:flex-row sm:items-end sm:justify-between">
-                    <div className="space-y-1">
-                        <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.16em] uppercase">Admissions & Enrollment</p>
-                        <h1 className="text-2xl font-semibold tracking-tight">Enrollment Records</h1>
-                        <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed">
-                            Process applicant handoffs and maintain current-semester enrollment workflow records.
-                        </p>
+            <div className="relative space-y-6 pb-10">
+                <div className="pointer-events-none absolute -top-24 right-0 size-72 rounded-full bg-blue-500/5 blur-3xl" aria-hidden="true" />
+
+                <header className="border-border/70 relative flex flex-col gap-6 border-b pb-6 lg:flex-row lg:items-end lg:justify-between">
+                    <div className="space-y-3">
+                        <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-[11px] font-semibold tracking-[0.16em] uppercase">
+                            <span className="size-1.5 rounded-full bg-blue-500" aria-hidden="true" />
+                            Admissions workspace
+                            <span className="border-border/70 text-muted-foreground rounded-full border px-2 py-0.5 tracking-normal normal-case">
+                                Current term
+                            </span>
+                        </div>
+                        <div className="space-y-1">
+                            <h1 className="text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">Enrollment records</h1>
+                            <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed">
+                                Track student handoffs, review workflow exceptions, and keep the current term moving.
+                            </p>
+                        </div>
                     </div>
                     {workflow_setup_required ? (
                         <Link href={route("administrators.system-management.index")} className={buttonVariants({ className: "gap-2" })}>
@@ -405,9 +414,17 @@ export default function AdministratorEnrollmentsIndex({
                             Configure workflow
                         </Link>
                     ) : (
-                        <div className="flex flex-wrap items-center gap-3">
-                            <SemesterSelector {...filters} />
-                            <Link href={route("administrators.enrollments.create")} className={buttonVariants({ className: "gap-2" })}>
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                            <div className="space-y-1.5">
+                                <p className="text-muted-foreground text-[10px] font-semibold tracking-[0.14em] uppercase">Viewing period</p>
+                                <SemesterSelector {...filters} />
+                            </div>
+                            <Link
+                                href={route("administrators.enrollments.create")}
+                                className={buttonVariants({
+                                    className: "gap-2 bg-blue-600 text-white shadow-blue-600/20 hover:bg-blue-500 hover:shadow-md",
+                                })}
+                            >
                                 <UserPlus className="size-4" aria-hidden="true" />
                                 New enrollment
                             </Link>
@@ -438,21 +455,28 @@ export default function AdministratorEnrollmentsIndex({
                     </Card>
                 ) : (
                     <>
-                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <div className="relative grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                             {[
+                                {
+                                    label: "Total enrolled",
+                                    value: analytics?.current_semester_count ?? enrollmentsTotal,
+                                    detail: "Current semester records",
+                                    icon: GraduationCap,
+                                    tone: "text-blue-600 dark:text-blue-400",
+                                },
+                                {
+                                    label: "Active records",
+                                    value: analytics?.active_count ?? stats.active,
+                                    detail: "Ready for the next step",
+                                    icon: Users,
+                                    tone: "text-emerald-600 dark:text-emerald-400",
+                                },
                                 {
                                     label: "Pending applicants",
                                     value: stats.applicants,
                                     detail: "Awaiting registrar handoff",
                                     icon: UserPlus,
-                                    tone: "text-blue-600 dark:text-blue-400",
-                                },
-                                {
-                                    label: "Active enrollments",
-                                    value: stats.active,
-                                    detail: "Current-semester records",
-                                    icon: Users,
-                                    tone: "text-emerald-600 dark:text-emerald-400",
+                                    tone: "text-violet-600 dark:text-violet-400",
                                 },
                                 {
                                     label: "Workflow exceptions",
@@ -461,22 +485,17 @@ export default function AdministratorEnrollmentsIndex({
                                     icon: AlertTriangle,
                                     tone: "text-amber-600 dark:text-amber-400",
                                 },
-                                {
-                                    label: "Recently completed",
-                                    value: stats.completed,
-                                    detail: "Reached final workflow status",
-                                    icon: History,
-                                    tone: "text-muted-foreground",
-                                },
                             ].map((metric) => (
-                                <Card key={metric.label} size="sm" className="gap-0 py-0">
-                                    <CardContent className="flex items-center justify-between gap-4 p-4">
+                                <Card key={metric.label} size="sm" className="border-border/70 bg-card/80 gap-0 py-0 shadow-sm">
+                                    <CardContent className="flex items-start justify-between gap-4 p-4 sm:p-5">
                                         <div className="min-w-0">
-                                            <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">{metric.label}</p>
-                                            <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{metric.value}</p>
+                                            <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.08em] uppercase">
+                                                {metric.label}
+                                            </p>
+                                            <p className="mt-2 text-2xl font-semibold tracking-[-0.03em] tabular-nums sm:text-3xl">{metric.value}</p>
                                             <p className="text-muted-foreground mt-1 truncate text-xs">{metric.detail}</p>
                                         </div>
-                                        <div className="bg-muted/60 flex size-10 shrink-0 items-center justify-center rounded-lg">
+                                        <div className="bg-muted/60 border-border/60 flex size-10 shrink-0 items-center justify-center rounded-lg border">
                                             <metric.icon className={`size-5 ${metric.tone}`} aria-hidden="true" />
                                         </div>
                                     </CardContent>
@@ -485,7 +504,7 @@ export default function AdministratorEnrollmentsIndex({
                         </div>
 
                         {stats.applicants > 0 && (
-                            <div className="flex flex-col gap-3 rounded-lg border border-blue-200/70 bg-blue-50/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-blue-900/50 dark:bg-blue-950/20">
+                            <div className="flex flex-col gap-3 rounded-xl border border-blue-200/70 bg-blue-50/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-blue-900/50 dark:bg-blue-950/20">
                                 <div className="flex items-center gap-3">
                                     <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300">
                                         <CircleCheckBig className="size-4" aria-hidden="true" />

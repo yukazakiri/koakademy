@@ -66,6 +66,20 @@ const getInitials = (name: string | null) => {
         .slice(0, 2);
 };
 
+function formatDate(value: string | null): string {
+    if (!value) return "—";
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) return "—";
+
+    return new Intl.DateTimeFormat("en-PH", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+    }).format(date);
+}
+
 export const createColumns = (actions?: EnrollmentActions, currency: string = "PHP", pipeline?: PipelineDisplay): ColumnDef<EnrollmentRow>[] => [
     {
         id: "select",
@@ -102,22 +116,20 @@ export const createColumns = (actions?: EnrollmentActions, currency: string = "P
         cell: ({ row }) => {
             const enrollment = row.original;
             return (
-                <div className="flex items-center gap-4">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400">
-                        <Avatar className="h-8 w-8 border">
-                            <AvatarFallback
-                                className={cn(
-                                    "text-xs font-medium",
-                                    enrollment.is_trashed
-                                        ? "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-400"
-                                        : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-400",
-                                )}
-                            >
-                                {getInitials(enrollment.student_name)}
-                            </AvatarFallback>
-                        </Avatar>
-                    </div>
-                    <div className="flex-1">
+                <div className="flex min-w-[220px] items-center gap-3">
+                    <Avatar className="border-border/70 size-9 border">
+                        <AvatarFallback
+                            className={cn(
+                                "text-xs font-semibold",
+                                enrollment.is_trashed
+                                    ? "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300"
+                                    : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300",
+                            )}
+                        >
+                            {getInitials(enrollment.student_name)}
+                        </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                             <p
                                 className={cn(
@@ -133,11 +145,32 @@ export const createColumns = (actions?: EnrollmentActions, currency: string = "P
                                 </Badge>
                             )}
                         </div>
-                        <p className="text-muted-foreground text-xs">{enrollment.course ?? "—"}</p>
+                        <p className="text-muted-foreground truncate text-xs">
+                            {enrollment.student_id ? `ID ${enrollment.student_id}` : "No student ID"}
+                        </p>
                     </div>
                 </div>
             );
         },
+    },
+    {
+        accessorKey: "course",
+        header: "Course / Program",
+        cell: ({ row }) => {
+            const enrollment = row.original;
+
+            return (
+                <div className="min-w-[175px]">
+                    <p className="text-sm font-medium">{enrollment.course ?? "—"}</p>
+                    <p className="text-muted-foreground max-w-[220px] truncate text-xs">{enrollment.course_title ?? "Program not assigned"}</p>
+                </div>
+            );
+        },
+    },
+    {
+        accessorKey: "department",
+        header: "Department",
+        cell: ({ row }) => <span className="text-muted-foreground min-w-[95px] text-sm font-medium">{row.original.department ?? "Unassigned"}</span>,
     },
     {
         accessorKey: "school_year",
@@ -145,12 +178,12 @@ export const createColumns = (actions?: EnrollmentActions, currency: string = "P
         cell: ({ row }) => {
             const enrollment = row.original;
             return (
-                <div className="space-y-1">
-                    <p className="text-sm font-medium">{enrollment.school_year}</p>
-                    <div className="text-muted-foreground flex items-center gap-2 text-xs">
-                        <span>Sem {enrollment.semester}</span>
-                        <span className="bg-muted-foreground/30 h-1 w-1 rounded-full" />
-                        <span>Year {enrollment.academic_year}</span>
+                <div className="min-w-[125px] space-y-1">
+                    <p className="text-sm font-medium">{enrollment.school_year ?? "—"}</p>
+                    <div className="text-muted-foreground flex items-center gap-2 text-[11px]">
+                        <span>Sem {enrollment.semester ?? "—"}</span>
+                        <span className="bg-muted-foreground/30 h-1 w-1 rounded-full" aria-hidden="true" />
+                        <span>Year {enrollment.academic_year ?? "—"}</span>
                     </div>
                 </div>
             );
@@ -165,11 +198,16 @@ export const createColumns = (actions?: EnrollmentActions, currency: string = "P
                 (status ? pipeline?.statusClasses?.[status] : undefined) ??
                 "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 border-gray-200";
             return (
-                <Badge variant="secondary" className={cn("font-medium", statusClass)}>
-                    {status}
+                <Badge variant="secondary" className={cn("rounded-full px-2.5 font-medium", statusClass)}>
+                    {status ?? "Unspecified"}
                 </Badge>
             );
         },
+    },
+    {
+        accessorKey: "subjects_count",
+        header: "Subjects",
+        cell: ({ row }) => <span className="min-w-[70px] text-sm font-medium tabular-nums">{row.original.subjects_count.toLocaleString()}</span>,
     },
     {
         accessorKey: "tuition",
@@ -177,16 +215,33 @@ export const createColumns = (actions?: EnrollmentActions, currency: string = "P
         cell: ({ row }) => {
             const tuition = row.original.tuition;
             return (
-                <div>
-                    <p className="text-foreground text-sm font-semibold">{formatMoney(tuition?.overall, currency)}</p>
-                    {tuition?.balance && tuition.balance > 0 ? (
-                        <p className="text-xs text-red-500">Balance: {formatMoney(tuition.balance, currency)}</p>
-                    ) : (
-                        <p className="text-xs text-emerald-600">Fully Paid</p>
-                    )}
+                <div className="min-w-[110px]">
+                    <p className="text-foreground text-sm font-semibold tabular-nums">{formatMoney(tuition?.overall, currency)}</p>
+                    <p className="text-muted-foreground text-[11px]">Total tuition</p>
                 </div>
             );
         },
+    },
+    {
+        id: "balance",
+        header: "Balance",
+        cell: ({ row }) => {
+            const balance = row.original.tuition?.balance ?? 0;
+
+            return (
+                <div className="min-w-[110px]">
+                    <p className={cn("text-sm font-semibold tabular-nums", balance > 0 ? "text-red-500" : "text-emerald-600 dark:text-emerald-400")}>
+                        {balance > 0 ? formatMoney(balance, currency) : "Paid in full"}
+                    </p>
+                    <p className="text-muted-foreground text-[11px]">{balance > 0 ? "Outstanding" : "Cleared"}</p>
+                </div>
+            );
+        },
+    },
+    {
+        accessorKey: "created_at",
+        header: "Enrolled",
+        cell: ({ row }) => <span className="text-muted-foreground min-w-[105px] text-xs">{formatDate(row.original.created_at)}</span>,
     },
     {
         id: "actions",
@@ -194,18 +249,6 @@ export const createColumns = (actions?: EnrollmentActions, currency: string = "P
             const enrollment = row.original;
             return (
                 <div className="flex items-center justify-end gap-1">
-                    {!enrollment.is_trashed && (
-                        <Button variant="outline" size="sm" asChild className="h-8 px-2" onClick={(e) => e.stopPropagation()}>
-                            <Link
-                                href={route("administrators.enrollments.edit", enrollment.id)}
-                                className="flex items-center"
-                                onClick={(e) => e.stopPropagation()}
-                            >
-                                <Pencil className="mr-2 h-4 w-4" />
-                                Edit
-                            </Link>
-                        </Button>
-                    )}
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <Button variant="ghost" className="h-8 w-8 p-0" onClick={(e) => e.stopPropagation()}>

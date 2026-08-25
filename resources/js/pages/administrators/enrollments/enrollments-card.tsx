@@ -2,11 +2,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Link } from "@inertiajs/react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { MoreHorizontal, Pencil, Search, Users } from "lucide-react";
+import { ArrowUpRight, ListFilter, Search, Users } from "lucide-react";
 import type { ReactNode } from "react";
-import { route } from "ziggy-js";
 import type { EnrollmentRow } from "./columns";
 import { DataTable } from "./data-table";
 import type { EnrollmentManagementProps } from "./types";
@@ -48,33 +46,33 @@ export function EnrollmentsCard({
             : `Showing ${enrollmentsData.length} of ${enrollmentsTotal} enrollments`;
 
     return (
-        <Card>
-            <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-4">
-                <div className="space-y-1">
-                    <CardTitle className="flex items-center gap-2">
-                        <Users className="h-5 w-5" />
-                        Enrolled Students
-                    </CardTitle>
-                    <CardDescription>{totalLabel}</CardDescription>
+        <Card className="border-border/70 bg-card/85 overflow-hidden shadow-sm">
+            <CardHeader className="border-border/60 flex flex-col gap-4 border-b px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                <div className="flex items-center gap-3">
+                    <div className="bg-primary/10 text-primary border-primary/15 flex size-9 shrink-0 items-center justify-center rounded-lg border">
+                        <Users className="size-4" aria-hidden="true" />
+                    </div>
+                    <div className="space-y-0.5">
+                        <CardTitle className="text-base font-semibold tracking-tight">Enrollment directory</CardTitle>
+                        <CardDescription className="text-xs">{totalLabel}</CardDescription>
+                    </div>
                 </div>
-                <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" asChild>
-                        <a href={filament.student_enrollments.index_url} target="_blank" rel="noreferrer">
-                            <MoreHorizontal className="mr-2 h-4 w-4" />
-                            Advanced View
-                        </a>
-                    </Button>
-                </div>
+                <Button variant="outline" size="sm" asChild className="self-start sm:self-auto">
+                    <a href={filament.student_enrollments.index_url} target="_blank" rel="noreferrer">
+                        <ArrowUpRight aria-hidden="true" />
+                        Advanced view
+                    </a>
+                </Button>
             </CardHeader>
-            <CardContent className="space-y-4">
-                {scopeControl ? <div className="border-b pb-3">{scopeControl}</div> : null}
+            <CardContent className="space-y-0 p-0">
+                {scopeControl ? <div className="border-border/60 border-b px-4 pt-3 sm:px-5">{scopeControl}</div> : null}
 
-                <div className="bg-muted/20 flex flex-col justify-between gap-3 rounded-lg border p-2.5 lg:flex-row lg:items-center">
+                <div className="border-border/60 flex flex-col justify-between gap-3 border-b px-4 py-3 sm:px-5 lg:flex-row lg:items-center">
                     <div className="relative min-w-0 flex-1">
-                        <Search className="text-muted-foreground absolute top-2.5 left-2.5 h-4 w-4" />
+                        <Search className="text-muted-foreground absolute top-2.5 left-3 size-4" aria-hidden="true" />
                         <Input
-                            placeholder="Search by student name, ID, course, or status..."
-                            className="bg-background h-9 pl-9"
+                            placeholder="Search by student, ID, course, or status..."
+                            className="border-border/70 bg-background/60 h-9 pl-9 shadow-none"
                             value={enrollmentSearch}
                             onChange={(e) => onSearchChange(e.target.value)}
                         />
@@ -82,7 +80,7 @@ export function EnrollmentsCard({
 
                     <div className="flex flex-wrap items-center gap-2">
                         <Select value={sortOption} onValueChange={onSortChange}>
-                            <SelectTrigger className="h-8 w-[190px]">
+                            <SelectTrigger className="border-border/70 bg-background/60 h-8 w-full sm:w-[175px]">
                                 <SelectValue placeholder="Sort enrollments" />
                             </SelectTrigger>
                             <SelectContent align="end">
@@ -95,30 +93,18 @@ export function EnrollmentsCard({
                             </SelectContent>
                         </Select>
 
-                        {filterControl}
+                        <div className="flex items-center gap-2">
+                            <ListFilter className="text-muted-foreground hidden size-3.5 sm:block" aria-hidden="true" />
+                            {filterControl}
+                        </div>
 
                         {hasActiveFilters ? resetControl : null}
                     </div>
                 </div>
 
-                <DataTable
-                    columns={enrollmentColumns}
-                    data={enrollmentsData}
-                    onRowClick={onRowClick}
-                    selectionActions={(selectedRows) => {
-                        if (selectedRows.length !== 1) return null;
-                        const enrollment = selectedRows[0] as EnrollmentRow;
-
-                        return (
-                            <Button size="sm" className="h-8" asChild>
-                                <Link href={route("administrators.enrollments.edit", enrollment.id)}>
-                                    <Pencil className="mr-2 h-4 w-4" />
-                                    Edit Selected
-                                </Link>
-                            </Button>
-                        );
-                    }}
-                />
+                <div className="px-4 pt-1 pb-4 sm:px-5">
+                    <DataTable columns={enrollmentColumns} data={enrollmentsData} onRowClick={onRowClick} tableVariant="spreadsheet" />
+                </div>
             </CardContent>
         </Card>
     );

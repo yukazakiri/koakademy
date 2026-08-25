@@ -217,7 +217,7 @@ const filtersContainerVariants = cva("flex flex-wrap items-center", {
     },
 });
 
-function FilterInput<T = unknown>({
+export function FilterInput<T = unknown>({
     field,
     onBlur,
     onKeyDown,
@@ -346,14 +346,13 @@ interface FilterRemoveButtonProps extends React.ButtonHTMLAttributes<HTMLButtonE
 function FilterRemoveButton({ className, icon = <XIcon />, ...props }: FilterRemoveButtonProps) {
     const context = useFilterContext();
 
-    const sizeMap = {
-        sm: "sm" as const,
-        default: "sm" as const,
-        lg: "default" as const,
-    };
-
     return (
-        <Button variant="outline" size={context.size === "sm" ? "icon-sm" : context.size === "lg" ? "icon-lg" : "icon"} {...props}>
+        <Button
+            variant="outline"
+            size={context.size === "sm" ? "icon-sm" : context.size === "lg" ? "icon-lg" : "icon"}
+            className={className}
+            {...props}
+        >
             {icon}
         </Button>
     );
@@ -842,8 +841,6 @@ function SelectOptionsPopover<T = unknown>({ field, values, onChange, onClose, i
 }
 
 function FilterValueSelector<T = unknown>({ field, values, onChange, operator, autoFocus }: FilterValueSelectorProps<T>) {
-    const context = useFilterContext();
-
     if (operator === "empty" || operator === "not_empty") {
         return null;
     }

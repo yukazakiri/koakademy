@@ -33,10 +33,11 @@ import {
     Banknote,
     CalendarDays,
     CheckCircle2,
-    Clock,
+    ClipboardList,
     Download,
+    Files,
     FileText,
-    GraduationCap,
+    ListChecks,
     MoreVertical,
     Pencil,
     Printer,
@@ -45,6 +46,7 @@ import {
     ShieldAlert,
     Undo2,
     UserCheck,
+    WalletCards,
 } from "lucide-react";
 import React, { useState } from "react";
 import { toast } from "sonner";
@@ -292,6 +294,10 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
     const balanceDue = enrollment.tuition?.balance_due ?? enrollment.tuition?.total_balance ?? 0;
     const totalPaid = enrollment.tuition?.total_paid ?? 0;
     const requiredDownpayment = enrollment.tuition?.required_downpayment ?? enrollment.tuition?.downpayment ?? 0;
+    const totalUnits = enrollment.subjects_enrolled.reduce((total, subject) => total + subject.units, 0);
+    const pendingRequirements = enrollment.requirements.filter((requirement) => requirement.status === "pending").length;
+    const reviewedRequirements = enrollment.requirements.filter((requirement) => requirement.status !== "pending").length;
+    const requirementsProgress = enrollment.requirements.length > 0 ? (reviewedRequirements / enrollment.requirements.length) * 100 : 100;
     const requirementReviewKey = () => (typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `requirement-${Date.now()}-${Math.random()}`);
 
     const reviewEnrollmentRequirement = (requirementId: number, action: "verify" | "waive", reason?: string) => {
@@ -484,6 +490,135 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                                   : "pending",
                   })),
               ];
+    const workflowTotalSteps = steps.length;
+    const workflowCompletedSteps = steps.filter((step) => step.status === "completed").length;
+    const currentWorkflowStep = steps.find((step) => step.status === "current") ?? null;
+    const workflowProgress = workflowTotalSteps > 0 ? (workflowCompletedSteps / workflowTotalSteps) * 100 : 0;
+    const nextActionLabel =
+        enrollment.workflow.allowed_transitions[0]?.label ??
+        nextStep?.label ??
+        (enrollment.workflow.terminal_outcome ? "Workflow complete" : "Review workflow");
+    const totalAssessment = enrollment.tuition?.overall_tuition ?? 0;
+    const paymentProgress = totalAssessment > 0 ? Math.min(100, Math.round((totalPaid / totalAssessment) * 100)) : 0;
+    const headerActions = (
+        <section aria-label="Enrollment actions" className="border-primary/20 bg-primary/[0.035] rounded-2xl border p-3 shadow-sm sm:p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0 px-1">
+                    <p className="text-primary text-[11px] font-semibold tracking-[0.14em] uppercase">Review action</p>
+                    <p className="mt-1 truncate text-sm font-semibold">{nextActionLabel}</p>
+                    <p className="text-muted-foreground mt-1 text-xs">Actions are permission-aware and recorded in the enrollment history.</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                    {enrollment.workflow_runtime === "policy_v1" &&
+                        enrollment.workflow.allowed_transitions.map((workflowTransition) =>
+                            workflowTransition.target_actions.includes("enrollment.verify_payment") ? (
+                                <VerifyCashierDialog
+                                    key={workflowTransition.key}
+                                    enrollmentId={enrollment.id}
+                                    tuition={enrollment.tuition}
+                                    additionalFees={enrollment.additional_fees}
+                                    label={workflowTransition.label}
+                                    requiresReason={workflowTransition.requires_reason}
+                                    receiptMode={workflowTransition.payment_configuration?.receipt_mode ?? "required"}
+                                    allowedPaymentMethods={enrollment.workflow.allowed_payment_methods}
+                                    buttonClassName="w-auto min-w-[10rem] rounded-xl"
+                                />
+                            ) : (
+                                <Button
+                                    key={workflowTransition.key}
+                                    onClick={() => handlePolicyTransition(workflowTransition)}
+                                    className="h-10 rounded-xl px-4 shadow-sm transition-[transform,box-shadow] duration-200 active:scale-[0.98]"
+                                >
+                                    <CheckCircle2 className="mr-2 size-4" />
+                                    {workflowTransition.label}
+                                </Button>
+                            ),
+                        )}
+
+                    {enrollment.workflow_runtime === "legacy" && nextStep?.action_type === "department_verification" && auth.can_verify_head && (
+                        <Button onClick={handleVerifyHeadDept} className="h-10 rounded-xl bg-blue-600 px-4 shadow-sm hover:bg-blue-700">
+                            <UserCheck className="mr-2 size-4" />
+                            Verify step
+                        </Button>
+                    )}
+
+                    {enrollment.workflow_runtime === "legacy" && nextStep?.action_type === "cashier_verification" && auth.can_verify_cashier && (
+                        <VerifyCashierDialog
+                            enrollmentId={enrollment.id}
+                            tuition={enrollment.tuition}
+                            additionalFees={enrollment.additional_fees}
+                            buttonClassName="w-auto min-w-[10rem] rounded-xl"
+                        />
+                    )}
+
+                    {enrollment.workflow_runtime === "legacy" &&
+                        auth.can_advance_pipeline &&
+                        nextStep &&
+                        nextStep.action_type !== "cashier_verification" &&
+                        enrollment.status !== pendingStatus && (
+                            <Button onClick={handleAdvancePipelineStep} className="h-10 rounded-xl px-4 shadow-sm">
+                                <CheckCircle2 className="mr-2 size-4" />
+                                Advance: {nextStep.label}
+                            </Button>
+                        )}
+
+                    {enrollment.status === completionStatus && (
+                        <Button
+                            className="h-10 rounded-xl px-4"
+                            variant="outline"
+                            onClick={() => window.open(route("administrators.enrollments.assessment-preview", enrollment.id), "_blank")}
+                        >
+                            <Printer className="mr-2 size-4" /> Print assessment
+                        </Button>
+                    )}
+
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="sm" className="h-10 rounded-xl px-3">
+                                More options <MoreVertical className="ml-1 size-3" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-56">
+                            <DropdownMenuLabel>Administrative actions</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            {enrollment.status === completionStatus && (
+                                <DropdownMenuItem onClick={handleResendAssessment}>
+                                    <FileText className="mr-2 h-4 w-4" /> Resend assessment email
+                                </DropdownMenuItem>
+                            )}
+                            {pendingScheduleChanges.length > 0 && (
+                                <DropdownMenuItem onClick={() => setShowScheduleChangesDialog(true)}>
+                                    <CalendarDays className="mr-2 h-4 w-4" /> Notify student for class schedule changes
+                                </DropdownMenuItem>
+                            )}
+                            {departmentStep && enrollment.status === departmentVerifiedStatus && auth.can_verify_head && (
+                                <DropdownMenuItem onClick={handleUndoHeadDept} className="text-red-600 focus:text-red-600">
+                                    <Undo2 className="mr-2 h-4 w-4" /> Undo step verification
+                                </DropdownMenuItem>
+                            )}
+                            {cashierStep && enrollment.status === cashierVerifiedStatus && auth.can_verify_cashier && (
+                                <DropdownMenuItem onClick={handleUndoCashier} className="text-red-600 focus:text-red-600">
+                                    <Undo2 className="mr-2 h-4 w-4" /> Undo payment verification
+                                </DropdownMenuItem>
+                            )}
+                            {auth.is_super_admin &&
+                                ((enrollment.workflow_runtime === "legacy" && enrollment.status === pendingStatus) ||
+                                    enrollment.allows_no_receipt_transition) && <QuickEnrollDialog enrollmentId={enrollment.id} />}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={handleRetryEnrollment}>
+                                <RefreshCcw className="mr-2 h-4 w-4" /> Retry class enrollment
+                            </DropdownMenuItem>
+                            {recent_deletions.length > 0 && (
+                                <DropdownMenuItem onClick={() => setShowUndoDialog(true)}>
+                                    <Undo2 className="mr-2 h-4 w-4" /> Restore deleted subjects ({recent_deletions.length})
+                                </DropdownMenuItem>
+                            )}
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
+            </div>
+        </section>
+    );
 
     return (
         <AdminLayout user={user} title="Enrollment Management">
@@ -551,326 +686,361 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
             </Dialog>
 
             <div className="space-y-6 pb-20">
-                {/* Minimal Header */}
-                <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-4">
-                        <Button variant="ghost" size="icon" asChild className="h-8 w-8">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="flex items-start gap-3 sm:gap-4">
+                        <Button variant="ghost" size="icon" asChild className="mt-1 h-9 w-9 shrink-0 rounded-full">
                             <Link href={route("administrators.enrollments.index")}>
-                                <ArrowLeft className="h-4 w-4" />
+                                <ArrowLeft className="size-4" />
+                                <span className="sr-only">Back to enrollments</span>
                             </Link>
                         </Button>
                         <div>
-                            <h1 className="text-xl font-semibold tracking-tight">Enrollment Details</h1>
-                            <p className="text-muted-foreground text-sm">Manage student enrollment and verification</p>
+                            <p className="text-muted-foreground mb-1 text-[11px] font-semibold tracking-[0.16em] uppercase">
+                                Enrollment review · {enrollment.school_year}
+                            </p>
+                            <h1 className="text-2xl font-semibold tracking-[-0.02em] sm:text-3xl">Review enrollment</h1>
+                            <p className="text-muted-foreground mt-1 max-w-xl text-sm leading-6">
+                                Confirm the student’s academic placement, requirements, and payment readiness before advancing the workflow.
+                            </p>
                         </div>
                     </div>
-                    <Button variant="outline" asChild>
-                        <Link href={route("administrators.enrollments.edit", enrollment.id)}>
-                            <Pencil className="mr-2 h-4 w-4" />
-                            Edit Enrollment
-                        </Link>
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        <Badge variant="outline" className={cn("rounded-full px-3 py-1 text-xs", getStatusColor(enrollment.status))}>
+                            <span className="mr-2 size-1.5 rounded-full bg-current" aria-hidden="true" />
+                            {enrollment.status}
+                        </Badge>
+                        <Button
+                            variant="outline"
+                            asChild
+                            className="rounded-full shadow-sm transition-[transform,box-shadow] duration-200 active:scale-[0.98]"
+                        >
+                            <Link href={route("administrators.enrollments.edit", enrollment.id)}>
+                                <Pencil className="mr-2 size-4" />
+                                Edit enrollment
+                            </Link>
+                        </Button>
+                    </div>
                 </div>
 
-                <div className="grid gap-6 lg:grid-cols-12">
-                    {/* Left Sidebar - Context & Status */}
-                    <div className="space-y-6 lg:col-span-4">
-                        {/* Student Profile Card */}
-                        <Card className="overflow-hidden">
-                            <div className="from-primary/10 to-primary/5 h-24 bg-gradient-to-r"></div>
-                            <CardContent className="relative pt-0">
-                                <div className="absolute -top-12 left-6">
-                                    <Avatar className="border-background h-24 w-24 border-4 shadow-sm">
-                                        <AvatarFallback className="bg-primary/10 text-primary text-2xl">
-                                            {enrollment.student.full_name.charAt(0)}
-                                        </AvatarFallback>
-                                    </Avatar>
-                                </div>
-                                <div className="mt-14 mb-4">
-                                    <h2 className="text-2xl leading-tight font-bold">{enrollment.student.full_name}</h2>
-                                    <div className="text-muted-foreground mt-1 flex items-center gap-2">
-                                        <Badge variant="secondary" className="font-normal">
-                                            {enrollment.student.student_id}
-                                        </Badge>
-                                        <span className="text-sm">{enrollment.student.email}</span>
-                                    </div>
-                                </div>
+                {headerActions}
 
-                                <div className="grid grid-cols-2 gap-4 border-t border-b py-4">
+                <section
+                    aria-labelledby="student-record-heading"
+                    className="border-border/70 bg-card/80 overflow-hidden rounded-2xl border shadow-sm backdrop-blur-xl"
+                >
+                    <div className="flex flex-col gap-5 p-5 sm:p-6 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex min-w-0 items-center gap-4">
+                            <Avatar className="border-background size-16 shrink-0 border-2 shadow-md sm:size-20">
+                                <AvatarFallback className="bg-primary/10 text-primary text-xl font-semibold sm:text-2xl">
+                                    {enrollment.student.full_name
+                                        .split(" ")
+                                        .map((name) => name.charAt(0))
+                                        .join("")
+                                        .slice(0, 2)
+                                        .toUpperCase()}
+                                </AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0">
+                                <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.16em] uppercase">Student record</p>
+                                <h2 id="student-record-heading" className="mt-1 truncate text-xl font-semibold tracking-[-0.02em] sm:text-2xl">
+                                    {enrollment.student.full_name}
+                                </h2>
+                                <div className="text-muted-foreground mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                                    <span className="font-medium">ID {enrollment.student.student_id}</span>
+                                    {enrollment.student.email && <span className="truncate">{enrollment.student.email}</span>}
+                                </div>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-8 gap-y-4 border-t pt-4 text-sm sm:grid-cols-4 lg:min-w-[520px] lg:border-t-0 lg:border-l lg:pt-0 lg:pl-8">
+                            <div>
+                                <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.12em] uppercase">Program</p>
+                                <p className="mt-1 truncate font-medium">{enrollment.student.course_code ?? "Not assigned"}</p>
+                            </div>
+                            <div>
+                                <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.12em] uppercase">Academic year</p>
+                                <p className="mt-1 font-medium">Year {enrollment.academic_year}</p>
+                            </div>
+                            <div>
+                                <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.12em] uppercase">Semester</p>
+                                <p className="mt-1 font-medium">{enrollment.semester === 1 ? "1st" : "2nd"} semester</p>
+                            </div>
+                            <div>
+                                <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.12em] uppercase">Units</p>
+                                <p className="mt-1 font-medium tabular-nums">{totalUnits} enrolled</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="bg-muted/20 grid border-t sm:grid-cols-3">
+                        <div className="flex items-center justify-between gap-3 px-5 py-4 sm:px-6">
+                            <div>
+                                <p className="text-muted-foreground text-xs">Review readiness</p>
+                                <p className="mt-1 font-semibold">{pendingRequirements === 0 ? "Ready for decision" : "Needs attention"}</p>
+                                <div className="mt-2 flex items-center gap-2">
+                                    <Progress value={requirementsProgress} className="h-1.5 w-20" />
+                                    <span className="text-muted-foreground text-[11px]">
+                                        {reviewedRequirements}/{enrollment.requirements.length || 0} reviewed
+                                    </span>
+                                </div>
+                            </div>
+                            <div
+                                className={cn(
+                                    "rounded-full px-2.5 py-1 text-xs font-semibold",
+                                    pendingRequirements === 0 ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600",
+                                )}
+                            >
+                                {pendingRequirements === 0 ? "Complete" : `${pendingRequirements} pending`}
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-between gap-3 border-t px-5 py-4 sm:border-t-0 sm:border-l sm:px-6">
+                            <div>
+                                <p className="text-muted-foreground text-xs">Assessment</p>
+                                <p className="mt-1 font-semibold tabular-nums">{formatMoney(enrollment.tuition?.overall_tuition)}</p>
+                            </div>
+                            <Banknote className="text-muted-foreground size-5" aria-hidden="true" />
+                        </div>
+                        <div className="flex items-center justify-between gap-3 border-t px-5 py-4 sm:border-t-0 sm:border-l sm:px-6">
+                            <div>
+                                <p className="text-muted-foreground text-xs">Outstanding balance</p>
+                                <p className={cn("mt-1 font-semibold tabular-nums", balanceDue > 0 ? "text-amber-600" : "text-emerald-600")}>
+                                    {formatMoney(balanceDue)}
+                                </p>
+                            </div>
+                            <WalletCards className="text-muted-foreground size-5" aria-hidden="true" />
+                        </div>
+                    </div>
+                </section>
+
+                <div className="grid items-start gap-6 xl:grid-cols-[minmax(280px,0.82fr)_minmax(0,1.8fr)]">
+                    {/* Review rail */}
+                    <aside className="space-y-6 xl:sticky xl:top-4">
+                        <Card className="border-border/70 overflow-hidden rounded-2xl shadow-sm">
+                            <CardHeader className="border-border/70 bg-muted/20 gap-1 border-b px-5 py-5">
+                                <div className="flex items-start justify-between gap-3">
                                     <div>
-                                        <p className="text-muted-foreground text-xs font-medium uppercase">Course</p>
-                                        <p className="mt-0.5 flex items-center gap-1.5 font-semibold">
-                                            <GraduationCap className="text-primary h-3.5 w-3.5" />
-                                            {enrollment.student.course_code}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <p className="text-muted-foreground text-xs font-medium uppercase">Year Level</p>
-                                        <p className="mt-0.5 flex items-center gap-1.5 font-semibold">
-                                            <span className="bg-primary/20 text-primary flex h-3.5 w-3.5 items-center justify-center rounded-full text-[9px] font-bold">
-                                                {enrollment.academic_year}
+                                        <CardTitle className="flex items-center gap-2 text-base tracking-[-0.01em]">
+                                            <span className="bg-primary/10 text-primary flex size-8 items-center justify-center rounded-lg">
+                                                <CheckCircle2 className="size-4" aria-hidden="true" />
                                             </span>
-                                            Year {enrollment.academic_year}
-                                        </p>
+                                            Workflow status
+                                        </CardTitle>
+                                        <CardDescription className="mt-2">Complete the next available review action.</CardDescription>
                                     </div>
-                                    <div>
-                                        <p className="text-muted-foreground text-xs font-medium uppercase">Semester</p>
-                                        <p className="mt-0.5 flex items-center gap-1.5 font-semibold">
-                                            <Clock className="text-primary h-3.5 w-3.5" />
-                                            {enrollment.semester === 1 ? "1st" : "2nd"} Sem
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <p className="text-muted-foreground text-xs font-medium uppercase">School Year</p>
-                                        <p className="mt-0.5 flex items-center gap-1.5 font-semibold">
-                                            <CalendarDays className="text-primary h-3.5 w-3.5" />
-                                            {enrollment.school_year}
-                                        </p>
-                                    </div>
-                                </div>
-
-                                <div className="mt-4 flex flex-col gap-2">
-                                    <div className="flex items-center justify-between text-sm">
-                                        <span className="text-muted-foreground">Enrolled Units</span>
-                                        <span className="font-medium">
-                                            {enrollment.subjects_enrolled.reduce((acc, sub) => acc + sub.units, 0)} Units
-                                        </span>
-                                    </div>
-                                    <Progress
-                                        value={(enrollment.subjects_enrolled.reduce((acc, sub) => acc + sub.units, 0) / 24) * 100}
-                                        className="h-2"
-                                    />
-                                </div>
-                            </CardContent>
-                        </Card>
-
-                        {/* Status & Actions Card */}
-                        <Card className="border-l-primary border-l-4 shadow-sm">
-                            <CardHeader className="pb-3">
-                                <CardTitle className="flex items-center justify-between text-base">
-                                    Enrollment Status
-                                    <Badge variant="outline" className={getStatusColor(enrollment.status)}>
+                                    <Badge
+                                        variant="outline"
+                                        className={cn("shrink-0 rounded-full px-2.5 py-1 text-xs", getStatusColor(enrollment.status))}
+                                    >
                                         {enrollment.status}
                                     </Badge>
-                                </CardTitle>
+                                </div>
+                                <div className="pt-3">
+                                    <div className="mb-2 flex items-center justify-between gap-3 text-xs">
+                                        <span className="text-muted-foreground font-medium">Review progress</span>
+                                        <span className="font-semibold tabular-nums">
+                                            {workflowCompletedSteps}/{workflowTotalSteps} steps
+                                        </span>
+                                    </div>
+                                    <Progress value={workflowProgress} className="h-1.5" />
+                                    <p className="text-muted-foreground mt-2 text-xs leading-5">
+                                        {currentWorkflowStep
+                                            ? `Current step: ${currentWorkflowStep.label}`
+                                            : enrollment.workflow.terminal_outcome
+                                              ? "All workflow steps are complete."
+                                              : "Review the available action to continue."}
+                                    </p>
+                                </div>
                             </CardHeader>
-                            <CardContent className="space-y-4">
-                                {/* Stepper Visual */}
-                                <div className="relative space-y-4 pl-2">
-                                    <div className="bg-muted absolute top-2 bottom-2 left-[7px] w-[2px]"></div>
-                                    {steps.map((step, idx) => (
-                                        <div key={idx} className="relative flex items-center gap-3">
-                                            <div
-                                                className={cn(
-                                                    "z-10 h-4 w-4 rounded-full border-2",
-                                                    step.status === "completed"
-                                                        ? "bg-primary border-primary"
-                                                        : step.status === "current"
-                                                          ? "bg-background border-primary animate-pulse"
-                                                          : "bg-background border-muted",
-                                                )}
+                            <CardContent className="space-y-5 p-5">
+                                <ol aria-label="Enrollment workflow steps" className="space-y-1">
+                                    {steps.map((step, idx) => {
+                                        const stepStateLabel =
+                                            step.status === "completed" ? "Completed" : step.status === "current" ? "In review" : "Pending";
+
+                                        return (
+                                            <li
+                                                key={idx}
+                                                aria-current={step.status === "current" ? "step" : undefined}
+                                                className="relative flex gap-3 py-2"
                                             >
-                                                {step.status === "completed" && <div className="bg-primary h-full w-full rounded-full" />}
-                                            </div>
-                                            <span
-                                                className={cn(
-                                                    "text-sm font-medium",
-                                                    step.status === "completed"
-                                                        ? "text-foreground"
-                                                        : step.status === "current"
-                                                          ? "text-primary font-bold"
-                                                          : "text-muted-foreground",
-                                                )}
-                                            >
-                                                {step.label}
-                                            </span>
+                                                <div className="relative flex w-7 shrink-0 justify-center">
+                                                    {idx < steps.length - 1 && (
+                                                        <span
+                                                            className={cn(
+                                                                "absolute top-8 bottom-[-0.5rem] w-px",
+                                                                step.status === "completed" ? "bg-primary/60" : "bg-border",
+                                                            )}
+                                                            aria-hidden="true"
+                                                        />
+                                                    )}
+                                                    <span
+                                                        className={cn(
+                                                            "relative z-10 flex size-7 items-center justify-center rounded-full border text-xs font-semibold",
+                                                            step.status === "completed" && "border-primary bg-primary text-primary-foreground",
+                                                            step.status === "current" &&
+                                                                "border-primary bg-primary/10 text-primary ring-primary/10 ring-4 motion-safe:transition-shadow motion-safe:duration-300",
+                                                            step.status === "pending" && "border-border bg-background text-muted-foreground",
+                                                        )}
+                                                    >
+                                                        {step.status === "completed" ? (
+                                                            <CheckCircle2 className="size-4" aria-hidden="true" />
+                                                        ) : (
+                                                            idx + 1
+                                                        )}
+                                                    </span>
+                                                </div>
+                                                <div className="min-w-0 flex-1 pt-0.5">
+                                                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                                                        <p
+                                                            className={cn(
+                                                                "text-sm font-semibold",
+                                                                step.status === "pending" && "text-muted-foreground",
+                                                            )}
+                                                        >
+                                                            {step.label}
+                                                        </p>
+                                                        <span
+                                                            className={cn(
+                                                                "text-[11px] font-medium",
+                                                                step.status === "completed" && "text-emerald-600",
+                                                                step.status === "current" && "text-primary",
+                                                                step.status === "pending" && "text-muted-foreground",
+                                                            )}
+                                                        >
+                                                            {stepStateLabel}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </li>
+                                        );
+                                    })}
+                                </ol>
+
+                                <div className="border-primary/20 bg-primary/[0.045] rounded-xl border p-4">
+                                    <p className="text-primary text-[11px] font-semibold tracking-[0.12em] uppercase">Next action</p>
+                                    <div className="mt-3 flex items-start gap-3">
+                                        <div className="bg-primary/10 text-primary flex size-8 shrink-0 items-center justify-center rounded-lg">
+                                            <UserCheck className="size-4" aria-hidden="true" />
                                         </div>
-                                    ))}
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-semibold">{nextActionLabel}</p>
+                                            <p className="text-muted-foreground mt-1 text-xs leading-5">
+                                                {currentWorkflowStep
+                                                    ? `The enrollment is currently at ${currentWorkflowStep.label}.`
+                                                    : "No additional workflow step is currently active."}
+                                            </p>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <Separator />
-
-                                {/* Primary Action Button */}
-                                <div className="pt-2">
-                                    {enrollment.workflow_runtime === "policy_v1" &&
-                                        enrollment.workflow.allowed_transitions.map((workflowTransition) =>
-                                            workflowTransition.target_actions.includes("enrollment.verify_payment") ? (
-                                                <VerifyCashierDialog
-                                                    key={workflowTransition.key}
-                                                    enrollmentId={enrollment.id}
-                                                    tuition={enrollment.tuition}
-                                                    additionalFees={enrollment.additional_fees}
-                                                    label={workflowTransition.label}
-                                                    requiresReason={workflowTransition.requires_reason}
-                                                    receiptMode={workflowTransition.payment_configuration?.receipt_mode ?? "required"}
-                                                    allowedPaymentMethods={enrollment.workflow.allowed_payment_methods}
-                                                />
-                                            ) : (
-                                                <Button
-                                                    key={workflowTransition.key}
-                                                    onClick={() => handlePolicyTransition(workflowTransition)}
-                                                    className="mb-2 h-10 w-full"
-                                                >
-                                                    <CheckCircle2 className="mr-2 h-4 w-4" />
-                                                    {workflowTransition.label}
-                                                </Button>
-                                            ),
-                                        )}
-
-                                    {enrollment.workflow_runtime === "legacy" &&
-                                        nextStep?.action_type === "department_verification" &&
-                                        auth.can_verify_head && (
-                                            <Button onClick={handleVerifyHeadDept} className="h-10 w-full bg-blue-600 shadow-sm hover:bg-blue-700">
-                                                <UserCheck className="mr-2 h-4 w-4" />
-                                                Verify Step
-                                            </Button>
-                                        )}
-
-                                    {enrollment.workflow_runtime === "legacy" &&
-                                        nextStep?.action_type === "cashier_verification" &&
-                                        auth.can_verify_cashier && (
-                                            <VerifyCashierDialog
-                                                enrollmentId={enrollment.id}
-                                                tuition={enrollment.tuition}
-                                                additionalFees={enrollment.additional_fees}
-                                            />
-                                        )}
-
-                                    {enrollment.workflow_runtime === "legacy" &&
-                                        auth.can_advance_pipeline &&
-                                        nextStep &&
-                                        nextStep.action_type !== "cashier_verification" &&
-                                        enrollment.status !== pendingStatus && (
-                                            <Button onClick={handleAdvancePipelineStep} className="h-10 w-full">
-                                                <CheckCircle2 className="mr-2 h-4 w-4" />
-                                                Advance: {nextStep.label}
-                                            </Button>
-                                        )}
-
-                                    {enrollment.status === completionStatus && (
-                                        <Button
-                                            className="w-full"
-                                            variant="outline"
-                                            onClick={() =>
-                                                window.open(route("administrators.enrollments.assessment-preview", enrollment.id), "_blank")
-                                            }
-                                        >
-                                            <Printer className="mr-2 h-4 w-4" /> Print Assessment
-                                        </Button>
-                                    )}
-
-                                    {/* More Actions Dropdown */}
-                                    <div className="mt-3 flex justify-center">
-                                        <DropdownMenu>
-                                            <DropdownMenuTrigger asChild>
-                                                <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
-                                                    More Options <MoreVertical className="ml-1 h-3 w-3" />
-                                                </Button>
-                                            </DropdownMenuTrigger>
-                                            <DropdownMenuContent align="center" className="w-56">
-                                                <DropdownMenuLabel>Administrative Actions</DropdownMenuLabel>
-                                                <DropdownMenuSeparator />
-                                                {enrollment.status === completionStatus && (
-                                                    <DropdownMenuItem onClick={handleResendAssessment}>
-                                                        <FileText className="mr-2 h-4 w-4" /> Resend Assessment Email
-                                                    </DropdownMenuItem>
-                                                )}
-                                                {pendingScheduleChanges.length > 0 && (
-                                                    <DropdownMenuItem onClick={() => setShowScheduleChangesDialog(true)}>
-                                                        <CalendarDays className="mr-2 h-4 w-4" /> Notify student for Class Schedule changes
-                                                    </DropdownMenuItem>
-                                                )}
-                                                {departmentStep && enrollment.status === departmentVerifiedStatus && auth.can_verify_head && (
-                                                    <DropdownMenuItem onClick={handleUndoHeadDept} className="text-red-600 focus:text-red-600">
-                                                        <Undo2 className="mr-2 h-4 w-4" /> Undo Step Verification
-                                                    </DropdownMenuItem>
-                                                )}
-                                                {cashierStep && enrollment.status === cashierVerifiedStatus && auth.can_verify_cashier && (
-                                                    <DropdownMenuItem onClick={handleUndoCashier} className="text-red-600 focus:text-red-600">
-                                                        <Undo2 className="mr-2 h-4 w-4" /> Undo Payment Verification
-                                                    </DropdownMenuItem>
-                                                )}
-                                                {auth.is_super_admin &&
-                                                    ((enrollment.workflow_runtime === "legacy" && enrollment.status === pendingStatus) ||
-                                                        enrollment.allows_no_receipt_transition) && (
-                                                        <QuickEnrollDialog enrollmentId={enrollment.id} />
-                                                    )}
-                                                <DropdownMenuSeparator />
-                                                <DropdownMenuItem onClick={handleRetryEnrollment}>
-                                                    <RefreshCcw className="mr-2 h-4 w-4" /> Retry Class Enrollment
-                                                </DropdownMenuItem>
-                                                {recent_deletions.length > 0 && (
-                                                    <DropdownMenuItem onClick={() => setShowUndoDialog(true)}>
-                                                        <Undo2 className="mr-2 h-4 w-4" /> Restore Deleted Subjects ({recent_deletions.length})
-                                                    </DropdownMenuItem>
-                                                )}
-                                            </DropdownMenuContent>
-                                        </DropdownMenu>
-                                    </div>
-                                </div>
                             </CardContent>
                         </Card>
 
-                        {/* Financial Summary Card */}
-                        <Card>
-                            <CardHeader className="pb-2">
-                                <CardTitle className="flex items-center gap-2 text-sm font-medium">
-                                    <Banknote className="text-muted-foreground h-4 w-4" />
-                                    Tuition Summary
+                        <Card aria-label="Tuition summary" className="border-border/70 rounded-2xl shadow-sm">
+                            <CardHeader className="bg-muted/20 gap-1 border-b px-5 py-5">
+                                <CardTitle className="flex items-center gap-2 text-base tracking-[-0.01em]">
+                                    <span className="flex size-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600">
+                                        <Banknote className="size-4" aria-hidden="true" />
+                                    </span>
+                                    Tuition summary
                                 </CardTitle>
+                                <CardDescription>Payment position for this enrollment.</CardDescription>
                             </CardHeader>
-                            <CardContent>
-                                <div className="mb-4 space-y-1">
-                                    <p className="text-3xl font-bold tracking-tight">{formatMoney(balanceDue)}</p>
-                                    <p className="text-muted-foreground text-xs">Remaining Balance</p>
+                            <CardContent className="space-y-4 p-5">
+                                <div className="border-border/70 bg-background/60 rounded-xl border p-4">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                            <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.12em] uppercase">Amount due</p>
+                                            <p className="mt-1 text-3xl font-semibold tracking-[-0.03em] tabular-nums">{formatMoney(balanceDue)}</p>
+                                        </div>
+                                        <Badge
+                                            variant="outline"
+                                            className={cn(
+                                                "rounded-full px-2.5 py-1 text-[11px]",
+                                                totalAssessment === 0
+                                                    ? "border-border text-muted-foreground"
+                                                    : balanceDue > 0
+                                                      ? "border-amber-500/30 bg-amber-500/10 text-amber-600"
+                                                      : "border-emerald-500/30 bg-emerald-500/10 text-emerald-600",
+                                            )}
+                                        >
+                                            {totalAssessment === 0 ? "Not assessed" : balanceDue > 0 ? "Outstanding" : "Paid in full"}
+                                        </Badge>
+                                    </div>
+                                    <div className="mt-5 space-y-2">
+                                        <div className="flex items-center justify-between text-xs">
+                                            <span className="text-muted-foreground">Payment progress</span>
+                                            <span className="font-semibold tabular-nums">{paymentProgress}%</span>
+                                        </div>
+                                        <Progress value={paymentProgress} className="h-1.5" />
+                                        <div className="text-muted-foreground flex justify-between text-[11px]">
+                                            <span>{formatMoney(totalPaid)} paid</span>
+                                            <span>{formatMoney(totalAssessment)} total</span>
+                                        </div>
+                                    </div>
                                 </div>
 
-                                <div className="space-y-3">
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-muted-foreground">Total Fees</span>
-                                        <span className="font-medium">{formatMoney(enrollment.tuition?.overall_tuition)}</span>
+                                <div className="divide-border/70 border-border/70 divide-y overflow-hidden rounded-xl border">
+                                    <div className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
+                                        <span className="text-muted-foreground">Total assessment</span>
+                                        <span className="font-medium tabular-nums">{formatMoney(totalAssessment)}</span>
                                     </div>
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-muted-foreground">Required Downpayment</span>
-                                        <span className="font-medium">{formatMoney(requiredDownpayment)}</span>
+                                    <div className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
+                                        <span className="text-muted-foreground">Required downpayment</span>
+                                        <span className="font-medium tabular-nums">{formatMoney(requiredDownpayment)}</span>
                                     </div>
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-muted-foreground">Total Paid</span>
-                                        <span className="font-medium text-green-600">- {formatMoney(totalPaid)}</span>
+                                    <div className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
+                                        <span className="text-muted-foreground">Total paid</span>
+                                        <span className="font-medium text-emerald-600 tabular-nums">{formatMoney(totalPaid)}</span>
                                     </div>
                                 </div>
                             </CardContent>
                         </Card>
-                    </div>
+                    </aside>
 
                     {/* Right Main Content */}
-                    <div className="lg:col-span-8">
+                    <main className="min-w-0">
                         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                            <TabsList className="bg-muted/60 h-auto w-full justify-start p-1">
-                                <TabsTrigger value="classes" className="data-[state=active]:bg-background flex-1 py-2 md:flex-none">
+                            <TabsList className="bg-muted/50 border-border/70 sticky top-2 z-20 h-auto w-full justify-start gap-1 rounded-xl border p-1.5 shadow-sm backdrop-blur-xl">
+                                <TabsTrigger
+                                    value="classes"
+                                    className="data-[state=active]:bg-background flex-1 gap-2 rounded-lg py-2.5 shadow-none data-[state=active]:shadow-sm md:flex-none"
+                                >
+                                    <ClipboardList className="size-4" aria-hidden="true" />
                                     Classes
                                 </TabsTrigger>
-                                <TabsTrigger value="financial" className="data-[state=active]:bg-background flex-1 py-2 md:flex-none">
+                                <TabsTrigger
+                                    value="financial"
+                                    className="data-[state=active]:bg-background flex-1 gap-2 rounded-lg py-2.5 shadow-none data-[state=active]:shadow-sm md:flex-none"
+                                >
+                                    <WalletCards className="size-4" aria-hidden="true" />
                                     Financial
                                 </TabsTrigger>
-                                <TabsTrigger value="resources" className="data-[state=active]:bg-background flex-1 py-2 md:flex-none">
+                                <TabsTrigger
+                                    value="resources"
+                                    className="data-[state=active]:bg-background flex-1 gap-2 rounded-lg py-2.5 shadow-none data-[state=active]:shadow-sm md:flex-none"
+                                >
+                                    <Files className="size-4" aria-hidden="true" />
                                     Documents
                                 </TabsTrigger>
                                 {enrollment.requirements.length > 0 && (
-                                    <TabsTrigger value="requirements" className="data-[state=active]:bg-background flex-1 py-2 md:flex-none">
+                                    <TabsTrigger
+                                        value="requirements"
+                                        className="data-[state=active]:bg-background flex-1 gap-2 rounded-lg py-2.5 shadow-none data-[state=active]:shadow-sm md:flex-none"
+                                    >
+                                        <ListChecks className="size-4" aria-hidden="true" />
                                         Requirements
                                     </TabsTrigger>
                                 )}
                             </TabsList>
 
                             {/* CLASSES TAB */}
-                            <TabsContent value="classes" className="mt-6 space-y-6">
+                            <TabsContent value="classes" className="mt-5 space-y-5">
                                 {/* Active Enrollments */}
-                                <Card>
-                                    <CardHeader>
+                                <Card className="border-border/70 rounded-2xl shadow-sm">
+                                    <CardHeader className="gap-1">
                                         <div className="flex items-center justify-between">
                                             <div>
-                                                <CardTitle>Class Schedule</CardTitle>
+                                                <CardTitle className="tracking-[-0.01em]">Class schedule</CardTitle>
                                                 <CardDescription>Enrolled subjects and class assignments</CardDescription>
                                             </div>
                                             <Badge variant="secondary">{enrollment.class_enrollments.length} Classes</Badge>
@@ -895,7 +1065,7 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                                                     </TableRow>
                                                 ) : (
                                                     enrollment.class_enrollments.map((cls) => (
-                                                        <TableRow key={cls.id}>
+                                                        <TableRow key={cls.id} className="hover:bg-muted/30 transition-colors">
                                                             <TableCell className="pl-6 align-top">
                                                                 <div className="font-semibold">{cls.subject_code}</div>
                                                                 <div className="text-muted-foreground line-clamp-1 text-xs">{cls.subject_title}</div>
@@ -960,7 +1130,7 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
 
                                 {/* Missing Classes - Enhanced UI */}
                                 {enrollment.missing_classes.length > 0 && (
-                                    <div className="overflow-hidden rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/20">
+                                    <div className="overflow-hidden rounded-2xl border border-amber-200 bg-amber-50 shadow-sm dark:border-amber-900 dark:bg-amber-950/20">
                                         <div className="flex items-center gap-3 border-b border-amber-200 bg-amber-100/50 p-4 dark:border-amber-900 dark:bg-amber-900/40">
                                             <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-500" />
                                             <div>
@@ -1032,11 +1202,11 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                             </TabsContent>
 
                             {/* FINANCIAL TAB */}
-                            <TabsContent value="financial" className="mt-6 space-y-6">
+                            <TabsContent value="financial" className="mt-5 space-y-5">
                                 <div className="grid gap-6 md:grid-cols-2">
-                                    <Card>
-                                        <CardHeader>
-                                            <CardTitle>Fees Breakdown</CardTitle>
+                                    <Card className="border-border/70 rounded-2xl shadow-sm">
+                                        <CardHeader className="gap-1">
+                                            <CardTitle className="tracking-[-0.01em]">Fees breakdown</CardTitle>
                                             <CardDescription>Detailed assessment of fees</CardDescription>
                                         </CardHeader>
                                         <CardContent className="space-y-4">
@@ -1108,9 +1278,9 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                                         </CardContent>
                                     </Card>
 
-                                    <Card>
-                                        <CardHeader>
-                                            <CardTitle>Transaction History</CardTitle>
+                                    <Card className="border-border/70 rounded-2xl shadow-sm">
+                                        <CardHeader className="gap-1">
+                                            <CardTitle className="tracking-[-0.01em]">Transaction history</CardTitle>
                                             <CardDescription>Payments and adjustments</CardDescription>
                                         </CardHeader>
                                         <CardContent>
@@ -1173,10 +1343,10 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                             </TabsContent>
 
                             {/* RESOURCES TAB */}
-                            <TabsContent value="resources" className="mt-6 space-y-6">
-                                <Card>
-                                    <CardHeader>
-                                        <CardTitle>Generated Documents</CardTitle>
+                            <TabsContent value="resources" className="mt-5 space-y-5">
+                                <Card className="border-border/70 rounded-2xl shadow-sm">
+                                    <CardHeader className="gap-1">
+                                        <CardTitle className="tracking-[-0.01em]">Generated documents</CardTitle>
                                         <CardDescription>Official enrollment forms and assessments</CardDescription>
                                     </CardHeader>
                                     <CardContent>
@@ -1184,7 +1354,7 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                                             {enrollment.resources.map((res) => (
                                                 <div
                                                     key={res.id}
-                                                    className="bg-card flex items-start gap-4 rounded-lg border p-4 transition-shadow hover:shadow-sm"
+                                                    className="bg-card/60 border-border/70 hover:bg-muted/30 flex items-start gap-4 rounded-xl border p-4 transition-[background-color,box-shadow] duration-200 hover:shadow-sm"
                                                 >
                                                     <div className="bg-primary/10 text-primary rounded-md p-2">
                                                         <FileText className="h-6 w-6" />
@@ -1213,10 +1383,10 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                                 </Card>
                             </TabsContent>
 
-                            <TabsContent value="requirements" className="mt-6 space-y-6">
-                                <Card>
-                                    <CardHeader>
-                                        <CardTitle>Enrollment requirements</CardTitle>
+                            <TabsContent value="requirements" className="mt-5 space-y-5">
+                                <Card className="border-border/70 rounded-2xl shadow-sm">
+                                    <CardHeader className="gap-1">
+                                        <CardTitle className="tracking-[-0.01em]">Enrollment requirements</CardTitle>
                                         <CardDescription>
                                             Required items must be verified or waived with a reason before their configured workflow step.
                                         </CardDescription>
@@ -1225,7 +1395,7 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                                         {enrollment.requirements.map((requirement) => (
                                             <div
                                                 key={requirement.id}
-                                                className="flex flex-col gap-4 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between"
+                                                className="bg-card/60 border-border/70 hover:bg-muted/20 flex flex-col gap-4 rounded-xl border p-4 transition-colors sm:flex-row sm:items-center sm:justify-between"
                                             >
                                                 <div className="min-w-0">
                                                     <div className="flex flex-wrap items-center gap-2">
@@ -1284,7 +1454,7 @@ export default function ShowEnrollment({ user, enrollment, auth, recent_deletion
                                 </Card>
                             </TabsContent>
                         </Tabs>
-                    </div>
+                    </main>
                 </div>
             </div>
 
@@ -1431,6 +1601,7 @@ function VerifyCashierDialog({
     requiresReason = false,
     receiptMode = "required",
     allowedPaymentMethods = [],
+    buttonClassName,
 }: {
     enrollmentId: number;
     tuition: EnrollmentData["tuition"];
@@ -1439,6 +1610,7 @@ function VerifyCashierDialog({
     requiresReason?: boolean;
     receiptMode?: "required" | "optional" | "none";
     allowedPaymentMethods?: string[];
+    buttonClassName?: string;
 }) {
     const { props } = usePage<{ branding?: Branding }>();
     const currency = props.branding?.currency || "PHP";
@@ -1481,7 +1653,7 @@ function VerifyCashierDialog({
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <Button className="h-10 w-full bg-emerald-600 shadow-sm hover:bg-emerald-700">
+                <Button className={cn("h-10 w-full bg-emerald-600 shadow-sm hover:bg-emerald-700", buttonClassName)}>
                     <CheckCircle2 className="mr-2 h-4 w-4" />
                     {label}
                 </Button>

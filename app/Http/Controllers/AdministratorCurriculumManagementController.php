@@ -29,51 +29,9 @@ use Inertia\Response;
 
 final class AdministratorCurriculumManagementController extends Controller
 {
-    public function index(): Response
+    public function index(CurriculumCapabilityResolver $capabilityResolver, TenantContext $tenantContext): Response
     {
-        $departments = Department::query()
-            ->withCount([
-                'courses',
-                'courses as active_courses_count' => fn ($query) => $query->where('is_active', true),
-            ])
-            ->withSum('courses as total_subjects_count', 'id')
-            ->orderBy('name')
-            ->get();
-
-        // Get subject counts per department via courses
-        $departmentIds = $departments->pluck('id');
-        $subjectCounts = Course::query()
-            ->whereIn('department_id', $departmentIds)
-            ->withCount('subjects')
-            ->get()
-            ->groupBy('department_id')
-            ->map(fn (Collection $courses): int => (int) $courses->sum('subjects_count'));
-
-        $versions = $this->buildVersions(
-            Course::query()->withCount('subjects')->get()
-        );
-
-        return Inertia::render('administrators/curriculum/index', [
-            ...$this->userProps(),
-            'stats' => [
-                'departments' => Department::count(),
-                'active_departments' => Department::where('is_active', true)->count(),
-                'programs' => Course::count(),
-                'active_programs' => Course::where('is_active', true)->count(),
-                'subjects' => Subject::count(),
-                'curriculum_versions' => count($versions),
-            ],
-            'departments' => $departments->map(fn (Department $dept): array => [
-                'id' => $dept->id,
-                'name' => $dept->name,
-                'code' => $dept->code,
-                'is_active' => $dept->is_active,
-                'courses_count' => $dept->courses_count,
-                'active_courses_count' => $dept->active_courses_count,
-                'subjects_count' => $subjectCounts->get($dept->id, 0),
-            ]),
-            'versions' => $versions,
-        ]);
+        return $this->programs($capabilityResolver, $tenantContext);
     }
 
     public function programs(CurriculumCapabilityResolver $capabilityResolver, TenantContext $tenantContext): Response

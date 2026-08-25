@@ -282,15 +282,6 @@ export const ADMIN_ROUTES: AdminRoute[] = [
         allowedRoles: [...SYSTEM_ADMIN_ROLES, UserRole.Dean, UserRole.AssociateDean, UserRole.DepartmentHead, UserRole.ProgramChair],
     },
     {
-        id: "admin-programs",
-        title: "Programs",
-        icon: <IconSchool className="size-4" />,
-        link: "/administrators/curriculum/programs",
-        section: "academic",
-        requiredPermission: "ViewAny:Course",
-        allowedRoles: [...SYSTEM_ADMIN_ROLES, UserRole.Dean, UserRole.AssociateDean, UserRole.DepartmentHead, UserRole.ProgramChair],
-    },
-    {
         id: "admin-grade-management",
         title: "Grades",
         icon: <IconClipboardCheck className="size-4" />,

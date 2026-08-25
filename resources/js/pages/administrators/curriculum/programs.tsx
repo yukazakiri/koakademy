@@ -1,4 +1,9 @@
-import { storeProgram } from "@/actions/App/Http/Controllers/AdministratorCurriculumManagementController";
+import {
+    programs as curriculumPrograms,
+    showProgram,
+    storeProgram,
+    toggleProgramStatus,
+} from "@/actions/App/Http/Controllers/AdministratorCurriculumManagementController";
 import AdminLayout from "@/components/administrators/admin-layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,25 +13,32 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import type { User } from "@/types/user";
 import { Head, Link, router, useForm } from "@inertiajs/react";
 import {
-    ColumnDef,
-    ColumnFiltersState,
-    SortingState,
-    VisibilityState,
-    flexRender,
-    getCoreRowModel,
-    getFilteredRowModel,
-    getPaginationRowModel,
-    getSortedRowModel,
-    useReactTable,
-} from "@tanstack/react-table";
-import { ArrowUpDown, Book, Calculator, ChevronLeft, GraduationCap, Link2, MoreHorizontal, Plus, Search } from "lucide-react";
+    ArrowRight,
+    ArrowUpRight,
+    BookOpen,
+    CalendarDays,
+    Check,
+    CheckCircle2,
+    ChevronLeft,
+    CircleAlert,
+    Clock3,
+    Ellipsis,
+    Filter,
+    GraduationCap,
+    Layers3,
+    ListFilter,
+    Plus,
+    Search,
+    Sparkles,
+    Waypoints,
+    X,
+} from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { route } from "ziggy-js";
 
 interface DepartmentOption {
     id: number;
@@ -116,25 +128,8 @@ type CurriculumVersion = {
     subject_count: number;
 };
 
-const departmentBadgeColors: Record<string, string> = {};
-const colorPalette = [
-    "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-    "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300",
-    "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-    "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-    "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300",
-    "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300",
-    "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
-    "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300",
-];
-
-function getDepartmentColor(code: string): string {
-    if (!departmentBadgeColors[code]) {
-        const idx = Object.keys(departmentBadgeColors).length % colorPalette.length;
-        departmentBadgeColors[code] = colorPalette[idx];
-    }
-    return departmentBadgeColors[code];
-}
+type StatusFilter = "all" | "active" | "inactive";
+type CreateStep = "identity" | "details";
 
 const FieldError = ({ message }: { message?: string }) => (message ? <p className="text-destructive mt-1 text-xs font-medium">{message}</p> : null);
 
@@ -152,53 +147,64 @@ function capabilityKind(schoolLevel?: string): string {
     }
 }
 
+function kindLabel(program: Pick<ProgramSummary, "curriculum_kind" | "curriculum_stage" | "qualification_level" | "tesda_program_type">): string {
+    if (program.curriculum_kind === "tesda_qualification") {
+        return program.tesda_program_type === "diploma" ? "Institutional diploma" : "TESDA qualification";
+    }
+
+    if (program.curriculum_kind === "grade_pathway") return program.curriculum_stage || "Grade pathway";
+    if (program.curriculum_kind === "senior_high_pathway") return program.curriculum_stage || "Senior High pathway";
+    if (program.curriculum_kind === "program") return "Academic program";
+
+    return program.qualification_level || "Legacy curriculum";
+}
+
+function frameworkLabel(value: string | null): string {
+    if (!value) return "Local curriculum";
+
+    return value
+        .split("_")
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+}
+
+function departmentColor(code: string | null): string {
+    const palette = [
+        "bg-sky-500/10 text-sky-700 dark:text-sky-300",
+        "bg-violet-500/10 text-violet-700 dark:text-violet-300",
+        "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+        "bg-amber-500/10 text-amber-700 dark:text-amber-300",
+        "bg-rose-500/10 text-rose-700 dark:text-rose-300",
+        "bg-cyan-500/10 text-cyan-700 dark:text-cyan-300",
+    ];
+
+    if (!code) return "bg-muted text-muted-foreground";
+
+    return palette[code.charCodeAt(0) % palette.length];
+}
+
 export default function CurriculumPrograms({
     user,
     stats,
     programs,
     departments,
     course_types,
+    versions,
     school,
     capabilities,
     catalog_templates,
     shs_pathways,
 }: CurriculumProgramsProps) {
-    const [sorting, setSorting] = useState<SortingState>([]);
-    const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
-    const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
-    const [rowSelection, setRowSelection] = useState({});
-    const [globalFilter, setGlobalFilter] = useState("");
     const [isCreateOpen, setIsCreateOpen] = useState(false);
+    const [createStep, setCreateStep] = useState<CreateStep>("identity");
+    const [search, setSearch] = useState("");
+    const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+    const [activeDepartment, setActiveDepartment] = useState<string>(() => {
+        if (typeof window === "undefined") return "all";
 
-    // Department filter from URL params
-    const urlParams = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
-    const initialDeptFilter = urlParams.get("department") ?? "all";
-    const [activeDepartment, setActiveDepartment] = useState<string>(initialDeptFilter);
-
-    // Departments that actually have programs
-    const departmentsWithPrograms = useMemo(() => {
-        const deptIdsWithPrograms = new Set(programs.map((p) => p.department_id).filter(Boolean));
-        return departments.filter((d) => deptIdsWithPrograms.has(d.id));
-    }, [departments, programs]);
-
-    // Filter programs by selected department
-    const filteredPrograms = useMemo(() => {
-        if (activeDepartment === "all") return programs;
-        const deptId = Number(activeDepartment);
-        return programs.filter((p) => p.department_id === deptId);
-    }, [programs, activeDepartment]);
-
-    // Filtered stats
-    const filteredStats = useMemo(() => {
-        if (activeDepartment === "all") return stats;
-        return {
-            programs: filteredPrograms.length,
-            active_programs: filteredPrograms.filter((p) => p.is_active).length,
-            subjects: filteredPrograms.reduce((sum, p) => sum + p.subjects_count, 0),
-            subjects_with_requisites: filteredPrograms.reduce((sum, p) => sum + p.prerequisites_count, 0),
-            curriculum_versions: stats.curriculum_versions,
-        };
-    }, [filteredPrograms, stats, activeDepartment]);
+        return new URLSearchParams(window.location.search).get("department") ?? "all";
+    });
+    const [activeFramework, setActiveFramework] = useState("all");
 
     const createForm = useForm({
         code: "",
@@ -227,8 +233,59 @@ export default function CurriculumPrograms({
     const selectedCapability = capabilities.find((capability) => capability.id === createForm.data.capability_id) ?? null;
     const compatibleTemplates = catalog_templates.filter((template) => template.framework === selectedCapability?.curriculum_framework);
 
+    const departmentsWithPrograms = useMemo(() => {
+        const ids = new Set(programs.map((program) => program.department_id).filter((id): id is number => id !== null));
+
+        return departments.filter((department) => ids.has(department.id));
+    }, [departments, programs]);
+
+    const frameworkOptions = useMemo(() => {
+        const labels = new Map(capabilities.map((capability) => [capability.curriculum_framework, capability.framework_label]));
+        const values = programs.reduce<string[]>((result, program) => {
+            if (program.curriculum_framework && !result.includes(program.curriculum_framework)) result.push(program.curriculum_framework);
+
+            return result;
+        }, []);
+
+        return values.map((value) => ({ value, label: labels.get(value) ?? frameworkLabel(value) }));
+    }, [capabilities, programs]);
+
+    const filteredPrograms = useMemo(() => {
+        const query = search.trim().toLowerCase();
+
+        return programs.filter((program) => {
+            const matchesQuery =
+                query === "" ||
+                [program.code, program.title, program.department, program.department_name, program.curriculum_year, program.course_type_name]
+                    .filter(Boolean)
+                    .join(" ")
+                    .toLowerCase()
+                    .includes(query);
+            const matchesStatus = statusFilter === "all" || (statusFilter === "active" ? program.is_active : !program.is_active);
+            const matchesDepartment = activeDepartment === "all" || String(program.department_id) === activeDepartment;
+            const matchesFramework = activeFramework === "all" || program.curriculum_framework === activeFramework;
+
+            return matchesQuery && matchesStatus && matchesDepartment && matchesFramework;
+        });
+    }, [activeDepartment, activeFramework, programs, search, statusFilter]);
+
+    const filteredStats = useMemo(() => {
+        const isUnfiltered = search.trim() === "" && statusFilter === "all" && activeDepartment === "all" && activeFramework === "all";
+
+        if (isUnfiltered) return stats;
+
+        return {
+            programs: filteredPrograms.length,
+            active_programs: filteredPrograms.filter((program) => program.is_active).length,
+            subjects: filteredPrograms.reduce((sum, program) => sum + program.subjects_count, 0),
+            subjects_with_requisites: filteredPrograms.reduce((sum, program) => sum + program.prerequisites_count, 0),
+            curriculum_versions: new Set(filteredPrograms.map((program) => program.curriculum_year).filter(Boolean)).size,
+        };
+    }, [activeDepartment, activeFramework, filteredPrograms, search, stats, statusFilter]);
+
     const selectCapability = (capabilityId: string): void => {
         const capability = capabilities.find((item) => item.id === capabilityId);
+
         createForm.setData({
             ...createForm.data,
             capability_id: capabilityId,
@@ -266,684 +323,857 @@ export default function CurriculumPrograms({
         });
     };
 
-    // Pre-fill department when filter is active
     useEffect(() => {
         if (activeDepartment !== "all" && isCreateOpen) {
             createForm.setData("department_id", activeDepartment);
         }
-    }, [isCreateOpen, activeDepartment]);
+    }, [activeDepartment, isCreateOpen]);
 
-    const handleCreateProgram = (e: FormEvent) => {
-        e.preventDefault();
-        createForm.post(storeProgram(), {
+    const resetCreateDialog = (): void => {
+        createForm.reset();
+        createForm.clearErrors();
+        setCreateStep("identity");
+    };
+
+    const handleCreateProgram = (event: FormEvent): void => {
+        event.preventDefault();
+
+        createForm.post(storeProgram().url, {
             preserveScroll: true,
             onSuccess: () => {
                 setIsCreateOpen(false);
-                createForm.reset();
-                createForm.clearErrors();
+                resetCreateDialog();
             },
         });
     };
 
-    const toggleStatus = (program: ProgramSummary) => {
-        router.put(route("administrators.curriculum.programs.toggle-status", program.id), {}, { preserveScroll: true });
+    const toggleStatus = (program: ProgramSummary): void => {
+        router.put(toggleProgramStatus(program.id).url, {}, { preserveScroll: true });
     };
 
-    const columns: ColumnDef<ProgramSummary>[] = useMemo(
-        () => [
-            {
-                accessorKey: "code",
-                header: ({ column }) => (
-                    <Button
-                        variant="ghost"
-                        className="data-[state=open]:bg-accent -ml-4 h-8"
-                        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-                    >
-                        Program
-                        <ArrowUpDown className="ml-2 h-4 w-4" />
-                    </Button>
-                ),
-                cell: ({ row }) => {
-                    const program = row.original;
-                    const deptCode = program.department || "N/A";
-                    return (
-                        <div className="flex max-w-[300px] flex-col gap-1">
-                            <div className="flex items-center gap-2">
-                                <span className="text-foreground leading-none font-semibold">{program.code}</span>
-                                {program.is_active ? (
-                                    <Badge
-                                        variant="secondary"
-                                        className="h-4 bg-emerald-100 px-1.5 py-0 text-[10px] font-medium text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
-                                    >
-                                        Active
-                                    </Badge>
-                                ) : (
-                                    <Badge variant="outline" className="text-muted-foreground h-4 px-1.5 py-0 text-[10px]">
-                                        Inactive
-                                    </Badge>
-                                )}
-                            </div>
-                            <span className="text-muted-foreground line-clamp-1 text-xs leading-snug" title={program.title}>
-                                {program.title}
-                            </span>
-                            <div className="mt-0.5 flex flex-wrap gap-1">
-                                <Badge variant="secondary" className={`h-4 px-1.5 py-0 text-[10px] font-semibold ${getDepartmentColor(deptCode)}`}>
-                                    {deptCode}
-                                </Badge>
-                                {program.curriculum_year && (
-                                    <Badge variant="outline" className="bg-background h-4 px-1.5 py-0 text-[10px]">
-                                        {program.curriculum_year}
-                                    </Badge>
-                                )}
-                                {program.course_type_name && (
-                                    <Badge variant="outline" className="border-primary/20 bg-primary/5 text-primary h-4 px-1.5 py-0 text-[10px]">
-                                        {program.course_type_name}
-                                    </Badge>
-                                )}
-                                {program.curriculum_kind !== "legacy" && (
-                                    <Badge
-                                        variant="outline"
-                                        className="h-4 border-violet-500/20 bg-violet-500/5 px-1.5 py-0 text-[10px] text-violet-700 dark:text-violet-300"
-                                    >
-                                        {program.curriculum_stage || program.qualification_level || program.curriculum_kind.replace(/_/g, " ")}
-                                    </Badge>
-                                )}
-                                {program.curriculum_kind === "tesda_qualification" && program.tesda_program_type && (
-                                    <Badge
-                                        variant="outline"
-                                        className="h-4 border-amber-500/20 bg-amber-500/5 px-1.5 py-0 text-[10px] text-amber-700 dark:text-amber-300"
-                                    >
-                                        {program.tesda_program_type === "diploma" ? "Institutional Diploma" : "National Certificate"}
-                                    </Badge>
-                                )}
-                            </div>
-                        </div>
-                    );
-                },
-                filterFn: (row, _id, value) => {
-                    const rowValue =
-                        `${row.original.code} ${row.original.title} ${row.original.department || ""} ${row.original.curriculum_year || ""}`.toLowerCase();
-                    return rowValue.includes((value as string).toLowerCase());
-                },
-            },
-            {
-                id: "curriculum_size",
-                header: "Stats",
-                cell: ({ row }) => {
-                    const program = row.original;
-                    return (
-                        <div className="grid w-fit grid-cols-1 gap-y-1 text-sm">
-                            <div className="text-muted-foreground flex items-center gap-1.5">
-                                <Book className="h-3.5 w-3.5 text-blue-500" />
-                                <span className="text-foreground font-medium">{program.subjects_count}</span>
-                                <span className="text-xs">Subjects</span>
-                            </div>
-                            <div className="text-muted-foreground flex items-center gap-1.5">
-                                <Calculator className="h-3.5 w-3.5 text-amber-500" />
-                                <span className="text-foreground font-medium">{program.total_units}</span>
-                                <span className="text-xs">Units</span>
-                            </div>
-                            <div className="text-muted-foreground flex items-center gap-1.5">
-                                <Link2 className="h-3.5 w-3.5 text-emerald-500" />
-                                <span className="text-foreground font-medium">{program.prerequisites_count}</span>
-                                <span className="text-xs">Prereqs</span>
-                            </div>
-                        </div>
-                    );
-                },
-            },
-            {
-                id: "actions",
-                cell: ({ row }) => {
-                    const program = row.original;
-                    return (
-                        <div className="flex items-center justify-end gap-2 pr-2">
-                            <Button asChild variant="secondary" size="sm" className="h-8">
-                                <Link href={route("administrators.curriculum.programs.show", program.id)}>Manage</Link>
-                            </Button>
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" className="h-8 w-8 p-0">
-                                        <span className="sr-only">Open menu</span>
-                                        <MoreHorizontal className="h-4 w-4" />
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={() => toggleStatus(program)}>
-                                        {program.is_active ? "Deactivate Program" : "Activate Program"}
-                                    </DropdownMenuItem>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
-                        </div>
-                    );
-                },
-            },
-        ],
-        [],
-    );
+    const clearFilters = (): void => {
+        setSearch("");
+        setStatusFilter("all");
+        setActiveDepartment("all");
+        setActiveFramework("all");
+    };
 
-    const table = useReactTable({
-        data: filteredPrograms,
-        columns,
-        onSortingChange: setSorting,
-        onColumnFiltersChange: setColumnFilters,
-        getCoreRowModel: getCoreRowModel(),
-        getPaginationRowModel: getPaginationRowModel(),
-        getSortedRowModel: getSortedRowModel(),
-        getFilteredRowModel: getFilteredRowModel(),
-        onColumnVisibilityChange: setColumnVisibility,
-        onRowSelectionChange: setRowSelection,
-        globalFilterFn: "includesString",
-        onGlobalFilterChange: setGlobalFilter,
-        state: {
-            sorting,
-            columnFilters,
-            columnVisibility,
-            rowSelection,
-            globalFilter,
-        },
-        initialState: {
-            pagination: { pageSize: 15 },
-        },
-    });
+    const activeFilterCount = [statusFilter !== "all", activeDepartment !== "all", activeFramework !== "all"].filter(Boolean).length;
+    const readiness = filteredStats.programs > 0 ? Math.round((filteredStats.active_programs / filteredStats.programs) * 100) : 0;
 
     return (
-        <AdminLayout user={user} title="Program Management">
-            <Head title="Program Management" />
-            <div className="flex flex-col gap-6">
-                {/* Hero Header */}
-                <Card className="border-none bg-gradient-to-br from-slate-50 via-white to-slate-50 shadow-sm dark:from-slate-900 dark:via-slate-900 dark:to-slate-950">
-                    <CardHeader className="flex flex-col gap-4 pb-6 lg:flex-row lg:items-center lg:justify-between">
-                        <div className="flex items-center gap-4">
-                            <div className="bg-primary/10 rounded-xl p-3">
-                                <GraduationCap className="text-primary size-6" />
-                            </div>
-                            <div className="space-y-1">
-                                <CardTitle className="text-2xl">Program Directory</CardTitle>
-                                <CardDescription className="max-w-xl text-sm">
-                                    Create and organize college, TESDA, elementary, junior high, and senior high pathways from one place.
-                                </CardDescription>
-                                {shs_pathways.length > 0 && (
-                                    <p className="text-muted-foreground text-xs">
-                                        {shs_pathways.length} existing Senior High tracks remain available through their current track and strand
-                                        records.
-                                    </p>
-                                )}
-                            </div>
+        <AdminLayout user={user} title="Programs">
+            <Head title="Programs · Curriculum" />
+            <div className="relative isolate flex flex-col gap-7 overflow-hidden pb-4">
+                <div className="pointer-events-none absolute -top-40 right-[-12rem] -z-10 size-[30rem] rounded-full bg-sky-400/10 blur-3xl dark:bg-sky-300/5" />
+                <div className="pointer-events-none absolute top-[22rem] left-[-20rem] -z-10 size-[34rem] rounded-full bg-amber-300/10 blur-3xl dark:bg-amber-300/5" />
+
+                <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs font-medium">
+                    <Link href={curriculumPrograms().url} className="hover:text-foreground transition-colors">
+                        Curriculum
+                    </Link>
+                    <span aria-hidden="true">/</span>
+                    <span className="text-foreground">Programs</span>
+                </div>
+
+                <section className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+                    <div className="max-w-2xl space-y-4">
+                        <div className="border-border/70 bg-background/70 text-muted-foreground inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold tracking-[0.14em] uppercase shadow-xs backdrop-blur-xl">
+                            <Sparkles className="size-3.5 text-amber-500" /> Curriculum studio
                         </div>
-                        <div className="flex flex-wrap items-center gap-3">
-                            <Button asChild variant="ghost" size="sm" className="h-9">
-                                <Link href={route("administrators.curriculum.index")}>
-                                    <ChevronLeft className="mr-1 size-4" />
-                                    Back to Overview
-                                </Link>
-                            </Button>
-                            <Button size="sm" className="h-9" onClick={() => setIsCreateOpen(true)}>
-                                <Plus className="mr-2 size-4" />
-                                Create Course
-                            </Button>
-                        </div>
-                    </CardHeader>
-                    <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                        <div className="bg-card rounded-xl border p-4 shadow-sm transition-all hover:shadow-md">
-                            <div className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Total Programs</div>
-                            <div className="text-foreground mt-2 text-3xl font-bold">{filteredStats.programs}</div>
-                            <p className="text-muted-foreground mt-1 text-xs font-medium">
-                                <span className="text-emerald-500">{filteredStats.active_programs}</span> currently active
+                        <div className="space-y-2">
+                            <h1 className="text-4xl leading-[0.98] font-semibold tracking-[-0.045em] text-balance sm:text-5xl">
+                                Programs that are ready to teach.
+                            </h1>
+                            <p className="text-muted-foreground max-w-xl text-sm leading-6 sm:text-base">
+                                Define each pathway, build its subject structure, and keep the active catalog aligned with your school’s curriculum.
                             </p>
                         </div>
-                        <div className="bg-card rounded-xl border p-4 shadow-sm transition-all hover:shadow-md">
-                            <div className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Total Subjects</div>
-                            <div className="text-foreground mt-2 text-3xl font-bold">{filteredStats.subjects}</div>
-                            <p className="text-muted-foreground mt-1 text-xs font-medium">Across programs</p>
-                        </div>
-                        <div className="bg-card rounded-xl border p-4 shadow-sm transition-all hover:shadow-md">
-                            <div className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Prerequisites</div>
-                            <div className="text-foreground mt-2 text-3xl font-bold">{filteredStats.subjects_with_requisites}</div>
-                            <p className="text-muted-foreground mt-1 text-xs font-medium">Subjects with rules</p>
-                        </div>
-                        <div className="bg-card rounded-xl border p-4 shadow-sm transition-all hover:shadow-md">
-                            <div className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Curriculum Years</div>
-                            <div className="text-foreground mt-2 text-3xl font-bold">{filteredStats.curriculum_versions}</div>
-                            <p className="text-muted-foreground mt-1 text-xs font-medium">Active versions</p>
-                        </div>
-                    </CardContent>
-                </Card>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Button asChild variant="ghost" className="rounded-full">
+                            <Link href={curriculumPrograms().url}>
+                                <ChevronLeft className="size-4" /> Curriculum overview
+                            </Link>
+                        </Button>
+                        <Button className="rounded-full px-4 shadow-sm" onClick={() => setIsCreateOpen(true)}>
+                            <Plus className="size-4" /> Add program
+                        </Button>
+                    </div>
+                </section>
 
-                {/* Department Filter Tabs + Table */}
-                <Card className="border shadow-sm">
-                    <CardHeader className="bg-muted/20 border-b pb-4">
-                        <div className="flex flex-col gap-4">
-                            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-                                <div>
-                                    <CardTitle className="text-lg">Programs</CardTitle>
-                                    <CardDescription>Search, filter, and manage your academic programs.</CardDescription>
+                <section className="overflow-hidden rounded-[28px] border border-slate-800 bg-slate-950 text-white shadow-xl shadow-slate-950/10 dark:border-slate-700">
+                    <div className="grid gap-0 lg:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.85fr)]">
+                        <div className="relative overflow-hidden p-6 sm:p-8">
+                            <div className="pointer-events-none absolute top-0 right-0 size-64 rounded-full bg-sky-400/15 blur-3xl" />
+                            <div className="relative flex h-full flex-col justify-between gap-8">
+                                <div className="space-y-3">
+                                    <div className="flex items-center gap-2 text-xs font-semibold tracking-[0.16em] text-slate-400 uppercase">
+                                        <Waypoints className="size-4 text-sky-300" /> Program operations
+                                    </div>
+                                    <div className="max-w-lg space-y-2">
+                                        <h2 className="text-2xl font-semibold tracking-[-0.03em] sm:text-3xl">One catalog, one source of truth.</h2>
+                                        <p className="text-sm leading-6 text-slate-300">
+                                            Use the list below to keep program identity, curriculum structure, and activation status in sync.
+                                        </p>
+                                    </div>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    <div className="relative w-full sm:w-64">
-                                        <Search className="text-muted-foreground absolute top-2.5 left-2.5 h-4 w-4" />
-                                        <Input
-                                            id="program-search"
-                                            placeholder="Search program, dept, or year..."
-                                            value={globalFilter ?? ""}
-                                            onChange={(event) => setGlobalFilter(event.target.value)}
-                                            className="bg-background h-9 w-full pl-9"
-                                        />
+                                <div className="grid gap-3 sm:grid-cols-3">
+                                    <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-xl">
+                                        <p className="text-xs text-slate-400">Programs in view</p>
+                                        <p className="mt-2 text-2xl font-semibold tracking-tight">{filteredStats.programs}</p>
+                                        <p className="mt-1 text-xs text-slate-400">{filteredStats.active_programs} active</p>
+                                    </div>
+                                    <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-xl">
+                                        <p className="text-xs text-slate-400">Subjects mapped</p>
+                                        <p className="mt-2 text-2xl font-semibold tracking-tight">{filteredStats.subjects}</p>
+                                        <p className="mt-1 text-xs text-slate-400">{filteredStats.subjects_with_requisites} with prerequisites</p>
+                                    </div>
+                                    <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-xl">
+                                        <p className="text-xs text-slate-400">Curriculum years</p>
+                                        <p className="mt-2 text-2xl font-semibold tracking-tight">{filteredStats.curriculum_versions}</p>
+                                        <p className="mt-1 text-xs text-slate-400">{school?.name ?? "Current school"}</p>
                                     </div>
                                 </div>
                             </div>
-                            {/* Department Filter Pills */}
-                            {departmentsWithPrograms.length > 1 && (
-                                <div className="flex flex-wrap gap-1.5">
-                                    <button
-                                        type="button"
-                                        onClick={() => setActiveDepartment("all")}
-                                        className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                                            activeDepartment === "all"
-                                                ? "bg-primary text-primary-foreground border-primary"
-                                                : "bg-muted/50 text-muted-foreground hover:bg-muted border-transparent"
-                                        }`}
-                                    >
-                                        All ({programs.length})
-                                    </button>
-                                    {departmentsWithPrograms.map((dept) => {
-                                        const count = programs.filter((p) => p.department_id === dept.id).length;
-                                        return (
+                        </div>
+                        <div className="border-t border-white/10 bg-white/[0.04] p-6 sm:p-8 lg:border-t-0 lg:border-l">
+                            <div className="flex items-start justify-between gap-4">
+                                <div>
+                                    <p className="text-xs font-semibold tracking-[0.16em] text-slate-400 uppercase">Catalog readiness</p>
+                                    <p className="mt-2 text-3xl font-semibold tracking-[-0.03em]">{readiness}%</p>
+                                </div>
+                                <CheckCircle2 className="size-5 text-emerald-300" />
+                            </div>
+                            <div className="mt-6 h-2 overflow-hidden rounded-full bg-white/10">
+                                <div
+                                    className="h-full rounded-full bg-emerald-300 transition-[width] duration-500 ease-out"
+                                    style={{ width: `${readiness}%` }}
+                                />
+                            </div>
+                            <div className="mt-4 flex items-start gap-3 text-sm leading-5 text-slate-300">
+                                <CircleAlert className="mt-0.5 size-4 shrink-0 text-amber-300" />
+                                <p>
+                                    {filteredStats.programs - filteredStats.active_programs === 0
+                                        ? "Every visible program is active and ready for downstream enrollment workflows."
+                                        : `${filteredStats.programs - filteredStats.active_programs} visible ${filteredStats.programs - filteredStats.active_programs === 1 ? "program needs" : "programs need"} review before activation.`}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_310px]">
+                    <section className="border-border/70 bg-card/80 min-w-0 overflow-hidden rounded-[24px] border shadow-sm backdrop-blur-xl">
+                        <div className="border-border/70 border-b p-5 sm:p-6">
+                            <div className="flex flex-col gap-5">
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <h2 className="text-xl font-semibold tracking-[-0.025em]">Program catalog</h2>
+                                            <Badge variant="secondary" className="rounded-full px-2.5">
+                                                {filteredPrograms.length}
+                                            </Badge>
+                                        </div>
+                                        <p className="text-muted-foreground mt-1 text-sm">
+                                            Search the catalog, then open a program to manage its curriculum.
+                                        </p>
+                                    </div>
+                                    <div className="text-muted-foreground flex items-center gap-2 text-xs">
+                                        <ListFilter className="size-4" />{" "}
+                                        {activeFilterCount > 0 ? `${activeFilterCount} filters active` : "All programs"}
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-col gap-3 lg:flex-row">
+                                    <div className="relative min-w-0 flex-1">
+                                        <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+                                        <Input
+                                            aria-label="Search programs"
+                                            value={search}
+                                            onChange={(event) => setSearch(event.target.value)}
+                                            placeholder="Search by code, name, department, or year…"
+                                            className="border-border/70 bg-background/70 h-10 rounded-xl pr-16 pl-9 shadow-none"
+                                        />
+                                        {search ? (
                                             <button
                                                 type="button"
-                                                key={dept.id}
-                                                onClick={() => setActiveDepartment(String(dept.id))}
-                                                className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                                                    activeDepartment === String(dept.id)
-                                                        ? "bg-primary text-primary-foreground border-primary"
-                                                        : "bg-muted/50 text-muted-foreground hover:bg-muted border-transparent"
-                                                }`}
+                                                aria-label="Clear search"
+                                                onClick={() => setSearch("")}
+                                                className="text-muted-foreground hover:bg-muted hover:text-foreground absolute top-1/2 right-3 -translate-y-1/2 rounded-md p-1 transition-colors"
                                             >
-                                                {dept.code} ({count})
+                                                <X className="size-3.5" />
                                             </button>
-                                        );
-                                    })}
+                                        ) : (
+                                            <span className="bg-muted text-muted-foreground pointer-events-none absolute top-1/2 right-3 hidden -translate-y-1/2 rounded border px-1.5 py-0.5 text-[10px] font-medium sm:inline">
+                                                ⌘ K
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        <Select value={activeDepartment} onValueChange={setActiveDepartment}>
+                                            <SelectTrigger className="bg-background/70 h-10 min-w-[150px] rounded-xl shadow-none">
+                                                <Filter className="text-muted-foreground size-3.5" />
+                                                <SelectValue placeholder="Department" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">All departments</SelectItem>
+                                                {departmentsWithPrograms.map((department) => (
+                                                    <SelectItem key={department.id} value={String(department.id)}>
+                                                        {department.code} · {department.name}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        {frameworkOptions.length > 0 && (
+                                            <Select value={activeFramework} onValueChange={setActiveFramework}>
+                                                <SelectTrigger className="bg-background/70 h-10 min-w-[150px] rounded-xl shadow-none">
+                                                    <Layers3 className="text-muted-foreground size-3.5" />
+                                                    <SelectValue placeholder="Framework" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="all">All frameworks</SelectItem>
+                                                    {frameworkOptions.map((option) => (
+                                                        <SelectItem key={option.value} value={option.value}>
+                                                            {option.label}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <div className="border-border/70 bg-muted/40 inline-flex rounded-xl border p-1">
+                                        {(["all", "active", "inactive"] as StatusFilter[]).map((status) => {
+                                            const label = status === "all" ? "All" : status === "active" ? "Active" : "Needs review";
+                                            const count =
+                                                status === "all"
+                                                    ? programs.length
+                                                    : status === "active"
+                                                      ? programs.filter((program) => program.is_active).length
+                                                      : programs.filter((program) => !program.is_active).length;
+
+                                            return (
+                                                <button
+                                                    type="button"
+                                                    key={status}
+                                                    aria-pressed={statusFilter === status}
+                                                    onClick={() => setStatusFilter(status)}
+                                                    className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-[background-color,color,box-shadow] duration-200 ${
+                                                        statusFilter === status
+                                                            ? "bg-background text-foreground shadow-sm"
+                                                            : "text-muted-foreground hover:text-foreground"
+                                                    }`}
+                                                >
+                                                    {label} <span className="text-muted-foreground ml-1 text-[10px]">{count}</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    {(search || activeFilterCount > 0) && (
+                                        <button
+                                            type="button"
+                                            onClick={clearFilters}
+                                            className="text-muted-foreground hover:text-foreground ml-auto text-xs font-medium transition-colors"
+                                        >
+                                            Clear filters
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="divide-border/60 divide-y">
+                            {filteredPrograms.length > 0 ? (
+                                filteredPrograms.map((program) => (
+                                    <article
+                                        key={program.id}
+                                        className="group hover:bg-muted/20 relative grid gap-5 p-5 transition-[background-color,transform] duration-200 sm:p-6 lg:grid-cols-[minmax(0,1fr)_180px_auto] lg:items-center"
+                                    >
+                                        <div className="absolute inset-y-5 left-0 w-1 rounded-r-full bg-sky-400/70 opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
+                                        <div className="min-w-0">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <Link
+                                                    href={showProgram(program.id).url}
+                                                    prefetch
+                                                    className="hover:text-primary truncate text-base font-semibold tracking-[-0.015em] transition-colors"
+                                                >
+                                                    {program.code}
+                                                </Link>
+                                                <Badge
+                                                    variant="secondary"
+                                                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                                        program.is_active
+                                                            ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                                                            : "bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                                                    }`}
+                                                >
+                                                    {program.is_active ? "Active" : "Needs review"}
+                                                </Badge>
+                                            </div>
+                                            <Link
+                                                href={showProgram(program.id).url}
+                                                className="text-muted-foreground hover:text-foreground mt-1 block truncate text-sm transition-colors"
+                                            >
+                                                {program.title}
+                                            </Link>
+                                            <div className="text-muted-foreground mt-3 flex flex-wrap items-center gap-2 text-xs">
+                                                {program.department && (
+                                                    <span className={`rounded-full px-2 py-1 font-semibold ${departmentColor(program.department)}`}>
+                                                        {program.department}
+                                                    </span>
+                                                )}
+                                                <span className="inline-flex items-center gap-1.5">
+                                                    <Waypoints className="size-3.5" /> {kindLabel(program)}
+                                                </span>
+                                                {program.curriculum_framework && <span className="text-border">•</span>}
+                                                {program.curriculum_framework && <span>{frameworkLabel(program.curriculum_framework)}</span>}
+                                                {program.curriculum_year && (
+                                                    <>
+                                                        <span className="text-border">•</span>
+                                                        <span className="inline-flex items-center gap-1.5">
+                                                            <CalendarDays className="size-3.5" /> {program.curriculum_year}
+                                                        </span>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="border-border/60 grid grid-cols-3 gap-3 border-t pt-4 text-xs sm:grid-cols-3 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-5">
+                                            <div>
+                                                <p className="text-muted-foreground">Subjects</p>
+                                                <p className="text-foreground mt-1 text-sm font-semibold">{program.subjects_count}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-muted-foreground">Units</p>
+                                                <p className="text-foreground mt-1 text-sm font-semibold">{program.total_units}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-muted-foreground">Prereqs</p>
+                                                <p className="text-foreground mt-1 text-sm font-semibold">{program.prerequisites_count}</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center justify-between gap-2 sm:justify-end">
+                                            <Button asChild variant="secondary" size="sm" className="rounded-full px-3">
+                                                <Link href={showProgram(program.id).url}>
+                                                    Manage <ArrowUpRight className="size-3.5" />
+                                                </Link>
+                                            </Button>
+                                            <DropdownMenu>
+                                                <DropdownMenuTrigger asChild>
+                                                    <Button variant="ghost" size="icon-sm" className="text-muted-foreground rounded-full">
+                                                        <Ellipsis className="size-4" />
+                                                        <span className="sr-only">Open actions for {program.code}</span>
+                                                    </Button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end">
+                                                    <DropdownMenuItem onClick={() => toggleStatus(program)}>
+                                                        {program.is_active ? "Deactivate program" : "Activate program"}
+                                                    </DropdownMenuItem>
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
+                                        </div>
+                                    </article>
+                                ))
+                            ) : (
+                                <div className="flex flex-col items-center justify-center px-6 py-20 text-center">
+                                    <div className="bg-muted text-muted-foreground flex size-12 items-center justify-center rounded-2xl">
+                                        <Search className="size-5" />
+                                    </div>
+                                    <h3 className="mt-4 text-sm font-semibold">No programs match these filters</h3>
+                                    <p className="text-muted-foreground mt-1 max-w-sm text-sm">
+                                        Try a different search or clear the filters to return to the full catalog.
+                                    </p>
+                                    <Button variant="outline" size="sm" className="mt-5 rounded-full" onClick={clearFilters}>
+                                        Reset catalog view
+                                    </Button>
                                 </div>
                             )}
                         </div>
-                    </CardHeader>
-                    <CardContent className="p-0">
-                        <Table>
-                            <TableHeader className="bg-muted/30">
-                                {table.getHeaderGroups().map((headerGroup) => (
-                                    <TableRow key={headerGroup.id} className="hover:bg-transparent">
-                                        {headerGroup.headers.map((header) => (
-                                            <TableHead key={header.id} className="py-3">
-                                                {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
-                                            </TableHead>
-                                        ))}
-                                    </TableRow>
-                                ))}
-                            </TableHeader>
-                            <TableBody>
-                                {table.getRowModel().rows?.length ? (
-                                    table.getRowModel().rows.map((row) => (
-                                        <TableRow key={row.id} data-state={row.getIsSelected() && "selected"} className="group">
-                                            {row.getVisibleCells().map((cell) => (
-                                                <TableCell key={cell.id} className="py-3">
-                                                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                                                </TableCell>
-                                            ))}
-                                        </TableRow>
+                    </section>
+
+                    <aside className="grid gap-4">
+                        <Card className="border-border/70 bg-card/80 rounded-[24px] shadow-sm backdrop-blur-xl">
+                            <CardHeader className="gap-1 p-5">
+                                <div className="flex items-center justify-between gap-3">
+                                    <CardTitle className="text-base tracking-[-0.015em]">Curriculum versions</CardTitle>
+                                    <Clock3 className="text-muted-foreground size-4" />
+                                </div>
+                                <CardDescription>Where your subject structures are concentrated.</CardDescription>
+                            </CardHeader>
+                            <CardContent className="grid gap-2 p-5 pt-0">
+                                {versions.length > 0 ? (
+                                    versions.slice(0, 5).map((version) => (
+                                        <div key={version.curriculum_year} className="border-border/60 bg-background/50 rounded-2xl border p-3.5">
+                                            <div className="flex items-center justify-between gap-3">
+                                                <span className="text-sm font-semibold">{version.curriculum_year}</span>
+                                                <span className="text-muted-foreground text-xs">
+                                                    {version.active_program_count}/{version.program_count} active
+                                                </span>
+                                            </div>
+                                            <div className="bg-muted mt-2 h-1.5 overflow-hidden rounded-full">
+                                                <div
+                                                    className="h-full rounded-full bg-sky-400 transition-[width] duration-500 ease-out"
+                                                    style={{
+                                                        width: `${version.program_count ? (version.active_program_count / version.program_count) * 100 : 0}%`,
+                                                    }}
+                                                />
+                                            </div>
+                                            <p className="text-muted-foreground mt-2 text-xs">{version.subject_count} subjects across this version</p>
+                                        </div>
                                     ))
                                 ) : (
-                                    <TableRow>
-                                        <TableCell colSpan={columns.length} className="text-muted-foreground h-32 text-center">
-                                            No programs found matching your criteria.
-                                        </TableCell>
-                                    </TableRow>
+                                    <p className="bg-muted/50 text-muted-foreground rounded-2xl p-4 text-sm">No curriculum versions yet.</p>
                                 )}
-                            </TableBody>
-                        </Table>
-                    </CardContent>
-                    {table.getPageCount() > 1 && (
-                        <div className="flex items-center justify-end space-x-2 border-t p-4">
-                            <Button variant="outline" size="sm" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>
-                                Previous
-                            </Button>
-                            <span className="text-muted-foreground text-sm">
-                                Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
-                            </span>
-                            <Button variant="outline" size="sm" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>
-                                Next
-                            </Button>
-                        </div>
-                    )}
-                </Card>
+                            </CardContent>
+                        </Card>
+
+                        <Card className="border-border/70 bg-card/80 rounded-[24px] shadow-sm backdrop-blur-xl">
+                            <CardHeader className="gap-1 p-5">
+                                <CardTitle className="text-base tracking-[-0.015em]">A reliable workflow</CardTitle>
+                                <CardDescription>Keep every program moving through the same three stages.</CardDescription>
+                            </CardHeader>
+                            <CardContent className="grid gap-4 p-5 pt-0">
+                                {[
+                                    ["01", "Define", "Name the pathway and align it to a framework."],
+                                    ["02", "Build", "Add subjects, units, sequencing, and prerequisites."],
+                                    ["03", "Activate", "Publish only after the curriculum is ready for enrollment."],
+                                ].map(([number, title, description]) => (
+                                    <div key={number} className="flex gap-3">
+                                        <span className="bg-muted text-muted-foreground flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold">
+                                            {number}
+                                        </span>
+                                        <div className="space-y-0.5">
+                                            <p className="text-sm font-semibold">{title}</p>
+                                            <p className="text-muted-foreground text-xs leading-5">{description}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                                {shs_pathways.length > 0 && (
+                                    <div className="mt-1 flex items-start gap-2 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-3 text-xs leading-5 text-amber-800 dark:text-amber-200">
+                                        <BookOpen className="mt-0.5 size-3.5 shrink-0" />
+                                        <span>
+                                            {shs_pathways.length} Senior High pathway records continue to use their track and strand structure.
+                                        </span>
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+                    </aside>
+                </div>
             </div>
-            {/* Create Course Dialog */}
+
             <Dialog
                 open={isCreateOpen}
                 onOpenChange={(open) => {
                     setIsCreateOpen(open);
-                    if (!open) {
-                        createForm.reset();
-                        createForm.clearErrors();
-                    }
+                    if (!open) resetCreateDialog();
                 }}
             >
-                <DialogContent className="bg-card border shadow-lg sm:max-w-3xl">
-                    <DialogHeader className="mb-4 border-b pb-4">
-                        <DialogTitle className="text-xl">Add a curriculum pathway</DialogTitle>
-                        <DialogDescription>
-                            Start with a school-supported framework, use a catalog starting point, or create a local pathway from scratch.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <form className="grid gap-5" onSubmit={handleCreateProgram}>
-                        <div className="bg-muted/30 grid gap-4 rounded-xl border p-4 md:grid-cols-2">
-                            <div className="grid gap-2">
-                                <Label className="text-foreground/80 font-semibold">School capability</Label>
-                                <Select value={createForm.data.capability_id} onValueChange={selectCapability}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Choose a supported pathway" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {capabilities.map((capability) => (
-                                            <SelectItem key={capability.id} value={capability.id}>
-                                                {capability.school_level_label} · {capability.framework_label}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                <FieldError message={createForm.errors.capability_id} />
+                <DialogContent className="border-border/80 bg-card/95 max-h-[min(880px,calc(100vh-2rem))] overflow-y-auto rounded-[26px] p-0 shadow-2xl backdrop-blur-2xl sm:max-w-3xl">
+                    <div className="border-border/70 bg-muted/25 border-b px-6 py-6 sm:px-8">
+                        <DialogHeader className="gap-3 pr-8 text-left">
+                            <div className="flex size-11 items-center justify-center rounded-2xl bg-sky-500/10 text-sky-700 dark:text-sky-300">
+                                <GraduationCap className="size-5" />
                             </div>
-                            <div className="grid gap-2">
-                                <Label className="text-foreground/80 font-semibold">Catalog starter (optional)</Label>
-                                <Select onValueChange={applyTemplate} disabled={!selectedCapability || compatibleTemplates.length === 0}>
-                                    <SelectTrigger>
-                                        <SelectValue
-                                            placeholder={selectedCapability ? "Choose a template or start custom" : "Choose a capability first"}
-                                        />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {compatibleTemplates.map((template) => (
-                                            <SelectItem key={template.code} value={template.code}>
-                                                {template.label}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                            <div className="space-y-1">
+                                <DialogTitle className="text-2xl tracking-[-0.03em]">Add a program</DialogTitle>
+                                <DialogDescription className="max-w-xl leading-5">
+                                    Start with the program identity, then add the standards and operational details your registrar needs.
+                                </DialogDescription>
                             </div>
-                        </div>
-                        {selectedCapability && (
-                            <div className="flex flex-wrap items-center gap-2 text-xs">
-                                <Badge variant="secondary">{selectedCapability.school_level_label}</Badge>
-                                <Badge variant="outline">{selectedCapability.framework_label}</Badge>
-                                {school && <span className="text-muted-foreground">Adding to {school.name}</span>}
-                            </div>
-                        )}
-                        <div className="grid gap-4 md:grid-cols-2">
-                            <div className="grid gap-2">
-                                <Label htmlFor="create-code" className="text-foreground/80 font-semibold">
-                                    Pathway Code
-                                </Label>
-                                <Input
-                                    id="create-code"
-                                    placeholder="e.g. BSIT"
-                                    value={createForm.data.code}
-                                    onChange={(e) => createForm.setData("code", e.target.value)}
-                                />
-                                <FieldError message={createForm.errors.code} />
-                            </div>
-                            {createForm.data.curriculum_kind === "program" && (
-                                <div className="grid gap-2">
-                                    <Label htmlFor="create-dept" className="text-foreground/80 font-semibold">
-                                        Department
-                                    </Label>
-                                    <Select
-                                        value={createForm.data.department_id}
-                                        onValueChange={(value) => createForm.setData("department_id", value)}
-                                    >
-                                        <SelectTrigger id="create-dept">
-                                            <SelectValue placeholder="Select department" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {departments.map((dept) => (
-                                                <SelectItem key={dept.id} value={String(dept.id)}>
-                                                    {dept.code} — {dept.name}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                    <FieldError message={createForm.errors.department_id} />
-                                </div>
-                            )}
-                        </div>
-                        <div className="grid gap-4 md:grid-cols-2">
-                            {createForm.data.curriculum_kind === "program" && (
-                                <div className="grid gap-2">
-                                    <Label htmlFor="create-course-type" className="text-foreground/80 font-semibold">
-                                        Course Type
-                                    </Label>
-                                    <Select
-                                        value={createForm.data.course_type_id}
-                                        onValueChange={(value) => createForm.setData("course_type_id", value)}
-                                    >
-                                        <SelectTrigger id="create-course-type">
-                                            <SelectValue placeholder="Select type" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {course_types.map((type) => (
-                                                <SelectItem key={type.id} value={String(type.id)}>
-                                                    {type.name}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                    <FieldError message={createForm.errors.course_type_id} />
-                                </div>
-                            )}
-                            <div className="grid gap-2">
-                                <Label htmlFor="create-title" className="text-foreground/80 font-semibold">
-                                    {createForm.data.curriculum_kind === "tesda_qualification"
-                                        ? "Qualification title"
-                                        : createForm.data.curriculum_kind === "grade_pathway"
-                                          ? "Grade pathway title"
-                                          : "Program title"}
-                                </Label>
-                                <Input
-                                    id="create-title"
-                                    placeholder="e.g. Bachelor of Science in Information Technology"
-                                    value={createForm.data.title}
-                                    onChange={(e) => createForm.setData("title", e.target.value)}
-                                />
-                                <FieldError message={createForm.errors.title} />
-                            </div>
-                        </div>
-                        {(createForm.data.curriculum_kind === "grade_pathway" || createForm.data.curriculum_kind === "senior_high_pathway") && (
-                            <div className="grid gap-2">
-                                <Label htmlFor="create-stage" className="text-foreground/80 font-semibold">
-                                    Grade level / stage
-                                </Label>
-                                <Input
-                                    id="create-stage"
-                                    placeholder="e.g. Grade 1, Grade 7, Grade 11"
-                                    value={createForm.data.curriculum_stage}
-                                    onChange={(e) => createForm.setData("curriculum_stage", e.target.value)}
-                                />
-                                <FieldError message={createForm.errors.curriculum_stage} />
-                            </div>
-                        )}
-                        {createForm.data.curriculum_kind === "tesda_qualification" && (
-                            <div className="grid gap-4 md:grid-cols-2">
-                                <div className="grid gap-2">
-                                    <Label htmlFor="create-tesda-type">TESDA program type</Label>
-                                    <Select
-                                        value={createForm.data.tesda_program_type}
-                                        onValueChange={(value) => createForm.setData("tesda_program_type", value)}
-                                    >
-                                        <SelectTrigger id="create-tesda-type">
-                                            <SelectValue placeholder="Select program type" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="national_certificate">National Certificate (NC)</SelectItem>
-                                            <SelectItem value="diploma">Institutional Diploma</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                    <FieldError message={createForm.errors.tesda_program_type} />
-                                </div>
-                                <div className="grid gap-2">
-                                    <Label htmlFor="create-qualification">Qualification level</Label>
-                                    <Input
-                                        id="create-qualification"
-                                        placeholder="e.g. NC II or Diploma"
-                                        value={createForm.data.qualification_level}
-                                        onChange={(e) => createForm.setData("qualification_level", e.target.value)}
-                                    />
-                                    <FieldError message={createForm.errors.qualification_level} />
-                                </div>
-                                <div className="grid gap-2">
-                                    <Label htmlFor="create-hours">Total program hours</Label>
-                                    <Input
-                                        id="create-hours"
-                                        type="number"
-                                        min="1"
-                                        value={createForm.data.duration_hours}
-                                        onChange={(e) => createForm.setData("duration_hours", e.target.value)}
-                                    />
-                                    <FieldError message={createForm.errors.duration_hours} />
-                                </div>
-                                {createForm.data.tesda_program_type === "diploma" && (
-                                    <>
-                                        <div className="grid gap-2">
-                                            <Label htmlFor="create-duration-years">Typical duration (years)</Label>
-                                            <Input
-                                                id="create-duration-years"
-                                                type="number"
-                                                min="0.5"
-                                                max="10"
-                                                step="0.5"
-                                                placeholder="e.g. 1 or 1.5"
-                                                value={createForm.data.duration_years}
-                                                onChange={(e) => createForm.setData("duration_years", e.target.value)}
-                                            />
-                                            <FieldError message={createForm.errors.duration_years} />
+                        </DialogHeader>
+                    </div>
+
+                    <form className="grid gap-6 px-6 py-6 sm:px-8" onSubmit={handleCreateProgram}>
+                        <Tabs value={createStep} onValueChange={(value) => setCreateStep(value as CreateStep)}>
+                            <TabsList className="grid w-full grid-cols-2 rounded-xl p-1">
+                                <TabsTab value="identity" className="justify-start gap-3 rounded-lg px-3 text-left">
+                                    <span className="bg-muted flex size-6 items-center justify-center rounded-full text-[10px] font-bold">1</span>
+                                    <span>
+                                        <span className="block text-xs font-semibold">Identity</span>
+                                        <span className="text-muted-foreground hidden text-[10px] font-normal sm:block">Name and pathway</span>
+                                    </span>
+                                </TabsTab>
+                                <TabsTab value="details" className="justify-start gap-3 rounded-lg px-3 text-left">
+                                    <span className="bg-muted flex size-6 items-center justify-center rounded-full text-[10px] font-bold">2</span>
+                                    <span>
+                                        <span className="block text-xs font-semibold">Standards & details</span>
+                                        <span className="text-muted-foreground hidden text-[10px] font-normal sm:block">Complete the record</span>
+                                    </span>
+                                </TabsTab>
+                            </TabsList>
+
+                            <TabsContent value="identity" className="grid gap-5 pt-4">
+                                <div className="rounded-2xl border border-sky-500/15 bg-sky-500/[0.04] p-4">
+                                    <div className="flex items-start gap-3">
+                                        <Sparkles className="mt-0.5 size-4 shrink-0 text-sky-600 dark:text-sky-300" />
+                                        <div>
+                                            <p className="text-sm font-semibold">Choose the right starting point</p>
+                                            <p className="text-muted-foreground mt-1 text-xs leading-5">
+                                                A framework keeps program metadata consistent. Use a catalog starter when one is available, or
+                                                continue with a custom pathway.
+                                            </p>
                                         </div>
+                                    </div>
+                                </div>
+
+                                <div className="grid gap-4 md:grid-cols-2">
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="create-capability">School capability</Label>
+                                        <Select value={createForm.data.capability_id} onValueChange={selectCapability}>
+                                            <SelectTrigger id="create-capability" className="rounded-xl">
+                                                <SelectValue placeholder="Choose a supported pathway" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {capabilities.map((capability) => (
+                                                    <SelectItem key={capability.id} value={capability.id}>
+                                                        {capability.school_level_label} · {capability.framework_label}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        {!capabilities.length && (
+                                            <p className="text-muted-foreground text-xs">
+                                                No framework is configured yet. You can still create a custom pathway.
+                                            </p>
+                                        )}
+                                        <FieldError message={createForm.errors.capability_id} />
+                                    </div>
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="create-template">
+                                            Catalog starter <span className="text-muted-foreground font-normal">(optional)</span>
+                                        </Label>
+                                        <Select onValueChange={applyTemplate} disabled={!selectedCapability || compatibleTemplates.length === 0}>
+                                            <SelectTrigger id="create-template" className="rounded-xl">
+                                                <SelectValue placeholder={selectedCapability ? "Choose a template" : "Choose a capability first"} />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {compatibleTemplates.map((template) => (
+                                                    <SelectItem key={template.code} value={template.code}>
+                                                        {template.label}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+
+                                {selectedCapability && (
+                                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                                        <Badge variant="secondary" className="rounded-full">
+                                            {selectedCapability.school_level_label}
+                                        </Badge>
+                                        <Badge variant="outline" className="rounded-full">
+                                            {selectedCapability.framework_label}
+                                        </Badge>
+                                        {school && <span className="text-muted-foreground">Adding to {school.name}</span>}
+                                    </div>
+                                )}
+
+                                <div className="grid gap-4 md:grid-cols-[0.65fr_1.35fr]">
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="create-code">Program code</Label>
+                                        <Input
+                                            id="create-code"
+                                            className="rounded-xl uppercase"
+                                            placeholder="e.g. BSIT"
+                                            value={createForm.data.code}
+                                            onChange={(event) => createForm.setData("code", event.target.value.toUpperCase())}
+                                        />
+                                        <FieldError message={createForm.errors.code} />
+                                    </div>
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="create-title">Program title</Label>
+                                        <Input
+                                            id="create-title"
+                                            className="rounded-xl"
+                                            placeholder="e.g. Bachelor of Science in Information Technology"
+                                            value={createForm.data.title}
+                                            onChange={(event) => createForm.setData("title", event.target.value)}
+                                        />
+                                        <FieldError message={createForm.errors.title} />
+                                    </div>
+                                </div>
+
+                                <div className="grid gap-4 md:grid-cols-2">
+                                    {createForm.data.curriculum_kind === "program" && (
                                         <div className="grid gap-2">
-                                            <Label htmlFor="create-internship-hours">Mandatory OJT / internship hours</Label>
+                                            <Label htmlFor="create-department">Department</Label>
+                                            <Select
+                                                value={createForm.data.department_id}
+                                                onValueChange={(value) => createForm.setData("department_id", value)}
+                                            >
+                                                <SelectTrigger id="create-department" className="rounded-xl">
+                                                    <SelectValue placeholder="Select department" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {departments.map((department) => (
+                                                        <SelectItem key={department.id} value={String(department.id)}>
+                                                            {department.code} · {department.name}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            <FieldError message={createForm.errors.department_id} />
+                                        </div>
+                                    )}
+                                    {createForm.data.curriculum_kind === "program" && (
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="create-course-type">Program type</Label>
+                                            <Select
+                                                value={createForm.data.course_type_id}
+                                                onValueChange={(value) => createForm.setData("course_type_id", value)}
+                                            >
+                                                <SelectTrigger id="create-course-type" className="rounded-xl">
+                                                    <SelectValue placeholder="Select program type" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {course_types.map((type) => (
+                                                        <SelectItem key={type.id} value={String(type.id)}>
+                                                            {type.name}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            <FieldError message={createForm.errors.course_type_id} />
+                                        </div>
+                                    )}
+                                </div>
+
+                                {(createForm.data.curriculum_kind === "grade_pathway" ||
+                                    createForm.data.curriculum_kind === "senior_high_pathway") && (
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="create-stage">Grade level / stage</Label>
+                                        <Input
+                                            id="create-stage"
+                                            className="rounded-xl"
+                                            placeholder="e.g. Grade 1, Grade 7, Grade 11"
+                                            value={createForm.data.curriculum_stage}
+                                            onChange={(event) => createForm.setData("curriculum_stage", event.target.value)}
+                                        />
+                                        <FieldError message={createForm.errors.curriculum_stage} />
+                                    </div>
+                                )}
+
+                                <div className="grid gap-4 md:grid-cols-2">
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="create-year">Curriculum year</Label>
+                                        <Input
+                                            id="create-year"
+                                            className="rounded-xl"
+                                            placeholder="e.g. 2024-2025"
+                                            value={createForm.data.curriculum_year}
+                                            onChange={(event) => createForm.setData("curriculum_year", event.target.value)}
+                                        />
+                                        <FieldError message={createForm.errors.curriculum_year} />
+                                    </div>
+                                    {createForm.data.curriculum_kind === "program" && (
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="create-misc">
+                                                Miscellaneous fee <span className="text-muted-foreground font-normal">(₱)</span>
+                                            </Label>
                                             <Input
-                                                id="create-internship-hours"
+                                                id="create-misc"
                                                 type="number"
                                                 min="0"
-                                                max="65535"
-                                                placeholder="e.g. 600"
-                                                value={createForm.data.internship_hours}
-                                                onChange={(e) => createForm.setData("internship_hours", e.target.value)}
+                                                className="rounded-xl"
+                                                placeholder="e.g. 3500"
+                                                value={createForm.data.miscelaneous}
+                                                onChange={(event) => createForm.setData("miscelaneous", event.target.value)}
                                             />
-                                            <FieldError message={createForm.errors.internship_hours} />
+                                            <FieldError message={createForm.errors.miscelaneous} />
                                         </div>
-                                        <div className="grid gap-2 md:col-span-2">
-                                            <Label htmlFor="create-bundled-qualifications">Bundled TESDA qualifications</Label>
+                                    )}
+                                </div>
+                            </TabsContent>
+
+                            <TabsContent value="details" className="grid gap-5 pt-4">
+                                {createForm.data.curriculum_kind === "tesda_qualification" && (
+                                    <div className="grid gap-4 rounded-2xl border border-amber-500/20 bg-amber-500/[0.04] p-4 md:grid-cols-2">
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="create-tesda-type">TESDA program type</Label>
+                                            <Select
+                                                value={createForm.data.tesda_program_type}
+                                                onValueChange={(value) => createForm.setData("tesda_program_type", value)}
+                                            >
+                                                <SelectTrigger id="create-tesda-type" className="rounded-xl">
+                                                    <SelectValue placeholder="Select program type" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="national_certificate">National Certificate (NC)</SelectItem>
+                                                    <SelectItem value="diploma">Institutional Diploma</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                            <FieldError message={createForm.errors.tesda_program_type} />
+                                        </div>
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="create-qualification">Qualification level</Label>
                                             <Input
-                                                id="create-bundled-qualifications"
-                                                placeholder="e.g. Cookery NC II, Bread & Pastry Production NC II"
-                                                value={createForm.data.bundled_qualifications}
-                                                onChange={(e) => createForm.setData("bundled_qualifications", e.target.value)}
+                                                id="create-qualification"
+                                                className="rounded-xl"
+                                                placeholder="e.g. NC II or Diploma"
+                                                value={createForm.data.qualification_level}
+                                                onChange={(event) => createForm.setData("qualification_level", event.target.value)}
                                             />
-                                            <p className="text-muted-foreground text-xs">Separate each qualification with a comma.</p>
-                                            <FieldError message={createForm.errors.bundled_qualifications} />
+                                            <FieldError message={createForm.errors.qualification_level} />
                                         </div>
-                                        <div className="grid gap-2 md:col-span-2">
-                                            <Label htmlFor="create-advanced-topics">Advanced topics and internship context</Label>
-                                            <Textarea
-                                                id="create-advanced-topics"
-                                                className="min-h-[80px] resize-none"
-                                                placeholder="e.g. Advanced culinary techniques, kitchen operations, menu planning..."
-                                                value={createForm.data.advanced_topics}
-                                                onChange={(e) => createForm.setData("advanced_topics", e.target.value)}
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="create-hours">Total program hours</Label>
+                                            <Input
+                                                id="create-hours"
+                                                type="number"
+                                                min="1"
+                                                className="rounded-xl"
+                                                value={createForm.data.duration_hours}
+                                                onChange={(event) => createForm.setData("duration_hours", event.target.value)}
                                             />
-                                            <FieldError message={createForm.errors.advanced_topics} />
+                                            <FieldError message={createForm.errors.duration_hours} />
                                         </div>
-                                    </>
+                                        {createForm.data.tesda_program_type === "diploma" && (
+                                            <>
+                                                <div className="grid gap-2">
+                                                    <Label htmlFor="create-duration-years">
+                                                        Typical duration <span className="text-muted-foreground font-normal">(years)</span>
+                                                    </Label>
+                                                    <Input
+                                                        id="create-duration-years"
+                                                        type="number"
+                                                        min="0.5"
+                                                        max="10"
+                                                        step="0.5"
+                                                        className="rounded-xl"
+                                                        placeholder="e.g. 1.5"
+                                                        value={createForm.data.duration_years}
+                                                        onChange={(event) => createForm.setData("duration_years", event.target.value)}
+                                                    />
+                                                    <FieldError message={createForm.errors.duration_years} />
+                                                </div>
+                                                <div className="grid gap-2">
+                                                    <Label htmlFor="create-internship-hours">OJT / internship hours</Label>
+                                                    <Input
+                                                        id="create-internship-hours"
+                                                        type="number"
+                                                        min="0"
+                                                        max="65535"
+                                                        className="rounded-xl"
+                                                        placeholder="e.g. 600"
+                                                        value={createForm.data.internship_hours}
+                                                        onChange={(event) => createForm.setData("internship_hours", event.target.value)}
+                                                    />
+                                                    <FieldError message={createForm.errors.internship_hours} />
+                                                </div>
+                                                <div className="grid gap-2 md:col-span-2">
+                                                    <Label htmlFor="create-bundled">Bundled qualifications</Label>
+                                                    <Input
+                                                        id="create-bundled"
+                                                        className="rounded-xl"
+                                                        placeholder="Separate each qualification with a comma"
+                                                        value={createForm.data.bundled_qualifications}
+                                                        onChange={(event) => createForm.setData("bundled_qualifications", event.target.value)}
+                                                    />
+                                                    <FieldError message={createForm.errors.bundled_qualifications} />
+                                                </div>
+                                                <div className="grid gap-2 md:col-span-2">
+                                                    <Label htmlFor="create-advanced">Advanced topics and internship context</Label>
+                                                    <Textarea
+                                                        id="create-advanced"
+                                                        className="min-h-20 resize-none rounded-xl"
+                                                        placeholder="Describe the advanced topics, operations, or internship context."
+                                                        value={createForm.data.advanced_topics}
+                                                        onChange={(event) => createForm.setData("advanced_topics", event.target.value)}
+                                                    />
+                                                    <FieldError message={createForm.errors.advanced_topics} />
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+
+                                {createForm.data.curriculum_kind === "program" && (
+                                    <div className="border-border/70 bg-muted/20 grid gap-4 rounded-2xl border p-4 md:grid-cols-2">
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="create-lec">Lecture rate / unit</Label>
+                                            <Input
+                                                id="create-lec"
+                                                type="number"
+                                                min="0"
+                                                className="rounded-xl"
+                                                value={createForm.data.lec_per_unit}
+                                                onChange={(event) => createForm.setData("lec_per_unit", event.target.value)}
+                                            />
+                                            <FieldError message={createForm.errors.lec_per_unit} />
+                                        </div>
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="create-lab">Lab rate / unit</Label>
+                                            <Input
+                                                id="create-lab"
+                                                type="number"
+                                                min="0"
+                                                className="rounded-xl"
+                                                value={createForm.data.lab_per_unit}
+                                                onChange={(event) => createForm.setData("lab_per_unit", event.target.value)}
+                                            />
+                                            <FieldError message={createForm.errors.lab_per_unit} />
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="grid gap-4 md:grid-cols-2">
+                                    <div className="grid gap-2 md:col-span-2">
+                                        <Label htmlFor="create-description">Description</Label>
+                                        <Textarea
+                                            id="create-description"
+                                            className="min-h-24 resize-none rounded-xl"
+                                            placeholder="Give staff a concise description of this program and its intended outcome."
+                                            value={createForm.data.description}
+                                            onChange={(event) => createForm.setData("description", event.target.value)}
+                                        />
+                                        <FieldError message={createForm.errors.description} />
+                                    </div>
+                                    <div className="grid gap-2 md:col-span-2">
+                                        <Label htmlFor="create-remarks">
+                                            Internal remarks <span className="text-muted-foreground font-normal">(optional)</span>
+                                        </Label>
+                                        <Textarea
+                                            id="create-remarks"
+                                            className="min-h-20 resize-none rounded-xl"
+                                            placeholder="Add internal notes for curriculum administrators."
+                                            value={createForm.data.remarks}
+                                            onChange={(event) => createForm.setData("remarks", event.target.value)}
+                                        />
+                                        <FieldError message={createForm.errors.remarks} />
+                                    </div>
+                                </div>
+                            </TabsContent>
+                        </Tabs>
+
+                        <DialogFooter className="border-border/70 border-t pt-5 sm:justify-between">
+                            <div className="text-muted-foreground flex items-center gap-2 text-xs">
+                                <span className="flex size-5 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-300">
+                                    <Check className="size-3" />
+                                </span>
+                                New programs are active by default; deactivate them when they need review.
+                            </div>
+                            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                                {createStep === "details" && (
+                                    <Button type="button" variant="ghost" className="rounded-full" onClick={() => setCreateStep("identity")}>
+                                        <ChevronLeft className="size-4" /> Back
+                                    </Button>
+                                )}
+                                {createStep === "identity" ? (
+                                    <Button type="button" className="rounded-full px-4" onClick={() => setCreateStep("details")}>
+                                        Continue <ArrowRight className="size-4" />
+                                    </Button>
+                                ) : (
+                                    <Button type="submit" className="rounded-full px-4" disabled={createForm.processing}>
+                                        {createForm.processing ? "Creating…" : "Create program"} <ArrowUpRight className="size-4" />
+                                    </Button>
                                 )}
                             </div>
-                        )}
-                        <div className="grid gap-4 md:grid-cols-2">
-                            <div className="grid gap-2">
-                                <Label htmlFor="create-curriculum-year" className="text-foreground/80 font-semibold">
-                                    Curriculum Year
-                                </Label>
-                                <Input
-                                    id="create-curriculum-year"
-                                    placeholder="e.g. 2024-2025"
-                                    value={createForm.data.curriculum_year}
-                                    onChange={(e) => createForm.setData("curriculum_year", e.target.value)}
-                                />
-                                <FieldError message={createForm.errors.curriculum_year} />
-                            </div>
-                            {createForm.data.curriculum_kind === "program" && (
-                                <div className="grid gap-2">
-                                    <Label htmlFor="create-misc" className="text-foreground/80 font-semibold">
-                                        Misc Fee (₱)
-                                    </Label>
-                                    <Input
-                                        id="create-misc"
-                                        type="number"
-                                        min="0"
-                                        placeholder="e.g. 3500"
-                                        value={createForm.data.miscelaneous}
-                                        onChange={(e) => createForm.setData("miscelaneous", e.target.value)}
-                                    />
-                                    <FieldError message={createForm.errors.miscelaneous} />
-                                </div>
-                            )}
-                        </div>
-                        {createForm.data.curriculum_kind === "program" && (
-                            <div className="grid gap-4 md:grid-cols-2">
-                                <div className="grid gap-2">
-                                    <Label htmlFor="create-lec" className="text-foreground/80 font-semibold">
-                                        Lecture Rate / Unit
-                                    </Label>
-                                    <Input
-                                        id="create-lec"
-                                        type="number"
-                                        min="0"
-                                        value={createForm.data.lec_per_unit}
-                                        onChange={(e) => createForm.setData("lec_per_unit", e.target.value)}
-                                    />
-                                    <FieldError message={createForm.errors.lec_per_unit} />
-                                </div>
-                                <div className="grid gap-2">
-                                    <Label htmlFor="create-lab" className="text-foreground/80 font-semibold">
-                                        Lab Rate / Unit
-                                    </Label>
-                                    <Input
-                                        id="create-lab"
-                                        type="number"
-                                        min="0"
-                                        value={createForm.data.lab_per_unit}
-                                        onChange={(e) => createForm.setData("lab_per_unit", e.target.value)}
-                                    />
-                                    <FieldError message={createForm.errors.lab_per_unit} />
-                                </div>
-                            </div>
-                        )}
-                        <div className="grid gap-2">
-                            <Label htmlFor="create-description" className="text-foreground/80 font-semibold">
-                                Description
-                            </Label>
-                            <Textarea
-                                id="create-description"
-                                className="min-h-[80px] resize-none"
-                                placeholder="Brief description of this program..."
-                                value={createForm.data.description}
-                                onChange={(e) => createForm.setData("description", e.target.value)}
-                            />
-                            <FieldError message={createForm.errors.description} />
-                        </div>
-                        <DialogFooter className="mt-2 border-t pt-4">
-                            <Button type="button" variant="ghost" onClick={() => setIsCreateOpen(false)}>
-                                Cancel
-                            </Button>
-                            <Button type="submit" disabled={createForm.processing}>
-                                <Plus className="mr-2 size-4" />
-                                Create pathway
-                            </Button>
                         </DialogFooter>
                     </form>
                 </DialogContent>

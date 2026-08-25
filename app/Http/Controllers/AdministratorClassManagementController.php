@@ -981,6 +981,7 @@ final class AdministratorClassManagementController extends Controller
                 'student.course:id,code',
             ])
             ->where('status', true)
+            ->whereHas('student')
             ->get()
             ->sortBy([
                 ['student.last_name', 'asc'],

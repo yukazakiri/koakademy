@@ -25,8 +25,9 @@ final readonly class StudentListExport implements FromCollection, ShouldAutoSize
     public function collection(): \Illuminate\Support\Enumerable
     {
         return $this->class->class_enrollments()
-            ->with(['student.course'])
             ->where('status', true)
+            ->whereHas('student')
+            ->with(['student.course'])
             ->get()
             ->sortBy(fn ($enrollment): string => $enrollment->student->last_name.' '.$enrollment->student->first_name);
     }

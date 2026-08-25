@@ -1,5 +1,5 @@
 import {
-    programs as curriculumPrograms,
+    index as curriculumIndex,
     showProgram,
     storeProgram,
     toggleProgramStatus,
@@ -344,6 +344,22 @@ export default function CurriculumPrograms({
                 setIsCreateOpen(false);
                 resetCreateDialog();
             },
+            onError: (errors) => {
+                const identityFields = [
+                    "capability_id",
+                    "code",
+                    "course_type_id",
+                    "curriculum_kind",
+                    "curriculum_stage",
+                    "curriculum_year",
+                    "department_id",
+                    "title",
+                ];
+
+                if (identityFields.some((field) => errors[field])) {
+                    setCreateStep("identity");
+                }
+            },
         });
     };
 
@@ -369,7 +385,7 @@ export default function CurriculumPrograms({
                 <div className="pointer-events-none absolute top-[22rem] left-[-20rem] -z-10 size-[34rem] rounded-full bg-amber-300/10 blur-3xl dark:bg-amber-300/5" />
 
                 <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs font-medium">
-                    <Link href={curriculumPrograms().url} className="hover:text-foreground transition-colors">
+                    <Link href={curriculumIndex().url} className="hover:text-foreground transition-colors">
                         Curriculum
                     </Link>
                     <span aria-hidden="true">/</span>
@@ -392,7 +408,7 @@ export default function CurriculumPrograms({
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                         <Button asChild variant="ghost" className="rounded-full">
-                            <Link href={curriculumPrograms().url}>
+                            <Link href={curriculumIndex().url}>
                                 <ChevronLeft className="size-4" /> Curriculum overview
                             </Link>
                         </Button>

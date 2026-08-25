@@ -131,13 +131,37 @@ A Laravel application with a React portal layer, packaged for self-hosting rathe
 
 ## Quick Start
 
-The supported production installer is Linux-only. It installs Docker when needed, creates a single-node Swarm, deploys Caddy HTTPS with PostgreSQL, Redis, Gotenberg, and a private FrankenPHP application, then opens the one-time `/setup` wizard.
+The supported production installer is Linux-only. It installs Docker when needed, preserves or creates a single-node Swarm manager, creates an attachable overlay network, deploys Caddy HTTPS with PostgreSQL, Redis, Gotenberg, and a private FrankenPHP application, then opens the one-time `/setup` wizard.
 
 **Linux**
 
 ```sh
-curl -fsSL https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh | sudo bash -s -- --stable --domain school.example
+curl -fsSL https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh | bash
 ```
+
+The stable installer resolves the latest checksummed release by default.
+Provide the public hostname through `KOAKADEMY_DOMAIN` for a non-interactive
+install:
+
+```sh
+curl -fsSL https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh \
+  | env KOAKADEMY_DOMAIN=koakademy.koamishin.com bash
+```
+
+The installer requests root privileges only for Docker, Swarm, and
+`/opt/koakademy` operations, so the command can be run as your normal Linux
+user when `sudo` is available. It adds that user to Docker's `docker` group;
+log out and back in, or run `newgrp docker`, before using `docker` without
+`sudo`. Docker-group membership grants root-equivalent access to the host.
+
+Before using a public hostname, point its DNS `A` record to the VPS and allow
+inbound TCP ports 80 and 443. Caddy obtains and renews HTTPS certificates for
+that hostname. For the example domain, the application will be available at
+`https://koakademy.koamishin.com`, with administration at `/admin` and the
+one-time setup wizard at `/setup`.
+
+The `https://dokploy.com/install.sh` command installs Dokploy itself. It is not
+the KoAkademy installer and must not be used in place of the command above.
 
 Visit `/setup` when the installer finishes to create the institution, the first academic period, and the first super administrator. The setup route closes after initialization.
 
@@ -146,7 +170,7 @@ The installer runs privileged remote code. Inspect it first if that is not appro
 ```sh
 curl -fSLO https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh
 less install.sh
-sudo bash install.sh --stable --domain school.example
+env KOAKADEMY_DOMAIN=school.example bash install.sh
 ```
 
 To evaluate the unreleased `master` build without a domain, use the edge
@@ -157,7 +181,7 @@ finishes, or choose another port with `--port`. This path is for staging and
 development only; it can change or break without a stable release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yukazakiri/koakademy/master/scripts/install.sh | sudo bash -s -- edge
+curl -fsSL https://raw.githubusercontent.com/yukazakiri/koakademy/master/scripts/install.sh | bash -s -- edge
 ```
 
 Stable releases publish the bootstrap, operator command, domain-backed and
@@ -178,7 +202,7 @@ npm run docs:check
 
 ## Operate It
 
-Run a current stable release in production. Caddy owns ports 80/443; the application, PostgreSQL, Redis, and Gotenberg stay private. Use `sudo koakademy update` for an explicit backed-up release update and `sudo koakademy configure storage|mail|search` for Docker-Secret-backed provider changes.
+Run a current stable release in production. Caddy owns ports 80/443; the application, PostgreSQL, Redis, and Gotenberg stay private. Use `koakademy update` for an explicit backed-up release update and `koakademy configure storage|mail|search` for Docker-Secret-backed provider changes. The operator self-elevates when it needs root-owned runtime files.
 
 | Need                                               | Start here                                                                                              |
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |

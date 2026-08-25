@@ -244,5 +244,5 @@ volumes:
 
 networks:
   private:
-    driver: overlay
-    attachable: true
+    external: true
+    name: ${KOAKADEMY_NETWORK}

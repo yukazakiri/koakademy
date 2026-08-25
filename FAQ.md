@@ -10,14 +10,21 @@ Only the latest stable, non-prerelease release is supported. Development and pre
 
 ## What does the one-line installer change?
 
-It installs Docker when needed, initializes Swarm only when inactive, and deploys Caddy, KoAkademy, PostgreSQL, Redis, and Gotenberg on a single VPS. Caddy owns ports 80/443; the remaining services are private on the Swarm overlay. The installer preserves an active manager cluster, never leaves Swarm, and stops before changing a legacy `koakademy-*` deployment.
+It installs Docker when needed, initializes Swarm only when inactive, creates an attachable overlay network, and deploys Caddy, KoAkademy, PostgreSQL, Redis, and Gotenberg on a single VPS. Caddy owns ports 80/443; the remaining services are private on the Swarm overlay. The installer preserves an active manager cluster, never leaves Swarm, and stops before changing a legacy `koakademy-*` deployment.
 
-The Linux command uses the explicit `--stable` channel to resolve a published
+The Linux command uses the stable channel by default to resolve a published
 GitHub Release, verify its checksummed bundle, and deploy the immutable GHCR
-digest in `version.json`. Use `edge` only for staging or development; it
-resolves the current `master` commit, publishes port `8000` when no domain is
-provided, and deploys the mutable
+digest in `version.json`. Set `KOAKADEMY_DOMAIN` for a non-interactive install;
+an attached terminal can provide the domain interactively. Use `edge` only for
+staging or development; it resolves the current `master` commit, publishes
+port `8000` when no domain is provided, and deploys the mutable
 `ghcr.io/yukazakiri/koakademy:edge-frankenphp` image.
+
+The bootstrap can be started by a normal user when `sudo` is available. It
+self-elevates for Docker, Swarm, and runtime-file operations, and adds the
+invoking user to Docker's `docker` group. Activate the change in the current
+shell with `newgrp docker`, or log out and back in, before using Docker without
+`sudo`; Docker-group membership grants root-equivalent access to the host.
 
 ## Can I use MySQL or SQLite in production?
 
@@ -39,7 +46,10 @@ Run migrations, start the app, then open `/setup`. The one-time wizard creates t
 
 ## Does KoAkademy run migrations automatically?
 
-Not in the supported production flow. `RUN_MIGRATIONS=false` is the default. Operators run `php artisan migrate --force` explicitly during installation and upgrades after taking a backup and reviewing release notes.
+Yes. `AUTO_MIGRATE=true` is the default, so the application also runs pending
+migrations when it starts. The installer and `koakademy update` still run
+`php artisan migrate --force` explicitly before rollout, after taking a backup
+and reviewing release notes.
 
 ## Which PDF library and renderer are used?
 
@@ -47,7 +57,7 @@ KoAkademy uses `spatie/laravel-pdf` with Gotenberg. Gotenberg runs as a private 
 
 ## Is local storage supported for production uploads?
 
-Fresh installs use a persistent application volume so setup works without a provider account. It is a single-node starter default, not resilient object storage. Use `sudo koakademy configure storage s3` or `sudo koakademy configure storage r2` before upload data must survive a host failure.
+Fresh installs use a persistent application volume so setup works without a provider account. It is a single-node starter default, not resilient object storage. Use `koakademy configure storage s3` or `koakademy configure storage r2` before upload data must survive a host failure.
 
 ## Are all routes under `/api` public API contracts?
 

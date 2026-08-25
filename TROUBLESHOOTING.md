@@ -3,7 +3,7 @@
 Start by preserving logs and the current release/image information before changing services:
 
 ```sh
-sudo koakademy status
+koakademy status
 docker service ps --no-trunc koakademy_app
 docker service logs --tail=200 koakademy_app
 docker service logs --tail=100 koakademy_caddy
@@ -39,16 +39,16 @@ Common causes are a failed migration, insufficient memory, a full volume, or una
 
 ## Update failure
 
-`koakademy update` creates a PostgreSQL dump before migrations. It does not silently roll back code after a migration because schema reversal can lose data. Inspect the release notes, task logs, and backup path printed by the command. Use `sudo koakademy rollback` only after confirming the prior code supports the new schema; otherwise restore the database and image together.
+`koakademy update` creates a PostgreSQL dump before migrations. It does not silently roll back code after a migration because schema reversal can lose data. Inspect the release notes, task logs, and backup path printed by the command. Use `koakademy rollback` only after confirming the prior code supports the new schema; otherwise restore the database and image together.
 
 ## Provider configuration failure
 
 Run the relevant configuration command again and check the app task after the rollout:
 
 ```sh
-sudo koakademy configure storage r2
-sudo koakademy configure mail smtp
-sudo koakademy configure search enable
+koakademy configure storage r2
+koakademy configure mail smtp
+koakademy configure search enable
 docker service logs --tail=200 koakademy_app
 ```
 

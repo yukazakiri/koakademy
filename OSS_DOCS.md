@@ -8,7 +8,8 @@ duplicating those guides in the README.
 ## README improvement checklist
 
 - [x] Explain the product, its self-hosted purpose, and beta status.
-- [x] Provide the supported Linux installer command and a safe inspection path.
+- [x] Provide the supported Linux one-line installer command, domain example,
+  and a safe inspection path.
 - [x] Identify Docker Compose as the manual deployment fallback.
 - [x] Link to installation, deployment, configuration, development, security,
   contribution, and API documentation.
@@ -22,8 +23,19 @@ duplicating those guides in the README.
 ### What does the online installer support?
 
 The supported automated path is Linux with Docker Engine and a public domain.
-It creates a single-node Docker Swarm, uses Caddy for ports 80 and 443, and
-keeps the application dependencies private on the Swarm network.
+It creates or preserves a single-node Docker Swarm manager, creates an
+attachable overlay network, uses Caddy for ports 80 and 443, and keeps the
+application dependencies private on the Swarm network.
+
+The stable bootstrap defaults to the latest checksummed GitHub Release. Set
+`KOAKADEMY_DOMAIN` for a non-interactive install. The Dokploy installer URL
+must not be substituted: it installs Dokploy, not KoAkademy.
+
+The bootstrap can be started by a normal user when `sudo` is available. The
+operator self-elevates only for Docker, Swarm, and runtime-file operations,
+then adds the invoking user to Docker's `docker` group so later Docker commands
+can run without `sudo` after a login refresh. Docker-group membership grants
+root-equivalent access to the host.
 
 ### Can I install without running the online installer?
 

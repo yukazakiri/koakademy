@@ -4,7 +4,7 @@ set -Eeuo pipefail
 : "${KOAKADEMY_INSTALLER_TEST_STATE:?}"
 
 state="$KOAKADEMY_INSTALLER_TEST_STATE"
-mkdir -p "$state/services" "$state/secrets" "$state/configs"
+mkdir -p "$state/services" "$state/secrets" "$state/configs" "$state/networks"
 if [[ -n "${KOAKADEMY_INSTALLER_TEST_LEGACY_SERVICE:-}" ]]; then
     : >"$state/services/${KOAKADEMY_INSTALLER_TEST_LEGACY_SERVICE}"
 fi
@@ -24,6 +24,7 @@ case "$command_name" in
             *'{{.Architecture}}'*) printf '%s\n' "${KOAKADEMY_INSTALLER_TEST_ARCHITECTURE:-amd64}" ;;
             *'{{.Swarm.LocalNodeState}}'*) printf '%s\n' "${KOAKADEMY_INSTALLER_TEST_SWARM_STATE:-active}" ;;
             *'{{.Swarm.ControlAvailable}}'*) printf '%s\n' "${KOAKADEMY_INSTALLER_TEST_SWARM_MANAGER:-true}" ;;
+            *'{{.Swarm.NodeAddr}}'*) printf '%s\n' "${KOAKADEMY_INSTALLER_TEST_NODE_ADDR:-192.0.2.10}" ;;
             *'{{.Name}}'*) printf 'installer-test-manager\n' ;;
             *) exit 1 ;;
         esac
@@ -31,6 +32,24 @@ case "$command_name" in
     swarm)
         [[ "${1:-}" == init ]]
         create services swarm-initialized
+        ;;
+    network)
+        action="${1:-}"
+        shift || true
+        case "$action" in
+            inspect)
+                name="${1:-}"
+                exists networks "$name" || exit 1
+                if [[ "$*" == *'--format'* ]]; then
+                    printf 'overlay true\n'
+                fi
+                ;;
+            create)
+                name="${*: -1}"
+                create networks "$name"
+                ;;
+            *) exit 1 ;;
+        esac
         ;;
     secret|config)
         object="${command_name}s"

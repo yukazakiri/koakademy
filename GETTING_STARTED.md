@@ -16,23 +16,37 @@ Docker does not need to be preinstalled. The installer uses Docker's official in
 
 ## One-line production installation
 
-Run this with the real public domain:
+Run this after pointing the real public domain at the VPS:
 
 ```sh
-curl -fsSL https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh | sudo bash -s -- --stable --domain school.example
+curl -fsSL https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh | bash
 ```
 
-The command resolves a stable GitHub Release, downloads the checksummed release bundle, deploys its immutable GHCR image digest, and then verifies `https://school.example/up`. It does not use `edge` or `latest`.
+For a non-interactive installation, provide the hostname through the environment:
+
+```sh
+curl -fsSL https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh \
+  | env KOAKADEMY_DOMAIN=koakademy.koamishin.com bash
+```
+
+The installer self-elevates only for Docker, Swarm, and `/opt/koakademy`
+operations, so it can be started as a normal user when `sudo` is available.
+It adds the invoking user to Docker's `docker` group. Activate the change in
+the current shell with `newgrp docker`, or log out and back in, before using
+Docker without `sudo`. Docker-group membership grants root-equivalent access
+to the host.
+
+The command resolves a stable GitHub Release, downloads the checksummed release bundle, deploys its immutable GHCR image digest, and then verifies `https://koakademy.koamishin.com/up`. It does not use `edge` or `latest`.
 
 It:
 
-1. Installs Docker when needed and initializes Swarm only when inactive.
+1. Installs Docker when needed and initializes Swarm only when inactive, preserving an active manager.
 2. Generates application, database, and Redis credentials as Docker Secrets.
-3. Starts Caddy on ports 80/443; the application, PostgreSQL, Redis, and Gotenberg remain private on the overlay network.
+3. Creates an attachable overlay network and starts Caddy on ports 80/443; the application, PostgreSQL, Redis, and Gotenberg remain private on it.
 4. Runs migrations once before enabling the app service.
 5. Creates a persistent application volume for first-boot local uploads, then prints the `/setup` URL.
 
-Visit `https://school.example/setup` to create the school and first super administrator. The setup route closes after initialization.
+Visit the selected hostname at `/setup` to create the school and first super administrator. For the example above, use `https://koakademy.koamishin.com/setup`. The setup route closes after initialization.
 
 The initial filesystem volume is a simplified single-node default, not durable object storage. Configure external S3/R2 and scheduled backups before treating the installation as resilient production infrastructure.
 
@@ -42,7 +56,7 @@ For staging or development without a domain, install the current unreleased
 `master` build:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yukazakiri/koakademy/master/scripts/install.sh | sudo bash -s -- edge
+curl -fsSL https://raw.githubusercontent.com/yukazakiri/koakademy/master/scripts/install.sh | bash -s -- edge
 ```
 
 The edge channel resolves the current `master` commit, downloads its matching
@@ -57,13 +71,13 @@ any time.
 The installer adds a single server command:
 
 ```sh
-sudo koakademy status
-sudo koakademy update
-sudo koakademy update --stable
-sudo koakademy update --edge
-sudo koakademy configure storage r2
-sudo koakademy configure mail smtp
-sudo koakademy configure search enable
+koakademy status
+koakademy update
+koakademy update --stable
+koakademy update --edge
+koakademy configure storage r2
+koakademy configure mail smtp
+koakademy configure search enable
 ```
 
 Provider credentials are requested without echoing, stored as versioned Docker Secrets, and never written to the application database or container filesystem. Every configuration change redeploys the FrankenPHP service so persistent workers load the new configuration.
@@ -73,7 +87,7 @@ published release or `--edge` to select the current unreleased `master` build.
 Stable updates deploy an immutable image; edge updates use the mutable
 `edge-frankenphp` image. Both create a PostgreSQL backup under
 `/opt/koakademy/backups`, run migrations, and check the public health endpoint.
-The previous image is recorded for `sudo koakademy rollback`, but rollback
+The previous image is recorded for `koakademy rollback`, but rollback
 never reverses database migrations. Restore the recorded backup when release
 notes do not guarantee schema compatibility.
 
@@ -84,7 +98,7 @@ Running remote privileged code is a trust decision. Download the matching stable
 ```sh
 curl -fSLO https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh
 less install.sh
-sudo bash install.sh --stable --domain school.example
+env KOAKADEMY_DOMAIN=school.example bash install.sh
 ```
 
 Each stable release contains the bootstrap, operator command, Swarm bundle,

@@ -21,6 +21,12 @@ for argument in "$@"; do
 done
 
 case "$*" in
+    *https://get.docker.com*)
+        test -n "${KOAKADEMY_INSTALLER_TEST_DOCKER_SOURCE:-}"
+        test -n "${KOAKADEMY_INSTALLER_TEST_DOCKER_TARGET:-}"
+        ln -s "$KOAKADEMY_INSTALLER_TEST_DOCKER_SOURCE" \
+            "$KOAKADEMY_INSTALLER_TEST_DOCKER_TARGET"
+        ;;
     *github.com/yukazakiri/koakademy/releases/download/*)
         test -n "${KOAKADEMY_INSTALLER_TEST_RELEASE_DIR:-}"
         test -n "$output_file"

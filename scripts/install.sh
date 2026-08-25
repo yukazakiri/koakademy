@@ -1,14 +1,23 @@
 #!/usr/bin/env bash
 
 # KoAkademy's tiny installer bootstrap. The installed command contains the
-# Swarm lifecycle; this file resolves a stable release or the current edge
-# commit and downloads the matching command.
+# Swarm lifecycle; this file resolves the latest stable release by default or
+# the current edge commit when explicitly requested, then downloads the
+# matching command.
 set -Eeuo pipefail
 
 repository="${KOAKADEMY_REPOSITORY:-yukazakiri/koakademy}"
 requested_tag="${KOAKADEMY_VERSION:-}"
 channel="stable"
 temporary_directory=""
+invoking_user="${KOAKADEMY_INSTALLER_USER:-${SUDO_USER:-}}"
+
+if [[ -z "$invoking_user" && -z "${KOAKADEMY_INSTALLER_TEST_STATE:-}" && "$(id -u)" -ne 0 ]]; then
+    invoking_user="$(id -un)"
+fi
+if [[ -n "$invoking_user" ]]; then
+    export KOAKADEMY_INSTALLER_USER="$invoking_user"
+fi
 
 cleanup() {
     [[ -z "${temporary_directory}" ]] || rm -rf -- "${temporary_directory}"
@@ -116,7 +125,24 @@ else
 fi
 chmod 0755 "${command_path}"
 
+run_operator() {
+    local -a arguments=("$@")
+    local -a environment=("KOAKADEMY_INSTALLER_USER=${KOAKADEMY_INSTALLER_USER:-}")
+
+    if [[ -n "${KOAKADEMY_INSTALLER_TEST_STATE:-}" || "$(id -u)" -eq 0 ]]; then
+        exec "${command_path}" "${arguments[@]}"
+    fi
+
+    command -v sudo >/dev/null 2>&1 ||
+        fail "Root privileges are required to configure Docker and Swarm. Install sudo or run this command as root."
+
+    [[ -z "${KOAKADEMY_DOMAIN+x}" ]] || environment+=("KOAKADEMY_DOMAIN=${KOAKADEMY_DOMAIN}")
+    [[ -z "${KOAKADEMY_ROOT+x}" ]] || environment+=("KOAKADEMY_ROOT=${KOAKADEMY_ROOT}")
+    [[ -z "${KOAKADEMY_ADVERTISE_ADDR+x}" ]] || environment+=("KOAKADEMY_ADVERTISE_ADDR=${KOAKADEMY_ADVERTISE_ADDR}")
+    exec sudo env "${environment[@]}" "${command_path}" "${arguments[@]}"
+}
+
 if [[ "${channel}" == stable ]]; then
-    exec "${command_path}" install --channel stable --release "${tag}" "$@"
+    run_operator install --channel stable --release "${tag}" "$@"
 fi
-exec "${command_path}" install --channel edge --source-sha "${source_sha}" "$@"
+run_operator install --channel edge --source-sha "${source_sha}" "$@"

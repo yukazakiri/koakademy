@@ -71,4 +71,4 @@ The built-in GitHub token publishes the repository's GHCR package, attestations,
 
 Delivery deliberately does not rebuild old releases or move image tags. If a published release has a registry or asset incident, investigate and repair it during a maintenance window with the exact tag and digest; do not make a new build overwrite an immutable tag.
 
-Application rollback uses the prior exact image recorded by `sudo koakademy update`. It never reverses database migrations automatically. Read release notes and restore the matching database backup when prior code cannot use the migrated schema.
+Application rollback uses the prior exact image recorded by `koakademy update`. It never reverses database migrations automatically. Read release notes and restore the matching database backup when prior code cannot use the migrated schema.

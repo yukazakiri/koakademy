@@ -9,6 +9,7 @@ readonly OPTIONAL_SECRET_VALUE="__KOAKADEMY_NOT_CONFIGURED__"
 
 repository="${KOAKADEMY_REPOSITORY:-$REPOSITORY_DEFAULT}"
 root="${KOAKADEMY_ROOT:-/opt/koakademy}"
+installer_user="${KOAKADEMY_INSTALLER_USER:-${SUDO_USER:-}}"
 release_tag=""
 channel="stable"
 channel_explicit=false
@@ -22,6 +23,7 @@ command_name=""
 subcommand=""
 configure_mode=""
 yes=false
+original_arguments=()
 
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 warn() { printf 'WARN: %s\n' "$*" >&2; }
@@ -42,6 +44,10 @@ Usage:
   koakademy rollback [--yes]
 
 Rollback changes only the application image. It never reverses database migrations.
+
+Stable installs may also provide KOAKADEMY_DOMAIN in the environment. When a
+stable install has no domain and is attached to a terminal, the installer asks
+for one. Non-interactive installs must provide --domain or KOAKADEMY_DOMAIN.
 EOF
 }
 
@@ -54,7 +60,9 @@ setup_paths() {
 
 require_root() {
     if ! is_test && [[ "$(id -u)" -ne 0 ]]; then
-        fail "Run as root, for example: sudo koakademy $command_name"
+        command -v sudo >/dev/null 2>&1 ||
+            fail "Root privileges are required for koakademy $command_name. Install sudo or run this command as root."
+        exec sudo -- "$0" "${original_arguments[@]}"
     fi
 }
 
@@ -87,6 +95,23 @@ validate_domain() {
         [[ "$value" == *..* ]] || [[ "$value" == *://* ]] || [[ "$value" == */* ]]; then
         fail "Domain must be a hostname without a protocol, port, or path."
     fi
+}
+
+prompt_for_domain() {
+    local domain=""
+
+    if [[ -n "${KOAKADEMY_DOMAIN:-}" ]]; then
+        printf '%s\n' "$KOAKADEMY_DOMAIN"
+        return
+    fi
+
+    if [[ -n "${KOAKADEMY_INSTALLER_TEST_NONINTERACTIVE:-}" || ! -r /dev/tty ]]; then
+        fail "Stable installs require a domain. Set KOAKADEMY_DOMAIN or pass --domain, for example: curl -fsSL https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh | env KOAKADEMY_DOMAIN=school.example bash"
+    fi
+
+    read -r -p "KoAkademy domain (for example school.example): " domain </dev/tty
+    [[ -n "$domain" ]] || fail "A domain is required for a stable HTTPS installation."
+    printf '%s\n' "$domain"
 }
 
 validate_url() {
@@ -196,6 +221,7 @@ write_initial_runtime() {
     cat >"$runtime_file" <<EOF
 KOAKADEMY_DOMAIN=$domain
 KOAKADEMY_NODE=$(docker info --format '{{.Name}}')
+KOAKADEMY_NETWORK=koakademy_private
 APP_NAME=KoAkademy
 APP_URL=$app_url
 PORTAL_HOST=$portal_host
@@ -207,6 +233,7 @@ KOAKADEMY_PUBLIC_PORT=$public_port
 APP_TIMEZONE=UTC
 APP_LOCALE=en
 APP_FALLBACK_LOCALE=en
+AUTO_MIGRATE=true
 MAIL_MAILER=log
 MAIL_SCHEME=
 MAIL_HOST=
@@ -397,23 +424,77 @@ ensure_docker() {
     [[ "$os" == linux ]] || fail "KoAkademy requires Docker's Linux engine."
     [[ "$architecture" == x86_64 || "$architecture" == amd64 || "$architecture" == aarch64 || "$architecture" == arm64 ]] ||
         fail "KoAkademy images support linux/amd64 and linux/arm64."
+    configure_docker_group
+}
+
+configure_docker_group() {
+    local user="$installer_user"
+
+    is_test && return
+    [[ -n "$user" && "$user" != root ]] || return
+    id "$user" >/dev/null 2>&1 || return
+
+    if ! getent group docker >/dev/null 2>&1; then
+        groupadd --system docker >/dev/null 2>&1 || fail "Could not create the docker group."
+    fi
+    if id -nG "$user" | tr ' ' '\n' | grep -Fxq docker; then
+        info "Docker access is already enabled for $user."
+        return
+    fi
+
+    usermod --append --groups docker "$user" ||
+        fail "Could not add $user to the docker group."
+    info "Added $user to the docker group. Log out and back in, or run 'newgrp docker', to use Docker without sudo."
+    warn "Docker group membership grants root-equivalent access to this host."
 }
 
 ensure_swarm_manager() {
-    local state manager
+    local state manager address
     state="$(docker info --format '{{.Swarm.LocalNodeState}}')"
     if [[ "$state" == inactive ]]; then
         info "Initializing a single-node Docker Swarm."
-        if [[ -n "${KOAKADEMY_ADVERTISE_ADDR:-}" ]]; then
-            docker swarm init --advertise-addr "$KOAKADEMY_ADVERTISE_ADDR"
+        address="${KOAKADEMY_ADVERTISE_ADDR:-}"
+        if [[ -z "$address" ]]; then
+            address="$(ip -o -4 addr show scope global 2>/dev/null \
+                | awk '$2 !~ /^(docker|br-|veth)/ {print $4}' \
+                | cut -d/ -f1 \
+                | head -n 1 || true)"
+        fi
+        if [[ -n "$address" ]]; then
+            info "Detected host address: $address"
+            docker swarm init --advertise-addr "$address"
         else
+            info "No host address was detected; Docker will choose the Swarm address."
             docker swarm init
         fi
     elif [[ "$state" != active ]]; then
         fail "Docker Swarm is in unsupported state '$state'."
+    else
+        address="$(docker info --format '{{.Swarm.NodeAddr}}' 2>/dev/null || true)"
+        if [[ -n "$address" ]]; then
+            info "Docker Swarm is already active on host address: $address"
+        else
+            info "Docker Swarm is already active; preserving the existing manager."
+        fi
     fi
     manager="$(docker info --format '{{.Swarm.ControlAvailable}}')"
     [[ "$manager" == true ]] || fail "Run on a Docker Swarm manager node."
+}
+
+ensure_overlay_network() {
+    local network="${KOAKADEMY_NETWORK:-${STACK_NAME}_private}"
+    local properties
+
+    if docker network inspect "$network" >/dev/null 2>&1; then
+        properties="$(docker network inspect "$network" --format '{{.Driver}} {{.Attachable}}')"
+        [[ "$properties" == "overlay true" ]] ||
+            fail "Docker network $network exists but is not an attachable overlay network."
+        info "Using existing attachable overlay network: $network"
+        return
+    fi
+
+    info "Creating attachable Docker Swarm network: $network"
+    docker network create --driver overlay --attachable "$network" >/dev/null
 }
 
 ensure_ports_available() {
@@ -550,7 +631,7 @@ run_app_job() {
     docker service create \
         --name "$job_name" --label "$MANAGED_LABEL" --mode replicated-job \
         --restart-condition on-failure --restart-max-attempts 3 \
-        --constraint "node.hostname==$KOAKADEMY_NODE" --network "${STACK_NAME}_private" \
+        --constraint "node.hostname==$KOAKADEMY_NODE" --network "${KOAKADEMY_NETWORK:-${STACK_NAME}_private}" \
         --env-file "$runtime_file" \
         --env APP_ENV=production \
         --env APP_DEBUG=false \
@@ -659,17 +740,26 @@ perform_install() {
         ensure_swarm_manager
         reject_legacy_installation
         if [[ -z "${KOAKADEMY_DOMAIN:-}" ]]; then
-            if [[ "$channel" != edge ]]; then
-                fail "Stable installs require --domain; edge installs without a domain publish http://127.0.0.1:$public_port."
+            if [[ "$channel" == edge ]]; then
+                direct_access=true
+                domain=localhost
+            else
+                KOAKADEMY_DOMAIN="$(prompt_for_domain)"
+                domain="$KOAKADEMY_DOMAIN"
             fi
-            direct_access=true
-            domain=localhost
         else
             domain="$KOAKADEMY_DOMAIN"
         fi
         [[ "$direct_access" == true ]] || validate_domain "$domain"
         validate_port "$public_port"
         ensure_ports_available
+        ensure_overlay_network
+    fi
+    if [[ "$resuming" == true ]]; then
+        if [[ -z "${KOAKADEMY_NETWORK:-}" ]]; then
+            set_runtime KOAKADEMY_NETWORK "${STACK_NAME}_private"
+        fi
+        ensure_overlay_network
     fi
     fetch_release
     image="$(release_image)"
@@ -710,6 +800,12 @@ perform_update() {
     local previous image backup
     require_root
     load_runtime
+    ensure_docker
+    ensure_swarm_manager
+    if [[ -z "${KOAKADEMY_NETWORK:-}" ]]; then
+        set_runtime KOAKADEMY_NETWORK "${STACK_NAME}_private"
+    fi
+    ensure_overlay_network
     if [[ "$channel_explicit" != true ]]; then
         channel="${RELEASE_CHANNEL:-stable}"
     fi
@@ -855,6 +951,7 @@ perform_rollback() {
 }
 
 print_status() {
+    require_root
     load_runtime
     printf 'Domain: %s\nChannel: %s\nAccess: %s\nRelease: %s\nImage: %s\nStorage: %s\nMail: %s\nSearch: %s\n' \
         "$KOAKADEMY_DOMAIN" "${RELEASE_CHANNEL:-stable}" "${APP_URL:-https://$KOAKADEMY_DOMAIN}" "$RELEASE_TAG" "$KOAKADEMY_IMAGE" "$FILESYSTEM_DISK" "$MAIL_MAILER" "$SCOUT_DRIVER"
@@ -888,6 +985,7 @@ parse_command() {
 }
 
 main() {
+    original_arguments=("$@")
     setup_paths
     validate_repository
     parse_command "$@"

@@ -26,18 +26,31 @@ unreleased `master` commit and uses the mutable `edge-frankenphp` image.
 Before installation, point the production domain to the VPS and make ports 80/443 available:
 
 ```sh
-curl -fsSL https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh | sudo bash -s -- --stable --domain school.example
+curl -fsSL https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh | bash
 ```
 
-The process installs Docker if necessary, initializes Swarm if it is inactive, creates Docker Secrets, starts Caddy and dependencies, runs one migration job, starts the app, and verifies `https://school.example/up`.
+For a non-interactive installation such as `koakademy.koamishin.com`, pass the domain through the environment:
 
-Complete `https://school.example/setup`, then check `https://school.example/admin`. The initial local application volume is suitable for a new single node only; configure external S3/R2 and backups before production reliance.
+```sh
+curl -fsSL https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh \
+  | env KOAKADEMY_DOMAIN=koakademy.koamishin.com bash
+```
+
+The bootstrap can be started as a normal user. It self-elevates only for
+Docker, Swarm, and `/opt/koakademy` operations, then adds the invoking user to
+Docker's `docker` group. Activate the change in the current shell with
+`newgrp docker`, or log out and back in, before using Docker without `sudo`.
+Docker-group membership grants root-equivalent access to the host.
+
+The process installs Docker if necessary, initializes Swarm if it is inactive, preserves an active manager, creates an attachable overlay network, creates Docker Secrets, starts Caddy and dependencies, runs one migration job, starts the app, and verifies `https://koakademy.koamishin.com/up`.
+
+Complete `https://koakademy.koamishin.com/setup`, then check `https://koakademy.koamishin.com/admin`. The initial local application volume is suitable for a new single node only; configure external S3/R2 and backups before production reliance.
 
 For an unreleased `master` build in staging without a domain, use the edge
 bootstrap. It publishes the app directly on port `8000`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yukazakiri/koakademy/master/scripts/install.sh | sudo bash -s -- edge
+curl -fsSL https://raw.githubusercontent.com/yukazakiri/koakademy/master/scripts/install.sh | bash -s -- edge
 ```
 
 Open `http://127.0.0.1:8000/setup`, or pass `--port 8080` to choose another
@@ -47,13 +60,13 @@ break without notice.
 ## Day-two operations
 
 ```sh
-sudo koakademy status
-sudo koakademy update
-sudo koakademy update --stable
-sudo koakademy update --edge
-sudo koakademy configure storage r2
-sudo koakademy configure mail smtp
-sudo koakademy configure search enable
+koakademy status
+koakademy update
+koakademy update --stable
+koakademy update --edge
+koakademy configure storage r2
+koakademy configure mail smtp
+koakademy configure search enable
 ```
 
 `update` follows the installed channel by default. Pass `--stable` to select a
@@ -67,7 +80,7 @@ health endpoint.
 The command retains the preceding image:
 
 ```sh
-sudo koakademy rollback
+koakademy rollback
 ```
 
 Rollback changes application code only. It never runs `migrate:rollback` or restores a database automatically. If the deployed migration is incompatible with old code, restore the recorded database backup and previous image together during a maintenance window.

@@ -6,13 +6,15 @@ here; this folder only keeps the scripts the project actually runs or ships.
 
 ## Installation
 
-- `install.sh` — small Linux bootstrap that resolves a published stable GitHub
-  Release with `--stable`, or the current unreleased `master` commit with
-  `edge`, verifies/downloads the matching operator command, and hands control
-  to it.
-- `koakademy` — privileged production operator for the single-node Docker Swarm
-  deployment. It installs, updates, configures, checks status, and rolls back
-  the application.
+- `install.sh` — small Linux bootstrap that resolves the latest published
+  stable GitHub Release by default, or the current unreleased `master` commit
+  with explicit `edge`, verifies/downloads the matching operator command, and
+  hands control to it. It can be started by a normal user when `sudo` is
+  available; stable installs accept `KOAKADEMY_DOMAIN` or `--domain`.
+- `koakademy` — production operator for the single-node Docker Swarm
+  deployment. It self-elevates for root-owned operations, installs Docker when
+  needed, adds the invoking user to Docker's `docker` group, and installs,
+  updates, configures, checks status, and rolls back the application.
 - `swarm-stack.yml`, `swarm-stack-direct.yml`, `Caddyfile`, and
   `koakademy-app-entrypoint.sh` — release assets consumed by the operator when
   it deploys the domain-backed or direct-port Swarm topology.

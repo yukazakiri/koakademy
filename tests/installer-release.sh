@@ -57,9 +57,66 @@ export KOAKADEMY_INSTALLER_TEST_RELEASE_TAG="v1.0.0"
 export KOAKADEMY_INSTALLER_TEST_SOURCE_SHA="$source_sha"
 export KOAKADEMY_ROOT="$state_directory/runtime"
 export PATH="$fixture_bin:$PATH"
+base_path="$PATH"
 
 if [[ "$channel" == stable ]]; then
-    bash "$bootstrap_directory/install.sh" --stable --domain school.example
+    export KOAKADEMY_DOMAIN=school.example
+    bash "$bootstrap_directory/install.sh"
+
+    # The explicit --domain form must remain equivalent to the environment
+    # form used by the no-argument one-line installer.
+    flag_state="$temporary_directory/flag-state"
+    unset KOAKADEMY_DOMAIN
+    export KOAKADEMY_INSTALLER_TEST_STATE="$flag_state"
+    export KOAKADEMY_ROOT="$flag_state/runtime"
+    export KOAKADEMY_INSTALLER_TEST_SWARM_STATE=inactive
+    export KOAKADEMY_ADVERTISE_ADDR=198.51.100.10
+
+    # Mask the host Docker binary so the fixture exercises the official Docker
+    # bootstrap path before the test fixture becomes available again.
+    minimal_bin="$temporary_directory/minimal-bin"
+    mkdir -p "$minimal_bin"
+    for utility in bash sh env ln mkdir rm cp chmod sed sha256sum grep head awk \
+        cut tr date openssl install stat sleep base64 dirname find mv mktemp cat; do
+        utility_path="$(type -P "$utility")"
+        ln -s "$utility_path" "$minimal_bin/$utility"
+    done
+    ln -s "$fixture_bin/curl" "$minimal_bin/curl"
+    rm "$fixture_bin/docker"
+    export KOAKADEMY_INSTALLER_TEST_DOCKER_SOURCE="$repository_root/tests/Fixtures/installer/docker"
+    export KOAKADEMY_INSTALLER_TEST_DOCKER_TARGET="$minimal_bin/docker"
+    export PATH="$minimal_bin"
+    bash "$bootstrap_directory/install.sh" --domain flag.example
+    export PATH="$base_path"
+    ln -s "$repository_root/tests/Fixtures/installer/docker" "$fixture_bin/docker"
+    unset KOAKADEMY_INSTALLER_TEST_DOCKER_SOURCE KOAKADEMY_INSTALLER_TEST_DOCKER_TARGET
+    grep -Fq 'KOAKADEMY_DOMAIN=flag.example' "$flag_state/runtime/runtime.env"
+    grep -Fq 'swarm init --advertise-addr 198.51.100.10' "$flag_state/docker.log"
+    unset KOAKADEMY_INSTALLER_TEST_SWARM_STATE KOAKADEMY_ADVERTISE_ADDR
+
+    # A piped, non-interactive stable install must fail with an actionable
+    # domain instruction instead of silently selecting an HTTP-only default.
+    missing_state="$temporary_directory/missing-state"
+    export KOAKADEMY_INSTALLER_TEST_STATE="$missing_state"
+    export KOAKADEMY_ROOT="$missing_state/runtime"
+    export KOAKADEMY_INSTALLER_TEST_NONINTERACTIVE=1
+    if bash "$bootstrap_directory/install.sh"; then
+        printf 'Expected a non-interactive stable install without a domain to fail.\n' >&2
+        exit 1
+    fi
+    unset KOAKADEMY_INSTALLER_TEST_NONINTERACTIVE
+
+    # Restore the primary fixture state for the update lifecycle assertions.
+    export KOAKADEMY_INSTALLER_TEST_STATE="$state_directory"
+    export KOAKADEMY_ROOT="$state_directory/runtime"
+    export KOAKADEMY_DOMAIN=school.example
+    if grep -Fq 'swarm init' "$state_directory/docker.log"; then
+        printf 'The active Swarm installation must not reinitialize the manager.\n' >&2
+        exit 1
+    fi
+    export KOAKADEMY_INSTALLER_TEST_IMAGE="ghcr.io/yukazakiri/koakademy:sha-1111111111111111111111111111111111111111"
+    bash "$state_directory/runtime/bin/koakademy" update --stable
+    unset KOAKADEMY_INSTALLER_TEST_IMAGE
 else
     export KOAKADEMY_INSTALLER_TEST_SOURCE_SHA="$previous_source_sha"
     export KOAKADEMY_INSTALLER_TEST_FAIL_FIRST_STACK=1
@@ -82,6 +139,9 @@ grep -Fq -- '--env DB_CONNECTION=pgsql' "$state_directory/docker.log"
 grep -Fq -- '--env DB_HOST=postgres' "$state_directory/docker.log"
 grep -Fq -- '--env REDIS_HOST=redis' "$state_directory/docker.log"
 grep -Fq -- '--env TELESCOPE_ENABLED=false' "$state_directory/docker.log"
+grep -Fq 'KOAKADEMY_NETWORK=koakademy_private' "$state_directory/runtime/runtime.env"
+grep -Fq 'AUTO_MIGRATE=true' "$state_directory/runtime/runtime.env"
+test -f "$state_directory/networks/koakademy_private"
 if [[ "$channel" == edge ]]; then
     grep -Fq "RELEASE_TAG=edge-$source_sha" "$state_directory/runtime/runtime.env"
     grep -Fq 'KOAKADEMY_DIRECT_ACCESS=true' "$state_directory/runtime/runtime.env"
@@ -94,6 +154,8 @@ if [[ "$channel" == edge ]]; then
     grep -Fq 'swarm-stack-direct.yml' "$state_directory/docker.log"
     grep -Fq "releases/edge-$source_sha/swarm-stack-direct.yml" \
         "$state_directory/docker.log"
+else
+    compgen -G "$state_directory/runtime/backups/*.dump" >/dev/null
 fi
 
 printf '%s installer fixture passed.\n' "$channel"

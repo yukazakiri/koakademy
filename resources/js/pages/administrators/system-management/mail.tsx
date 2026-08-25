@@ -55,7 +55,7 @@ export default function SystemManagementMailPage({ user, mail_config, access }: 
                                     restarted safely.
                                 </p>
                                 <code className="bg-background block w-fit rounded px-2 py-1 text-xs">
-                                    sudo koakademy configure mail {isLogTransport ? "smtp" : "log"}
+                                    koakademy configure mail {isLogTransport ? "smtp" : "log"}
                                 </code>
                             </div>
                         </div>

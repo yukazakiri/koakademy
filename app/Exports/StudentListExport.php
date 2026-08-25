@@ -71,7 +71,7 @@ final readonly class StudentListExport implements FromCollection, ShouldAutoSize
         ];
     }
 
-    public function styles(Worksheet $sheet)
+    public function styles(Worksheet $sheet): array
     {
         return [
             6 => ['font' => ['bold' => true]], // Header row

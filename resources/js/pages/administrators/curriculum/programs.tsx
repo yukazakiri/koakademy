@@ -204,7 +204,14 @@ export default function CurriculumPrograms({
 
         return new URLSearchParams(window.location.search).get("department") ?? "all";
     });
+    const [activeYear, setActiveYear] = useState<string>(() => {
+        if (typeof window === "undefined") return "all";
+
+        return new URLSearchParams(window.location.search).get("year") ?? "all";
+    });
     const [activeFramework, setActiveFramework] = useState("all");
+    const isCurriculumRoot =
+        typeof window !== "undefined" && window.location.pathname.replace(/\/$/, "") === curriculumIndex().url.replace(/\/$/, "");
 
     const createForm = useForm({
         code: "",
@@ -263,14 +270,16 @@ export default function CurriculumPrograms({
                     .includes(query);
             const matchesStatus = statusFilter === "all" || (statusFilter === "active" ? program.is_active : !program.is_active);
             const matchesDepartment = activeDepartment === "all" || String(program.department_id) === activeDepartment;
+            const matchesYear = activeYear === "all" || program.curriculum_year === activeYear;
             const matchesFramework = activeFramework === "all" || program.curriculum_framework === activeFramework;
 
-            return matchesQuery && matchesStatus && matchesDepartment && matchesFramework;
+            return matchesQuery && matchesStatus && matchesDepartment && matchesYear && matchesFramework;
         });
-    }, [activeDepartment, activeFramework, programs, search, statusFilter]);
+    }, [activeDepartment, activeFramework, activeYear, programs, search, statusFilter]);
 
     const filteredStats = useMemo(() => {
-        const isUnfiltered = search.trim() === "" && statusFilter === "all" && activeDepartment === "all" && activeFramework === "all";
+        const isUnfiltered =
+            search.trim() === "" && statusFilter === "all" && activeDepartment === "all" && activeYear === "all" && activeFramework === "all";
 
         if (isUnfiltered) return stats;
 
@@ -281,7 +290,7 @@ export default function CurriculumPrograms({
             subjects_with_requisites: filteredPrograms.reduce((sum, program) => sum + program.prerequisites_count, 0),
             curriculum_versions: new Set(filteredPrograms.map((program) => program.curriculum_year).filter(Boolean)).size,
         };
-    }, [activeDepartment, activeFramework, filteredPrograms, search, stats, statusFilter]);
+    }, [activeDepartment, activeFramework, activeYear, filteredPrograms, search, stats, statusFilter]);
 
     const selectCapability = (capabilityId: string): void => {
         const capability = capabilities.find((item) => item.id === capabilityId);
@@ -371,31 +380,38 @@ export default function CurriculumPrograms({
         setSearch("");
         setStatusFilter("all");
         setActiveDepartment("all");
+        setActiveYear("all");
         setActiveFramework("all");
     };
 
-    const activeFilterCount = [statusFilter !== "all", activeDepartment !== "all", activeFramework !== "all"].filter(Boolean).length;
+    const activeFilterCount = [statusFilter !== "all", activeDepartment !== "all", activeYear !== "all", activeFramework !== "all"].filter(
+        Boolean,
+    ).length;
     const readiness = filteredStats.programs > 0 ? Math.round((filteredStats.active_programs / filteredStats.programs) * 100) : 0;
 
     return (
-        <AdminLayout user={user} title="Programs">
-            <Head title="Programs · Curriculum" />
+        <AdminLayout user={user} title={isCurriculumRoot ? "Curriculum" : "Programs"}>
+            <Head title={isCurriculumRoot ? "Curriculum · Programs" : "Programs · Curriculum"} />
             <div className="relative isolate flex flex-col gap-7 overflow-hidden pb-4">
                 <div className="pointer-events-none absolute -top-40 right-[-12rem] -z-10 size-[30rem] rounded-full bg-sky-400/10 blur-3xl dark:bg-sky-300/5" />
                 <div className="pointer-events-none absolute top-[22rem] left-[-20rem] -z-10 size-[34rem] rounded-full bg-amber-300/10 blur-3xl dark:bg-amber-300/5" />
 
                 <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs font-medium">
-                    <Link href={curriculumIndex().url} className="hover:text-foreground transition-colors">
-                        Curriculum
-                    </Link>
+                    {isCurriculumRoot ? (
+                        <span>Curriculum</span>
+                    ) : (
+                        <Link href={curriculumIndex().url} className="hover:text-foreground transition-colors">
+                            Curriculum
+                        </Link>
+                    )}
                     <span aria-hidden="true">/</span>
-                    <span className="text-foreground">Programs</span>
+                    <span className="text-foreground">Program catalog</span>
                 </div>
 
                 <section className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
                     <div className="max-w-2xl space-y-4">
                         <div className="border-border/70 bg-background/70 text-muted-foreground inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold tracking-[0.14em] uppercase shadow-xs backdrop-blur-xl">
-                            <Sparkles className="size-3.5 text-amber-500" /> Curriculum studio
+                            <Sparkles className="size-3.5 text-amber-500" /> {isCurriculumRoot ? "Curriculum workspace" : "Curriculum studio"}
                         </div>
                         <div className="space-y-2">
                             <h1 className="text-4xl leading-[0.98] font-semibold tracking-[-0.045em] text-balance sm:text-5xl">
@@ -407,11 +423,13 @@ export default function CurriculumPrograms({
                         </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                        <Button asChild variant="ghost" className="rounded-full">
-                            <Link href={curriculumIndex().url}>
-                                <ChevronLeft className="size-4" /> Curriculum overview
-                            </Link>
-                        </Button>
+                        {!isCurriculumRoot && (
+                            <Button asChild variant="ghost" className="rounded-full">
+                                <Link href={curriculumIndex().url}>
+                                    <ChevronLeft className="size-4" /> Curriculum workspace
+                                </Link>
+                            </Button>
+                        )}
                         <Button className="rounded-full px-4 shadow-sm" onClick={() => setIsCreateOpen(true)}>
                             <Plus className="size-4" /> Add program
                         </Button>
@@ -537,6 +555,20 @@ export default function CurriculumPrograms({
                                                 {departmentsWithPrograms.map((department) => (
                                                     <SelectItem key={department.id} value={String(department.id)}>
                                                         {department.code} · {department.name}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        <Select value={activeYear} onValueChange={setActiveYear}>
+                                            <SelectTrigger className="bg-background/70 h-10 min-w-[145px] rounded-xl shadow-none">
+                                                <CalendarDays className="text-muted-foreground size-3.5" />
+                                                <SelectValue placeholder="Curriculum year" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">All curriculum years</SelectItem>
+                                                {versions.map((version) => (
+                                                    <SelectItem key={version.curriculum_year} value={version.curriculum_year}>
+                                                        {version.curriculum_year}
                                                     </SelectItem>
                                                 ))}
                                             </SelectContent>
@@ -723,7 +755,15 @@ export default function CurriculumPrograms({
                             <CardContent className="grid gap-2 p-5 pt-0">
                                 {versions.length > 0 ? (
                                     versions.slice(0, 5).map((version) => (
-                                        <div key={version.curriculum_year} className="border-border/60 bg-background/50 rounded-2xl border p-3.5">
+                                        <button
+                                            key={version.curriculum_year}
+                                            type="button"
+                                            aria-pressed={activeYear === version.curriculum_year}
+                                            onClick={() => setActiveYear(activeYear === version.curriculum_year ? "all" : version.curriculum_year)}
+                                            className={`border-border/60 bg-background/50 hover:bg-muted/50 w-full rounded-2xl border p-3.5 text-left transition-colors ${
+                                                activeYear === version.curriculum_year ? "ring-2 ring-sky-400/40" : ""
+                                            }`}
+                                        >
                                             <div className="flex items-center justify-between gap-3">
                                                 <span className="text-sm font-semibold">{version.curriculum_year}</span>
                                                 <span className="text-muted-foreground text-xs">
@@ -739,7 +779,7 @@ export default function CurriculumPrograms({
                                                 />
                                             </div>
                                             <p className="text-muted-foreground mt-2 text-xs">{version.subject_count} subjects across this version</p>
-                                        </div>
+                                        </button>
                                     ))
                                 ) : (
                                     <p className="bg-muted/50 text-muted-foreground rounded-2xl p-4 text-sm">No curriculum versions yet.</p>

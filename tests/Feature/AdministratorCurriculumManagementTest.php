@@ -59,13 +59,15 @@ it('allows administrative users to view curriculum management pages', function (
 })->with([
     'curriculum overview' => [
         '/administrators/curriculum',
-        'administrators/curriculum/index',
+        'administrators/curriculum/programs',
         fn (AssertableInertia $page): AssertableInertia => $page
             ->has('stats')
             ->where('stats.programs', 2)
             ->where('stats.subjects', 3)
             ->has('versions', 2)
-            ->has('departments'),
+            ->has('programs', 2)
+            ->has('departments')
+            ->has('course_types'),
     ],
     'programs' => [
         '/administrators/curriculum/programs',

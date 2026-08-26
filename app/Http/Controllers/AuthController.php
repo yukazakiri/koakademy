@@ -169,7 +169,7 @@ final class AuthController extends Controller
 
         $validationRules = [
             'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users',
+            'email' => 'required|string|email|max:255',
             'password' => ['required', 'confirmed', Password::defaults()],
             'user_type' => 'required|string|in:student',
             'student_type' => 'required|string|in:college,shs',
@@ -193,6 +193,12 @@ final class AuthController extends Controller
         }
 
         $email = $request->string('email')->trim()->lower()->toString();
+
+        if (User::whereRaw('LOWER(email) = ?', [$email])->exists()) {
+            return back()
+                ->withErrors(['email' => 'An account with this email already exists.'])
+                ->withInput($request->except(['password', 'password_confirmation']));
+        }
 
         // Verify OTP
         $otpKey = 'signup_otp_'.$email;
@@ -254,7 +260,7 @@ final class AuthController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users',
+            'email' => 'required|string|email|max:255',
             'password' => ['required', 'confirmed', Password::defaults()],
             'faculty_id_number' => 'nullable|string|max:255',
             'role' => 'required|string|in:professor,associate_professor,assistant_professor,instructor,part_time_faculty',
@@ -268,6 +274,12 @@ final class AuthController extends Controller
         }
 
         $email = $request->string('email')->trim()->lower()->toString();
+
+        if (User::whereRaw('LOWER(email) = ?', [$email])->exists()) {
+            return back()
+                ->withErrors(['email' => 'An account with this email already exists.'])
+                ->withInput($request->except(['password', 'password_confirmation']));
+        }
 
         // Verify OTP
         $otpKey = 'signup_otp_'.$email;

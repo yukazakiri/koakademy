@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Enums\StudentType;
 use App\Mail\SignupOtpMail;
 use App\Models\Faculty;
+use App\Models\User;
 use App\Services\StudentOrganizationAssignmentService;
 use Exception;
 use Illuminate\Http\JsonResponse;
@@ -29,7 +30,7 @@ final class SignupOtpController extends Controller
         ]);
 
         $validator = Validator::make($request->all(), [
-            'email' => 'required|email|unique:users',
+            'email' => 'required|email',
             'user_type' => 'required|in:student,faculty',
         ]);
 
@@ -38,6 +39,14 @@ final class SignupOtpController extends Controller
         }
 
         $email = $request->string('email')->trim()->lower()->toString();
+
+        if (User::whereRaw('LOWER(email) = ?', [$email])->exists()) {
+            return response()->json([
+                'message' => 'An account with this email already exists.',
+                'errors' => ['email' => ['An account with this email already exists.']],
+            ], 422);
+        }
+
         $userType = $request->user_type;
 
         // Perform specific validation based on user type (same as AuthController)

@@ -128,7 +128,7 @@ final class SignupController extends Controller
         ]);
 
         $validator = Validator::make($request->all(), [
-            'email' => 'required|email|unique:users',
+            'email' => 'required|email',
             'user_type' => 'required|in:student,faculty',
         ]);
 
@@ -137,6 +137,14 @@ final class SignupController extends Controller
         }
 
         $email = $request->string('email')->trim()->lower()->toString();
+
+        if (User::whereRaw('LOWER(email) = ?', [$email])->exists()) {
+            return response()->json([
+                'message' => 'An account with this email already exists.',
+                'errors' => ['email' => ['An account with this email already exists.']],
+            ], 422);
+        }
+
         $userType = $request->user_type;
 
         if ($userType === 'student') {
@@ -198,7 +206,7 @@ final class SignupController extends Controller
 
         $validationRules = [
             'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users',
+            'email' => 'required|string|email|max:255',
             'password' => ['required', 'confirmed', Password::defaults()],
             'user_type' => 'required|string|in:student',
             'student_type' => 'required|string|in:college,shs',
@@ -222,6 +230,14 @@ final class SignupController extends Controller
         }
 
         $email = $request->string('email')->trim()->lower()->toString();
+
+        if (User::whereRaw('LOWER(email) = ?', [$email])->exists()) {
+            return response()->json([
+                'message' => 'An account with this email already exists.',
+                'errors' => ['email' => ['An account with this email already exists.']],
+            ], 422);
+        }
+
         $otpKey = 'signup_otp_'.$email;
         $cachedOtp = Cache::get($otpKey);
 
@@ -290,7 +306,7 @@ final class SignupController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users',
+            'email' => 'required|string|email|max:255',
             'password' => ['required', 'confirmed', Password::defaults()],
             'faculty_id_number' => 'nullable|string|max:255',
             'role' => 'required|string|in:professor,associate_professor,assistant_professor,instructor,part_time_faculty',
@@ -305,6 +321,14 @@ final class SignupController extends Controller
         }
 
         $email = $request->string('email')->trim()->lower()->toString();
+
+        if (User::whereRaw('LOWER(email) = ?', [$email])->exists()) {
+            return response()->json([
+                'message' => 'An account with this email already exists.',
+                'errors' => ['email' => ['An account with this email already exists.']],
+            ], 422);
+        }
+
         $otpKey = 'signup_otp_'.$email;
         $cachedOtp = Cache::get($otpKey);
 

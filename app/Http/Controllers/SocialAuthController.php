@@ -71,9 +71,17 @@ final class SocialAuthController extends Controller
                 return redirect()->intended($this->redirectForUser($user));
             }
 
-            $user = User::query()
+            $emailMatches = User::query()
                 ->whereRaw('LOWER(email) = ?', [$email])
-                ->first();
+                ->get();
+
+            if ($emailMatches->count() > 1) {
+                return redirect('/login')->withErrors([
+                    'email' => 'Multiple accounts match this email. Please contact support.',
+                ]);
+            }
+
+            $user = $emailMatches->first();
 
             if ($user instanceof User) {
                 $this->storeConnectedAccount($user, $provider, $socialUser);

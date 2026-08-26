@@ -21,21 +21,21 @@ final class ModuleManifestRepository
      */
     public function all(): array
     {
-        $path = $this->modulesPath ?? base_path('Modules');
+        $manifests = [];
+        $manifestPaths = [];
 
-        if (! is_dir($path)) {
-            return [];
+        foreach ($this->manifestDirectories() as $path) {
+            $path = mb_rtrim($path, DIRECTORY_SEPARATOR);
+            $manifestPattern = str_contains($path, '*')
+                ? $path.DIRECTORY_SEPARATOR.'module.json'
+                : $path.DIRECTORY_SEPARATOR.'*'.DIRECTORY_SEPARATOR.'module.json';
+
+            foreach (glob($manifestPattern) ?: [] as $manifestPath) {
+                $manifestPaths[realpath($manifestPath) ?: $manifestPath] = $manifestPath;
+            }
         }
 
-        $manifests = [];
-
-        foreach (glob(mb_rtrim($path, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'*', GLOB_ONLYDIR) ?: [] as $modulePath) {
-            $manifestPath = $modulePath.DIRECTORY_SEPARATOR.'module.json';
-
-            if (! is_file($manifestPath)) {
-                continue;
-            }
-
+        foreach ($manifestPaths as $manifestPath) {
             $manifests[] = $this->read($manifestPath);
         }
 
@@ -60,7 +60,7 @@ final class ModuleManifestRepository
      */
     public function enabled(): array
     {
-        $statusesPath = $this->statusesPath ?? base_path('modules_statuses.json');
+        $statusesPath = $this->statusesPath ?? config('modules.activators.file.statuses-file', base_path('modules_statuses.json'));
 
         if (! is_file($statusesPath)) {
             return [];
@@ -76,6 +76,28 @@ final class ModuleManifestRepository
             $this->all(),
             static fn (ModuleManifest $manifest): bool => ($statuses[$manifest->name] ?? false) === true,
         ));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function manifestDirectories(): array
+    {
+        if ($this->modulesPath !== null) {
+            return is_dir($this->modulesPath) ? [$this->modulesPath] : [];
+        }
+
+        $directories = [base_path('Modules')];
+
+        if ((bool) config('modules.scan.enabled', false)) {
+            foreach (config('modules.scan.paths', []) as $path) {
+                if (is_string($path) && $path !== '') {
+                    $directories[] = $path;
+                }
+            }
+        }
+
+        return $directories;
     }
 
     private function read(string $path): ModuleManifest

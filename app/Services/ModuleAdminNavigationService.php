@@ -4,18 +4,21 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use Nwidart\Modules\Contracts\RepositoryInterface;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use SplFileInfo;
 
 final class ModuleAdminNavigationService
 {
+    public function __construct(private readonly RepositoryInterface $modules) {}
+
     /**
      * @return array<int, array<string, mixed>>
      */
     public function getRoutes(): array
     {
-        $statusesPath = base_path('modules_statuses.json');
+        $statusesPath = config('modules.activators.file.statuses-file', base_path('modules_statuses.json'));
 
         if (! is_file($statusesPath)) {
             return [];
@@ -34,10 +37,11 @@ final class ModuleAdminNavigationService
                 continue;
             }
 
-            $modulePages = $this->getModuleInertiaPages($moduleName);
+            $modulePath = $this->getModulePath($moduleName);
+            $modulePages = $this->getModuleInertiaPages($modulePath);
             $modulePagesLookup = array_fill_keys($modulePages, true);
 
-            $configPath = base_path("Modules/{$moduleName}/config/navigation.php");
+            $configPath = $modulePath.DIRECTORY_SEPARATOR.'config'.DIRECTORY_SEPARATOR.'navigation.php';
             $configuredLinks = [];
 
             $config = is_file($configPath) ? require $configPath : null;
@@ -79,9 +83,19 @@ final class ModuleAdminNavigationService
     /**
      * @return array<int, string>
      */
-    private function getModuleInertiaPages(string $moduleName): array
+    private function getModulePath(string $moduleName): string
     {
-        $pagesDirectory = base_path("Modules/{$moduleName}/resources/assets/js/Pages");
+        $module = $this->modules->find($moduleName);
+
+        return $module?->getPath() ?? base_path("Modules/{$moduleName}");
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function getModuleInertiaPages(string $modulePath): array
+    {
+        $pagesDirectory = $modulePath.DIRECTORY_SEPARATOR.'resources'.DIRECTORY_SEPARATOR.'assets'.DIRECTORY_SEPARATOR.'js'.DIRECTORY_SEPARATOR.'Pages';
 
         if (! is_dir($pagesDirectory)) {
             return [];

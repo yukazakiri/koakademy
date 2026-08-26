@@ -43,6 +43,15 @@ for variable_name in DB_CONNECTION DB_HOST DB_PORT DB_DATABASE DB_USERNAME DB_PA
     [ -n "${variable_value}" ] && normalize_environment_value "${variable_name}" "${variable_value}"
 done
 
+for variable_name in MODULE_MARKETPLACE_ENABLED MODULE_REGISTRY_REQUIRE_SIGNATURE MODULE_DEFAULT_STATUS \
+    MODULE_STATUSES_FILE MODULE_REGISTRY_URL MODULE_REGISTRY_PUBLIC_KEY_FILE; do
+    eval "variable_value=\${${variable_name}:-}"
+    [ -n "${variable_value}" ] && normalize_environment_value "${variable_name}" "${variable_value}"
+done
+
+export MODULE_STATUSES_FILE="${MODULE_STATUSES_FILE:-/app/storage/app/modules_statuses.json}"
+export MODULE_DEFAULT_STATUS="${MODULE_DEFAULT_STATUS:-preserve}"
+
 if [ -n "${AUTO_MIGRATE+x}" ]; then
     normalize_environment_value AUTO_MIGRATE "${AUTO_MIGRATE}"
 fi
@@ -136,6 +145,13 @@ purge_laravel_provider_caches() {
     # These files are safe to regenerate and can reference providers that are
     # not installed in the current container image.
     rm -f bootstrap/cache/*.php
+}
+
+initialize_module_statuses() {
+    echo "Initializing persistent module statuses (${MODULE_DEFAULT_STATUS})..."
+    php artisan modules:initialize-statuses \
+        --mode="${MODULE_DEFAULT_STATUS}" \
+        --no-interaction
 }
 
 is_primary_container() {
@@ -810,6 +826,7 @@ bootstrap_container() {
 
     fix_storage_permissions
     purge_laravel_provider_caches
+    initialize_module_statuses
     resolve_database_connection
     configure_database_connection_defaults
     configure_pulse_database_defaults

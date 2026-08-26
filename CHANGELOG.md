@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.21.0](https://github.com/yukazakiri/koakademy/compare/v1.20.1...v1.21.0) (2026-08-26)
+
+
+### Features
+
+* **admin-users:** redesign user management interface ([de98596](https://github.com/yukazakiri/koakademy/commit/de985968cabde1bb98a909305bd793de2851bdf9))
+* **auth:** assign students to record organization ([#207](https://github.com/yukazakiri/koakademy/issues/207)) ([959627f](https://github.com/yukazakiri/koakademy/commit/959627f2286cb2fe1a1c49a02cdff04acb5539ab))
+* **curriculum:** add safe program table management ([d11d9f1](https://github.com/yukazakiri/koakademy/commit/d11d9f149edb9455fbdf68a0b87d7a5a1ee0a16f))
+* **curriculum:** redesign program management studio ([#205](https://github.com/yukazakiri/koakademy/issues/205)) ([0f53b9b](https://github.com/yukazakiri/koakademy/commit/0f53b9b8b2b09c4913735130abe42e8c1fc91b9f))
+* **curriculum:** support dynamic pathways and TESDA diplomas ([6c00962](https://github.com/yukazakiri/koakademy/commit/6c0096274537a2c542ff45ef32b358e17ba5f444))
+* **curriculum:** unify workspace and program catalog ([#206](https://github.com/yukazakiri/koakademy/issues/206)) ([0e95257](https://github.com/yukazakiri/koakademy/commit/0e95257cee15743c6780b9e1f2d3e50a9ea17dd8))
+* **enrollments:** revamp enrollment table ([efaee2d](https://github.com/yukazakiri/koakademy/commit/efaee2d171a581c655aaed5640851f590233af98))
+* **enrollments:** surface review actions in header ([ea24f45](https://github.com/yukazakiri/koakademy/commit/ea24f45ba0892d321d13761c4c74913b1630fb4b))
+* **installer:** streamline self-hosted swarm setup ([e5fc3fa](https://github.com/yukazakiri/koakademy/commit/e5fc3fa6027c631b958b8fa53a925e4709eae939))
+* **modules:** enable marketplace with persistent module states ([5b891cc](https://github.com/yukazakiri/koakademy/commit/5b891cc2650e1cff6b7e835bb2b2da3107bb3b54))
+* publish Composer module registry integration ([2007019](https://github.com/yukazakiri/koakademy/commit/20070190e3ff32de59c48c6b7e1a7978bf59d1e4))
+
+
+### Bug Fixes
+
+* **docker:** normalize quoted deployment environment values ([a1970ac](https://github.com/yukazakiri/koakademy/commit/a1970acbcfaa523ce32de2f8a6ed5b0e663a126e))
+* **exports:** match Excel styles contract ([676f722](https://github.com/yukazakiri/koakademy/commit/676f722ba056e18f5b89b378380402391f8aff2e))
+* **exports:** skip enrollments without students ([39228f1](https://github.com/yukazakiri/koakademy/commit/39228f16a31f5bb9f6adf744a434d4e145b8deb0))
+* expose module registry settings in Swarm stacks ([d72b761](https://github.com/yukazakiri/koakademy/commit/d72b761c8cf20daa0bbbf9e1f69100f52dac2cf9))
+
+
+### Maintenance
+
+* **data:** replace real-world locations with samples ([782e165](https://github.com/yukazakiri/koakademy/commit/782e165dcdf1459870be46f559fc1609b968b15d))
+
 ## [1.20.1](https://github.com/yukazakiri/koakademy/compare/v1.20.0...v1.20.1) (2026-08-24)
 
 

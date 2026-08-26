@@ -4,17 +4,19 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Enums\StudentType;
 use App\Enums\UserRole;
 use App\Models\ConnectedAccount;
 use App\Models\Faculty;
-use App\Models\Student;
 use App\Models\User;
 use App\Services\SocialiteProviderService;
+use App\Services\StudentOrganizationAssignmentService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rules\Password;
@@ -24,6 +26,10 @@ use Spatie\Permission\Models\Role;
 
 final class AuthController extends Controller
 {
+    public function __construct(
+        private readonly StudentOrganizationAssignmentService $studentOrganizations,
+    ) {}
+
     public function showLoginForm(): Response
     {
         return Inertia::render('login', [
@@ -139,6 +145,10 @@ final class AuthController extends Controller
 
     public function signup(Request $request)
     {
+        $request->merge([
+            'email' => $request->string('email')->trim()->lower()->toString(),
+        ]);
+
         $userType = $request->input('user_type');
 
         // Different validation based on user type
@@ -159,11 +169,11 @@ final class AuthController extends Controller
 
         $validationRules = [
             'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users',
+            'email' => 'required|string|email|max:255',
             'password' => ['required', 'confirmed', Password::defaults()],
             'user_type' => 'required|string|in:student',
             'student_type' => 'required|string|in:college,shs',
-            'record_id' => 'required',
+            'record_id' => 'nullable|integer',
             'otp' => 'required|string',
         ];
 
@@ -182,8 +192,16 @@ final class AuthController extends Controller
                 ->withInput($request->except(['password', 'password_confirmation']));
         }
 
+        $email = $request->string('email')->trim()->lower()->toString();
+
+        if (User::whereRaw('LOWER(email) = ?', [$email])->exists()) {
+            return back()
+                ->withErrors(['email' => 'An account with this email already exists.'])
+                ->withInput($request->except(['password', 'password_confirmation']));
+        }
+
         // Verify OTP
-        $otpKey = 'signup_otp_'.$request->email;
+        $otpKey = 'signup_otp_'.$email;
         $cachedOtp = Cache::get($otpKey);
 
         if (! $cachedOtp || (string) $cachedOtp !== (string) $request->otp) {
@@ -192,62 +210,45 @@ final class AuthController extends Controller
                 ->withInput($request->except(['password', 'password_confirmation']));
         }
 
-        // Verify the student exists and matches the provided ID
-        $student = Student::find($request->record_id);
-
-        if (! $student) {
-            return back()
-                ->withErrors(['email' => 'Student record not found.'])
-                ->withInput($request->only(['name', 'email', 'student_type']));
-        }
-
-        // Verify student ID or LRN matches
-        if ($isShs) {
-            if ($student->lrn !== $request->lrn) {
-                return back()
-                    ->withErrors(['lrn' => 'The LRN does not match our records for this email address.'])
-                    ->withInput($request->only(['name', 'email', 'student_type', 'lrn']));
-            }
-        } elseif ((string) $student->student_id !== $request->student_id) {
-            return back()
-                ->withErrors(['student_id' => 'The Student ID does not match our records for this email address.'])
-                ->withInput($request->only(['name', 'email', 'student_type', 'student_id']));
-        }
-
-        // Clear OTP after successful verification
-        Cache::forget($otpKey);
-
         // Determine the role based on student type
         $role = $isShs ? UserRole::ShsStudent : UserRole::Student;
+        $user = DB::transaction(function () use ($request, $role, $studentType, $isShs, $email): User {
+            $student = $this->studentOrganizations->resolveForSignup(
+                email: $email,
+                studentType: StudentType::from($studentType),
+                identifier: $request->string($isShs ? 'lrn' : 'student_id')->toString(),
+                recordId: $request->input('record_id'),
+                lockForUpdate: true,
+            );
 
-        // Create or get the spatie role
-        $spatieRoleName = $role->value;
-        $spatieRole = Role::firstOrCreate(
-            ['name' => $spatieRoleName, 'guard_name' => 'web'],
-            ['name' => $spatieRoleName, 'guard_name' => 'web']
-        );
+            $spatieRole = Role::firstOrCreate(
+                ['name' => $role->value, 'guard_name' => 'web'],
+                ['name' => $role->value, 'guard_name' => 'web'],
+            );
 
-        // Create the user
-        $user = User::create([
-            'name' => $request->name,
-            'email' => $request->email,
-            'password' => Hash::make($request->password),
-            'role' => $role,
-            'record_id' => $student->id,
-            'email_verified_at' => now(),
-            'avatar_url' => $this->pendingSocialiteAvatar($request->email),
-        ]);
+            $user = User::create([
+                'name' => $request->name,
+                'email' => $email,
+                'password' => Hash::make($request->password),
+                'role' => $role,
+                'record_id' => $student->id,
+                'school_id' => $student->school_id,
+                'email_verified_at' => now(),
+                'avatar_url' => $this->pendingSocialiteAvatar($email),
+            ]);
 
-        // Assign spatie role
-        $user->assignRole($spatieRole);
+            $user->assignRole($spatieRole);
+            $this->studentOrganizations->assign($user, $student);
 
-        // Link student to user
-        $student->user_id = $user->id;
-        $student->save();
+            return $user;
+        });
+
+        Cache::forget($otpKey);
 
         $this->linkPendingSocialiteSignup($request, $user);
 
         Auth::login($user);
+        $request->session()->regenerate();
 
         return redirect('/student/dashboard');
     }
@@ -259,7 +260,7 @@ final class AuthController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users',
+            'email' => 'required|string|email|max:255',
             'password' => ['required', 'confirmed', Password::defaults()],
             'faculty_id_number' => 'nullable|string|max:255',
             'role' => 'required|string|in:professor,associate_professor,assistant_professor,instructor,part_time_faculty',
@@ -272,8 +273,16 @@ final class AuthController extends Controller
                 ->withInput($request->except(['password', 'password_confirmation']));
         }
 
+        $email = $request->string('email')->trim()->lower()->toString();
+
+        if (User::whereRaw('LOWER(email) = ?', [$email])->exists()) {
+            return back()
+                ->withErrors(['email' => 'An account with this email already exists.'])
+                ->withInput($request->except(['password', 'password_confirmation']));
+        }
+
         // Verify OTP
-        $otpKey = 'signup_otp_'.$request->email;
+        $otpKey = 'signup_otp_'.$email;
         $cachedOtp = Cache::get($otpKey);
 
         if (! $cachedOtp || (string) $cachedOtp !== (string) $request->otp) {
@@ -300,17 +309,17 @@ final class AuthController extends Controller
 
         $userData = [
             'name' => $request->name,
-            'email' => $request->email,
+            'email' => $email,
             'password' => Hash::make($request->password),
             'role' => $role,
             'email_verified_at' => now(),
-            'avatar_url' => $this->pendingSocialiteAvatar($request->email),
+            'avatar_url' => $this->pendingSocialiteAvatar($email),
         ];
 
         // If faculty_id_number is provided, verify it matches the email
         if ($request->filled('faculty_id_number')) {
             $faculty = Faculty::where('faculty_id_number', $request->faculty_id_number)
-                ->where('email', $request->email)
+                ->whereRaw('LOWER(email) = ?', [$email])
                 ->first();
 
             if (! $faculty) {
@@ -335,6 +344,7 @@ final class AuthController extends Controller
         $this->linkPendingSocialiteSignup($request, $user);
 
         Auth::login($user);
+        $request->session()->regenerate();
 
         return redirect('/faculty/dashboard');
     }
@@ -379,7 +389,7 @@ final class AuthController extends Controller
     {
         $pending = session('socialite_signup');
 
-        if (! is_array($pending) || ($pending['email'] ?? null) !== $email) {
+        if (! is_array($pending) || mb_strtolower(mb_trim((string) ($pending['email'] ?? ''))) !== mb_strtolower(mb_trim($email))) {
             return null;
         }
 
@@ -392,7 +402,7 @@ final class AuthController extends Controller
     {
         $pending = $request->session()->get('socialite_signup');
 
-        if (! is_array($pending) || ($pending['email'] ?? null) !== $user->email) {
+        if (! is_array($pending) || mb_strtolower(mb_trim((string) ($pending['email'] ?? ''))) !== mb_strtolower(mb_trim($user->email))) {
             return;
         }
 

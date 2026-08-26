@@ -34,6 +34,7 @@
         <server name="SESSION_DRIVER" value="array"/>
         <server name="BROADCAST_CONNECTION" value="null"/>
         <server name="SCOUT_DRIVER" value="collection"/>
+        <server name="MODULE_SCAN_VENDOR" value="false"/>
         <server name="PULSE_ENABLED" value="false"/>
         <server name="PULSE_DB_CONNECTION" value="sqlite"/>
         <server name="TELESCOPE_ENABLED" value="false"/>

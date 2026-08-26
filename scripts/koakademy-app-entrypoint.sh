@@ -36,5 +36,6 @@ load_optional_secret LIBRARY_R2_SECRET_ACCESS_KEY /run/secrets/koakademy-library
 load_optional_secret MAIL_PASSWORD /run/secrets/koakademy-smtp-password
 load_optional_secret SEQUENZY_API_KEY /run/secrets/koakademy-sequenzy-api-key
 load_optional_secret MEILISEARCH_KEY /run/secrets/koakademy-meilisearch-key
+load_optional_secret MODULE_REGISTRY_PUBLIC_KEY /run/secrets/koakademy-module-registry-public-key
 
 exec /usr/local/bin/start-container "$@"

@@ -61,9 +61,9 @@ The sync command generates marked MDX mirrors consumed by both Astro and the in-
 
 ## Hosted documentation site
 
-The Astro site in `docs/` is always buildable locally with `npm --prefix docs run build`. Its `deploy-docs.yml` workflow is intentionally disabled while the repository is private.
+The Astro site in `docs/` is buildable locally with `npm --prefix docs run build`. Its `deploy-docs.yml` workflow builds on pushes to `master` that change documentation and can also be dispatched manually.
 
-After making the repository public, enable GitHub Pages in **Settings → Pages → Build and deployment → Source: GitHub Actions**, then re-enable the workflow:
+After making the repository public, enable GitHub Pages in **Settings → Pages → Build and deployment → Source: GitHub Actions**. If the workflow is disabled in repository settings, enable it with:
 
 ```sh
 gh workflow enable deploy-docs.yml --repo yukazakiri/koakademy

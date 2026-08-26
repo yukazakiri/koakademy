@@ -45,6 +45,10 @@ use App\Filament\Plugins\Widgets\PennantFeatureAdoptionWidget;
 use App\Models\Passkey;
 use App\Models\StudentTransaction;
 use App\Models\User;
+use App\Modules\CompatibilityChecker;
+use App\Modules\ModuleManifestRepository;
+use App\Modules\RegistryClient;
+use App\Modules\VersionConstraint;
 use App\Observers\StudentTransactionObserver;
 use App\Services\ChangelogService;
 use App\Services\GeneralSettingsService;
@@ -72,6 +76,10 @@ final class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(ExportFailureHandler::class);
+        $this->app->singleton(ModuleManifestRepository::class);
+        $this->app->singleton(RegistryClient::class);
+        $this->app->singleton(VersionConstraint::class);
+        $this->app->singleton(CompatibilityChecker::class);
         // scoped = one instance per HTTP request, so Auth is always available when first used
         $this->app->scoped(GeneralSettingsService::class);
         $this->app->scoped(NewsletterSettingsService::class);

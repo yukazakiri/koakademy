@@ -242,7 +242,7 @@ return [
     |
     */
     'scan' => [
-        'enabled' => false,
+        'enabled' => (bool) env('MODULE_SCAN_VENDOR', true),
         'paths' => [
             base_path('vendor/*/*'),
         ],

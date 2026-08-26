@@ -48,9 +48,9 @@ CI runs both on every push and PR (see [CI pipeline](./ci/)); run them before co
 
 ## Deployment
 
-`deploy-docs.yml` builds the site and can deploy it through `upload-pages-artifact` + `deploy-pages`. The workflow is intentionally disabled while the repository is private.
+`deploy-docs.yml` builds the site and can deploy it through `upload-pages-artifact` + `deploy-pages` on documentation pushes to `master` or manual dispatch.
 
-After the repository becomes public:
+After making the repository public:
 
 1. Enable **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 2. Run `gh workflow enable deploy-docs.yml --repo yukazakiri/koakademy`.

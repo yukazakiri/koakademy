@@ -6,7 +6,11 @@ use App\Enums\SubjectEnrolledEnum;
 use App\Enums\UserRole;
 use App\Models\Course;
 use App\Models\CourseType;
+use App\Models\EnrollmentPolicy;
+use App\Models\Student;
+use App\Models\StudentEnrollment;
 use App\Models\Subject;
+use App\Models\SubjectEnrollment;
 use App\Models\User;
 use Inertia\Testing\AssertableInertia;
 
@@ -222,4 +226,128 @@ it('toggles program active status', function (): void {
         ->assertRedirect();
 
     expect($program->refresh())->is_active->toBeTrue();
+});
+
+it('analyzes program deletion impact before allowing removal', function (): void {
+    $user = User::factory()->create([
+        'role' => UserRole::Admin,
+    ]);
+
+    $program = Course::factory()->create([
+        'code' => 'BSCS',
+    ]);
+
+    Subject::factory()->for($program)->count(2)->create();
+    EnrollmentPolicy::factory()->create([
+        'course_id' => $program->id,
+    ]);
+
+    actingAs($user)
+        ->getJson(portalUrlForAdministrators("/administrators/curriculum/programs/deletion-impact?ids%5B%5D={$program->id}"))
+        ->assertOk()
+        ->assertJsonPath('can_delete', true)
+        ->assertJsonPath('programs.0.has_destructive_changes', true)
+        ->assertJsonPath('programs.0.totals.subjects', 2)
+        ->assertJsonPath('programs.0.totals.policies', 1)
+        ->assertJsonPath('programs.0.records.0.severity', 'destructive')
+        ->assertJsonPath('programs.0.records.6.severity', 'warning');
+});
+
+it('classifies subject enrollment history as a deletion blocker', function (): void {
+    $user = User::factory()->create([
+        'role' => UserRole::Admin,
+    ]);
+
+    $program = Course::factory()->create([
+        'code' => 'BSN',
+    ]);
+    $subject = Subject::factory()->for($program)->create();
+    $student = Student::factory()->create([
+        'course_id' => $program->id,
+    ]);
+    $enrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'course_id' => $program->id,
+    ]);
+    SubjectEnrollment::query()->create([
+        'student_id' => $student->id,
+        'subject_id' => $subject->id,
+        'enrollment_id' => $enrollment->id,
+        'school_year' => '2024 - 2025',
+        'semester' => 1,
+    ]);
+
+    actingAs($user)
+        ->getJson(portalUrlForAdministrators("/administrators/curriculum/programs/deletion-impact?ids%5B%5D={$program->id}"))
+        ->assertOk()
+        ->assertJsonPath('can_delete', false)
+        ->assertJsonPath('programs.0.totals.subject_enrollments', 1)
+        ->assertJsonPath('programs.0.records.1.severity', 'blocked');
+});
+
+it('blocks program deletion when students or enrollment history still reference it', function (): void {
+    $user = User::factory()->create([
+        'role' => UserRole::Admin,
+    ]);
+
+    $program = Course::factory()->create([
+        'code' => 'BSIT',
+    ]);
+    $student = Student::factory()->create([
+        'course_id' => $program->id,
+    ]);
+    StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'course_id' => $program->id,
+    ]);
+
+    actingAs($user)
+        ->delete(portalUrlForAdministrators("/administrators/curriculum/programs/{$program->id}"), [
+            'confirmation' => $program->code,
+        ])
+        ->assertSessionHasErrors('programs');
+
+    expect(Course::query()->whereKey($program->id)->exists())->toBeTrue();
+});
+
+it('deletes a program and its subjects after an explicit confirmation', function (): void {
+    $user = User::factory()->create([
+        'role' => UserRole::Admin,
+    ]);
+
+    $program = Course::factory()->create([
+        'code' => 'BSA',
+    ]);
+    $subject = Subject::factory()->for($program)->create();
+
+    actingAs($user)
+        ->delete(portalUrlForAdministrators("/administrators/curriculum/programs/{$program->id}"), [
+            'confirmation' => $program->code,
+        ])
+        ->assertRedirect();
+
+    expect(Course::query()->whereKey($program->id)->exists())->toBeFalse();
+    expect(Subject::query()->whereKey($subject->id)->exists())->toBeFalse();
+});
+
+it('deletes multiple safe programs only after confirming the bulk operation', function (): void {
+    $user = User::factory()->create([
+        'role' => UserRole::Admin,
+    ]);
+
+    $programs = collect([
+        Course::factory()->create(['code' => 'BSCE']),
+        Course::factory()->create(['code' => 'BSME']),
+    ]);
+
+    actingAs($user)
+        ->delete(portalUrlForAdministrators('/administrators/curriculum/programs'), [
+            'ids' => $programs->pluck('id')->all(),
+            'confirmation' => 'DELETE',
+        ])
+        ->assertRedirect();
+
+    foreach ($programs as $program) {
+        expect(Course::query()->whereKey($program->id)->exists())->toBeFalse();
+    }
 });

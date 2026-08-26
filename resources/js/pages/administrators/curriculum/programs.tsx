@@ -1,23 +1,50 @@
 import {
     index as curriculumIndex,
+    destroyProgram,
+    destroyPrograms,
+    programDeletionImpact,
     showProgram,
     storeProgram,
     toggleProgramStatus,
+    updateProgram,
 } from "@/actions/App/Http/Controllers/AdministratorCurriculumManagementController";
 import AdminLayout from "@/components/administrators/admin-layout";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import type { User } from "@/types/user";
 import { Head, Link, router, useForm } from "@inertiajs/react";
 import {
+    type ColumnDef,
+    type PaginationState,
+    type SortingState,
+    type VisibilityState,
+    flexRender,
+    getCoreRowModel,
+    getPaginationRowModel,
+    getSortedRowModel,
+    useReactTable,
+} from "@tanstack/react-table";
+import {
+    ArrowDownUp,
     ArrowRight,
     ArrowUpRight,
     BookOpen,
@@ -25,16 +52,21 @@ import {
     Check,
     CheckCircle2,
     ChevronLeft,
-    CircleAlert,
+    ChevronRight,
     Clock3,
+    Columns3,
     Ellipsis,
     Filter,
     GraduationCap,
     Layers3,
     ListFilter,
+    Pencil,
     Plus,
     Search,
+    ShieldAlert,
+    ShieldCheck,
     Sparkles,
+    Trash2,
     Waypoints,
     X,
 } from "lucide-react";
@@ -87,7 +119,7 @@ type CatalogTemplate = {
     tesda_program_type: string | null;
     duration_years: number | null;
     internship_hours: number | null;
-    bundled_qualifications: string[];
+    bundled_qualifications: string[] | null;
     advanced_topics: string | null;
     reference: string;
 };
@@ -117,7 +149,7 @@ type ProgramSummary = {
     tesda_program_type: string | null;
     duration_years: number | null;
     internship_hours: number | null;
-    bundled_qualifications: string[];
+    bundled_qualifications: string[] | null;
     advanced_topics: string | null;
 };
 
@@ -130,6 +162,61 @@ type CurriculumVersion = {
 
 type StatusFilter = "all" | "active" | "inactive";
 type CreateStep = "identity" | "details";
+type DeletionSeverity = "safe" | "warning" | "destructive" | "blocked";
+
+type ProgramDeletionRecord = {
+    key: string;
+    label: string;
+    count: number;
+    severity: DeletionSeverity;
+    blocks: boolean;
+    effect: string;
+};
+
+type ProgramDeletionImpact = {
+    id: number;
+    code: string;
+    title: string;
+    can_delete: boolean;
+    has_blockers: boolean;
+    has_destructive_changes: boolean;
+    records: ProgramDeletionRecord[];
+    totals: {
+        subjects: number;
+        subject_enrollments: number;
+        classes: number;
+        students: number;
+        enrollments: number;
+        pending_enrollments: number;
+        policies: number;
+        research_papers: number;
+    };
+};
+
+type ProgramDeletionResponse = {
+    programs: ProgramDeletionImpact[];
+    can_delete: boolean;
+    requires_confirmation: boolean;
+    totals: ProgramDeletionImpact["totals"];
+};
+
+type ProgramEditData = {
+    code: string;
+    title: string;
+    department_id: string;
+    course_type_id: string;
+    curriculum_year: string;
+    curriculum_kind: string;
+    curriculum_stage: string;
+    duration_hours: string;
+    qualification_level: string;
+    catalog_reference: string;
+    tesda_program_type: string;
+    duration_years: string;
+    internship_hours: string;
+    bundled_qualifications: string;
+    advanced_topics: string;
+};
 
 const FieldError = ({ message }: { message?: string }) => (message ? <p className="text-destructive mt-1 text-xs font-medium">{message}</p> : null);
 
@@ -210,6 +297,17 @@ export default function CurriculumPrograms({
         return new URLSearchParams(window.location.search).get("year") ?? "all";
     });
     const [activeFramework, setActiveFramework] = useState("all");
+    const [sorting, setSorting] = useState<SortingState>([]);
+    const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 10 });
+    const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
+    const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+    const [editingProgram, setEditingProgram] = useState<ProgramSummary | null>(null);
+    const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+    const [deletionImpact, setDeletionImpact] = useState<ProgramDeletionResponse | null>(null);
+    const [deletionLoading, setDeletionLoading] = useState(false);
+    const [deletionSubmitting, setDeletionSubmitting] = useState(false);
+    const [deletionError, setDeletionError] = useState<string | null>(null);
+    const [deletionConfirmation, setDeletionConfirmation] = useState("");
     const isCurriculumRoot =
         typeof window !== "undefined" && window.location.pathname.replace(/\/$/, "") === curriculumIndex().url.replace(/\/$/, "");
 
@@ -226,6 +324,24 @@ export default function CurriculumPrograms({
         remarks: "",
         capability_id: capabilities[0]?.id ?? "",
         curriculum_kind: capabilityKind(capabilities[0]?.school_level),
+        curriculum_stage: "",
+        duration_hours: "",
+        qualification_level: "",
+        catalog_reference: "",
+        tesda_program_type: "national_certificate",
+        duration_years: "",
+        internship_hours: "",
+        bundled_qualifications: "",
+        advanced_topics: "",
+    });
+
+    const editForm = useForm<ProgramEditData>({
+        code: "",
+        title: "",
+        department_id: "",
+        course_type_id: "",
+        curriculum_year: "",
+        curriculum_kind: "legacy",
         curriculum_stage: "",
         duration_hours: "",
         qualification_level: "",
@@ -327,7 +443,7 @@ export default function CurriculumPrograms({
             tesda_program_type: template.tesda_program_type ?? "national_certificate",
             duration_years: template.duration_years?.toString() ?? "",
             internship_hours: template.internship_hours?.toString() ?? "",
-            bundled_qualifications: template.bundled_qualifications.join(", "),
+            bundled_qualifications: template.bundled_qualifications?.join(", ") ?? "",
             advanced_topics: template.advanced_topics ?? "",
         });
     };
@@ -376,6 +492,128 @@ export default function CurriculumPrograms({
         router.put(toggleProgramStatus(program.id).url, {}, { preserveScroll: true });
     };
 
+    const openEditProgram = (program: ProgramSummary): void => {
+        setEditingProgram(program);
+        editForm.clearErrors();
+        editForm.setData({
+            code: program.code,
+            title: program.title,
+            department_id: program.department_id?.toString() ?? "",
+            course_type_id: program.course_type_id?.toString() ?? "",
+            curriculum_year: program.curriculum_year ?? "",
+            curriculum_kind: program.curriculum_kind,
+            curriculum_stage: program.curriculum_stage ?? "",
+            duration_hours: program.duration_hours?.toString() ?? "",
+            qualification_level: program.qualification_level ?? "",
+            catalog_reference: "",
+            tesda_program_type: program.tesda_program_type ?? "national_certificate",
+            duration_years: program.duration_years?.toString() ?? "",
+            internship_hours: program.internship_hours?.toString() ?? "",
+            bundled_qualifications: program.bundled_qualifications?.join(", ") ?? "",
+            advanced_topics: program.advanced_topics ?? "",
+        });
+    };
+
+    const handleEditProgram = (event: FormEvent): void => {
+        event.preventDefault();
+        if (!editingProgram) return;
+
+        const isDiploma = editForm.data.curriculum_kind === "tesda_qualification" && editForm.data.tesda_program_type === "diploma";
+        const payload = {
+            code: editForm.data.code,
+            title: editForm.data.title,
+            department_id: editForm.data.curriculum_kind === "program" ? editForm.data.department_id : null,
+            course_type_id: editForm.data.curriculum_kind === "program" ? editForm.data.course_type_id : null,
+            curriculum_year: editForm.data.curriculum_year,
+            curriculum_kind: editForm.data.curriculum_kind,
+            ...(editForm.data.curriculum_kind === "grade_pathway" || editForm.data.curriculum_kind === "senior_high_pathway"
+                ? { curriculum_stage: editForm.data.curriculum_stage }
+                : {}),
+            ...(isDiploma
+                ? {
+                      duration_hours: editForm.data.duration_hours,
+                      qualification_level: editForm.data.qualification_level,
+                      tesda_program_type: editForm.data.tesda_program_type,
+                      duration_years: editForm.data.duration_years,
+                      internship_hours: editForm.data.internship_hours,
+                      bundled_qualifications: editForm.data.bundled_qualifications,
+                      advanced_topics: editForm.data.advanced_topics,
+                  }
+                : {}),
+        };
+
+        editForm.transform(() => payload);
+        editForm.put(updateProgram(editingProgram.id).url, {
+            preserveScroll: true,
+            onSuccess: () => setEditingProgram(null),
+        });
+    };
+
+    const openDeletionDialog = async (ids: number[]): Promise<void> => {
+        setIsDeleteOpen(true);
+        setDeletionLoading(true);
+        setDeletionImpact(null);
+        setDeletionError(null);
+        setDeletionConfirmation("");
+
+        try {
+            const query = new URLSearchParams();
+            ids.forEach((id) => query.append("ids[]", String(id)));
+
+            const response = await fetch(`${programDeletionImpact().url}?${query.toString()}`, {
+                credentials: "same-origin",
+                headers: {
+                    Accept: "application/json",
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+            });
+            const payload = (await response.json()) as ProgramDeletionResponse | { message?: string };
+
+            if (!response.ok || !("programs" in payload)) {
+                throw new Error("message" in payload && payload.message ? payload.message : "The deletion review could not be completed.");
+            }
+
+            setDeletionImpact(payload);
+        } catch (error) {
+            setDeletionError(error instanceof Error ? error.message : "The deletion review could not be completed.");
+        } finally {
+            setDeletionLoading(false);
+        }
+    };
+
+    const confirmDeletion = (): void => {
+        if (!deletionImpact || !deletionImpact.can_delete) return;
+
+        const ids = deletionImpact.programs.map((program) => program.id);
+        const expectedConfirmation = ids.length === 1 ? deletionImpact.programs[0].code : "DELETE";
+
+        if (deletionConfirmation.trim().toUpperCase() !== expectedConfirmation.toUpperCase()) return;
+
+        setDeletionSubmitting(true);
+        const onSuccess = (): void => {
+            setIsDeleteOpen(false);
+            setDeletionImpact(null);
+            setDeletionConfirmation("");
+            setRowSelection({});
+        };
+        const onError = (errors: Record<string, string>): void => {
+            setDeletionError(errors.programs ?? errors.confirmation ?? "The deletion was rejected after the final safety check.");
+        };
+        const options = {
+            data: ids.length === 1 ? { confirmation: deletionConfirmation.trim() } : { ids, confirmation: deletionConfirmation.trim() },
+            preserveScroll: true,
+            onSuccess,
+            onError,
+            onFinish: () => setDeletionSubmitting(false),
+        };
+
+        if (ids.length === 1) {
+            router.delete(destroyProgram(ids[0]).url, options);
+        } else {
+            router.delete(destroyPrograms().url, options);
+        }
+    };
+
     const clearFilters = (): void => {
         setSearch("");
         setStatusFilter("all");
@@ -384,169 +622,359 @@ export default function CurriculumPrograms({
         setActiveFramework("all");
     };
 
+    const columns = useMemo<ColumnDef<ProgramSummary>[]>(
+        () => [
+            {
+                id: "select",
+                enableHiding: false,
+                header: ({ table }) => (
+                    <Checkbox
+                        aria-label="Select all visible programs"
+                        checked={table.getIsAllPageRowsSelected() || (table.getIsSomePageRowsSelected() && "indeterminate")}
+                        onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+                    />
+                ),
+                cell: ({ row }) => (
+                    <Checkbox
+                        aria-label={`Select ${row.original.code}`}
+                        checked={row.getIsSelected()}
+                        onCheckedChange={(value) => row.toggleSelected(!!value)}
+                    />
+                ),
+            },
+            {
+                id: "program",
+                accessorFn: (row) => `${row.code} ${row.title}`,
+                header: ({ column }) => (
+                    <button
+                        type="button"
+                        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                        className="hover:text-foreground inline-flex items-center gap-1.5 transition-colors"
+                    >
+                        Program <ArrowDownUp className="size-3" />
+                    </button>
+                ),
+                cell: ({ row }) => {
+                    const program = row.original;
+
+                    return (
+                        <div className="max-w-[340px] min-w-[240px]">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <Link
+                                    href={showProgram(program.id).url}
+                                    prefetch
+                                    className="hover:text-primary focus-visible:ring-ring/60 truncate rounded-sm font-semibold tracking-[-0.015em] transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                                >
+                                    {program.code}
+                                </Link>
+                                <Badge
+                                    variant="secondary"
+                                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                        program.is_active
+                                            ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                                            : "bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                                    }`}
+                                >
+                                    {program.is_active ? "Active" : "Needs review"}
+                                </Badge>
+                            </div>
+                            <Link
+                                href={showProgram(program.id).url}
+                                className="text-muted-foreground hover:text-foreground focus-visible:ring-ring/60 mt-1 block truncate rounded-sm text-xs transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                            >
+                                {program.title}
+                            </Link>
+                        </div>
+                    );
+                },
+            },
+            {
+                id: "department",
+                accessorFn: (row) => row.department ?? "Unassigned",
+                header: "Department",
+                cell: ({ row }) => (
+                    <span className={`rounded-full px-2 py-1 text-xs font-semibold ${departmentColor(row.original.department)}`}>
+                        {row.original.department ?? "Unassigned"}
+                    </span>
+                ),
+            },
+            {
+                id: "curriculum_year",
+                accessorKey: "curriculum_year",
+                header: ({ column }) => (
+                    <button
+                        type="button"
+                        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                        className="hover:text-foreground inline-flex items-center gap-1.5 transition-colors"
+                    >
+                        Curriculum <ArrowDownUp className="size-3" />
+                    </button>
+                ),
+                cell: ({ row }) => <span className="text-muted-foreground text-xs">{row.original.curriculum_year ?? "Unassigned"}</span>,
+            },
+            {
+                id: "footprint",
+                accessorFn: (row) => row.subjects_count,
+                header: "Footprint",
+                cell: ({ row }) => (
+                    <div className="text-muted-foreground grid grid-cols-3 gap-3 text-xs">
+                        <span title="Subjects">
+                            <strong className="text-foreground block font-semibold">{row.original.subjects_count}</strong> subjects
+                        </span>
+                        <span title="Units">
+                            <strong className="text-foreground block font-semibold">{row.original.total_units}</strong> units
+                        </span>
+                        <span title="Prerequisites">
+                            <strong className="text-foreground block font-semibold">{row.original.prerequisites_count}</strong> prereqs
+                        </span>
+                    </div>
+                ),
+            },
+            {
+                id: "actions",
+                enableHiding: false,
+                header: () => <span className="sr-only">Actions</span>,
+                cell: ({ row }) => {
+                    const program = row.original;
+
+                    return (
+                        <div className="flex items-center justify-end gap-1">
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="text-muted-foreground hover:text-foreground rounded-lg"
+                                title={`Edit ${program.code}`}
+                                onClick={() => openEditProgram(program)}
+                            >
+                                <Pencil className="size-4" />
+                                <span className="sr-only">Edit {program.code}</span>
+                            </Button>
+                            <Button asChild variant="secondary" size="sm" className="hidden rounded-lg px-3 xl:inline-flex">
+                                <Link href={showProgram(program.id).url}>
+                                    Manage <ArrowUpRight className="size-3.5" />
+                                </Link>
+                            </Button>
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="text-muted-foreground rounded-lg">
+                                        <Ellipsis className="size-4" />
+                                        <span className="sr-only">Open actions for {program.code}</span>
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => toggleStatus(program)}>
+                                        {program.is_active ? "Deactivate program" : "Activate program"}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                        className="text-destructive focus:text-destructive"
+                                        onClick={() => void openDeletionDialog([program.id])}
+                                    >
+                                        <Trash2 className="size-4" /> Delete program
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </div>
+                    );
+                },
+            },
+        ],
+        [],
+    );
+
+    const table = useReactTable({
+        data: filteredPrograms,
+        columns,
+        state: { sorting, pagination, rowSelection, columnVisibility },
+        enableRowSelection: true,
+        getRowId: (row) => String(row.id),
+        onSortingChange: setSorting,
+        onPaginationChange: setPagination,
+        onRowSelectionChange: setRowSelection,
+        onColumnVisibilityChange: setColumnVisibility,
+        getCoreRowModel: getCoreRowModel(),
+        getSortedRowModel: getSortedRowModel(),
+        getPaginationRowModel: getPaginationRowModel(),
+    });
+
+    const selectedProgramIds = useMemo(() => table.getSelectedRowModel().rows.map((row) => row.original.id), [rowSelection, table]);
+
+    useEffect(() => {
+        setPagination((current) => ({ ...current, pageIndex: 0 }));
+    }, [activeDepartment, activeFramework, activeYear, search, statusFilter]);
+
     const activeFilterCount = [statusFilter !== "all", activeDepartment !== "all", activeYear !== "all", activeFramework !== "all"].filter(
         Boolean,
     ).length;
     const readiness = filteredStats.programs > 0 ? Math.round((filteredStats.active_programs / filteredStats.programs) * 100) : 0;
+    const deletionRecords = deletionImpact
+        ? (deletionImpact.programs[0]?.records ?? []).map((record) => ({
+              ...record,
+              count: deletionImpact.totals[record.key as keyof ProgramDeletionImpact["totals"]],
+          }))
+        : [];
+    const deletionConfirmationTarget = deletionImpact?.programs.length === 1 ? deletionImpact.programs[0].code : "DELETE";
 
     return (
         <AdminLayout user={user} title={isCurriculumRoot ? "Curriculum" : "Programs"}>
             <Head title={isCurriculumRoot ? "Curriculum · Programs" : "Programs · Curriculum"} />
-            <div className="relative isolate flex flex-col gap-7 overflow-hidden pb-4">
-                <div className="pointer-events-none absolute -top-40 right-[-12rem] -z-10 size-[30rem] rounded-full bg-sky-400/10 blur-3xl dark:bg-sky-300/5" />
-                <div className="pointer-events-none absolute top-[22rem] left-[-20rem] -z-10 size-[34rem] rounded-full bg-amber-300/10 blur-3xl dark:bg-amber-300/5" />
+            <div className="relative isolate flex flex-col gap-6 pb-4">
+                <div className="pointer-events-none absolute -top-28 right-[-11rem] -z-10 size-[27rem] rounded-full bg-sky-400/10 blur-3xl dark:bg-sky-300/5" />
 
-                <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs font-medium">
-                    {isCurriculumRoot ? (
-                        <span>Curriculum</span>
-                    ) : (
-                        <Link href={curriculumIndex().url} className="hover:text-foreground transition-colors">
-                            Curriculum
-                        </Link>
-                    )}
-                    <span aria-hidden="true">/</span>
-                    <span className="text-foreground">Program catalog</span>
-                </div>
-
-                <section className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-                    <div className="max-w-2xl space-y-4">
-                        <div className="border-border/70 bg-background/70 text-muted-foreground inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold tracking-[0.14em] uppercase shadow-xs backdrop-blur-xl">
-                            <Sparkles className="size-3.5 text-amber-500" /> {isCurriculumRoot ? "Curriculum workspace" : "Curriculum studio"}
+                <header className="border-border/70 relative flex flex-col gap-6 border-b pb-7 lg:flex-row lg:items-end lg:justify-between">
+                    <div className="min-w-0 space-y-4">
+                        <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs font-medium">
+                            {isCurriculumRoot ? (
+                                <span>Curriculum</span>
+                            ) : (
+                                <Link
+                                    href={curriculumIndex().url}
+                                    className="hover:text-foreground focus-visible:ring-ring/60 rounded-sm transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                                >
+                                    Curriculum
+                                </Link>
+                            )}
+                            <span aria-hidden="true">/</span>
+                            <span className="text-foreground">Program catalog</span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className="bg-primary/8 text-primary inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold tracking-[0.14em] uppercase">
+                                <Sparkles className="size-3.5" /> Curriculum workspace
+                            </span>
+                            {school?.name && <span className="text-muted-foreground text-xs">{school.name}</span>}
                         </div>
                         <div className="space-y-2">
-                            <h1 className="text-4xl leading-[0.98] font-semibold tracking-[-0.045em] text-balance sm:text-5xl">
-                                Programs that are ready to teach.
-                            </h1>
-                            <p className="text-muted-foreground max-w-xl text-sm leading-6 sm:text-base">
-                                Define each pathway, build its subject structure, and keep the active catalog aligned with your school’s curriculum.
+                            <h1 className="text-3xl font-semibold tracking-[-0.04em] text-balance sm:text-4xl">Program catalog</h1>
+                            <p className="text-muted-foreground max-w-2xl text-sm leading-6 sm:text-[15px]">
+                                Keep every academic pathway, grade progression, and technical qualification ready for curriculum planning and
+                                enrollment.
                             </p>
                         </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex shrink-0 flex-wrap items-center gap-2">
                         {!isCurriculumRoot && (
-                            <Button asChild variant="ghost" className="rounded-full">
+                            <Button asChild variant="ghost" className="rounded-lg">
                                 <Link href={curriculumIndex().url}>
                                     <ChevronLeft className="size-4" /> Curriculum workspace
                                 </Link>
                             </Button>
                         )}
-                        <Button className="rounded-full px-4 shadow-sm" onClick={() => setIsCreateOpen(true)}>
+                        <Button className="rounded-lg px-4 shadow-sm" onClick={() => setIsCreateOpen(true)}>
                             <Plus className="size-4" /> Add program
                         </Button>
                     </div>
-                </section>
+                </header>
 
-                <section className="overflow-hidden rounded-[28px] border border-slate-800 bg-slate-950 text-white shadow-xl shadow-slate-950/10 dark:border-slate-700">
-                    <div className="grid gap-0 lg:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.85fr)]">
-                        <div className="relative overflow-hidden p-6 sm:p-8">
-                            <div className="pointer-events-none absolute top-0 right-0 size-64 rounded-full bg-sky-400/15 blur-3xl" />
-                            <div className="relative flex h-full flex-col justify-between gap-8">
-                                <div className="space-y-3">
-                                    <div className="flex items-center gap-2 text-xs font-semibold tracking-[0.16em] text-slate-400 uppercase">
-                                        <Waypoints className="size-4 text-sky-300" /> Program operations
-                                    </div>
-                                    <div className="max-w-lg space-y-2">
-                                        <h2 className="text-2xl font-semibold tracking-[-0.03em] sm:text-3xl">One catalog, one source of truth.</h2>
-                                        <p className="text-sm leading-6 text-slate-300">
-                                            Use the list below to keep program identity, curriculum structure, and activation status in sync.
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="grid gap-3 sm:grid-cols-3">
-                                    <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-xl">
-                                        <p className="text-xs text-slate-400">Programs in view</p>
-                                        <p className="mt-2 text-2xl font-semibold tracking-tight">{filteredStats.programs}</p>
-                                        <p className="mt-1 text-xs text-slate-400">{filteredStats.active_programs} active</p>
-                                    </div>
-                                    <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-xl">
-                                        <p className="text-xs text-slate-400">Subjects mapped</p>
-                                        <p className="mt-2 text-2xl font-semibold tracking-tight">{filteredStats.subjects}</p>
-                                        <p className="mt-1 text-xs text-slate-400">{filteredStats.subjects_with_requisites} with prerequisites</p>
-                                    </div>
-                                    <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-xl">
-                                        <p className="text-xs text-slate-400">Curriculum years</p>
-                                        <p className="mt-2 text-2xl font-semibold tracking-tight">{filteredStats.curriculum_versions}</p>
-                                        <p className="mt-1 text-xs text-slate-400">{school?.name ?? "Current school"}</p>
-                                    </div>
-                                </div>
+                <section className="border-border/80 bg-card overflow-hidden rounded-2xl border shadow-sm" aria-label="Catalog overview">
+                    <div className="grid divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
+                        <div className="flex items-center justify-between gap-4 px-5 py-4 sm:p-5">
+                            <div>
+                                <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.12em] uppercase">Programs in view</p>
+                                <p className="mt-2 text-2xl font-semibold tracking-[-0.03em]">{filteredStats.programs}</p>
+                            </div>
+                            <div className="bg-primary/8 text-primary flex size-9 items-center justify-center rounded-xl">
+                                <Waypoints className="size-4" />
                             </div>
                         </div>
-                        <div className="border-t border-white/10 bg-white/[0.04] p-6 sm:p-8 lg:border-t-0 lg:border-l">
-                            <div className="flex items-start justify-between gap-4">
-                                <div>
-                                    <p className="text-xs font-semibold tracking-[0.16em] text-slate-400 uppercase">Catalog readiness</p>
-                                    <p className="mt-2 text-3xl font-semibold tracking-[-0.03em]">{readiness}%</p>
-                                </div>
-                                <CheckCircle2 className="size-5 text-emerald-300" />
+                        <div className="flex items-center justify-between gap-4 px-5 py-4 sm:p-5">
+                            <div>
+                                <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.12em] uppercase">Active pathways</p>
+                                <p className="mt-2 text-2xl font-semibold tracking-[-0.03em]">{filteredStats.active_programs}</p>
                             </div>
-                            <div className="mt-6 h-2 overflow-hidden rounded-full bg-white/10">
+                            <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400" />
+                        </div>
+                        <div className="flex items-center justify-between gap-4 px-5 py-4 sm:p-5">
+                            <div>
+                                <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.12em] uppercase">Subjects mapped</p>
+                                <p className="mt-2 text-2xl font-semibold tracking-[-0.03em]">{filteredStats.subjects}</p>
+                            </div>
+                            <div className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                                <BookOpen className="size-4" />
+                                <span>{filteredStats.subjects_with_requisites} prereq-aware</span>
+                            </div>
+                        </div>
+                        <div className="px-5 py-4 sm:p-5">
+                            <div className="flex items-center justify-between gap-4">
+                                <div>
+                                    <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.12em] uppercase">Catalog readiness</p>
+                                    <p className="mt-2 text-2xl font-semibold tracking-[-0.03em]">{readiness}%</p>
+                                </div>
+                                <span className="text-muted-foreground text-xs">
+                                    {filteredStats.programs - filteredStats.active_programs} to review
+                                </span>
+                            </div>
+                            <div
+                                className="bg-muted mt-3 h-1.5 overflow-hidden rounded-full"
+                                role="progressbar"
+                                aria-label="Catalog readiness"
+                                aria-valuemin={0}
+                                aria-valuemax={100}
+                                aria-valuenow={readiness}
+                            >
                                 <div
-                                    className="h-full rounded-full bg-emerald-300 transition-[width] duration-500 ease-out"
+                                    className="h-full rounded-full bg-emerald-500 transition-[width] duration-500 ease-out"
                                     style={{ width: `${readiness}%` }}
                                 />
-                            </div>
-                            <div className="mt-4 flex items-start gap-3 text-sm leading-5 text-slate-300">
-                                <CircleAlert className="mt-0.5 size-4 shrink-0 text-amber-300" />
-                                <p>
-                                    {filteredStats.programs - filteredStats.active_programs === 0
-                                        ? "Every visible program is active and ready for downstream enrollment workflows."
-                                        : `${filteredStats.programs - filteredStats.active_programs} visible ${filteredStats.programs - filteredStats.active_programs === 1 ? "program needs" : "programs need"} review before activation.`}
-                                </p>
                             </div>
                         </div>
                     </div>
                 </section>
 
-                <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_310px]">
-                    <section className="border-border/70 bg-card/80 min-w-0 overflow-hidden rounded-[24px] border shadow-sm backdrop-blur-xl">
+                <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_290px]">
+                    <section
+                        className="border-border/80 bg-card min-w-0 overflow-hidden rounded-2xl border shadow-sm"
+                        aria-labelledby="program-catalog-heading"
+                    >
                         <div className="border-border/70 border-b p-5 sm:p-6">
                             <div className="flex flex-col gap-5">
                                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                                     <div>
                                         <div className="flex items-center gap-2">
-                                            <h2 className="text-xl font-semibold tracking-[-0.025em]">Program catalog</h2>
-                                            <Badge variant="secondary" className="rounded-full px-2.5">
+                                            <h2 id="program-catalog-heading" className="text-xl font-semibold tracking-[-0.025em]">
+                                                Program catalog
+                                            </h2>
+                                            <Badge variant="secondary" className="rounded-full px-2.5" aria-live="polite">
                                                 {filteredPrograms.length}
                                             </Badge>
                                         </div>
                                         <p className="text-muted-foreground mt-1 text-sm">
-                                            Search the catalog, then open a program to manage its curriculum.
+                                            Search by identity, then open a program to manage its curriculum.
                                         </p>
                                     </div>
                                     <div className="text-muted-foreground flex items-center gap-2 text-xs">
-                                        <ListFilter className="size-4" />{" "}
-                                        {activeFilterCount > 0 ? `${activeFilterCount} filters active` : "All programs"}
+                                        <ListFilter className="size-4" />
+                                        <span>{activeFilterCount > 0 ? `${activeFilterCount} filters active` : "All programs"}</span>
                                     </div>
                                 </div>
 
-                                <div className="flex flex-col gap-3 lg:flex-row">
-                                    <div className="relative min-w-0 flex-1">
-                                        <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+                                <div className="bg-muted/30 border-border/60 grid gap-3 rounded-xl border p-3 lg:grid-cols-[minmax(0,1fr)_auto]">
+                                    <div className="relative min-w-0">
+                                        <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2" />
                                         <Input
                                             aria-label="Search programs"
                                             value={search}
                                             onChange={(event) => setSearch(event.target.value)}
-                                            placeholder="Search by code, name, department, or year…"
-                                            className="border-border/70 bg-background/70 h-10 rounded-xl pr-16 pl-9 shadow-none"
+                                            placeholder="Search code, name, department, or year…"
+                                            className="bg-background h-10 rounded-lg pr-16 pl-10 shadow-none"
                                         />
                                         {search ? (
                                             <button
                                                 type="button"
                                                 aria-label="Clear search"
                                                 onClick={() => setSearch("")}
-                                                className="text-muted-foreground hover:bg-muted hover:text-foreground absolute top-1/2 right-3 -translate-y-1/2 rounded-md p-1 transition-colors"
+                                                className="text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring/60 absolute top-1/2 right-2 flex size-8 -translate-y-1/2 items-center justify-center rounded-md transition-colors focus-visible:ring-2 focus-visible:outline-none"
                                             >
                                                 <X className="size-3.5" />
                                             </button>
                                         ) : (
-                                            <span className="bg-muted text-muted-foreground pointer-events-none absolute top-1/2 right-3 hidden -translate-y-1/2 rounded border px-1.5 py-0.5 text-[10px] font-medium sm:inline">
+                                            <span className="bg-muted text-muted-foreground pointer-events-none absolute top-1/2 right-2 hidden -translate-y-1/2 rounded border px-1.5 py-0.5 text-[10px] font-medium sm:inline">
                                                 ⌘ K
                                             </span>
                                         )}
                                     </div>
                                     <div className="flex flex-wrap gap-2">
                                         <Select value={activeDepartment} onValueChange={setActiveDepartment}>
-                                            <SelectTrigger className="bg-background/70 h-10 min-w-[150px] rounded-xl shadow-none">
+                                            <SelectTrigger className="bg-background h-10 min-w-[150px] rounded-lg shadow-none">
                                                 <Filter className="text-muted-foreground size-3.5" />
                                                 <SelectValue placeholder="Department" />
                                             </SelectTrigger>
@@ -560,7 +988,7 @@ export default function CurriculumPrograms({
                                             </SelectContent>
                                         </Select>
                                         <Select value={activeYear} onValueChange={setActiveYear}>
-                                            <SelectTrigger className="bg-background/70 h-10 min-w-[145px] rounded-xl shadow-none">
+                                            <SelectTrigger className="bg-background h-10 min-w-[145px] rounded-lg shadow-none">
                                                 <CalendarDays className="text-muted-foreground size-3.5" />
                                                 <SelectValue placeholder="Curriculum year" />
                                             </SelectTrigger>
@@ -575,7 +1003,7 @@ export default function CurriculumPrograms({
                                         </Select>
                                         {frameworkOptions.length > 0 && (
                                             <Select value={activeFramework} onValueChange={setActiveFramework}>
-                                                <SelectTrigger className="bg-background/70 h-10 min-w-[150px] rounded-xl shadow-none">
+                                                <SelectTrigger className="bg-background h-10 min-w-[150px] rounded-lg shadow-none">
                                                     <Layers3 className="text-muted-foreground size-3.5" />
                                                     <SelectValue placeholder="Framework" />
                                                 </SelectTrigger>
@@ -593,7 +1021,11 @@ export default function CurriculumPrograms({
                                 </div>
 
                                 <div className="flex flex-wrap items-center gap-2">
-                                    <div className="border-border/70 bg-muted/40 inline-flex rounded-xl border p-1">
+                                    <div
+                                        className="border-border/70 bg-muted/50 inline-flex rounded-lg border p-1"
+                                        role="group"
+                                        aria-label="Filter by program status"
+                                    >
                                         {(["all", "active", "inactive"] as StatusFilter[]).map((status) => {
                                             const label = status === "all" ? "All" : status === "active" ? "Active" : "Needs review";
                                             const count =
@@ -609,7 +1041,7 @@ export default function CurriculumPrograms({
                                                     key={status}
                                                     aria-pressed={statusFilter === status}
                                                     onClick={() => setStatusFilter(status)}
-                                                    className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-[background-color,color,box-shadow] duration-200 ${
+                                                    className={`focus-visible:ring-ring/60 cursor-pointer rounded-md px-3 py-1.5 text-xs font-semibold transition-[background-color,color,box-shadow] duration-200 focus-visible:ring-2 focus-visible:outline-none ${
                                                         statusFilter === status
                                                             ? "bg-background text-foreground shadow-sm"
                                                             : "text-muted-foreground hover:text-foreground"
@@ -624,7 +1056,7 @@ export default function CurriculumPrograms({
                                         <button
                                             type="button"
                                             onClick={clearFilters}
-                                            className="text-muted-foreground hover:text-foreground ml-auto text-xs font-medium transition-colors"
+                                            className="text-muted-foreground hover:text-foreground focus-visible:ring-ring/60 ml-auto cursor-pointer rounded-md px-2 py-1 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none"
                                         >
                                             Clear filters
                                         </button>
@@ -633,126 +1065,187 @@ export default function CurriculumPrograms({
                             </div>
                         </div>
 
-                        <div className="divide-border/60 divide-y">
-                            {filteredPrograms.length > 0 ? (
-                                filteredPrograms.map((program) => (
-                                    <article
-                                        key={program.id}
-                                        className="group hover:bg-muted/20 relative grid gap-5 p-5 transition-[background-color,transform] duration-200 sm:p-6 lg:grid-cols-[minmax(0,1fr)_180px_auto] lg:items-center"
+                        {selectedProgramIds.length > 0 && (
+                            <div className="border-border/70 bg-primary/[0.04] flex flex-col gap-3 border-b px-5 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                                <div className="flex items-center gap-2 text-sm">
+                                    <Badge className="rounded-full">{selectedProgramIds.length}</Badge>
+                                    <span className="font-medium">program{selectedProgramIds.length === 1 ? "" : "s"} selected</span>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="rounded-lg"
+                                        onClick={() =>
+                                            programs
+                                                .filter((program) => selectedProgramIds.includes(program.id) && !program.is_active)
+                                                .forEach((program) => router.put(toggleProgramStatus(program.id).url, {}, { preserveScroll: true }))
+                                        }
                                     >
-                                        <div className="absolute inset-y-5 left-0 w-1 rounded-r-full bg-sky-400/70 opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
-                                        <div className="min-w-0">
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                <Link
-                                                    href={showProgram(program.id).url}
-                                                    prefetch
-                                                    className="hover:text-primary truncate text-base font-semibold tracking-[-0.015em] transition-colors"
-                                                >
-                                                    {program.code}
-                                                </Link>
-                                                <Badge
-                                                    variant="secondary"
-                                                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                                                        program.is_active
-                                                            ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                                                            : "bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                                                    }`}
-                                                >
-                                                    {program.is_active ? "Active" : "Needs review"}
-                                                </Badge>
-                                            </div>
-                                            <Link
-                                                href={showProgram(program.id).url}
-                                                className="text-muted-foreground hover:text-foreground mt-1 block truncate text-sm transition-colors"
+                                        <CheckCircle2 className="size-3.5" /> Activate
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="rounded-lg"
+                                        onClick={() =>
+                                            programs
+                                                .filter((program) => selectedProgramIds.includes(program.id) && program.is_active)
+                                                .forEach((program) => router.put(toggleProgramStatus(program.id).url, {}, { preserveScroll: true }))
+                                        }
+                                    >
+                                        <Clock3 className="size-3.5" /> Deactivate
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="destructive"
+                                        size="sm"
+                                        className="rounded-lg"
+                                        onClick={() => void openDeletionDialog(selectedProgramIds)}
+                                    >
+                                        <Trash2 className="size-3.5" /> Delete selected
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="flex items-center justify-between gap-3 border-b px-5 py-3 sm:px-6">
+                            <p className="text-muted-foreground text-xs">
+                                Showing {table.getRowModel().rows.length} of {filteredPrograms.length} programs
+                            </p>
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button type="button" variant="outline" size="sm" className="rounded-lg">
+                                        <Columns3 className="size-3.5" /> Columns
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                    {table
+                                        .getAllLeafColumns()
+                                        .filter((column) => column.getCanHide())
+                                        .map((column) => (
+                                            <DropdownMenuCheckboxItem
+                                                key={column.id}
+                                                checked={column.getIsVisible()}
+                                                onCheckedChange={(value) => column.toggleVisibility(!!value)}
                                             >
-                                                {program.title}
-                                            </Link>
-                                            <div className="text-muted-foreground mt-3 flex flex-wrap items-center gap-2 text-xs">
-                                                {program.department && (
-                                                    <span className={`rounded-full px-2 py-1 font-semibold ${departmentColor(program.department)}`}>
-                                                        {program.department}
-                                                    </span>
-                                                )}
-                                                <span className="inline-flex items-center gap-1.5">
-                                                    <Waypoints className="size-3.5" /> {kindLabel(program)}
-                                                </span>
-                                                {program.curriculum_framework && <span className="text-border">•</span>}
-                                                {program.curriculum_framework && <span>{frameworkLabel(program.curriculum_framework)}</span>}
-                                                {program.curriculum_year && (
-                                                    <>
-                                                        <span className="text-border">•</span>
-                                                        <span className="inline-flex items-center gap-1.5">
-                                                            <CalendarDays className="size-3.5" /> {program.curriculum_year}
-                                                        </span>
-                                                    </>
-                                                )}
-                                            </div>
-                                        </div>
+                                                {column.id === "curriculum_year"
+                                                    ? "Curriculum year"
+                                                    : column.id === "footprint"
+                                                      ? "Footprint"
+                                                      : "Department"}
+                                            </DropdownMenuCheckboxItem>
+                                        ))}
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </div>
 
-                                        <div className="border-border/60 grid grid-cols-3 gap-3 border-t pt-4 text-xs sm:grid-cols-3 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-5">
-                                            <div>
-                                                <p className="text-muted-foreground">Subjects</p>
-                                                <p className="text-foreground mt-1 text-sm font-semibold">{program.subjects_count}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-muted-foreground">Units</p>
-                                                <p className="text-foreground mt-1 text-sm font-semibold">{program.total_units}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-muted-foreground">Prereqs</p>
-                                                <p className="text-foreground mt-1 text-sm font-semibold">{program.prerequisites_count}</p>
-                                            </div>
-                                        </div>
-
-                                        <div className="flex items-center justify-between gap-2 sm:justify-end">
-                                            <Button asChild variant="secondary" size="sm" className="rounded-full px-3">
-                                                <Link href={showProgram(program.id).url}>
-                                                    Manage <ArrowUpRight className="size-3.5" />
-                                                </Link>
-                                            </Button>
-                                            <DropdownMenu>
-                                                <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" size="icon-sm" className="text-muted-foreground rounded-full">
-                                                        <Ellipsis className="size-4" />
-                                                        <span className="sr-only">Open actions for {program.code}</span>
-                                                    </Button>
-                                                </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end">
-                                                    <DropdownMenuItem onClick={() => toggleStatus(program)}>
-                                                        {program.is_active ? "Deactivate program" : "Activate program"}
-                                                    </DropdownMenuItem>
-                                                </DropdownMenuContent>
-                                            </DropdownMenu>
-                                        </div>
-                                    </article>
-                                ))
+                        <div className="overflow-hidden">
+                            {table.getRowModel().rows.length > 0 ? (
+                                <Table>
+                                    <TableHeader>
+                                        {table.getHeaderGroups().map((headerGroup) => (
+                                            <TableRow key={headerGroup.id}>
+                                                {headerGroup.headers.map((header) => (
+                                                    <TableHead
+                                                        key={header.id}
+                                                        className="text-muted-foreground px-4 text-[10px] font-semibold tracking-[0.13em] uppercase"
+                                                    >
+                                                        {header.isPlaceholder
+                                                            ? null
+                                                            : flexRender(header.column.columnDef.header, header.getContext())}
+                                                    </TableHead>
+                                                ))}
+                                            </TableRow>
+                                        ))}
+                                    </TableHeader>
+                                    <TableBody>
+                                        {table.getRowModel().rows.map((row) => (
+                                            <TableRow key={row.id} data-state={row.getIsSelected() ? "selected" : undefined}>
+                                                {row.getVisibleCells().map((cell) => (
+                                                    <TableCell key={cell.id} className="px-4 py-4">
+                                                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                                    </TableCell>
+                                                ))}
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
                             ) : (
                                 <div className="flex flex-col items-center justify-center px-6 py-20 text-center">
                                     <div className="bg-muted text-muted-foreground flex size-12 items-center justify-center rounded-2xl">
                                         <Search className="size-5" />
                                     </div>
                                     <h3 className="mt-4 text-sm font-semibold">No programs match these filters</h3>
-                                    <p className="text-muted-foreground mt-1 max-w-sm text-sm">
-                                        Try a different search or clear the filters to return to the full catalog.
-                                    </p>
-                                    <Button variant="outline" size="sm" className="mt-5 rounded-full" onClick={clearFilters}>
+                                    <p className="text-muted-foreground mt-1 max-w-sm text-sm">Try another search or reset the catalog view.</p>
+                                    <Button variant="outline" size="sm" className="mt-5 rounded-lg" onClick={clearFilters}>
                                         Reset catalog view
                                     </Button>
                                 </div>
                             )}
                         </div>
+
+                        <div className="border-border/70 flex flex-col gap-3 border-t px-5 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                            <p className="text-muted-foreground text-xs">
+                                Page {table.getState().pagination.pageIndex + 1} of {Math.max(table.getPageCount(), 1)}
+                            </p>
+                            <div className="flex items-center gap-2">
+                                <Select
+                                    value={String(table.getState().pagination.pageSize)}
+                                    onValueChange={(value) => table.setPageSize(Number(value))}
+                                >
+                                    <SelectTrigger className="h-9 w-[115px] rounded-lg text-xs">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="10">10 / page</SelectItem>
+                                        <SelectItem value="25">25 / page</SelectItem>
+                                        <SelectItem value="50">50 / page</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="icon"
+                                    className="size-9 rounded-lg"
+                                    disabled={!table.getCanPreviousPage()}
+                                    onClick={() => table.previousPage()}
+                                    aria-label="Previous page"
+                                >
+                                    <ChevronLeft className="size-4" />
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="icon"
+                                    className="size-9 rounded-lg"
+                                    disabled={!table.getCanNextPage()}
+                                    onClick={() => table.nextPage()}
+                                    aria-label="Next page"
+                                >
+                                    <ChevronRight className="size-4" />
+                                </Button>
+                            </div>
+                        </div>
                     </section>
 
                     <aside className="grid gap-4">
-                        <Card className="border-border/70 bg-card/80 rounded-[24px] shadow-sm backdrop-blur-xl">
-                            <CardHeader className="gap-1 p-5">
+                        <section
+                            className="border-border/80 bg-card overflow-hidden rounded-2xl border shadow-sm"
+                            aria-labelledby="curriculum-versions-heading"
+                        >
+                            <div className="border-border/70 border-b p-5">
                                 <div className="flex items-center justify-between gap-3">
-                                    <CardTitle className="text-base tracking-[-0.015em]">Curriculum versions</CardTitle>
+                                    <h2 id="curriculum-versions-heading" className="text-base font-semibold tracking-[-0.015em]">
+                                        Curriculum versions
+                                    </h2>
                                     <Clock3 className="text-muted-foreground size-4" />
                                 </div>
-                                <CardDescription>Where your subject structures are concentrated.</CardDescription>
-                            </CardHeader>
-                            <CardContent className="grid gap-2 p-5 pt-0">
+                                <p className="text-muted-foreground mt-1 text-sm">Select a year to narrow the catalog.</p>
+                            </div>
+                            <div className="grid gap-2 p-4">
                                 {versions.length > 0 ? (
                                     versions.slice(0, 5).map((version) => (
                                         <button
@@ -760,8 +1253,8 @@ export default function CurriculumPrograms({
                                             type="button"
                                             aria-pressed={activeYear === version.curriculum_year}
                                             onClick={() => setActiveYear(activeYear === version.curriculum_year ? "all" : version.curriculum_year)}
-                                            className={`border-border/60 bg-background/50 hover:bg-muted/50 w-full rounded-2xl border p-3.5 text-left transition-colors ${
-                                                activeYear === version.curriculum_year ? "ring-2 ring-sky-400/40" : ""
+                                            className={`border-border/60 bg-background hover:bg-muted/50 focus-visible:ring-ring/60 w-full cursor-pointer rounded-xl border p-3.5 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none ${
+                                                activeYear === version.curriculum_year ? "border-primary/40 bg-primary/5" : ""
                                             }`}
                                         >
                                             <div className="flex items-center justify-between gap-3">
@@ -772,34 +1265,36 @@ export default function CurriculumPrograms({
                                             </div>
                                             <div className="bg-muted mt-2 h-1.5 overflow-hidden rounded-full">
                                                 <div
-                                                    className="h-full rounded-full bg-sky-400 transition-[width] duration-500 ease-out"
+                                                    className="h-full rounded-full bg-sky-600 transition-[width] duration-500 ease-out dark:bg-sky-400"
                                                     style={{
                                                         width: `${version.program_count ? (version.active_program_count / version.program_count) * 100 : 0}%`,
                                                     }}
                                                 />
                                             </div>
-                                            <p className="text-muted-foreground mt-2 text-xs">{version.subject_count} subjects across this version</p>
+                                            <p className="text-muted-foreground mt-2 text-xs">{version.subject_count} subjects mapped</p>
                                         </button>
                                     ))
                                 ) : (
-                                    <p className="bg-muted/50 text-muted-foreground rounded-2xl p-4 text-sm">No curriculum versions yet.</p>
+                                    <p className="bg-muted/50 text-muted-foreground rounded-xl p-4 text-sm">No curriculum versions yet.</p>
                                 )}
-                            </CardContent>
-                        </Card>
+                            </div>
+                        </section>
 
-                        <Card className="border-border/70 bg-card/80 rounded-[24px] shadow-sm backdrop-blur-xl">
-                            <CardHeader className="gap-1 p-5">
-                                <CardTitle className="text-base tracking-[-0.015em]">A reliable workflow</CardTitle>
-                                <CardDescription>Keep every program moving through the same three stages.</CardDescription>
-                            </CardHeader>
-                            <CardContent className="grid gap-4 p-5 pt-0">
+                        <section className="border-border/80 bg-card overflow-hidden rounded-2xl border shadow-sm" aria-labelledby="workflow-heading">
+                            <div className="border-border/70 border-b p-5">
+                                <h2 id="workflow-heading" className="text-base font-semibold tracking-[-0.015em]">
+                                    Curriculum workflow
+                                </h2>
+                                <p className="text-muted-foreground mt-1 text-sm">A simple path from definition to enrollment.</p>
+                            </div>
+                            <div className="grid gap-4 p-5">
                                 {[
                                     ["01", "Define", "Name the pathway and align it to a framework."],
                                     ["02", "Build", "Add subjects, units, sequencing, and prerequisites."],
-                                    ["03", "Activate", "Publish only after the curriculum is ready for enrollment."],
+                                    ["03", "Activate", "Publish only when the curriculum is ready."],
                                 ].map(([number, title, description]) => (
                                     <div key={number} className="flex gap-3">
-                                        <span className="bg-muted text-muted-foreground flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold">
+                                        <span className="bg-primary/8 text-primary flex size-7 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold">
                                             {number}
                                         </span>
                                         <div className="space-y-0.5">
@@ -809,15 +1304,13 @@ export default function CurriculumPrograms({
                                     </div>
                                 ))}
                                 {shs_pathways.length > 0 && (
-                                    <div className="mt-1 flex items-start gap-2 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-3 text-xs leading-5 text-amber-800 dark:text-amber-200">
+                                    <div className="flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-xs leading-5 text-amber-800 dark:text-amber-200">
                                         <BookOpen className="mt-0.5 size-3.5 shrink-0" />
-                                        <span>
-                                            {shs_pathways.length} Senior High pathway records continue to use their track and strand structure.
-                                        </span>
+                                        <span>{shs_pathways.length} Senior High pathway records retain their track and strand structure.</span>
                                     </div>
                                 )}
-                            </CardContent>
-                        </Card>
+                            </div>
+                        </section>
                     </aside>
                 </div>
             </div>
@@ -1234,6 +1727,266 @@ export default function CurriculumPrograms({
                     </form>
                 </DialogContent>
             </Dialog>
+
+            <Dialog
+                open={editingProgram !== null}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setEditingProgram(null);
+                        editForm.clearErrors();
+                    }
+                }}
+            >
+                <DialogContent className="border-border/80 bg-card/95 max-h-[min(720px,calc(100vh-2rem))] overflow-y-auto rounded-[26px] p-0 shadow-2xl backdrop-blur-2xl sm:max-w-2xl">
+                    <div className="border-border/70 bg-muted/25 border-b px-6 py-6 sm:px-8">
+                        <DialogHeader className="gap-3 pr-8 text-left">
+                            <div className="bg-primary/10 text-primary flex size-11 items-center justify-center rounded-2xl">
+                                <Pencil className="size-5" />
+                            </div>
+                            <div className="space-y-1">
+                                <DialogTitle className="text-2xl tracking-[-0.03em]">Quick edit program</DialogTitle>
+                                <DialogDescription>
+                                    Update the catalog identity here. Use Manage for subjects, prerequisites, fees, and complete pathway metadata.
+                                </DialogDescription>
+                            </div>
+                        </DialogHeader>
+                    </div>
+
+                    <form className="grid gap-5 px-6 py-6 sm:px-8" onSubmit={handleEditProgram}>
+                        <div className="grid gap-4 md:grid-cols-[0.65fr_1.35fr]">
+                            <div className="grid gap-2">
+                                <Label htmlFor="edit-code">Program code</Label>
+                                <Input
+                                    id="edit-code"
+                                    className="rounded-xl uppercase"
+                                    value={editForm.data.code}
+                                    onChange={(event) => editForm.setData("code", event.target.value.toUpperCase())}
+                                />
+                                <FieldError message={editForm.errors.code} />
+                            </div>
+                            <div className="grid gap-2">
+                                <Label htmlFor="edit-title">Program title</Label>
+                                <Input
+                                    id="edit-title"
+                                    className="rounded-xl"
+                                    value={editForm.data.title}
+                                    onChange={(event) => editForm.setData("title", event.target.value)}
+                                />
+                                <FieldError message={editForm.errors.title} />
+                            </div>
+                        </div>
+
+                        {editForm.data.curriculum_kind === "program" && (
+                            <div className="grid gap-4 md:grid-cols-2">
+                                <div className="grid gap-2">
+                                    <Label htmlFor="edit-department">Department</Label>
+                                    <Select value={editForm.data.department_id} onValueChange={(value) => editForm.setData("department_id", value)}>
+                                        <SelectTrigger id="edit-department" className="rounded-xl">
+                                            <SelectValue placeholder="Select department" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {departments.map((department) => (
+                                                <SelectItem key={department.id} value={String(department.id)}>
+                                                    {department.code} · {department.name}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <FieldError message={editForm.errors.department_id} />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="edit-course-type">Program type</Label>
+                                    <Select value={editForm.data.course_type_id} onValueChange={(value) => editForm.setData("course_type_id", value)}>
+                                        <SelectTrigger id="edit-course-type" className="rounded-xl">
+                                            <SelectValue placeholder="Select program type" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {course_types.map((type) => (
+                                                <SelectItem key={type.id} value={String(type.id)}>
+                                                    {type.name}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <FieldError message={editForm.errors.course_type_id} />
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                            <div className="grid gap-2">
+                                <Label htmlFor="edit-year">Curriculum year</Label>
+                                <Input
+                                    id="edit-year"
+                                    className="rounded-xl"
+                                    value={editForm.data.curriculum_year}
+                                    onChange={(event) => editForm.setData("curriculum_year", event.target.value)}
+                                />
+                                <FieldError message={editForm.errors.curriculum_year} />
+                            </div>
+                            <div className="grid gap-2">
+                                <Label>Curriculum profile</Label>
+                                <div className="bg-muted/40 flex min-h-10 items-center rounded-xl border px-3">
+                                    <Badge variant="secondary" className="rounded-full">
+                                        {editingProgram ? kindLabel(editingProgram) : "Curriculum profile"}
+                                    </Badge>
+                                </div>
+                            </div>
+                        </div>
+
+                        {editingProgram?.curriculum_kind === "tesda_qualification" && (
+                            <div className="grid gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/[0.04] p-4 text-sm">
+                                <div className="flex items-start gap-2">
+                                    <GraduationCap className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-300" />
+                                    <p className="text-muted-foreground leading-5">
+                                        This is a technical qualification. Its hours, bundled qualifications, and advanced topics remain unchanged in
+                                        quick edit; open Manage for full metadata editing.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
+                        <DialogFooter className="border-border/70 border-t pt-5 sm:justify-between">
+                            <Button type="button" variant="ghost" className="rounded-full" onClick={() => setEditingProgram(null)}>
+                                Cancel
+                            </Button>
+                            <Button type="submit" className="rounded-full px-4" disabled={editForm.processing}>
+                                {editForm.processing ? "Saving…" : "Save changes"} <Check className="size-4" />
+                            </Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
+
+            <AlertDialog
+                open={isDeleteOpen}
+                onOpenChange={(open) => {
+                    setIsDeleteOpen(open);
+                    if (!open && !deletionSubmitting) {
+                        setDeletionImpact(null);
+                        setDeletionError(null);
+                        setDeletionConfirmation("");
+                    }
+                }}
+            >
+                <AlertDialogContent className="border-border/80 max-h-[min(760px,calc(100vh-2rem))] overflow-y-auto rounded-[26px] sm:max-w-2xl">
+                    <AlertDialogHeader className="text-left">
+                        <div
+                            className={`flex size-11 items-center justify-center rounded-2xl ${deletionImpact?.can_delete ? "bg-destructive/10 text-destructive" : "bg-amber-500/10 text-amber-700 dark:text-amber-300"}`}
+                        >
+                            {deletionImpact?.can_delete ? <Trash2 className="size-5" /> : <ShieldAlert className="size-5" />}
+                        </div>
+                        <AlertDialogTitle className="text-2xl tracking-[-0.03em]">Review deletion impact</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            The server analyzes related records before every deletion. This preview is informational; the final check runs again when
+                            you confirm.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+
+                    {deletionLoading && <div className="bg-muted/40 text-muted-foreground rounded-2xl p-5 text-sm">Analyzing related records…</div>}
+
+                    {deletionError && (
+                        <div role="alert" className="border-destructive/30 bg-destructive/5 text-destructive rounded-2xl border p-4 text-sm">
+                            {deletionError}
+                        </div>
+                    )}
+
+                    {deletionImpact && !deletionLoading && (
+                        <div className="grid gap-4">
+                            <div
+                                className={`rounded-2xl border p-4 ${deletionImpact.can_delete ? "border-destructive/20 bg-destructive/[0.04]" : "border-amber-500/25 bg-amber-500/[0.05]"}`}
+                            >
+                                <div className="flex items-start gap-3">
+                                    {deletionImpact.can_delete ? (
+                                        <ShieldAlert className="text-destructive mt-0.5 size-5 shrink-0" />
+                                    ) : (
+                                        <ShieldCheck className="mt-0.5 size-5 shrink-0 text-amber-700 dark:text-amber-300" />
+                                    )}
+                                    <div className="space-y-1">
+                                        <p className="font-semibold">
+                                            {deletionImpact.can_delete
+                                                ? "Deletion is allowed after confirmation"
+                                                : "Deletion blocked by related records"}
+                                        </p>
+                                        <p className="text-muted-foreground text-sm leading-5">
+                                            {deletionImpact.programs.length === 1
+                                                ? `${deletionImpact.programs[0].code} · ${deletionImpact.programs[0].title}`
+                                                : `${deletionImpact.programs.length} programs selected. Review the combined impact below.`}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="grid gap-2">
+                                {deletionRecords.map((record) => {
+                                    const isSafe = record.count === 0;
+                                    const isBlocked = record.blocks && record.count > 0;
+                                    const isDestructive = record.severity === "destructive" && record.count > 0;
+
+                                    return (
+                                        <div key={record.key} className="border-border/70 bg-muted/20 flex items-start gap-3 rounded-xl border p-3">
+                                            <div
+                                                className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg ${isSafe ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : isBlocked ? "bg-amber-500/10 text-amber-700 dark:text-amber-300" : "bg-destructive/10 text-destructive"}`}
+                                            >
+                                                {isSafe ? <ShieldCheck className="size-4" /> : <ShieldAlert className="size-4" />}
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                                    <p className="text-sm font-semibold">{record.label}</p>
+                                                    <Badge variant="outline" className="rounded-full">
+                                                        {record.count}
+                                                    </Badge>
+                                                </div>
+                                                <p className="text-muted-foreground mt-1 text-xs leading-5">{record.effect}</p>
+                                                {isDestructive && <p className="text-destructive mt-1 text-xs font-semibold">Permanent deletion</p>}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            {deletionImpact.can_delete && (
+                                <div className="grid gap-2">
+                                    <Label htmlFor="delete-confirmation">Type {deletionConfirmationTarget} to confirm</Label>
+                                    <Input
+                                        id="delete-confirmation"
+                                        value={deletionConfirmation}
+                                        onChange={(event) => setDeletionConfirmation(event.target.value)}
+                                        placeholder={deletionConfirmationTarget}
+                                        autoComplete="off"
+                                        className="rounded-xl font-mono uppercase"
+                                        aria-describedby="delete-confirmation-help"
+                                    />
+                                    <p id="delete-confirmation-help" className="text-muted-foreground text-xs leading-5">
+                                        This action is permanent. Subjects will be removed with the program; nullable policy and research links will
+                                        be cleared.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={deletionSubmitting}>Cancel</AlertDialogCancel>
+                        {deletionImpact?.can_delete && (
+                            <AlertDialogAction
+                                disabled={
+                                    deletionLoading ||
+                                    deletionSubmitting ||
+                                    deletionConfirmation.trim().toUpperCase() !== deletionConfirmationTarget.toUpperCase()
+                                }
+                                onClick={(event) => {
+                                    event.preventDefault();
+                                    confirmDeletion();
+                                }}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                                {deletionSubmitting ? "Deleting…" : "Delete permanently"}
+                            </AlertDialogAction>
+                        )}
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </AdminLayout>
     );
 }

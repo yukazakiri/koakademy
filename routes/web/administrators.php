@@ -332,9 +332,12 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/curriculum', [AdministratorCurriculumManagementController::class, 'index'])->name('curriculum.index');
         Route::get('/curriculum/programs', [AdministratorCurriculumManagementController::class, 'programs'])->name('curriculum.programs.index');
         Route::post('/curriculum/programs', [AdministratorCurriculumManagementController::class, 'storeProgram'])->name('curriculum.programs.store');
+        Route::get('/curriculum/programs/deletion-impact', [AdministratorCurriculumManagementController::class, 'programDeletionImpact'])->name('curriculum.programs.deletion-impact');
+        Route::delete('/curriculum/programs', [AdministratorCurriculumManagementController::class, 'destroyPrograms'])->name('curriculum.programs.destroy-many');
         Route::get('/curriculum/programs/{course}', [AdministratorCurriculumManagementController::class, 'showProgram'])->name('curriculum.programs.show');
         Route::put('/curriculum/programs/{course}', [AdministratorCurriculumManagementController::class, 'updateProgram'])->name('curriculum.programs.update');
         Route::put('/curriculum/programs/{course}/toggle-status', [AdministratorCurriculumManagementController::class, 'toggleProgramStatus'])->name('curriculum.programs.toggle-status');
+        Route::delete('/curriculum/programs/{course}', [AdministratorCurriculumManagementController::class, 'destroyProgram'])->name('curriculum.programs.destroy');
         Route::post('/curriculum/programs/{course}/subjects', [AdministratorCurriculumManagementController::class, 'storeSubject'])->name('curriculum.programs.subjects.store');
         Route::put('/curriculum/programs/{course}/subjects/{subject}', [AdministratorCurriculumManagementController::class, 'updateSubject'])->name('curriculum.programs.subjects.update');
         Route::delete('/curriculum/programs/{course}/subjects/{subject}', [AdministratorCurriculumManagementController::class, 'destroySubject'])->name('curriculum.programs.subjects.destroy');

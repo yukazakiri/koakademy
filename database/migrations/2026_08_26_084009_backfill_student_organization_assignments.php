@@ -35,42 +35,44 @@ return new class extends Migration
             ->map(fn ($rows) => $rows->first());
 
         foreach ($assignments as $assignment) {
-            $updated = DB::table('users')
-                ->where('id', $assignment->user_id)
-                ->whereNull('school_id')
-                ->update(['school_id' => $assignment->school_id]);
+            DB::transaction(function () use ($assignment): void {
+                $updated = DB::table('users')
+                    ->where('id', $assignment->user_id)
+                    ->whereNull('school_id')
+                    ->update(['school_id' => $assignment->school_id]);
 
-            if ($updated !== 1) {
-                continue;
-            }
+                if ($updated !== 1) {
+                    return;
+                }
 
-            DB::table('organization_user')
-                ->where('user_id', $assignment->user_id)
-                ->where('school_id', '!=', $assignment->school_id)
-                ->update(['is_primary' => false]);
+                DB::table('organization_user')
+                    ->where('user_id', $assignment->user_id)
+                    ->where('school_id', '!=', $assignment->school_id)
+                    ->update(['is_primary' => false]);
 
-            $membership = DB::table('organization_user')
-                ->where('user_id', $assignment->user_id)
-                ->where('school_id', $assignment->school_id);
+                $membership = DB::table('organization_user')
+                    ->where('user_id', $assignment->user_id)
+                    ->where('school_id', $assignment->school_id);
 
-            if ($membership->exists()) {
-                $membership->update([
-                    'role' => $assignment->role,
-                    'is_primary' => true,
-                    'is_active' => true,
-                    'updated_at' => now(),
-                ]);
-            } else {
-                DB::table('organization_user')->insert([
-                    'user_id' => $assignment->user_id,
-                    'school_id' => $assignment->school_id,
-                    'role' => $assignment->role,
-                    'is_primary' => true,
-                    'is_active' => true,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-            }
+                if ($membership->exists()) {
+                    $membership->update([
+                        'role' => $assignment->role,
+                        'is_primary' => true,
+                        'is_active' => true,
+                        'updated_at' => now(),
+                    ]);
+                } else {
+                    DB::table('organization_user')->insert([
+                        'user_id' => $assignment->user_id,
+                        'school_id' => $assignment->school_id,
+                        'role' => $assignment->role,
+                        'is_primary' => true,
+                        'is_active' => true,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+            });
         }
     }
 

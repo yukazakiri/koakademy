@@ -11,7 +11,9 @@ use App\Models\School;
 use App\Models\Student;
 use App\Models\User;
 use App\Services\TenantContext;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Spatie\Permission\Models\Role;
 
@@ -409,6 +411,56 @@ it('backfills organization assignments for previously linked student users', fun
         'user_id' => $user->id,
         'school_id' => $school->id,
         'role' => 'student',
+        'is_primary' => true,
+        'is_active' => true,
+    ]);
+});
+
+it('rolls back a legacy student assignment when membership creation fails', function () {
+    $school = School::factory()->create();
+    $user = User::factory()->create([
+        'email' => 'retry.student@test.com',
+        'role' => UserRole::Student,
+        'school_id' => null,
+    ]);
+    Student::factory()->create([
+        'institution_id' => $school->id,
+        'school_id' => $school->id,
+        'email' => 'retry.student@test.com',
+        'student_id' => 1010101,
+        'student_type' => StudentType::College,
+        'course_id' => $this->course->id,
+        'user_id' => $user->id,
+    ]);
+
+    $failMembershipInsert = true;
+    DB::listen(function (QueryExecuted $query) use (&$failMembershipInsert): void {
+        if ($failMembershipInsert
+            && str_contains(mb_strtolower($query->sql), 'insert into')
+            && str_contains(mb_strtolower($query->sql), 'organization_user')) {
+            $failMembershipInsert = false;
+
+            throw new RuntimeException('Forced membership insert failure.');
+        }
+    });
+
+    $migration = require database_path('migrations/2026_08_26_084009_backfill_student_organization_assignments.php');
+
+    expect(fn () => $migration->up())
+        ->toThrow(RuntimeException::class, 'Forced membership insert failure.');
+
+    expect($user->refresh()->school_id)->toBeNull();
+    $this->assertDatabaseMissing('organization_user', [
+        'user_id' => $user->id,
+        'school_id' => $school->id,
+    ]);
+
+    $migration->up();
+
+    expect($user->refresh()->school_id)->toBe($school->id);
+    $this->assertDatabaseHas('organization_user', [
+        'user_id' => $user->id,
+        'school_id' => $school->id,
         'is_primary' => true,
         'is_active' => true,
     ]);

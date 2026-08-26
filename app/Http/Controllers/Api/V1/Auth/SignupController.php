@@ -38,6 +38,10 @@ final class SignupController extends Controller
     public function emailLookup(Request $request): JsonResponse
     {
         try {
+            $request->merge([
+                'email' => $request->string('email')->trim()->lower()->toString(),
+            ]);
+
             $validator = Validator::make($request->all(), [
                 'email' => 'required|email',
             ]);
@@ -51,7 +55,7 @@ final class SignupController extends Controller
 
             $email = $request->string('email')->trim()->lower()->toString();
 
-            $existingUser = User::where('email', $email)->first();
+            $existingUser = User::whereRaw('LOWER(email) = ?', [$email])->first();
             if ($existingUser) {
                 return response()->json([
                     'found' => false,
@@ -60,7 +64,7 @@ final class SignupController extends Controller
                 ]);
             }
 
-            $faculty = Faculty::where('email', $email)->first();
+            $faculty = Faculty::whereRaw('LOWER(email) = ?', [$email])->first();
 
             if ($faculty) {
                 return response()->json([
@@ -119,6 +123,10 @@ final class SignupController extends Controller
      */
     public function sendOtp(Request $request): JsonResponse
     {
+        $request->merge([
+            'email' => $request->string('email')->trim()->lower()->toString(),
+        ]);
+
         $validator = Validator::make($request->all(), [
             'email' => 'required|email|unique:users',
             'user_type' => 'required|in:student,faculty',
@@ -167,6 +175,10 @@ final class SignupController extends Controller
      */
     public function signup(Request $request): JsonResponse
     {
+        $request->merge([
+            'email' => $request->string('email')->trim()->lower()->toString(),
+        ]);
+
         $userType = $request->input('user_type');
 
         if ($userType === 'student') {
@@ -326,7 +338,7 @@ final class SignupController extends Controller
 
         if ($request->filled('faculty_id_number')) {
             $faculty = Faculty::where('faculty_id_number', $request->faculty_id_number)
-                ->where('email', $email)
+                ->whereRaw('LOWER(email) = ?', [$email])
                 ->first();
 
             if (! $faculty) {
@@ -416,7 +428,7 @@ final class SignupController extends Controller
         if ($request->filled('faculty_id_number')) {
             $email = $request->string('email')->trim()->lower()->toString();
             $faculty = Faculty::where('faculty_id_number', $request->faculty_id_number)
-                ->where('email', $email)
+                ->whereRaw('LOWER(email) = ?', [$email])
                 ->first();
 
             if (! $faculty) {

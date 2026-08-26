@@ -47,7 +47,7 @@ it('can lookup existing student email', function () {
 
 it('can lookup existing faculty email', function () {
     $faculty = Faculty::factory()->create([
-        'email' => 'faculty@test.com',
+        'email' => 'Faculty@Test.com',
     ]);
 
     $response = $this->postJson(route('signup.email-lookup'), [
@@ -76,7 +76,7 @@ it('returns error for unknown email', function () {
 
 it('returns error for existing user account', function () {
     User::factory()->create([
-        'email' => 'existing@test.com',
+        'email' => 'Existing@Test.com',
     ]);
 
     $response = $this->postJson(route('signup.email-lookup'), [
@@ -88,6 +88,109 @@ it('returns error for existing user account', function () {
             'found' => false,
             'account_exists' => true,
         ]);
+});
+
+it('handles mixed-case records in the API signup lookup', function () {
+    User::factory()->create(['email' => 'Api.Existing@Test.com']);
+    $faculty = Faculty::factory()->create(['email' => 'Api.Faculty@Test.com']);
+
+    $this->postJson('/api/v1/auth/signup/email-lookup', [
+        'email' => 'api.existing@test.com',
+    ])->assertOk()->assertJson([
+        'found' => false,
+        'account_exists' => true,
+    ]);
+
+    $this->postJson('/api/v1/auth/signup/email-lookup', [
+        'email' => 'api.faculty@test.com',
+    ])->assertOk()->assertJson([
+        'found' => true,
+        'type' => 'faculty',
+        'record_id' => $faculty->id,
+    ]);
+});
+
+it('validates signup uniqueness using the normalized email', function () {
+    User::factory()->create(['email' => 'existing.student@test.com']);
+
+    $payload = [
+        'name' => 'Duplicate Student',
+        'email' => 'Existing.Student@Test.com',
+        'password' => 'password',
+        'password_confirmation' => 'password',
+        'user_type' => 'student',
+        'student_type' => 'college',
+        'student_id' => '1234567',
+        'otp' => 'ABC123',
+    ];
+
+    $this->post(route('signup'), $payload)
+        ->assertSessionHasErrors(['email']);
+
+    $this->postJson('/api/v1/auth/signup', $payload)
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['email']);
+});
+
+it('verifies mixed-case faculty records before sending signup otp', function () {
+    Mail::fake();
+
+    $faculty = Faculty::factory()->create([
+        'email' => 'Otp.Faculty@Test.com',
+        'faculty_id_number' => 'FAC-CASE-1',
+    ]);
+    $payload = [
+        'email' => 'otp.faculty@test.com',
+        'user_type' => 'faculty',
+        'role' => 'instructor',
+        'faculty_id_number' => 'FAC-CASE-1',
+    ];
+
+    $this->postJson(route('signup.send-otp'), $payload)->assertOk();
+    $this->postJson('/api/v1/auth/signup/send-otp', $payload)->assertOk();
+
+    Mail::assertSent(SignupOtpMail::class, 2);
+    Mail::assertSent(SignupOtpMail::class, fn (SignupOtpMail $mail): bool => $mail->hasTo(mb_strtolower($faculty->email)));
+});
+
+it('matches mixed-case faculty records during web and API signup', function () {
+    $webFaculty = Faculty::factory()->create([
+        'email' => 'Web.Faculty@Test.com',
+        'faculty_id_number' => 'FAC-WEB-1',
+    ]);
+    Cache::put('signup_otp_web.faculty@test.com', 'WEBOTP', 600);
+
+    $this->post(route('signup'), [
+        'name' => 'Web Faculty',
+        'email' => 'web.faculty@test.com',
+        'password' => 'password',
+        'password_confirmation' => 'password',
+        'role' => 'instructor',
+        'faculty_id_number' => 'FAC-WEB-1',
+        'otp' => 'WEBOTP',
+    ])->assertRedirect('/faculty/dashboard');
+
+    $webUser = User::query()->where('email', 'web.faculty@test.com')->firstOrFail();
+    expect($webUser->record_id)->toBe((string) $webFaculty->id);
+
+    $apiFaculty = Faculty::factory()->create([
+        'email' => 'Api.Signup.Faculty@Test.com',
+        'faculty_id_number' => 'FAC-API-1',
+    ]);
+    Cache::put('signup_otp_api.signup.faculty@test.com', 'APIOTP', 600);
+
+    $this->postJson('/api/v1/auth/signup', [
+        'name' => 'API Faculty',
+        'email' => 'api.signup.faculty@test.com',
+        'password' => 'password',
+        'password_confirmation' => 'password',
+        'role' => 'instructor',
+        'faculty_id_number' => 'FAC-API-1',
+        'otp' => 'APIOTP',
+    ])->assertCreated();
+
+    $apiUser = User::query()->where('email', 'api.signup.faculty@test.com')->firstOrFail();
+    expect($apiUser->record_id)->toBe((string) $apiFaculty->id);
 });
 
 it('can send otp with valid student credentials', function () {
@@ -392,8 +495,9 @@ it('backfills organization assignments for previously linked student users', fun
         'email' => 'legacy.student@test.com',
         'role' => UserRole::Student,
         'school_id' => null,
+        'record_id' => 'stale-record',
     ]);
-    Student::factory()->create([
+    $student = Student::factory()->create([
         'institution_id' => $school->id,
         'school_id' => $school->id,
         'email' => 'legacy.student@test.com',
@@ -406,11 +510,71 @@ it('backfills organization assignments for previously linked student users', fun
     $migration = require database_path('migrations/2026_08_26_084009_backfill_student_organization_assignments.php');
     $migration->up();
 
-    expect($user->refresh()->school_id)->toBe($school->id);
+    expect($user->refresh()->school_id)->toBe($school->id)
+        ->and((int) $user->record_id)->toBe($student->id);
     $this->assertDatabaseHas('organization_user', [
         'user_id' => $user->id,
         'school_id' => $school->id,
         'role' => 'student',
+        'is_primary' => true,
+        'is_active' => true,
+    ]);
+});
+
+it('does not backfill student users from inactive organizations', function () {
+    $inactiveSchool = School::factory()->inactive()->create();
+    $user = User::factory()->create([
+        'email' => 'inactive.student@test.com',
+        'role' => UserRole::Student,
+        'school_id' => null,
+        'record_id' => null,
+    ]);
+    Student::factory()->create([
+        'institution_id' => $inactiveSchool->id,
+        'school_id' => $inactiveSchool->id,
+        'email' => 'inactive.student@test.com',
+        'student_id' => 2020202,
+        'student_type' => StudentType::College,
+        'course_id' => $this->course->id,
+        'user_id' => $user->id,
+    ]);
+
+    $migration = require database_path('migrations/2026_08_26_084009_backfill_student_organization_assignments.php');
+    $migration->up();
+
+    expect($user->refresh()->school_id)->toBeNull()
+        ->and($user->record_id)->toBeNull();
+    $this->assertDatabaseMissing('organization_user', [
+        'user_id' => $user->id,
+        'school_id' => $inactiveSchool->id,
+    ]);
+});
+
+it('preserves record id when multiple linked students make identity ambiguous', function () {
+    $school = School::factory()->create();
+    $user = User::factory()->create([
+        'email' => 'ambiguous.legacy.student@test.com',
+        'role' => UserRole::Student,
+        'school_id' => null,
+        'record_id' => 'existing-record',
+    ]);
+    Student::factory()->count(2)->create([
+        'institution_id' => $school->id,
+        'school_id' => $school->id,
+        'email' => 'ambiguous.legacy.student@test.com',
+        'student_type' => StudentType::College,
+        'course_id' => $this->course->id,
+        'user_id' => $user->id,
+    ]);
+
+    $migration = require database_path('migrations/2026_08_26_084009_backfill_student_organization_assignments.php');
+    $migration->up();
+
+    expect($user->refresh()->school_id)->toBe($school->id)
+        ->and($user->record_id)->toBe('existing-record');
+    $this->assertDatabaseHas('organization_user', [
+        'user_id' => $user->id,
+        'school_id' => $school->id,
         'is_primary' => true,
         'is_active' => true,
     ]);
@@ -449,7 +613,8 @@ it('rolls back a legacy student assignment when membership creation fails', func
     expect(fn () => $migration->up())
         ->toThrow(RuntimeException::class, 'Forced membership insert failure.');
 
-    expect($user->refresh()->school_id)->toBeNull();
+    expect($user->refresh()->school_id)->toBeNull()
+        ->and($user->record_id)->toBeNull();
     $this->assertDatabaseMissing('organization_user', [
         'user_id' => $user->id,
         'school_id' => $school->id,

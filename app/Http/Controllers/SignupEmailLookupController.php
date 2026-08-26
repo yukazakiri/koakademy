@@ -27,6 +27,10 @@ final class SignupEmailLookupController extends Controller
     public function __invoke(Request $request): JsonResponse
     {
         try {
+            $request->merge([
+                'email' => $request->string('email')->trim()->lower()->toString(),
+            ]);
+
             $validator = Validator::make($request->all(), [
                 'email' => 'required|email',
             ]);
@@ -41,7 +45,7 @@ final class SignupEmailLookupController extends Controller
             $email = $request->string('email')->trim()->lower()->toString();
 
             // Check if user account already exists
-            $existingUser = User::where('email', $email)->first();
+            $existingUser = User::whereRaw('LOWER(email) = ?', [$email])->first();
             if ($existingUser) {
                 return response()->json([
                     'found' => false,
@@ -51,7 +55,7 @@ final class SignupEmailLookupController extends Controller
             }
 
             // Check if email exists in Faculty table
-            $faculty = Faculty::where('email', $email)->first();
+            $faculty = Faculty::whereRaw('LOWER(email) = ?', [$email])->first();
 
             if ($faculty) {
                 return response()->json([

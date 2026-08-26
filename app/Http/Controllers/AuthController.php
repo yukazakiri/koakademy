@@ -145,6 +145,10 @@ final class AuthController extends Controller
 
     public function signup(Request $request)
     {
+        $request->merge([
+            'email' => $request->string('email')->trim()->lower()->toString(),
+        ]);
+
         $userType = $request->input('user_type');
 
         // Different validation based on user type
@@ -303,7 +307,7 @@ final class AuthController extends Controller
         // If faculty_id_number is provided, verify it matches the email
         if ($request->filled('faculty_id_number')) {
             $faculty = Faculty::where('faculty_id_number', $request->faculty_id_number)
-                ->where('email', $email)
+                ->whereRaw('LOWER(email) = ?', [$email])
                 ->first();
 
             if (! $faculty) {

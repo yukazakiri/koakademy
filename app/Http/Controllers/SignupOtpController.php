@@ -24,6 +24,10 @@ final class SignupOtpController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        $request->merge([
+            'email' => $request->string('email')->trim()->lower()->toString(),
+        ]);
+
         $validator = Validator::make($request->all(), [
             'email' => 'required|email|unique:users',
             'user_type' => 'required|in:student,faculty',
@@ -116,7 +120,7 @@ final class SignupOtpController extends Controller
         if ($request->filled('faculty_id_number')) {
             $email = $request->string('email')->trim()->lower()->toString();
             $faculty = Faculty::where('faculty_id_number', $request->faculty_id_number)
-                ->where('email', $email)
+                ->whereRaw('LOWER(email) = ?', [$email])
                 ->first();
 
             if (! $faculty) {

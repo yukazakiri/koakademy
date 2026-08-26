@@ -72,7 +72,7 @@ final class SocialAuthController extends Controller
             }
 
             $user = User::query()
-                ->where('email', $email)
+                ->whereRaw('LOWER(email) = ?', [$email])
                 ->first();
 
             if ($user instanceof User) {

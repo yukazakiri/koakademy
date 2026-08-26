@@ -145,7 +145,7 @@ it('links a google account to an existing user email and syncs the avatar', func
     ]);
 
     $user = User::factory()->create([
-        'email' => 'student@example.com',
+        'email' => 'Student@Example.com',
         'role' => UserRole::Student,
         'avatar_url' => null,
     ]);

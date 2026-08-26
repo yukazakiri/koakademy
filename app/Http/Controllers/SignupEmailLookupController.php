@@ -6,8 +6,8 @@ namespace App\Http\Controllers;
 
 use App\Enums\StudentType;
 use App\Models\Faculty;
-use App\Models\Student;
 use App\Models\User;
+use App\Services\StudentOrganizationAssignmentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -16,6 +16,10 @@ use Throwable;
 
 final class SignupEmailLookupController extends Controller
 {
+    public function __construct(
+        private readonly StudentOrganizationAssignmentService $studentOrganizations,
+    ) {}
+
     /**
      * Check if an email exists in the Student or Faculty tables
      * and return the appropriate user type and details.
@@ -34,7 +38,7 @@ final class SignupEmailLookupController extends Controller
                 ], 422);
             }
 
-            $email = $request->input('email');
+            $email = $request->string('email')->trim()->lower()->toString();
 
             // Check if user account already exists
             $existingUser = User::where('email', $email)->first();
@@ -60,10 +64,17 @@ final class SignupEmailLookupController extends Controller
                 ]);
             }
 
-            // Check if email exists in Student table
-            $student = Student::where('email', $email)->first();
+            $students = $this->studentOrganizations->candidatesForEmail($email);
+            $student = $students->first();
 
             if ($student) {
+                if ($students->pluck('student_type')->unique()->count() > 1) {
+                    return response()->json([
+                        'found' => false,
+                        'message' => 'This email matches multiple student types. Please contact your school administrator.',
+                    ]);
+                }
+
                 $studentType = $student->student_type;
                 $isShs = $studentType === StudentType::SeniorHighSchool;
 
@@ -77,7 +88,7 @@ final class SignupEmailLookupController extends Controller
                     // 'lrn' => $student->lrn, // Removed for security/verification
                     'course' => $student->Course?->name ?? null,
                     'academic_year' => $student->academic_year,
-                    'record_id' => $student->id,
+                    'record_id' => $students->count() === 1 ? $student->id : null,
                 ]);
             }
 

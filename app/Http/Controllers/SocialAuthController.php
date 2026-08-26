@@ -8,6 +8,7 @@ use App\Enums\UserRole;
 use App\Models\ConnectedAccount;
 use App\Models\User;
 use App\Services\SocialiteProviderService;
+use App\Services\StudentOrganizationAssignmentService;
 use Exception;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -19,7 +20,8 @@ use Laravel\Socialite\Facades\Socialite;
 final class SocialAuthController extends Controller
 {
     public function __construct(
-        private readonly SocialiteProviderService $socialiteProviders
+        private readonly SocialiteProviderService $socialiteProviders,
+        private readonly StudentOrganizationAssignmentService $studentOrganizations,
     ) {}
 
     public function redirect(string $provider): RedirectResponse
@@ -43,6 +45,8 @@ final class SocialAuthController extends Controller
                 ]);
             }
 
+            $email = mb_strtolower(mb_trim($email));
+
             $connectedAccount = ConnectedAccount::query()
                 ->where('provider', $provider)
                 ->where('provider_id', $socialUser->getId())
@@ -61,6 +65,7 @@ final class SocialAuthController extends Controller
                 if ($provider === 'google') {
                     $this->syncAvatar($user, $socialUser);
                 }
+                $this->studentOrganizations->reconcileExistingStudent($user);
                 $this->login($request, $user);
 
                 return redirect()->intended($this->redirectForUser($user));
@@ -73,6 +78,7 @@ final class SocialAuthController extends Controller
             if ($user instanceof User) {
                 $this->storeConnectedAccount($user, $provider, $socialUser);
                 $this->syncAvatar($user, $socialUser);
+                $this->studentOrganizations->reconcileExistingStudent($user);
                 $this->login($request, $user);
 
                 return redirect()

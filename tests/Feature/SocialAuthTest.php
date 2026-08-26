@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Enums\UserRole;
 use App\Models\ConnectedAccount;
 use App\Models\GeneralSetting;
+use App\Models\School;
+use App\Models\Student;
 use App\Models\User;
 use Inertia\Testing\AssertableInertia;
 use Laravel\Socialite\Facades\Socialite;
@@ -161,6 +163,77 @@ it('links a google account to an existing user email and syncs the avatar', func
         'provider_id' => 'google-123',
         'email' => 'student@example.com',
     ]);
+});
+
+it('repairs a linked student organization before social login', function (): void {
+    enableSocialProvider();
+    fakeGoogleUser(['email' => 'linked.student@example.com']);
+
+    $school = School::factory()->create();
+    $user = User::factory()->create([
+        'email' => 'linked.student@example.com',
+        'role' => UserRole::Student,
+        'school_id' => null,
+    ]);
+    $student = Student::factory()->create([
+        'institution_id' => $school->id,
+        'school_id' => $school->id,
+        'email' => 'linked.student@example.com',
+        'student_id' => 9876543,
+        'user_id' => $user->id,
+    ]);
+    $user->forceFill(['record_id' => $student->id])->save();
+
+    ConnectedAccount::query()->create([
+        'user_id' => $user->id,
+        'provider' => 'google',
+        'provider_id' => 'google-123',
+        'email' => 'linked.student@example.com',
+        'token' => 'old-token',
+    ]);
+
+    $this->get(portalUrlForAdministrators('/auth/google/callback'))
+        ->assertRedirect('/student/dashboard');
+
+    expect($user->refresh()->school_id)->toBe($school->id);
+    $this->assertDatabaseHas('organization_user', [
+        'user_id' => $user->id,
+        'school_id' => $school->id,
+        'is_primary' => true,
+        'is_active' => true,
+    ]);
+});
+
+it('does not infer a student organization from social email alone', function (): void {
+    enableSocialProvider();
+    fakeGoogleUser(['email' => 'ambiguous.student@example.com']);
+
+    $firstSchool = School::factory()->create();
+    $secondSchool = School::factory()->create();
+    Student::factory()->create([
+        'institution_id' => $firstSchool->id,
+        'school_id' => $firstSchool->id,
+        'email' => 'ambiguous.student@example.com',
+        'student_id' => 4444444,
+    ]);
+    Student::factory()->create([
+        'institution_id' => $secondSchool->id,
+        'school_id' => $secondSchool->id,
+        'email' => 'ambiguous.student@example.com',
+        'student_id' => 5555555,
+    ]);
+    $user = User::factory()->create([
+        'email' => 'ambiguous.student@example.com',
+        'role' => UserRole::Student,
+        'record_id' => null,
+        'school_id' => null,
+    ]);
+
+    $this->get(portalUrlForAdministrators('/auth/google/callback'))
+        ->assertRedirect('/student/dashboard');
+
+    expect($user->refresh()->school_id)->toBeNull();
+    $this->assertDatabaseMissing('organization_user', ['user_id' => $user->id]);
 });
 
 it('redirects unknown google users to signup with prefilled session data', function (): void {

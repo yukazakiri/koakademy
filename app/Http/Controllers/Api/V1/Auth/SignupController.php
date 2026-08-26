@@ -9,12 +9,13 @@ use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Mail\SignupOtpMail;
 use App\Models\Faculty;
-use App\Models\Student;
 use App\Models\User;
+use App\Services\StudentOrganizationAssignmentService;
 use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -26,6 +27,10 @@ use Throwable;
 
 final class SignupController extends Controller
 {
+    public function __construct(
+        private readonly StudentOrganizationAssignmentService $studentOrganizations,
+    ) {}
+
     /**
      * Check if an email exists in the Student or Faculty tables
      * and return the appropriate user type and details.
@@ -44,7 +49,7 @@ final class SignupController extends Controller
                 ], 422);
             }
 
-            $email = $request->input('email');
+            $email = $request->string('email')->trim()->lower()->toString();
 
             $existingUser = User::where('email', $email)->first();
             if ($existingUser) {
@@ -68,9 +73,17 @@ final class SignupController extends Controller
                 ]);
             }
 
-            $student = Student::where('email', $email)->first();
+            $students = $this->studentOrganizations->candidatesForEmail($email);
+            $student = $students->first();
 
             if ($student) {
+                if ($students->pluck('student_type')->unique()->count() > 1) {
+                    return response()->json([
+                        'found' => false,
+                        'message' => 'This email matches multiple student types. Please contact your school administrator.',
+                    ]);
+                }
+
                 $studentType = $student->student_type;
                 $isShs = $studentType === StudentType::SeniorHighSchool;
 
@@ -82,7 +95,7 @@ final class SignupController extends Controller
                     'name' => $student->full_name,
                     'course' => $student->Course?->name ?? null,
                     'academic_year' => $student->academic_year,
-                    'record_id' => $student->id,
+                    'record_id' => $students->count() === 1 ? $student->id : null,
                 ]);
             }
 
@@ -115,7 +128,7 @@ final class SignupController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $email = $request->email;
+        $email = $request->string('email')->trim()->lower()->toString();
         $userType = $request->user_type;
 
         if ($userType === 'student') {
@@ -177,7 +190,7 @@ final class SignupController extends Controller
             'password' => ['required', 'confirmed', Password::defaults()],
             'user_type' => 'required|string|in:student',
             'student_type' => 'required|string|in:college,shs',
-            'record_id' => 'required',
+            'record_id' => 'nullable|integer',
             'otp' => 'required|string',
         ];
 
@@ -196,7 +209,8 @@ final class SignupController extends Controller
             ], 422);
         }
 
-        $otpKey = 'signup_otp_'.$request->email;
+        $email = $request->string('email')->trim()->lower()->toString();
+        $otpKey = 'signup_otp_'.$email;
         $cachedOtp = Cache::get($otpKey);
 
         if (! $cachedOtp || (string) $cachedOtp !== (string) $request->otp) {
@@ -206,52 +220,38 @@ final class SignupController extends Controller
             ], 422);
         }
 
-        $student = Student::find($request->record_id);
+        $role = $isShs ? UserRole::ShsStudent : UserRole::Student;
+        $user = DB::transaction(function () use ($request, $role, $studentType, $isShs, $email): User {
+            $student = $this->studentOrganizations->resolveForSignup(
+                email: $email,
+                studentType: StudentType::from($studentType),
+                identifier: $request->string($isShs ? 'lrn' : 'student_id')->toString(),
+                recordId: $request->input('record_id'),
+                lockForUpdate: true,
+            );
 
-        if (! $student) {
-            return response()->json([
-                'message' => 'Student record not found.',
-                'errors' => ['email' => ['Student record not found.']],
-            ], 422);
-        }
+            $spatieRole = Role::firstOrCreate(
+                ['name' => $role->value, 'guard_name' => 'web'],
+                ['name' => $role->value, 'guard_name' => 'web'],
+            );
 
-        if ($isShs) {
-            if ($student->lrn !== $request->lrn) {
-                return response()->json([
-                    'message' => 'The LRN does not match our records.',
-                    'errors' => ['lrn' => ['The LRN does not match our records for this email address.']],
-                ], 422);
-            }
-        } elseif ((string) $student->student_id !== (string) $request->student_id) {
-            return response()->json([
-                'message' => 'The Student ID does not match our records.',
-                'errors' => ['student_id' => ['The Student ID does not match our records for this email address.']],
-            ], 422);
-        }
+            $user = User::create([
+                'name' => $request->name,
+                'email' => $email,
+                'password' => Hash::make($request->password),
+                'role' => $role,
+                'record_id' => $student->id,
+                'school_id' => $student->school_id,
+                'email_verified_at' => now(),
+            ]);
+
+            $user->assignRole($spatieRole);
+            $this->studentOrganizations->assign($user, $student);
+
+            return $user;
+        });
 
         Cache::forget($otpKey);
-
-        $role = $isShs ? UserRole::ShsStudent : UserRole::Student;
-
-        $spatieRoleName = $role->value;
-        $spatieRole = Role::firstOrCreate(
-            ['name' => $spatieRoleName, 'guard_name' => 'web'],
-            ['name' => $spatieRoleName, 'guard_name' => 'web']
-        );
-
-        $user = User::create([
-            'name' => $request->name,
-            'email' => $request->email,
-            'password' => Hash::make($request->password),
-            'role' => $role,
-            'record_id' => $student->id,
-            'email_verified_at' => now(),
-        ]);
-
-        $user->assignRole($spatieRole);
-
-        $student->user_id = $user->id;
-        $student->save();
 
         $token = $user->createToken('auth_token')->plainTextToken;
 
@@ -292,7 +292,8 @@ final class SignupController extends Controller
             ], 422);
         }
 
-        $otpKey = 'signup_otp_'.$request->email;
+        $email = $request->string('email')->trim()->lower()->toString();
+        $otpKey = 'signup_otp_'.$email;
         $cachedOtp = Cache::get($otpKey);
 
         if (! $cachedOtp || (string) $cachedOtp !== (string) $request->otp) {
@@ -317,7 +318,7 @@ final class SignupController extends Controller
 
         $userData = [
             'name' => $request->name,
-            'email' => $request->email,
+            'email' => $email,
             'password' => Hash::make($request->password),
             'role' => $role,
             'email_verified_at' => now(),
@@ -325,7 +326,7 @@ final class SignupController extends Controller
 
         if ($request->filled('faculty_id_number')) {
             $faculty = Faculty::where('faculty_id_number', $request->faculty_id_number)
-                ->where('email', $request->email)
+                ->where('email', $email)
                 ->first();
 
             if (! $faculty) {
@@ -373,7 +374,7 @@ final class SignupController extends Controller
 
         $rules = [
             'student_type' => 'required|string|in:college,shs',
-            'record_id' => 'required',
+            'record_id' => 'nullable|integer',
         ];
 
         if ($isShs) {
@@ -388,19 +389,12 @@ final class SignupController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $student = Student::find($request->record_id);
-
-        if (! $student) {
-            return response()->json(['errors' => ['email' => ['Student record not found.']]], 422);
-        }
-
-        if ($isShs) {
-            if ($student->lrn !== $request->lrn) {
-                return response()->json(['errors' => ['lrn' => ['The LRN does not match our records for this email address.']]], 422);
-            }
-        } elseif ((string) $student->student_id !== (string) $request->student_id) {
-            return response()->json(['errors' => ['student_id' => ['The Student ID does not match our records for this email address.']]], 422);
-        }
+        $this->studentOrganizations->resolveForSignup(
+            email: $request->string('email')->toString(),
+            studentType: StudentType::from($studentType),
+            identifier: $request->string($isShs ? 'lrn' : 'student_id')->toString(),
+            recordId: $request->input('record_id'),
+        );
 
         return null;
     }
@@ -420,8 +414,9 @@ final class SignupController extends Controller
         }
 
         if ($request->filled('faculty_id_number')) {
+            $email = $request->string('email')->trim()->lower()->toString();
             $faculty = Faculty::where('faculty_id_number', $request->faculty_id_number)
-                ->where('email', $request->email)
+                ->where('email', $email)
                 ->first();
 
             if (! $faculty) {

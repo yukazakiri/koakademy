@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Enums\StudentType;
 use App\Mail\SignupOtpMail;
 use App\Models\Faculty;
-use App\Models\Student;
+use App\Services\StudentOrganizationAssignmentService;
 use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,6 +18,10 @@ use Illuminate\Support\Str;
 
 final class SignupOtpController extends Controller
 {
+    public function __construct(
+        private readonly StudentOrganizationAssignmentService $studentOrganizations,
+    ) {}
+
     public function store(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
@@ -28,7 +33,7 @@ final class SignupOtpController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $email = $request->email;
+        $email = $request->string('email')->trim()->lower()->toString();
         $userType = $request->user_type;
 
         // Perform specific validation based on user type (same as AuthController)
@@ -72,7 +77,7 @@ final class SignupOtpController extends Controller
 
         $rules = [
             'student_type' => 'required|string|in:college,shs',
-            'record_id' => 'required',
+            'record_id' => 'nullable|integer',
         ];
 
         if ($isShs) {
@@ -87,21 +92,12 @@ final class SignupOtpController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $student = Student::find($request->record_id);
-
-        if (! $student) {
-            return response()->json(['errors' => ['email' => 'Student record not found.']], 422);
-        }
-
-        // Verify student ID or LRN matches
-        if ($isShs) {
-            if ($student->lrn !== $request->lrn) {
-                return response()->json(['errors' => ['lrn' => 'The LRN does not match our records for this email address.']], 422);
-            }
-        } elseif ((string) $student->student_id !== (string) $request->student_id) {
-            // Compare as strings to handle potential type mismatches
-            return response()->json(['errors' => ['student_id' => 'The Student ID does not match our records for this email address.']], 422);
-        }
+        $this->studentOrganizations->resolveForSignup(
+            email: $request->string('email')->toString(),
+            studentType: StudentType::from($studentType),
+            identifier: $request->string($isShs ? 'lrn' : 'student_id')->toString(),
+            recordId: $request->input('record_id'),
+        );
 
         return null;
     }
@@ -118,8 +114,9 @@ final class SignupOtpController extends Controller
         }
 
         if ($request->filled('faculty_id_number')) {
+            $email = $request->string('email')->trim()->lower()->toString();
             $faculty = Faculty::where('faculty_id_number', $request->faculty_id_number)
-                ->where('email', $request->email)
+                ->where('email', $email)
                 ->first();
 
             if (! $faculty) {

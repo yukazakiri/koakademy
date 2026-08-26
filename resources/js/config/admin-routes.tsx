@@ -126,7 +126,10 @@ export interface ModuleAdminRoute {
     }[];
 }
 
-const MODULE_REACT_PAGES = import.meta.glob("../../../Modules/**/resources/assets/js/Pages/**/*.tsx");
+const MODULE_REACT_PAGES = {
+    ...import.meta.glob("../../../Modules/**/resources/assets/js/Pages/**/*.tsx"),
+    ...import.meta.glob("../../../vendor/*/*/resources/assets/js/Pages/**/*.tsx"),
+};
 
 /**
  * Route sections for organizing the sidebar

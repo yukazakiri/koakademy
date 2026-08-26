@@ -1,7 +1,7 @@
 import tailwindcss from "@tailwindcss/vite";
 
-import react from "@vitejs/plugin-react";
 import { wayfinder } from "@laravel/vite-plugin-wayfinder";
+import react from "@vitejs/plugin-react";
 import laravel from "laravel-vite-plugin";
 import fs from "node:fs";
 import path from "node:path";
@@ -58,6 +58,7 @@ export default defineConfig({
                     "./Modules/**/app/Filament/**/*.php",
                     "./Modules/**/resources/views/**/*.blade.php",
                     "./Modules/**/resources/assets/js/**/*.tsx",
+                    "./vendor/*/*/resources/assets/js/**/*.tsx",
                     "./resources/views/**/*.blade.php",
                     "./vendor/filament/**/*.blade.php",
                     "./resources/js/**/*.tsx",
@@ -71,7 +72,6 @@ export default defineConfig({
             ssr: "resources/js/ssr.tsx",
         }),
         react(),
-
     ],
     resolve: {
         dedupe: ["react", "react-dom"],

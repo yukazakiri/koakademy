@@ -6,7 +6,10 @@ import ReactDOMServer from "react-dom/server";
 import { resolveBranding, type Branding } from "@/lib/branding";
 
 const appPages = import.meta.glob("./pages/**/*.tsx");
-const modulePages = import.meta.glob("../../Modules/**/resources/assets/js/Pages/**/*.tsx");
+const modulePages = {
+    ...import.meta.glob("../../Modules/**/resources/assets/js/Pages/**/*.tsx"),
+    ...import.meta.glob("../../vendor/*/*/resources/assets/js/Pages/**/*.tsx"),
+};
 
 createServer((page) =>
     createInertiaApp({
@@ -20,9 +23,7 @@ createServer((page) =>
         resolve: async (name) => {
             const modulePagePath = Object.keys(modulePages).find((path) => path.endsWith(`/resources/assets/js/Pages/${name}.tsx`));
 
-            return modulePagePath
-                ? modulePages[modulePagePath]()
-                : resolvePageComponent(`./pages/${name}.tsx`, appPages);
+            return modulePagePath ? modulePages[modulePagePath]() : resolvePageComponent(`./pages/${name}.tsx`, appPages);
         },
         setup: ({ App, props }) => <App {...props} />,
     }),

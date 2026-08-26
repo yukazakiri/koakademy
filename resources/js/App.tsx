@@ -20,7 +20,10 @@ declare global {
 }
 
 const appPages = import.meta.glob("./pages/**/*.tsx");
-const modulePages = import.meta.glob("../../Modules/**/resources/assets/js/Pages/**/*.tsx");
+const modulePages = {
+    ...import.meta.glob("../../Modules/**/resources/assets/js/Pages/**/*.tsx"),
+    ...import.meta.glob("../../vendor/*/*/resources/assets/js/Pages/**/*.tsx"),
+};
 
 createInertiaApp({
     id: "app",

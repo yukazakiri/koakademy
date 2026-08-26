@@ -12,6 +12,8 @@ use App\Http\Requests\UpdateCurriculumProgramRequest;
 use App\Http\Requests\UpdateCurriculumSubjectRequest;
 use App\Models\Course;
 use App\Models\Department;
+use App\Models\EnrollmentPolicy;
+use App\Models\PendingEnrollment;
 use App\Models\School;
 use App\Models\ShsTrack;
 use App\Models\Subject;
@@ -19,10 +21,14 @@ use App\Models\User;
 use App\Services\CurriculumCapabilityResolver;
 use App\Services\TenantContext;
 use App\Support\ChedProgramRules;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Redirect;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -201,6 +207,91 @@ final class AdministratorCurriculumManagementController extends Controller
         return Redirect::back()->with('success', "Program {$status} successfully.");
     }
 
+    public function programDeletionImpact(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer', 'distinct', 'exists:courses,id'],
+        ]);
+
+        $programs = Course::query()
+            ->whereKey($validated['ids'])
+            ->orderBy('code')
+            ->get();
+
+        $impacts = $programs
+            ->map(fn (Course $course): array => $this->buildProgramDeletionImpact($course))
+            ->values();
+
+        $totals = $impacts->reduce(function (array $totals, array $impact): array {
+            foreach (array_keys($totals) as $key) {
+                $totals[$key] += $impact['totals'][$key];
+            }
+
+            return $totals;
+        }, $this->emptyDeletionTotals());
+
+        return response()->json([
+            'programs' => $impacts->all(),
+            'can_delete' => $impacts->every(fn (array $impact): bool => $impact['can_delete']),
+            'requires_confirmation' => true,
+            'totals' => $totals,
+        ]);
+    }
+
+    public function destroyProgram(Request $request, Course $course): RedirectResponse
+    {
+        $validated = $request->validate([
+            'confirmation' => ['required', 'string'],
+        ]);
+        $impact = $this->buildProgramDeletionImpact($course);
+
+        $this->assertProgramDeletionAllowed($impact, $validated['confirmation'], $course->code);
+
+        $course->deleteOrFail();
+
+        return Redirect::back()->with('success', "Program {$course->code} deleted permanently.");
+    }
+
+    public function destroyPrograms(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer', 'distinct', 'exists:courses,id'],
+            'confirmation' => ['required', 'string'],
+        ]);
+
+        $programs = Course::query()
+            ->whereKey($validated['ids'])
+            ->orderBy('code')
+            ->get();
+
+        if ($programs->count() !== count($validated['ids'])) {
+            abort(404);
+        }
+
+        $impacts = $programs->map(fn (Course $course): array => $this->buildProgramDeletionImpact($course));
+        $blockedProgram = $impacts->first(fn (array $impact): bool => ! $impact['can_delete']);
+
+        if ($blockedProgram !== null) {
+            $this->assertProgramDeletionAllowed($blockedProgram, $validated['confirmation'], 'DELETE');
+        }
+
+        if ($blockedProgram === null && mb_strtoupper(mb_trim($validated['confirmation'])) !== 'DELETE') {
+            throw ValidationException::withMessages([
+                'confirmation' => 'Type DELETE to confirm this permanent deletion.',
+            ]);
+        }
+
+        DB::transaction(function () use ($programs): void {
+            foreach ($programs as $program) {
+                $program->deleteOrFail();
+            }
+        });
+
+        return Redirect::back()->with('success', "{$programs->count()} programs deleted permanently.");
+    }
+
     public function storeSubject(StoreCurriculumSubjectRequest $request, Course $course): RedirectResponse
     {
         $validated = $this->normalizeSubjectPayload($request->validated());
@@ -229,6 +320,180 @@ final class AdministratorCurriculumManagementController extends Controller
         $subject->delete();
 
         return Redirect::back()->with('success', 'Subject removed from this program.');
+    }
+
+    /**
+     * @return array{id: int, code: string, title: string, can_delete: bool, has_blockers: bool, has_destructive_changes: bool, records: list<array{key: string, label: string, count: int, severity: string, blocks: bool, effect: string}>, totals: array<string, int>}
+     */
+    private function buildProgramDeletionImpact(Course $course): array
+    {
+        $subjectIds = $course->subjects()->pluck('subject.id');
+        $subjects = $subjectIds->count();
+        $subjectEnrollments = $subjectIds->isEmpty()
+            ? 0
+            : (int) DB::table('subject_enrollments')->whereIn('subject_id', $subjectIds)->count();
+        $classes = $subjectIds->isEmpty()
+            ? 0
+            : (int) DB::table('classes')->whereIn('subject_id', $subjectIds)->count();
+        $students = $course->students()->withTrashed()->count();
+        $enrollments = (int) DB::table('student_enrollment')
+            ->where('course_id', (string) $course->id)
+            ->count();
+        $pendingEnrollments = Schema::hasTable('pending_enrollments')
+            ? PendingEnrollment::query()
+                ->where(function ($query) use ($course): void {
+                    $query
+                        ->whereJsonContains('data->course_id', $course->id)
+                        ->orWhereJsonContains('data->course_id', (string) $course->id);
+                })
+                ->count()
+            : 0;
+        $policies = EnrollmentPolicy::query()->where('course_id', $course->id)->count();
+        $researchPapers = (int) DB::table('library_research_papers')
+            ->where('course_id', $course->id)
+            ->count();
+
+        $totals = [
+            'subjects' => $subjects,
+            'subject_enrollments' => $subjectEnrollments,
+            'classes' => $classes,
+            'students' => $students,
+            'enrollments' => $enrollments,
+            'pending_enrollments' => $pendingEnrollments,
+            'policies' => $policies,
+            'research_papers' => $researchPapers,
+        ];
+
+        $records = [
+            [
+                'key' => 'subjects',
+                'label' => 'Curriculum subjects',
+                'count' => $subjects,
+                'severity' => $subjects > 0 ? 'destructive' : 'safe',
+                'blocks' => false,
+                'effect' => $subjects > 0
+                    ? 'These subject records will be permanently deleted with the program.'
+                    : 'No subject records are attached to this program.',
+            ],
+            [
+                'key' => 'students',
+                'label' => 'Students assigned',
+                'count' => $students,
+                'severity' => $students > 0 ? 'blocked' : 'safe',
+                'blocks' => $students > 0,
+                'effect' => $students > 0
+                    ? 'Deletion is blocked because students would keep an orphaned program reference.'
+                    : 'No student records are assigned to this program.',
+            ],
+            [
+                'key' => 'subject_enrollments',
+                'label' => 'Subject enrollment records',
+                'count' => $subjectEnrollments,
+                'severity' => $subjectEnrollments > 0 ? 'blocked' : 'safe',
+                'blocks' => $subjectEnrollments > 0,
+                'effect' => $subjectEnrollments > 0
+                    ? 'Deletion is blocked because subject enrollment history would be orphaned when subjects are removed.'
+                    : 'No subject enrollment records are attached to this program.',
+            ],
+            [
+                'key' => 'classes',
+                'label' => 'Scheduled classes',
+                'count' => $classes,
+                'severity' => $classes > 0 ? 'warning' : 'safe',
+                'blocks' => false,
+                'effect' => $classes > 0
+                    ? 'Classes will survive, but their subject link will be cleared when the subjects are removed.'
+                    : 'No scheduled classes are linked through this program\'s subjects.',
+            ],
+            [
+                'key' => 'enrollments',
+                'label' => 'Enrollment history',
+                'count' => $enrollments,
+                'severity' => $enrollments > 0 ? 'blocked' : 'safe',
+                'blocks' => $enrollments > 0,
+                'effect' => $enrollments > 0
+                    ? 'Deletion is blocked so historical enrollment records are not orphaned.'
+                    : 'No enrollment history is attached to this program.',
+            ],
+            [
+                'key' => 'pending_enrollments',
+                'label' => 'Pending applications',
+                'count' => $pendingEnrollments,
+                'severity' => $pendingEnrollments > 0 ? 'blocked' : 'safe',
+                'blocks' => $pendingEnrollments > 0,
+                'effect' => $pendingEnrollments > 0
+                    ? 'Deletion is blocked while pending applications reference this program.'
+                    : 'No pending applications reference this program.',
+            ],
+            [
+                'key' => 'policies',
+                'label' => 'Enrollment policies',
+                'count' => $policies,
+                'severity' => $policies > 0 ? 'warning' : 'safe',
+                'blocks' => false,
+                'effect' => $policies > 0
+                    ? 'Policies will survive, but their program link will be cleared.'
+                    : 'No enrollment policies are linked to this program.',
+            ],
+            [
+                'key' => 'research_papers',
+                'label' => 'Research papers',
+                'count' => $researchPapers,
+                'severity' => $researchPapers > 0 ? 'warning' : 'safe',
+                'blocks' => false,
+                'effect' => $researchPapers > 0
+                    ? 'Research papers will survive, but their program link will be cleared.'
+                    : 'No research papers are linked to this program.',
+            ],
+        ];
+
+        $hasBlockers = collect($records)->contains(fn (array $record): bool => $record['blocks'] && $record['count'] > 0);
+
+        return [
+            'id' => $course->id,
+            'code' => $course->code,
+            'title' => $course->title,
+            'can_delete' => ! $hasBlockers,
+            'has_blockers' => $hasBlockers,
+            'has_destructive_changes' => $subjects > 0,
+            'records' => $records,
+            'totals' => $totals,
+        ];
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private function emptyDeletionTotals(): array
+    {
+        return [
+            'subjects' => 0,
+            'subject_enrollments' => 0,
+            'classes' => 0,
+            'students' => 0,
+            'enrollments' => 0,
+            'pending_enrollments' => 0,
+            'policies' => 0,
+            'research_papers' => 0,
+        ];
+    }
+
+    /**
+     * @param  array{can_delete: bool}  $impact
+     */
+    private function assertProgramDeletionAllowed(array $impact, string $confirmation, string $expectedConfirmation): void
+    {
+        if (! $impact['can_delete']) {
+            throw ValidationException::withMessages([
+                'programs' => 'Deletion is blocked until assigned students, enrollment history, and pending applications are moved or removed.',
+            ]);
+        }
+
+        if (mb_strtoupper(mb_trim($confirmation)) !== mb_strtoupper(mb_trim($expectedConfirmation))) {
+            throw ValidationException::withMessages([
+                'confirmation' => "Type {$expectedConfirmation} to confirm this permanent deletion.",
+            ]);
+        }
     }
 
     private function buildVersions(Collection $programs): array

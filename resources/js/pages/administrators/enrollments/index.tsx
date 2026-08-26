@@ -12,18 +12,28 @@ import {
     Building2,
     ChevronRight,
     CircleCheckBig,
+    FileDown,
     Filter,
     GraduationCap,
+    Loader2,
     RotateCcw,
     Settings2,
+    Trash2,
     UserPlus,
     Users,
+    X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { route } from "ziggy-js";
-import { createColumns, type EnrollmentRow } from "./columns";
-import { DeleteEnrollmentDialog, ForceDeleteEnrollmentDialog, RestoreEnrollmentDialog } from "./enrollment-dialogs";
+import { createColumns, type EnrollmentRow, type EnrollmentSelectionRefs } from "./columns";
+import {
+    BulkDeleteEnrollmentsDialog,
+    BulkForceDeleteEnrollmentsDialog,
+    DeleteEnrollmentDialog,
+    ForceDeleteEnrollmentDialog,
+    RestoreEnrollmentDialog,
+} from "./enrollment-dialogs";
 import { EnrollmentsCard } from "./enrollments-card";
 import type { Branding, EnrollmentManagementProps } from "./types";
 
@@ -138,6 +148,29 @@ function sortEnrollments(enrollments: EnrollmentRow[], sortOption: string): Enro
     });
 }
 
+function nowStamp(): string {
+    const now = new Date();
+    const pad = (value: number) => String(value).padStart(2, "0");
+
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+}
+
+async function readBlobErrorMessage(error: unknown): Promise<string | null> {
+    const response = (error as { response?: { data?: unknown } } | undefined)?.response;
+
+    if (!(response?.data instanceof Blob)) {
+        return null;
+    }
+
+    try {
+        const parsed = JSON.parse(await response.data.text()) as { message?: unknown };
+
+        return typeof parsed.message === "string" ? parsed.message : null;
+    } catch {
+        return null;
+    }
+}
+
 export default function AdministratorEnrollmentsIndex({
     user,
     workflow_setup_required,
@@ -160,6 +193,16 @@ export default function AdministratorEnrollmentsIndex({
     const [forceDeleteEnrollment, setForceDeleteEnrollment] = useState<EnrollmentRow | null>(null);
     const [restoreEnrollment, setRestoreEnrollment] = useState<EnrollmentRow | null>(null);
     const [isEnrollmentDeleting, setIsEnrollmentDeleting] = useState(false);
+
+    const selectionRefs: EnrollmentSelectionRefs = {
+        anchorId: useRef<string | null>(null),
+        shiftPressed: useRef(false),
+    };
+    const clearSelectionRef = useRef<(() => void) | null>(null);
+    const [selectedEnrollments, setSelectedEnrollments] = useState<EnrollmentRow[]>([]);
+    const [bulkDialog, setBulkDialog] = useState<"delete" | "forceDelete" | null>(null);
+    const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
 
     useEffect(() => {
         setEnrollmentSearch(filters.search || "");
@@ -295,6 +338,161 @@ export default function AdministratorEnrollmentsIndex({
         );
     };
 
+    const resetBulkSelection = () => {
+        setSelectedEnrollments([]);
+        setBulkDialog(null);
+        clearSelectionRef.current?.();
+        selectionRefs.anchorId.current = null;
+    };
+
+    const handleBulkDelete = () => {
+        if (selectedEnrollments.length === 0) return;
+
+        setIsBulkDeleting(true);
+        router.post(
+            route("administrators.enrollments.bulk-destroy"),
+            { ids: selectedEnrollments.map((enrollment) => enrollment.id) },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    toast.success(`${selectedEnrollments.length} enrollment(s) have been deleted.`);
+                    resetBulkSelection();
+                },
+                onError: () => {
+                    toast.error("Failed to delete enrollments.");
+                },
+                onFinish: () => {
+                    setIsBulkDeleting(false);
+                },
+            },
+        );
+    };
+
+    const handleBulkForceDelete = () => {
+        if (selectedEnrollments.length === 0) return;
+
+        setIsBulkDeleting(true);
+        router.post(
+            route("administrators.enrollments.bulk-force-destroy"),
+            { ids: selectedEnrollments.map((enrollment) => enrollment.id) },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    toast.success(`${selectedEnrollments.length} enrollment(s) have been permanently deleted.`);
+                    resetBulkSelection();
+                },
+                onError: () => {
+                    toast.error("Failed to permanently delete enrollments.");
+                },
+                onFinish: () => {
+                    setIsBulkDeleting(false);
+                },
+            },
+        );
+    };
+
+    const handleBulkExport = async (rows: EnrollmentRow[]) => {
+        if (rows.length === 0 || isExporting) return;
+
+        setIsExporting(true);
+        try {
+            const response = await window.axios.post(
+                route("administrators.enrollments.bulk-export-assessments"),
+                { ids: rows.map((enrollment) => enrollment.id) },
+                { responseType: "blob" },
+            );
+
+            const disposition = String(response.headers?.["content-disposition"] ?? "");
+            const fileName = /filename="?([^";]+)"?/i.exec(disposition)?.[1] ?? `bulk-assessments-${nowStamp()}.pdf`;
+
+            const url = URL.createObjectURL(response.data as Blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+
+            const included = Number(response.headers?.["x-assessment-count"] ?? 0);
+            const skipped = Number(response.headers?.["x-assessment-skipped-count"] ?? 0);
+
+            toast.success(`Exported ${included} assessment${included === 1 ? "" : "s"} to "${fileName}".`);
+
+            if (skipped > 0) {
+                toast.info(`${skipped} enrollment${skipped === 1 ? "" : "s"} had no assessment file and were skipped.`);
+            }
+        } catch (error) {
+            toast.error((await readBlobErrorMessage(error)) ?? "Failed to export assessments.");
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+    const renderSelectionActions = (selectedRows: EnrollmentRow[], helpers: { clearSelection: () => void }) => {
+        if (selectedRows.length === 0) return null;
+
+        clearSelectionRef.current = helpers.clearSelection;
+
+        const trashedCount = selectedRows.filter((row) => row.is_trashed).length;
+
+        return (
+            <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="secondary" className="h-6 rounded-full px-2.5 text-xs">
+                    {selectedRows.length} selected
+                </Badge>
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/40"
+                    onClick={() => {
+                        setSelectedEnrollments(selectedRows);
+                        setBulkDialog("delete");
+                    }}
+                >
+                    <Trash2 className="size-3.5" aria-hidden="true" />
+                    Delete
+                </Button>
+                {trashedCount > 0 && (
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/40"
+                        onClick={() => {
+                            setSelectedEnrollments(selectedRows);
+                            setBulkDialog("forceDelete");
+                        }}
+                    >
+                        <AlertTriangle className="size-3.5" aria-hidden="true" />
+                        Force delete
+                    </Button>
+                )}
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-border/70 bg-background/60 h-8 gap-1.5"
+                    disabled={isExporting}
+                    onClick={() => {
+                        setSelectedEnrollments(selectedRows);
+                        void handleBulkExport(selectedRows);
+                    }}
+                >
+                    {isExporting ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <FileDown className="size-3.5" aria-hidden="true" />}
+                    Export assessments
+                </Button>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground hover:text-foreground h-8 w-8 p-0"
+                    onClick={resetBulkSelection}
+                    aria-label="Clear selection"
+                >
+                    <X className="size-3.5" aria-hidden="true" />
+                </Button>
+            </div>
+        );
+    };
+
     // Create enrollment columns with action handlers
     const enrollmentColumns = useMemo(
         () =>
@@ -303,6 +501,7 @@ export default function AdministratorEnrollmentsIndex({
                     onDelete: (enrollment) => setDeleteEnrollment(enrollment),
                     onForceDelete: (enrollment) => setForceDeleteEnrollment(enrollment),
                     onRestore: (enrollment) => setRestoreEnrollment(enrollment),
+                    selectionRefs,
                 },
                 currency,
                 {
@@ -567,6 +766,8 @@ export default function AdministratorEnrollmentsIndex({
                             onSearchChange={handleEnrollmentSearchChange}
                             onSortChange={setSortOption}
                             onRowClick={handleEnrollmentClick}
+                            selectionActions={renderSelectionActions}
+                            getRowId={(row) => String(row.id)}
                         />
                     </>
                 )}
@@ -594,6 +795,20 @@ export default function AdministratorEnrollmentsIndex({
                         isDeleting={isEnrollmentDeleting}
                         onOpenChange={(open) => !open && setRestoreEnrollment(null)}
                         onConfirm={handleRestoreEnrollment}
+                    />
+                    <BulkDeleteEnrollmentsDialog
+                        open={bulkDialog === "delete"}
+                        count={selectedEnrollments.length}
+                        isDeleting={isBulkDeleting}
+                        onOpenChange={(open) => !open && setBulkDialog(null)}
+                        onConfirm={handleBulkDelete}
+                    />
+                    <BulkForceDeleteEnrollmentsDialog
+                        open={bulkDialog === "forceDelete"}
+                        count={selectedEnrollments.length}
+                        isDeleting={isBulkDeleting}
+                        onOpenChange={(open) => !open && setBulkDialog(null)}
+                        onConfirm={handleBulkForceDelete}
                     />
                 </>
             )}

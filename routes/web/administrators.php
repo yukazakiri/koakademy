@@ -192,6 +192,11 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/enrollments/{enrollment}/activity-log', [AdministratorEnrollmentManagementController::class, 'activityLog'])->whereNumber('enrollment')->name('enrollments.activity-log');
         Route::post('/enrollments/{enrollment}/restore-subjects', [AdministratorEnrollmentManagementController::class, 'restoreSubjects'])->whereNumber('enrollment')->name('enrollments.restore-subjects');
 
+        // Enrollment Bulk Actions
+        Route::post('/enrollments/bulk-destroy', [AdministratorEnrollmentManagementController::class, 'bulkDestroy'])->name('enrollments.bulk-destroy');
+        Route::post('/enrollments/bulk-force-destroy', [AdministratorEnrollmentManagementController::class, 'bulkForceDestroy'])->name('enrollments.bulk-force-destroy');
+        Route::post('/enrollments/bulk-export-assessments', [AdministratorEnrollmentManagementController::class, 'bulkExportAssessments'])->name('enrollments.bulk-export-assessments');
+
         // Enrollment Reports
         Route::post('/enrollments/reports/bulk-assessments', [AdministratorEnrollmentManagementController::class, 'generateBulkAssessments'])->name('enrollments.reports.bulk-assessments');
         Route::get('/enrollments/reports/data', [AdministratorEnrollmentManagementController::class, 'enrollmentReportData'])->name('enrollments.reports.data');

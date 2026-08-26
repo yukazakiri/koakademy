@@ -47,7 +47,8 @@ interface DataTableProps<TData, TValue> {
     dataKey?: string; // Key for partial reloads
     isLoading?: boolean;
     onRowClick?: (row: TData) => void;
-    selectionActions?: (selectedRows: TData[]) => React.ReactNode;
+    selectionActions?: (selectedRows: TData[], helpers: { clearSelection: () => void }) => React.ReactNode;
+    getRowId?: (row: TData) => string;
     tableVariant?: "default" | "spreadsheet";
 }
 
@@ -61,6 +62,7 @@ export function DataTable<TData, TValue>({
     isLoading = false,
     onRowClick,
     selectionActions,
+    getRowId,
     tableVariant = "default",
 }: DataTableProps<TData, TValue>) {
     const isServerSide = !!routeName && !!pagination;
@@ -108,6 +110,7 @@ export function DataTable<TData, TValue>({
     const table = useReactTable({
         data,
         columns,
+        getRowId,
         getCoreRowModel: getCoreRowModel(),
         manualPagination: isServerSide,
         manualSorting: isServerSide,
@@ -147,7 +150,9 @@ export function DataTable<TData, TValue>({
     });
 
     const selectedRows = table.getSelectedRowModel().rows.map((row) => row.original);
-    const selectionActionsContent = selectionActions ? selectionActions(selectedRows) : null;
+    const selectionActionsContent = selectionActions
+        ? selectionActions(selectedRows, { clearSelection: () => setRowSelection({}) })
+        : null;
     const clientPageCount = Math.max(table.getPageCount(), 1);
     const clientCurrentPage = Math.min(table.getState().pagination.pageIndex + 1, clientPageCount);
     const pageSizeOptions = isServerSide ? [10, 50, 150] : [10, 25, 50, 100];

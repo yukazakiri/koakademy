@@ -23,6 +23,8 @@ type EnrollmentsCardProps = {
     onSearchChange: (value: string) => void;
     onSortChange: (value: string) => void;
     onRowClick: (row: EnrollmentRow) => void;
+    selectionActions?: (selectedRows: EnrollmentRow[], helpers: { clearSelection: () => void }) => ReactNode;
+    getRowId?: (row: EnrollmentRow) => string;
 };
 
 export function EnrollmentsCard({
@@ -39,6 +41,8 @@ export function EnrollmentsCard({
     onSearchChange,
     onSortChange,
     onRowClick,
+    selectionActions,
+    getRowId,
 }: EnrollmentsCardProps) {
     const totalLabel =
         enrollmentsData.length === enrollmentsTotal
@@ -103,7 +107,14 @@ export function EnrollmentsCard({
                 </div>
 
                 <div className="px-4 pt-1 pb-4 sm:px-5">
-                    <DataTable columns={enrollmentColumns} data={enrollmentsData} onRowClick={onRowClick} tableVariant="spreadsheet" />
+                    <DataTable
+                        columns={enrollmentColumns}
+                        data={enrollmentsData}
+                        onRowClick={onRowClick}
+                        tableVariant="spreadsheet"
+                        selectionActions={selectionActions}
+                        getRowId={getRowId}
+                    />
                 </div>
             </CardContent>
         </Card>

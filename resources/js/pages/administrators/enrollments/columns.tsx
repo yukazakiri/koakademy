@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { Link } from "@inertiajs/react";
 import { ColumnDef } from "@tanstack/react-table";
 import { AlertTriangle, ArrowUpDown, Copy, Eye, FileText, MoreHorizontal, Pencil, RotateCcw, Trash2 } from "lucide-react";
+import type { RefObject } from "react";
 import { route } from "ziggy-js";
 
 // Define the shape of our data based on the controller output
@@ -44,6 +45,12 @@ export type EnrollmentActions = {
     onDelete?: (enrollment: EnrollmentRow) => void;
     onForceDelete?: (enrollment: EnrollmentRow) => void;
     onRestore?: (enrollment: EnrollmentRow) => void;
+    selectionRefs?: EnrollmentSelectionRefs;
+};
+
+export type EnrollmentSelectionRefs = {
+    anchorId: RefObject<string | null>;
+    shiftPressed: RefObject<boolean>;
 };
 
 type PipelineDisplay = {
@@ -84,22 +91,63 @@ export const createColumns = (actions?: EnrollmentActions, currency: string = "P
     {
         id: "select",
         header: ({ table }) => (
-            <Checkbox
-                checked={table.getIsAllPageRowsSelected() || (table.getIsSomePageRowsSelected() && "indeterminate")}
-                onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-                aria-label="Select all"
-                className="translate-y-[2px]"
-            />
+            <div className="flex h-full items-center">
+                <Checkbox
+                    checked={table.getIsAllPageRowsSelected() || (table.getIsSomePageRowsSelected() && "indeterminate")}
+                    onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+                    aria-label="Select all"
+                />
+            </div>
         ),
-        cell: ({ row }) => (
-            <Checkbox
-                checked={row.getIsSelected()}
-                onCheckedChange={(value) => row.toggleSelected(!!value)}
-                aria-label="Select row"
-                className="translate-y-[2px]"
-                onClick={(e) => e.stopPropagation()}
-            />
-        ),
+        cell: ({ row, table }) => {
+            const handleCheckedChange = (value: boolean | "indeterminate") => {
+                const selectionRefs = actions?.selectionRefs;
+
+                if (selectionRefs) {
+                    if (selectionRefs.shiftPressed.current) {
+                        selectionRefs.shiftPressed.current = false;
+
+                        const rows = table.getRowModel().rows;
+                        const currentIndex = rows.findIndex((candidate) => candidate.id === row.id);
+                        const anchorIndex =
+                            selectionRefs.anchorId.current === null
+                                ? -1
+                                : rows.findIndex((candidate) => candidate.id === selectionRefs.anchorId.current);
+
+                        if (currentIndex !== -1 && anchorIndex !== -1) {
+                            const [start, end] = anchorIndex <= currentIndex ? [anchorIndex, currentIndex] : [currentIndex, anchorIndex];
+
+                            for (let index = start; index <= end; index++) {
+                                rows[index]?.toggleSelected(!!value);
+                            }
+
+                            return;
+                        }
+                    }
+
+                    selectionRefs.anchorId.current = row.id;
+                }
+
+                row.toggleSelected(!!value);
+            };
+
+            return (
+                <div className="flex h-full items-center">
+                    <Checkbox
+                        checked={row.getIsSelected()}
+                        onCheckedChange={handleCheckedChange}
+                        aria-label="Select row"
+                        onClick={(event) => {
+                            event.stopPropagation();
+
+                            if (actions?.selectionRefs) {
+                                actions.selectionRefs.shiftPressed.current = event.shiftKey;
+                            }
+                        }}
+                    />
+                </div>
+            );
+        },
         enableSorting: false,
         enableHiding: false,
     },

@@ -10,6 +10,7 @@ use App\Enums\StudentStatus;
 use App\Exceptions\AssessmentExportLimitReached;
 use App\Exports\EnrollmentReportExport;
 use App\Features\DynamicEnrollmentPolicies;
+use App\Http\Requests\Administrators\BulkEnrollmentIdsRequest;
 use App\Http\Requests\Administrators\GenerateBulkAssessmentsRequest;
 use App\Http\Requests\Administrators\SaveEnrollmentRequest;
 use App\Jobs\GenerateAssessmentPdfJob;
@@ -51,6 +52,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -1916,6 +1918,158 @@ final class AdministratorEnrollmentManagementController extends Controller
     }
 
     /**
+     * Soft delete multiple student enrollments at once.
+     */
+    public function bulkDestroy(BulkEnrollmentIdsRequest $request, TenantContext $tenantContext): RedirectResponse
+    {
+        $schoolId = $this->resolveAccessibleSchoolId($tenantContext);
+
+        $validated = $request->validated();
+
+        $enrollments = StudentEnrollment::query()
+            ->whereKey($validated['ids'])
+            ->where('school_id', $schoolId)
+            ->get();
+
+        if ($enrollments->isEmpty()) {
+            return back()->with('flash', ['error' => 'No matching enrollments were found to delete.']);
+        }
+
+        DB::transaction(function () use ($enrollments): void {
+            $enrollments->each(function (StudentEnrollment $enrollment): void {
+                $enrollment->delete();
+            });
+        });
+
+        return redirect()
+            ->route('administrators.enrollments.index')
+            ->with('flash', ['success' => sprintf('%d enrollment(s) have been deleted.', $enrollments->count())]);
+    }
+
+    /**
+     * Permanently delete multiple student enrollments and all related records.
+     */
+    public function bulkForceDestroy(BulkEnrollmentIdsRequest $request, TenantContext $tenantContext): RedirectResponse
+    {
+        $schoolId = $this->resolveAccessibleSchoolId($tenantContext);
+
+        $validated = $request->validated();
+
+        $enrollments = StudentEnrollment::withTrashed()
+            ->whereKey($validated['ids'])
+            ->where('school_id', $schoolId)
+            ->get();
+
+        if ($enrollments->isEmpty()) {
+            return back()->with('flash', ['error' => 'No matching enrollments were found to permanently delete.']);
+        }
+
+        try {
+            DB::transaction(function () use ($enrollments): void {
+                $enrollments->each(function (StudentEnrollment $enrollment): void {
+                    // Delete related subject enrollments
+                    $enrollment->subjectsEnrolled()->delete();
+
+                    // Delete related additional fees
+                    $enrollment->additionalFees()->delete();
+
+                    // Delete related tuition record
+                    $enrollment->studentTuition()->delete();
+
+                    // Delete related resources
+                    $enrollment->resources()->delete();
+
+                    // Delete related enrollment transactions
+                    $enrollment->enrollmentTransactions()->delete();
+
+                    // Force delete the enrollment
+                    $enrollment->forceDelete();
+                });
+            });
+        } catch (Exception $e) {
+            return back()->with('flash', ['error' => 'Failed to permanently delete enrollments: '.$e->getMessage()]);
+        }
+
+        return redirect()
+            ->route('administrators.enrollments.index')
+            ->with('flash', ['success' => sprintf('%d enrollment(s) have been permanently deleted.', $enrollments->count())]);
+    }
+
+    /**
+     * Merge the stored assessment PDFs of the selected enrollments into one downloadable file.
+     */
+    public function bulkExportAssessments(BulkEnrollmentIdsRequest $request, TenantContext $tenantContext, PdfGenerationService $pdfs): BinaryFileResponse|JsonResponse
+    {
+        $schoolId = $this->resolveAccessibleSchoolId($tenantContext);
+
+        $validated = $request->validated();
+
+        // Preserve the display order the table submitted.
+        $orderById = array_flip($validated['ids']);
+
+        $enrollments = StudentEnrollment::query()
+            ->whereKey($validated['ids'])
+            ->where('school_id', $schoolId)
+            ->get()
+            ->sortBy(fn (StudentEnrollment $enrollment): int => $orderById[$enrollment->getKey()] ?? PHP_INT_MAX)
+            ->values();
+
+        $temporaryDirectory = $pdfs->createTempDirectory('assessment_bulk_');
+        $localPaths = [];
+        $skippedCount = 0;
+
+        try {
+            foreach ($enrollments as $enrollment) {
+                $resource = $enrollment->resources()
+                    ->where('type', 'assessment')
+                    ->latest()
+                    ->first();
+
+                $diskName = $resource?->disk ?? (string) config('filesystems.default');
+
+                $contents = null;
+                if ($resource !== null && Storage::disk($diskName)->exists($resource->file_path)) {
+                    $contents = Storage::disk($diskName)->get($resource->file_path);
+                }
+
+                if ($contents === null || $contents === '') {
+                    $skippedCount++;
+
+                    continue;
+                }
+
+                $localPath = $temporaryDirectory.DIRECTORY_SEPARATOR.sprintf('assessment_%d.pdf', $enrollment->getKey());
+                file_put_contents($localPath, $contents);
+                $localPaths[] = $localPath;
+            }
+
+            if ($localPaths === []) {
+                return response()->json([
+                    'message' => 'No assessment files were found for the selected enrollments.',
+                ], 404);
+            }
+
+            // Keep the merged output outside the temp directory so it survives
+            // cleanup until the download response has been sent.
+            $outputPath = mb_rtrim(sys_get_temp_dir(), '/\\').DIRECTORY_SEPARATOR.uniqid('bulk_assessments_', true).'.pdf';
+            $pdfs->mergePdfs($localPaths, $outputPath, true);
+
+            return response()
+                ->download($outputPath, sprintf('bulk-assessments-%s.pdf', now()->format('Y-m-d-His')), [
+                    'X-Assessment-Count' => (string) count($localPaths),
+                    'X-Assessment-Skipped-Count' => (string) $skippedCount,
+                ])
+                ->deleteFileAfterSend(true);
+        } finally {
+            foreach ($localPaths as $localPath) {
+                @unlink($localPath);
+            }
+
+            $pdfs->cleanupTempDirectory($temporaryDirectory);
+        }
+    }
+
+    /**
      * Get recent activity log entries for an enrollment (deleted subjects/class enrollments).
      */
     public function activityLog(StudentEnrollment $enrollment): JsonResponse
@@ -2276,6 +2430,20 @@ final class AdministratorEnrollmentManagementController extends Controller
         return response()->json(['courses' => $courses]);
     }
 
+    /**
+     * Resolve the active school for bulk actions, mirroring the export guard.
+     */
+    private function resolveAccessibleSchoolId(TenantContext $tenantContext): int
+    {
+        $schoolId = $tenantContext->getCurrentSchoolId();
+
+        if ($schoolId === null || ! $tenantContext->canAccessOrganization($schoolId)) {
+            abort(403, 'Select an accessible school before performing bulk enrollment actions.');
+        }
+
+        return $schoolId;
+    }
+
     private function resolveEnrollmentReportVariant(string $variant): string
     {
         return in_array($variant, [
@@ -2454,7 +2622,7 @@ final class AdministratorEnrollmentManagementController extends Controller
         }
 
         try {
-            return \Illuminate\Support\Facades\Storage::url($logoValue);
+            return Storage::url($logoValue);
         } catch (Throwable) {
             return $logoValue;
         }

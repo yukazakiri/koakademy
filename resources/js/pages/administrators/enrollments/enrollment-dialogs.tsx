@@ -519,3 +519,74 @@ export function RestoreEnrollmentDialog({ open, enrollment, isDeleting, onOpenCh
         </AlertDialog>
     );
 }
+
+type BulkDeleteEnrollmentsDialogProps = {
+    open: boolean;
+    count: number;
+    isDeleting: boolean;
+    onOpenChange: (open: boolean) => void;
+    onConfirm: () => void;
+};
+
+export function BulkDeleteEnrollmentsDialog({ open, count, isDeleting, onOpenChange, onConfirm }: BulkDeleteEnrollmentsDialogProps) {
+    return (
+        <AlertDialog open={open} onOpenChange={onOpenChange}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Delete Enrollments</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        Are you sure you want to delete <strong>{count}</strong> enrollment{count === 1 ? "" : "s"}? This action will soft-delete the
+                        records. You can restore them later if needed.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={onConfirm} disabled={isDeleting} className="bg-red-600 text-white hover:bg-red-700">
+                        {isDeleting ? "Deleting..." : "Delete"}
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+    );
+}
+
+type BulkForceDeleteEnrollmentsDialogProps = {
+    open: boolean;
+    count: number;
+    isDeleting: boolean;
+    onOpenChange: (open: boolean) => void;
+    onConfirm: () => void;
+};
+
+export function BulkForceDeleteEnrollmentsDialog({ open, count, isDeleting, onOpenChange, onConfirm }: BulkForceDeleteEnrollmentsDialogProps) {
+    return (
+        <AlertDialog open={open} onOpenChange={onOpenChange}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle className="flex items-center gap-2 text-red-600">
+                        <AlertTriangle className="h-5 w-5" />
+                        Permanently Delete Enrollments
+                    </AlertDialogTitle>
+                    <AlertDialogDescription className="space-y-3">
+                        <p>
+                            Are you sure you want to <strong>permanently delete</strong> <strong>{count}</strong> enrollment{count === 1 ? "" : "s"}?
+                        </p>
+                        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400">
+                            <p className="font-semibold">Warning: This action cannot be undone!</p>
+                            <p className="mt-1">
+                                All related data including subject enrollments, additional fees, tuition records, and transactions will be permanently
+                                removed from the system.
+                            </p>
+                        </div>
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={onConfirm} disabled={isDeleting} className="bg-red-600 text-white hover:bg-red-700">
+                        {isDeleting ? "Deleting..." : "Permanently Delete"}
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+    );
+}

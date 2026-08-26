@@ -242,7 +242,7 @@ return [
     |
     */
     'scan' => [
-        'enabled' => false,
+        'enabled' => (bool) env('MODULE_SCAN_VENDOR', true),
         'paths' => [
             base_path('vendor/*/*'),
         ],
@@ -292,7 +292,7 @@ return [
     'activators' => [
         'file' => [
             'class' => FileActivator::class,
-            'statuses-file' => base_path('modules_statuses.json'),
+            'statuses-file' => env('MODULE_STATUSES_FILE', base_path('modules_statuses.json')),
         ],
     ],
 

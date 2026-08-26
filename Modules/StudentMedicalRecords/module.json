@@ -1,11 +1,26 @@
 {
     "name": "StudentMedicalRecords",
-    "alias": "studentmedicalrecords",
-    "description": "",
+    "alias": "student-medical-records",
+    "composer_package": "koakademy/student-medical-records",
+    "version": "1.0.0",
+    "description": "Confidential student medical records, clinic visits, and reporting tools.",
+    "author": "KoAkademy contributors",
+    "license": "AGPL-3.0-or-later",
+    "requires": {
+        "core": ">=1.20.0",
+        "php": ">=8.5",
+        "modules": {}
+    },
+    "compatibility": {
+        "laravel": "^13.0",
+        "filament": "^5.0"
+    },
     "keywords": [],
     "priority": 0,
     "providers": [
         "Modules\\StudentMedicalRecords\\Providers\\StudentMedicalRecordsServiceProvider"
     ],
-    "files": []
+    "files": [],
+    "repository": "https://github.com/yukazakiri/koakademy-module-student-medical-records",
+    "homepage": "https://github.com/yukazakiri/koakademy-module-student-medical-records"
 }

@@ -14,6 +14,7 @@ use App\Http\Controllers\AdministratorFacultyImportController;
 use App\Http\Controllers\AdministratorFacultyManagementController;
 use App\Http\Controllers\AdministratorFinanceController;
 use App\Http\Controllers\AdministratorGlobalSearchController;
+use App\Http\Controllers\AdministratorModuleMarketplaceController;
 use App\Http\Controllers\AdministratorRegistrarDocumentController;
 use App\Http\Controllers\AdministratorRegistrarInsightsController;
 use App\Http\Controllers\AdministratorRolesController;
@@ -417,6 +418,13 @@ Route::middleware(['auth', 'administrators.only'])
 
         // System Management
         Route::get('/system-management', [App\Http\Controllers\AdministratorSystemManagementController::class, 'index'])->name('system-management.index');
+        Route::get('/module-marketplace', [AdministratorModuleMarketplaceController::class, 'index'])->name('module-marketplace.index');
+        Route::post('/module-marketplace/{module}/enable', [AdministratorModuleMarketplaceController::class, 'enable'])
+            ->where('module', '[A-Za-z][A-Za-z0-9_-]*')
+            ->name('module-marketplace.enable');
+        Route::post('/module-marketplace/{module}/disable', [AdministratorModuleMarketplaceController::class, 'disable'])
+            ->where('module', '[A-Za-z][A-Za-z0-9_-]*')
+            ->name('module-marketplace.disable');
         Route::get('/system-management/school', [App\Http\Controllers\AdministratorSystemManagementController::class, 'school'])->name('system-management.school.index');
         Route::get('/system-management/enrollment-pipeline', [App\Http\Controllers\AdministratorSystemManagementController::class, 'enrollmentPipeline'])->name('system-management.enrollment-pipeline.index');
         Route::get('/system-management/seo', [App\Http\Controllers\AdministratorSystemManagementController::class, 'seo'])->name('system-management.seo.index');

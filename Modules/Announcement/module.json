@@ -1,11 +1,26 @@
 {
     "name": "Announcement",
     "alias": "announcement",
-    "description": "",
+    "composer_package": "koakademy/announcement",
+    "version": "1.0.0",
+    "description": "School-wide announcements for administrators and portal users.",
+    "author": "KoAkademy contributors",
+    "license": "AGPL-3.0-or-later",
+    "requires": {
+        "core": ">=1.20.0",
+        "php": ">=8.5",
+        "modules": {}
+    },
+    "compatibility": {
+        "laravel": "^13.0",
+        "filament": "^5.0"
+    },
     "keywords": [],
     "priority": 0,
     "providers": [
         "Modules\\Announcement\\Providers\\AnnouncementServiceProvider"
     ],
-    "files": []
+    "files": [],
+    "repository": "https://github.com/yukazakiri/koakademy-module-announcement",
+    "homepage": "https://github.com/yukazakiri/koakademy-module-announcement"
 }

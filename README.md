@@ -117,6 +117,32 @@ A Laravel application with a React portal layer, packaged for self-hosting rathe
 | **Runtime**       | nginx + PHP-FPM in a Docker image, with a FrankenPHP (Octane) variant · Docker Swarm installer or supported Docker Compose topology |
 | **Quality**       | [Pest 5](https://pestphp.com) · Laravel Pint · frontend and documentation builds · CI validation                                              |
 
+### Supported environments
+
+| Area | Supported baseline |
+| --- | --- |
+| Production host | Linux with Docker Engine and a public DNS name |
+| CPU architectures | AMD64 and ARM64 |
+| Application runtime | PHP 8.5, Laravel 13, Filament 5 |
+| Databases | PostgreSQL in production; SQLite for local development and tests |
+| Application services | Redis queues/cache/sessions and Gotenberg for production PDF rendering |
+| Alternative deployment | Docker Compose for operators managing their own reverse proxy |
+
+## Public modules
+
+Optional domains are published as Composer packages from the signed
+[KoAkademy module registry](https://yukazakiri.github.io/koakademy-modules/):
+
+```sh
+composer config repositories.koakademy composer https://yukazakiri.github.io/koakademy-modules
+composer require koakademy/library-system:^1.0
+```
+
+The core scans vendor-installed modules by default. The registry client is
+signature-checked and read-only; installations remain explicit Composer
+operations. A container-hosted registry can generate its Ed25519 keypair on
+first deployment with its persistent key volume. Never commit the private key.
+
 ### Layout
 
 | Path            |                                                                           |

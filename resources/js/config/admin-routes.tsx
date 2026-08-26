@@ -560,6 +560,15 @@ export const ADMIN_ROUTES: AdminRoute[] = [
     // SYSTEM ADMINISTRATION
     // ============================================
     {
+        id: "admin-module-marketplace",
+        title: "Marketplace",
+        icon: <IconTools className="size-4" />,
+        link: "/administrators/module-marketplace",
+        section: "system",
+        badge: "New",
+        allowedRoles: SYSTEM_ADMIN_ROLES,
+    },
+    {
         id: "admin-inventory",
         title: "Assets",
         icon: <IconTools className="size-4" />,

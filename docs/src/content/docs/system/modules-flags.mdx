@@ -22,6 +22,61 @@ Modules use **nwidart/laravel-modules** and are registered into the Filament adm
 
 A module can contain migrations, models, policies, Filament resources/pages/widgets, routes, controllers, jobs, and its own tests — the same conventions as `app/`. Module Filament resources appear in the admin panel automatically once the module is enabled.
 
+## Publishing a module
+
+The public module contract is the module.json file at the root of every
+module. A distributable module must declare:
+
+~~~json
+{
+  "name": "LibrarySystem",
+  "alias": "library-system",
+  "composer_package": "koakademy/library-system",
+  "version": "1.4.2",
+  "description": "Library operations.",
+  "author": "Maintainer name",
+  "license": "AGPL-3.0-or-later",
+  "requires": {
+    "core": ">=1.20.0",
+    "php": ">=8.5",
+    "modules": {}
+  },
+  "compatibility": {
+    "laravel": "^13.0",
+    "filament": "^5.0"
+  },
+  "providers": [
+    "Modules\\LibrarySystem\\Providers\\LibrarySystemServiceProvider"
+  ]
+}
+~~~
+
+Standalone module repositories use Composer PSR-4 autoloading, tagged semantic
+releases, migrations that are safe to run on upgrade, and package-contract tests.
+The public registry exposes both a signed catalog and a Composer `packages.json`
+repository. Install a package explicitly from the host application:
+
+~~~sh
+composer config repositories.koakademy composer https://yukazakiri.github.io/koakademy-modules
+composer require koakademy/library-system:^1.0
+~~~
+
+Each catalog release also declares an HTTPS ZIP asset and SHA-256 checksum for
+auditability. Composer performs the package installation; the marketplace layer
+does not execute arbitrary remote code.
+
+The core registry client is disabled by default. Enabling it requires
+MODULE_MARKETPLACE_ENABLED=true, an HTTPS MODULE_REGISTRY_URL, and an
+Ed25519 public key in MODULE_REGISTRY_PUBLIC_KEY. Unsigned catalogs are
+rejected by default. The catalog is read-only; package installation remains an
+explicit Composer operation by the host administrator.
+
+For a container-hosted registry, `scripts/ensure-signing-key.php` creates the
+Ed25519 keypair only when the persistent key volume is empty. It prints the
+public key and reuses the same key on restart; mount that public key into the
+KoAkademy app with `MODULE_REGISTRY_PUBLIC_KEY_FILE` or provide it through the
+deployment secret consumed by the app entrypoint.
+
 ## Feature flags (Pennant)
 
 Runtime flags use **Laravel Pennant** with the database store. Flags are **class-based toggles** in `app/Features/Toggles`, catalogued in `FeatureToggleRegistry` and enforced by the `EnsureFeatureEnabled` middleware. There are 36 toggles in three families:

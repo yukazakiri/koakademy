@@ -1,11 +1,26 @@
 {
     "name": "LibrarySystem",
-    "alias": "librarysystem",
-    "description": "",
+    "alias": "library-system",
+    "composer_package": "koakademy/library-system",
+    "version": "1.0.0",
+    "description": "Library catalogue, borrowing, research papers, and rights-cleared digital editions.",
+    "author": "KoAkademy contributors",
+    "license": "AGPL-3.0-or-later",
+    "requires": {
+        "core": ">=1.20.0",
+        "php": ">=8.5",
+        "modules": {}
+    },
+    "compatibility": {
+        "laravel": "^13.0",
+        "filament": "^5.0"
+    },
     "keywords": [],
     "priority": 0,
     "providers": [
         "Modules\\LibrarySystem\\Providers\\LibrarySystemServiceProvider"
     ],
-    "files": []
+    "files": [],
+    "repository": "https://github.com/yukazakiri/koakademy-module-library-system",
+    "homepage": "https://github.com/yukazakiri/koakademy-module-library-system"
 }

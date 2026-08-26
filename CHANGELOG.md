@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.22.0](https://github.com/yukazakiri/koakademy/compare/v1.21.0...v1.22.0) (2026-08-26)
+
+
+### Features
+
+* **modules:** load vendor module pages in host build ([a939e21](https://github.com/yukazakiri/koakademy/commit/a939e21aba627a2a9fae338f8975a3dada84906f))
+
 ## [1.21.0](https://github.com/yukazakiri/koakademy/compare/v1.20.1...v1.21.0) (2026-08-26)
 
 

@@ -70,7 +70,10 @@ final class AdministratorUserManagementController extends Controller
         $query->orderBy($sortField, $sortDirection);
 
         // Get all users for client-side pagination with TanStack Table
-        $users = $query->get();
+        $users = $query->get()->each(function (User $user): void {
+            $user->setAttribute('last_login_at', $user->getAttribute('last_login_at'));
+            $user->setAttribute('security_two_factor_enabled', (bool) ($user->getAttribute('security_two_factor_enabled') ?? true));
+        });
 
         $onlineUserIds = $this->onlineUserPresence->onlineUserIds();
         $onlineUsers = count($onlineUserIds);

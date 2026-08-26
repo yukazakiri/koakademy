@@ -71,15 +71,20 @@ export function DataTable<TData, TValue>({ columns, data, options }: DataTablePr
 
     return (
         <div className="space-y-4">
-            <div className="flex items-center justify-between">
-                <div className="flex flex-1 flex-col gap-4 sm:flex-row sm:items-center">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+                    <label htmlFor="users-search" className="sr-only">
+                        Search users
+                    </label>
                     <Input
+                        id="users-search"
                         placeholder="Search by name or email..."
+                        aria-label="Search users by name or email"
                         value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
                         onChange={(event) => table.getColumn("name")?.setFilterValue(event.target.value)}
-                        className="h-8 w-full sm:w-[250px] lg:w-[300px]"
+                        className="h-10 w-full sm:w-[280px]"
                     />
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                         {table.getColumn("role") && options?.roles && (
                             <Select
                                 value={(table.getColumn("role")?.getFilterValue() as string) ?? "all"}
@@ -91,7 +96,7 @@ export function DataTable<TData, TValue>({ columns, data, options }: DataTablePr
                                     }
                                 }}
                             >
-                                <SelectTrigger className="h-8 w-[140px]">
+                                <SelectTrigger className="h-10 w-[150px]">
                                     <SelectValue placeholder="Role" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -115,7 +120,7 @@ export function DataTable<TData, TValue>({ columns, data, options }: DataTablePr
                                     }
                                 }}
                             >
-                                <SelectTrigger className="h-8 w-[140px]">
+                                <SelectTrigger className="h-10 w-[150px]">
                                     <SelectValue placeholder="Status" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -125,8 +130,29 @@ export function DataTable<TData, TValue>({ columns, data, options }: DataTablePr
                                 </SelectContent>
                             </Select>
                         )}
+                        {table.getColumn("security_two_factor_enabled") && (
+                            <Select
+                                value={(table.getColumn("security_two_factor_enabled")?.getFilterValue() as string) ?? "all"}
+                                onValueChange={(value) => {
+                                    if (value === "all") {
+                                        table.getColumn("security_two_factor_enabled")?.setFilterValue(undefined);
+                                    } else {
+                                        table.getColumn("security_two_factor_enabled")?.setFilterValue(value);
+                                    }
+                                }}
+                            >
+                                <SelectTrigger className="h-10 w-[150px]">
+                                    <SelectValue placeholder="2FA" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All 2FA states</SelectItem>
+                                    <SelectItem value="enabled">Protected</SelectItem>
+                                    <SelectItem value="disabled">Off</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        )}
                         {isFiltered && (
-                            <Button variant="ghost" onClick={() => table.resetColumnFilters()} className="h-8 px-2 lg:px-3">
+                            <Button variant="ghost" onClick={() => table.resetColumnFilters()} className="h-10 px-3">
                                 Reset
                                 <X className="ml-2 h-4 w-4" />
                             </Button>
@@ -135,14 +161,18 @@ export function DataTable<TData, TValue>({ columns, data, options }: DataTablePr
                 </div>
                 <DataTableViewOptions table={table} />
             </div>
-            <div className="overflow-hidden rounded-md border">
-                <Table>
+            <div className="overflow-x-auto rounded-lg border">
+                <Table className="min-w-[760px]">
                     <TableHeader>
                         {table.getHeaderGroups().map((headerGroup) => (
-                            <TableRow key={headerGroup.id}>
+                            <TableRow key={headerGroup.id} className="bg-muted/30 hover:bg-muted/30">
                                 {headerGroup.headers.map((header) => {
                                     return (
-                                        <TableHead key={header.id} colSpan={header.colSpan}>
+                                        <TableHead
+                                            key={header.id}
+                                            colSpan={header.colSpan}
+                                            className="h-10 text-xs font-semibold tracking-wide uppercase"
+                                        >
                                             {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
                                         </TableHead>
                                     );
@@ -153,16 +183,19 @@ export function DataTable<TData, TValue>({ columns, data, options }: DataTablePr
                     <TableBody>
                         {table.getRowModel().rows?.length ? (
                             table.getRowModel().rows.map((row) => (
-                                <TableRow key={row.id} data-state={row.getIsSelected() && "selected"}>
+                                <TableRow key={row.id} data-state={row.getIsSelected() && "selected"} className="group">
                                     {row.getVisibleCells().map((cell) => (
-                                        <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
+                                        <TableCell key={cell.id} className="py-3">
+                                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                        </TableCell>
                                     ))}
                                 </TableRow>
                             ))
                         ) : (
                             <TableRow>
-                                <TableCell colSpan={columns.length} className="h-24 text-center">
-                                    No results.
+                                <TableCell colSpan={columns.length} className="h-28 text-center">
+                                    <p className="font-medium">No users found</p>
+                                    <p className="text-muted-foreground mt-1 text-sm">Try a different search or clear the active filters.</p>
                                 </TableCell>
                             </TableRow>
                         )}

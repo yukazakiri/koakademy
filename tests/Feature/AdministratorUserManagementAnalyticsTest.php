@@ -75,6 +75,11 @@ it('returns complete analytics for the administrator users page', function (): v
         ->assertOk();
 
     $analytics = $response->inertiaProps('analytics');
+    $users = $response->inertiaProps('users.data');
+    $todayStudent = collect($users)->firstWhere('name', 'Today Student');
+
+    expect($todayStudent)->not->toBeNull()
+        ->and($todayStudent)->toHaveKeys(['id', 'created_at', 'last_login_at', 'security_two_factor_enabled']);
 
     expect($analytics['total_users'])->toBe(5)
         ->and($analytics['all_time_users'])->toBe(6)

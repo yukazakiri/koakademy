@@ -10,10 +10,11 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useOnlinePresence } from "@/contexts/online-presence-context";
+import type { User } from "@/types/user";
 import { Head, Link, router, usePoll } from "@inertiajs/react";
-import { KeyRound, Plus, ShieldCheck, Trash2, UserCog } from "lucide-react";
+import { ChevronDown, KeyRound, Plus, ShieldCheck, Trash2, UserCog } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AnalyticsData, UserAnalytics } from "./analytics";
 import { createColumns, ExtendedUser } from "./columns";
@@ -21,7 +22,7 @@ import { DataTable } from "./data-table";
 import { OnlineUsersWidget } from "./online-users-widget";
 
 // Declare route globally to avoid TS errors
-declare const route: any;
+declare const route: (name: string, ...parameters: unknown[]) => string;
 
 interface PageProps {
     users: {
@@ -47,22 +48,19 @@ interface PageProps {
         type: string;
         message: string;
     };
-    user: any;
+    user: User;
 }
 
-type ActionType = "delete" | "impersonate" | "verify" | "reset_password" | null;
+type ActionType = "delete" | "impersonate" | "verify" | "reset_password";
 
-export default function UserIndex({ users, analytics, online_user_ids, filters, options, user }: PageProps) {
+export default function UserIndex({ users, analytics, online_user_ids, options, user }: PageProps) {
     const presence = useOnlinePresence();
     const liveOnlineUserIds = presence.isReady ? presence.onlineUserIds : online_user_ids;
     const liveAnalytics = useMemo(
         () => ({
             ...analytics,
             online_users: liveOnlineUserIds.length,
-            online_rate:
-                analytics.total_users > 0
-                    ? Number(((liveOnlineUserIds.length / analytics.total_users) * 100).toFixed(1))
-                    : 0,
+            online_rate: analytics.total_users > 0 ? Number(((liveOnlineUserIds.length / analytics.total_users) * 100).toFixed(1)) : 0,
         }),
         [analytics, liveOnlineUserIds],
     );
@@ -72,7 +70,7 @@ export default function UserIndex({ users, analytics, online_user_ids, filters, 
     });
 
     const [actionState, setActionState] = useState<{
-        type: ActionType;
+        type: ActionType | null;
         userId: number | null;
         userName: string | null;
     }>({ type: null, userId: null, userName: null });
@@ -131,75 +129,97 @@ export default function UserIndex({ users, analytics, online_user_ids, filters, 
         <AdminLayout user={user} title="User Management">
             <Head title="Administrators • Users" />
 
-            <div className="flex flex-col gap-4">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h2 className="text-2xl font-bold tracking-tight">Users</h2>
-                        <p className="text-muted-foreground">Manage system users, roles, and permissions.</p>
+            <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-5">
+                <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                    <div className="space-y-1">
+                        <p className="text-muted-foreground text-xs font-semibold tracking-[0.16em] uppercase">Administration / Access</p>
+                        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">User management</h1>
+                        <p className="text-muted-foreground max-w-2xl text-sm">Review accounts, access levels, and organization assignments.</p>
                     </div>
-                    <Button asChild>
+                    <Button asChild className="w-full sm:w-auto">
                         <Link href={route("administrators.users.create")}>
-                            <Plus className="mr-2 h-4 w-4" /> Add User
+                            <Plus aria-hidden="true" />
+                            Add user
                         </Link>
                     </Button>
-                </div>
+                </header>
 
                 <UserAnalytics stats={liveAnalytics} />
 
-                <OnlineUsersWidget users={users.data} onlineUserIds={liveOnlineUserIds} />
+                <section className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
+                    <Card className="min-w-0">
+                        <CardHeader className="border-b py-4">
+                            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                    <CardTitle className="text-base">All users</CardTitle>
+                                    <p className="text-muted-foreground mt-1 text-sm">Search and filter the current account directory.</p>
+                                </div>
+                                <span className="text-muted-foreground text-sm tabular-nums">
+                                    {users.total.toLocaleString("en-US")} {users.total === 1 ? "account" : "accounts"}
+                                </span>
+                            </div>
+                        </CardHeader>
+                        <CardContent className="pt-4">
+                            <DataTable columns={columns} data={users.data} options={options} />
+                        </CardContent>
+                    </Card>
 
-                <Card>
-                    <CardHeader>
-                        <CardTitle>All Users</CardTitle>
-                        <CardDescription>
-                            A comprehensive list of all users in the system. Use the search and filters to find specific users.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <DataTable columns={columns} data={users.data} options={options} />
-                    </CardContent>
-                </Card>
+                    <OnlineUsersWidget users={users.data} onlineUserIds={liveOnlineUserIds} />
+                </section>
 
-                {/* Action Confirmation Dialogs */}
+                <details className="group bg-card rounded-xl border shadow-xs">
+                    <summary className="hover:bg-muted/40 focus-visible:ring-ring/45 flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-4 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset [&::-webkit-details-marker]:hidden">
+                        <div>
+                            <h2 className="font-medium">Account analytics</h2>
+                            <p className="text-muted-foreground mt-1 text-sm">Registration, verification, and role coverage.</p>
+                        </div>
+                        <ChevronDown
+                            aria-hidden="true"
+                            className="text-muted-foreground size-5 shrink-0 transition-transform group-open:rotate-180"
+                        />
+                    </summary>
+                    <div className="border-t p-4">
+                        <UserAnalytics stats={liveAnalytics} detailed />
+                    </div>
+                </details>
+
+                {/* Action confirmation dialog */}
                 <AlertDialog open={!!actionState.type} onOpenChange={closeDialog}>
-                    <AlertDialogContent>
+                    <AlertDialogContent className="sm:max-w-md">
                         <AlertDialogHeader>
                             <AlertDialogTitle className="flex items-center gap-2">
-                                {actionState.type === "delete" && <Trash2 className="h-5 w-5 text-red-500" />}
-                                {actionState.type === "impersonate" && <UserCog className="h-5 w-5 text-amber-500" />}
-                                {actionState.type === "verify" && <ShieldCheck className="h-5 w-5 text-emerald-500" />}
-                                {actionState.type === "reset_password" && <KeyRound className="h-5 w-5 text-blue-500" />}
+                                {actionState.type === "delete" && <Trash2 aria-hidden="true" className="text-destructive size-5" />}
+                                {actionState.type === "impersonate" && <UserCog aria-hidden="true" className="size-5 text-amber-600" />}
+                                {actionState.type === "verify" && <ShieldCheck aria-hidden="true" className="size-5 text-emerald-600" />}
+                                {actionState.type === "reset_password" && <KeyRound aria-hidden="true" className="size-5 text-blue-600" />}
 
-                                {actionState.type === "delete" && "Delete User"}
-                                {actionState.type === "impersonate" && "Impersonate User"}
-                                {actionState.type === "verify" && "Verify Email"}
-                                {actionState.type === "reset_password" && "Reset Password"}
+                                {actionState.type === "delete" && "Delete user"}
+                                {actionState.type === "impersonate" && "Impersonate user"}
+                                {actionState.type === "verify" && "Verify email"}
+                                {actionState.type === "reset_password" && "Reset password"}
                             </AlertDialogTitle>
                             <AlertDialogDescription>
                                 {actionState.type === "delete" && (
                                     <>
-                                        Are you sure you want to delete <span className="text-foreground font-semibold">{actionState.userName}</span>?
-                                        This action cannot be undone and will remove all associated data.
+                                        Delete <span className="text-foreground font-medium">{actionState.userName}</span>? This removes the account
+                                        and its associated data.
                                     </>
                                 )}
                                 {actionState.type === "impersonate" && (
                                     <>
-                                        You are about to log in as <span className="text-foreground font-semibold">{actionState.userName}</span>. You
-                                        will have full access to their account. To return to your account, use the "Stop Impersonating" button in the
-                                        top bar.
+                                        Start a session as <span className="text-foreground font-medium">{actionState.userName}</span>? You will have
+                                        full access to the user&apos;s account.
                                     </>
                                 )}
                                 {actionState.type === "verify" && (
                                     <>
-                                        Manually verify the email address for{" "}
-                                        <span className="text-foreground font-semibold">{actionState.userName}</span>? This will allow them to access
-                                        features requiring email verification.
+                                        Mark <span className="text-foreground font-medium">{actionState.userName}</span>&apos;s email address as
+                                        verified?
                                     </>
                                 )}
                                 {actionState.type === "reset_password" && (
                                     <>
-                                        Send a password reset link to <span className="text-foreground font-semibold">{actionState.userName}</span>?
-                                        They will receive an email with instructions to set a new password.
+                                        Send a password reset link to <span className="text-foreground font-medium">{actionState.userName}</span>?
                                     </>
                                 )}
                             </AlertDialogDescription>
@@ -207,22 +227,16 @@ export default function UserIndex({ users, analytics, online_user_ids, filters, 
                         <AlertDialogFooter>
                             <AlertDialogCancel>Cancel</AlertDialogCancel>
                             <AlertDialogAction
-                                onClick={(e) => {
-                                    e.preventDefault();
+                                onClick={(event) => {
+                                    event.preventDefault();
                                     confirmAction();
                                 }}
-                                className={
-                                    actionState.type === "delete"
-                                        ? "bg-red-600 hover:bg-red-700"
-                                        : actionState.type === "impersonate"
-                                          ? "bg-amber-600 hover:bg-amber-700"
-                                          : ""
-                                }
+                                className={actionState.type === "delete" ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : ""}
                             >
-                                {actionState.type === "delete" && "Delete User"}
-                                {actionState.type === "impersonate" && "Start Impersonation"}
-                                {actionState.type === "verify" && "Confirm Verification"}
-                                {actionState.type === "reset_password" && "Send Reset Link"}
+                                {actionState.type === "delete" && "Delete user"}
+                                {actionState.type === "impersonate" && "Start session"}
+                                {actionState.type === "verify" && "Verify email"}
+                                {actionState.type === "reset_password" && "Send link"}
                             </AlertDialogAction>
                         </AlertDialogFooter>
                     </AlertDialogContent>

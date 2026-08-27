@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.23.0](https://github.com/yukazakiri/koakademy/compare/v1.22.0...v1.23.0) (2026-08-27)
+
+
+### Features
+
+* **forms:** add online forms package ([bc528c1](https://github.com/yukazakiri/koakademy/commit/bc528c1956f5c080722a6e8dd7650ed9d956a08d))
+* **marketplace:** add guided module updates ([#212](https://github.com/yukazakiri/koakademy/issues/212)) ([26016ec](https://github.com/yukazakiri/koakademy/commit/26016ec3fdb4f5ef02eeba4c1f80c57be9b45f59))
+* **modules:** persist marketplace activation state ([#211](https://github.com/yukazakiri/koakademy/issues/211)) ([b203c56](https://github.com/yukazakiri/koakademy/commit/b203c56ceaa804205dea8d8e377bdc57b7bc600c))
+
+
+### Bug Fixes
+
+* **modules:** accept edge core versions for compatibility ([51c6ad1](https://github.com/yukazakiri/koakademy/commit/51c6ad16398b2ea3728e01d57ae3344ee736af49))
+* **modules:** show Composer module pages in admin navigation ([27a46bc](https://github.com/yukazakiri/koakademy/commit/27a46bc21069820ad4ec285e9cc7c4e7e1676e61))
+
+
+### Documentation
+
+* **modules:** add standalone module creation guide ([84bc9ef](https://github.com/yukazakiri/koakademy/commit/84bc9ef9b8be563a19c24a7364b6fd294bae2b9c))
+* **modules:** document registry and deployment lifecycle ([1a22915](https://github.com/yukazakiri/koakademy/commit/1a229158d87e6988b0fab7032a49bdb2769f0fc2))
+
 ## [1.22.0](https://github.com/yukazakiri/koakademy/compare/v1.21.0...v1.22.0) (2026-08-26)
 
 

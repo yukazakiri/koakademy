@@ -9,7 +9,7 @@ it('creates a disabled status file for fresh installations', function (): void {
     $statusesPath = storage_path('framework/testing/module-statuses-disabled-'.uniqid().'.json');
 
     try {
-        config(['modules.activators.file.statuses-file' => $statusesPath]);
+        config(['modules.statuses-file' => $statusesPath]);
 
         expect(Artisan::call('modules:initialize-statuses', [
             '--mode' => 'disabled',
@@ -37,7 +37,7 @@ it('preserves the image status file for upgrades and never overwrites an existin
     $statusesPath = storage_path('framework/testing/module-statuses-preserve-'.uniqid().'.json');
 
     try {
-        config(['modules.activators.file.statuses-file' => $statusesPath]);
+        config(['modules.statuses-file' => $statusesPath]);
 
         expect(Artisan::call('modules:initialize-statuses', [
             '--mode' => 'preserve',

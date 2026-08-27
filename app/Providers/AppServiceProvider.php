@@ -47,6 +47,7 @@ use App\Models\StudentTransaction;
 use App\Models\User;
 use App\Modules\CompatibilityChecker;
 use App\Modules\ModuleManifestRepository;
+use App\Modules\ModuleStateRepository;
 use App\Modules\RegistryClient;
 use App\Modules\VersionConstraint;
 use App\Observers\StudentTransactionObserver;
@@ -58,6 +59,7 @@ use App\Services\Newsletter\NewsletterSubscriptionService;
 use App\Services\VersionService;
 use App\Support\HostingSecurity;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\URL;
@@ -66,6 +68,7 @@ use Illuminate\View\FileViewFinder;
 use Laravel\Passkeys\Passkeys;
 use Laravel\Pennant\Feature;
 use Livewire\Livewire;
+use Nwidart\Modules\Contracts\RepositoryInterface;
 use Throwable;
 
 final class AppServiceProvider extends ServiceProvider
@@ -77,9 +80,23 @@ final class AppServiceProvider extends ServiceProvider
     {
         $this->app->singleton(ExportFailureHandler::class);
         $this->app->singleton(ModuleManifestRepository::class);
+        $this->app->singleton(ModuleStateRepository::class);
         $this->app->singleton(RegistryClient::class);
         $this->app->singleton(VersionConstraint::class);
         $this->app->singleton(CompatibilityChecker::class);
+
+        $this->app->resolving(Migrator::class, function (Migrator $migrator): void {
+            $migrationPath = (string) config('modules.paths.generator.migration.path');
+
+            foreach ($this->app->make(RepositoryInterface::class)->all() as $module) {
+                $path = $module->getExtraPath($migrationPath);
+
+                if (is_dir($path)) {
+                    $migrator->path($path);
+                }
+            }
+        });
+
         // scoped = one instance per HTTP request, so Auth is always available when first used
         $this->app->scoped(GeneralSettingsService::class);
         $this->app->scoped(NewsletterSettingsService::class);

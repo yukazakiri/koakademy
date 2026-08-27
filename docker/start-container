@@ -43,7 +43,7 @@ for variable_name in DB_CONNECTION DB_HOST DB_PORT DB_DATABASE DB_USERNAME DB_PA
     [ -n "${variable_value}" ] && normalize_environment_value "${variable_name}" "${variable_value}"
 done
 
-for variable_name in MODULE_MARKETPLACE_ENABLED MODULE_REGISTRY_REQUIRE_SIGNATURE MODULE_DEFAULT_STATUS \
+for variable_name in MODULE_MARKETPLACE_ENABLED MODULE_REGISTRY_REQUIRE_SIGNATURE MODULE_ACTIVATOR MODULE_DEFAULT_STATUS \
     MODULE_STATUSES_FILE MODULE_REGISTRY_URL MODULE_REGISTRY_PUBLIC_KEY_FILE; do
     eval "variable_value=\${${variable_name}:-}"
     [ -n "${variable_value}" ] && normalize_environment_value "${variable_name}" "${variable_value}"
@@ -150,6 +150,13 @@ purge_laravel_provider_caches() {
 initialize_module_statuses() {
     echo "Initializing persistent module statuses (${MODULE_DEFAULT_STATUS})..."
     php artisan modules:initialize-statuses \
+        --mode="${MODULE_DEFAULT_STATUS}" \
+        --no-interaction
+}
+
+sync_module_statuses() {
+    echo "Synchronizing installed module states into the database..."
+    php artisan modules:sync-statuses \
         --mode="${MODULE_DEFAULT_STATUS}" \
         --no-interaction
 }
@@ -813,6 +820,7 @@ run_primary_startup_tasks() {
     ensure_vendor_view_dirs
     prepare_pulse_storage
     run_migrations_if_enabled
+    sync_module_statuses
     run_docker_scripts_if_enabled
     dispatch_optimize
     schedule_scout_settings_post_start

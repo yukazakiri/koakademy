@@ -9,7 +9,7 @@ KoAkademy composes optional functionality at three levels: **modules** (code-lev
 
 ## Modules
 
-Modules use **nwidart/laravel-modules** and are registered into the Filament admin panel through `coolsam/modules` (`ModulesPlugin` in `AdminPanelProvider`). Enabled state lives in the persistent `modules_statuses.json` file. The six bundled source-tree modules ship enabled for backward-compatible defaults; standalone Composer modules must be installed in the image before they can be enabled.
+Modules use **nwidart/laravel-modules** and are registered into the Filament admin panel through `coolsam/modules` (`ModulesPlugin` in `AdminPanelProvider`). Enabled state is stored in the `module_installations` database table after the migration runs. The persistent `modules_statuses.json` file remains the first-boot default and rollback fallback. The six bundled source-tree modules ship enabled for backward-compatible defaults; standalone Composer modules must be installed in the image before they can be enabled.
 
 | Module | Registers | Purpose |
 | ------ | --------- | ------- |
@@ -29,11 +29,13 @@ release tags, migrations, and `module.json` manifests. The [Forms module](https:
 is an example: it provides configurable forms, surveys, evaluations, and
 record-linked submissions without copying its source into `Modules/`.
 
-Install a standalone package in the application repository, commit the lockfile,
-build the image, run its migrations, and then enable it from **Administrators →
-Marketplace**. The Marketplace does not run Composer or update a live
-container. See [Module Registry](/koakademy/maintainers/module-registry/) for
-the release and deployment lifecycle.
+Install a standalone package in the application or distribution repository,
+commit the lockfile, build the image, run its migrations, and then enable it
+from **Administrators → Marketplace**. The Marketplace does not run Composer or
+update a live container. Startup synchronizes newly discovered packages into
+the database without overwriting existing administrator choices. See [Module
+Registry](/koakademy/maintainers/module-registry/) for the release and
+deployment lifecycle.
 
 ## Publishing a module
 

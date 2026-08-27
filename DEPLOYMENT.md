@@ -100,11 +100,20 @@ as Announcement:
 5. Run `php artisan migrate --force` in the release container when the module
    has migrations, clear/rebuild application caches, and roll every Swarm
    replica.
-6. Open **Administrators → Marketplace** and enable the installed module if it
-   is disabled.
+6. Container startup runs `modules:sync-statuses` after migrations. It records
+   installed package metadata without overwriting existing enabled/disabled
+   choices or clearing restart-required markers.
+7. Open **Administrators → Marketplace** and enable the installed module if it
+   is disabled, then roll the workers when the Marketplace reports that a
+   restart is required.
+8. After every replica has been updated and verified healthy, run
+   `php artisan modules:sync-statuses --acknowledge-restart` once to clear the
+   completed rollout marker.
 
-Refreshing Marketplace only refreshes catalog information. It does not install
-Composer packages, rebuild frontend assets, run migrations, or restart Swarm.
+Refreshing Marketplace only refreshes signed catalog information. It does not
+install Composer packages, rebuild frontend assets, run migrations, or restart
+Swarm. Module activation state is stored in the `module_installations` database
+table; `modules_statuses.json` remains a first-boot and rollback fallback.
 Existing source-tree modules under `Modules/` also do not receive updates from
 their standalone repositories until the application is deliberately migrated
 to the Composer package. Keep the legacy module enabled during that migration

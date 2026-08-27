@@ -21,6 +21,9 @@ interface MarketplaceModule {
     homepage: string | null;
     installed: boolean;
     enabled: boolean;
+    status: "not_installed" | "disabled" | "enabled" | "restart_required";
+    restart_required: boolean;
+    update_available: boolean;
     compatible: boolean;
     compatibility_errors: string[];
     asset_url: string | null;
@@ -41,15 +44,20 @@ interface Props {
 
 export default function ModuleMarketplacePage({ user, marketplace }: Props) {
     const [processingModule, setProcessingModule] = useState<string | null>(null);
+    const restartRequiredModules = marketplace.modules.filter((module) => module.restart_required);
 
     function changeStatus(module: MarketplaceModule): void {
         const nextEnabled = !module.enabled;
         setProcessingModule(module.name);
 
-        router.post((nextEnabled ? enable : disable).url(module.name), {}, {
-            preserveScroll: true,
-            onFinish: () => setProcessingModule(null),
-        });
+        router.post(
+            (nextEnabled ? enable : disable).url(module.name),
+            {},
+            {
+                preserveScroll: true,
+                onFinish: () => setProcessingModule(null),
+            },
+        );
     }
 
     return (
@@ -69,9 +77,18 @@ export default function ModuleMarketplacePage({ user, marketplace }: Props) {
                                 Review the signed public catalog and control modules that are already included in this application image.
                             </p>
                         </div>
-                        <Badge variant={marketplace.enabled ? "default" : "outline"} className="w-fit">
-                            {marketplace.enabled ? "Marketplace enabled" : "Marketplace disabled"}
-                        </Badge>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant={marketplace.enabled ? "default" : "outline"} className="w-fit">
+                                {marketplace.enabled ? "Marketplace enabled" : "Marketplace disabled"}
+                            </Badge>
+                            {marketplace.registry_url && (
+                                <Button variant="outline" size="sm" asChild>
+                                    <a href="?refresh=1">
+                                        <RefreshCw className="size-3.5" /> Refresh catalog
+                                    </a>
+                                </Button>
+                            )}
+                        </div>
                     </div>
                 </header>
 
@@ -81,16 +98,31 @@ export default function ModuleMarketplacePage({ user, marketplace }: Props) {
                     </div>
                 )}
 
+                {restartRequiredModules.length > 0 && (
+                    <div
+                        className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200"
+                        role="status"
+                    >
+                        Restart or redeploy the application to apply changes to: {restartRequiredModules.map((module) => module.name).join(", ")}.
+                    </div>
+                )}
+
                 <div className="border-border/70 bg-muted/30 text-muted-foreground rounded-xl border px-4 py-3 text-sm leading-6">
-                    New Composer packages are installed during an image build. The marketplace does not run Composer in a live container, so a
-                    package marked as not installed needs a new image before it can be enabled here. After changing a module state, restart or
-                    redeploy the application so every long-running worker loads the new providers and routes.
+                    New Composer packages are installed during an image build. The marketplace does not run Composer in a live container, so a package
+                    marked as not installed needs a new image before it can be enabled here. After changing a module state, restart or redeploy the
+                    application so every long-running worker loads the new providers and routes.
                 </div>
 
                 {marketplace.modules.length > 0 ? (
                     <section aria-label="Available modules" className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                         {marketplace.modules.map((module) => {
                             const isProcessing = processingModule === module.name;
+                            const statusLabel = {
+                                not_installed: "Not installed",
+                                disabled: "Disabled",
+                                enabled: "Enabled",
+                                restart_required: "Restart required",
+                            }[module.status];
 
                             return (
                                 <Card key={module.name} className="border-border/70 flex h-full flex-col">
@@ -99,12 +131,12 @@ export default function ModuleMarketplacePage({ user, marketplace }: Props) {
                                             <div>
                                                 <CardTitle className="flex items-center gap-2">
                                                     {module.name}
-                                                    {module.enabled && <CheckCircle2 className="text-emerald-600 size-4" aria-label="Enabled" />}
+                                                    {module.enabled && <CheckCircle2 className="size-4 text-emerald-600" aria-label="Enabled" />}
                                                 </CardTitle>
                                                 <CardDescription className="mt-1">{module.composer_package ?? module.alias}</CardDescription>
                                             </div>
-                                            <Badge variant={module.installed ? (module.enabled ? "default" : "outline") : "secondary"}>
-                                                {module.installed ? (module.enabled ? "Enabled" : "Disabled") : "Image required"}
+                                            <Badge variant={module.status === "enabled" ? "default" : module.installed ? "outline" : "secondary"}>
+                                                {statusLabel}
                                             </Badge>
                                         </div>
                                     </CardHeader>
@@ -123,7 +155,7 @@ export default function ModuleMarketplacePage({ user, marketplace }: Props) {
                                                 <dt className="font-medium">Compatibility</dt>
                                                 <dd className="mt-0.5">
                                                     {module.compatible ? (
-                                                        <span className="text-emerald-600 inline-flex items-center gap-1">
+                                                        <span className="inline-flex items-center gap-1 text-emerald-600">
                                                             <CheckCircle2 className="size-3" /> Compatible
                                                         </span>
                                                     ) : (
@@ -137,6 +169,11 @@ export default function ModuleMarketplacePage({ user, marketplace }: Props) {
                                                 <dt className="font-medium">License</dt>
                                                 <dd className="text-foreground mt-0.5">{module.license}</dd>
                                             </div>
+                                            {module.update_available && (
+                                                <div className="col-span-2">
+                                                    <span className="text-amber-700 dark:text-amber-300">Update available in the catalog.</span>
+                                                </div>
+                                            )}
                                         </dl>
                                         {!module.compatible && module.compatibility_errors.length > 0 && (
                                             <ul className="text-destructive list-disc space-y-1 pl-4 text-xs">
@@ -175,7 +212,7 @@ export default function ModuleMarketplacePage({ user, marketplace }: Props) {
                                             </Button>
                                         ) : (
                                             <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
-                                                <PackageCheck className="size-3.5" /> Rebuild image to install
+                                                <PackageCheck className="size-3.5" /> Add with Composer, then rebuild
                                             </span>
                                         )}
                                     </CardFooter>
@@ -188,7 +225,9 @@ export default function ModuleMarketplacePage({ user, marketplace }: Props) {
                         <PackageOpen className="text-muted-foreground mx-auto size-8" />
                         <p className="text-foreground mt-3 font-medium">No modules are currently listed.</p>
                         <p className="text-muted-foreground mt-1 text-sm">
-                            {marketplace.registry_url ? "Refresh the catalog or check the registry configuration." : "Configure a signed module registry to publish modules here."}
+                            {marketplace.registry_url
+                                ? "Refresh the catalog or check the registry configuration."
+                                : "Configure a signed module registry to publish modules here."}
                         </p>
                         {marketplace.registry_url && (
                             <Button variant="link" size="sm" asChild className="mt-2">

@@ -18,24 +18,14 @@ final class ModuleAdminNavigationService
      */
     public function getRoutes(): array
     {
-        $statusesPath = config('modules.activators.file.statuses-file', base_path('modules_statuses.json'));
-
-        if (! is_file($statusesPath)) {
-            return [];
-        }
-
-        $decoded = json_decode((string) file_get_contents($statusesPath), true);
-
-        if (! is_array($decoded)) {
-            return [];
-        }
-
         $routes = [];
 
-        foreach ($decoded as $moduleName => $enabled) {
-            if ($enabled !== true) {
+        foreach ($this->modules->all() as $module) {
+            if (! $module->isEnabled()) {
                 continue;
             }
+
+            $moduleName = $module->getName();
 
             $modulePath = $this->getModulePath($moduleName);
             $modulePages = $this->getModuleInertiaPages($modulePath);

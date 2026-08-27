@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Modules\ModuleManifestRepository;
+use App\Modules\ModuleStateRepository;
 use Illuminate\Console\Command;
 use JsonException;
 use Override;
@@ -19,9 +20,9 @@ final class InitializeModuleStatuses extends Command
     #[Override]
     protected $description = 'Create the persistent module status file once without overwriting administrator choices.';
 
-    public function handle(ModuleManifestRepository $manifests): int
+    public function handle(ModuleManifestRepository $manifests, ModuleStateRepository $states): int
     {
-        $statusesPath = (string) config('modules.activators.file.statuses-file', base_path('modules_statuses.json'));
+        $statusesPath = $states->statusFilePath();
 
         if ($statusesPath === '') {
             throw new RuntimeException('The module status file path cannot be empty.');

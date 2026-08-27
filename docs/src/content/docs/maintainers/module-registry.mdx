@@ -38,6 +38,12 @@ Updating the registry changes catalog information. It does not modify a
 running container, install `vendor/` dependencies, rebuild Vite assets, run
 migrations, or restart Swarm.
 
+The Marketplace fetches the signed catalog at runtime, using the configured
+cache TTL. Contributors can therefore publish new catalog entries without
+changing the KoAkademy core repository. A catalog entry describes an available
+release; it does not mean that the PHP package is installed in a particular
+image.
+
 ## Install a standalone module
 
 From the KoAkademy application repository, configure the Composer registry and
@@ -58,7 +64,14 @@ Commit `composer.json` and `composer.lock`, then build the normal KoAkademy
 image. Run migrations in the release container when the package includes
 database migrations, clear/rebuild application caches, and roll the Swarm
 service. Only after the package is in the image should a super administrator
-open **Administrators → Marketplace** and enable it.
+open **Administrators → Marketplace** and enable it. The enable/disable
+decision is stored in `module_installations`, and the application shows a
+restart-required notice until the workers have been rolled. At container
+startup, `modules:sync-statuses` records installed package metadata without
+overwriting existing administrator choices or clearing restart markers. After
+every application replica has been updated and verified healthy, acknowledge
+the completed rollout explicitly with
+`php artisan modules:sync-statuses --acknowledge-restart`.
 
 The current Forms package supports authenticated, guest-identifier, and
 anonymous forms, protected submissions, and KoAkademy student-model mappings.
@@ -138,11 +151,13 @@ For a new Announcement release such as `1.0.2`:
 5. Run `php artisan migrate --force` when required, clear/rebuild caches, and
    roll every Swarm replica.
 6. Enable the installed version in **Administrators → Marketplace** if its
-   persistent status is disabled.
+   persistent status is disabled, then roll the application workers when the
+   Marketplace reports that a restart is required.
 
 Existing deployments stay on the old module version until the application
 lockfile and image are updated. Marketplace refreshes do not perform these
-steps.
+steps. The database state survives image replacement; the JSON status file is
+retained for first-boot defaults and compatibility with older releases.
 
 ## Legacy source-tree modules
 
@@ -153,8 +168,8 @@ automatically replace that local source.
 
 Migrate a local module to its Composer package as a separate, tested change.
 Keep the existing module enabled during the migration unless the migration
-plan explicitly changes its status. The persistent status file preserves
-existing administrator choices across application upgrades.
+plan explicitly changes its status. The `module_installations` row preserves
+administrator choices across application upgrades.
 
 ## Configuration and troubleshooting
 
@@ -165,6 +180,7 @@ MODULE_MARKETPLACE_ENABLED=true
 MODULE_REGISTRY_REQUIRE_SIGNATURE=true
 MODULE_REGISTRY_URL=https://yukazakiri.github.io/koakademy-modules/registry.json
 MODULE_SCAN_VENDOR=true
+MODULE_ACTIVATOR=database
 ```
 
 The registry public key must match the catalog trust root. If Marketplace
@@ -173,3 +189,12 @@ installed in the image, its provider is discoverable, its compatibility check
 passes, and its dependencies are enabled. If the signed catalog cannot be
 reached, installed modules remain visible but remote catalog information may
 be unavailable.
+
+## Core-only installations
+
+A core-only image should omit optional Composer packages. It can still display
+the signed Marketplace catalog, but catalog entries are shown as **Not
+installed** and cannot be enabled until the package is added to the application
+dependency manifest and a new image is built. An official full distribution can
+ship the same packages in its image while initializing optional modules as
+disabled for new installations.

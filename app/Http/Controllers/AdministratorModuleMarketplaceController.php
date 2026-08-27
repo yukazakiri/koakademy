@@ -168,7 +168,7 @@ final class AdministratorModuleMarketplaceController extends Controller
             return null;
         }
 
-        return "composer require {$manifest->composerPackage}:^{$release->version} --update-with-dependencies";
+        return "composer require {$manifest->composerPackage}:{$release->version} --update-with-dependencies";
     }
 
     private function setStatus(string $moduleName, bool $enabled): RedirectResponse

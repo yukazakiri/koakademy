@@ -128,6 +128,9 @@ final class RegistrarStudentProfileWorkbook
         ['key' => 'employed_by_institution', 'label' => 'Employed by Institution', 'group' => 'Scholarship and Employment', 'type' => 'boolean', 'read' => ['student.employed_by_institution'], 'write' => ['student.employed_by_institution']],
     ];
 
+    /** @var array<string, list<string>> */
+    private array $availableColumns = [];
+
     /** @return list<array<string, mixed>> */
     public function fields(): array
     {
@@ -445,7 +448,7 @@ final class RegistrarStudentProfileWorkbook
         [$scope, $attribute] = array_pad(explode('.', $target, 2), 2, '');
 
         if ($scope === 'contacts') {
-            return Schema::hasColumn('students', 'contacts');
+            return in_array('contacts', $this->availableColumns('students'), true);
         }
 
         $table = match ($scope) {
@@ -457,7 +460,13 @@ final class RegistrarStudentProfileWorkbook
             default => null,
         };
 
-        return $table !== null && Schema::hasColumn($table, $attribute);
+        return $table !== null && in_array($attribute, $this->availableColumns($table), true);
+    }
+
+    /** @return list<string> */
+    private function availableColumns(string $table): array
+    {
+        return $this->availableColumns[$table] ??= Schema::getColumnListing($table);
     }
 
     private function canonicalValue(mixed $value): mixed

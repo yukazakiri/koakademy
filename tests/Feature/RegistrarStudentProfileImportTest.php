@@ -148,6 +148,8 @@ it('stages and confirms profile fields and first-year classification from a sign
         (string) $student->student_id => [
             'Email' => 'updated-email@example.test',
             "Father's Name" => 'Andres Example',
+            "Father's Occupation" => 'Farmer',
+            'Junior High School Address' => '123 Learning Street',
             'First-year Intake Classification' => 'New freshman',
             'Religion' => '',
         ],
@@ -160,7 +162,7 @@ it('stages and confirms profile fields and first-year classification from a sign
     )->assertCreated()
         ->assertJsonPath('import.summary.ready_students', 1)
         ->assertJsonPath('import.summary.invalid_students', 0)
-        ->assertJsonPath('import.summary.changed_fields', 3)
+        ->assertJsonPath('import.summary.changed_fields', 5)
         ->assertJsonPath('import.students.0.intake_category', 'new_freshman');
 
     expect($student->refresh()->email)->toBe('old-email@example.test')
@@ -180,6 +182,8 @@ it('stages and confirms profile fields and first-year classification from a sign
         ->and($updatedStudent->phone)->toBe('09170000000')
         ->and($updatedStudent->religion)->toBe('Roman Catholic')
         ->and(data_get($updatedStudent->contacts, 'parents.father_name'))->toBe('Andres Example')
+        ->and(data_get($updatedStudent->studentParentInfo, 'father_occupation'))->toBe('Farmer')
+        ->and(data_get($updatedStudent->profile_details, 'junior_high_school_address'))->toBe('123 Learning Street')
         ->and($enrollment->refresh()->intake_category)->toBe('new_freshman');
 });
 

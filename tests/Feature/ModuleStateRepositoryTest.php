@@ -66,6 +66,36 @@ it('persists activation changes in the database and legacy file', function (): v
     }
 });
 
+it('merges a fresh legacy status snapshot when a worker has stale state', function (): void {
+    $statusesPath = storage_path('framework/testing/module-state-stale-worker-'.uniqid().'.json');
+
+    try {
+        config([
+            'modules.activator' => 'file',
+            'modules.statuses-file' => $statusesPath,
+        ]);
+        File::put($statusesPath, json_encode([
+            'Forms' => false,
+            'Announcement' => false,
+        ], JSON_THROW_ON_ERROR));
+
+        $staleWorker = new ModuleStateRepository;
+        expect($staleWorker->isEnabled('Forms'))->toBeFalse();
+
+        (new ModuleStateRepository)->setEnabled('Announcement', true);
+        $staleWorker->setEnabled('Forms', true);
+
+        expect(json_decode(File::get($statusesPath), true, 512, JSON_THROW_ON_ERROR))
+            ->toMatchArray([
+                'Forms' => true,
+                'Announcement' => true,
+            ]);
+    } finally {
+        File::delete($statusesPath);
+        File::delete($statusesPath.'.lock');
+    }
+});
+
 it('does not clear restart markers until the rollout is explicitly acknowledged', function (): void {
     $states = new ModuleStateRepository;
     $manifest = moduleStateManifest('Announcement');

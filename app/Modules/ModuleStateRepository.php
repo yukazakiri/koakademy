@@ -82,7 +82,7 @@ final class ModuleStateRepository
             ]);
         }
 
-        $this->writeLegacyStatuses();
+        $this->writeLegacyStatuses($moduleName, $enabled);
     }
 
     /**
@@ -221,7 +221,7 @@ final class ModuleStateRepository
         $this->loaded = true;
     }
 
-    private function writeLegacyStatuses(): void
+    private function writeLegacyStatuses(string $moduleName, bool $enabled): void
     {
         $path = $this->statusFilePath();
         $directory = dirname($path);
@@ -230,23 +230,71 @@ final class ModuleStateRepository
             throw new RuntimeException("Unable to create module status directory [{$directory}].");
         }
 
+        $lockPath = $path.'.lock';
+        $lockHandle = fopen($lockPath, 'c');
+
+        if ($lockHandle === false) {
+            throw new RuntimeException("Unable to open module status lock file [{$lockPath}].");
+        }
+
         try {
-            $contents = json_encode($this->statuses, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL;
-        } catch (JsonException $exception) {
-            throw new RuntimeException('Unable to encode module statuses.', previous: $exception);
+            if (! flock($lockHandle, LOCK_EX)) {
+                throw new RuntimeException("Unable to lock module status file [{$path}].");
+            }
+
+            $statuses = $this->freshStatusSnapshot();
+            $statuses[$moduleName] = $enabled;
+
+            try {
+                $contents = json_encode($statuses, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL;
+            } catch (JsonException $exception) {
+                throw new RuntimeException('Unable to encode module statuses.', previous: $exception);
+            }
+
+            $temporaryPath = $path.'.'.bin2hex(random_bytes(8)).'.tmp';
+
+            if (file_put_contents($temporaryPath, $contents) === false) {
+                throw new RuntimeException("Unable to write temporary module status file [{$temporaryPath}].");
+            }
+
+            if (! rename($temporaryPath, $path)) {
+                @unlink($temporaryPath);
+
+                throw new RuntimeException("Unable to replace module status file [{$path}].");
+            }
+
+            $this->statuses = $statuses;
+        } finally {
+            flock($lockHandle, LOCK_UN);
+            fclose($lockHandle);
+        }
+    }
+
+    /**
+     * @return array<string, bool>
+     */
+    private function freshStatusSnapshot(): array
+    {
+        $statuses = $this->readLegacyStatuses();
+
+        if (! $this->databaseIsAvailable()) {
+            return $statuses;
         }
 
-        $temporaryPath = $path.'.'.bin2hex(random_bytes(8)).'.tmp';
-
-        if (file_put_contents($temporaryPath, $contents, LOCK_EX) === false) {
-            throw new RuntimeException("Unable to write temporary module status file [{$temporaryPath}].");
+        try {
+            foreach (DB::table($this->tableName())->pluck('enabled', 'module_name') as $moduleName => $enabled) {
+                if (is_string($moduleName)) {
+                    $statuses[$moduleName] = (bool) $enabled;
+                }
+            }
+        } catch (Throwable $exception) {
+            Log::warning('Unable to refresh database-backed module states; using the legacy status file.', [
+                'message' => $exception->getMessage(),
+            ]);
+            $this->databaseAvailable = false;
         }
 
-        if (! rename($temporaryPath, $path)) {
-            @unlink($temporaryPath);
-
-            throw new RuntimeException("Unable to replace module status file [{$path}].");
-        }
+        return $statuses;
     }
 
     private function tableName(): string

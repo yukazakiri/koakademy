@@ -43,7 +43,8 @@ it('shows installed modules in the marketplace and persists status changes', fun
                 ->component('administrators/module-marketplace/index', false)
                 ->where('marketplace.enabled', true)
                 ->has('marketplace.modules', 6)
-                ->where('marketplace.modules.0.installed', true));
+                ->where('marketplace.modules.0.installed', true)
+                ->where('marketplace.modules.0.installation_source', 'source'));
 
         actingAs($user)
             ->post(portalUrlForAdministrators('/administrators/module-marketplace/Announcement/disable'))

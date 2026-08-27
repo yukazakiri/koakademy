@@ -719,6 +719,7 @@ final readonly class RegistrarStudentProfileImportService
         ];
         $relatedUpdates = [];
         $contacts = is_array($student->contacts) ? $student->contacts : [];
+        $profileDetails = is_array($student->profile_details) ? $student->profile_details : [];
 
         foreach ($changes as $change) {
             foreach ($this->workbook->writeTargets((string) $change['key']) as $target) {
@@ -735,6 +736,11 @@ final readonly class RegistrarStudentProfileImportService
 
                     continue;
                 }
+                if ($scope === 'details') {
+                    data_set($profileDetails, $attribute, $value);
+
+                    continue;
+                }
                 if (isset($related[$scope])) {
                     $relatedUpdates[$scope][$attribute] = $value;
                 }
@@ -746,6 +752,7 @@ final readonly class RegistrarStudentProfileImportService
         }
 
         $student->contacts = $contacts;
+        $student->profile_details = $profileDetails;
 
         foreach ($relatedUpdates as $scope => $attributes) {
             $definition = $related[$scope];

@@ -51,7 +51,7 @@ require the package:
 
 ```sh
 composer config repositories.koakademy composer https://yukazakiri.github.io/koakademy-modules
-composer require koakademy/forms:^1.0
+composer require koakademy/forms:^1.1
 ```
 
 Use this command after the package has a catalog entry in the public registry.
@@ -73,10 +73,42 @@ every application replica has been updated and verified healthy, acknowledge
 the completed rollout explicitly with
 `php artisan modules:sync-statuses --acknowledge-restart`.
 
-The current Forms package supports authenticated, guest-identifier, and
-anonymous forms, protected submissions, and KoAkademy student-model mappings.
+The current Forms package supports authenticated, guest-identifier, anonymous,
+and record-bound invitation forms, protected submissions, reusable templates,
+safe suggestions, and KoAkademy student-model mappings. Its built-in Student
+Profile Completion template renders only missing fields and applies answers
+with blank-only concurrency protection. Sparse fields use the host
+`students.profile_details` JSON column while existing normalized columns remain
+the first storage target.
+
+When a newer catalog release is available, Marketplace shows an **Update**
+button. For Composer-installed modules it displays and can copy the exact
+`composer require` command for the release. For legacy source-tree modules it
+explains that the source must be updated or migrated in the KoAkademy
+repository. In both cases, updating still requires a new image build and a
+rollout; the button never changes PHP code inside a running container.
 See the [Forms module repository](https://github.com/yukazakiri/koakademy-module-forms)
 for its package-specific behavior and configuration.
+
+### Forms v1.1 operational checklist
+
+After installing or updating Forms:
+
+1. Run `php artisan migrate --force` so the template, invitation, field
+   presentation, and `students.profile_details` migrations are applied.
+2. Confirm the package is installed in the image and the provider is visible
+   under `vendor/koakademy/forms`.
+3. Build the host frontend so the module's Inertia pages and generated route
+   helpers are included.
+4. Open **Administrators → Marketplace** and enable the installed module if
+   the persistent status is disabled.
+5. Open **Online Forms → Templates**, choose **Student Profile Completion**,
+   publish the generated form, then use **Invitations** to preview eligible
+   students and explicitly queue email delivery.
+
+Deployment and Marketplace refreshes never send invitations. Links are hashed
+at rest, expire after 30 days by default, are revoked on resend, and become
+unusable after completion. The queue must be running for delivery.
 
 ## Publish or update a module
 

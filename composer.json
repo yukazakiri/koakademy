@@ -40,7 +40,7 @@
         "inertiajs/inertia-laravel": "^3.0",
         "joaopaulolndev/filament-edit-profile": "^3.0",
         "joaopaulolndev/filament-general-settings": "^3.0",
-        "koakademy/forms": "^1.0",
+        "koakademy/forms": "^1.1",
         "laraowl/client": "^1.0",
         "laravel/framework": "^13.0",
         "laravel/nightwatch": "^1.22",
@@ -124,16 +124,16 @@
             "type": "package",
             "package": {
                 "name": "koakademy/forms",
-                "version": "1.0.0",
+                "version": "1.1.0",
                 "type": "library",
                 "dist": {
                     "type": "zip",
-                    "url": "https://github.com/yukazakiri/koakademy-module-forms/archive/refs/tags/v1.0.0.zip"
+                    "url": "https://github.com/yukazakiri/koakademy-module-forms/archive/refs/tags/v1.1.0.zip"
                 },
                 "source": {
                     "type": "git",
                     "url": "https://github.com/yukazakiri/koakademy-module-forms.git",
-                    "reference": "v1.0.0"
+                    "reference": "v1.1.0"
                 },
                 "require": {
                     "php": ">=8.5 <8.6",

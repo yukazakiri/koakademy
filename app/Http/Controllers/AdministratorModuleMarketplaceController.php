@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use App\Modules\CompatibilityChecker;
 use App\Modules\Contracts\ModuleManifest;
+use App\Modules\Contracts\ModuleRelease;
 use App\Modules\Contracts\RegistryEntry;
 use App\Modules\Exceptions\ModuleRegistryException;
 use App\Modules\ModuleManifestRepository;
@@ -120,6 +121,7 @@ final class AdministratorModuleMarketplaceController extends Controller
         $status = ! ($installedModule instanceof Module)
             ? 'not_installed'
             : ($restartRequired ? 'restart_required' : ($installedModule->isEnabled() ? 'enabled' : 'disabled'));
+        $installationSource = $this->installationSource($installedModule);
 
         return [
             'name' => $manifest->name,
@@ -139,11 +141,34 @@ final class AdministratorModuleMarketplaceController extends Controller
             'update_available' => $installedManifest !== null
                 && $latestRelease !== null
                 && version_compare($latestRelease->version, $installedManifest->version, '>'),
+            'installation_source' => $installationSource,
+            'update_command' => $this->updateCommand($manifest, $latestRelease, $installationSource),
             'compatible' => $compatibility->isCompatible() && $activationErrors === [],
             'compatibility_errors' => [...$compatibility->errors, ...$activationErrors],
             'asset_url' => $latestRelease?->assetUrl,
             'released_at' => $latestRelease?->releasedAt,
         ];
+    }
+
+    private function installationSource(?Module $module): ?string
+    {
+        if (! $module instanceof Module) {
+            return null;
+        }
+
+        $modulePath = str_replace('\\', '/', realpath($module->getPath()) ?: $module->getPath());
+        $vendorPath = mb_rtrim(str_replace('\\', '/', base_path('vendor')), '/');
+
+        return str_starts_with($modulePath, $vendorPath.'/') ? 'composer' : 'source';
+    }
+
+    private function updateCommand(ModuleManifest $manifest, ?ModuleRelease $release, ?string $installationSource): ?string
+    {
+        if ($installationSource !== 'composer' || $manifest->composerPackage === null || $release === null) {
+            return null;
+        }
+
+        return "composer require {$manifest->composerPackage}:{$release->version} --update-with-dependencies";
     }
 
     private function setStatus(string $moduleName, bool $enabled): RedirectResponse

@@ -10,8 +10,10 @@ use App\Modules\Contracts\ModuleManifest;
 use App\Modules\Contracts\RegistryEntry;
 use App\Modules\Exceptions\ModuleRegistryException;
 use App\Modules\ModuleManifestRepository;
+use App\Modules\ModuleStateRepository;
 use App\Modules\RegistryClient;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -26,10 +28,11 @@ final class AdministratorModuleMarketplaceController extends Controller
         private readonly ModuleManifestRepository $manifests,
         private readonly RegistryClient $registry,
         private readonly CompatibilityChecker $compatibility,
+        private readonly ModuleStateRepository $states,
         private readonly RepositoryInterface $modules,
     ) {}
 
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $user = $this->administrator();
         $registryEntries = [];
@@ -37,7 +40,7 @@ final class AdministratorModuleMarketplaceController extends Controller
 
         if ((bool) config('modules-marketplace.enabled', false)) {
             try {
-                $registryEntries = $this->registry->all();
+                $registryEntries = $this->registry->all($request->boolean('refresh'));
             } catch (ModuleRegistryException) {
                 $registryError = 'The signed module catalog is temporarily unavailable. Installed modules are still shown below.';
             } catch (Throwable $exception) {
@@ -113,6 +116,10 @@ final class AdministratorModuleMarketplaceController extends Controller
         $compatibility = $this->compatibility->check($manifest);
         $activationErrors = $this->activationErrors($manifest, $installedModule);
         $latestRelease = $entry?->latestRelease();
+        $restartRequired = $installedModule instanceof Module && $this->states->restartRequired($manifest->name);
+        $status = ! ($installedModule instanceof Module)
+            ? 'not_installed'
+            : ($restartRequired ? 'restart_required' : ($installedModule->isEnabled() ? 'enabled' : 'disabled'));
 
         return [
             'name' => $manifest->name,
@@ -127,6 +134,11 @@ final class AdministratorModuleMarketplaceController extends Controller
             'homepage' => $entry?->homepage ?? $manifest->homepage,
             'installed' => $installedModule instanceof Module,
             'enabled' => $installedModule?->isEnabled() ?? false,
+            'status' => $status,
+            'restart_required' => $restartRequired,
+            'update_available' => $installedManifest !== null
+                && $latestRelease !== null
+                && version_compare($latestRelease->version, $installedManifest->version, '>'),
             'compatible' => $compatibility->isCompatible() && $activationErrors === [],
             'compatibility_errors' => [...$compatibility->errors, ...$activationErrors],
             'asset_url' => $latestRelease?->assetUrl,

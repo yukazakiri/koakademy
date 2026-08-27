@@ -12,8 +12,8 @@ use RuntimeException;
 final class ModuleManifestRepository
 {
     public function __construct(
+        private readonly ModuleStateRepository $states,
         private readonly ?string $modulesPath = null,
-        private readonly ?string $statusesPath = null,
     ) {}
 
     /**
@@ -60,21 +60,9 @@ final class ModuleManifestRepository
      */
     public function enabled(): array
     {
-        $statusesPath = $this->statusesPath ?? config('modules.activators.file.statuses-file', base_path('modules_statuses.json'));
-
-        if (! is_file($statusesPath)) {
-            return [];
-        }
-
-        $statuses = json_decode((string) file_get_contents($statusesPath), true);
-
-        if (! is_array($statuses)) {
-            throw new RuntimeException('The module status file must contain a JSON object.');
-        }
-
         return array_values(array_filter(
             $this->all(),
-            static fn (ModuleManifest $manifest): bool => ($statuses[$manifest->name] ?? false) === true,
+            fn (ModuleManifest $manifest): bool => $this->states->isEnabled($manifest->name),
         ));
     }
 

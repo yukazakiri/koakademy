@@ -16,7 +16,7 @@ final class RegistryClient
     /**
      * @return list<RegistryEntry>
      */
-    public function all(): array
+    public function all(bool $forceRefresh = false): array
     {
         if (! (bool) config('modules-marketplace.enabled', false)) {
             return [];
@@ -34,6 +34,10 @@ final class RegistryClient
 
         $cacheKey = 'module-registry:'.hash('sha256', $url);
         $ttl = max(60, (int) config('modules-marketplace.cache_ttl', 3600));
+
+        if ($forceRefresh) {
+            Cache::forget($cacheKey);
+        }
 
         return Cache::remember($cacheKey, $ttl, function () use ($url): array {
             $response = Http::acceptJson()

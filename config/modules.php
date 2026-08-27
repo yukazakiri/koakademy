@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Modules\DatabaseActivator;
 use Nwidart\Modules\Activators\FileActivator;
 use Nwidart\Modules\Providers\ConsoleServiceProvider;
 
@@ -188,6 +189,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Persistent module state
+    |--------------------------------------------------------------------------
+    |
+    | The database is authoritative once the module_installations migration
+    | has run. The JSON file remains as a first-boot default and a rollback
+    | compatibility layer for older releases.
+    |
+    */
+    'statuses-file' => env('MODULE_STATUSES_FILE', base_path('modules_statuses.json')),
+
+    /*
+    |--------------------------------------------------------------------------
     | Auto Discover of Modules
     |--------------------------------------------------------------------------
     |
@@ -290,11 +303,14 @@ return [
     | The file activator will store the activation status in storage/installed_modules
     */
     'activators' => [
+        'database' => [
+            'class' => DatabaseActivator::class,
+        ],
         'file' => [
             'class' => FileActivator::class,
             'statuses-file' => env('MODULE_STATUSES_FILE', base_path('modules_statuses.json')),
         ],
     ],
 
-    'activator' => 'file',
+    'activator' => env('MODULE_ACTIVATOR', 'database'),
 ];

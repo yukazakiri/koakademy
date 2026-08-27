@@ -103,3 +103,18 @@ it('refuses registry URLs that are not HTTPS', function (): void {
     expect(fn (): array => app(RegistryClient::class)->all())
         ->toThrow(ModuleRegistryException::class, 'must use HTTPS');
 });
+
+it('can force a fresh catalog fetch without waiting for the cache ttl', function (): void {
+    $url = moduleRegistryTestUrl('refresh');
+    config(['modules-marketplace.registry_url' => $url]);
+
+    Http::fake([$url => Http::sequence()
+        ->push(unsignedModuleRegistryPayload())
+        ->push(unsignedModuleRegistryPayload())]);
+
+    $client = app(RegistryClient::class);
+    $client->all();
+    $client->all(forceRefresh: true);
+
+    Http::assertSentCount(2);
+});

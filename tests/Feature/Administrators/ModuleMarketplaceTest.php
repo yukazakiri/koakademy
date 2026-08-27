@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\UserRole;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Inertia\Testing\AssertableInertia;
 
@@ -27,9 +28,10 @@ it('shows installed modules in the marketplace and persists status changes', fun
         config([
             'modules-marketplace.enabled' => true,
             'modules-marketplace.registry_url' => null,
-            'modules.activators.file.statuses-file' => $statusesPath,
+            'modules.statuses-file' => $statusesPath,
         ]);
 
+        $this->app->forgetInstance(App\Modules\ModuleStateRepository::class);
         $this->app->forgetInstance(Nwidart\Modules\Contracts\ActivatorInterface::class);
         $this->app->forgetInstance(Nwidart\Modules\Contracts\RepositoryInterface::class);
         $this->app->forgetInstance('modules');
@@ -47,7 +49,9 @@ it('shows installed modules in the marketplace and persists status changes', fun
             ->post(portalUrlForAdministrators('/administrators/module-marketplace/Announcement/disable'))
             ->assertRedirect();
 
-        expect(json_decode(File::get($statusesPath), true, 512, JSON_THROW_ON_ERROR)['Announcement'])->toBeFalse();
+        expect(json_decode(File::get($statusesPath), true, 512, JSON_THROW_ON_ERROR)['Announcement'])->toBeFalse()
+            ->and((bool) DB::table('module_installations')->where('module_name', 'Announcement')->value('enabled'))->toBeFalse()
+            ->and((bool) DB::table('module_installations')->where('module_name', 'Announcement')->value('restart_required'))->toBeTrue();
     } finally {
         File::delete($statusesPath);
     }

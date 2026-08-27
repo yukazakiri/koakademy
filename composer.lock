@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "441af1d90448c6791caa9952d26cde19",
+    "content-hash": "06f3f013c8c190ee1e8b5c3d63cc3e4d",
     "packages": [
         {
             "name": "achyutn/filament-log-viewer",
@@ -5415,6 +5415,42 @@
                 "source": "https://github.com/kirschbaum-development/eloquent-power-joins/tree/4.3.3"
             },
             "time": "2026-07-23T11:41:37+00:00"
+        },
+        {
+            "name": "koakademy/forms",
+            "version": "1.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/yukazakiri/koakademy-module-forms.git",
+                "reference": "v1.0.0"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://github.com/yukazakiri/koakademy-module-forms/archive/refs/tags/v1.0.0.zip"
+            },
+            "require": {
+                "filament/filament": "^5.0",
+                "inertiajs/inertia-laravel": "^3.0",
+                "laravel/framework": "^13.0",
+                "nwidart/laravel-modules": "^13.0",
+                "php": ">=8.5 <8.6",
+                "spatie/laravel-permission": "^6.21"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Modules\\Forms\\Providers\\FormsServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Modules\\Forms\\": "app/",
+                    "Modules\\Forms\\Database\\Factories\\": "database/factories/",
+                    "Modules\\Forms\\Database\\Seeders\\": "database/seeders/"
+                }
+            }
         },
         {
             "name": "laminas/laminas-diactoros",

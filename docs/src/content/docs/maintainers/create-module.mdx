@@ -229,6 +229,14 @@ Implement the domain using the application’s Laravel conventions:
 - host-specific behavior is behind an adapter or contract with a safe fallback
   for other Laravel hosts.
 
+For record-linked modules, define the binding contract before the UI. Accept
+only allowlisted model keys and field paths; never accept a browser-submitted
+record ID as the authority for an update. If the host has sparse or evolving
+data, add a documented JSON fallback rather than changing the module's public
+field keys on every host schema variation. If suggestions are exposed, return
+normalized values only and enforce a minimum frequency so one record cannot be
+identified.
+
 At minimum, test:
 
 - manifest and Composer package identity;
@@ -237,6 +245,11 @@ At minimum, test:
 - authorization for allowed and denied roles;
 - validation and duplicate/submission behavior;
 - any host-model mapping, tenant boundary, file access, export, or queue path.
+
+For invitation-backed record updates, also test token hashing, expiry,
+revocation on resend, one-time completion, queued delivery, record binding,
+row locking, blank-only application, concurrent-value protection, and audit
+metadata for applied and skipped fields.
 
 Run the package checks before tagging:
 

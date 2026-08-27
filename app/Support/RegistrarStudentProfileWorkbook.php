@@ -10,6 +10,7 @@ use Carbon\CarbonInterface;
 use DateTimeImmutable;
 use DateTimeInterface;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use JsonException;
 
@@ -177,7 +178,31 @@ final class RegistrarStudentProfileWorkbook
     /** @return list<string> */
     public function writeTargets(string $key): array
     {
-        return $this->field($key)['write'] ?? [];
+        $field = $this->field($key);
+        if ($field === null) {
+            return [];
+        }
+
+        $targets = array_values(array_filter(
+            $field['write'] ?? [],
+            fn (string $target): bool => $this->targetIsAvailable($target),
+        ));
+        $directTargets = array_values(array_filter(
+            $targets,
+            static fn (string $target): bool => ! str_starts_with($target, 'contacts.'),
+        ));
+        $legacyTargets = array_values(array_filter(
+            $targets,
+            static fn (string $target): bool => str_starts_with($target, 'contacts.'),
+        ));
+
+        if ($directTargets !== []) {
+            return [...$directTargets, ...$legacyTargets];
+        }
+
+        return $legacyTargets !== []
+            ? [...$legacyTargets, 'details.'.$field['key']]
+            : ['details.'.$field['key']];
     }
 
     public function displayValue(string $key, mixed $value): string
@@ -406,7 +431,33 @@ final class RegistrarStudentProfileWorkbook
             }
         }
 
+        $details = is_array($student->profile_details) ? $student->profile_details : [];
+        $value = Arr::get($details, (string) $field['key']);
+        if ($value !== null && $value !== '') {
+            return $this->canonicalValue($value);
+        }
+
         return null;
+    }
+
+    private function targetIsAvailable(string $target): bool
+    {
+        [$scope, $attribute] = array_pad(explode('.', $target, 2), 2, '');
+
+        if ($scope === 'contacts') {
+            return Schema::hasColumn('students', 'contacts');
+        }
+
+        $table = match ($scope) {
+            'student' => 'students',
+            'contact' => 'student_contacts',
+            'parent' => 'student_parents_info',
+            'education' => 'student_education_info',
+            'personal' => 'students_personal_info',
+            default => null,
+        };
+
+        return $table !== null && Schema::hasColumn($table, $attribute);
     }
 
     private function canonicalValue(mixed $value): mixed

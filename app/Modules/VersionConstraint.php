@@ -74,6 +74,8 @@ final class VersionConstraint
 
     private function normalizeVersion(string $version): string
     {
-        return preg_replace('/^v/i', '', mb_trim($version)) ?: mb_trim($version);
+        $normalized = preg_replace('/^v/i', '', mb_trim($version)) ?: mb_trim($version);
+
+        return preg_replace('/[-+].*$/', '', $normalized) ?: $normalized;
     }
 }

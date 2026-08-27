@@ -80,6 +80,13 @@ Profile Completion template renders only missing fields and applies answers
 with blank-only concurrency protection. Sparse fields use the host
 `students.profile_details` JSON column while existing normalized columns remain
 the first storage target.
+
+When a newer catalog release is available, Marketplace shows an **Update**
+button. For Composer-installed modules it displays and can copy the exact
+`composer require` command for the release. For legacy source-tree modules it
+explains that the source must be updated or migrated in the KoAkademy
+repository. In both cases, updating still requires a new image build and a
+rollout; the button never changes PHP code inside a running container.
 See the [Forms module repository](https://github.com/yukazakiri/koakademy-module-forms)
 for its package-specific behavior and configuration.
 

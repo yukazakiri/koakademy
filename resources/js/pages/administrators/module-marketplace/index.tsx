@@ -2,10 +2,11 @@ import AdminLayout from "@/components/administrators/admin-layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { disable, enable } from "@/routes/administrators/module-marketplace";
 import type { User } from "@/types/user";
 import { Head, router } from "@inertiajs/react";
-import { CheckCircle2, ExternalLink, PackageCheck, PackageOpen, Power, RefreshCw, XCircle } from "lucide-react";
+import { Check, CheckCircle2, Copy, ExternalLink, PackageCheck, PackageOpen, Power, RefreshCw, XCircle } from "lucide-react";
 import { useState } from "react";
 
 interface MarketplaceModule {
@@ -24,6 +25,8 @@ interface MarketplaceModule {
     status: "not_installed" | "disabled" | "enabled" | "restart_required";
     restart_required: boolean;
     update_available: boolean;
+    installation_source: "composer" | "source" | null;
+    update_command: string | null;
     compatible: boolean;
     compatibility_errors: string[];
     asset_url: string | null;
@@ -44,7 +47,34 @@ interface Props {
 
 export default function ModuleMarketplacePage({ user, marketplace }: Props) {
     const [processingModule, setProcessingModule] = useState<string | null>(null);
+    const [selectedUpdate, setSelectedUpdate] = useState<MarketplaceModule | null>(null);
+    const [copiedUpdateCommand, setCopiedUpdateCommand] = useState(false);
     const restartRequiredModules = marketplace.modules.filter((module) => module.restart_required);
+
+    function openUpdateDialog(module: MarketplaceModule): void {
+        setSelectedUpdate(module);
+        setCopiedUpdateCommand(false);
+    }
+
+    function closeUpdateDialog(): void {
+        setSelectedUpdate(null);
+        setCopiedUpdateCommand(false);
+    }
+
+    async function copyUpdateCommand(): Promise<void> {
+        const command = selectedUpdate?.update_command;
+
+        if (!command || !navigator.clipboard) {
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(command);
+            setCopiedUpdateCommand(true);
+        } catch {
+            setCopiedUpdateCommand(false);
+        }
+    }
 
     function changeStatus(module: MarketplaceModule): void {
         const nextEnabled = !module.enabled;
@@ -200,21 +230,28 @@ export default function ModuleMarketplacePage({ user, marketplace }: Props) {
                                                 </Button>
                                             )}
                                         </div>
-                                        {module.installed ? (
-                                            <Button
-                                                variant={module.enabled ? "outline" : "default"}
-                                                size="sm"
-                                                disabled={isProcessing || !marketplace.enabled || (!module.enabled && !module.compatible)}
-                                                onClick={() => changeStatus(module)}
-                                            >
-                                                {isProcessing ? <RefreshCw className="size-3.5 animate-spin" /> : <Power className="size-3.5" />}
-                                                {module.enabled ? "Disable" : "Enable"}
-                                            </Button>
-                                        ) : (
-                                            <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
-                                                <PackageCheck className="size-3.5" /> Add with Composer, then rebuild
-                                            </span>
-                                        )}
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            {module.update_available && (
+                                                <Button variant="outline" size="sm" onClick={() => openUpdateDialog(module)}>
+                                                    <RefreshCw className="size-3.5" /> Update
+                                                </Button>
+                                            )}
+                                            {module.installed ? (
+                                                <Button
+                                                    variant={module.enabled ? "outline" : "default"}
+                                                    size="sm"
+                                                    disabled={isProcessing || !marketplace.enabled || (!module.enabled && !module.compatible)}
+                                                    onClick={() => changeStatus(module)}
+                                                >
+                                                    {isProcessing ? <RefreshCw className="size-3.5 animate-spin" /> : <Power className="size-3.5" />}
+                                                    {module.enabled ? "Disable" : "Enable"}
+                                                </Button>
+                                            ) : (
+                                                <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
+                                                    <PackageCheck className="size-3.5" /> Add with Composer, then rebuild
+                                                </span>
+                                            )}
+                                        </div>
                                     </CardFooter>
                                 </Card>
                             );
@@ -238,6 +275,68 @@ export default function ModuleMarketplacePage({ user, marketplace }: Props) {
                         )}
                     </div>
                 )}
+
+                <Dialog open={selectedUpdate !== null} onOpenChange={(open) => !open && closeUpdateDialog()}>
+                    <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
+                        <DialogHeader>
+                            <DialogTitle>
+                                {selectedUpdate ? `Update ${selectedUpdate.name} to ${selectedUpdate.version}` : "Update module"}
+                            </DialogTitle>
+                            <DialogDescription>
+                                Module code is delivered through the application image. This action prepares the update; it does not change the
+                                running container.
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        {selectedUpdate && (
+                            <div className="space-y-5">
+                                {selectedUpdate.installation_source === "composer" && selectedUpdate.update_command ? (
+                                    <div className="space-y-2">
+                                        <p className="text-sm font-medium">Run this in the KoAkademy application repository:</p>
+                                        <div className="bg-muted flex items-start gap-2 rounded-lg border p-3">
+                                            <code className="min-w-0 flex-1 text-xs leading-5 break-all">{selectedUpdate.update_command}</code>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="shrink-0"
+                                                onClick={copyUpdateCommand}
+                                                aria-label={`Copy update command for ${selectedUpdate.name}`}
+                                            >
+                                                {copiedUpdateCommand ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                                                {copiedUpdateCommand ? "Copied" : "Copy"}
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="border-border bg-muted/40 space-y-2 rounded-lg border p-4 text-sm leading-6">
+                                        <p className="font-medium">This is a source-tree module.</p>
+                                        <p>
+                                            Update <code>Modules/{selectedUpdate.name}</code> in the KoAkademy repository, or migrate it to its
+                                            standalone Composer package before rebuilding the application image. The catalog release cannot update
+                                            source files in a running container.
+                                        </p>
+                                    </div>
+                                )}
+
+                                <ol className="text-muted-foreground list-decimal space-y-2 pl-5 text-sm leading-6">
+                                    <li>Update the source or run the Composer command, then commit the dependency lockfile.</li>
+                                    <li>Build and publish a new KoAkademy image.</li>
+                                    <li>Redeploy every HTTP, queue, and scheduler replica.</li>
+                                    <li>
+                                        After every replica is healthy, acknowledge the rollout with{" "}
+                                        <code>php artisan modules:sync-statuses --acknowledge-restart</code>.
+                                    </li>
+                                </ol>
+                            </div>
+                        )}
+
+                        <DialogFooter>
+                            <Button variant="outline" onClick={closeUpdateDialog}>
+                                Close
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
             </div>
         </AdminLayout>
     );

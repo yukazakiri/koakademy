@@ -51,6 +51,21 @@ Root `README.md`, `GETTING_STARTED.md`, `DEPLOYMENT.md`, `CONFIGURATION.md`, `TR
 
 Operator guides, enrollment blueprints, and API pages remain native under `docs/src/content/docs/`.
 
+## Standalone module contributions
+
+Standalone modules are maintained in separate repositories and distributed
+through the [KoAkademy module registry](https://github.com/yukazakiri/koakademy-modules).
+Read its [contributor guide](https://github.com/yukazakiri/koakademy-modules/blob/master/CONTRIBUTING.md)
+before opening a registry change. The contributor workflow releases a tagged
+module, generates the catalog metadata without access to the private key, and
+opens a reviewable pull request. A registry maintainer signs the catalog after
+review.
+
+Updating the registry does not update a running KoAkademy deployment. The
+application repository must update its Composer lockfile and publish a new
+image. See the [module lifecycle guide](https://github.com/yukazakiri/koakademy-modules/blob/master/docs/module-lifecycle.md)
+for the Composer, image, migration, Swarm, Marketplace, and rollback sequence.
+
 ## License
 
 By contributing, you agree that your contribution is licensed under the repository's [GNU AGPL-3.0-or-later license](LICENSE.md). Ensure you have the right to submit the work and preserve required notices for third-party material.

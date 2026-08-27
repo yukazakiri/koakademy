@@ -23,6 +23,13 @@ The test environment is hermetic: SQLite in memory, array cache/session/mail, sy
 
 Delivery owns the only multi-architecture release-image build. The path-filtered documentation deployment owns the Astro production build, while CI still catches generated-document and local-link drift before merge.
 
+Standalone module registry validation runs in the separate
+[KoAkademy module registry](https://github.com/yukazakiri/koakademy-modules)
+repository. Its CI checks `registry.json` and `packages.json` consistency on
+pull requests, while pushes to `master` additionally verify the Ed25519
+signature. The Pages workflow repeats both checks before publishing. Registry
+contributors never need access to the private signing key.
+
 Release Please pull requests use a fast path because they do not change application code. The classifier trusts only the same-repository Release Please branch and requires the change set to be exactly `.release-please-manifest.json`, `CHANGELOG.md`, and `version.json`. It then checks matching stable versions, the generated PR title, and the changelog entry. Any additional file automatically restores the full application and workflow-security suite.
 
 ## Reproduce locally

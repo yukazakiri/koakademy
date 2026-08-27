@@ -1,6 +1,6 @@
 ---
 title: Modules & Feature Flags
-description: The six optional modules, the Pennant feature-flag system, and institution settings — and when to use each.
+description: Bundled and standalone modules, the Pennant feature-flag system, and institution settings — and when to use each.
 ---
 
 # Modules & Feature Flags
@@ -9,7 +9,7 @@ KoAkademy composes optional functionality at three levels: **modules** (code-lev
 
 ## Modules
 
-Modules use **nwidart/laravel-modules** and are registered into the Filament admin panel through `coolsam/modules` (`ModulesPlugin` in `AdminPanelProvider`). Enabled state lives in `modules_statuses.json`; all six ship enabled.
+Modules use **nwidart/laravel-modules** and are registered into the Filament admin panel through `coolsam/modules` (`ModulesPlugin` in `AdminPanelProvider`). Enabled state lives in the persistent `modules_statuses.json` file. The six bundled source-tree modules ship enabled for backward-compatible defaults; standalone Composer modules must be installed in the image before they can be enabled.
 
 | Module | Registers | Purpose |
 | ------ | --------- | ------- |
@@ -21,6 +21,19 @@ Modules use **nwidart/laravel-modules** and are registered into the Filament adm
 | **StudentMedicalRecords** | Model with confidentiality flags, Filament cluster + resource, stats widget, policy | Clinic visit records |
 
 A module can contain migrations, models, policies, Filament resources/pages/widgets, routes, controllers, jobs, and its own tests — the same conventions as `app/`. Module Filament resources appear in the admin panel automatically once the module is enabled.
+
+### Standalone modules
+
+Standalone modules are Composer packages with their own repositories, tests,
+release tags, migrations, and `module.json` manifests. The [Forms module](https://github.com/yukazakiri/koakademy-module-forms)
+is an example: it provides configurable forms, surveys, evaluations, and
+record-linked submissions without copying its source into `Modules/`.
+
+Install a standalone package in the application repository, commit the lockfile,
+build the image, run its migrations, and then enable it from **Administrators →
+Marketplace**. The Marketplace does not run Composer or update a live
+container. See [Module Registry](/koakademy/maintainers/module-registry/) for
+the release and deployment lifecycle.
 
 ## Publishing a module
 
@@ -65,11 +78,12 @@ Each catalog release also declares an HTTPS ZIP asset and SHA-256 checksum for
 auditability. Composer performs the package installation; the marketplace layer
 does not execute arbitrary remote code.
 
-The core registry client is disabled by default. Enabling it requires
-MODULE_MARKETPLACE_ENABLED=true, an HTTPS MODULE_REGISTRY_URL, and an
-Ed25519 public key in MODULE_REGISTRY_PUBLIC_KEY. Unsigned catalogs are
-rejected by default. The catalog is read-only; package installation remains an
-explicit Composer operation by the host administrator.
+The Marketplace client is enabled by default in the current installer and
+Swarm templates. It reads an HTTPS `MODULE_REGISTRY_URL` and requires an
+Ed25519 public key in `MODULE_REGISTRY_PUBLIC_KEY`; unsigned catalogs are
+rejected by default. The catalog is read-only, and package installation
+remains an explicit Composer operation performed while building the host
+application image.
 
 For a container-hosted registry, `scripts/ensure-signing-key.php` creates the
 Ed25519 keypair only when the persistent key volume is empty. It prints the

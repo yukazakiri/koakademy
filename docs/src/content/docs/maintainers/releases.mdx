@@ -41,6 +41,19 @@ domain.
 
 The exact SemVer image tag and its digest are the deployment contract. Do not deploy a mutable alias.
 
+## Module releases
+
+Standalone modules have a separate release step. A module tag updates the
+public catalog only after a registry maintainer generates and signs the
+matching metadata. The KoAkademy application then updates its Composer
+lockfile and publishes a new image before a deployed container can receive the
+module code.
+
+Read [Module Registry](/koakademy/maintainers/module-registry/) for the
+contributor workflow, signing boundary, Composer commands, Marketplace
+enablement, Swarm rollout, legacy source-tree module behavior, and rollback
+guidance.
+
 ## Stable release assets
 
 Every release contains:

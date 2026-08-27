@@ -1,0 +1,171 @@
+---
+title: Module Registry
+description: Publish, install, update, and operate standalone KoAkademy modules.
+---
+
+# Module Registry
+
+KoAkademy distributes standalone modules through the public
+[module registry](https://github.com/yukazakiri/koakademy-modules). The registry
+contains two related indexes:
+
+- `registry.json` is the signed Marketplace catalog.
+- `packages.json` is the Composer repository used during application builds.
+
+The Marketplace is a catalog and module-status interface. It is not a live
+package installer. Composer and the application image remain the code delivery
+boundary.
+
+## How the pieces fit together
+
+```text
+module repository and vX.Y.Z tag
+        │
+        ├─ registry updater ──▶ signed registry.json + packages.json
+        │                                  │
+        │                                  └─ GitHub Pages
+        │
+        └─ KoAkademy composer.json/lock ──▶ application image ──▶ Swarm
+                                                               │
+                                                               └─ Marketplace enable/disable
+```
+
+Updating the registry changes catalog information. It does not modify a
+running container, install `vendor/` dependencies, rebuild Vite assets, run
+migrations, or restart Swarm.
+
+## Install a standalone module
+
+From the KoAkademy application repository, configure the Composer registry and
+require the package:
+
+```sh
+composer config repositories.koakademy composer https://yukazakiri.github.io/koakademy-modules
+composer require koakademy/forms:^1.0
+```
+
+Use this command after the package has a catalog entry in the public registry.
+The KoAkademy core repository may temporarily carry a direct package
+repository definition while a newly released module is waiting for its signed
+registry entry; that fallback is not a substitute for publishing the module
+to the catalog.
+
+Commit `composer.json` and `composer.lock`, then build the normal KoAkademy
+image. Run migrations in the release container when the package includes
+database migrations, clear/rebuild application caches, and roll the Swarm
+service. Only after the package is in the image should a super administrator
+open **Administrators → Marketplace** and enable it.
+
+The current Forms package supports authenticated, guest-identifier, and
+anonymous forms, protected submissions, and KoAkademy student-model mappings.
+See the [Forms module repository](https://github.com/yukazakiri/koakademy-module-forms)
+for its package-specific behavior and configuration.
+
+## Publish or update a module
+
+### Contributor steps
+
+1. Keep the module source in its own repository.
+2. Update `module.json` and `composer.json`; keep the package name, provider,
+   and repository identity stable.
+3. Create a matching public semver tag: manifest `1.2.3` must use tag `v1.2.3`.
+4. In a checkout of the registry repository, download the exact tag archive:
+
+   ```sh
+   curl -L https://github.com/OWNER/REPOSITORY/archive/refs/tags/v1.2.3.zip \
+       -o /tmp/module-v1.2.3.zip
+   php scripts/update-module.php \
+       --module=/path/to/module-repository \
+       --archive=/tmp/module-v1.2.3.zip
+   php scripts/validate-registry.php
+   ```
+
+5. Open a pull request containing the generated `registry.json` and
+   `packages.json` changes, the module release/tag, compatibility requirements,
+   migrations, permissions, and rollback notes.
+
+The updater reads the module manifest and Composer metadata, calculates the
+SHA-256 and Composer distribution checksums, updates both indexes, sorts the
+entries, and removes the old signature. Contributors must not generate or
+commit a signing key.
+
+### Maintainer steps
+
+After reviewing the module and the generated diff, use the existing private
+registry key from protected storage:
+
+```sh
+php scripts/validate-registry.php
+php scripts/sign-registry.php registry.json /secure/registry-private.key registry.json
+php scripts/validate-registry.php
+php scripts/verify-registry.php
+```
+
+Merge only after the signature verifies. Registry CI validates every change;
+the Pages workflow validates the signed files again before publishing them.
+Never generate a replacement key for an ordinary module update. Existing
+applications trust the current public key, so key rotation requires a separate
+migration of every `MODULE_REGISTRY_PUBLIC_KEY` secret.
+
+The complete contributor checklist is in the registry repository’s
+[`CONTRIBUTING.md`](https://github.com/yukazakiri/koakademy-modules/blob/master/CONTRIBUTING.md).
+
+## Update a deployed module
+
+For a new Announcement release such as `1.0.2`:
+
+1. Release `v1.0.2` from the Announcement module repository.
+2. Add the release to the signed registry and wait for Pages publication.
+3. In KoAkademy, run:
+
+   ```sh
+   composer update koakademy/announcement --with-dependencies
+   php artisan test --compact
+   git add composer.json composer.lock
+   git commit -m "chore(modules): update announcement"
+   git push
+   ```
+
+   If Announcement is not yet a Composer dependency, use
+   `composer require koakademy/announcement:^1.0.2` instead.
+
+4. Build and deploy the new stable or edge image through the normal release
+   process.
+5. Run `php artisan migrate --force` when required, clear/rebuild caches, and
+   roll every Swarm replica.
+6. Enable the installed version in **Administrators → Marketplace** if its
+   persistent status is disabled.
+
+Existing deployments stay on the old module version until the application
+lockfile and image are updated. Marketplace refreshes do not perform these
+steps.
+
+## Legacy source-tree modules
+
+The six original modules under the application’s `Modules/` directory are
+source-tree modules and remain enabled by the image’s status file for backward
+compatibility. A standalone repository with the same module name does not
+automatically replace that local source.
+
+Migrate a local module to its Composer package as a separate, tested change.
+Keep the existing module enabled during the migration unless the migration
+plan explicitly changes its status. The persistent status file preserves
+existing administrator choices across application upgrades.
+
+## Configuration and troubleshooting
+
+The current installer and Swarm templates default to:
+
+```dotenv
+MODULE_MARKETPLACE_ENABLED=true
+MODULE_REGISTRY_REQUIRE_SIGNATURE=true
+MODULE_REGISTRY_URL=https://yukazakiri.github.io/koakademy-modules/registry.json
+MODULE_SCAN_VENDOR=true
+```
+
+The registry public key must match the catalog trust root. If Marketplace
+shows a module but cannot enable it, confirm that the matching package is
+installed in the image, its provider is discoverable, its compatibility check
+passes, and its dependencies are enabled. If the signed catalog cannot be
+reached, installed modules remain visible but remote catalog information may
+be unavailable.

@@ -30,14 +30,19 @@ KoAkademy provides three purpose-built workspaces in addition to the Filament ad
 
 ## Optional modules
 
-Six modules extend the platform: Announcements, Cashier, Inventory, Library System, Notification Center, and Student Medical Records. Each can be enabled or disabled per institution. See the [Modules guide](./modules/).
+Six bundled modules extend the platform: Announcements, Cashier, Inventory,
+Library System, Notification Center, and Student Medical Records. Standalone
+Composer modules such as Forms can add further workflows. Each installed module
+can be enabled or disabled per institution. See the [Modules guide](./modules/)
+and the [Module Registry guide](/koakademy/maintainers/module-registry/).
 
 ## How features are switched
 
 KoAkademy has two layers of feature control, both managed by administrators without code changes:
 
-1. **Feature toggles** — runtime flags (managed under the admin Feature Toggles page) that enable or disable portal areas such as faculty attendance, student tuition pages, online enrollment, and developer tools. Faculty and student portals check these flags before showing a page.
-2. **General settings** — institution-wide switches in General Settings, including the student portal, online enrollment, clearances, signature capture, QR codes, and the inventory and library modules.
+1. **Module status** — installed code-level domains enabled or disabled from **Administrators → Marketplace**. The Marketplace does not install Composer packages; a standalone package must already be present in the application image.
+2. **Feature toggles** — runtime flags (managed under the admin Feature Toggles page) that enable or disable portal areas such as faculty attendance, student tuition pages, online enrollment, and developer tools. Faculty and student portals check these flags before showing a page.
+3. **General settings** — institution-wide switches in General Settings, including the student portal, online enrollment, clearances, signature capture, QR codes, and the inventory and library modules.
 
 :::note[What this does]
 Disabling a toggle hides the feature immediately for affected users without deleting any data. Re-enabling restores the same records.

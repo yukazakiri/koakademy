@@ -17,6 +17,8 @@ duplicating those guides in the README.
   Engine versions, and supported architectures.
 - [ ] Add a public staging/demo environment only if one is intentionally
   operated and safe for non-production data.
+- [x] Document the signed module registry, Composer installation boundary,
+  Marketplace enablement, and container update lifecycle.
 
 ## FAQ draft
 
@@ -75,6 +77,11 @@ story is:
   rollback.
 - Docker Compose remains a manual topology for operators who own the reverse
   proxy and environment configuration.
+- The Marketplace reads the signed module catalog and installed manifests. It
+  does not install Composer packages or mutate a running container.
+- Standalone module releases require a registry metadata update followed by an
+  application lockfile/image update; legacy source-tree modules do not
+  auto-switch to packages.
 
 ## Licensing, citation, and reproducibility
 
@@ -87,6 +94,8 @@ story is:
   should verify the asset bundle on a clean Linux host before publication.
 - Do not publish real institutional data, credentials, production logs, or
   provider secrets in examples or fixtures.
+- Registry releases must preserve the existing public signing key; key
+  rotation is a coordinated maintainer operation, not a module update step.
 
 ## Intentionally deferred
 

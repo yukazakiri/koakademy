@@ -13,6 +13,49 @@ KoAkademy is a production-capable beta. It provides a hardened reference topolog
 
 Only the latest stable, non-prerelease release is supported. Development and prerelease images are for evaluation. Read the changelog and release notes before upgrading.
 
+## How do I install a module?
+
+The Marketplace is enabled by default in the current installer and shows the
+signed public catalog alongside modules already installed in the application
+image. It does not install packages itself. Add the module's Composer package
+to the KoAkademy application, commit the generated `composer.lock`, build and
+deploy a new image, run migrations when required, and then enable the module in
+**Administrators → Marketplace**.
+
+For example, a Forms installation from the application repository is:
+
+```sh
+composer require koakademy/forms:^1.0
+php artisan migrate --force
+php artisan optimize:clear
+```
+
+The production image must also run the normal frontend build. Do not run
+Composer as a web request or depend on a live container changing its own
+`vendor/` directory.
+
+## How does a module update reach an existing deployment?
+
+Publishing a new module tag updates the registry catalog only after a
+maintainer signs and merges the registry change. The KoAkademy application must
+then update its Composer lockfile and publish a new image. Dokploy or the
+Swarm operator deploys that image, runs the release migration/cache steps, and
+rolls the replicas. An existing container remains on its previous module
+version until that image rollout occurs.
+
+If the module is still a local source-tree module under `Modules/`, its
+standalone repository updates do not affect it. Migrate the application to the
+Composer package as a separate, tested change first.
+
+## Why does Marketplace show a module as disabled?
+
+The package may be installed but absent or disabled in the persistent module
+status file. A super administrator can enable it from **Administrators →
+Marketplace** after confirming the compatibility checks pass. If it is not
+installed in the image, enabling is not possible; update Composer and redeploy
+the image first. Existing status choices are preserved during application
+upgrades.
+
 ## What does the one-line installer change?
 
 It installs Docker when needed, initializes Swarm only when inactive, creates an attachable overlay network, and deploys Caddy, KoAkademy, PostgreSQL, Redis, and Gotenberg on a single VPS. Caddy owns ports 80/443; the remaining services are private on the Swarm overlay. The installer preserves an active manager cluster, never leaves Swarm, and stops before changing a legacy `koakademy-*` deployment.

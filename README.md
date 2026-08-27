@@ -93,7 +93,7 @@ KoAkademy is built around the daily work of a school, not a generic database wit
 | **Enrollment**                  | A registrar-to-cashier workflow driven by versioned enrollment blueprints. Rules can be scoped, simulated, staged, and rolled back instead of being buried in code.                           |
 | **Three portals**               | Distinct administrator, faculty, and student experiences for the work each role actually needs: classes, attendance, submissions, grades, schedules, tuition, announcements, and digital IDs. |
 | **Finance**                     | Tuition assessment, payment posting, statements of account, receipts, public verification, and finance reporting.                                                                             |
-| **Optional modules**            | Library, inventory, cashier, student medical records, announcements, and notification tools can be enabled as the institution needs them.                                                     |
+| **Optional modules**            | Library, inventory, cashier, student medical records, announcements, notification tools, and standalone workflows such as Forms can be enabled as the institution needs them.                                                     |
 | **Security and accountability** | Role-based permissions, multi-factor authentication, passkeys, audited impersonation, and an operator-controlled deployment boundary.                                                         |
 
 The public API is intentionally small while it is beta. Only the endpoints described in the [API documentation](docs/src/content/docs/api/api-overview.mdx) are part of its supported contract.
@@ -140,8 +140,12 @@ composer require koakademy/library-system:^1.0
 
 The core scans vendor-installed modules by default. The registry client is
 signature-checked and read-only; installations remain explicit Composer
-operations. A container-hosted registry can generate its Ed25519 keypair on
-first deployment with its persistent key volume. Never commit the private key.
+operations. The Marketplace can enable an installed module, but it does not
+install packages or update a running container. A container-hosted registry can
+generate its Ed25519 keypair on first deployment with its persistent key
+volume. Never commit the private key. See the [module registry deployment
+guide](docs/src/content/docs/maintainers/module-registry.mdx) for release and
+update procedures.
 
 ### Layout
 

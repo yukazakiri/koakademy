@@ -1,11 +1,11 @@
 ---
 title: Optional Modules
-description: The six optional KoAkademy modules — Announcements, Cashier, Inventory, Library, Notification Center, and Student Medical Records — and how they are enabled.
+description: Bundled and standalone KoAkademy modules, including Announcements, Forms, Cashier, Inventory, Library, Notification Center, and Student Medical Records.
 ---
 
 # Optional Modules
 
-KoAkademy ships six modules that extend the platform for institutions that need them. Modules are enabled or disabled per installation by your system administrator; some areas additionally depend on feature toggles in General Settings. If your school does not use a module, its pages and menus are hidden entirely.
+KoAkademy ships six source-tree modules that extend the platform for institutions that need them. Standalone Composer modules can add further domains without copying source into the core repository. Modules are enabled or disabled per installation by your system administrator; some areas additionally depend on feature toggles in General Settings. If your school does not use a module, its pages and menus are hidden entirely.
 
 ## Announcements
 
@@ -13,6 +13,22 @@ School-wide announcements targeted at staff, faculty, or students.
 
 - Administrators create, schedule, and publish announcements from the administration panel.
 - Active announcements appear as a **banner** in the administration panel and on the **student portal** dashboard and announcements page.
+
+## Forms
+
+The standalone Forms module supports configurable surveys, evaluations, student
+information updates, and other school workflows.
+
+- Forms can require an authenticated account, identify a guest by e-mail or
+  student ID, or accept anonymous responses.
+- Administrators can define text, choice, date, rating, upload, and other field
+  types, response policies, close dates, and review workflows.
+- Responses can remain linked to the submitting user and can be mapped to
+  approved KoAkademy student fields before an administrator applies changes.
+
+Forms must be installed in the application image with Composer before it can be
+enabled. See [Module Registry](../maintainers/module-registry/) for the
+installation and deployment sequence.
 
 ## Cashier
 
@@ -60,4 +76,15 @@ Medical records contain sensitive personal data. Access is limited by role and c
 
 ## Enabling or disabling a module
 
-Module availability is an **operator decision** made at deployment time (module management) and, for some areas, through institution switches in **General Settings** — for example the inventory and library modules, the student portal, online enrollment, clearances, signature capture, and QR codes. Changes take effect without a redeploy for settings-based switches; fully removing a module requires an application administrator.
+Open **Administrators → Marketplace** to enable or disable an installed module.
+The Marketplace also reports the signed registry catalog and compatibility
+status, but it does not install Composer packages or update a running
+container. A standalone module must be added to the application, included in a
+new image, and migrated before it can be enabled.
+
+Existing module status choices are preserved during upgrades. The six bundled
+modules ship enabled for backward-compatible installations; a newly installed
+standalone module may appear disabled until a super administrator enables it.
+Some areas additionally depend on feature toggles in **General Settings** —
+for example the inventory and library modules, the student portal, online
+enrollment, clearances, signature capture, and QR codes.

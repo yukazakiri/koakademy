@@ -85,6 +85,36 @@ koakademy rollback
 
 Rollback changes application code only. It never runs `migrate:rollback` or restores a database automatically. If the deployed migration is incompatible with old code, restore the recorded database backup and previous image together during a maintenance window.
 
+## Module releases and upgrades
+
+The module registry and the application image have separate release lifecycles.
+The registry publishes signed catalog and Composer metadata; it does not
+change code in an existing Swarm service. To update a standalone module such
+as Announcement:
+
+1. Release the module repository with a matching semver tag, for example
+   `v1.0.2`.
+2. Update and sign the registry catalog, then wait for the registry Pages
+   workflow to publish it.
+3. In the KoAkademy repository, run
+   `composer update koakademy/announcement --with-dependencies` and commit
+   `composer.json` and `composer.lock`. Use `composer require` for a package
+   that is not declared yet.
+4. Build and deploy a new application image through the normal stable or edge
+   release process.
+5. Run `php artisan migrate --force` in the release container when the module
+   has migrations, clear/rebuild application caches, and roll every Swarm
+   replica.
+6. Open **Administrators → Marketplace** and enable the installed module if it
+   is disabled.
+
+Refreshing Marketplace only refreshes catalog information. It does not install
+Composer packages, rebuild frontend assets, run migrations, or restart Swarm.
+Existing source-tree modules under `Modules/` also do not receive updates from
+their standalone repositories until the application is deliberately migrated
+to the Composer package. Keep the legacy module enabled during that migration
+unless the migration plan explicitly changes its status.
+
 ## Backups and recovery
 
 Back up and restore-test all of these:

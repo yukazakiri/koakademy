@@ -39,6 +39,8 @@ module manifest declares its semantic version, license, providers, core/PHP
 requirements, and Laravel/Filament compatibility. The six bundled modules
 remain in Modules/ for the core application's backward-compatible defaults;
 matching standalone Composer repositories are published for independent use.
+Additional packages, such as the Forms module, can be added to the application
+image through Composer without copying their source into the core repository.
 
 The public distribution boundary is intentionally separate:
 
@@ -48,11 +50,20 @@ yukazakiri/koakademy-modules               -> signed catalog and Composer reposi
 yukazakiri/koakademy-module-<name>         -> one standalone Composer package per module
 ~~~
 
-Registry reads are disabled by default. When enabled, the core accepts only an
-HTTPS catalog with an Ed25519 signature and a SHA-256 checksum declaration for
-every release asset. Composer remains the installation boundary: a host
-explicitly adds a package from the signed catalog's `packages.json`, then
-Laravel discovers the package provider and module manifest. The marketplace
-client does not execute arbitrary downloaded code.
+The Marketplace client is enabled by default in the current installer and
+Swarm configuration. It accepts only an HTTPS catalog with an Ed25519
+signature and a SHA-256 checksum declaration for every release asset. Composer
+remains the installation boundary: a host explicitly adds a package from the
+signed catalog's `packages.json`, then the image build installs the locked
+package and Laravel discovers its provider and module manifest. The Marketplace
+does not execute Composer, download PHP code, or replace an already-running
+container.
+
+The module status file is persistent. The bundled image statuses preserve the
+existing six modules as enabled, and upgrades do not overwrite an operator's
+choices. A newly installed standalone package must be present in the image
+before it can be enabled from **Administrators → Marketplace**. Existing
+source-tree modules remain source-tree modules until the application is
+deliberately migrated to their Composer package.
 
 Production migrations are explicit release jobs. Application startup never migrates the database, and rollback never assumes database migrations can be safely reversed.

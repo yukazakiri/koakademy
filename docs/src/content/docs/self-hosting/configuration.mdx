@@ -69,6 +69,39 @@ koakademy configure search enable
 
 Provide the external HTTPS endpoint and API key. KoAkademy enables the Scout Meilisearch driver, rolls the app service, synchronizes index settings, and imports the registered searchable models. No Meilisearch service is added to the Swarm stack. Disable it with `koakademy configure search disable`.
 
+## Module Marketplace
+
+The Marketplace reads the signed KoAkademy module catalog and combines it
+with the modules installed in the current application image. It is enabled by
+default in the installer and Swarm templates:
+
+```dotenv
+MODULE_MARKETPLACE_ENABLED=true
+MODULE_REGISTRY_URL=https://yukazakiri.github.io/koakademy-modules/registry.json
+MODULE_REGISTRY_CACHE_TTL=3600
+MODULE_REGISTRY_REQUIRE_SIGNATURE=true
+MODULE_REGISTRY_PUBLIC_KEY=gnGm74yPDu7umv6sF0lzepJnEVEx7b9_HYDrAxjxYYs
+MODULE_REGISTRY_PUBLIC_KEY_FILE=
+MODULE_SCAN_VENDOR=true
+```
+
+`MODULE_REGISTRY_PUBLIC_KEY_FILE` can provide the public key from a mounted
+secret; use it when the deployment does not keep the key inline. Keep the
+public key aligned with the registry trust root and never put the private
+signing key in the application or its image.
+
+The Marketplace is read-only. It can enable or disable an installed module,
+but it does not run Composer or install code into a live container. To add a
+standalone module, declare the Composer package in the application, commit the
+lockfile, rebuild the image, run its migrations, and then enable it from
+**Administrators → Marketplace**. See the [module registry guide](https://github.com/yukazakiri/koakademy-modules/blob/master/docs/module-lifecycle.md)
+for the contributor and maintainer release process.
+
+The persistent module status file is initialized without overwriting existing
+choices. This preserves enabled bundled modules and administrator decisions
+during upgrades. A package that was not present in the previous image may
+appear disabled until an administrator enables it.
+
 ## Application and routing
 
 Caddy terminates HTTPS and is the only public service. It forwards to the internal FrankenPHP app over the Swarm overlay. The installer sets:

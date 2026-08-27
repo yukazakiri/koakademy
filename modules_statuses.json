@@ -4,5 +4,6 @@
     "StudentMedicalRecords": true,
     "NotificationCenter": true,
     "Announcement": true,
-    "Inventory": true
+    "Inventory": true,
+    "Forms": true
 }

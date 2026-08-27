@@ -121,19 +121,24 @@
     },
     "repositories": [
         {
+            "type": "composer",
+            "url": "https://yukazakiri.github.io/koakademy-modules"
+        },
+        {
             "type": "package",
             "package": {
                 "name": "koakademy/forms",
-                "version": "1.1.0",
+                "version": "1.1.1",
                 "type": "library",
                 "dist": {
                     "type": "zip",
-                    "url": "https://github.com/yukazakiri/koakademy-module-forms/archive/refs/tags/v1.1.0.zip"
+                    "url": "https://github.com/yukazakiri/koakademy-module-forms/archive/refs/tags/v1.1.1.zip",
+                    "shasum": "968687134c9ad058e60f32819058fe69375b95ee"
                 },
                 "source": {
                     "type": "git",
                     "url": "https://github.com/yukazakiri/koakademy-module-forms.git",
-                    "reference": "v1.1.0"
+                    "reference": "v1.1.1"
                 },
                 "require": {
                     "php": ">=8.5 <8.6",

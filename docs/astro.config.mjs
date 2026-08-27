@@ -54,6 +54,7 @@ export default defineConfig({
                     items: [
                         { slug: "maintainers/ci" },
                         { slug: "maintainers/releases" },
+                        { slug: "maintainers/create-module" },
                         { slug: "maintainers/module-registry" },
                         { slug: "maintainers/automation" },
                         { slug: "maintainers/documentation" },

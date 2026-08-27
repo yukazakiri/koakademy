@@ -1,0 +1,473 @@
+---
+title: Create a Module
+description: The complete contributor and maintainer workflow for building and publishing a standalone KoAkademy module.
+---
+
+# Create a Module
+
+This guide is for contributors who want to create a standalone Composer module
+for KoAkademy and maintainers who will review and publish it. A complete
+module release has three separate deliverables:
+
+1. A tested module repository with a matching semantic version tag.
+2. A signed entry in the [KoAkademy module registry](https://github.com/yukazakiri/koakademy-modules).
+3. A KoAkademy application image that installs the locked package.
+
+The Marketplace only displays the signed catalog and controls the status of
+code already installed in the image. It does not install Composer packages or
+update a live container.
+
+## 1. Decide the module boundary
+
+Create a module when the feature is an optional domain with its own models,
+migrations, screens, permissions, routes, jobs, or scheduled work. Keep the
+module independent from the core application where practical:
+
+- Put module code, tests, migrations, configuration, and views in the module
+  repository.
+- Use public contracts for host integrations instead of reaching into arbitrary
+  application classes.
+- Treat student, medical, financial, and identity data as sensitive. Define
+  authorization, retention, audit, and export behavior before implementation.
+- Do not change core tables or assume a particular host model without declaring
+  the integration contract and migration impact.
+- Use database migrations for every schema change. Never rewrite a migration
+  that has been released.
+
+Review the [system module guide](/koakademy/system/modules-flags/) and the
+[Forms module](https://github.com/yukazakiri/koakademy-module-forms) for
+examples of a package with host-model integration.
+
+## 2. Choose stable identities
+
+Choose these values once and keep them stable after the first release:
+
+| Identity | Rule | Example |
+| --- | --- | --- |
+| GitHub repository | `koakademy-module-<alias>` | `koakademy-module-surveys` |
+| Module `name` | Starts with a letter; letters, numbers, `_`, and `-` | `Surveys` |
+| Module `alias` | Lowercase letters, numbers, and `-` | `surveys` |
+| Composer package | Lowercase `vendor/package` | `koakademy/surveys` |
+| PHP namespace | `Modules\\<Name>\\` | `Modules\\Surveys\\` |
+| Provider | A loadable service-provider class | `Modules\\Surveys\\Providers\\SurveysServiceProvider` |
+
+The module name, alias, Composer package, provider, and repository URL identify
+the same product across Composer, Laravel, the catalog, and Marketplace. Do
+not rename them as part of a routine feature release.
+
+## 3. Create the standalone repository
+
+Create a public repository and a local checkout. The repository can start from
+an existing standalone module’s file layout, but remove its domain code and
+tests rather than copying behavior accidentally:
+
+```sh
+gh repo create yukazakiri/koakademy-module-surveys --public --clone
+cd koakademy-module-surveys
+composer init \
+    --name=koakademy/surveys \
+    --type=library \
+    --license=AGPL-3.0-or-later \
+    --no-interaction
+mkdir -p app/Providers app/Models app/Policies database/migrations resources/views routes tests/Unit tests/Feature
+```
+
+Add the normal repository files:
+
+```text
+koakademy-module-surveys/
+├── app/
+│   ├── Models/
+│   ├── Policies/
+│   └── Providers/SurveysServiceProvider.php
+├── config/
+├── database/migrations/
+├── resources/views/
+├── routes/
+├── tests/
+├── composer.json
+├── module.json
+├── phpunit.xml
+├── README.md
+└── LICENSE.md
+```
+
+Keep `vendor/`, build output, local environment files, and test databases out
+of Git. The release asset is generated from the public Git tag by GitHub.
+
+## 4. Add the module manifest
+
+Create `module.json` at the repository root. This is the metadata read by
+KoAkademy and by the registry updater:
+
+```json
+{
+  "name": "Surveys",
+  "alias": "surveys",
+  "composer_package": "koakademy/surveys",
+  "version": "0.1.0",
+  "description": "Configurable surveys for school workflows.",
+  "author": "KoAkademy contributors",
+  "license": "AGPL-3.0-or-later",
+  "requires": {
+    "core": ">=1.22.0",
+    "php": ">=8.5",
+    "modules": {}
+  },
+  "compatibility": {
+    "laravel": "^13.0",
+    "filament": "^5.0"
+  },
+  "providers": [
+    "Modules\\Surveys\\Providers\\SurveysServiceProvider"
+  ],
+  "repository": "https://github.com/yukazakiri/koakademy-module-surveys",
+  "homepage": "https://github.com/yukazakiri/koakademy-module-surveys"
+}
+```
+
+The required registry fields are `name`, `alias`, `composer_package`,
+`version`, `description`, `author`, `license`, `repository`, `homepage`, and
+`providers`. `requires.modules` is an object whose keys are module names and
+whose values are version constraints when another module is required.
+
+Keep `module.json` and `composer.json` versions aligned. The first release can
+use `0.1.0`; subsequent releases should follow semantic versioning. The tag
+must be `v0.1.0` for this example.
+
+## 5. Wire Composer and Laravel discovery
+
+The package must autoload its namespace and advertise its provider through
+Composer. A minimal runtime section looks like this:
+
+```json
+{
+  "name": "koakademy/surveys",
+  "type": "library",
+  "license": "AGPL-3.0-or-later",
+  "require": {
+    "php": ">=8.5 <8.6",
+    "filament/filament": "^5.0",
+    "laravel/framework": "^13.0",
+    "nwidart/laravel-modules": "^13.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "Modules\\Surveys\\": "app/",
+      "Modules\\Surveys\\Database\\Factories\\": "database/factories/",
+      "Modules\\Surveys\\Database\\Seeders\\": "database/seeders/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Modules\\Surveys\\Tests\\": "tests/"
+    }
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "Modules\\Surveys\\Providers\\SurveysServiceProvider"
+      ]
+    }
+  },
+  "scripts": {
+    "test": "pest --compact"
+  }
+}
+```
+
+Only add runtime dependencies the module actually uses. Add `inertiajs`,
+`spatie/laravel-permission`, storage adapters, or other packages explicitly
+when the module needs them. Do not copy the entire KoAkademy application’s
+dependency list into every module.
+
+The service provider should load only the module’s own resources and bind
+documented integration contracts. For example:
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace Modules\Surveys\Providers;
+
+use Illuminate\Support\ServiceProvider;
+
+final class SurveysServiceProvider extends ServiceProvider
+{
+    public function register(): void
+    {
+        $this->app->register(RouteServiceProvider::class);
+    }
+
+    public function boot(): void
+    {
+        $modulePath = dirname(__DIR__, 2);
+
+        $this->loadMigrationsFrom($modulePath.'/database/migrations');
+        $this->mergeConfigFrom($modulePath.'/config/surveys.php', 'surveys');
+        $this->loadViewsFrom($modulePath.'/resources/views', 'surveys');
+    }
+}
+```
+
+Register policies, gates, commands, routes, translations, and Filament
+resources from the provider or a provider it registers. Keep authorization in
+the backend; hiding a frontend link is not access control.
+
+## 6. Build the feature and its contract tests
+
+Implement the domain using the application’s Laravel conventions:
+
+- migrations and Eloquent models own durable data;
+- policies and permission checks protect every read and write;
+- Filament resources belong under the module namespace;
+- routes use the module prefix and named routes;
+- queued work is safe to retry and does not leak sensitive payloads;
+- uploaded files use private storage unless public access is explicitly part
+  of the feature;
+- host-specific behavior is behind an adapter or contract with a safe fallback
+  for other Laravel hosts.
+
+At minimum, test:
+
+- manifest and Composer package identity;
+- service-provider discovery and boot;
+- migrations on a clean database and an upgrade database;
+- authorization for allowed and denied roles;
+- validation and duplicate/submission behavior;
+- any host-model mapping, tenant boundary, file access, export, or queue path.
+
+Run the package checks before tagging:
+
+```sh
+composer validate --no-check-publish --strict
+composer install --no-interaction --prefer-dist
+composer test
+find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+```
+
+The module repository should also have a secret-free GitHub Actions workflow
+that runs Composer validation, dependency installation, syntax checks, and
+tests on pull requests and pushes. Do not make the registry signing key or
+production deployment credentials available to module CI.
+
+## 7. Test it in KoAkademy
+
+Before publishing, test the package from a KoAkademy checkout rather than only
+from the module’s package test harness:
+
+```sh
+composer config repositories.local-module path ../koakademy-module-surveys
+composer require koakademy/surveys:dev-main
+php artisan migrate --force
+php artisan package:discover --ansi
+php artisan route:list
+npm run build
+php artisan test --compact
+```
+
+For a real release candidate, test from the Git tag or ZIP distribution so
+missing files and incorrect package metadata cannot be hidden by a path
+repository. Confirm that `vendor/koakademy/surveys/module.json` exists and
+that the provider class is discoverable.
+
+Remove the local path repository before committing the application’s final
+Composer configuration. Production should resolve a tagged package from the
+public registry and use the committed lockfile.
+
+## 8. Release the module
+
+Update the module version and release notes, run the package checks again, then
+create the matching tag:
+
+```sh
+git add module.json composer.json composer.lock README.md CHANGELOG.md
+git commit -m "feat(surveys): release 0.1.0"
+git push origin main
+git tag -a v0.1.0 -m "Release v0.1.0"
+git push origin v0.1.0
+gh release create v0.1.0 --repo yukazakiri/koakademy-module-surveys --generate-notes
+```
+
+The registry uses the GitHub tag archive at:
+
+```text
+https://github.com/yukazakiri/koakademy-module-surveys/archive/refs/tags/v0.1.0.zip
+```
+
+Do not change the tag contents after publication. If the release is defective,
+publish a new patch version rather than moving the tag.
+
+## 9. Register it in the public catalog
+
+Clone the registry repository and download the exact tag archive. The updater
+reads the module repository’s `module.json` and `composer.json`, computes the
+SHA-256 catalog checksum and Composer SHA-1 distribution checksum, and updates
+both indexes:
+
+```sh
+gh repo clone yukazakiri/koakademy-modules
+cd koakademy-modules
+curl -L https://github.com/yukazakiri/koakademy-module-surveys/archive/refs/tags/v0.1.0.zip \
+    -o /tmp/surveys-v0.1.0.zip
+php scripts/update-module.php \
+    --module=/path/to/koakademy-module-surveys \
+    --archive=/tmp/surveys-v0.1.0.zip
+php scripts/validate-registry.php
+git diff -- registry.json packages.json
+```
+
+On Windows PowerShell:
+
+```powershell
+gh repo clone yukazakiri/koakademy-modules
+Set-Location koakademy-modules
+$moduleVersion = '0.1.0'
+Invoke-WebRequest `
+    -Uri "https://github.com/yukazakiri/koakademy-module-surveys/archive/refs/tags/v$moduleVersion.zip" `
+    -OutFile "$env:TEMP/surveys-v$moduleVersion.zip"
+php scripts/update-module.php `
+    --module='C:\path\to\koakademy-module-surveys' `
+    --archive="$env:TEMP/surveys-v$moduleVersion.zip"
+php scripts/validate-registry.php
+git diff -- registry.json packages.json
+```
+
+Review the generated entry carefully:
+
+- package name and module alias are correct;
+- the current version is present in both files;
+- the asset URL points to the immutable `v0.1.0` tag;
+- the checksum was calculated from that exact URL’s archive;
+- core, PHP, module, Laravel, and Filament requirements are correct;
+- the provider class exists in the release;
+- no private key or sensitive data is in the diff.
+
+The updater removes `registry.json.signature` intentionally. Commit the two
+generated index changes to a branch and open a pull request. Contributors do
+not sign the catalog.
+
+## 10. Maintainer signing and publication
+
+After the registry pull request and module release are reviewed, a maintainer
+uses the existing private Ed25519 key from protected storage:
+
+```sh
+php scripts/validate-registry.php
+php scripts/sign-registry.php registry.json /secure/registry-private.key registry.json
+php scripts/validate-registry.php
+php scripts/verify-registry.php
+git add registry.json packages.json
+git commit -m "feat(registry): publish surveys 0.1.0"
+git push origin master
+```
+
+Registry CI validates structure on pull requests and verifies the signature on
+`master`. GitHub Pages repeats both checks before publishing the catalog and
+Composer index. Do not generate a new key for a normal module release; that
+would invalidate existing applications’ configured public key.
+
+## 11. Install it and make it appear in Marketplace
+
+After the signed catalog is published, update the KoAkademy application
+repository:
+
+```sh
+composer config repositories.koakademy composer https://yukazakiri.github.io/koakademy-modules
+composer require koakademy/surveys:^0.1
+git add composer.json composer.lock
+git commit -m "feat(modules): add surveys"
+git push
+```
+
+The application image build must run Composer installation and the normal
+frontend build. The production deployment then runs the module’s migrations,
+clears/rebuilds caches, and rolls every Swarm replica. For example:
+
+```sh
+php artisan migrate --force
+php artisan optimize:clear
+php artisan optimize
+```
+
+Marketplace visibility requires all of these conditions:
+
+1. The signed catalog entry is reachable at the configured HTTPS registry URL.
+2. The application’s configured public key matches the registry trust root.
+3. The module package is installed in the image and its `module.json` is under
+   the vendor scan path.
+4. `MODULE_SCAN_VENDOR=true` remains enabled.
+5. Composer’s Laravel provider discovery has run successfully.
+6. The module satisfies the running core/PHP/Laravel/Filament constraints.
+7. A super administrator opens **Administrators → Marketplace**.
+
+The Marketplace combines catalog entries with installed manifests. It may show
+a catalog release before the package is installed, but it cannot enable a
+module that is absent from the image. A newly installed package may be
+disabled until the administrator enables it; the persistent status file keeps
+existing module choices during upgrades.
+
+## 12. Update the module later
+
+For version `0.1.1`, repeat the release and registry steps with tag `v0.1.1`.
+Then update the application lockfile and image:
+
+```sh
+composer update koakademy/surveys --with-dependencies
+php artisan test --compact
+git add composer.json composer.lock
+git commit -m "chore(modules): update surveys"
+git push
+```
+
+The registry update alone does not change `vendor/` in an existing container.
+Dokploy or the Swarm operator must deploy the newly built image. If the module
+still exists as a local source-tree copy under `Modules/`, its standalone
+repository releases do not update that copy; migrate to the Composer package
+as a separate tested change.
+
+## Troubleshooting checklist
+
+### It is in the registry but not installed
+
+Add the Composer requirement to the KoAkademy application, commit the lockfile,
+rebuild the image, and redeploy. Refreshing Marketplace cannot install it.
+
+### It is installed but not visible
+
+Confirm `vendor/<vendor>/<package>/module.json` exists, `MODULE_SCAN_VENDOR=true`,
+the provider is present in Composer’s `extra.laravel.providers`, and the image
+ran `php artisan package:discover --ansi`. Clear application/Octane caches and
+restart the app service after changing package contents.
+
+### It is visible but cannot be enabled
+
+Read the compatibility error. Check the core/PHP/Laravel/Filament constraints,
+required modules, provider boot errors, migrations, and persistent module status.
+Enable required module dependencies first. Edge core versions include build
+metadata; compatibility checks normalize that prerelease/build suffix before
+comparing the core version constraint.
+
+### Registry signature verification fails
+
+Restore the existing private key or revert the unsigned catalog change. Do not
+generate a replacement key as a quick fix; existing installations trust the
+current public key and will reject a catalog signed by a new key.
+
+## Maintainer acceptance checklist
+
+- [ ] The module has a stable name, alias, Composer package, provider, and
+      public repository.
+- [ ] `module.json` and `composer.json` are complete and version-aligned.
+- [ ] Runtime dependencies and compatibility constraints are minimal and
+      correct.
+- [ ] Migrations, authorization, privacy, audit, and rollback behavior are
+      reviewed.
+- [ ] Package contract, integration, upgrade, and failure-path tests pass.
+- [ ] Module CI is secret-free and green.
+- [ ] The public `vX.Y.Z` tag is immutable and matches the manifest.
+- [ ] Registry metadata passes validation and is reviewed before signing.
+- [ ] The existing signing key is used; no private key is committed.
+- [ ] A KoAkademy image test confirms provider discovery, migrations, build,
+      and Marketplace enablement.

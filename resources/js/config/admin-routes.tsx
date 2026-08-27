@@ -865,9 +865,28 @@ function inferInertiaPagesFromLink(link: string): string[] {
 }
 
 function modulePageExists(moduleName: string, inertiaPage: string): boolean {
-    const pageSuffix = `/Modules/${moduleName}/resources/assets/js/Pages/${inertiaPage}.tsx`;
+    const pageSuffix = `/resources/assets/js/Pages/${inertiaPage}.tsx`;
+    const moduleDirectory = `/Modules/${moduleName}/`;
+    const composerModuleDirectory = `/vendor/[^/]+/${toComposerModuleSlug(moduleName)}/`;
+    const composerModulePattern = new RegExp(composerModuleDirectory.replaceAll("/", "\\/"));
 
-    return Object.keys(MODULE_REACT_PAGES).some((pagePath) => pagePath.endsWith(pageSuffix));
+    return Object.keys(MODULE_REACT_PAGES).some((pagePath) => {
+        const normalizedPagePath = pagePath.replaceAll("\\", "/");
+
+        if (!normalizedPagePath.endsWith(pageSuffix)) {
+            return false;
+        }
+
+        return normalizedPagePath.includes(moduleDirectory) || composerModulePattern.test(normalizedPagePath);
+    });
+}
+
+function toComposerModuleSlug(moduleName: string): string {
+    return moduleName
+        .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+        .replace(/[^a-zA-Z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")
+        .toLowerCase();
 }
 
 export function getResolvedAdminRoutes(moduleRoutes: ModuleAdminRoute[] = []): AdminRoute[] {

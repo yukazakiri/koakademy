@@ -128,17 +128,17 @@
             "type": "package",
             "package": {
                 "name": "koakademy/forms",
-                "version": "1.1.2",
+                "version": "1.1.3",
                 "type": "library",
                 "dist": {
                     "type": "zip",
-                    "url": "https://github.com/yukazakiri/koakademy-module-forms/archive/refs/tags/v1.1.2.zip",
-                    "shasum": "ef71737e887c40d78ecf1967b0dc00f05091e4bb"
+                    "url": "https://github.com/yukazakiri/koakademy-module-forms/archive/refs/tags/v1.1.3.zip",
+                    "shasum": "974a10a47dea25ed91ed6c5890f43f4c9dd15a25"
                 },
                 "source": {
                     "type": "git",
                     "url": "https://github.com/yukazakiri/koakademy-module-forms.git",
-                    "reference": "v1.1.2"
+                    "reference": "v1.1.3"
                 },
                 "require": {
                     "php": ">=8.5 <8.6",

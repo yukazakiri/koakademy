@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "f912a37621d3c7c8db7e6841acb8f92c",
+    "content-hash": "1e1d96e84291d44f842fb7287b90acf3",
     "packages": [
         {
             "name": "achyutn/filament-log-viewer",
@@ -5418,16 +5418,17 @@
         },
         {
             "name": "koakademy/forms",
-            "version": "1.1.4",
+            "version": "v1.1.5",
             "source": {
                 "type": "git",
                 "url": "https://github.com/yukazakiri/koakademy-module-forms.git",
-                "reference": "v1.1.4"
+                "reference": "956b018c7353482f7bec621c1fecb2db092d0dcb"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://github.com/yukazakiri/koakademy-module-forms/archive/refs/tags/v1.1.4.zip",
-                "shasum": "22881846e26b971fec6295ea16b761e917b8a680"
+                "url": "https://api.github.com/repos/yukazakiri/koakademy-module-forms/zipball/956b018c7353482f7bec621c1fecb2db092d0dcb",
+                "reference": "956b018c7353482f7bec621c1fecb2db092d0dcb",
+                "shasum": ""
             },
             "require": {
                 "filament/filament": "^5.0",
@@ -5436,6 +5437,12 @@
                 "nwidart/laravel-modules": "^13.0",
                 "php": ">=8.5 <8.6",
                 "spatie/laravel-permission": "^6.21"
+            },
+            "require-dev": {
+                "laravel/pint": "^1.24",
+                "orchestra/testbench": "^11.0",
+                "pestphp/pest": "^5.0",
+                "pestphp/pest-plugin-laravel": "^5.0"
             },
             "type": "library",
             "extra": {
@@ -5451,7 +5458,27 @@
                     "Modules\\Forms\\Database\\Factories\\": "database/factories/",
                     "Modules\\Forms\\Database\\Seeders\\": "database/seeders/"
                 }
-            }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "Modules\\Forms\\Tests\\": "tests/"
+                }
+            },
+            "scripts": {
+                "test": [
+                    "pest --compact"
+                ]
+            },
+            "license": [
+                "AGPL-3.0-or-later"
+            ],
+            "authors": [
+                {
+                    "name": "KoAkademy contributors"
+                }
+            ],
+            "description": "Configurable online forms, surveys, evaluations, and record-linked submissions for KoAkademy.",
+            "time": "2026-08-27T15:13:30+00:00"
         },
         {
             "name": "laminas/laminas-diactoros",

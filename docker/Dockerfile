@@ -18,6 +18,20 @@ RUN composer install \
     --no-progress \
     --ignore-platform-reqs
 
+# Forms is maintained in its own repository. Refresh only that package at
+# image-build time so a redeploy picks up the newest compatible 1.x release;
+# every other dependency remains governed by composer.lock.
+ARG FORMS_REFRESH=locked
+RUN printf 'Refreshing Forms dependency (%s)\n' "$FORMS_REFRESH" && composer update koakademy/forms \
+    --with-dependencies \
+    --no-dev \
+    --no-interaction \
+    --no-autoloader \
+    --no-ansi \
+    --no-scripts \
+    --no-progress \
+    --ignore-platform-reqs
+
 COPY . .
 RUN mkdir -p \
     storage/framework/sessions \

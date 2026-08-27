@@ -553,6 +553,8 @@ jobs:
           platforms: linux/${{ matrix.platform }}
           push: true
           tags: ghcr.io/${{ github.repository }}:sha-${{ needs.publish.outputs.source_sha }}-${{ matrix.platform }}
+          build-args: |
+            FORMS_REFRESH=${{ github.run_id }}-${{ github.run_attempt }}
           labels: |
             org.opencontainers.image.created=${{ steps.metadata.outputs.created }}
             org.opencontainers.image.revision=${{ needs.publish.outputs.source_sha }}
@@ -574,6 +576,8 @@ jobs:
           platforms: linux/${{ matrix.platform }}
           push: true
           tags: ghcr.io/${{ github.repository }}:sha-${{ needs.publish.outputs.source_sha }}-franken-${{ matrix.platform }}
+          build-args: |
+            FORMS_REFRESH=${{ github.run_id }}-${{ github.run_attempt }}
           labels: |
             org.opencontainers.image.created=${{ steps.metadata-franken.outputs.created }}
             org.opencontainers.image.revision=${{ needs.publish.outputs.source_sha }}

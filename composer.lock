@@ -5418,16 +5418,16 @@
         },
         {
             "name": "koakademy/forms",
-            "version": "v1.1.8",
+            "version": "v1.1.9",
             "source": {
                 "type": "git",
                 "url": "https://github.com/yukazakiri/koakademy-module-forms.git",
-                "reference": "0d7451b6ba9befb4272a81651600d85287ec5d64"
+                "reference": "608a79215e9ce35f55098789e429c23239484b99"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/yukazakiri/koakademy-module-forms/zipball/0d7451b6ba9befb4272a81651600d85287ec5d64",
-                "reference": "0d7451b6ba9befb4272a81651600d85287ec5d64",
+                "url": "https://api.github.com/repos/yukazakiri/koakademy-module-forms/zipball/608a79215e9ce35f55098789e429c23239484b99",
+                "reference": "608a79215e9ce35f55098789e429c23239484b99",
                 "shasum": ""
             },
             "require": {
@@ -5478,7 +5478,7 @@
                 }
             ],
             "description": "Configurable online forms, surveys, evaluations, and record-linked submissions for KoAkademy.",
-            "time": "2026-08-28T00:09:26+00:00"
+            "time": "2026-08-28T00:32:52+00:00"
         },
         {
             "name": "laminas/laminas-diactoros",

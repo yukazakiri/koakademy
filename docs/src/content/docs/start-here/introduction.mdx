@@ -5,41 +5,47 @@ description: What KoAkademy is, the stack it runs on, and where to go next.
 
 import { Card, CardGrid } from "@astrojs/starlight/components";
 
-# KoAkademy developer documentation
+# KoAkademy Platform Documentation
 
-KoAkademy is a self-hosted school administration and learning platform. It is a production-capable beta: the repository provides a supported topology and automated validation, while each operator remains responsible for staging, backup, monitoring, privacy, and recovery.
+KoAkademy is an open-source, self-hosted school administration and learning management platform. It gives educational institutions complete ownership of student records, grades, enrollment workflows, and academic data without vendor lock-in or recurring per-seat fees.
 
 <CardGrid stagger>
-    <Card title="Understand the system" icon="open-book">
-        Learn how the domain model, enrollment engine, modules, and portals fit together in **System Internals**.
+    <Card title="Understand the Architecture" icon="open-book">
+        Explore how the multi-tenant domain model, enrollment blueprint engine, modular plugins, and React portals connect in **System Internals**.
     </Card>
-    <Card title="Contribute" icon="github">
-        Develop with PHP 8.5, Laravel 13, Filament 5, React 19, Inertia, Pest 5, and the canonical documentation workflow.
+    <Card title="Contribute Code & Docs" icon="github">
+        Build with PHP 8.5, Laravel 13, Filament 5, Inertia 3, React 19, Tailwind CSS 4, and Pest 5 using our canonical documentation workflow.
     </Card>
-    <Card title="Self-host" icon="server">
-        Use the one-line Docker Swarm installer for Caddy HTTPS, KoAkademy, PostgreSQL, Redis, Gotenberg, and optional external S3/R2.
+    <Card title="Self-Host on Your Servers" icon="server">
+        Run the one-line Docker Swarm installer to provision Caddy HTTPS, FrankenPHP application service, PostgreSQL, Redis, and Gotenberg PDF rendering.
     </Card>
-    <Card title="Integrate" icon="seti:json">
-        Use only the tested beta subset: public settings, authenticated settings, and authenticated student verification.
+    <Card title="Integrate via Public API" icon="seti:json">
+        Interact with the tested beta API subset for general institution settings and cryptographic student verification.
     </Card>
 </CardGrid>
 
-## Pick your path
+## Pick Your Path
 
-- **New contributor?** Start with [Development setup](./development/), read the [Architecture overview](./architecture/), then dive into **System Internals** — beginning with the [domain model](../system/architecture-domain/).
-- **Maintainer?** The **Maintainers** section documents the [CI pipeline](../maintainers/ci/), the [release and versioning process](../maintainers/releases/), [repository automation](../maintainers/automation/), and the [documentation system](../maintainers/documentation/) itself.
-- **Self-hosting?** Begin with [Installation](../self-hosting/installation/), then follow [Deployment](../self-hosting/deployment/) and [Configuration](../self-hosting/configuration/). The supported default is one HTTPS hostname with administration at `/admin`.
-- **Operating a school on KoAkademy?** The [User Guide](../user-guide/introduction/) covers daily staff workflows, and **Enrollment Blueprints** covers no-code enrollment configuration.
+- **Are you a new contributor?** Head to the [Contributing Guide](../start-here/contributing/) to set up your environment, learn about our testing requirements, and see sample code. Check the [Architecture Overview](../start-here/architecture/) for an overview of data boundaries.
+- **Are you building a feature or extension?** Explore the [Frontend Guide](../system/frontend/), [Auth & Authorization](../system/auth-authorization/), [Modules & Feature Flags](../system/modules-flags/), and [Enrollment Policy Extensions](../development/enrollment-policy-extensions/).
+- **Are you deploying KoAkademy?** Read the [Installation Guide](../self-hosting/installation/), followed by [Configuration](../self-hosting/configuration/) and [Deployment & Backups](../self-hosting/deployment/).
+- **Are you operating a school?** The [User Guide](../user-guide/introduction/) covers daily administrative and faculty routines, while [Enrollment Blueprints](../enrollment-policies/overview/) explains no-code policy configuration.
 
-## The stack at a glance
+## Technology Stack
 
-| Layer | Technology |
-| ----- | ---------- |
-| Backend | PHP 8.5, Laravel 13, FrankenPHP in the supported production image |
-| Administration | Filament 5 with Shield permissions |
-| Portals | Inertia 3, React 19, Tailwind CSS 4, shadcn/ui |
-| Data | PostgreSQL, Redis (cache, sessions, queues) |
-| Documents | `spatie/laravel-pdf` with Gotenberg |
-| Tests | Pest 5 (parallel, SQLite in-memory) |
+| Layer | Technology | Details |
+| ----- | ---------- | ------- |
+| **Backend Framework** | PHP 8.5, Laravel 13 | Service layer, Form Requests, Policies, strict types |
+| **Application Runtime** | FrankenPHP (Octane) / Nginx | High-performance application worker in production Docker image |
+| **Admin Workspace** | Filament 5 | Resource managers, Shield role permissions, custom widgets |
+| **User Portals** | Inertia 3, React 19, TypeScript | Server-driven client rendering with SSR support (`ssr.tsx`) |
+| **Styling & Components**| Tailwind CSS 4, shadcn/ui | Radix UI primitives, Lucide icons, accessible responsive layouts |
+| **Routing Helpers** | Laravel Wayfinder | Generated typed TypeScript actions/routes (`@/actions`, `@/routes`) |
+| **Database & Cache** | PostgreSQL, Redis | PostgreSQL for durable records, Redis for sessions, cache, and queues |
+| **Document Generation**| `spatie/laravel-pdf` + Gotenberg | Chromium-based server-side PDF compilation |
+| **Testing Framework** | Pest 5 | Feature and unit tests running in parallel against in-memory SQLite |
+| **Documentation Site** | Astro 5 + Starlight | MDX collections, Pagefind search, single-source sync |
 
-Only the latest stable release is supported. KoAkademy is licensed under GNU AGPL-3.0-or-later.
+## Open Source & Licensing
+
+KoAkademy is licensed under **[GNU AGPL-3.0-or-later](https://github.com/yukazakiri/koakademy/blob/master/LICENSE.md)**. Commercial restrictions, artificial telemetry, or hidden paywalls are not included. All institutional data remains strictly on your chosen infrastructure.

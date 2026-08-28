@@ -1,0 +1,159 @@
+---
+title: Self-Hosting on Coolify
+description: Deploy KoAkademy on Coolify v4 using Docker Compose or standalone Docker images.
+---
+
+[Coolify](https://coolify.io/) is an all-in-one open-source, self-hostable platform to manage servers, applications, and databases.
+
+## Prerequisites
+
+- An active Coolify v4 instance installed on your server.
+- DNS A/AAAA record pointing to your Coolify host IP.
+- Server with at least 4 GB RAM.
+
+---
+
+## Step-by-Step Deployment Guide
+
+### Step 1: Create a Project & Environment
+
+1. In the Coolify dashboard, select **Projects** → **+ Add Project**.
+2. Name the project `KoAkademy`.
+3. Open the newly created environment (e.g. `production`).
+
+---
+
+### Step 2: Add Docker Compose Service
+
+1. Click **+ Add Resource** and choose **Docker Compose**.
+2. Set the service name to `koakademy-stack`.
+3. In the **Docker Compose Configuration** textarea, paste the following configuration:
+
+```yaml
+version: "3.8"
+
+services:
+  app:
+    image: ghcr.io/yukazakiri/koakademy:latest
+    restart: unless-stopped
+    environment:
+      APP_NAME: "KoAkademy"
+      APP_ENV: "production"
+      APP_DEBUG: "false"
+      APP_URL: "${COOLIFY_FQDN_APP:-https://school.example.com}"
+      APP_KEY: "${APP_KEY}"
+      APP_PORT: 8000
+      OCTANE_SERVER: "frankenphp"
+      AUTO_MIGRATE: "true"
+      RUN_OPTIMIZE: "foreground"
+      
+      # Database
+      DB_CONNECTION: "pgsql"
+      DB_HOST: "postgres"
+      DB_PORT: 5432
+      DB_DATABASE: "koakademy"
+      DB_USERNAME: "koakademy"
+      DB_PASSWORD: "${DB_PASSWORD}"
+      
+      # Redis Cache & Queues
+      CACHE_STORE: "redis"
+      SESSION_DRIVER: "redis"
+      QUEUE_CONNECTION: "redis"
+      REDIS_HOST: "redis"
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: "${REDIS_PASSWORD}"
+      
+      # PDF Service
+      GOTENBERG_URL: "http://gotenberg:3000"
+      
+      # Storage
+      FILESYSTEM_DISK: "public"
+    volumes:
+      - app_storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      gotenberg:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "koakademy"
+      POSTGRES_USER: "koakademy"
+      POSTGRES_PASSWORD: "${DB_PASSWORD}"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U koakademy -d koakademy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"${REDIS_PASSWORD}\" ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:3000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  app_storage:
+  pg_data:
+  redis_data:
+```
+
+---
+
+### Step 3: Configure Environment Variables in Coolify
+
+In Coolify's **Environment Variables** panel, set the following secrets:
+
+1. `APP_KEY`: Generate a key with `docker run --rm ghcr.io/yukazakiri/koakademy:latest php artisan key:generate --show`.
+2. `DB_PASSWORD`: Enter a secure random string for PostgreSQL.
+3. `REDIS_PASSWORD`: Enter a secure random string for Redis.
+
+---
+
+### Step 4: Configure Domain & Traefik Routing
+
+1. In the **General** settings of the `app` service inside the compose stack:
+   - In **Domains**, enter your full domain: `https://school.example.com`.
+   - Ensure the internal port is set to `8000`.
+2. Coolify will automatically configure Traefik with Let's Encrypt HTTPS certificates for `https://school.example.com`.
+
+---
+
+### Step 5: Deploy the Application
+
+1. Click **Deploy**.
+2. Monitor build logs in real-time. Coolify will pull the images, run health checks on PostgreSQL, Redis, and Gotenberg, execute automatic migrations via `AUTO_MIGRATE=true`, and boot FrankenPHP.
+3. Once the deployment status turns green, visit `https://school.example.com/setup` to create the super administrator account and initialize your school institution.
+
+---
+
+## Health Checks & Diagnostics
+
+Coolify monitors container health using the built-in health check endpoints:
+
+- **App Liveness/Readiness**: `http://127.0.0.1:8000/up`
+- **Gotenberg Health**: `http://gotenberg:3000/health`
+- **Postgres Health**: `pg_isready -U koakademy`
+- **Redis Health**: `redis-cli ping`

@@ -5,123 +5,147 @@ description: Bundled and standalone modules, the Pennant feature-flag system, an
 
 # Modules & Feature Flags
 
-KoAkademy composes optional functionality at three levels: **modules** (code-level, deployed), **feature flags** (runtime, per installation), and **institution settings** (runtime, per school). This page inventories all three and explains which mechanism to reach for.
+KoAkademy provides modular extensibility and runtime configurability through three distinct mechanisms:
 
-## Modules
+1. **Modules (Code level):** Optional domain features with dedicated models, controllers, migrations, and UI.
+2. **Feature Flags (Runtime level):** Class-based toggles powered by **Laravel Pennant** for gradual feature rollouts.
+3. **Institution Settings (Configuration level):** Per-school settings stored via `spatie/laravel-settings`.
 
-Modules use **nwidart/laravel-modules** and are registered into the Filament admin panel through `coolsam/modules` (`ModulesPlugin` in `AdminPanelProvider`). Enabled state is stored in the `module_installations` database table after the migration runs. The persistent `modules_statuses.json` file remains the first-boot default and rollback fallback. The six bundled source-tree modules ship enabled for backward-compatible defaults; standalone Composer modules must be installed in the image before they can be enabled.
+## Modules Overview
 
-| Module | Registers | Purpose |
+Modules are managed via `nwidart/laravel-modules` and integrated with Filament through `coolsam/modules`:
+
+### Bundled Core Modules
+
+KoAkademy includes six bundled modules under `Modules/` that are active by default:
+
+| Module | Namespace | Purpose |
 | ------ | --------- | ------- |
-| **Announcement** | Model + policy, Filament resource, admin & student-portal endpoints, banner render hook | School-wide announcements |
-| **Cashier** | Shield-protected Filament page, controllers, notifications | Student balance lookup and payment posting for cashiers |
-| **Inventory** | Filament resources (products, categories, suppliers, borrowings, stock movements, amendments), ledger service | Property and equipment management |
-| **LibrarySystem** | Filament resources (books, authors, categories, borrow records), research papers | Library operations |
-| **NotificationCenter** | Template model + service, 12 template notification classes, bulk-send job, admin UI | Template-based messaging |
-| **StudentMedicalRecords** | Model with confidentiality flags, Filament cluster + resource, stats widget, policy | Clinic visit records |
+| **Announcement** | `Modules\Announcement` | School-wide news and targeted broadcast banners |
+| **Cashier** | `Modules\Cashier` | In-person student balance lookup and cashier payment processing |
+| **Inventory** | `Modules\Inventory` | Campus equipment tracking, suppliers, and stock ledger |
+| **LibrarySystem** | `Modules\LibrarySystem` | Book cataloging, borrow/return logs, and digital paper archives |
+| **NotificationCenter** | `Modules\NotificationCenter` | Dynamic notification templates and batch broadcast jobs |
+| **StudentMedicalRecords** | `Modules\StudentMedicalRecords` | Confidential clinic visit notes and student medical profiles |
 
-A module can contain migrations, models, policies, Filament resources/pages/widgets, routes, controllers, jobs, and its own tests — the same conventions as `app/`. Module Filament resources appear in the admin panel automatically once the module is enabled.
+### Standalone Composer Modules
 
-### Standalone modules
+Standalone modules (like the [Forms Module](https://github.com/yukazakiri/koakademy-module-forms)) are published as separate Composer packages via the [KoAkademy Module Registry](https://github.com/yukazakiri/koakademy-modules).
 
-Standalone modules are Composer packages with their own repositories, tests,
-release tags, migrations, and `module.json` manifests. The [Forms module](https://github.com/yukazakiri/koakademy-module-forms)
-is an example: it provides configurable forms, surveys, evaluations, and
-record-linked submissions without copying its source into `Modules/`.
+Installation is performed at the Composer level:
 
-Install a standalone package in the application or distribution repository,
-commit the lockfile, build the image, run its migrations, and then enable it
-from **Administrators → Marketplace**. The Marketplace does not run Composer or
-update a live container. Startup synchronizes newly discovered packages into
-the database without overwriting existing administrator choices. See [Module
-Registry](/koakademy/maintainers/module-registry/) for the release and
-deployment lifecycle.
-
-## Publishing a module
-
-The public module contract is the module.json file at the root of every
-module. A distributable module must declare:
-
-~~~json
-{
-  "name": "LibrarySystem",
-  "alias": "library-system",
-  "composer_package": "koakademy/library-system",
-  "version": "1.4.2",
-  "description": "Library operations.",
-  "author": "Maintainer name",
-  "license": "AGPL-3.0-or-later",
-  "requires": {
-    "core": ">=1.20.0",
-    "php": ">=8.5",
-    "modules": {}
-  },
-  "compatibility": {
-    "laravel": "^13.0",
-    "filament": "^5.0"
-  },
-  "providers": [
-    "Modules\\LibrarySystem\\Providers\\LibrarySystemServiceProvider"
-  ]
-}
-~~~
-
-Standalone module repositories use Composer PSR-4 autoloading, tagged semantic
-releases, migrations that are safe to run on upgrade, and package-contract tests.
-The public registry exposes both a signed catalog and a Composer `packages.json`
-repository. Install a package explicitly from the host application:
-
-~~~sh
+```sh
+# Add the registry repository
 composer config repositories.koakademy composer https://yukazakiri.github.io/koakademy-modules
-composer require koakademy/library-system:^1.0
-~~~
 
-Each catalog release also declares an HTTPS ZIP asset and SHA-256 checksum for
-auditability. Composer performs the package installation; the marketplace layer
-does not execute arbitrary remote code.
+# Require the desired module package
+composer require koakademy/module-forms:^1.0
 
-The Marketplace client is enabled by default in the current installer and
-Swarm templates. It reads an HTTPS `MODULE_REGISTRY_URL` and requires an
-Ed25519 public key in `MODULE_REGISTRY_PUBLIC_KEY`; unsigned catalogs are
-rejected by default. The catalog is read-only, and package installation
-remains an explicit Composer operation performed while building the host
-application image.
+# Run module database migrations
+php artisan migrate --force
+```
 
-For a container-hosted registry, `scripts/ensure-signing-key.php` creates the
-Ed25519 keypair only when the persistent key volume is empty. It prints the
-public key and reuses the same key on restart; mount that public key into the
-KoAkademy app with `MODULE_REGISTRY_PUBLIC_KEY_FILE` or provide it through the
-deployment secret consumed by the app entrypoint.
-
-## Feature flags (Pennant)
-
-Runtime flags use **Laravel Pennant** with the database store. Flags are **class-based toggles** in `app/Features/Toggles`, catalogued in `FeatureToggleRegistry` and enforced by the `EnsureFeatureEnabled` middleware. There are 36 toggles in three families:
-
-- **`faculty-*` (19)** — dashboard, classes, grades, attendance, schedule, action center, at-risk alerts, assessments, inbox, office hours, requests/approvals, insights, resources, forms, toolkit, announcements, help, settings, developer mode.
-- **`student-*` (12)** — dashboard, classes, tuition, schedule, announcements, settings, information updates, help, grades preview, attendance tracker, developer mode — plus signature-pad and avatar-upload capabilities.
-- **Administrative/enrollment** — `admin-developer-mode`, `online-college-enrollment`, `online-tesda-enrollment`, and `DynamicEnrollmentPolicies`. The dynamic-policy flag defaults to `false`: while off, future enrollments use the legacy runtime; after deliberate activation, future enrollments resolve published database-backed blueprints.
-
-Operators manage flags from the **Feature Toggles** page in the admin workspace (an in-app Pennant Manager plugin); portal middleware hides disabled areas without deleting data.
-
-## Institution settings
-
-`GeneralSetting` (spatie/laravel-settings) holds institution-wide booleans distinct from Pennant flags: the student portal, online enrollment, clearances, signature capture, QR codes, the inventory and library modules, the support page, and transfer e-mails. These are edited in **General Settings** and seeded by the setup wizard's final step.
-
-## Which mechanism should you use?
-
-| If the capability… | Use |
-| ------------------ | --- |
-| Is a whole optional domain (new models, screens, jobs) | A **module** |
-| Turns an existing screen/flow on or off at runtime | A **Pennant flag** + `EnsureFeatureEnabled` |
-| Is institution configuration an operator edits | A **`GeneralSetting`** value |
-
-## Adding a new toggle
-
-1. Create a class in `app/Features/Toggles` with a `resolve()` method.
-2. Register it in `FeatureToggleRegistry` under the right family.
-3. Guard routes/pages with `EnsureFeatureEnabled` (backend) — not just conditional rendering (frontend).
-4. Cover enabled and disabled behavior with Pest tests.
-
-:::caution[Resolver defaults matter]
-A flag's `resolve()` decides the default for every installation. Hard-coded `false` (like `DynamicEnrollmentPolicies`) keeps a feature dark even when code ships — say so explicitly when you do this.
+:::note[Marketplace Enablement]
+The in-app Marketplace under **Administrators → Marketplace** displays available and installed modules. The Marketplace allows administrators to enable or disable installed modules, but it never executes arbitrary shell commands or modifies a running container at runtime.
 :::
+
+## Feature Flags (Laravel Pennant)
+
+KoAkademy uses class-based feature flags located in `app/Features/Toggles/`. Feature flags are defined in `AppServiceProvider` and mapped in `FeatureToggleRegistry`.
+
+### Creating a New Feature Flag
+
+To add a new feature toggle:
+
+1. Create a toggle class in `app/Features/Toggles/`:
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace App\Features\Toggles;
+
+use App\Features\Concerns\ResolvesFeatureToggle;
+use App\Features\Contracts\FeatureToggle;
+
+final class FacultyAnalytics implements FeatureToggle
+{
+    use ResolvesFeatureToggle;
+
+    public function key(): string
+    {
+        return 'faculty-analytics';
+    }
+
+    public function name(): string
+    {
+        return 'Faculty Analytics';
+    }
+
+    public function summary(): string
+    {
+        return 'Visual class attendance and grade distribution charts.';
+    }
+
+    public function audience(): string
+    {
+        return 'faculty';
+    }
+
+    public function badge(): string
+    {
+        return 'Analytics';
+    }
+
+    public function accent(): string
+    {
+        return 'text-primary';
+    }
+
+    public function ctaLabel(): string
+    {
+        return 'View Analytics';
+    }
+
+    public function ctaUrl(): string
+    {
+        return '/faculty/analytics';
+    }
+
+    public function steps(): array
+    {
+        return [];
+    }
+
+    public function category(): string
+    {
+        return 'Faculty';
+    }
+}
+```
+
+2. Register the class in `App\Services\FeatureToggleRegistry`:
+
+```php
+private const array KEY_TO_CLASS = [
+    // ...
+    'faculty-analytics' => FacultyAnalytics::class,
+];
+```
+
+3. Define the feature in `App\Providers\AppServiceProvider::definePennantFeatures()`:
+
+```php
+Feature::define(FacultyAnalytics::class);
+```
+
+4. Guard backend routes using the `EnsureFeatureEnabled` middleware in `app/Http/Middleware/EnsureFeatureEnabled.php` or controller policies.
+
+## Choosing the Right Extensibility Mechanism
+
+| If you are adding... | Use this mechanism |
+| -------------------- | ------------------ |
+| A complete domain with separate database tables and migrations | **A Module** |
+| A toggleable screen, sub-feature, or staged rollout | **A Pennant Feature Flag** |
+| School-specific preferences (e.g. school logo, term labels, fees) | **A `GeneralSetting` property** |

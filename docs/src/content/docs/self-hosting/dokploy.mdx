@@ -1,0 +1,172 @@
+---
+title: Self-Hosting on Dokploy
+description: Deploy and operate KoAkademy using Dokploy's open-source PaaS on your own VPS.
+---
+
+[Dokploy](https://dokploy.com/) is an open-source, self-hosted Platform-as-a-Service (PaaS) alternative to Vercel/Heroku/Coolify that runs on top of Docker and Traefik.
+
+## Deployment Strategies
+
+You can deploy KoAkademy in Dokploy using either:
+1. **Docker Compose Stack (Recommended)**: Deploys the application, PostgreSQL, Redis, and Gotenberg together inside an isolated Dokploy project network.
+2. **Individual Services**: Deploys Dokploy managed databases (PostgreSQL & Redis) alongside a standalone Docker image service for the application and Gotenberg.
+
+---
+
+## Method 1: Compose Stack Deployment (Recommended)
+
+### Step 1: Create a Project in Dokploy
+
+1. Navigate to your Dokploy dashboard.
+2. Click **Create Project** and name it `koakademy`.
+3. Inside the project, click **Create Service** and select **Compose**.
+
+### Step 2: Configure Compose Stack
+
+Paste the following production Compose specification into the **Raw Compose** editor:
+
+```yaml
+version: "3.8"
+
+services:
+  app:
+    image: ghcr.io/yukazakiri/koakademy:latest
+    restart: unless-stopped
+    environment:
+      APP_NAME: "KoAkademy"
+      APP_ENV: "production"
+      APP_DEBUG: "false"
+      APP_URL: "https://school.example.com"
+      APP_KEY: "${APP_KEY}"
+      APP_PORT: 8000
+      OCTANE_SERVER: "frankenphp"
+      AUTO_MIGRATE: "true"
+      RUN_OPTIMIZE: "foreground"
+      
+      # Database
+      DB_CONNECTION: "pgsql"
+      DB_HOST: "postgres"
+      DB_PORT: 5432
+      DB_DATABASE: "koakademy"
+      DB_USERNAME: "koakademy"
+      DB_PASSWORD: "${DB_PASSWORD}"
+      
+      # Redis
+      CACHE_STORE: "redis"
+      SESSION_DRIVER: "redis"
+      QUEUE_CONNECTION: "redis"
+      REDIS_HOST: "redis"
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: "${REDIS_PASSWORD}"
+      
+      # PDF Service
+      GOTENBERG_URL: "http://gotenberg:3000"
+      
+      # Storage
+      FILESYSTEM_DISK: "public"
+    volumes:
+      - app_storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      gotenberg:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.koakademy-app.rule=Host(`school.example.com`)"
+      - "traefik.http.routers.koakademy-app.entrypoints=websecure"
+      - "traefik.http.routers.koakademy-app.tls.certresolver=letsencrypt"
+      - "traefik.http.services.koakademy-app.loadbalancer.server.port=8000"
+
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "koakademy"
+      POSTGRES_USER: "koakademy"
+      POSTGRES_PASSWORD: "${DB_PASSWORD}"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U koakademy -d koakademy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"${REDIS_PASSWORD}\" ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:3000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  app_storage:
+  pg_data:
+  redis_data:
+```
+
+### Step 3: Configure Environment Variables
+
+Under the **Environment** tab in Dokploy, add the secret variables:
+
+| Variable | Description | Example |
+| :--- | :--- | :--- |
+| `APP_KEY` | Laravel 32-byte encryption key | `base64:...` |
+| `DB_PASSWORD` | Strong PostgreSQL user password | `SecretDBPass123!` |
+| `REDIS_PASSWORD` | Strong Redis authentication password | `SecretRedisPass123!` |
+
+:::tip[Handling Quotes in Dokploy]
+Dokploy's environment editor sometimes persists strings with surrounding quotation marks (e.g. `"false"`). KoAkademy's container entrypoint automatically strips surrounding quotes at boot to ensure flags like `APP_DEBUG=false` or `AUTO_MIGRATE=true` parse as strict booleans.
+:::
+
+### Step 4: Domain & SSL Routing
+
+1. In Dokploy's **Domains** section, add your domain: `school.example.com`.
+2. Select container port: `8000`.
+3. Enable **HTTPS / SSL Certificate** via Let's Encrypt.
+4. Click **Deploy**.
+
+---
+
+## Method 2: Standalone Application with Dokploy Managed Databases
+
+If you prefer using Dokploy's UI-managed databases with automated backups:
+
+1. **Create PostgreSQL**:
+   - Go to **Databases** → **Create PostgreSQL**.
+   - Set Database name: `koakademy`, Username: `koakademy`.
+2. **Create Redis**:
+   - Go to **Databases** → **Create Redis**.
+3. **Deploy Gotenberg**:
+   - Create an **Application** service with image `gotenberg/gotenberg:8`. Expose port `3000` to internal network.
+4. **Deploy KoAkademy**:
+   - Create an **Application** service with Docker image `ghcr.io/yukazakiri/koakademy:latest`.
+   - Set internal container port to `8000`.
+   - Mount persistent volume: Host `/var/lib/dokploy/volumes/koakademy-storage` -> Container `/app/storage`.
+   - Set healthcheck path to `/up`.
+   - Connect the environment variables pointing to the Dokploy PostgreSQL and Redis internal hosts.
+
+---
+
+## Post-Installation Verification
+
+1. Once the build completes and Traefik routes traffic, navigate to `https://school.example.com/setup`.
+2. Complete the initial registration wizard to set up your school and admin credentials.
+3. Check the application status at `https://school.example.com/up`.

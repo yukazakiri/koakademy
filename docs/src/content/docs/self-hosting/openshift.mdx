@@ -1,0 +1,258 @@
+---
+title: Self-Hosting on Red Hat OpenShift
+description: Deploy KoAkademy in enterprise Red Hat OpenShift (OKD, ARO, ROSA, OCP) environments.
+---
+
+This guide covers running KoAkademy on [Red Hat OpenShift Container Platform (OCP)](https://www.redhat.com/en/technologies/cloud-computing/openshift), Azure Red Hat OpenShift (ARO), or Red Hat OpenShift on AWS (ROSA).
+
+## OpenShift Architectural Considerations
+
+1. **Security Context Constraints (SCC)**:
+   - KoAkademy's base container sets POSIX capabilities (`CAP_NET_BIND_SERVICE`) on FrankenPHP and defaults to non-root UID `1000:1000`.
+   - On OpenShift clusters with restricted SCCs, the pod will run with an arbitrary assigned UID from the project's UID range. The container filesystem and `/tmp/opcache-file-cache` permissions support standard OpenShift non-root user execution.
+2. **OpenShift Routes**:
+   - OpenShift uses `Route` objects backed by HAProxy routers for ingress traffic and automatic TLS edge termination.
+3. **Storage**:
+   - For multi-replica setups without S3/R2 object storage, ensure your StorageClass supports `ReadWriteMany` (RWX) for `/app/storage`.
+
+---
+
+## Step 1: Create Project & Secrets
+
+Create a dedicated OpenShift project:
+
+```sh
+oc new-project koakademy --display-name="KoAkademy School System"
+```
+
+Create OpenShift secrets:
+
+```sh
+oc create secret generic koakademy-secrets \
+  --from-literal=APP_KEY="base64:YOUR_32_BYTE_APP_KEY" \
+  --from-literal=DB_PASSWORD="YourSecurePostgresPassword" \
+  --from-literal=REDIS_PASSWORD="YourSecureRedisPassword"
+```
+
+---
+
+## Step 2: Create ConfigMap
+
+```yaml
+# koakademy-configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: koakademy-config
+  namespace: koakademy
+data:
+  APP_NAME: "KoAkademy"
+  APP_ENV: "production"
+  APP_DEBUG: "false"
+  APP_URL: "https://koakademy.apps.cluster.example.com"
+  OCTANE_SERVER: "frankenphp"
+  AUTO_MIGRATE: "true"
+  RUN_OPTIMIZE: "foreground"
+  
+  # DB & Redis
+  DB_CONNECTION: "pgsql"
+  DB_HOST: "postgresql"
+  DB_PORT: "5432"
+  DB_DATABASE: "koakademy"
+  DB_USERNAME: "koakademy"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  
+  # PDF Service
+  GOTENBERG_URL: "http://gotenberg:3000"
+  FILESYSTEM_DISK: "public"
+```
+
+Apply the ConfigMap:
+
+```sh
+oc apply -f koakademy-configmap.yaml
+```
+
+---
+
+## Step 3: Deploy Gotenberg, PostgreSQL & Redis
+
+You can use OpenShift Template or standard manifests:
+
+```yaml
+# dependencies.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gotenberg
+  namespace: koakademy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gotenberg
+  template:
+    metadata:
+      labels:
+        app: gotenberg
+    spec:
+      containers:
+        - name: gotenberg
+          image: gotenberg/gotenberg:8
+          ports:
+            - containerPort: 3000
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gotenberg
+  namespace: koakademy
+spec:
+  selector:
+    app: gotenberg
+  ports:
+    - port: 3000
+      targetPort: 3000
+```
+
+Apply dependencies:
+
+```sh
+oc apply -f dependencies.yaml
+```
+
+---
+
+## Step 4: Deploy KoAkademy Application
+
+```yaml
+# koakademy-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: koakademy
+  namespace: koakademy
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: koakademy
+  template:
+    metadata:
+      labels:
+        app: koakademy
+    spec:
+      containers:
+        - name: app
+          image: ghcr.io/yukazakiri/koakademy:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+            - containerPort: 2019
+              name: admin
+          envFrom:
+            - configMapRef:
+                name: koakademy-config
+            - secretRef:
+                name: koakademy-secrets
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+          livenessProbe:
+            httpGet:
+              path: /up
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /up
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: koakademy
+  namespace: koakademy
+spec:
+  selector:
+    app: koakademy
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+```
+
+Apply application deployment:
+
+```sh
+oc apply -f koakademy-deployment.yaml
+```
+
+---
+
+## Step 5: Expose OpenShift Route with TLS
+
+Create an edge-terminated OpenShift Route:
+
+```yaml
+# koakademy-route.yaml
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: koakademy
+  namespace: koakademy
+  annotations:
+    haproxy.router.openshift.io/timeout: "300s"
+    haproxy.router.openshift.io/proxy-body-size: "100m"
+spec:
+  host: koakademy.apps.cluster.example.com
+  to:
+    kind: Service
+    name: koakademy
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+```
+
+Apply Route:
+
+```sh
+oc apply -f koakademy-route.yaml
+```
+
+---
+
+## Step 6: Verify Deployment
+
+Check deployment status:
+
+```sh
+oc get pods -n koakademy
+oc logs -f deployment/koakademy -n koakademy
+```
+
+Open the OpenShift Route URL (`https://koakademy.apps.cluster.example.com/setup`) in your browser to complete installation.

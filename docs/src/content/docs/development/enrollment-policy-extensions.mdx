@@ -1,150 +1,136 @@
 ---
-title: Enrollment policy extensions
-description: Add rules, actions, assignment strategies, and billing strategies without storing executable classes in policy data.
+title: Enrollment Policy Extensions
+description: Add custom rules, actions, assignment strategies, and billing strategies without storing executable classes in policy data.
 ---
 
-Enrollment policies store stable handler keys and JSON configuration. They never store PHP class names, closures, formulas, or scripts. A published version and every compiled enrollment snapshot are immutable.
+# Enrollment Policy Extensions
 
-## Extension contracts
+KoAkademy’s enrollment engine executes declarative, version-controlled blueprints. Policies store stable handler keys and JSON configuration data—**they never store executable PHP class names, closures, formulas, or raw scripts**.
 
-Implement one of the public contracts in `app/Contracts/Enrollment`:
+This architecture allows institutional rules to be simulated, versioned, exported, and rolled back safely.
 
-- `EnrollmentRuleHandler` evaluates an `EnrollmentContext` and returns a `RuleResult`.
-- `EnrollmentActionHandler` performs one atomic, idempotent action and returns an `ActionResult`.
-- `EnrollmentAssignmentStrategy` describes or simulates subject/class assignment. A strategy selected for live rollout must also implement `RuntimeEnrollmentAssignmentStrategy`.
-- `EnrollmentBillingStrategy` describes or simulates fees and payment gates. A strategy selected for live rollout must also implement `RuntimeEnrollmentBillingStrategy`.
+## Extension Contracts
 
-Keys are public compatibility identifiers. Prefix third-party keys, for example `acme.scholarship_eligibility`, and never rename a key while published policy versions still reference it.
+Custom extension points live under `app/Contracts/Enrollment/`:
 
-## Registration
+| Interface | Purpose | Method to Implement |
+| --------- | ------- | ------------------- |
+| `EnrollmentRuleHandler` | Evaluates student eligibility or condition | `evaluate(EnrollmentContext $context, array $config): RuleResult` |
+| `EnrollmentActionHandler` | Executes an idempotent side-effect | `execute(EnrollmentContext $context, array $config, string $idempotencyKey): ActionResult` |
+| `EnrollmentAssignmentStrategy` | Determines subject or class section assignment | `recommend(EnrollmentContext $context, array $config): array` |
+| `EnrollmentBillingStrategy` | Calculates custom fees or tuition structures | `calculate(EnrollmentContext $context, array $config): array` |
+| `EnrollmentOperatorSchemaProvider` | *(Optional)* Exposes configuration fields to the visual no-code blueprint editor | `operatorSchema(): array` |
 
-Register handlers from a service provider after resolving `EnrollmentPolicyRegistry`:
+## Writing an Enrollment Rule Extension
+
+Here is a complete, production-grade example of a custom rule that checks whether a student has an approved scholarship:
 
 ```php
+<?php
+
+declare(strict_types=1);
+
+namespace App\Enrollment\Rules;
+
+use App\Contracts\Enrollment\EnrollmentOperatorSchemaProvider;
+use App\Contracts\Enrollment\EnrollmentRuleHandler;
+use App\Data\Enrollment\EnrollmentContext;
+use App\Data\Enrollment\RuleResult;
+
+final readonly class ScholarshipEligibilityRule implements EnrollmentRuleHandler, EnrollmentOperatorSchemaProvider
+{
+    public function key(): string
+    {
+        return 'eligibility.scholarship';
+    }
+
+    public function metadata(): array
+    {
+        return [
+            'key' => $this->key(),
+            'label' => 'Scholarship Eligibility',
+            'category' => 'eligibility',
+        ];
+    }
+
+    public function configurationSchema(): array
+    {
+        return $this->operatorSchema();
+    }
+
+    public function operatorSchema(): array
+    {
+        return [
+            'description' => 'Verify minimum scholarship percentage before enrollment.',
+            'what_it_does' => 'Checks the approved scholarship grant on the student record.',
+            'impact' => 'Students without the minimum grant cannot proceed through this blueprint.',
+            'example' => 'Enter 50 to require at least a 50% tuition scholarship.',
+            'docs_anchor' => 'enrollment-policies/availability-eligibility-documents',
+            'fields' => [
+                [
+                    'key' => 'minimum_percentage',
+                    'label' => 'Minimum Scholarship %',
+                    'control' => 'number',
+                    'required' => true,
+                    'min' => 1,
+                    'max' => 100,
+                    'recommended' => 50,
+                ],
+            ],
+        ];
+    }
+
+    public function evaluate(EnrollmentContext $context, array $configuration): RuleResult
+    {
+        $minPercentage = (int) ($configuration['minimum_percentage'] ?? 0);
+
+        // Access student facts from the immutable context
+        $scholarshipPercentage = (int) ($context->facts['scholarship_percentage'] ?? 0);
+
+        if ($scholarshipPercentage < $minPercentage) {
+            return RuleResult::fail(
+                "Student scholarship ({$scholarshipPercentage}%) is below the required {$minPercentage}%.",
+                ['actual' => $scholarshipPercentage, 'required' => $minPercentage],
+            );
+        }
+
+        return RuleResult::pass(['scholarship_percentage' => $scholarshipPercentage]);
+    }
+}
+```
+
+## Registering Extensions
+
+Register custom rules, actions, and strategies with `EnrollmentPolicyRegistry` inside a service provider:
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace App\Providers;
+
 use App\Enrollment\EnrollmentPolicyRegistry;
+use App\Enrollment\Rules\ScholarshipEligibilityRule;
+use Illuminate\Support\ServiceProvider;
 
-$this->app->afterResolving(
-    EnrollmentPolicyRegistry::class,
-    function (EnrollmentPolicyRegistry $registry): void {
-        $registry->registerRule(new ScholarshipEligibilityRule());
-        $registry->registerAction(new ReserveScholarshipAction());
-    },
-);
-```
-
-Registry objects may contain immutable metadata and stateless collaborators. Do not store a request, user, enrollment, or tenant as mutable registry state; the registry is shared by long-lived processes such as Horizon queue workers.
-
-## Configuration schemas
-
-Return a JSON-schema-like object from `configurationSchema()` or `payloadSchema()`. Configuration must be plain JSON data. Reject unknown keys where practical and give validation messages an operator can act on.
-
-To make an extension editable by school operators, also implement the optional `EnrollmentOperatorSchemaProvider` contract. Its `operatorSchema()` manifest supplies help content and fields for the guided editor. Supported controls are boolean, text, number, money, percentage, date/date range, select, multi-select, role, permission, school, program, period, and notification channel. Dynamic choices must use one of the registry's whitelisted option-source keys.
-
-Extensions without this optional contract still execute and can be restored from a validated backup, but their configuration is shown read-only in the visual editor. This keeps existing community extensions compatible.
-
-The operator-schema contract is independent from runtime execution. Legacy assignment and billing extensions remain valid manifest and simulation providers, but compilation rejects them for a published live workflow unless they implement the corresponding runtime contract.
-
-```php
-public function operatorSchema(): array
+final class CustomEnrollmentServiceProvider extends ServiceProvider
 {
-    return [
-        'description' => 'Allow only students with an approved scholarship.',
-        'what_it_does' => 'Checks the approved scholarship percentage on the student record.',
-        'impact' => 'Students below this percentage cannot continue through the matching blueprint.',
-        'example' => 'Enter 50 to allow half and full scholars.',
-        'docs_anchor' => 'enrollment-policies/availability-eligibility-documents',
-        'fields' => [[
-            'key' => 'minimum_percentage',
-            'label' => 'Minimum scholarship',
-            'control' => 'percentage',
-            'required' => true,
-            'description' => 'The smallest approved scholarship percentage accepted by this rule.',
-            'placeholder' => '50',
-            'example' => 50,
-            'prefix' => null,
-            'suffix' => '%',
-            'min' => 0,
-            'max' => 100,
-            'step' => 1,
-            'recommended' => 50,
-        ]],
-    ];
+    public function boot(): void
+    {
+        $this->app->afterResolving(
+            EnrollmentPolicyRegistry::class,
+            function (EnrollmentPolicyRegistry $registry): void {
+                $registry->registerRule(new ScholarshipEligibilityRule());
+            },
+        );
+    }
 }
 ```
 
-The top-level help keys are additive and optional:
+## Extension Safety Guidelines
 
-| Key            | Operator use                                               |
-| -------------- | ---------------------------------------------------------- |
-| `description`  | Short explanation shown on the setting card.               |
-| `what_it_does` | Plain-language explanation in the contextual help drawer.  |
-| `impact`       | What changes for a matched student.                        |
-| `example`      | A realistic school scenario or sample value.               |
-| `docs_anchor`  | Relative page under the configured documentation base URL. |
-
-Field metadata is also optional. Use `description`, `placeholder`, `example`, `prefix`, `suffix`, `min`, `max`, `step`, and `recommended` to make the form self-explanatory. Conditional fields may use a deterministic `visible_when` descriptor:
-
-```php
-[
-    'key' => 'minimum_amount',
-    'label' => 'Minimum amount',
-    'control' => 'money',
-    'min' => 0,
-    'visible_when' => [
-        'field' => 'gate_type',
-        'equals' => 'fixed',
-    ],
-]
-```
-
-Supported conditional operators are `equals` and `in`. Conditions may reference only another field in the same handler configuration. Do not use executable callbacks in a manifest.
-
-## Operator-schema compatibility
-
-- Adding help text, bounds, examples, or conditional visibility is backward-compatible when it does not reinterpret stored values.
-- Removing a field requires the runtime handler to keep accepting configurations written by every supported published schema version.
-- Renaming a field or changing its semantics is incompatible. Add a new handler key or schema version instead.
-- Missing optional metadata receives generic guidance from the registry.
-- A handler with no operator schema remains executable and importable but read-only in the guided editor.
-- Option sources are allowlisted by the application. Unknown source names are rejected during draft save, import, simulation, and publication.
-- The manifest must never contain a class name to execute, a script, a closure, an arbitrary URL, or a request-specific object.
-
-Rules should fail closed when required facts are unavailable. Actions run inside the enrollment transition database transaction and must use the supplied idempotency key for every externally visible side effect. They must not open nested transactions, change workflow status/outcome, use ambient `Auth`, or call the legacy workflow adapter. Queue notifications only after commit.
-
-## Import format
-
-Exports use this envelope:
-
-```json
-{
-    "format": "koakademy.enrollment-policy",
-    "schema_version": 1,
-    "name": "College enrollment",
-    "configuration": {}
-}
-```
-
-Only `configuration` is executable by the policy compiler, and only through registered keys. Imports containing unknown handler keys, unsupported schema versions, PHP class names, or script/code fields are rejected.
-
-## Version compatibility
-
-Handler changes must remain compatible with every published schema version they claim to support. Add a new stable handler key for incompatible semantics. Never reinterpret an existing key in a way that changes pinned snapshots.
-
-## Testing expectations
-
-Every extension should include Pest coverage for metadata, valid and invalid configuration, pass/fail evaluation, authorization, idempotent retry, transaction rollback, and compatibility with an immutable compiled snapshot. Capacity-changing actions also need a concurrent final-seat test.
-
-Operator-facing extensions must additionally test:
-
-- Every supported control converts to and from stored configuration.
-- Recommended values and numeric bounds validate correctly.
-- `visible_when` hides only the intended field and server-side validation follows the same condition.
-- Unknown option sources fail with an actionable validation message.
-- Missing help metadata receives registry defaults.
-- An extension without `EnrollmentOperatorSchemaProvider` renders read-only without losing stored configuration.
-- Import/export contains stable keys and plain configuration only.
-- A representative simulation and the published version produce the same resolved checksum.
-
-When a handler can block a student, test that its failure includes an operator-friendly message and the correct editor section so the simulation report can link back to the setting.
-
-Run focused tests first, then Pint, Wayfinder generation, the frontend build, and `git diff --check`.
+- **Idempotency:** Actions must execute safely when re-run with the same `$idempotencyKey`.
+- **Stateless Registry:** Do not store request instances, users, or active models inside the handler object; the registry is shared by long-running workers (Horizon / Octane).
+- **JSON Compatibility:** Schema definitions must use serializable JSON structures.
+- **Testing:** Include Pest feature tests covering evaluation success, evaluation failure, missing facts, and edge-case values.

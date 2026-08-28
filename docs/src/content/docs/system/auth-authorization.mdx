@@ -1,60 +1,145 @@
 ---
 title: Auth, Roles & Permissions
-description: Guards, multi-factor authentication, passkeys, the role hierarchy, and how authorization is enforced.
+description: Authentication guards, multi-factor authentication, passkeys, role hierarchy, and multi-layer authorization enforcement.
 ---
 
 # Auth, Roles & Permissions
 
-KoAkademy handles sensitive student data, so authentication and authorization are layered. This page covers the guards, the sign-in hardening options, the role system, and where checks are enforced.
+KoAkademy manages sensitive student academic, financial, and medical records. Authentication and authorization are strictly enforced at multiple boundaries across the stack.
 
-## Guards and audiences
+## Authentication Guards & Audiences
 
-| Guard | Used by | Notes |
-| ----- | ------- | ----- |
-| `web` | Admin panel, admin workspace, faculty/student portals | Session-based; portals additionally check role middleware |
-| `portal` | The stub Filament `portal` panel | Exists for completeness; real portals use `web` |
-| `sanctum` | `/api/*` | Bearer tokens issued per deployment |
+| Guard | Used For | Implementation Details |
+| ----- | -------- | ---------------------- |
+| `web` | Admin panel, Staff workspace, Faculty & Student portals | Session-based state with encrypted cookies; guarded by portal-specific audience middleware |
+| `sanctum` | Public & authenticated REST API (`/api/*`) | Bearer tokens with fine-grained abilities |
 
-Sign-in options: email/password, **Socialite** social providers (configurable per installation), **passkeys** (WebAuthn — public login options/verify endpoints), and a demo-login route used for evaluation. Signup supports email lookup with OTP verification, and there is a faculty-verification flow for staff accounts.
+### Supported Sign-in Methods
 
-## Multi-factor authentication
+- **Email & Password:** Standard credential authentication with rate limiting and secure hashing.
+- **Passkeys (WebAuthn):** Hardware security keys and biometric sign-in via `laravel/passkeys`.
+- **Multi-Factor Authentication (2FA):**
+  - TOTP authenticator apps (`SecurityAwareAppAuthentication`).
+  - Time-based email one-time passcodes (`SecurityAwareEmailAuthentication`).
+- **Social Authentication:** Optional OAuth login via Laravel Socialite (configured per deployment).
 
-Two second factors ship in the box, implemented as custom Filament authentication responses:
+## Roles & Permission Model
 
-- **TOTP authenticator apps** — recoverable app-based codes (`SecurityAwareAppAuthentication`).
-- **Email codes** — 30-minute one-time codes (`SecurityAwareEmailAuthentication`).
+Role definitions and permissions use **spatie/laravel-permission** with **Filament Shield**:
 
-Users manage 2FA, passkeys, active sessions, and personal API keys from their profile settings — in the admin panel (Edit Profile) and in the React portals alike. A dedicated 2FA challenge route handles the post-login step.
+- **Role Enum (`UserRole`):** Defines roughly 30 distinct institutional roles (e.g. `SuperAdmin`, `Admin`, `President`, `Registrar`, `Cashier`, `Dean`, `Professor`, `Student`, `Alumni`).
+- **Role Hierarchy:** Methods like `$role->canAccessAdminPortal()`, `$role->isFaculty()`, and `$role->getManageableRoles()` determine portal access and assignment privileges without hardcoding role strings.
+- **Super Administrator Bypass:** The `super_admin` role has system-wide administrative access across all tenant schools.
 
-## Roles
+## Multi-Layer Authorization Enforcement
 
-Roles come from **spatie/laravel-permission** with **Filament Shield** generating and enforcing per-resource permissions in the admin panel.
+Authorization in KoAkademy is never purely client-side; every protected action is verified at three distinct layers:
 
-- `super_admin` bypasses checks and can cross school boundaries.
-- A `UserRole` enum defines roughly **30 institution roles** — developer, super admin, admin, president, registrar, cashier, librarian, support staff, professor ranks, student, graduate, SHS student, and more.
-- The enum carries **hierarchy levels**, `getManageableRoles()` (which roles a given role may assign), and portal-access helpers — use these instead of hard-coding role names.
+```
+Incoming Request
+      │
+      ▼
+1. Middleware Layer
+   ├── EnsureAdministrativePortalAccess / EnsureFacultyAccess / EnsureStudentAccess
+   ├── EnsureFeatureEnabled (Pennant feature flags)
+   └── SetTenantContext (School tenancy scoping)
+      │
+      ▼
+2. Controller / Form Request Layer
+   ├── FormRequest::authorize() method
+   └── $this->authorize('ability', Model::class) or Gate::authorize()
+      │
+      ▼
+3. Policy Layer (Eloquent Model Policies)
+   └── Specific ability checks (e.g. StudentEnrollmentPolicy, AccountPolicy)
+```
 
-Typical permission shapes in the panel are Shield-generated (`view_any_student`, `update_student`, …); outside the panel, per-model **policies** authorize actions for both app and module models.
+### Contributor Code Sample: Protecting a Custom Action
 
-## Where authorization is enforced
+When creating a new controller or API endpoint, implement a dedicated Policy and authorize the incoming request:
 
-1. **Middleware** — first gate at the route level:
-   - `role:` (spatie) and custom `administrators.only`
-   - `EnsureAdministrativePortalAccess`, `EnsureFacultyAccess`, `EnsureStudentAccess` — keep each audience in its own portal
-   - `EnsureFeatureEnabled` — blocks disabled features (see [Modules & feature flags](./modules-flags/))
-   - `EnsureSystemIsSetup` — guards the first-run wizard
-   - `SetTenantContext` — establishes the school scope (see [Architecture & domain model](./architecture-domain/))
-2. **Policies** — model-level authorization in controllers, Filament resources, and API handlers. Filament resources defer to the same policies, so a rule change applies everywhere.
-3. **Form requests / controllers** — validate input and call `authorize` for protected actions; never trust portal-side hiding as a security boundary.
+```php
+<?php
 
-## Audit and impersonation
+declare(strict_types=1);
 
-- **Activity logging** (spatie/laravel-activitylog) records administrative changes; the admin workspace exposes them under **Audit Logs**.
-- **Impersonation** (stechstudio/filament-impersonate) lets privileged staff sign in as another user for support, with an explicit stop-impersonation route. Treat impersonation as an audited, permission-gated action.
+namespace App\Http\Controllers;
 
-## Contributing rules of thumb
+use App\Models\StudentEnrollment;
+use App\Models\User;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 
-- New protected action → new or existing **policy** ability, enforced in the controller/resource — not just hidden UI.
-- New portal route → attach the **audience middleware** for that portal.
-- Never bypass the school scope; super-admin-only features should check the role explicitly.
-- Tokens, codes, and secrets never appear in logs, URLs, or source.
+final class EnrollmentStatusController extends Controller
+{
+    public function updateStatus(Request $request, StudentEnrollment $enrollment): JsonResponse
+    {
+        // 1. Authorize against the model's policy
+        Gate::authorize('update', $enrollment);
+
+        // 2. Validate input parameters
+        $validated = $request->validate([
+            'status' => ['required', 'string', 'in:pending,verified,approved,rejected'],
+            'reason' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        // 3. Perform the state change
+        $enrollment->update([
+            'status' => $validated['status'],
+            'rejection_reason' => $validated['reason'] ?? null,
+        ]);
+
+        return response()->json([
+            'message' => 'Enrollment status updated successfully.',
+            'enrollment' => $enrollment,
+        ]);
+    }
+}
+```
+
+### Matching Eloquent Policy (`StudentEnrollmentPolicy`)
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace App\Policies;
+
+use App\Enums\UserRole;
+use App\Models\StudentEnrollment;
+use App\Models\User;
+use Illuminate\Auth\Access\HandlesAuthorization;
+
+final class StudentEnrollmentPolicy
+{
+    use HandlesAuthorization;
+
+    public function viewAny(User $user): bool
+    {
+        return $user->hasAnyRole([
+            UserRole::SuperAdmin->value,
+            UserRole::Admin->value,
+            UserRole::Registrar->value,
+        ]);
+    }
+
+    public function update(User $user, StudentEnrollment $enrollment): bool
+    {
+        if ($user->hasRole(UserRole::SuperAdmin->value)) {
+            return true;
+        }
+
+        // Must belong to the same school and have administrative role
+        return $user->school_id === $enrollment->school_id
+            && $user->hasAnyRole([UserRole::Admin->value, UserRole::Registrar->value]);
+    }
+}
+```
+
+## Security & Audit Logging
+
+- **Audit Trails:** `spatie/laravel-activitylog` tracks changes to administrative records, visible in **Admin Workspace → Audit Logs**.
+- **Impersonation:** Privileged administrators can impersonate staff or students for support inquiries (`stechstudio/filament-impersonate`). All impersonated actions are tagged in audit logs.
+- **Privacy Protections:** Student medical records, personal identity numbers, and credentials are encrypted or obfuscated in application logs.

@@ -1,6 +1,20 @@
 # Installation
 
-KoAkademy runs as a self-managed Linux service. The default path is a single-node Docker Swarm with Caddy HTTPS, PostgreSQL, Redis, Gotenberg, and a private FrankenPHP application service.
+KoAkademy runs as a self-managed Linux service with flexible deployment targets.
+
+## Deployment Options Matrix
+
+Choose the self-hosting method that best aligns with your infrastructure:
+
+| Platform / Method | Recommended Use Case | Reverse Proxy / SSL | Multi-Node / HA | Guide |
+| :--- | :--- | :--- | :--- | :--- |
+| **Linux VPS (1-Line Installer)** | Dedicated VPS / Bare Metal | Built-in Caddy (Auto HTTPS) | Single-node Swarm | [Quickstart](#one-line-production-installation) |
+| **Docker Compose** | Custom proxy / existing Docker host | Caddy / Nginx / Traefik | Single host | [Compose Guide](./docker-compose/) |
+| **Dokploy** | Self-hosted PaaS / Single-pane UI | Traefik (Automated) | Project-based | [Dokploy Guide](./dokploy/) |
+| **Coolify** | Self-hosted PaaS / Multi-server UI | Traefik (Automated) | Multi-server | [Coolify Guide](./coolify/) |
+| **Docker Swarm** | Lightweight container clustering | Caddy / Swarm Ingress | Native Multi-node | [Swarm Guide](./docker-swarm/) |
+| **Kubernetes (K8s / K3s)** | Enterprise / Cloud orchestration | Ingress / cert-manager | Native Multi-node | [K8s Guide](./kubernetes/) |
+| **Red Hat OpenShift** | Enterprise OCP / OKD / ROSA | OpenShift Route (TLS) | Native Multi-node | [OpenShift Guide](./openshift/) |
 
 KoAkademy is beta software. Use staging first, review release notes, and keep a tested recovery path for institutional data.
 
@@ -14,82 +28,132 @@ KoAkademy is beta software. Use staging first, review release notes, and keep a 
 
 Docker does not need to be preinstalled. The installer uses Docker's official installer when the engine is absent. It supports Docker's Linux distributions and AMD64 or ARM64 hosts.
 
-## One-line production installation
+## Quickstart (One-line Installer)
 
-Run this after pointing the real public domain at the VPS:
-
-```sh
-curl -fsSL https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh | bash
-```
-
-For a non-interactive installation, provide the hostname through the environment:
+The fastest and officially supported production path is the automated one-line installer:
 
 ```sh
-curl -fsSL https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh \
-  | env KOAKADEMY_DOMAIN=koakademy.koamishin.com bash
+curl -sSL https://koakademy.koamishin.com/install.sh | bash
 ```
 
-The installer self-elevates only for Docker, Swarm, and `/opt/koakademy`
-operations, so it can be started as a normal user when `sudo` is available.
-It adds the invoking user to Docker's `docker` group. Activate the change in
-the current shell with `newgrp docker`, or log out and back in, before using
-Docker without `sudo`. Docker-group membership grants root-equivalent access
-to the host.
-
-The command resolves a stable GitHub Release, downloads the checksummed release bundle, deploys its immutable GHCR image digest, and then verifies `https://koakademy.koamishin.com/up`. It does not use `edge` or `latest`.
-
-It:
-
-1. Installs Docker when needed and initializes Swarm only when inactive, preserving an active manager.
-2. Generates application, database, and Redis credentials as Docker Secrets.
-3. Creates an attachable overlay network and starts Caddy on ports 80/443; the application, PostgreSQL, Redis, and Gotenberg remain private on it.
-4. Runs migrations once before enabling the app service.
-5. Creates a persistent application volume for first-boot local uploads, then prints the `/setup` URL.
-
-Visit the selected hostname at `/setup` to create the school and first super administrator. For the example above, use `https://koakademy.koamishin.com/setup`. The setup route closes after initialization.
-
-The initial filesystem volume is a simplified single-node default, not durable object storage. Configure external S3/R2 and scheduled backups before treating the installation as resilient production infrastructure.
-
-## Unreleased master edge installation
-
-For staging or development without a domain, install the current unreleased
-`master` build:
+For non-interactive automation (e.g. cloud-init or CI), pass the target domain directly:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yukazakiri/koakademy/master/scripts/install.sh | bash -s -- edge
+curl -sSL https://koakademy.koamishin.com/install.sh \
+  | env KOAKADEMY_DOMAIN=school.example.com bash
 ```
 
-The edge channel resolves the current `master` commit, downloads its matching
-operator and direct-port Swarm assets, publishes the app on port `8000`, and
-uses the mutable `ghcr.io/yukazakiri/koakademy:edge-frankenphp` image. Open
-`http://127.0.0.1:8000/setup`, or pass `--port 8080` to choose another port.
-It is not a stable or production-supported release and may change or break at
-any time.
+### What `install.sh` Does Under the Hood
 
-## Operate the installation
+The installer bootstrap executes with zero unnecessary assumptions and performs:
 
-The installer adds a single server command:
+1. **Host Verification**: Validates a supported Linux host (`amd64` / `arm64`). Installs Docker Engine automatically via Docker's official script if missing.
+2. **Docker Swarm Setup**: Initializes or preserves an active single-node Docker Swarm manager.
+3. **Secret Generation**: Securely generates cryptographic Docker Secrets for `APP_KEY`, PostgreSQL credentials, and Redis passwords.
+4. **Private Overlay Network**: Creates an isolated `koakademy_private` Swarm overlay network.
+5. **Caddy Edge Proxy**: Starts Caddy on ports 80 and 443 with automatic TLS/HTTPS certificates.
+6. **Isolated Services**: Spawns FrankenPHP (Laravel Octane on port 8000), PostgreSQL 18, Redis 8, and Gotenberg 8 (PDF rendering) on the private overlay network.
+7. **Database Migrations**: Automatically runs database migrations before routing live traffic.
+8. **CLI Installation**: Installs the `koakademy` management CLI to `/usr/local/bin/koakademy` (or `/opt/koakademy/koakademy`).
+9. **User Permissions**: Configures the invoking user into the `docker` group for rootless Docker commands.
+
+Once complete, open `https://school.example.com/setup` to finish the web setup wizard and register your school's initial super administrator.
+
+---
+
+## Operating KoAkademy via CLI
+
+The installer provisions the `koakademy` CLI binary for day-two operations, updates, backups, rollbacks, and service configuration.
+
+### CLI Syntax & Command Overview
+
+```sh
+koakademy <command> [subcommand] [flags]
+```
+
+### Core CLI Commands
+
+#### 1. Check System Status & Health
+
+Inspect running containers, image versions, replica counts, and Swarm health:
 
 ```sh
 koakademy status
-koakademy update
-koakademy update --stable
-koakademy update --edge
-koakademy configure storage r2
-koakademy configure mail smtp
-koakademy configure search enable
 ```
 
-Provider credentials are requested without echoing, stored as versioned Docker Secrets, and never written to the application database or container filesystem. Every configuration change redeploys the FrankenPHP service so persistent workers load the new configuration.
+#### 2. Upgrades & Release Updates
 
-`update` follows the installed channel by default. Pass `--stable` to select a
-published release or `--edge` to select the current unreleased `master` build.
-Stable updates deploy an immutable image; edge updates use the mutable
-`edge-frankenphp` image. Both create a PostgreSQL backup under
-`/opt/koakademy/backups`, run migrations, and check the public health endpoint.
-The previous image is recorded for `koakademy rollback`, but rollback
-never reverses database migrations. Restore the recorded backup when release
-notes do not guarantee schema compatibility.
+Update to the latest stable release. This command automatically takes a PostgreSQL snapshot under `/opt/koakademy/backups/`, updates the immutable image digest, runs database migrations, and performs a zero-downtime rolling restart:
+
+```sh
+# Update to latest stable release
+koakademy update
+
+# Explicitly pin a specific release version
+koakademy update --release v1.2.0
+
+# Switch/Update to the edge channel (master branch)
+koakademy update --edge
+```
+
+#### 3. Image Rollback
+
+If a newly deployed image experiences issues, rollback to the previous container image:
+
+```sh
+koakademy rollback
+```
+
+:::caution[Database Migrations]
+`koakademy rollback` rolls back the application container image only. It never rolls back database schema migrations automatically. If schema changes are breaking, restore the database backup taken during the update step from `/opt/koakademy/backups/`.
+:::
+
+#### 4. Configure Object Storage (S3 / Cloudflare R2)
+
+Configure durable object storage for uploads, institutional branding, and student documents:
+
+```sh
+# Cloudflare R2
+koakademy configure storage r2
+
+# Amazon S3 or S3-compatible storage (MinIO, Wasabi, DigitalOcean Spaces)
+koakademy configure storage s3
+
+# Digital Library private bucket
+koakademy configure storage library-r2
+
+# Revert to local container volume storage
+koakademy configure storage local
+```
+
+#### 5. Configure Transactional Email (SMTP / Sequenzy)
+
+Set up outbound transactional notifications, email verification, and password resets:
+
+```sh
+# Configure SMTP
+koakademy configure mail smtp
+
+# Configure Sequenzy transactional provider
+koakademy configure mail sequenzy
+
+# Set mailer to local logs (development/testing)
+koakademy configure mail log
+```
+
+#### 6. Configure Search Engine (Meilisearch)
+
+Enable or disable Laravel Scout full-text search indexing:
+
+```sh
+# Enable and connect external Meilisearch instance
+koakademy configure search enable
+
+# Disable Scout search (fallback to database search)
+koakademy configure search disable
+```
+
+---
 
 ## Inspect before running
 

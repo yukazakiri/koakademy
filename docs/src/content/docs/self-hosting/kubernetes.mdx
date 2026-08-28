@@ -1,0 +1,291 @@
+---
+title: Self-Hosting on Kubernetes
+description: Production Kubernetes (K8s / K3s) deployment guide with Helm or declarative manifests, Ingress, and persistent storage.
+---
+
+This guide provides declarative Kubernetes manifests for running KoAkademy on standard Kubernetes distributions (EKS, GKE, AKS, K3s, RKE2, or kubeadm).
+
+## Architectural Components
+
+- **App Deployment**: FrankenPHP Octane container (2+ replicas) running PHP 8.5 with probes pointing to `/up`.
+- **Gotenberg Deployment**: Stateless Gotenberg 8 microservice for PDF rendering.
+- **PostgreSQL & Redis**: Managed cloud databases (AWS RDS, Cloud SQL) or in-cluster StatefulSets/Bitnami operators.
+- **Ingress**: Ingress-NGINX or Traefik with `cert-manager` for automatic Let's Encrypt TLS certificates.
+- **Persistent Storage**: S3/Cloudflare R2 for assets or `ReadWriteMany` (NFS/Ceph) for local disk sharing across pods.
+
+---
+
+## Step 1: Create Namespace & Secrets
+
+Create `koakademy-secrets.yaml`:
+
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: koakademy
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: koakademy-secrets
+  namespace: koakademy
+type: Opaque
+stringData:
+  APP_KEY: "base64:YOUR_GENERATED_32_BYTE_BASE64_KEY"
+  DB_PASSWORD: "YourSecureDatabasePassword"
+  REDIS_PASSWORD: "YourSecureRedisPassword"
+  # S3 / R2 credentials if using object storage
+  AWS_ACCESS_KEY_ID: "your_access_key"
+  AWS_SECRET_ACCESS_KEY: "your_secret_key"
+```
+
+Apply secrets:
+
+```sh
+kubectl apply -f koakademy-secrets.yaml
+```
+
+---
+
+## Step 2: Create ConfigMap
+
+Create `koakademy-config.yaml`:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: koakademy-config
+  namespace: koakademy
+data:
+  APP_NAME: "KoAkademy"
+  APP_ENV: "production"
+  APP_DEBUG: "false"
+  APP_URL: "https://school.example.com"
+  OCTANE_SERVER: "frankenphp"
+  AUTO_MIGRATE: "true"
+  RUN_OPTIMIZE: "foreground"
+  
+  # Database
+  DB_CONNECTION: "pgsql"
+  DB_HOST: "postgres.koakademy.svc.cluster.local"
+  DB_PORT: "5432"
+  DB_DATABASE: "koakademy"
+  DB_USERNAME: "koakademy"
+  
+  # Redis
+  CACHE_STORE: "redis"
+  SESSION_DRIVER: "redis"
+  QUEUE_CONNECTION: "redis"
+  REDIS_HOST: "redis.koakademy.svc.cluster.local"
+  REDIS_PORT: "6379"
+  
+  # Gotenberg
+  GOTENBERG_URL: "http://gotenberg.koakademy.svc.cluster.local:3000"
+  
+  # Object Storage
+  FILESYSTEM_DISK: "r2"
+  AWS_BUCKET: "koakademy-uploads"
+  AWS_DEFAULT_REGION: "auto"
+  AWS_ENDPOINT: "https://<account-id>.r2.cloudflarestorage.com"
+```
+
+Apply config:
+
+```sh
+kubectl apply -f koakademy-config.yaml
+```
+
+---
+
+## Step 3: Gotenberg PDF Service
+
+Create `gotenberg.yaml`:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gotenberg
+  namespace: koakademy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gotenberg
+  template:
+    metadata:
+      labels:
+        app: gotenberg
+    spec:
+      containers:
+        - name: gotenberg
+          image: gotenberg/gotenberg:8
+          ports:
+            - containerPort: 3000
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1024Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gotenberg
+  namespace: koakademy
+spec:
+  selector:
+    app: gotenberg
+  ports:
+    - protocol: TCP
+      port: 3000
+      targetPort: 3000
+```
+
+---
+
+## Step 4: Application Deployment & Service
+
+Create `koakademy-app.yaml`:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: koakademy-app
+  namespace: koakademy
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: koakademy
+  template:
+    metadata:
+      labels:
+        app: koakademy
+    spec:
+      containers:
+        - name: koakademy
+          image: ghcr.io/yukazakiri/koakademy:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+            - containerPort: 2019
+              name: metrics
+          envFrom:
+            - configMapRef:
+                name: koakademy-config
+            - secretRef:
+                name: koakademy-secrets
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+          livenessProbe:
+            httpGet:
+              path: /up
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /up
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: koakademy-service
+  namespace: koakademy
+spec:
+  type: ClusterIP
+  selector:
+    app: koakademy
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+```
+
+---
+
+## Step 5: Ingress with TLS (cert-manager)
+
+Create `ingress.yaml`:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: koakademy-ingress
+  namespace: koakademy
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - school.example.com
+      secretName: koakademy-tls-cert
+  rules:
+    - host: school.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: koakademy-service
+                port:
+                  number: 80
+```
+
+---
+
+## Step 6: Deploy & Verify
+
+Apply all resources:
+
+```sh
+kubectl apply -f gotenberg.yaml
+kubectl apply -f koakademy-app.yaml
+kubectl apply -f ingress.yaml
+```
+
+Monitor rollout:
+
+```sh
+kubectl -n koakademy rollout status deployment/koakademy-app
+kubectl -n koakademy get pods -w
+```
+
+When pods are in `Running` status, visit `https://school.example.com/setup` to finish installation.

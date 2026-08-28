@@ -4,18 +4,22 @@ description: Developer, maintainer, and operator documentation for the KoAkademy
 template: splash
 hero:
     title: KoAkademy
-    tagline: Self-hosted school administration and learning platform — Laravel 13, Filament 5, Inertia, and React 19 in a FrankenPHP application service. Understand the system, run it, extend it.
+    tagline: Self-hosted school administration and learning platform — Laravel 13, Filament 5, Inertia 3, and React 19 in a containerized FrankenPHP stack. Understand the system, contribute, or deploy it.
     image:
         file: ../../assets/logo.png
         alt: KoAkademy
     actions:
-        - text: Understand the system
+        - text: Get Started
           link: /koakademy/start-here/introduction/
           icon: right-arrow
           variant: primary
-        - text: Self-host
+        - text: Contributor Guide
+          link: /koakademy/start-here/contributing/
+          icon: open-book
+        - text: Self-Host
           link: /koakademy/self-hosting/installation/
-          icon: right-arrow
+          icon: seti:shell
+          variant: secondary
         - text: GitHub
           link: https://github.com/yukazakiri/koakademy
           icon: external
@@ -24,47 +28,66 @@ hero:
 
 import { Card, CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-## For contributors
+## Quick Path Selection
 
-Set up a development environment and learn how the moving parts fit together.
+Choose your role to get straight to the relevant guides:
 
 <CardGrid>
-    <LinkCard title="Development setup" href="/koakademy/start-here/development/" description="PHP 8.5, Laravel 13, Pest 5, Vite — from clone to running tests." />
-    <LinkCard title="Architecture overview" href="/koakademy/start-here/architecture/" description="Runtime services, application layers, and data boundaries." />
-    <LinkCard title="System Internals" href="/koakademy/system/architecture-domain/" description="Domain model, auth, modules, enrollment engine, queues, frontend." />
-    <LinkCard title="Contributing" href="/koakademy/start-here/contributing/" description="PR checklist, code style, and documentation ownership." />
+    <LinkCard
+        title="New Contributor"
+        href="/koakademy/start-here/contributing/"
+        description="Set up your local environment, write Pest tests, build React portals, and submit clean PRs."
+    />
+    <LinkCard
+        title="System Architect"
+        href="/koakademy/system/architecture-domain/"
+        description="Explore the domain model, multi-layer authorization, enrollment engine, and Pennant feature flags."
+    />
+    <LinkCard
+        title="Self-Host Operator"
+        href="/koakademy/self-hosting/installation/"
+        description="Deploy with the single-node Docker Swarm installer, Caddy HTTPS, PostgreSQL, Redis, and Gotenberg."
+    />
+    <LinkCard
+        title="School Staff & Registrar"
+        href="/koakademy/user-guide/introduction/"
+        description="Daily operational workflows, student management, and no-code enrollment blueprint configuration."
+    />
 </CardGrid>
 
-## For maintainers
+## For Contributors & Developers
 
-How the repository itself operates — CI, releases, and automation.
+Everything needed to develop features, understand system internals, and run tests locally.
 
 <CardGrid>
-    <LinkCard title="CI pipeline" href="/koakademy/maintainers/ci/" description="Required PR, merge queue, workflow security, and multi-architecture build checks." />
-    <LinkCard title="Releases & versioning" href="/koakademy/maintainers/releases/" description="Release Please, immutable stable images, and installer bundles." />
-    <LinkCard title="Create a module" href="/koakademy/maintainers/create-module/" description="Build, test, release, register, and install a standalone module." />
-    <LinkCard title="Module registry" href="/koakademy/maintainers/module-registry/" description="Publish, install, update, and deploy standalone Composer modules." />
-    <LinkCard title="Repository automation" href="/koakademy/maintainers/automation/" description="Labels, issue quality checks, roadmap board, and PR access." />
-    <LinkCard title="Documentation system" href="/koakademy/maintainers/documentation/" description="Canonical Markdown, generated mirrors, and the docs site itself." />
+    <LinkCard title="Development Setup" href="/koakademy/start-here/development/" description="PHP 8.5, Laravel 13, Pest 5, Vite 8 — from clone to running test suites." />
+    <LinkCard title="Contributing Guide" href="/koakademy/start-here/contributing/" description="Contributor workflow, sample code, review checklist, and documentation rules." />
+    <LinkCard title="Frontend Architecture" href="/koakademy/system/frontend/" description="Inertia 3, React 19, Wayfinder typed route helpers, and the shadcn/Tailwind design system." />
+    <LinkCard title="Auth & Authorization" href="/koakademy/system/auth-authorization/" description="Web/Sanctum guards, 2FA/passkeys, role hierarchies, and policy enforcement." />
+    <LinkCard title="Modules & Feature Flags" href="/koakademy/system/modules-flags/" description="Bundled vs. standalone Composer modules and Pennant class-based feature flags." />
+    <LinkCard title="Enrollment Policy Extensions" href="/koakademy/development/enrollment-policy-extensions/" description="Add custom rules, actions, and strategies to the enrollment engine safely." />
 </CardGrid>
 
-## For operators
+## For Maintainers
 
-Run KoAkademy in production on your own infrastructure.
+Repository automation, releases, and CI/CD pipelines.
 
 <CardGrid>
-    <LinkCard title="Installation" href="/koakademy/self-hosting/installation/" description="The supported production topology, step by step." />
-    <LinkCard title="Deployment" href="/koakademy/self-hosting/deployment/" description="Upgrades, backups, rollback, and the production checklist." />
-    <LinkCard title="Configuration" href="/koakademy/self-hosting/configuration/" description="Environment variables and service contracts." />
-    <LinkCard title="Troubleshooting" href="/koakademy/self-hosting/troubleshooting/" description="Diagnose containers, proxies, uploads, PDFs, and queues." />
+    <LinkCard title="CI Pipeline" href="/koakademy/maintainers/ci/" description="PR classification, Pest test runners, actionlint, zizmor security scans, and merge queue." />
+    <LinkCard title="Releases & Versioning" href="/koakademy/maintainers/releases/" description="Release Please automation, semantic versioning, and immutable container images." />
+    <LinkCard title="Create a Module" href="/koakademy/maintainers/create-module/" description="Build, test, and release a standalone Composer module package." />
+    <LinkCard title="Module Registry" href="/koakademy/maintainers/module-registry/" description="Publish and distribute signed catalog entries for the module ecosystem." />
+    <LinkCard title="Documentation System" href="/koakademy/maintainers/documentation/" description="Canonical root Markdown, sync scripts, and Starlight MDX structure." />
+    <LinkCard title="Repository Automation" href="/koakademy/maintainers/automation/" description="Issue labeling, project roadmap boards, and automated workflows." />
 </CardGrid>
 
-## For school staff
+## For Operators
 
-Day-to-day usage guides for administrators, faculty, and students.
+Production deployment, service contracts, and operational troubleshooting.
 
 <CardGrid>
-    <LinkCard title="User Guide" href="/koakademy/user-guide/introduction/" description="Daily workflows for registrars, cashiers, and administrators." />
-    <LinkCard title="Enrollment Blueprints" href="/koakademy/enrollment-policies/overview/" description="Configure who can enroll, what they pay, and who approves — without code." />
-    <LinkCard title="API Reference" href="/koakademy/api/api-overview/" description="The tested integration subset: settings and student verification." />
+    <LinkCard title="Installation Guide" href="/koakademy/self-hosting/installation/" description="One-line Linux installer for Docker Swarm with Caddy reverse proxy." />
+    <LinkCard title="Deployment & Upgrades" href="/koakademy/self-hosting/deployment/" description="Zero-downtime updates, database migrations, backups, and rollback." />
+    <LinkCard title="Configuration" href="/koakademy/self-hosting/configuration/" description="Environment variables, Docker secrets, S3/R2 storage, and SMTP setup." />
+    <LinkCard title="Troubleshooting & FAQ" href="/koakademy/self-hosting/troubleshooting/" description="Container diagnostics, database connectivity, PDF generation, and common fixes." />
 </CardGrid>

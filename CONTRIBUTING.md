@@ -1,73 +1,209 @@
 # Contributing
 
-Thank you for improving KoAkademy. Contributions should be focused, testable, and safe for institutions that self-host the application.
+Thank you for contributing to KoAkademy! Contributions should be focused, well-tested, and safe for institutions that self-host the platform.
 
-## Before opening work
+## Before Opening Work
 
-- Search existing issues and pull requests.
-- Use a GitHub issue for substantial behavior or architecture changes so maintainers can confirm direction.
-- Do not use a public issue for vulnerabilities; follow [SECURITY.md](SECURITY.md).
-- Keep product changes separate from formatting, generated files, or unrelated refactors.
+- **Search existing issues and pull requests** to avoid duplicate effort.
+- **Open a discussion or feature issue first** for substantial behavior or architectural changes so maintainers can confirm direction.
+- **Do not post vulnerabilities in public issues.** Follow [SECURITY.md](SECURITY.md) to report security concerns privately through GitHub Advisory.
+- **Keep pull requests focused:** avoid mixing feature work with mass formatting, dependency bumps, or generated file changes.
+- Note: KoAkademy is an open-source project maintained by volunteers; no fixed response-time or merge-time SLA is promised.
 
-No response-time or merge-time SLA is promised.
+## Development Setup
 
-## Development setup
-
-Follow [Development](DEVELOPMENT.md). Use PHP 8.5, Node.js 22, Composer 2, and the locked dependencies. The default automated test environment uses SQLite; production-specific database behavior should also be tested with PostgreSQL.
-
-## Pull request checklist
-
-Before submitting:
+KoAkademy runs on **PHP 8.5**, **Laravel 13**, **Inertia 3**, **React 19**, and **Node.js 22**. Follow [Development](DEVELOPMENT.md) for full installation instructions:
 
 ```sh
-vendor/bin/pint --test
-php artisan test --parallel --compact
+# 1. Clone the repository and install dependencies
+git clone https://github.com/yukazakiri/koakademy.git
+cd koakademy
+composer install
+npm ci
+
+# 2. Configure environment and database
+cp .env.example .env
+php artisan key:generate
+touch database/database.sqlite
+php artisan migrate
+
+# 3. Build frontend assets and start servers
 npm run build
+php artisan serve
+```
+
+Run `npm run dev` in a separate terminal when working on React portal components with hot module replacement (HMR).
+
+## First Contribution Walkthrough
+
+Whether you are fixing a bug or adding a feature, follow this step-by-step workflow:
+
+1. **Create a topic branch** from `master`:
+   ```sh
+   git checkout -b fix/enrollment-fee-calculation
+   ```
+2. **Write or update a Pest test** that reproduces the issue or verifies the new behavior.
+3. **Implement your changes** following repository conventions (strict types in PHP, TypeScript in React).
+4. **Run local validation** before opening your PR.
+
+### Contributor Code Samples
+
+#### 1. Backend Feature Test (Pest 5)
+
+Write feature tests under `tests/Feature/`. Use model factories and `actingAs()` to verify authorization and response payloads:
+
+```php
+<?php
+
+declare(strict_types=1);
+
+use App\Enums\UserRole;
+use App\Models\StudentEnrollment;
+use App\Models\User;
+use Inertia\Testing\AssertableInertia;
+
+use function Pest\Laravel\actingAs;
+
+it('allows registrars to view pending enrollment applicants', function (): void {
+    $registrar = User::factory()->create(['role' => UserRole::Registrar]);
+    $enrollment = StudentEnrollment::factory()->create();
+
+    actingAs($registrar)
+        ->get(portalUrlForAdministrators('/administrators/enrollments'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->component('administrators/enrollment/index', false)
+            ->has('enrollments.data', 1)
+            ->where('enrollments.data.0.id', $enrollment->id)
+        );
+});
+
+it('forbids unauthorized roles from updating enrollment records', function (): void {
+    $student = User::factory()->create(['role' => UserRole::Student]);
+    $enrollment = StudentEnrollment::factory()->create();
+
+    actingAs($student)
+        ->put(portalUrlForAdministrators("/administrators/enrollments/{$enrollment->id}"), [
+            'status' => 'approved',
+        ])
+        ->assertForbidden();
+});
+```
+
+#### 2. Frontend React Form (Inertia 3 + Wayfinder)
+
+Frontend components live in `resources/js/pages/`. Use generated Wayfinder route helpers from `@/actions` or `@/routes` with Inertia's `useForm`:
+
+```tsx
+import { store } from "@/actions/App/Http/Controllers/AdministratorEnrollmentPolicyController";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useForm } from "@inertiajs/react";
+import type { FormEvent } from "react";
+
+interface CreatePolicyProps {
+    onSuccess?: () => void;
+}
+
+export function CreatePolicyForm({ onSuccess }: CreatePolicyProps) {
+    const form = useForm({
+        name: "",
+        preset: "legacy",
+        school_id: null as number | null,
+    });
+
+    const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+
+        form.post(store.url(), {
+            preserveScroll: true,
+            onSuccess: () => {
+                form.reset();
+                onSuccess?.();
+            },
+        });
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+                <Label htmlFor="name">Blueprint Name</Label>
+                <Input
+                    id="name"
+                    value={form.data.name}
+                    onChange={(e) => form.setData("name", e.target.value)}
+                    placeholder="College enrollment foundation"
+                    aria-invalid={Boolean(form.errors.name)}
+                />
+                {form.errors.name && (
+                    <p className="text-destructive text-sm" role="alert">
+                        {form.errors.name}
+                    </p>
+                )}
+            </div>
+
+            <Button type="submit" disabled={form.processing}>
+                {form.processing ? "Saving..." : "Create Blueprint"}
+            </Button>
+        </form>
+    );
+}
+```
+
+## Pull Request Checklist
+
+Before submitting your pull request, verify that every check passes locally:
+
+```sh
+# 1. Format and check PHP code style
+vendor/bin/pint --test
+
+# 2. Run backend test suite
+php artisan test --parallel --compact
+
+# 3. Build frontend bundle
+npm run build
+
+# 4. Check documentation mirrors and link integrity
 npm run docs:check
+
+# 5. Build documentation site
 npm --prefix docs run build
+
+# 6. Verify production Docker Compose syntax
 KOAKADEMY_ENV_FILE=.env.production.example \
   docker compose --env-file .env.production.example -f compose.production.yaml config --quiet
 ```
 
-- Add or update Pest tests for behavior changes.
-- Add migrations for schema changes; do not rewrite released migration history.
-- Update canonical root docs when installation, configuration, architecture, or operations change.
-- Run `npm run docs:sync` and commit generated MDX mirrors.
-- Keep API examples limited to tested routes and real response shapes.
-- Avoid new services, dependencies, network calls, or telemetry without explaining the tradeoff.
-- Confirm no credentials, personal data, production logs, or generated `.env` files are included.
-- Give the pull request a clear topic-focused title. Automation converts non-conventional titles to a Conventional Commit title such as `fix(installer): preserve swarm state` or `feat(enrollments): add fee overrides`; review the inferred type and scope before merge.
-- Keep the branch current with `master` so the merge queue can validate the exact candidate.
+### Review Standards
 
-## Code style
+- **Tests:** Add or update Pest tests for all behavioral changes.
+- **Migrations:** Add new migrations for schema changes; never modify or delete historical, released migrations.
+- **Documentation:** When user-visible behavior, configuration, or architecture changes, update the canonical root docs and run `npm run docs:sync`.
+- **Secrets & Data:** Ensure no credentials, personal records, tokens, or environment files are included in commits.
+- **PR Titles:** Use a concise, descriptive title. CI validates Conventional Commit format (e.g., `feat(enrollment): add scholarship fee override` or `fix(auth): preserve tenant scope on 2FA challenge`).
 
-PHP follows Laravel conventions and Laravel Pint. New PHP files use `declare(strict_types=1);`. Tests use Pest. React code should be typed, accessible, and use established components and generated route helpers where practical.
+## Code Style & Conventions
 
-Prefer small commits with imperative messages. KoAkademy squash-merges pull requests, so the automatically normalized and maintainer-reviewed Conventional Commit PR title becomes the `master` commit and the Release Please changelog/version input. Pull request descriptions should explain the problem, solution, validation performed, user-visible impact, migration or rollback concerns, and screenshots for interface changes.
+- **PHP:** Strict typing enabled (`declare(strict_types=1);` on all new files), formatted with Laravel Pint. Follow Laravel 13 patterns (Form Requests, Eloquent Policies, Enums).
+- **TypeScript / React:** Strict TypeScript, React 19 patterns, shadcn/ui components, and Tailwind CSS 4 utility classes.
+- **Accessibility:** Ensure keyboard accessibility, visible focus rings, ARIA labels for icon buttons, and respect for `prefers-reduced-motion`.
 
-## Documentation ownership
+## Documentation Ownership
 
-Root `README.md`, `GETTING_STARTED.md`, `DEPLOYMENT.md`, `CONFIGURATION.md`, `TROUBLESHOOTING.md`, `DEVELOPMENT.md`, `CONTRIBUTING.md`, `ARCHITECTURE.md`, and `FAQ.md` are canonical. Their generated MDX mirrors contain a warning header and must not be edited by hand.
+KoAkademy maintains a **single-source documentation system**:
 
-Operator guides, enrollment blueprints, and API pages remain native under `docs/src/content/docs/`.
+| Location | Role | How to Edit |
+| -------- | ---- | ----------- |
+| `GETTING_STARTED.md`, `DEPLOYMENT.md`, `CONFIGURATION.md`, `TROUBLESHOOTING.md`, `DEVELOPMENT.md`, `ARCHITECTURE.md`, `CONTRIBUTING.md`, `FAQ.md` | **Canonical Sources** | Edit directly in the root directory. |
+| `docs/src/content/docs/start-here/contributing.mdx`, etc. | **Generated Mirrors** | **Do not edit manually.** Run `npm run docs:sync`. |
+| `docs/src/content/docs/system/*`, `docs/src/content/docs/user-guide/*`, `docs/src/content/docs/enrollment-policies/*`, `docs/src/content/docs/api/*` | **Native Docs Pages** | Edit directly under `docs/src/content/docs/`. |
 
-## Standalone module contributions
+## Standalone Module Contributions
 
-Standalone modules are maintained in separate repositories and distributed
-through the [KoAkademy module registry](https://github.com/yukazakiri/koakademy-modules).
-Read its [contributor guide](https://github.com/yukazakiri/koakademy-modules/blob/master/CONTRIBUTING.md)
-before opening a registry change. The contributor workflow releases a tagged
-module, generates the catalog metadata without access to the private key, and
-opens a reviewable pull request. A registry maintainer signs the catalog after
-review.
+Standalone domain extensions (such as the Forms module) live in dedicated repositories under the [KoAkademy module registry](https://github.com/yukazakiri/koakademy-modules). Check the [Module Creation Guide](ARCHITECTURE.md) and registry guidelines before publishing a new module package.
 
-Updating the registry does not update a running KoAkademy deployment. The
-application repository must update its Composer lockfile and publish a new
-image. See the [module lifecycle guide](https://github.com/yukazakiri/koakademy-modules/blob/master/docs/module-lifecycle.md)
-for the Composer, image, migration, Swarm, Marketplace, and rollback sequence.
+## License & Legal
 
-## License
-
-By contributing, you agree that your contribution is licensed under the repository's [GNU AGPL-3.0-or-later license](LICENSE.md). Ensure you have the right to submit the work and preserve required notices for third-party material.
-
-The project has not adopted a Code of Conduct yet. That is an explicit maintainer decision still to be made; contributors should nevertheless communicate respectfully and keep discussion focused on the work.
+By contributing, you agree that your code will be licensed under KoAkademy's [GNU AGPL-3.0-or-later](LICENSE.md) license. Ensure you have the rights to submit the code and preserve copyright notices for third-party material.

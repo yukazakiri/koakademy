@@ -4,7 +4,6 @@ import ReactDOMServer from "react-dom/server";
 
 import { resolveBranding, type Branding } from "@/lib/branding";
 import { resolveInertiaPage, type InertiaPageModule, type InertiaPageModules } from "@/lib/inertia-page-resolver";
-import "./bones/registry";
 
 const appPages: InertiaPageModules = import.meta.glob<InertiaPageModule>("./pages/**/*.tsx");
 const modulePages: InertiaPageModules = {

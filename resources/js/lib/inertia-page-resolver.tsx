@@ -21,6 +21,14 @@ export type AdminInstantPageProps = Record<string, unknown> & {
     user?: User;
 };
 
+let adminSkeletonRegistryPromise: Promise<void> | null = null;
+
+function ensureAdminSkeletonRegistry(): Promise<void> {
+    adminSkeletonRegistryPromise ??= import("../bones/registry").then(() => undefined);
+
+    return adminSkeletonRegistryPromise;
+}
+
 function AdminInstantLoadingPage({
     component,
     definition,
@@ -84,6 +92,10 @@ function wrapResolvedPage(component: string, original: ResolvedComponent): Resol
 export async function resolveInertiaPage(name: string, appPages: InertiaPageModules, modulePages: InertiaPageModules): Promise<ResolvedComponent> {
     const modulePagePath = Object.keys(modulePages).find((path) => path.endsWith(`/resources/assets/js/Pages/${name}.tsx`));
     const pageModule = modulePagePath ? await modulePages[modulePagePath]() : await resolvePageComponent(`./pages/${name}.tsx`, appPages);
+
+    if (resolveAdminPageDefinitionByComponent(name)) {
+        await ensureAdminSkeletonRegistry();
+    }
 
     return wrapResolvedPage(name, pageModule.default);
 }

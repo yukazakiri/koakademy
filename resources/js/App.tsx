@@ -3,7 +3,6 @@ import { ThemeProvider } from "@/hooks/use-theme";
 import { resolveInertiaPage, type InertiaPageModule, type InertiaPageModules } from "@/lib/inertia-page-resolver";
 import { createInertiaApp, router } from "@inertiajs/react";
 import { createRoot, hydrateRoot } from "react-dom/client";
-import "./bones/registry";
 import "./bootstrap"; // Initialize Axios
 
 declare global {

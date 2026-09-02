@@ -40,7 +40,7 @@ beforeEach(function (): void {
     ]);
 });
 
-it('filters students by profile course department and year level', function (): void {
+it('provides the complete student dataset for client-side profile filters', function (): void {
     $technology = Department::factory()->forSchool($this->school)->create([
         'code' => 'TECH',
         'name' => 'Technology',
@@ -93,9 +93,12 @@ it('filters students by profile course department and year level', function (): 
         ->get(portalUrlForAdministrators("/administrators/students?course_id={$informationTechnology->id}"))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page
-            ->has('students.data', 2)
-            ->where('students.data.0.course', 'BSIT')
-            ->where('students.data.1.course', 'BSIT')
+            ->has('students.data', 3)
+            ->where('students.data', fn ($students): bool => $students->pluck('id')->sort()->values()->all() === collect([
+                $technologyFirstYear->id,
+                $technologySecondYear->id,
+                $businessFirstYear->id,
+            ])->sort()->values()->all())
             ->where('filters.course_id', $informationTechnology->id)
         );
 
@@ -103,11 +106,15 @@ it('filters students by profile course department and year level', function (): 
         ->get(portalUrlForAdministrators("/administrators/students?department_id={$business->id}"))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page
-            ->has('students.data', 1)
-            ->where('students.data.0.id', $businessFirstYear->id)
-            ->where('students.data.0.course_id', $businessAdministration->id)
-            ->where('students.data.0.department_id', $business->id)
-            ->where('students.data.0.year_level', 1)
+            ->has('students.data', 3)
+            ->where('students.data', function ($students) use ($businessFirstYear, $businessAdministration, $business): bool {
+                return $students->contains(
+                    fn (array $student): bool => $student['id'] === $businessFirstYear->id
+                        && $student['course_id'] === $businessAdministration->id
+                        && $student['department_id'] === $business->id
+                        && $student['year_level'] === 1
+                );
+            })
             ->where('filters.department_id', $business->id)
         );
 
@@ -115,8 +122,12 @@ it('filters students by profile course department and year level', function (): 
         ->get(portalUrlForAdministrators('/administrators/students?year_level=2'))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page
-            ->has('students.data', 1)
-            ->where('students.data.0.id', $technologySecondYear->id)
+            ->has('students.data', 3)
+            ->where('students.data', function ($students) use ($technologySecondYear): bool {
+                return $students->contains(
+                    fn (array $student): bool => $student['id'] === $technologySecondYear->id
+                );
+            })
             ->where('filters.year_level', 2)
             ->has('options.courses', 2)
             ->has('options.departments', 2)
@@ -167,9 +178,13 @@ it('filters current enrollment using only the configured school year and semeste
         ->get(portalUrlForAdministrators('/administrators/students?current_enrollment=enrolled'))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page
-            ->has('students.data', 1)
-            ->where('students.data.0.id', $current->id)
-            ->where('students.data.0.status', StudentStatus::Enrolled->value)
+            ->has('students.data', 4)
+            ->where('students.data', function ($students) use ($current): bool {
+                return $students->contains(
+                    fn (array $student): bool => $student['id'] === $current->id
+                        && $student['status'] === StudentStatus::Enrolled->value
+                );
+            })
             ->where('filters.current_enrollment', 'enrolled')
         );
 
@@ -177,9 +192,10 @@ it('filters current enrollment using only the configured school year and semeste
         ->get(portalUrlForAdministrators('/administrators/students?current_enrollment=not_enrolled'))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page
-            ->has('students.data', 3)
-            ->where('students.data', function ($students) use ($applicant, $historical, $withoutStatus): bool {
+            ->has('students.data', 4)
+            ->where('students.data', function ($students) use ($applicant, $current, $historical, $withoutStatus): bool {
                 return $students->pluck('id')->sort()->values()->all() === collect([
+                    $current->id,
                     $historical->id,
                     $applicant->id,
                     $withoutStatus->id,
@@ -227,11 +243,15 @@ it('combines the new filters without changing global student totals', function (
         ->get(portalUrlForAdministrators("/administrators/students?{$query}"))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page
-            ->has('students.data', 1)
-            ->where('students.data.0.id', $matching->id)
-            ->where('students.total', 1)
+            ->has('students.data', 2)
+            ->where('students.data', function ($students) use ($matching, $wrongYear): bool {
+                return $students->pluck('id')->sort()->values()->all() === collect([
+                    $matching->id,
+                    $wrongYear->id,
+                ])->sort()->values()->all();
+            })
+            ->where('students.total', 2)
             ->where('stats.total_students', 2)
-            ->where('adminSidebarCounts.students', 2)
         );
 });
 

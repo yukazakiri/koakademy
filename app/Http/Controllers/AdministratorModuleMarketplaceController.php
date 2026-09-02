@@ -13,6 +13,7 @@ use App\Modules\Exceptions\ModuleRegistryException;
 use App\Modules\ModuleManifestRepository;
 use App\Modules\ModuleStateRepository;
 use App\Modules\RegistryClient;
+use App\Services\ModuleAdminNavigationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -31,6 +32,7 @@ final class AdministratorModuleMarketplaceController extends Controller
         private readonly CompatibilityChecker $compatibility,
         private readonly ModuleStateRepository $states,
         private readonly RepositoryInterface $modules,
+        private readonly ModuleAdminNavigationService $moduleAdminNavigation,
     ) {}
 
     public function index(Request $request): Response
@@ -211,6 +213,8 @@ final class AdministratorModuleMarketplaceController extends Controller
         } else {
             $module->disable();
         }
+
+        $this->moduleAdminNavigation->forgetCache();
 
         $status = $enabled ? 'enabled' : 'disabled';
 

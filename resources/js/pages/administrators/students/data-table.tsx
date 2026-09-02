@@ -1,6 +1,5 @@
 import {
     ColumnDef,
-    ColumnFiltersState,
     SortingState,
     VisibilityState,
     flexRender,
@@ -33,6 +32,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { adminVisit } from "@/lib/admin-navigation";
 import { router } from "@inertiajs/react";
 import {
     CheckCircle,
@@ -50,24 +50,17 @@ import {
 import { toast } from "sonner";
 import type { Student } from "./columns";
 
-declare let route: any;
+declare let route: (name: string, params?: Record<string, unknown> | string | number) => string;
 
 interface DataTableProps<TData extends Student, TValue> {
     columns: ColumnDef<TData, TValue>[];
     data: TData[];
-    // Server-side pagination props
-    pagination?: {
-        current_page: number;
-        last_page: number;
-        per_page: number;
-        total: number;
-        next_page_url: string | null;
-        prev_page_url: string | null;
-        from: number;
-        to: number;
-    };
-    filters?: Record<string, any>;
-    routeName?: string; // Route to visit for server-side updates
+    pageIndex: number;
+    pageSize: number;
+    sorting: SortingState;
+    onPageIndexChange: (pageIndex: number) => void;
+    onPageSizeChange: (pageSize: number) => void;
+    onSortingChange: (sorting: SortingState) => void;
     bulkActions?: {
         statusOptions?: { value: string; label: string }[];
     };
@@ -139,16 +132,16 @@ const studentExportColumns: ExportColumn<Student>[] = [
 export function DataTable<TData extends Student, TValue>({
     columns,
     data,
-    pagination,
-    filters = {},
-    routeName = "administrators.students.index",
+    pageIndex,
+    pageSize,
+    sorting,
+    onPageIndexChange,
+    onPageSizeChange,
+    onSortingChange,
     bulkActions,
 }: DataTableProps<TData, TValue>) {
-    const [sorting, setSorting] = React.useState<SortingState>([]);
-    const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
     const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({});
     const [rowSelection, setRowSelection] = React.useState({});
-    const [globalFilter, setGlobalFilter] = React.useState("");
     const [emailDialogOpen, setEmailDialogOpen] = React.useState(false);
     const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
     const [forceDeleteDialogOpen, setForceDeleteDialogOpen] = React.useState(false);
@@ -170,89 +163,37 @@ export function DataTable<TData extends Student, TValue>({
         setRowSelection({});
     }, [data]);
 
-    // Initialize sorting from URL if present
-    React.useEffect(() => {
-        const urlParams = new URLSearchParams(window.location.search);
-        const sort = urlParams.get("sort");
-        const direction = urlParams.get("direction");
-        if (sort) {
-            setSorting([{ id: sort, desc: direction === "desc" }]);
-        }
-    }, []);
-
     const table = useReactTable({
         data,
         columns,
         getRowId: (row) => String(row.id),
         getCoreRowModel: getCoreRowModel(),
-        manualPagination: !!pagination,
-        manualSorting: !!pagination,
-        pageCount: pagination?.last_page ?? -1,
         getPaginationRowModel: getPaginationRowModel(),
         onSortingChange: (updater) => {
-            const newSorting = typeof updater === "function" ? updater(sorting) : updater;
-            setSorting(newSorting);
-
-            // Trigger server-side sort
-            if (newSorting.length > 0) {
-                const { id, desc } = newSorting[0];
-                router.get(
-                    route(routeName),
-                    { ...filters, sort: id, direction: desc ? "desc" : "asc", page: 1 },
-                    { only: ["students", "filters"], preserveScroll: true, preserveState: true, replace: true },
-                );
-            } else {
-                // Reset sort
-                router.get(
-                    route(routeName),
-                    { ...filters, sort: "created_at", direction: "desc", page: 1 },
-                    { only: ["students", "filters"], preserveScroll: true, preserveState: true, replace: true },
-                );
-            }
+            const nextSorting = typeof updater === "function" ? updater(sorting) : updater;
+            onSortingChange(nextSorting);
         },
         getSortedRowModel: getSortedRowModel(),
-        onColumnFiltersChange: setColumnFilters,
         getFilteredRowModel: getFilteredRowModel(),
         onColumnVisibilityChange: setColumnVisibility,
         onRowSelectionChange: setRowSelection,
         state: {
             sorting,
-            columnFilters,
             columnVisibility,
             rowSelection,
             pagination: {
-                pageIndex: pagination ? pagination.current_page - 1 : 0,
-                pageSize: pagination ? pagination.per_page : 10,
+                pageIndex,
+                pageSize,
             },
         },
-        // Server-side pagination handlers
         onPaginationChange: (updater) => {
-            // This is tricky with Inertia because we need to navigate.
-            // Typically manualPagination implies we handle the state ourselves and fetch.
-            // But with Inertia, we just visit the URL.
-            // However, standard table pagination UI calls table.nextPage(), which updates internal state.
-            // We can override the Pagination Controls to navigate directly.
+            const currentPagination = { pageIndex, pageSize };
+            const nextPagination = typeof updater === "function" ? updater(currentPagination) : updater;
+
+            onPageIndexChange(nextPagination.pageIndex);
+            onPageSizeChange(nextPagination.pageSize);
         },
     });
-
-    // Function to handle page navigation via Inertia
-    const navigateToPage = (url: string | null) => {
-        if (url) {
-            router.get(url, {}, { only: ["students", "filters"], preserveScroll: true, preserveState: true, replace: true });
-        }
-    };
-
-    const handlePerPageChange = (value: string | null) => {
-        if (!value) {
-            return;
-        }
-
-        router.get(
-            route(routeName),
-            { ...filters, per_page: value, page: 1 },
-            { only: ["students", "filters"], preserveScroll: true, preserveState: true, replace: true },
-        );
-    };
 
     const selectedRows = table.getFilteredSelectedRowModel().rows;
     const selectedData = selectedRows.map((row) => row.original);
@@ -477,23 +418,29 @@ export function DataTable<TData extends Student, TValue>({
                 </div>
 
                 <div className="flex items-center gap-2">
-                    {pagination && (
-                        <div className="flex items-center space-x-2">
-                            <p className="text-sm font-medium">Rows per page</p>
-                            <Select value={`${pagination.per_page}`} onValueChange={handlePerPageChange}>
-                                <SelectTrigger className="h-8 w-[70px]">
-                                    <SelectValue placeholder={pagination.per_page} />
-                                </SelectTrigger>
-                                <SelectContent side="top">
-                                    {[10, 20, 50, 100].map((pageSize) => (
-                                        <SelectItem key={pageSize} value={`${pageSize}`}>
-                                            {pageSize}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                    )}
+                    <div className="flex items-center space-x-2">
+                        <p className="text-sm font-medium">Rows per page</p>
+                        <Select
+                            value={`${pageSize}`}
+                            onValueChange={(value) => {
+                                if (value) {
+                                    onPageSizeChange(Number(value));
+                                    onPageIndexChange(0);
+                                }
+                            }}
+                        >
+                            <SelectTrigger className="h-8 w-[70px]">
+                                <SelectValue placeholder={pageSize} />
+                            </SelectTrigger>
+                            <SelectContent side="top">
+                                {[10, 20, 50, 100].map((pageSizeOption) => (
+                                    <SelectItem key={pageSizeOption} value={`${pageSizeOption}`}>
+                                        {pageSizeOption}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
                     <DropdownMenu>
                         <DropdownMenuTrigger render={<Button variant="outline" className="ml-auto" />}>
                             <Settings2 className="mr-2 h-4 w-4" />
@@ -648,9 +595,9 @@ export function DataTable<TData extends Student, TValue>({
                                         }
 
                                         // Navigate to student detail page
-                                        const student = row.original as any;
+                                        const student = row.original;
                                         if (student?.id) {
-                                            router.visit(route("administrators.students.show", student.id));
+                                            adminVisit(route("administrators.students.show", student.id));
                                         }
                                     }}
                                 >
@@ -673,73 +620,56 @@ export function DataTable<TData extends Student, TValue>({
             {/* Pagination Controls */}
             <div className="flex items-center justify-between space-x-2 py-4">
                 <div className="text-muted-foreground flex-1 text-sm">
-                    {pagination ? (
-                        <>
-                            Showing {pagination.from} to {pagination.to} of {pagination.total} entries
-                        </>
-                    ) : (
-                        <>
-                            {table.getFilteredSelectedRowModel().rows.length} of {table.getFilteredRowModel().rows.length} row(s) selected.
-                        </>
-                    )}
+                    Showing {table.getFilteredRowModel().rows.length === 0 ? 0 : pageIndex * pageSize + 1} to{" "}
+                    {Math.min((pageIndex + 1) * pageSize, table.getFilteredRowModel().rows.length)} of {table.getFilteredRowModel().rows.length}{" "}
+                    entries
                 </div>
 
-                {pagination ? (
+                <div className="flex items-center space-x-2">
                     <div className="flex items-center space-x-2">
-                        <div className="flex items-center space-x-2">
-                            <p className="text-sm font-medium">
-                                Page {pagination.current_page} of {pagination.last_page}
-                            </p>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                            <Button
-                                variant="outline"
-                                className="hidden h-8 w-8 p-0 lg:flex"
-                                onClick={() => navigateToPage(route(routeName, { ...filters, page: 1 }))}
-                                disabled={pagination.current_page === 1}
-                            >
-                                <span className="sr-only">Go to first page</span>
-                                <ChevronsLeft className="h-4 w-4" />
-                            </Button>
-                            <Button
-                                variant="outline"
-                                className="h-8 w-8 p-0"
-                                onClick={() => navigateToPage(pagination.prev_page_url)}
-                                disabled={!pagination.prev_page_url}
-                            >
-                                <span className="sr-only">Go to previous page</span>
-                                <ChevronLeft className="h-4 w-4" />
-                            </Button>
-                            <Button
-                                variant="outline"
-                                className="h-8 w-8 p-0"
-                                onClick={() => navigateToPage(pagination.next_page_url)}
-                                disabled={!pagination.next_page_url}
-                            >
-                                <span className="sr-only">Go to next page</span>
-                                <ChevronRight className="h-4 w-4" />
-                            </Button>
-                            <Button
-                                variant="outline"
-                                className="hidden h-8 w-8 p-0 lg:flex"
-                                onClick={() => navigateToPage(route(routeName, { ...filters, page: pagination.last_page }))}
-                                disabled={pagination.current_page === pagination.last_page}
-                            >
-                                <span className="sr-only">Go to last page</span>
-                                <ChevronsRight className="h-4 w-4" />
-                            </Button>
-                        </div>
+                        <p className="text-sm font-medium">
+                            Page {pageIndex + 1} of {Math.max(1, table.getPageCount())}
+                        </p>
                     </div>
-                ) : (
-                    <div className="space-x-2">
-                        <Button variant="outline" size="sm" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>
-                            Previous
+                    <div className="flex items-center space-x-2">
+                        <Button
+                            variant="outline"
+                            className="hidden h-8 w-8 p-0 lg:flex"
+                            onClick={() => onPageIndexChange(0)}
+                            disabled={!table.getCanPreviousPage()}
+                        >
+                            <span className="sr-only">Go to first page</span>
+                            <ChevronsLeft className="h-4 w-4" />
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>
-                            Next
+                        <Button
+                            variant="outline"
+                            className="h-8 w-8 p-0"
+                            onClick={() => onPageIndexChange(Math.max(0, pageIndex - 1))}
+                            disabled={!table.getCanPreviousPage()}
+                        >
+                            <span className="sr-only">Go to previous page</span>
+                            <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        <Button
+                            variant="outline"
+                            className="h-8 w-8 p-0"
+                            onClick={() => onPageIndexChange(Math.min(table.getPageCount() - 1, pageIndex + 1))}
+                            disabled={!table.getCanNextPage()}
+                        >
+                            <span className="sr-only">Go to next page</span>
+                            <ChevronRight className="h-4 w-4" />
+                        </Button>
+                        <Button
+                            variant="outline"
+                            className="hidden h-8 w-8 p-0 lg:flex"
+                            onClick={() => onPageIndexChange(Math.max(0, table.getPageCount() - 1))}
+                            disabled={!table.getCanNextPage()}
+                        >
+                            <span className="sr-only">Go to last page</span>
+                            <ChevronsRight className="h-4 w-4" />
                         </Button>
                     </div>
-                )}
+                </div>
             </div>
         </div>
     );

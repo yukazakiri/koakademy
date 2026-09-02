@@ -1,4 +1,5 @@
 import AdminLayout from "@/components/administrators/admin-layout";
+import { AdminDeferredSection } from "@/components/administrators/admin-skeleton";
 import { Filters, type FilterFieldConfig, type Filter as FilterType } from "@/components/reui/filters";
 import {
     AlertDialog,
@@ -20,8 +21,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AdminLink } from "@/lib/admin-navigation";
 import type { User } from "@/types/user";
-import { Head, Link, router } from "@inertiajs/react";
+import { Head, router } from "@inertiajs/react";
+import type { SortingState } from "@tanstack/react-table";
 import {
     Award,
     BookOpen,
@@ -51,11 +54,51 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { useDebouncedCallback } from "use-debounce";
 import { columns, Student } from "./columns";
 import { DataTable } from "./data-table";
 
 declare let route: (name: string, params?: Record<string, unknown> | string | number) => string;
+
+function parseSortOption(value: string): { sort: string; direction: "asc" | "desc" } {
+    const [sort = "created_at", direction = "desc"] = value.split(":");
+
+    return {
+        sort,
+        direction: direction === "asc" ? "asc" : "desc",
+    };
+}
+
+function sortStudentRows(studentRows: Student[], sorting: SortingState): Student[] {
+    const activeSort = sorting[0];
+
+    if (!activeSort) {
+        return studentRows;
+    }
+
+    return [...studentRows].sort((leftStudent, rightStudent) => {
+        const leftValue = leftStudent[activeSort.id as keyof Student];
+        const rightValue = rightStudent[activeSort.id as keyof Student];
+
+        if (leftValue === rightValue) {
+            return 0;
+        }
+
+        if (leftValue === null || leftValue === undefined) {
+            return 1;
+        }
+
+        if (rightValue === null || rightValue === undefined) {
+            return -1;
+        }
+
+        const comparison =
+            typeof leftValue === "number" && typeof rightValue === "number"
+                ? leftValue - rightValue
+                : String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: "base" });
+
+        return activeSort.desc ? -comparison : comparison;
+    });
+}
 
 interface StudentsIndexProps {
     user: User;
@@ -65,7 +108,7 @@ interface StudentsIndexProps {
             create_url: string;
         };
     };
-    students: {
+    students?: {
         data: Student[];
         total: number;
         from: number;
@@ -111,9 +154,18 @@ interface StudentsIndexProps {
 }
 
 export default function AdministratorStudentsIndex({ user, students, stats, filters, options }: StudentsIndexProps) {
+    const studentRows = students?.data ?? [];
+    const isStudentsLoading = students === undefined || students === null;
     const [search, setSearch] = useState(filters.search || "");
     const [viewMode, setViewMode] = useState<"list" | "grid">("list");
     const [sortOption, setSortOption] = useState(`${filters.sort ?? "created_at"}:${filters.direction ?? "desc"}`);
+    const [sorting, setSorting] = useState<SortingState>(() => {
+        const initialSort = parseSortOption(`${filters.sort ?? "created_at"}:${filters.direction ?? "desc"}`);
+
+        return [{ id: initialSort.sort, desc: initialSort.direction === "desc" }];
+    });
+    const [pageIndex, setPageIndex] = useState(0);
+    const [pageSize, setPageSize] = useState(filters.per_page ?? 20);
 
     const [activeFilters, setActiveFilters] = useState<FilterType[]>([]);
 
@@ -128,28 +180,14 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
         [activeFilters],
     );
 
-    const serverFilterValues = useMemo(() => {
-        const values: Record<string, string> = {};
-
-        if (filters.trashed && filters.trashed !== "active") values.trashed = filters.trashed;
-        if (filters.type) values.type = filters.type;
-        if (filters.status) values.status = filters.status;
-        if (filters.course_id) values.course_id = String(filters.course_id);
-        if (filters.department_id) values.department_id = String(filters.department_id);
-        if (filters.year_level) values.year_level = String(filters.year_level);
-        if (filters.current_enrollment) values.current_enrollment = filters.current_enrollment;
-        if (filters.scholarship_type) values.scholarship_type = filters.scholarship_type;
-        if (filters.employment_status) values.employment_status = filters.employment_status;
-        if (filters.is_indigenous_person) values.is_indigenous_person = filters.is_indigenous_person;
-        if (filters.previous_semester_cleared) values.previous_semester_cleared = filters.previous_semester_cleared;
-
-        return values;
-    }, [filters]);
-
     const filteredStudents = useMemo(() => {
         const searchTerm = search.trim().toLowerCase();
+        const trashedFilter = activeFilterValues.trashed ?? "active";
 
-        return students.data.filter((student) => {
+        return studentRows.filter((student) => {
+            if (trashedFilter === "active" && student.deleted_at !== null) return false;
+            if (trashedFilter === "trashed" && student.deleted_at === null) return false;
+
             const matchesSearch =
                 searchTerm === "" ||
                 [
@@ -172,8 +210,7 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
             return Object.entries(activeFilterValues).every(([field, value]) => {
                 switch (field) {
                     case "trashed":
-                        if (value === "all") return true;
-                        return value === "trashed" ? student.deleted_at !== null : student.deleted_at === null;
+                        return true;
                     case "type":
                         return student.type === value;
                     case "status":
@@ -199,90 +236,35 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
                 }
             });
         });
-    }, [activeFilterValues, search, students.data]);
+    }, [activeFilterValues, search, studentRows]);
 
-    const hasLocalSearch = search.trim() !== "";
-    const serverSearch = filters.search ?? "";
-    const isServerSearchCurrent = search.trim() === serverSearch.trim();
-    const isServerFilterStateCurrent =
-        Object.keys(activeFilterValues).length === Object.keys(serverFilterValues).length &&
-        Object.entries(activeFilterValues).every(([field, value]) => serverFilterValues[field] === value);
-    const shouldUseLocalResults = (hasLocalSearch && !isServerSearchCurrent) || (activeFilters.length > 0 && !isServerFilterStateCurrent);
-    const visibleStudents = shouldUseLocalResults ? filteredStudents : students.data;
-    const visiblePagination = shouldUseLocalResults
-        ? {
-              current_page: 1,
-              last_page: 1,
-              per_page: students.per_page,
-              total: filteredStudents.length,
-              next_page_url: null,
-              prev_page_url: null,
-              from: filteredStudents.length > 0 ? 1 : 0,
-              to: filteredStudents.length,
-          }
-        : {
-              current_page: students.current_page,
-              last_page: students.last_page,
-              per_page: students.per_page,
-              total: students.total,
-              next_page_url: students.next_page_url,
-              prev_page_url: students.prev_page_url,
-              from: students.from,
-              to: students.to,
-          };
+    const sortedStudents = useMemo(() => sortStudentRows(filteredStudents, sorting), [filteredStudents, sorting]);
 
-    const parseSortOption = (value: string): { sort: string; direction: "asc" | "desc" } => {
-        const [sort = "created_at", direction = "desc"] = value.split(":");
+    const localPagination = useMemo(() => {
+        const total = sortedStudents.length;
+        const lastPage = Math.max(1, Math.ceil(total / pageSize));
+        const currentPageIndex = Math.min(pageIndex, lastPage - 1);
+        const from = total === 0 ? 0 : currentPageIndex * pageSize + 1;
+        const to = total === 0 ? 0 : Math.min((currentPageIndex + 1) * pageSize, total);
 
         return {
-            sort,
-            direction: direction === "asc" ? "asc" : "desc",
+            current_page: currentPageIndex + 1,
+            last_page: lastPage,
+            per_page: pageSize,
+            total,
+            from,
+            to,
         };
-    };
+    }, [pageIndex, pageSize, sortedStudents.length]);
 
-    const buildFilterParams = (
-        searchTerm: string,
-        filterValues: FilterType[] = activeFilters,
-        selectedSortOption: string = sortOption,
-    ): Record<string, string | number | null> => {
-        const sort = parseSortOption(selectedSortOption);
-        const appliedFilters: Record<string, string | number | null> = {
-            search: searchTerm.trim() || null,
-            type: null,
-            status: null,
-            course_id: null,
-            department_id: null,
-            year_level: null,
-            current_enrollment: null,
-            scholarship_type: null,
-            employment_status: null,
-            is_indigenous_person: null,
-            previous_semester_cleared: null,
-            sort: sort.sort,
-            direction: sort.direction,
-            per_page: students.per_page,
-            page: 1,
-        };
+    const paginatedStudents = useMemo(
+        () => sortedStudents.slice(localPagination.from > 0 ? localPagination.from - 1 : 0, localPagination.to),
+        [localPagination.from, localPagination.to, sortedStudents],
+    );
 
-        filterValues.forEach((filter) => {
-            const value = filter.values[0];
-
-            if (typeof value === "string" || typeof value === "number") {
-                appliedFilters[filter.field] = value;
-            }
-        });
-
-        return appliedFilters;
-    };
-
-    const refreshStudents = useDebouncedCallback((searchTerm: string, filterValues: FilterType[], selectedSortOption: string = sortOption) => {
-        router.get(route("administrators.students.index"), buildFilterParams(searchTerm, filterValues, selectedSortOption), {
-            only: ["students", "filters"],
-            preserveScroll: true,
-            preserveState: true,
-            replace: true,
-        });
-    }, 350);
+    useEffect(() => {
+        setPageIndex(0);
+    }, [activeFilters, search, sortOption]);
 
     useEffect(() => {
         const initialFilters: FilterType[] = [];
@@ -322,17 +304,19 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
                 values: [filters.previous_semester_cleared],
             });
         setActiveFilters(initialFilters);
-        setSortOption(`${filters.sort ?? "created_at"}:${filters.direction ?? "desc"}`);
+        const nextSortOption = `${filters.sort ?? "created_at"}:${filters.direction ?? "desc"}`;
+        const nextSort = parseSortOption(nextSortOption);
+        setSortOption(nextSortOption);
+        setSorting([{ id: nextSort.sort, desc: nextSort.direction === "desc" }]);
+        setPageSize(filters.per_page ?? 20);
     }, [filters]);
 
     const handleFiltersChange = (newFilters: FilterType[]) => {
         setActiveFilters(newFilters);
-        refreshStudents(search, newFilters);
     };
 
     const clearFilters = () => {
         setActiveFilters([]);
-        refreshStudents(search, []);
     };
 
     const handleSortChange = (value: string | null) => {
@@ -341,29 +325,14 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
         }
 
         setSortOption(value);
-        router.get(route("administrators.students.index"), buildFilterParams(search, activeFilters, value), {
-            only: ["students", "filters"],
-            preserveScroll: true,
-            preserveState: true,
-            replace: true,
-        });
+        const sort = parseSortOption(value);
+        setSorting([{ id: sort.sort, desc: sort.direction === "desc" }]);
     };
 
-    const navigateToStudentsPage = (url: string | null) => {
-        if (!url) {
-            return;
-        }
-
-        router.get(
-            url,
-            {},
-            {
-                only: ["students", "filters"],
-                preserveScroll: true,
-                preserveState: true,
-                replace: true,
-            },
-        );
+    const handleTableSortingChange = (nextSorting: SortingState) => {
+        setSorting(nextSorting);
+        const nextSort = nextSorting[0];
+        setSortOption(nextSort ? `${nextSort.id}:${nextSort.desc ? "desc" : "asc"}` : "created_at:desc");
     };
 
     const filterFields: FilterFieldConfig[] = useMemo(
@@ -584,10 +553,10 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
                             Find, review, and maintain authoritative student records across the institution.
                         </p>
                     </div>
-                    <Link href={route("administrators.students.create")} className={buttonVariants({ className: "gap-2" })}>
+                    <AdminLink href={route("administrators.students.create")} className={buttonVariants({ className: "gap-2" })}>
                         <Plus className="size-4" aria-hidden="true" />
                         Create student
-                    </Link>
+                    </AdminLink>
                 </header>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -641,7 +610,9 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
                         <div>
                             <p className="text-sm font-semibold">Student records</p>
                             <p className="text-muted-foreground text-xs">
-                                Showing {visiblePagination.from}–{visiblePagination.to} of {visiblePagination.total} matching records
+                                {isStudentsLoading
+                                    ? "Loading student records..."
+                                    : `Showing ${localPagination.from}–${localPagination.to} of ${localPagination.total} matching records`}
                             </p>
                         </div>
                         {activeFilters.length > 0 && (
@@ -661,7 +632,6 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
                                     onChange={(event) => {
                                         const nextSearch = event.target.value;
                                         setSearch(nextSearch);
-                                        refreshStudents(nextSearch, activeFilters);
                                     }}
                                 />
                             </div>
@@ -727,127 +697,129 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
                     </CardContent>
                 </Card>
                 {/* Content */}
-                <Tabs value={viewMode} className="w-full">
-                    <TabsContent value="list" className="mt-0">
-                        <DataTable
-                            columns={columns}
-                            data={visibleStudents}
-                            pagination={visiblePagination}
-                            filters={filters}
-                            bulkActions={{ statusOptions: options.statuses }}
-                        />
-                    </TabsContent>
+                <AdminDeferredSection data="students" label="Loading student records" name="admin-administrators-students-index" variant="list">
+                    <Tabs value={viewMode} className="w-full">
+                        <TabsContent value="list" className="mt-0">
+                            <DataTable
+                                columns={columns}
+                                data={sortedStudents}
+                                pageIndex={localPagination.current_page - 1}
+                                pageSize={pageSize}
+                                sorting={sorting}
+                                onPageIndexChange={setPageIndex}
+                                onPageSizeChange={(nextPageSize) => {
+                                    setPageSize(nextPageSize);
+                                    setPageIndex(0);
+                                }}
+                                onSortingChange={handleTableSortingChange}
+                                bulkActions={{ statusOptions: options.statuses }}
+                            />
+                        </TabsContent>
 
-                    <TabsContent value="grid" className="mt-0">
-                        {visibleStudents.length === 0 ? (
-                            <div className="bg-muted/10 flex h-64 flex-col items-center justify-center rounded-lg border border-dashed">
-                                <Search className="mb-2 h-8 w-8 opacity-20" />
-                                <p className="text-muted-foreground">No students found matching your criteria.</p>
-                            </div>
-                        ) : (
-                            <>
-                                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                                    {visibleStudents.map((row) => (
-                                        <Card
-                                            key={row.id}
-                                            className="cursor-pointer transition-shadow hover:shadow-md"
-                                            onClick={(e) => {
-                                                // Don't navigate if clicking on buttons or links
-                                                const target = e.target as HTMLElement;
-                                                if (target.closest("button") || target.closest("a")) {
-                                                    return;
-                                                }
-                                                router.visit(route("administrators.students.show", row.id));
-                                            }}
-                                        >
-                                            <CardHeader className="flex flex-row items-center gap-4 space-y-0 pb-2">
-                                                <Avatar className="h-12 w-12 border">
-                                                    <AvatarImage src={row.avatar_url ?? undefined} alt={row.name} />
-                                                    <AvatarFallback className="bg-primary/10 text-primary text-lg font-medium">
-                                                        {getInitials(row.name)}
-                                                    </AvatarFallback>
-                                                </Avatar>
-                                                <div className="flex flex-col overflow-hidden">
-                                                    <h3 className="truncate text-sm font-semibold" title={row.name}>
-                                                        {row.name}
-                                                    </h3>
-                                                    <p className="text-muted-foreground truncate text-xs">{row.student_id ?? "No ID"}</p>
-                                                </div>
-                                            </CardHeader>
-                                            <CardContent className="pt-4">
-                                                <div className="mb-3 flex flex-wrap gap-2">
-                                                    <Badge className={`text-[10px] font-bold shadow-none ${getStatusColor(row.status)}`}>
-                                                        {row.status ?? "Unknown"}
-                                                    </Badge>
-                                                    <Badge variant="outline" className="text-[10px]">
-                                                        {row.course ?? "N/A"}
-                                                    </Badge>
-                                                </div>
-                                                <div className="text-muted-foreground space-y-1 text-xs">
-                                                    <div className="flex items-center justify-between">
-                                                        <span>Year:</span>
-                                                        <span className="text-foreground font-medium">{row.academic_year}</span>
+                        <TabsContent value="grid" className="mt-0">
+                            {paginatedStudents.length === 0 ? (
+                                <div className="bg-muted/10 flex h-64 flex-col items-center justify-center rounded-lg border border-dashed">
+                                    <Search className="mb-2 h-8 w-8 opacity-20" />
+                                    <p className="text-muted-foreground">No students found matching your criteria.</p>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                                        {paginatedStudents.map((row) => (
+                                            <Card key={row.id} className="transition-shadow hover:shadow-md">
+                                                <CardHeader className="flex flex-row items-center gap-4 space-y-0 pb-2">
+                                                    <Avatar className="h-12 w-12 border">
+                                                        <AvatarImage src={row.avatar_url ?? undefined} alt={row.name} />
+                                                        <AvatarFallback className="bg-primary/10 text-primary text-lg font-medium">
+                                                            {getInitials(row.name)}
+                                                        </AvatarFallback>
+                                                    </Avatar>
+                                                    <div className="flex flex-col overflow-hidden">
+                                                        <h3 className="truncate text-sm font-semibold" title={row.name}>
+                                                            {row.name}
+                                                        </h3>
+                                                        <p className="text-muted-foreground truncate text-xs">{row.student_id ?? "No ID"}</p>
                                                     </div>
-                                                    <div className="flex items-center justify-between">
-                                                        <span>Clearance:</span>
-                                                        <div className="flex items-center gap-1">
-                                                            {getClearanceIcon(row.previous_sem_clearance)}
-                                                            <span className="capitalize">
-                                                                {row.previous_sem_clearance === "cleared" ? "Cleared" : "Pending"}
-                                                            </span>
+                                                </CardHeader>
+                                                <CardContent className="pt-4">
+                                                    <div className="mb-3 flex flex-wrap gap-2">
+                                                        <Badge className={`text-[10px] font-bold shadow-none ${getStatusColor(row.status)}`}>
+                                                            {row.status ?? "Unknown"}
+                                                        </Badge>
+                                                        <Badge variant="outline" className="text-[10px]">
+                                                            {row.course ?? "N/A"}
+                                                        </Badge>
+                                                    </div>
+                                                    <div className="text-muted-foreground space-y-1 text-xs">
+                                                        <div className="flex items-center justify-between">
+                                                            <span>Year:</span>
+                                                            <span className="text-foreground font-medium">{row.academic_year}</span>
+                                                        </div>
+                                                        <div className="flex items-center justify-between">
+                                                            <span>Clearance:</span>
+                                                            <div className="flex items-center gap-1">
+                                                                {getClearanceIcon(row.previous_sem_clearance)}
+                                                                <span className="capitalize">
+                                                                    {row.previous_sem_clearance === "cleared" ? "Cleared" : "Pending"}
+                                                                </span>
+                                                            </div>
                                                         </div>
                                                     </div>
-                                                </div>
-                                            </CardContent>
-                                            <CardFooter className="flex gap-2 pt-0">
-                                                <Link
-                                                    href={route("administrators.students.show", row.id)}
-                                                    className={buttonVariants({ variant: "outline", size: "sm", className: "w-full" })}
-                                                >
-                                                    View
-                                                </Link>
-                                                <DropdownMenu>
-                                                    <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-8 w-8" />}>
-                                                        <MoreHorizontal className="h-4 w-4" />
-                                                    </DropdownMenuTrigger>
-                                                    <DropdownMenuContent align="end">
-                                                        <DropdownMenuItem render={<Link href={route("administrators.students.edit", row.id)} />}>
-                                                            Edit
-                                                        </DropdownMenuItem>
-                                                    </DropdownMenuContent>
-                                                </DropdownMenu>
-                                            </CardFooter>
-                                        </Card>
-                                    ))}
-                                </div>
-                                {/* Manual Pagination for Grid View using the same style as Table */}
-                                <div className="mt-4 flex items-center justify-between border-t pt-4">
-                                    <div className="text-muted-foreground text-sm">
-                                        Showing {visiblePagination.from} to {visiblePagination.to} of {visiblePagination.total} entries
+                                                </CardContent>
+                                                <CardFooter className="flex gap-2 pt-0">
+                                                    <AdminLink
+                                                        href={route("administrators.students.show", row.id)}
+                                                        className={buttonVariants({ variant: "outline", size: "sm", className: "w-full" })}
+                                                    >
+                                                        View
+                                                    </AdminLink>
+                                                    <DropdownMenu>
+                                                        <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-8 w-8" />}>
+                                                            <MoreHorizontal className="h-4 w-4" />
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent align="end">
+                                                            <DropdownMenuItem
+                                                                render={<AdminLink href={route("administrators.students.edit", row.id)} />}
+                                                            >
+                                                                Edit
+                                                            </DropdownMenuItem>
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
+                                                </CardFooter>
+                                            </Card>
+                                        ))}
                                     </div>
-                                    <div className="flex gap-2">
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            disabled={!visiblePagination.prev_page_url}
-                                            onClick={() => navigateToStudentsPage(visiblePagination.prev_page_url)}
-                                        >
-                                            Previous
-                                        </Button>
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            disabled={!visiblePagination.next_page_url}
-                                            onClick={() => navigateToStudentsPage(visiblePagination.next_page_url)}
-                                        >
-                                            Next
-                                        </Button>
+                                    {/* Manual Pagination for Grid View using the same style as Table */}
+                                    <div className="mt-4 flex items-center justify-between border-t pt-4">
+                                        <div className="text-muted-foreground text-sm">
+                                            Showing {localPagination.from} to {localPagination.to} of {localPagination.total} entries
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                disabled={localPagination.current_page === 1}
+                                                onClick={() => setPageIndex((currentPageIndex) => Math.max(0, currentPageIndex - 1))}
+                                            >
+                                                Previous
+                                            </Button>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                disabled={localPagination.current_page === localPagination.last_page}
+                                                onClick={() =>
+                                                    setPageIndex((currentPageIndex) => Math.min(localPagination.last_page - 1, currentPageIndex + 1))
+                                                }
+                                            >
+                                                Next
+                                            </Button>
+                                        </div>
                                     </div>
-                                </div>
-                            </>
-                        )}
-                    </TabsContent>
-                </Tabs>
+                                </>
+                            )}
+                        </TabsContent>
+                    </Tabs>
+                </AdminDeferredSection>
             </div>
 
             <AlertDialog open={!!softDeleteTarget} onOpenChange={(open) => !open && setSoftDeleteTarget(null)}>

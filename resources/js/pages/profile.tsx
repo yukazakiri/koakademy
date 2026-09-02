@@ -89,6 +89,8 @@ type StudentProfileCompletion = {
 
 type StudentProfileTab = "basic" | "personal" | "family" | "education" | "reporting";
 
+type GraduationYearValue = string | number | null | undefined;
+
 const normalizeStudentGender = (gender?: string | null): string => {
     const normalizedGender = (gender ?? "")
         .trim()
@@ -97,6 +99,8 @@ const normalizeStudentGender = (gender?: string | null): string => {
 
     return ["male", "female", "other", "prefer_not_to_say"].includes(normalizedGender) ? normalizedGender : "";
 };
+
+const normalizeGraduationYear = (year: GraduationYearValue): string => (year === null || year === undefined ? "" : `${year}`);
 
 const tabForStudentFormErrors = (errors: Record<string, string>): StudentProfileTab => {
     const errorKeys = Object.keys(errors);
@@ -305,17 +309,17 @@ export default function ProfilePage() {
             };
             education?: {
                 elementary_school?: string;
-                elementary_year_graduated?: string;
+                elementary_year_graduated?: GraduationYearValue;
                 high_school?: string;
-                high_school_year_graduated?: string;
+                high_school_year_graduated?: GraduationYearValue;
                 senior_high_school?: string;
-                senior_high_year_graduated?: string;
+                senior_high_year_graduated?: GraduationYearValue;
                 college_school?: string;
                 college_course?: string;
-                college_year_graduated?: string;
+                college_year_graduated?: GraduationYearValue;
                 vocational_school?: string;
                 vocational_course?: string;
-                vocational_year_graduated?: string;
+                vocational_year_graduated?: GraduationYearValue;
             };
             parents?: {
                 father_name?: string;
@@ -495,17 +499,17 @@ export default function ProfilePage() {
         },
         education: {
             elementary_school: student?.education?.elementary_school || "",
-            elementary_year_graduated: student?.education?.elementary_year_graduated || "",
+            elementary_year_graduated: normalizeGraduationYear(student?.education?.elementary_year_graduated),
             high_school: student?.education?.high_school || "",
-            high_school_year_graduated: student?.education?.high_school_year_graduated || "",
+            high_school_year_graduated: normalizeGraduationYear(student?.education?.high_school_year_graduated),
             senior_high_school: student?.education?.senior_high_school || "",
-            senior_high_year_graduated: student?.education?.senior_high_year_graduated || "",
+            senior_high_year_graduated: normalizeGraduationYear(student?.education?.senior_high_year_graduated),
             college_school: student?.education?.college_school || "",
             college_course: student?.education?.college_course || "",
-            college_year_graduated: student?.education?.college_year_graduated || "",
+            college_year_graduated: normalizeGraduationYear(student?.education?.college_year_graduated),
             vocational_school: student?.education?.vocational_school || "",
             vocational_course: student?.education?.vocational_course || "",
-            vocational_year_graduated: student?.education?.vocational_year_graduated || "",
+            vocational_year_graduated: normalizeGraduationYear(student?.education?.vocational_year_graduated),
         },
         parents: {
             father_name: student?.parents?.father_name || "",

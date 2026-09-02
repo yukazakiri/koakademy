@@ -729,12 +729,28 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
                                             <Card
                                                 key={row.id}
                                                 className="cursor-pointer transition-shadow hover:shadow-md"
+                                                role="link"
+                                                tabIndex={0}
+                                                aria-label={`View ${row.name}`}
                                                 onClick={(e) => {
                                                     // Don't navigate if clicking on buttons or links
                                                     const target = e.target as HTMLElement;
                                                     if (target.closest("button") || target.closest("a")) {
                                                         return;
                                                     }
+                                                    adminVisit(route("administrators.students.show", row.id));
+                                                }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key !== "Enter" && e.key !== " ") {
+                                                        return;
+                                                    }
+
+                                                    const target = e.target as HTMLElement;
+                                                    if (target.closest("button") || target.closest("a")) {
+                                                        return;
+                                                    }
+
+                                                    e.preventDefault();
                                                     adminVisit(route("administrators.students.show", row.id));
                                                 }}
                                             >

@@ -196,7 +196,7 @@ interface AdminDeferredSectionProps {
     variant?: AdminSkeletonVariant;
     label?: string;
     className?: string;
-    children: ReactNode | ((props: { reloading: boolean }) => ReactNode);
+    children: ReactNode;
 }
 
 export function AdminDeferredSection({ data, name, variant = "list", label = "Loading section", className, children }: AdminDeferredSectionProps) {

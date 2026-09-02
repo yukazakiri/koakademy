@@ -1,18 +1,13 @@
-import type { ResolvedComponent } from "@inertiajs/react";
 import { createInertiaApp } from "@inertiajs/react";
 import createServer from "@inertiajs/react/server";
-import { resolvePageComponent } from "laravel-vite-plugin/inertia-helpers";
 import ReactDOMServer from "react-dom/server";
 
 import { resolveBranding, type Branding } from "@/lib/branding";
+import { resolveInertiaPage, type InertiaPageModule, type InertiaPageModules } from "@/lib/inertia-page-resolver";
 import "./bones/registry";
 
-type InertiaPageModule = {
-    default: ResolvedComponent;
-};
-
-const appPages = import.meta.glob<InertiaPageModule>("./pages/**/*.tsx");
-const modulePages = {
+const appPages: InertiaPageModules = import.meta.glob<InertiaPageModule>("./pages/**/*.tsx");
+const modulePages: InertiaPageModules = {
     ...import.meta.glob<InertiaPageModule>("../../Modules/**/resources/assets/js/Pages/**/*.tsx"),
     ...import.meta.glob<InertiaPageModule>("../../vendor/*/*/resources/assets/js/Pages/**/*.tsx"),
 };
@@ -26,13 +21,7 @@ createServer((page) =>
             const appName = resolveBranding(props.branding).appName;
             return title ? `${title} - ${appName}` : appName;
         },
-        resolve: async (name) => {
-            const modulePagePath = Object.keys(modulePages).find((path) => path.endsWith(`/resources/assets/js/Pages/${name}.tsx`));
-
-            const module = modulePagePath ? await modulePages[modulePagePath]() : await resolvePageComponent(`./pages/${name}.tsx`, appPages);
-
-            return module.default;
-        },
+        resolve: (name) => resolveInertiaPage(name, appPages, modulePages),
         setup: ({ App, props }) => <App {...props} />,
     }),
 );

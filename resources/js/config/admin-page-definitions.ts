@@ -11,6 +11,8 @@ export interface AdminPageDefinition {
 
 type PageDefinitionInput = Omit<AdminPageDefinition, "skeleton" | "loadingProps" | "fixture">;
 
+const UNMATCHABLE_CURRICULUM_INDEX_ALIAS = /a^/; // Fixture and component registration only; never resolve this route.
+
 function pageDefinition(input: PageDefinitionInput): AdminPageDefinition {
     const skeleton = `admin-${input.component.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 
@@ -53,7 +55,7 @@ const definitions: PageDefinitionInput[] = [
     { routePattern: /^\/administrators\/faculties\/(?!create$)[^/]+$/, component: "administrators/faculties/show", variant: "detail" },
     { routePattern: /^\/administrators\/faculties\/create$/, component: "administrators/faculties/create", variant: "form" },
     { routePattern: /^\/administrators\/faculties$/, component: "administrators/faculties/index", variant: "list" },
-    { routePattern: /^\/administrators\/finance\/payments\/[^/]+$/, component: "administrators/finance/receipt", variant: "detail" },
+    { routePattern: /^\/administrators\/finance\/payments\/(?!create$)[^/]+$/, component: "administrators/finance/receipt", variant: "detail" },
     { routePattern: /^\/administrators\/finance\/receipt\/[^/]+$/, component: "administrators/finance/receipt", variant: "detail" },
     {
         routePattern: /^\/administrators\/finance\/tuition-adjustments\/imports\/[^/]+$/,
@@ -205,7 +207,7 @@ const definitions: PageDefinitionInput[] = [
     { routePattern: /^\/administrators\/system-management\/pulse$/, component: "administrators/system-management/pulse", variant: "analytics" },
     { routePattern: /^\/administrators\/system-management$/, component: "administrators/system-management/index", variant: "settings" },
     { routePattern: /^\/administrators\/dashboard$/, component: "administrators/dashboard", variant: "dashboard" },
-    { routePattern: /a^/, component: "administrators/curriculum/programs/index", variant: "list" },
+    { routePattern: UNMATCHABLE_CURRICULUM_INDEX_ALIAS, component: "administrators/curriculum/programs/index", variant: "list" },
 ];
 
 export const ADMIN_PAGE_DEFINITIONS = definitions.map(pageDefinition);

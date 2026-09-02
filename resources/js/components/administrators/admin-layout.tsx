@@ -28,6 +28,16 @@ interface AdminLayoutProps {
     children: React.ReactNode;
 }
 
+function isSameUrlWithoutHash(url: URL, location: Location): boolean {
+    const destination = new URL(url.toString(), location.origin);
+    const current = new URL(location.href);
+
+    destination.hash = "";
+    current.hash = "";
+
+    return destination.href === current.href;
+}
+
 export default function AdminLayout({ user, title, children }: AdminLayoutProps) {
     const { announcements, auth, institutionOnboarding } = usePage<PageProps>().props;
     const resolvedUser = auth?.user ?? user;
@@ -35,7 +45,9 @@ export default function AdminLayout({ user, title, children }: AdminLayoutProps)
 
     useEffect(() => {
         const removeStartListener = router.on("start", ({ detail }) => {
-            if (detail.visit.method !== "get") {
+            const isPartialVisit = detail.visit.only.length > 0 || detail.visit.except.length > 0 || detail.visit.reset.length > 0;
+
+            if (detail.visit.method !== "get" || isPartialVisit || isSameUrlWithoutHash(detail.visit.url, window.location)) {
                 return;
             }
 

@@ -222,11 +222,21 @@ it('registers every administrator page component with an admin skeleton definiti
     ])->pluck(1)->unique();
 
     foreach ($components as $component) {
-        $skeleton = 'admin-'.preg_replace('/[^a-z0-9]+/', '-', mb_strtolower($component));
+        $definitionPattern = '/\{[^}]*component: "'.preg_quote($component, '/').'"[^}]*variant: "[^"]+"[^}]*\}/s';
+        preg_match($definitionPattern, $definitionSource, $definitionMatches);
 
-        expect($definitionSource)->toContain("component: \"{$component}\"");
-        expect($definitionSource)->toContain('skeleton');
-        expect($registrySource)->toContain($skeleton);
+        expect($definitionMatches)->not->toBeEmpty();
+
+        $definitionEntry = $definitionMatches[0];
+        preg_match('/component: "([^"]+)"/', $definitionEntry, $componentMatches);
+
+        expect($componentMatches[1] ?? null)->toBe($component);
+
+        $skeleton = 'admin-'.preg_replace('/[^a-z0-9]+/', '-', mb_strtolower($componentMatches[1]));
+        $registryIdentifier = preg_replace('/[^a-z0-9]+/', '_', mb_strtolower($skeleton));
+
+        expect($registrySource)->toContain("  \"{$skeleton}\": _{$registryIdentifier},");
+        expect(is_file(resource_path("js/bones/{$skeleton}.bones.json")))->toBeTrue();
     }
 
     expect(count($boneFiles))->toBeGreaterThanOrEqual($components->count());

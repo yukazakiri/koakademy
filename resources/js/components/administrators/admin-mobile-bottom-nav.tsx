@@ -1,20 +1,11 @@
 "use client";
 
 import { triggerGlobalCommandPalette } from "@/components/global-command-palette";
+import { AdminLink } from "@/lib/admin-navigation";
 import { cn } from "@/lib/utils";
 import type { User } from "@/types/user";
-import { Link, usePage } from "@inertiajs/react";
-import {
-    IconBooks,
-    IconBriefcase,
-    IconCash,
-    IconDashboard,
-    IconHelp,
-    IconSchool,
-    IconServer,
-    IconTools,
-    IconUser,
-} from "@tabler/icons-react";
+import { usePage } from "@inertiajs/react";
+import { IconBooks, IconBriefcase, IconCash, IconDashboard, IconHelp, IconSchool, IconServer, IconTools, IconUser } from "@tabler/icons-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -71,7 +62,16 @@ function useScrollDirection() {
 
 function IconMore() {
     return (
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+            width="22"
+            height="22"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        >
             <circle cx="12" cy="12" r="1" />
             <circle cx="12" cy="5" r="1" />
             <circle cx="12" cy="19" r="1" />
@@ -154,12 +154,12 @@ export function AdminMobileBottomNav() {
                 initial={false}
                 animate={{ y: visible ? 0 : 100 }}
                 transition={{ type: "spring", stiffness: 400, damping: 32 }}
-                className="md:hidden fixed bottom-0 left-0 right-0 z-50 isolate"
+                className="fixed right-0 bottom-0 left-0 isolate z-50 md:hidden"
                 onTouchStart={handleTouchStart}
                 onTouchEnd={handleTouchEnd}
             >
                 {/* Single cohesive glass backdrop */}
-                <div className="absolute inset-0 bg-background/80 backdrop-blur-2xl backdrop-saturate-150 border-t border-border/40 shadow-[0_-4px_24px_rgba(0,0,0,0.06)] dark:shadow-[0_-4px_24px_rgba(0,0,0,0.25)]" />
+                <div className="bg-background/80 border-border/40 absolute inset-0 border-t shadow-[0_-4px_24px_rgba(0,0,0,0.06)] backdrop-blur-2xl backdrop-saturate-150 dark:shadow-[0_-4px_24px_rgba(0,0,0,0.25)]" />
 
                 {/* Compact nav row */}
                 <div
@@ -171,21 +171,21 @@ export function AdminMobileBottomNav() {
                         const isActive = activeId === section.id;
 
                         return (
-                            <Link
+                            <AdminLink
                                 key={section.id}
                                 href={section.link}
                                 prefetch
                                 cacheFor="30s"
                                 onClick={() => triggerHaptic()}
                                 className={cn(
-                                    "relative flex flex-1 flex-col items-center justify-center gap-[3px] py-1.5 select-none transition-colors",
-                                    isActive ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                                    "relative flex flex-1 flex-col items-center justify-center gap-[3px] py-1.5 transition-colors select-none",
+                                    isActive ? "text-primary" : "text-muted-foreground hover:text-foreground",
                                 )}
                             >
                                 {isActive && (
                                     <motion.div
                                         layoutId="admin-nav-pill"
-                                        className="absolute inset-x-1.5 inset-y-0.5 bg-primary/10 rounded-xl"
+                                        className="bg-primary/10 absolute inset-x-1.5 inset-y-0.5 rounded-xl"
                                         transition={{ type: "spring", stiffness: 500, damping: 35 }}
                                     />
                                 )}
@@ -195,21 +195,18 @@ export function AdminMobileBottomNav() {
                                     animate={{ scale: isActive ? 1.06 : 1, y: isActive ? -1 : 0 }}
                                     transition={{ type: "spring", stiffness: 500, damping: 30 }}
                                 >
-                                    <Icon
-                                        className="size-5 transition-colors duration-200"
-                                        stroke={isActive ? 2.2 : 1.5}
-                                    />
+                                    <Icon className="size-5 transition-colors duration-200" stroke={isActive ? 2.2 : 1.5} />
                                 </motion.div>
 
                                 <span
                                     className={cn(
                                         "relative z-10 text-[10px] font-semibold tracking-wide transition-colors duration-200",
-                                        isActive ? "text-primary" : "text-muted-foreground/70"
+                                        isActive ? "text-primary" : "text-muted-foreground/70",
                                     )}
                                 >
                                     {section.label}
                                 </span>
-                            </Link>
+                            </AdminLink>
                         );
                     })}
 
@@ -220,10 +217,10 @@ export function AdminMobileBottomNav() {
                                 triggerHaptic();
                                 setShowMore(true);
                             }}
-                            className="relative flex flex-1 flex-col items-center justify-center gap-[3px] py-1.5 select-none text-muted-foreground hover:text-foreground transition-colors"
+                            className="text-muted-foreground hover:text-foreground relative flex flex-1 flex-col items-center justify-center gap-[3px] py-1.5 transition-colors select-none"
                         >
                             <IconMore />
-                            <span className="text-[10px] font-semibold tracking-wide text-muted-foreground/70">More</span>
+                            <span className="text-muted-foreground/70 text-[10px] font-semibold tracking-wide">More</span>
                         </button>
                     )}
                 </div>
@@ -237,7 +234,7 @@ export function AdminMobileBottomNav() {
                         animate={{ y: 0 }}
                         exit={{ y: "100%" }}
                         transition={{ type: "spring", stiffness: 400, damping: 35 }}
-                        className="fixed inset-x-0 bottom-0 z-[60] bg-background/95 backdrop-blur-2xl border-t rounded-t-2xl md:hidden"
+                        className="bg-background/95 fixed inset-x-0 bottom-0 z-[60] rounded-t-2xl border-t backdrop-blur-2xl md:hidden"
                         onTouchStart={(e) => {
                             const t = e.touches[0];
                             touchStart.current = { x: t.clientX, y: t.clientY, time: Date.now() };
@@ -250,26 +247,23 @@ export function AdminMobileBottomNav() {
                         }}
                     >
                         <div className="flex justify-center pt-2 pb-1">
-                            <div className="h-1 w-9 rounded-full bg-foreground/10" />
+                            <div className="bg-foreground/10 h-1 w-9 rounded-full" />
                         </div>
-                        <div className="flex items-center justify-between px-4 py-2 border-b">
+                        <div className="flex items-center justify-between border-b px-4 py-2">
                             <span className="text-sm font-medium">All Sections</span>
-                            <button
-                                onClick={() => setShowMore(false)}
-                                className="text-muted-foreground hover:text-foreground p-1"
-                            >
+                            <button onClick={() => setShowMore(false)} className="text-muted-foreground hover:text-foreground p-1">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                     <path d="M18 6L6 18M6 6l12 12" />
                                 </svg>
                             </button>
                         </div>
-                        <div className="grid grid-cols-4 gap-1 px-2 py-3 max-h-[50vh] overflow-y-auto">
+                        <div className="grid max-h-[50vh] grid-cols-4 gap-1 overflow-y-auto px-2 py-3">
                             {sections.map((section) => {
                                 const Icon = SECTION_ICONS[section.id];
                                 const isActive = activeId === section.id;
 
                                 return (
-                                    <Link
+                                    <AdminLink
                                         key={section.id}
                                         href={section.link}
                                         prefetch
@@ -279,13 +273,13 @@ export function AdminMobileBottomNav() {
                                             setShowMore(false);
                                         }}
                                         className={cn(
-                                            "flex flex-col items-center gap-1.5 py-2.5 px-1 rounded-xl transition-colors",
-                                            isActive ? "text-primary bg-primary/10" : "text-muted-foreground hover:bg-accent"
+                                            "flex flex-col items-center gap-1.5 rounded-xl px-1 py-2.5 transition-colors",
+                                            isActive ? "text-primary bg-primary/10" : "text-muted-foreground hover:bg-accent",
                                         )}
                                     >
                                         <Icon className="size-5" stroke={isActive ? 2 : 1.5} />
-                                        <span className="text-[10px] font-medium text-center leading-tight">{section.label}</span>
-                                    </Link>
+                                        <span className="text-center text-[10px] leading-tight font-medium">{section.label}</span>
+                                    </AdminLink>
                                 );
                             })}
                         </div>

@@ -1,15 +1,17 @@
 import { AdminHeader } from "@/components/administrators/admin-header";
 import { AdministratorSidebar } from "@/components/administrators/admin-sidebar";
+import { AdminPageNavigationSkeleton, AdminSkeletonFixtureCatalog } from "@/components/administrators/admin-skeleton";
 import { InstitutionOnboarding, InstitutionSchoolLevelOnboarding } from "@/components/administrators/institution-school-level-onboarding";
 import { AnalyticsScripts } from "@/components/analytics-scripts";
 import { AnnouncementBanner } from "@/components/announcement-banner";
 import { GlobalCommandPalette } from "@/components/global-command-palette";
 import ImpersonationBanner from "@/components/impersonation-banner";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { resolveAdminPageDefinition } from "@/config/admin-page-definitions";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { User } from "@/types/user";
-import { usePage } from "@inertiajs/react";
-import React from "react";
+import { router, usePage } from "@inertiajs/react";
+import React, { useEffect, useState } from "react";
 
 interface PageProps {
     [key: string]: unknown;
@@ -26,9 +28,49 @@ interface AdminLayoutProps {
     children: React.ReactNode;
 }
 
+function isSameUrlWithoutHash(url: URL, location: Location): boolean {
+    const destination = new URL(url.toString(), location.origin);
+    const current = new URL(location.href);
+
+    destination.hash = "";
+    current.hash = "";
+
+    return destination.href === current.href;
+}
+
 export default function AdminLayout({ user, title, children }: AdminLayoutProps) {
     const { announcements, auth, institutionOnboarding } = usePage<PageProps>().props;
     const resolvedUser = auth?.user ?? user;
+    const [navigationDefinition, setNavigationDefinition] = useState<ReturnType<typeof resolveAdminPageDefinition>>(null);
+
+    useEffect(() => {
+        const removeStartListener = router.on("start", ({ detail }) => {
+            const isPartialVisit = detail.visit.only.length > 0 || detail.visit.except.length > 0 || detail.visit.reset.length > 0;
+
+            if (detail.visit.method !== "get" || isPartialVisit || isSameUrlWithoutHash(detail.visit.url, window.location)) {
+                return;
+            }
+
+            const definition = resolveAdminPageDefinition(String(detail.visit.url));
+
+            if (definition) {
+                setNavigationDefinition(definition);
+            }
+        });
+        const clearNavigationSkeleton = () => setNavigationDefinition(null);
+        const removeFinishListener = router.on("finish", clearNavigationSkeleton);
+        const removeCancelListener = router.on("cancel", clearNavigationSkeleton);
+
+        return () => {
+            removeStartListener();
+            removeFinishListener();
+            removeCancelListener();
+        };
+    }, []);
+
+    if (typeof window !== "undefined" && (window as Window & { __BONEYARD_BUILD?: boolean }).__BONEYARD_BUILD) {
+        return <AdminSkeletonFixtureCatalog />;
+    }
 
     if (!resolvedUser) {
         return null;
@@ -46,7 +88,7 @@ export default function AdminLayout({ user, title, children }: AdminLayoutProps)
                         <div className="@container/main flex flex-1 flex-col gap-2">
                             <div className="flex flex-col gap-4 px-4 py-4 pb-24 md:gap-6 md:py-6 md:pb-6 lg:px-6">
                                 <AnnouncementBanner announcements={announcements ?? []} />
-                                {children}
+                                {navigationDefinition ? <AdminPageNavigationSkeleton definition={navigationDefinition} /> : children}
                             </div>
                         </div>
                     </div>

@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { getRoutesForRoleWithModules, type ModuleAdminRoute } from "@/config/admin-routes";
+import { adminVisit } from "@/lib/admin-navigation";
 import type { User } from "@/types/user";
 import { router, usePage } from "@inertiajs/react";
 import {
@@ -254,7 +255,7 @@ export function GlobalCommandContent({
                     keywords: "admin home overview",
                     shortcut: "G D",
                     icon: <IconHome className="h-4 w-4" />,
-                    onSelect: () => router.visit("/administrators/dashboard"),
+                    onSelect: () => adminVisit("/administrators/dashboard"),
                 },
                 {
                     id: "nav:admin-students",
@@ -263,7 +264,7 @@ export function GlobalCommandContent({
                     keywords: "admin students records",
                     shortcut: "G S",
                     icon: <IconUser className="h-4 w-4" />,
-                    onSelect: () => router.visit("/administrators/students"),
+                    onSelect: () => adminVisit("/administrators/students"),
                 },
                 {
                     id: "nav:admin-classes",
@@ -272,7 +273,7 @@ export function GlobalCommandContent({
                     keywords: "admin classes sections",
                     shortcut: "G C",
                     icon: <IconUsers className="h-4 w-4" />,
-                    onSelect: () => router.visit("/administrators/classes"),
+                    onSelect: () => adminVisit("/administrators/classes"),
                 },
                 {
                     id: "nav:admin-faculties",
@@ -281,7 +282,7 @@ export function GlobalCommandContent({
                     keywords: "admin faculty staff instructors",
                     shortcut: "G F",
                     icon: <IconUsers className="h-4 w-4" />,
-                    onSelect: () => router.visit("/administrators/faculties"),
+                    onSelect: () => adminVisit("/administrators/faculties"),
                 },
                 {
                     id: "nav:admin-enrollments",
@@ -290,7 +291,7 @@ export function GlobalCommandContent({
                     keywords: "admin enrollments management",
                     shortcut: "G E",
                     icon: <IconChecklist className="h-4 w-4" />,
-                    onSelect: () => router.visit("/administrators/enrollments"),
+                    onSelect: () => adminVisit("/administrators/enrollments"),
                 },
                 {
                     id: "nav:admin-scheduling",
@@ -298,7 +299,7 @@ export function GlobalCommandContent({
                     label: "Scheduling & Timetable",
                     keywords: "admin scheduling timetable analytics",
                     icon: <IconCalendarStats className="h-4 w-4" />,
-                    onSelect: () => router.visit("/administrators/scheduling-analytics"),
+                    onSelect: () => adminVisit("/administrators/scheduling-analytics"),
                 },
                 {
                     id: "nav:admin-users",
@@ -307,7 +308,7 @@ export function GlobalCommandContent({
                     keywords: "admin users",
                     shortcut: "G U",
                     icon: <IconShieldLock className="h-4 w-4" />,
-                    onSelect: () => router.visit("/administrators/users"),
+                    onSelect: () => adminVisit("/administrators/users"),
                 },
                 {
                     id: "nav:admin-settings",
@@ -315,7 +316,7 @@ export function GlobalCommandContent({
                     label: "My Profile",
                     keywords: "admin profile settings",
                     icon: <IconSettings className="h-4 w-4" />,
-                    onSelect: () => router.visit("/administrators/settings"),
+                    onSelect: () => adminVisit("/administrators/settings"),
                 },
                 {
                     id: "nav:admin-system-management",
@@ -323,7 +324,7 @@ export function GlobalCommandContent({
                     label: "System Settings",
                     keywords: "institution campus enrollment grading branding notifications newsletter api integrations system health",
                     icon: <IconSettings className="h-4 w-4" />,
-                    onSelect: () => router.visit("/administrators/system-management"),
+                    onSelect: () => adminVisit("/administrators/system-management"),
                 },
                 {
                     id: "nav:help",
@@ -342,7 +343,7 @@ export function GlobalCommandContent({
                     label: route.title,
                     keywords: `${route.title} ${route.moduleSource ?? ""}`.trim(),
                     icon: route.icon ?? <IconGridDots className="h-4 w-4" />,
-                    onSelect: () => router.visit(route.link),
+                    onSelect: () => adminVisit(route.link),
                 }));
             const navigation = [...navigationCandidates, ...moduleNavigation].filter(
                 (item) => !item.routeId || allowedAdminRouteIds.has(item.routeId),
@@ -714,7 +715,7 @@ export function GlobalCommandContent({
     async function openStudentDetails(student: StudentSearchResult): Promise<void> {
         if (isAdminContext) {
             if (onSelect) onSelect();
-            router.visit(`/administrators/students/${student.id}`);
+            adminVisit(`/administrators/students/${student.id}`);
             return;
         }
 
@@ -789,7 +790,7 @@ export function GlobalCommandContent({
                                 onSelect={() => {
                                     if (onSelect) onSelect();
                                     if (isAdminContext) {
-                                        router.visit(`/administrators/enrollments/${result.id}`);
+                                        adminVisit(`/administrators/enrollments/${result.id}`);
                                     } else if (isStudentContext) {
                                         router.visit(`/student/tuition`);
                                     } else {
@@ -849,7 +850,7 @@ export function GlobalCommandContent({
                                 onSelect={() => {
                                     if (onSelect) onSelect();
                                     if (isAdminContext) {
-                                        router.visit(`/administrators/classes/${result.id}`);
+                                        adminVisit(`/administrators/classes/${result.id}`);
                                     } else if (isInstructor) {
                                         router.visit(`/classes/${result.id}`);
                                     } else {
@@ -892,7 +893,7 @@ export function GlobalCommandContent({
                                 onMouseEnter={() => prefetchAdministratorDestination(`/administrators/faculties/${result.id}`)}
                                 onSelect={() => {
                                     if (onSelect) onSelect();
-                                    router.visit(`/administrators/faculties/${result.id}`);
+                                    adminVisit(`/administrators/faculties/${result.id}`);
                                 }}
                                 className="flex items-center gap-3 py-3"
                             >
@@ -922,7 +923,7 @@ export function GlobalCommandContent({
                                 onMouseEnter={() => prefetchAdministratorDestination(`/administrators/users/${result.id}/edit`)}
                                 onSelect={() => {
                                     if (onSelect) onSelect();
-                                    router.visit(`/administrators/users/${result.id}/edit`);
+                                    adminVisit(`/administrators/users/${result.id}/edit`);
                                 }}
                                 className="flex items-center gap-3 py-3"
                             >

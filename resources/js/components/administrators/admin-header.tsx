@@ -25,8 +25,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { AdminLink } from "@/lib/admin-navigation";
 import { User } from "@/types/user";
-import { Link, router, usePage } from "@inertiajs/react";
+import { router, usePage } from "@inertiajs/react";
 import { IconSearch } from "@tabler/icons-react";
 import { ChevronDown, Clock, LogOut, Settings } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -229,12 +230,12 @@ export function AdminHeader({ title, user }: AdminHeaderProps) {
                                 <DropdownMenuLabel className="text-muted-foreground px-2 text-xs">Quick Actions</DropdownMenuLabel>
 
                                 <DropdownMenuItem asChild className="cursor-pointer rounded-lg">
-                                    <Link href={profileLink} prefetch cacheFor="30s" className="flex items-center gap-3 px-2 py-2.5">
+                                    <AdminLink href={profileLink} prefetch cacheFor="30s" className="flex items-center gap-3 px-2 py-2.5">
                                         <span className="bg-muted flex size-8 items-center justify-center rounded-lg">
                                             <Settings className="size-4" />
                                         </span>
                                         <span className="font-medium">Settings</span>
-                                    </Link>
+                                    </AdminLink>
                                 </DropdownMenuItem>
 
                                 <DropdownMenuSeparator />

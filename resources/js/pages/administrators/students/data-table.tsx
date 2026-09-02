@@ -32,6 +32,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { adminVisit } from "@/lib/admin-navigation";
 import { router } from "@inertiajs/react";
 import {
     CheckCircle,
@@ -596,7 +597,7 @@ export function DataTable<TData extends Student, TValue>({
                                         // Navigate to student detail page
                                         const student = row.original;
                                         if (student?.id) {
-                                            router.visit(route("administrators.students.show", student.id));
+                                            adminVisit(route("administrators.students.show", student.id));
                                         }
                                     }}
                                 >

@@ -207,6 +207,51 @@ it('keeps a complete administrator page catalog mapped to existing React compone
     }
 });
 
+it('registers every administrator page component with an admin skeleton definition', function (): void {
+    $definitionSource = file_get_contents(resource_path('js/config/admin-page-definitions.ts'));
+    $registrySource = file_get_contents(resource_path('js/bones/registry.ts'));
+    $boneFiles = glob(resource_path('js/bones/*.bones.json')) ?: [];
+
+    expect($definitionSource)->toBeString()->not->toBeEmpty();
+    expect($registrySource)->toBeString()->not->toBeEmpty();
+    expect($boneFiles)->not->toBeEmpty();
+
+    $components = collect([
+        ...administratorInertiaPageCatalog(),
+        ...administratorInertiaParameterizedPageCatalog(),
+    ])->pluck(1)->unique();
+
+    foreach ($components as $component) {
+        $definitionPattern = '/\{[^}]*component: "'.preg_quote($component, '/').'"[^}]*variant: "[^"]+"[^}]*\}/s';
+        preg_match($definitionPattern, $definitionSource, $definitionMatches);
+
+        expect($definitionMatches)->not->toBeEmpty();
+
+        $definitionEntry = $definitionMatches[0];
+        preg_match('/component: "([^"]+)"/', $definitionEntry, $componentMatches);
+
+        expect($componentMatches[1] ?? null)->toBe($component);
+
+        $skeleton = 'admin-'.preg_replace('/[^a-z0-9]+/', '-', mb_strtolower($componentMatches[1]));
+        $registryIdentifier = preg_replace('/[^a-z0-9]+/', '_', mb_strtolower($skeleton));
+
+        expect($registrySource)->toContain("  \"{$skeleton}\": _{$registryIdentifier},");
+        expect(is_file(resource_path("js/bones/{$skeleton}.bones.json")))->toBeTrue();
+    }
+
+    expect(count($boneFiles))->toBeGreaterThanOrEqual($components->count());
+
+    foreach ($boneFiles as $boneFile) {
+        $payload = json_decode(file_get_contents($boneFile), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($payload['breakpoints'] ?? [])->toHaveCount(3);
+
+        foreach ([375, 768, 1280] as $breakpoint) {
+            expect($payload['breakpoints'][(string) $breakpoint]['bones'] ?? [])->not->toBeEmpty();
+        }
+    }
+});
+
 function administratorInertiaParameterizedUrl(string $routeName, string $fixture): string
 {
     $school = app(TenantContext::class)->getCurrentSchool();

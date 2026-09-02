@@ -1,4 +1,5 @@
 import AdminLayout from "@/components/administrators/admin-layout";
+import { AdminDeferredSection } from "@/components/administrators/admin-skeleton";
 import { Filters, type FilterFieldConfig, type Filter as FilterType } from "@/components/reui/filters";
 import {
     AlertDialog,
@@ -20,8 +21,9 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AdminLink, adminVisit } from "@/lib/admin-navigation";
 import type { User } from "@/types/user";
-import { Head, Link, router } from "@inertiajs/react";
+import { Head, router } from "@inertiajs/react";
 import type { SortingState } from "@tanstack/react-table";
 import {
     Award,
@@ -96,16 +98,6 @@ function sortStudentRows(studentRows: Student[], sorting: SortingState): Student
 
         return activeSort.desc ? -comparison : comparison;
     });
-}
-
-function StudentRecordsLoadingState() {
-    return (
-        <div className="animate-pulse rounded-lg border p-6">
-            <div className="bg-muted h-4 w-1/3 rounded" />
-            <div className="bg-muted mt-3 h-4 w-full rounded" />
-            <div className="bg-muted mt-3 h-4 w-5/6 rounded" />
-        </div>
-    );
 }
 
 interface StudentsIndexProps {
@@ -561,10 +553,10 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
                             Find, review, and maintain authoritative student records across the institution.
                         </p>
                     </div>
-                    <Link href={route("administrators.students.create")} className={buttonVariants({ className: "gap-2" })}>
+                    <AdminLink href={route("administrators.students.create")} className={buttonVariants({ className: "gap-2" })}>
                         <Plus className="size-4" aria-hidden="true" />
                         Create student
-                    </Link>
+                    </AdminLink>
                 </header>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -705,11 +697,9 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
                     </CardContent>
                 </Card>
                 {/* Content */}
-                <Tabs value={viewMode} className="w-full">
-                    <TabsContent value="list" className="mt-0">
-                        {isStudentsLoading ? (
-                            <StudentRecordsLoadingState />
-                        ) : (
+                <AdminDeferredSection data="students" label="Loading student records" name="admin-administrators-students-index" variant="list">
+                    <Tabs value={viewMode} className="w-full">
+                        <TabsContent value="list" className="mt-0">
                             <DataTable
                                 columns={columns}
                                 data={sortedStudents}
@@ -724,123 +714,123 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
                                 onSortingChange={handleTableSortingChange}
                                 bulkActions={{ statusOptions: options.statuses }}
                             />
-                        )}
-                    </TabsContent>
+                        </TabsContent>
 
-                    <TabsContent value="grid" className="mt-0">
-                        {isStudentsLoading ? (
-                            <StudentRecordsLoadingState />
-                        ) : paginatedStudents.length === 0 ? (
-                            <div className="bg-muted/10 flex h-64 flex-col items-center justify-center rounded-lg border border-dashed">
-                                <Search className="mb-2 h-8 w-8 opacity-20" />
-                                <p className="text-muted-foreground">No students found matching your criteria.</p>
-                            </div>
-                        ) : (
-                            <>
-                                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                                    {paginatedStudents.map((row) => (
-                                        <Card
-                                            key={row.id}
-                                            className="cursor-pointer transition-shadow hover:shadow-md"
-                                            onClick={(e) => {
-                                                // Don't navigate if clicking on buttons or links
-                                                const target = e.target as HTMLElement;
-                                                if (target.closest("button") || target.closest("a")) {
-                                                    return;
-                                                }
-                                                router.visit(route("administrators.students.show", row.id));
-                                            }}
-                                        >
-                                            <CardHeader className="flex flex-row items-center gap-4 space-y-0 pb-2">
-                                                <Avatar className="h-12 w-12 border">
-                                                    <AvatarImage src={row.avatar_url ?? undefined} alt={row.name} />
-                                                    <AvatarFallback className="bg-primary/10 text-primary text-lg font-medium">
-                                                        {getInitials(row.name)}
-                                                    </AvatarFallback>
-                                                </Avatar>
-                                                <div className="flex flex-col overflow-hidden">
-                                                    <h3 className="truncate text-sm font-semibold" title={row.name}>
-                                                        {row.name}
-                                                    </h3>
-                                                    <p className="text-muted-foreground truncate text-xs">{row.student_id ?? "No ID"}</p>
-                                                </div>
-                                            </CardHeader>
-                                            <CardContent className="pt-4">
-                                                <div className="mb-3 flex flex-wrap gap-2">
-                                                    <Badge className={`text-[10px] font-bold shadow-none ${getStatusColor(row.status)}`}>
-                                                        {row.status ?? "Unknown"}
-                                                    </Badge>
-                                                    <Badge variant="outline" className="text-[10px]">
-                                                        {row.course ?? "N/A"}
-                                                    </Badge>
-                                                </div>
-                                                <div className="text-muted-foreground space-y-1 text-xs">
-                                                    <div className="flex items-center justify-between">
-                                                        <span>Year:</span>
-                                                        <span className="text-foreground font-medium">{row.academic_year}</span>
+                        <TabsContent value="grid" className="mt-0">
+                            {paginatedStudents.length === 0 ? (
+                                <div className="bg-muted/10 flex h-64 flex-col items-center justify-center rounded-lg border border-dashed">
+                                    <Search className="mb-2 h-8 w-8 opacity-20" />
+                                    <p className="text-muted-foreground">No students found matching your criteria.</p>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                                        {paginatedStudents.map((row) => (
+                                            <Card
+                                                key={row.id}
+                                                className="cursor-pointer transition-shadow hover:shadow-md"
+                                                onClick={(e) => {
+                                                    // Don't navigate if clicking on buttons or links
+                                                    const target = e.target as HTMLElement;
+                                                    if (target.closest("button") || target.closest("a")) {
+                                                        return;
+                                                    }
+                                                    adminVisit(route("administrators.students.show", row.id));
+                                                }}
+                                            >
+                                                <CardHeader className="flex flex-row items-center gap-4 space-y-0 pb-2">
+                                                    <Avatar className="h-12 w-12 border">
+                                                        <AvatarImage src={row.avatar_url ?? undefined} alt={row.name} />
+                                                        <AvatarFallback className="bg-primary/10 text-primary text-lg font-medium">
+                                                            {getInitials(row.name)}
+                                                        </AvatarFallback>
+                                                    </Avatar>
+                                                    <div className="flex flex-col overflow-hidden">
+                                                        <h3 className="truncate text-sm font-semibold" title={row.name}>
+                                                            {row.name}
+                                                        </h3>
+                                                        <p className="text-muted-foreground truncate text-xs">{row.student_id ?? "No ID"}</p>
                                                     </div>
-                                                    <div className="flex items-center justify-between">
-                                                        <span>Clearance:</span>
-                                                        <div className="flex items-center gap-1">
-                                                            {getClearanceIcon(row.previous_sem_clearance)}
-                                                            <span className="capitalize">
-                                                                {row.previous_sem_clearance === "cleared" ? "Cleared" : "Pending"}
-                                                            </span>
+                                                </CardHeader>
+                                                <CardContent className="pt-4">
+                                                    <div className="mb-3 flex flex-wrap gap-2">
+                                                        <Badge className={`text-[10px] font-bold shadow-none ${getStatusColor(row.status)}`}>
+                                                            {row.status ?? "Unknown"}
+                                                        </Badge>
+                                                        <Badge variant="outline" className="text-[10px]">
+                                                            {row.course ?? "N/A"}
+                                                        </Badge>
+                                                    </div>
+                                                    <div className="text-muted-foreground space-y-1 text-xs">
+                                                        <div className="flex items-center justify-between">
+                                                            <span>Year:</span>
+                                                            <span className="text-foreground font-medium">{row.academic_year}</span>
+                                                        </div>
+                                                        <div className="flex items-center justify-between">
+                                                            <span>Clearance:</span>
+                                                            <div className="flex items-center gap-1">
+                                                                {getClearanceIcon(row.previous_sem_clearance)}
+                                                                <span className="capitalize">
+                                                                    {row.previous_sem_clearance === "cleared" ? "Cleared" : "Pending"}
+                                                                </span>
+                                                            </div>
                                                         </div>
                                                     </div>
-                                                </div>
-                                            </CardContent>
-                                            <CardFooter className="flex gap-2 pt-0">
-                                                <Link
-                                                    href={route("administrators.students.show", row.id)}
-                                                    className={buttonVariants({ variant: "outline", size: "sm", className: "w-full" })}
-                                                >
-                                                    View
-                                                </Link>
-                                                <DropdownMenu>
-                                                    <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-8 w-8" />}>
-                                                        <MoreHorizontal className="h-4 w-4" />
-                                                    </DropdownMenuTrigger>
-                                                    <DropdownMenuContent align="end">
-                                                        <DropdownMenuItem render={<Link href={route("administrators.students.edit", row.id)} />}>
-                                                            Edit
-                                                        </DropdownMenuItem>
-                                                    </DropdownMenuContent>
-                                                </DropdownMenu>
-                                            </CardFooter>
-                                        </Card>
-                                    ))}
-                                </div>
-                                {/* Manual Pagination for Grid View using the same style as Table */}
-                                <div className="mt-4 flex items-center justify-between border-t pt-4">
-                                    <div className="text-muted-foreground text-sm">
-                                        Showing {localPagination.from} to {localPagination.to} of {localPagination.total} entries
+                                                </CardContent>
+                                                <CardFooter className="flex gap-2 pt-0">
+                                                    <AdminLink
+                                                        href={route("administrators.students.show", row.id)}
+                                                        className={buttonVariants({ variant: "outline", size: "sm", className: "w-full" })}
+                                                    >
+                                                        View
+                                                    </AdminLink>
+                                                    <DropdownMenu>
+                                                        <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-8 w-8" />}>
+                                                            <MoreHorizontal className="h-4 w-4" />
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent align="end">
+                                                            <DropdownMenuItem
+                                                                render={<AdminLink href={route("administrators.students.edit", row.id)} />}
+                                                            >
+                                                                Edit
+                                                            </DropdownMenuItem>
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
+                                                </CardFooter>
+                                            </Card>
+                                        ))}
                                     </div>
-                                    <div className="flex gap-2">
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            disabled={localPagination.current_page === 1}
-                                            onClick={() => setPageIndex((currentPageIndex) => Math.max(0, currentPageIndex - 1))}
-                                        >
-                                            Previous
-                                        </Button>
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            disabled={localPagination.current_page === localPagination.last_page}
-                                            onClick={() =>
-                                                setPageIndex((currentPageIndex) => Math.min(localPagination.last_page - 1, currentPageIndex + 1))
-                                            }
-                                        >
-                                            Next
-                                        </Button>
+                                    {/* Manual Pagination for Grid View using the same style as Table */}
+                                    <div className="mt-4 flex items-center justify-between border-t pt-4">
+                                        <div className="text-muted-foreground text-sm">
+                                            Showing {localPagination.from} to {localPagination.to} of {localPagination.total} entries
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                disabled={localPagination.current_page === 1}
+                                                onClick={() => setPageIndex((currentPageIndex) => Math.max(0, currentPageIndex - 1))}
+                                            >
+                                                Previous
+                                            </Button>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                disabled={localPagination.current_page === localPagination.last_page}
+                                                onClick={() =>
+                                                    setPageIndex((currentPageIndex) => Math.min(localPagination.last_page - 1, currentPageIndex + 1))
+                                                }
+                                            >
+                                                Next
+                                            </Button>
+                                        </div>
                                     </div>
-                                </div>
-                            </>
-                        )}
-                    </TabsContent>
-                </Tabs>
+                                </>
+                            )}
+                        </TabsContent>
+                    </Tabs>
+                </AdminDeferredSection>
             </div>
 
             <AlertDialog open={!!softDeleteTarget} onOpenChange={(open) => !open && setSoftDeleteTarget(null)}>

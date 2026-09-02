@@ -11,7 +11,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Link } from "@inertiajs/react";
+import { AdminLink } from "@/lib/admin-navigation";
 import { ColumnDef } from "@tanstack/react-table";
 import {
     ArrowUpDown,
@@ -293,10 +293,10 @@ export const columns: ColumnDef<Student>[] = [
                         <DropdownMenuLabel>Actions</DropdownMenuLabel>
                         <DropdownMenuItem onClick={() => navigator.clipboard.writeText(String(student.student_id))}>Copy Student ID</DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem render={<Link href={route("administrators.students.show", student.id)} />}>
+                        <DropdownMenuItem render={<AdminLink href={route("administrators.students.show", student.id)} />}>
                             <Eye className="mr-2 h-4 w-4" /> View Details
                         </DropdownMenuItem>
-                        <DropdownMenuItem render={<Link href={route("administrators.students.edit", student.id)} />}>
+                        <DropdownMenuItem render={<AdminLink href={route("administrators.students.edit", student.id)} />}>
                             <UserCheck className="mr-2 h-4 w-4" /> Edit Student
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />

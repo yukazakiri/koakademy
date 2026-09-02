@@ -609,6 +609,12 @@ html:not(.dark)::view-transition-new(root) {
     animation: shimmer 3s ease-in-out infinite;
 }
 
+@media (prefers-reduced-motion: reduce) {
+    .admin-boneyard-bone {
+        animation: none !important;
+    }
+}
+
 @layer base {
     * {
         @apply border-border outline-ring/50;

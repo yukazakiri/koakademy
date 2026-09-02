@@ -20,13 +20,14 @@ final class UpdateStudentProfileRequest extends FormRequest
      */
     public function rules(): array
     {
-        $studentId = Student::query()
+        $student = Student::query()
             ->where('user_id', $this->user()?->id)
-            ->value('id');
+            ->first(['id', 'profile_reporting_confirmed_at']);
+        $studentId = $student?->id;
         $incomeModes = array_keys(config('income_brackets.modes', []));
         $selectedMode = (string) $this->input('income_bracket_mode', config('income_brackets.default_mode', 'annual'));
         $incomeBracketKeys = $this->incomeBracketKeysForMode($selectedMode);
-        $reportingConfirmed = $this->boolean('reporting_confirmed');
+        $reportingValidationRequired = $this->boolean('reporting_confirmed') || $student?->profile_reporting_confirmed_at !== null;
         $usesSameParentIncome = $this->has('use_same_parent_income') ? $this->boolean('use_same_parent_income') : true;
 
         return [
@@ -92,9 +93,9 @@ final class UpdateStudentProfileRequest extends FormRequest
             'province_of_origin' => ['nullable', 'string', 'max:100'],
             'region_of_origin' => ['nullable', 'string', 'max:100'],
             'is_indigenous_person' => ['nullable', 'boolean'],
-            'indigenous_group' => ['nullable', Rule::requiredIf($reportingConfirmed && $this->boolean('is_indigenous_person')), 'string', 'max:100'],
+            'indigenous_group' => ['nullable', Rule::requiredIf($reportingValidationRequired && $this->boolean('is_indigenous_person')), 'string', 'max:100'],
             'is_pwd' => ['nullable', 'boolean'],
-            'pwd_type' => ['nullable', Rule::requiredIf($reportingConfirmed && $this->boolean('is_pwd')), 'string', 'max:100'],
+            'pwd_type' => ['nullable', Rule::requiredIf($reportingValidationRequired && $this->boolean('is_pwd')), 'string', 'max:100'],
             'is_solo_parent' => ['nullable', 'boolean'],
             'is_senior_citizen' => ['nullable', 'boolean'],
             'is_magna_carta' => ['nullable', 'boolean'],
@@ -102,9 +103,9 @@ final class UpdateStudentProfileRequest extends FormRequest
             'is_first_generation' => ['nullable', 'boolean'],
             'income_bracket_mode' => ['nullable', 'string', 'in:'.implode(',', $incomeModes)],
             'use_same_parent_income' => ['nullable', 'boolean'],
-            'family_income_bracket' => ['nullable', Rule::requiredIf($reportingConfirmed && $usesSameParentIncome), 'string', 'in:'.implode(',', $incomeBracketKeys)],
-            'father_income_bracket' => ['nullable', Rule::requiredIf($reportingConfirmed && ! $usesSameParentIncome), 'string', 'in:'.implode(',', $incomeBracketKeys)],
-            'mother_income_bracket' => ['nullable', Rule::requiredIf($reportingConfirmed && ! $usesSameParentIncome), 'string', 'in:'.implode(',', $incomeBracketKeys)],
+            'family_income_bracket' => ['nullable', Rule::requiredIf($reportingValidationRequired && $usesSameParentIncome), 'string', 'in:'.implode(',', $incomeBracketKeys)],
+            'father_income_bracket' => ['nullable', Rule::requiredIf($reportingValidationRequired && ! $usesSameParentIncome), 'string', 'in:'.implode(',', $incomeBracketKeys)],
+            'mother_income_bracket' => ['nullable', Rule::requiredIf($reportingValidationRequired && ! $usesSameParentIncome), 'string', 'in:'.implode(',', $incomeBracketKeys)],
             'reporting_confirmed' => ['nullable', 'boolean'],
         ];
     }
@@ -124,7 +125,7 @@ final class UpdateStudentProfileRequest extends FormRequest
                 'college_year_graduated',
                 'vocational_year_graduated',
             ] as $field) {
-                if (array_key_exists($field, $education) && $education[$field] !== null && $education[$field] !== '') {
+                if (array_key_exists($field, $education) && (is_int($education[$field]) || is_float($education[$field]))) {
                     $education[$field] = (string) $education[$field];
                 }
             }

@@ -429,6 +429,110 @@ it('saves numeric education years from non-reporting tabs without requiring blan
     expect($this->student->studentEducationInfo->{$seniorHighYearColumn})->toBe('2022');
 });
 
+it('revalidates reporting dependencies on non-reporting saves after confirmation', function (): void {
+    $confirmedAt = now()->subMinute()->startOfSecond();
+    $originalPhone = $this->student->phone;
+
+    $this->student->update([
+        'profile_reporting_confirmed_at' => $confirmedAt,
+        'is_indigenous_person' => false,
+        'is_pwd' => false,
+        'use_same_parent_income' => true,
+        'family_income_bracket' => 'below_250k',
+    ]);
+
+    $response = $this
+        ->actingAs($this->user)
+        ->put(route('student.profile.student.update'), [
+            'first_name' => $this->student->first_name,
+            'last_name' => $this->student->last_name,
+            'email' => $this->student->email,
+            'phone' => '+63 912 345 6789',
+            'birth_date' => '2000-01-01',
+            'gender' => 'male',
+            'is_indigenous_person' => true,
+            'indigenous_group' => '',
+            'is_pwd' => true,
+            'pwd_type' => '',
+            'income_bracket_mode' => 'annual',
+            'use_same_parent_income' => false,
+            'reporting_confirmed' => false,
+        ]);
+
+    $response->assertSessionHasErrors([
+        'indigenous_group',
+        'pwd_type',
+        'father_income_bracket',
+        'mother_income_bracket',
+    ]);
+
+    $student = $this->student->refresh();
+
+    expect($student->phone)->toBe($originalPhone)
+        ->and($student->profile_reporting_confirmed_at?->toDateTimeString())->toBe($confirmedAt->toDateTimeString());
+});
+
+it('allows valid non-reporting saves after reporting confirmation without refreshing confirmation', function (): void {
+    $confirmedAt = now()->subMinute()->startOfSecond();
+
+    $this->student->update([
+        'profile_reporting_confirmed_at' => $confirmedAt,
+        'is_indigenous_person' => true,
+        'indigenous_group' => 'Manobo',
+        'is_pwd' => false,
+        'pwd_type' => null,
+        'use_same_parent_income' => true,
+        'family_income_bracket' => 'below_250k',
+    ]);
+
+    $response = $this
+        ->actingAs($this->user)
+        ->put(route('student.profile.student.update'), [
+            'first_name' => $this->student->first_name,
+            'last_name' => $this->student->last_name,
+            'email' => $this->student->email,
+            'phone' => '+63 912 345 6789',
+            'birth_date' => '2000-01-01',
+            'gender' => 'male',
+            'is_indigenous_person' => true,
+            'indigenous_group' => 'Manobo',
+            'is_pwd' => false,
+            'income_bracket_mode' => 'annual',
+            'use_same_parent_income' => true,
+            'family_income_bracket' => 'below_250k',
+            'reporting_confirmed' => false,
+        ]);
+
+    $response->assertRedirect();
+    $response->assertSessionDoesntHaveErrors();
+
+    $student = $this->student->refresh();
+
+    expect($student->phone)->toBe('+63 912 345 6789')
+        ->and($student->profile_reporting_confirmed_at?->toDateTimeString())->toBe($confirmedAt->toDateTimeString());
+});
+
+it('rejects non-scalar graduation years with validation errors', function (mixed $graduationYear): void {
+    $response = $this
+        ->actingAs($this->user)
+        ->putJson(route('student.profile.student.update'), [
+            'first_name' => $this->student->first_name,
+            'last_name' => $this->student->last_name,
+            'email' => $this->student->email,
+            'education' => [
+                'high_school_year_graduated' => $graduationYear,
+            ],
+            'reporting_confirmed' => false,
+        ]);
+
+    $response
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['education.high_school_year_graduated']);
+})->with([
+    'array value' => [[2020]],
+    'object value' => [['year' => 2020]],
+]);
+
 it('requires family income when confirmed reporting uses shared parent income', function (): void {
     $response = $this
         ->actingAs($this->user)

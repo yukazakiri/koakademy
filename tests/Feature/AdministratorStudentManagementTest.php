@@ -325,7 +325,7 @@ it('force deletes a student and all of their related records', function (): void
         ->and(StudentStatusRecord::query()->where('student_id', $studentId)->exists())->toBeFalse();
 });
 
-it('shows the trashed students list when the trashed filter is set', function (): void {
+it('provides active and trashed students for the local status filter', function (): void {
     config(['activitylog.enabled' => false, 'inertia.testing.ensure_pages_exist' => false]);
     withoutVite();
 
@@ -339,8 +339,13 @@ it('shows the trashed students list when the trashed filter is set', function ()
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page
             ->component('administrators/students/index', false)
-            ->where('students.data.0.id', $trashed->id)
-            ->where('students.data.0.deleted_at', fn ($value) => $value !== null)
+            ->where('students.data', function ($students) use ($active, $trashed): bool {
+                return $students->contains(
+                    fn (array $student): bool => $student['id'] === $active->id && $student['deleted_at'] === null
+                ) && $students->contains(
+                    fn (array $student): bool => $student['id'] === $trashed->id && $student['deleted_at'] !== null
+                );
+            })
             ->where('filters.trashed', 'trashed')
         );
 
@@ -349,8 +354,14 @@ it('shows the trashed students list when the trashed filter is set', function ()
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page
             ->component('administrators/students/index', false)
-            ->where('students.data.0.id', $active->id)
-            ->where('students.data.0.deleted_at', null)
+            ->where('students.data', function ($students) use ($active, $trashed): bool {
+                return $students->contains(
+                    fn (array $student): bool => $student['id'] === $active->id && $student['deleted_at'] === null
+                ) && $students->contains(
+                    fn (array $student): bool => $student['id'] === $trashed->id && $student['deleted_at'] !== null
+                );
+            })
+            ->where('filters.trashed', 'active')
         );
 });
 

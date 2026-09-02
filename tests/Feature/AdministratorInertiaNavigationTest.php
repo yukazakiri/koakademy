@@ -360,6 +360,19 @@ it('advertises the admin shell deferred props on initial Inertia visits', functi
         ]);
 });
 
+it('defers the student records dataset during Inertia navigation', function (): void {
+    $user = administratorInertiaAuditUser();
+
+    $response = actingAs($user)
+        ->get(route('administrators.students.index'), administratorInertiaHeaders())
+        ->assertOk()
+        ->assertHeader('X-Inertia', 'true');
+
+    expect($response->json('deferredProps.student-directory'))
+        ->toContain('students')
+        ->and($response->json('props'))->not->toHaveKey('students');
+});
+
 it('caches module navigation discovery and supports explicit invalidation', function (): void {
     Cache::forget('admin-navigation-routes:v1');
 

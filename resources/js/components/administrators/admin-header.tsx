@@ -229,7 +229,7 @@ export function AdminHeader({ title, user }: AdminHeaderProps) {
                                 <DropdownMenuLabel className="text-muted-foreground px-2 text-xs">Quick Actions</DropdownMenuLabel>
 
                                 <DropdownMenuItem asChild className="cursor-pointer rounded-lg">
-                                    <Link href={profileLink} className="flex items-center gap-3 px-2 py-2.5">
+                                    <Link href={profileLink} prefetch cacheFor="30s" className="flex items-center gap-3 px-2 py-2.5">
                                         <span className="bg-muted flex size-8 items-center justify-center rounded-lg">
                                             <Settings className="size-4" />
                                         </span>

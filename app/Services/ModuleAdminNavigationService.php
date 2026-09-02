@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Nwidart\Modules\Contracts\RepositoryInterface;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
@@ -11,12 +12,34 @@ use SplFileInfo;
 
 final class ModuleAdminNavigationService
 {
-    public function __construct(private readonly RepositoryInterface $modules) {}
+    private const CACHE_KEY = 'admin-navigation-routes:v1';
+
+    public function __construct(
+        private readonly RepositoryInterface $modules,
+        private readonly CacheRepository $cache,
+    ) {}
 
     /**
      * @return array<int, array<string, mixed>>
      */
     public function getRoutes(): array
+    {
+        return $this->cache->remember(
+            self::CACHE_KEY,
+            now()->addMinutes(5),
+            fn (): array => $this->discoverRoutes(),
+        );
+    }
+
+    public function forgetCache(): void
+    {
+        $this->cache->forget(self::CACHE_KEY);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function discoverRoutes(): array
     {
         $routes = [];
 

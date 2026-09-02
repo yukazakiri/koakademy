@@ -41,6 +41,8 @@ export default function SystemManagementLayout({ user, access, activeSection, he
                             <div className="text-muted-foreground mb-3 flex flex-wrap items-center gap-1.5 text-xs font-medium">
                                 <Link
                                     href="/administrators/system-management"
+                                    prefetch
+                                    cacheFor="30s"
                                     className="hover:text-foreground focus-visible:ring-ring rounded-sm transition-colors focus-visible:ring-2 focus-visible:outline-none"
                                 >
                                     System Settings

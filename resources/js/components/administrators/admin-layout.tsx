@@ -13,7 +13,7 @@ import React from "react";
 
 interface PageProps {
     [key: string]: unknown;
-    announcements: any[];
+    announcements?: any[];
     institutionOnboarding?: InstitutionOnboarding;
     auth?: {
         user?: User | null;
@@ -45,7 +45,7 @@ export default function AdminLayout({ user, title, children }: AdminLayoutProps)
                     <div className="flex flex-1 flex-col">
                         <div className="@container/main flex flex-1 flex-col gap-2">
                             <div className="flex flex-col gap-4 px-4 py-4 pb-24 md:gap-6 md:py-6 md:pb-6 lg:px-6">
-                                <AnnouncementBanner announcements={announcements} />
+                                <AnnouncementBanner announcements={announcements ?? []} />
                                 {children}
                             </div>
                         </div>

@@ -24,6 +24,7 @@ use App\Services\StudentClassShareService;
 use App\Support\AdministratorSidebarCounts;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
+use Inertia\Inertia;
 use Inertia\Middleware;
 use Laravel\Pennant\Feature;
 use Modules\Announcement\Services\AnnouncementDataService;
@@ -63,6 +64,7 @@ final class HandleInertiaRequests extends Middleware
         $administratorSidebarCounts = app(AdministratorSidebarCounts::class);
         $socialiteProviderService = app(SocialiteProviderService::class);
         $generalSettingsService = app(GeneralSettingsService::class);
+        $isAdministratorPortal = $request->is('administrators') || $request->is('administrators/*');
 
         $featureValues = $onboardingService->getAllFeatureValues($user);
         $studentInformationUpdatesEnabled = $user && Feature::for($user)->active(StudentInformationUpdates::class);
@@ -87,11 +89,17 @@ final class HandleInertiaRequests extends Middleware
                 'settings' => $settingsService->getSettings(),
                 'socialAuthProviders' => $socialiteProviderService->enabledProviders(...),
                 'version' => config('app.version'),
-                'onboarding' => [
-                    'forceOnLogin' => (bool) config('onboarding.force_on_login'),
-                    'features' => $onboardingService->getOnboardingFeatures($user),
-                    'dismissEndpoint' => route('onboarding.dismiss'),
-                ],
+                'onboarding' => $isAdministratorPortal
+                    ? Inertia::defer(fn (): array => [
+                        'forceOnLogin' => (bool) config('onboarding.force_on_login'),
+                        'features' => $onboardingService->getOnboardingFeatures($user),
+                        'dismissEndpoint' => route('onboarding.dismiss'),
+                    ], 'admin-shell', true)
+                    : [
+                        'forceOnLogin' => (bool) config('onboarding.force_on_login'),
+                        'features' => $onboardingService->getOnboardingFeatures($user),
+                        'dismissEndpoint' => route('onboarding.dismiss'),
+                    ],
                 'featureFlags' => [
                     'experimentalKeys' => config('onboarding.experimental_feature_keys', []),
                     'enabledRoutes' => array_merge(
@@ -105,20 +113,36 @@ final class HandleInertiaRequests extends Middleware
                 ],
                 'facultyClasses' => $facultyClassService->getFacultyClasses($user),
                 'studentClasses' => $studentClassService->getStudentClasses($user),
-                'notifications' => $notificationService->transformNotifications($user),
-                'unreadNotificationsCount' => $notificationService->getUnreadCount($user),
-                'unresolvedHelpTicketsCount' => $onboardingService->getUnresolvedHelpTicketsCount($user),
+                'notifications' => $isAdministratorPortal
+                    ? Inertia::defer(fn (): array => $notificationService->transformNotifications($user), 'admin-shell', true)
+                    : $notificationService->transformNotifications($user),
+                'unreadNotificationsCount' => $isAdministratorPortal
+                    ? Inertia::defer(fn (): int => $notificationService->getUnreadCount($user), 'admin-shell', true)
+                    : $notificationService->getUnreadCount($user),
+                'unresolvedHelpTicketsCount' => $isAdministratorPortal
+                    ? Inertia::defer(fn (): int => $onboardingService->getUnresolvedHelpTicketsCount($user), 'admin-shell', true)
+                    : $onboardingService->getUnresolvedHelpTicketsCount($user),
                 'newsletter' => fn (): array => $this->getNewsletterData($user),
-                'adminSidebarCounts' => fn () => $administratorSidebarCounts->resolve($request),
+                'adminSidebarCounts' => $isAdministratorPortal
+                    ? Inertia::defer(fn (): ?array => $administratorSidebarCounts->resolve($request), 'admin-shell', true)
+                    : fn (): ?array => $administratorSidebarCounts->resolve($request),
                 'moduleAdminRoutes' => $moduleAdminNavigationService->getRoutes(),
-                'institutionOnboarding' => fn (): ?array => $this->getInstitutionOnboardingData($request, $user),
+                'institutionOnboarding' => $isAdministratorPortal
+                    ? Inertia::defer(fn (): ?array => $this->getInstitutionOnboardingData($request, $user), 'admin-shell', true)
+                    : fn (): ?array => $this->getInstitutionOnboardingData($request, $user),
             ],
             [
-                'announcements' => fn (): array => $this->getSharedAnnouncements(
-                    request: $request,
-                    user: $user,
-                    announcementService: $announcementService,
-                ),
+                'announcements' => $isAdministratorPortal
+                    ? Inertia::defer(fn (): array => $this->getSharedAnnouncements(
+                        request: $request,
+                        user: $user,
+                        announcementService: $announcementService,
+                    ), 'admin-shell', true)
+                    : fn (): array => $this->getSharedAnnouncements(
+                        request: $request,
+                        user: $user,
+                        announcementService: $announcementService,
+                    ),
             ]
         );
     }

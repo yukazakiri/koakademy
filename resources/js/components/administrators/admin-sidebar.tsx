@@ -369,7 +369,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                             return (
                                                 <SidebarMenuItem key={route.id}>
                                                     <SidebarMenuButton asChild isActive={isActive}>
-                                                        <Link href={route.link}>
+                                                        <Link href={route.link} prefetch cacheFor="30s">
                                                             {route.icon}
                                                             <div className="flex flex-col">
                                                                 <span>{route.title}</span>
@@ -402,7 +402,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                             return (
                                                 <SidebarMenuItem key={route.id}>
                                                     <SidebarMenuButton asChild isActive={isActive}>
-                                                        <Link href={route.link}>
+                                                        <Link href={route.link} prefetch cacheFor="30s">
                                                             {route.icon}
                                                             <span>{route.title}</span>
                                                             {badgeContent}
@@ -414,7 +414,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                                             return (
                                                                 <SidebarMenuSubItem key={idx}>
                                                                     <SidebarMenuSubButton asChild isActive={isSubActive}>
-                                                                        <Link href={sub.link}>
+                                                                        <Link href={sub.link} prefetch cacheFor="30s">
                                                                             {sub.icon}
                                                                             <span>{sub.title}</span>
                                                                         </Link>
@@ -433,7 +433,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                         return (
                                             <SidebarMenuItem key={route.id}>
                                                 <SidebarMenuButton asChild isActive={isActive}>
-                                                    <Link href={route.link}>
+                                                    <Link href={route.link} prefetch cacheFor="30s">
                                                         {route.icon}
                                                         <span>{route.title}</span>
                                                         {badgeContent}
@@ -452,6 +452,8 @@ export function AdministratorSidebar({ user }: { user: User }) {
                     <div className="flex items-center justify-between">
                         <Link
                             href="/changelog"
+                            prefetch
+                            cacheFor="30s"
                             className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium transition-colors"
                         >
                             <span className="inline-flex items-center gap-1">
@@ -492,7 +494,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                         <SidebarMenu>
                             <SidebarMenuItem>
                                 <SidebarMenuButton size="lg" asChild className="md:h-8 md:p-0">
-                                    <Link href="/administrators/dashboard">
+                                    <Link href="/administrators/dashboard" prefetch cacheFor="30s">
                                         <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center overflow-hidden rounded-lg">
                                             <img
                                                 src={branding.logo}
@@ -599,7 +601,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                                 return (
                                                     <SidebarMenuItem key={route.id}>
                                                         <SidebarMenuButton asChild isActive={isActive}>
-                                                            <Link href={route.link}>
+                                                            <Link href={route.link} prefetch cacheFor="30s">
                                                                 {route.icon}
                                                                 <div className="flex flex-col">
                                                                     <span>{route.title}</span>
@@ -635,7 +637,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                                 return (
                                                     <SidebarMenuItem key={route.id}>
                                                         <SidebarMenuButton asChild isActive={isActive}>
-                                                            <Link href={route.link}>
+                                                            <Link href={route.link} prefetch cacheFor="30s">
                                                                 {route.icon}
                                                                 <span>{route.title}</span>
                                                                 {badgeContent}
@@ -647,7 +649,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                                                 return (
                                                                     <SidebarMenuSubItem key={idx}>
                                                                         <SidebarMenuSubButton asChild isActive={isSubActive}>
-                                                                            <Link href={sub.link}>
+                                                                            <Link href={sub.link} prefetch cacheFor="30s">
                                                                                 {sub.icon}
                                                                                 <span>{sub.title}</span>
                                                                             </Link>
@@ -666,7 +668,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                             return (
                                                 <SidebarMenuItem key={route.id}>
                                                     <SidebarMenuButton asChild isActive={isActive}>
-                                                        <Link href={route.link}>
+                                                        <Link href={route.link} prefetch cacheFor="30s">
                                                             {route.icon}
                                                             <span>{route.title}</span>
                                                             {badgeContent}
@@ -685,6 +687,8 @@ export function AdministratorSidebar({ user }: { user: User }) {
                         <div className="flex items-center justify-between">
                             <Link
                                 href="/changelog"
+                                prefetch
+                                cacheFor="30s"
                                 className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium transition-colors"
                             >
                                 <span className="inline-flex items-center gap-1">

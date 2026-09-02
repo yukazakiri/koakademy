@@ -174,6 +174,8 @@ export function AdminMobileBottomNav() {
                             <Link
                                 key={section.id}
                                 href={section.link}
+                                prefetch
+                                cacheFor="30s"
                                 onClick={() => triggerHaptic()}
                                 className={cn(
                                     "relative flex flex-1 flex-col items-center justify-center gap-[3px] py-1.5 select-none transition-colors",
@@ -270,6 +272,8 @@ export function AdminMobileBottomNav() {
                                     <Link
                                         key={section.id}
                                         href={section.link}
+                                        prefetch
+                                        cacheFor="30s"
                                         onClick={() => {
                                             triggerHaptic();
                                             setShowMore(false);

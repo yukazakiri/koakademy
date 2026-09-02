@@ -19,8 +19,8 @@ import { formatDistanceToNow } from "date-fns";
 import { useEffect, useState, type ComponentProps, type MouseEvent } from "react";
 
 interface PageProps {
-    notifications: PortalNotification[];
-    unreadNotificationsCount: number;
+    notifications?: PortalNotification[];
+    unreadNotificationsCount?: number;
     auth?: {
         user?: {
             id: number;
@@ -51,10 +51,11 @@ export function NotificationsPopover({ baseUrl = "/notifications", inboxUrl }: N
     const { props } = usePage<PageProps>();
     const initialNotifications = props.notifications ?? [];
     const initialUnreadCount = props.unreadNotificationsCount ?? 0;
+    const hasNotificationData = props.notifications !== undefined;
     const userId = props.auth?.user?.id;
 
     // Local state for real-time updates
-    const [notifications, setNotifications] = useState<Notification[]>(initialNotifications);
+    const [notifications, setNotifications] = useState<PortalNotification[]>(initialNotifications);
     const [unreadCount, setUnreadCount] = useState(initialUnreadCount);
 
     // Sync with server data when page props change
@@ -170,7 +171,7 @@ export function NotificationsPopover({ baseUrl = "/notifications", inboxUrl }: N
         });
     };
 
-    const handleNotificationClick = (notification: Notification) => {
+    const handleNotificationClick = (notification: PortalNotification) => {
         // If there's an action URL, navigate to it
         if (notification.actionUrl) {
             router.visit(notification.actionUrl);
@@ -191,7 +192,7 @@ export function NotificationsPopover({ baseUrl = "/notifications", inboxUrl }: N
         }
     };
 
-    const handleActionClick = (e: MouseEvent, notification: Notification, action: NotificationAction) => {
+    const handleActionClick = (e: MouseEvent, notification: PortalNotification, action: NotificationAction) => {
         e.preventDefault();
         e.stopPropagation();
 
@@ -284,7 +285,11 @@ export function NotificationsPopover({ baseUrl = "/notifications", inboxUrl }: N
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
 
-                {notifications.length === 0 ? (
+                {!hasNotificationData ? (
+                    <div className="text-muted-foreground flex items-center justify-center py-8 text-sm" aria-live="polite">
+                        Loading notifications…
+                    </div>
+                ) : notifications.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-8 text-center">
                         <IconBellOff className="text-muted-foreground/50 mb-2 size-10" />
                         <p className="text-muted-foreground text-sm font-medium">No notifications</p>

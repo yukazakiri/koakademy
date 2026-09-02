@@ -148,6 +148,14 @@ function setLocalStorageSafe(key: string, value: string): void {
     }
 }
 
+function prefetchAdministratorDestination(href: string): void {
+    if (href !== "/administrators" && !href.startsWith("/administrators/")) {
+        return;
+    }
+
+    router.prefetch(href, {}, { cacheFor: "30s" });
+}
+
 async function downloadSchedulePdf(type: "timetable" | "matrix"): Promise<void> {
     const toastId = toast.loading("Queueing PDF export…", {
         description: `Preparing your schedule export (${type}).`,
@@ -773,6 +781,11 @@ export function GlobalCommandContent({
                         {enrollmentResults.map((result) => (
                             <CommandItem
                                 key={`enrollment:${result.id}`}
+                                onMouseEnter={() => {
+                                    if (isAdminContext) {
+                                        prefetchAdministratorDestination(`/administrators/enrollments/${result.id}`);
+                                    }
+                                }}
                                 onSelect={() => {
                                     if (onSelect) onSelect();
                                     if (isAdminContext) {
@@ -828,6 +841,11 @@ export function GlobalCommandContent({
                         {classResults.map((result) => (
                             <CommandItem
                                 key={`class:${result.id}`}
+                                onMouseEnter={() => {
+                                    if (isAdminContext) {
+                                        prefetchAdministratorDestination(`/administrators/classes/${result.id}`);
+                                    }
+                                }}
                                 onSelect={() => {
                                     if (onSelect) onSelect();
                                     if (isAdminContext) {
@@ -871,6 +889,7 @@ export function GlobalCommandContent({
                         {facultyResults.map((result) => (
                             <CommandItem
                                 key={`faculty:${result.id}`}
+                                onMouseEnter={() => prefetchAdministratorDestination(`/administrators/faculties/${result.id}`)}
                                 onSelect={() => {
                                     if (onSelect) onSelect();
                                     router.visit(`/administrators/faculties/${result.id}`);
@@ -900,6 +919,7 @@ export function GlobalCommandContent({
                         {userResults.map((result) => (
                             <CommandItem
                                 key={`user:${result.id}`}
+                                onMouseEnter={() => prefetchAdministratorDestination(`/administrators/users/${result.id}/edit`)}
                                 onSelect={() => {
                                     if (onSelect) onSelect();
                                     router.visit(`/administrators/users/${result.id}/edit`);

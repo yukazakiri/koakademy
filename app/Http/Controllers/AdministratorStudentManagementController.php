@@ -1142,7 +1142,7 @@ final class AdministratorStudentManagementController extends Controller
         };
     }
 
-    public function edit(Student $student): Response
+    public function edit(Student $student, CurriculumCapabilityResolver $capabilityResolver): Response
     {
         $student->loadMissing([
             'Course',
@@ -1173,7 +1173,7 @@ final class AdministratorStudentManagementController extends Controller
                 ];
             })->filter()->values(),
             'current_classes' => $student->getCurrentClasses(),
-            'options' => $this->getFormOptions(),
+            'options' => $this->getFormOptions($capabilityResolver),
         ]);
     }
 

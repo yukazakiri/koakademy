@@ -9,6 +9,7 @@ use App\Modules\Contracts\ModuleRelease;
 use App\Modules\ModuleManifestRepository;
 use App\Modules\ModuleStateRepository;
 use App\Modules\RegistryClient;
+use App\Services\ModuleAdminNavigationService;
 use Nwidart\Modules\Contracts\RepositoryInterface;
 
 it('targets the exact catalog release in the Composer update command', function (): void {
@@ -20,6 +21,7 @@ it('targets the exact catalog release in the Composer update command', function 
         new CompatibilityChecker($manifests),
         new ModuleStateRepository,
         Mockery::mock(RepositoryInterface::class),
+        app(ModuleAdminNavigationService::class),
     );
     $manifest = ModuleManifest::fromArray([
         'name' => 'Forms',

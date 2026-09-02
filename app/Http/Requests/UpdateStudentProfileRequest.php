@@ -26,6 +26,8 @@ final class UpdateStudentProfileRequest extends FormRequest
         $incomeModes = array_keys(config('income_brackets.modes', []));
         $selectedMode = (string) $this->input('income_bracket_mode', config('income_brackets.default_mode', 'annual'));
         $incomeBracketKeys = $this->incomeBracketKeysForMode($selectedMode);
+        $reportingConfirmed = $this->boolean('reporting_confirmed');
+        $usesSameParentIncome = $this->has('use_same_parent_income') ? $this->boolean('use_same_parent_income') : true;
 
         return [
             'first_name' => ['required', 'string', 'max:255'],
@@ -90,9 +92,9 @@ final class UpdateStudentProfileRequest extends FormRequest
             'province_of_origin' => ['nullable', 'string', 'max:100'],
             'region_of_origin' => ['nullable', 'string', 'max:100'],
             'is_indigenous_person' => ['nullable', 'boolean'],
-            'indigenous_group' => ['nullable', 'required_if:is_indigenous_person,true,1', 'string', 'max:100'],
+            'indigenous_group' => ['nullable', Rule::requiredIf($reportingConfirmed && $this->boolean('is_indigenous_person')), 'string', 'max:100'],
             'is_pwd' => ['nullable', 'boolean'],
-            'pwd_type' => ['nullable', 'required_if:is_pwd,true,1', 'string', 'max:100'],
+            'pwd_type' => ['nullable', Rule::requiredIf($reportingConfirmed && $this->boolean('is_pwd')), 'string', 'max:100'],
             'is_solo_parent' => ['nullable', 'boolean'],
             'is_senior_citizen' => ['nullable', 'boolean'],
             'is_magna_carta' => ['nullable', 'boolean'],
@@ -100,18 +102,37 @@ final class UpdateStudentProfileRequest extends FormRequest
             'is_first_generation' => ['nullable', 'boolean'],
             'income_bracket_mode' => ['nullable', 'string', 'in:'.implode(',', $incomeModes)],
             'use_same_parent_income' => ['nullable', 'boolean'],
-            'family_income_bracket' => ['nullable', 'required_if:use_same_parent_income,true,1', 'string', 'in:'.implode(',', $incomeBracketKeys)],
-            'father_income_bracket' => ['nullable', 'required_if:use_same_parent_income,false,0', 'string', 'in:'.implode(',', $incomeBracketKeys)],
-            'mother_income_bracket' => ['nullable', 'required_if:use_same_parent_income,false,0', 'string', 'in:'.implode(',', $incomeBracketKeys)],
+            'family_income_bracket' => ['nullable', Rule::requiredIf($reportingConfirmed && $usesSameParentIncome), 'string', 'in:'.implode(',', $incomeBracketKeys)],
+            'father_income_bracket' => ['nullable', Rule::requiredIf($reportingConfirmed && ! $usesSameParentIncome), 'string', 'in:'.implode(',', $incomeBracketKeys)],
+            'mother_income_bracket' => ['nullable', Rule::requiredIf($reportingConfirmed && ! $usesSameParentIncome), 'string', 'in:'.implode(',', $incomeBracketKeys)],
             'reporting_confirmed' => ['nullable', 'boolean'],
         ];
     }
 
     protected function prepareForValidation(): void
     {
-        $this->merge([
+        $education = $this->input('education');
+        $merge = [
             'gender' => $this->normalizeGender($this->input('gender')),
-        ]);
+        ];
+
+        if (is_array($education)) {
+            foreach ([
+                'elementary_year_graduated',
+                'high_school_year_graduated',
+                'senior_high_year_graduated',
+                'college_year_graduated',
+                'vocational_year_graduated',
+            ] as $field) {
+                if (array_key_exists($field, $education) && $education[$field] !== null && $education[$field] !== '') {
+                    $education[$field] = (string) $education[$field];
+                }
+            }
+
+            $merge['education'] = $education;
+        }
+
+        $this->merge($merge);
     }
 
     private function normalizeGender(mixed $gender): ?string

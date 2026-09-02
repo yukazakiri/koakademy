@@ -367,6 +367,7 @@ it('validates reporting details that depend on a selected support group or incom
             'is_pwd' => true,
             'income_bracket_mode' => 'annual',
             'use_same_parent_income' => false,
+            'reporting_confirmed' => true,
         ]);
 
     $response->assertSessionHasErrors([
@@ -375,6 +376,72 @@ it('validates reporting details that depend on a selected support group or incom
         'father_income_bracket',
         'mother_income_bracket',
     ]);
+});
+
+it('saves numeric education years from non-reporting tabs without requiring blank reporting fields', function (): void {
+    $response = $this
+        ->actingAs($this->user)
+        ->putJson(route('student.profile.student.update'), [
+            'first_name' => $this->student->first_name,
+            'middle_name' => $this->student->middle_name,
+            'last_name' => $this->student->last_name,
+            'email' => $this->student->email,
+            'phone' => $this->student->phone,
+            'address' => $this->student->address,
+            'birth_date' => $this->student->birth_date->format('Y-m-d'),
+            'gender' => $this->student->gender,
+            'education' => [
+                'elementary_school' => 'Sample Elementary School',
+                'elementary_year_graduated' => 2016,
+                'high_school' => 'Sample Junior High School',
+                'high_school_year_graduated' => 2020,
+                'senior_high_school' => 'Sample Senior High School',
+                'senior_high_year_graduated' => 2022,
+                'college_school' => 'Sample College',
+                'college_course' => 'BS Information Technology',
+                'college_year_graduated' => 2026,
+                'vocational_school' => 'Sample Vocational School',
+                'vocational_course' => 'Computer Servicing',
+                'vocational_year_graduated' => 2024,
+            ],
+            'is_indigenous_person' => true,
+            'indigenous_group' => '',
+            'is_pwd' => true,
+            'pwd_type' => '',
+            'income_bracket_mode' => 'annual',
+            'use_same_parent_income' => true,
+            'family_income_bracket' => '',
+            'reporting_confirmed' => false,
+        ]);
+
+    $response->assertRedirect();
+    $response->assertSessionDoesntHaveErrors();
+
+    $this->student->refresh();
+    $this->student->load('studentEducationInfo');
+
+    expect($this->student->studentEducationInfo)->not->toBeNull();
+
+    $seniorHighYearColumn = Schema::hasColumn('student_education_info', 'senior_high_year_graduated')
+        ? 'senior_high_year_graduated'
+        : 'senior_high_graduate_year';
+
+    expect($this->student->studentEducationInfo->{$seniorHighYearColumn})->toBe('2022');
+});
+
+it('requires family income when confirmed reporting uses shared parent income', function (): void {
+    $response = $this
+        ->actingAs($this->user)
+        ->put(route('student.profile.student.update'), [
+            'first_name' => $this->student->first_name,
+            'last_name' => $this->student->last_name,
+            'email' => $this->student->email,
+            'income_bracket_mode' => 'annual',
+            'use_same_parent_income' => true,
+            'reporting_confirmed' => true,
+        ]);
+
+    $response->assertSessionHasErrors(['family_income_bracket']);
 });
 
 it('clears dependent reporting details when the related category no longer applies', function (): void {

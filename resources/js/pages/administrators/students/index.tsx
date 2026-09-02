@@ -21,7 +21,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AdminLink, adminVisit } from "@/lib/admin-navigation";
+import { AdminLink } from "@/lib/admin-navigation";
 import type { User } from "@/types/user";
 import { Head, router } from "@inertiajs/react";
 import type { SortingState } from "@tanstack/react-table";
@@ -726,34 +726,7 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
                                 <>
                                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                                         {paginatedStudents.map((row) => (
-                                            <Card
-                                                key={row.id}
-                                                className="cursor-pointer transition-shadow hover:shadow-md"
-                                                role="link"
-                                                tabIndex={0}
-                                                aria-label={`View ${row.name}`}
-                                                onClick={(e) => {
-                                                    // Don't navigate if clicking on buttons or links
-                                                    const target = e.target as HTMLElement;
-                                                    if (target.closest("button") || target.closest("a")) {
-                                                        return;
-                                                    }
-                                                    adminVisit(route("administrators.students.show", row.id));
-                                                }}
-                                                onKeyDown={(e) => {
-                                                    if (e.key !== "Enter" && e.key !== " ") {
-                                                        return;
-                                                    }
-
-                                                    const target = e.target as HTMLElement;
-                                                    if (target.closest("button") || target.closest("a")) {
-                                                        return;
-                                                    }
-
-                                                    e.preventDefault();
-                                                    adminVisit(route("administrators.students.show", row.id));
-                                                }}
-                                            >
+                                            <Card key={row.id} className="transition-shadow hover:shadow-md">
                                                 <CardHeader className="flex flex-row items-center gap-4 space-y-0 pb-2">
                                                     <Avatar className="h-12 w-12 border">
                                                         <AvatarImage src={row.avatar_url ?? undefined} alt={row.name} />

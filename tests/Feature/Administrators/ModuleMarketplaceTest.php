@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\UserRole;
 use App\Models\User;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Inertia\Testing\AssertableInertia;
@@ -46,13 +47,16 @@ it('shows installed modules in the marketplace and persists status changes', fun
                 ->where('marketplace.modules.0.installed', true)
                 ->where('marketplace.modules.0.installation_source', 'source'));
 
+        Cache::put('admin-navigation-routes:v1', ['stale-route']);
+
         actingAs($user)
             ->post(portalUrlForAdministrators('/administrators/module-marketplace/Announcement/disable'))
             ->assertRedirect();
 
         expect(json_decode(File::get($statusesPath), true, 512, JSON_THROW_ON_ERROR)['Announcement'])->toBeFalse()
             ->and((bool) DB::table('module_installations')->where('module_name', 'Announcement')->value('enabled'))->toBeFalse()
-            ->and((bool) DB::table('module_installations')->where('module_name', 'Announcement')->value('restart_required'))->toBeTrue();
+            ->and((bool) DB::table('module_installations')->where('module_name', 'Announcement')->value('restart_required'))->toBeTrue()
+            ->and(Cache::has('admin-navigation-routes:v1'))->toBeFalse();
     } finally {
         File::delete($statusesPath);
     }

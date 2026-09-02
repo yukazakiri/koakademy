@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Administrator skeleton fixture catalog</title>
+        <style>
+            :root {
+                color-scheme: light;
+                font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+                background: #f8fafc;
+                color: #0f172a;
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+
+            body {
+                margin: 0;
+            }
+
+            .catalog {
+                width: 100%;
+                max-width: 1248px;
+                margin: 0 auto;
+                padding: 24px;
+            }
+
+            [data-boneyard] {
+                margin-bottom: 48px;
+            }
+
+            .fixture-surface {
+                width: 100%;
+                padding: 24px;
+                border: 1px solid #e2e8f0;
+                border-radius: 16px;
+                background: #ffffff;
+            }
+
+            .fixture-heading,
+            .fixture-toolbar,
+            .fixture-actions,
+            .fixture-field,
+            .fixture-table,
+            .fixture-panel,
+            .fixture-stat {
+                display: flex;
+            }
+
+            .fixture-heading,
+            .fixture-field,
+            .fixture-panel,
+            .fixture-stat {
+                flex-direction: column;
+            }
+
+            .fixture-heading {
+                gap: 8px;
+                margin-bottom: 24px;
+            }
+
+            .fixture-toolbar,
+            .fixture-actions {
+                flex-wrap: wrap;
+                gap: 12px;
+            }
+
+            .fixture-toolbar {
+                margin-bottom: 20px;
+            }
+
+            .fixture-actions {
+                justify-content: flex-end;
+                margin-top: 20px;
+            }
+
+            .fixture-stats,
+            .fixture-panels,
+            .fixture-form,
+            .fixture-detail {
+                display: grid;
+                gap: 16px;
+            }
+
+            .fixture-stats {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                margin-bottom: 24px;
+            }
+
+            .fixture-panels {
+                grid-template-columns: minmax(0, 1.6fr) minmax(240px, 1fr);
+            }
+
+            .fixture-detail {
+                grid-template-columns: minmax(0, 1.5fr) minmax(220px, 1fr);
+            }
+
+            .fixture-form {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .fixture-stat,
+            .fixture-panel,
+            .fixture-detail > .fixture-panel,
+            .fixture-table {
+                min-height: 120px;
+                padding: 16px;
+                border: 1px solid #e2e8f0;
+                border-radius: 12px;
+                background: #f8fafc;
+            }
+
+            .fixture-panel,
+            .fixture-detail > .fixture-panel {
+                min-height: 240px;
+                gap: 16px;
+            }
+
+            .fixture-detail > .fixture-panel:last-child {
+                grid-column: 1 / -1;
+                min-height: 180px;
+            }
+
+            .fixture-table {
+                min-height: 300px;
+                flex-direction: column;
+                gap: 12px;
+                overflow: hidden;
+            }
+
+            .fixture-table-row {
+                display: grid;
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                gap: 16px;
+            }
+
+            .fixture-table-row + .fixture-table-row {
+                padding-top: 12px;
+                border-top: 1px solid #e2e8f0;
+            }
+
+            .fixture-field {
+                gap: 8px;
+            }
+
+            .shape {
+                height: 16px;
+                border-radius: 8px;
+                background: #cbd5e1;
+            }
+
+            .shape-title {
+                width: min(45%, 360px);
+                height: 32px;
+            }
+
+            .shape-copy {
+                width: min(66%, 520px);
+                height: 16px;
+            }
+
+            .shape-short {
+                width: 32%;
+            }
+
+            .shape-label {
+                width: 96px;
+            }
+
+            .shape-input {
+                width: 100%;
+                height: 40px;
+                border: 1px solid #cbd5e1;
+                background: #ffffff;
+            }
+
+            .shape-button {
+                width: 112px;
+                height: 40px;
+            }
+
+            .shape-stat {
+                width: 64%;
+                height: 28px;
+            }
+
+            .shape-panel-title {
+                width: 48%;
+                height: 20px;
+            }
+
+            .shape-panel-line {
+                width: 86%;
+            }
+
+            @media (max-width: 767px) {
+                .catalog {
+                    padding: 16px;
+                }
+
+                .fixture-surface {
+                    padding: 16px;
+                }
+
+                .fixture-stats,
+                .fixture-panels,
+                .fixture-detail,
+                .fixture-form {
+                    grid-template-columns: 1fr;
+                }
+
+                .fixture-detail > .fixture-panel:last-child {
+                    grid-column: auto;
+                }
+
+                .fixture-toolbar > .shape-input {
+                    width: 100%;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <main class="catalog" data-admin-skeleton-fixtures></main>
+        <script type="module">
+            import { snapshotBones } from "/node_modules/boneyard-js/dist/extract.js";
+
+            window.__BONEYARD_SNAPSHOT = snapshotBones;
+
+            const names = [
+                "admin-administrators-curriculum-programs",
+                "admin-administrators-audit-logs-index",
+                "admin-administrators-classes-create",
+                "admin-administrators-classes-index",
+                "admin-administrators-classes-show",
+                "admin-administrators-curriculum-programs-index",
+                "admin-administrators-curriculum-programs-show",
+                "admin-administrators-dashboard",
+                "admin-administrators-departments-edit",
+                "admin-administrators-departments-index",
+                "admin-administrators-enrollments-applicants",
+                "admin-administrators-enrollments-assessment-preview",
+                "admin-administrators-enrollments-create",
+                "admin-administrators-enrollments-edit",
+                "admin-administrators-enrollments-index",
+                "admin-administrators-enrollments-show",
+                "admin-administrators-faculties-create",
+                "admin-administrators-faculties-edit",
+                "admin-administrators-faculties-index",
+                "admin-administrators-faculties-show",
+                "admin-administrators-feature-toggles-index",
+                "admin-administrators-finance-create-payment",
+                "admin-administrators-finance-dashboard",
+                "admin-administrators-finance-invoices",
+                "admin-administrators-finance-payments",
+                "admin-administrators-finance-receipt",
+                "admin-administrators-finance-reports",
+                "admin-administrators-finance-tuition-adjustment-spreadsheet-import",
+                "admin-administrators-finance-tuition-adjustments",
+                "admin-administrators-finance-tuition-update-requests-index",
+                "admin-administrators-finance-tuition-update-requests-show",
+                "admin-administrators-help-index",
+                "admin-administrators-help-show",
+                "admin-administrators-inventory-borrowings-edit",
+                "admin-administrators-inventory-borrowings-index",
+                "admin-administrators-inventory-index",
+                "admin-administrators-inventory-items-edit",
+                "admin-administrators-inventory-items-index",
+                "admin-administrators-inventory-ledger-index",
+                "admin-administrators-library-authors-edit",
+                "admin-administrators-library-authors-index",
+                "admin-administrators-library-books-edit",
+                "admin-administrators-library-books-index",
+                "admin-administrators-library-borrow-records-edit",
+                "admin-administrators-library-borrow-records-index",
+                "admin-administrators-library-categories-edit",
+                "admin-administrators-library-categories-index",
+                "admin-administrators-library-index",
+                "admin-administrators-library-research-papers-edit",
+                "admin-administrators-library-research-papers-index",
+                "admin-administrators-module-marketplace-index",
+                "admin-administrators-registrar-analytics",
+                "admin-administrators-registrar-reports",
+                "admin-administrators-roles-edit",
+                "admin-administrators-roles-index",
+                "admin-administrators-scheduling-analytics",
+                "admin-administrators-students-create",
+                "admin-administrators-students-documents-index",
+                "admin-administrators-students-documents-list",
+                "admin-administrators-students-edit",
+                "admin-administrators-students-index",
+                "admin-administrators-students-show",
+                "admin-administrators-system-management-analytics",
+                "admin-administrators-system-management-api",
+                "admin-administrators-system-management-brand",
+                "admin-administrators-system-management-enrollment-pipeline",
+                "admin-administrators-system-management-faculty-fields",
+                "admin-administrators-system-management-finance-documents",
+                "admin-administrators-system-management-grading",
+                "admin-administrators-system-management-identifiers",
+                "admin-administrators-system-management-index",
+                "admin-administrators-system-management-mail",
+                "admin-administrators-system-management-newsletter",
+                "admin-administrators-system-management-notifications",
+                "admin-administrators-system-management-pulse",
+                "admin-administrators-system-management-school",
+                "admin-administrators-system-management-seo",
+                "admin-administrators-system-management-socialite",
+                "admin-administrators-system-management-tuition-payment-schedule",
+                "admin-administrators-users-create",
+                "admin-administrators-users-edit",
+                "admin-administrators-users-index",
+                "admin-announcement-index",
+                "admin-notificationcenter-index",
+                "admin-notifications-index",
+                "admin-profile",
+            ];
+
+            const shape = (className) => {
+                const element = document.createElement("div");
+                element.className = `shape ${className}`;
+                return element;
+            };
+
+            const appendLines = (parent, count = 3) => {
+                for (let index = 0; index < count; index += 1) {
+                    parent.append(shape(index === count - 1 ? "shape-short" : "shape-panel-line"));
+                }
+            };
+
+            const heading = (surface) => {
+                const element = document.createElement("div");
+                element.className = "fixture-heading";
+                element.append(shape("shape-title"), shape("shape-copy"));
+                surface.append(element);
+            };
+
+            const toolbar = (surface) => {
+                const element = document.createElement("div");
+                element.className = "fixture-toolbar";
+                element.append(shape("shape-input"), shape("shape-button"), shape("shape-button"));
+                surface.append(element);
+            };
+
+            const listFixture = (surface) => {
+                toolbar(surface);
+
+                const table = document.createElement("div");
+                table.className = "fixture-table";
+
+                for (let rowIndex = 0; rowIndex < 8; rowIndex += 1) {
+                    const row = document.createElement("div");
+                    row.className = "fixture-table-row";
+                    row.append(shape("shape-panel-line"), shape("shape-panel-line"), shape("shape-short"), shape("shape-short"));
+                    table.append(row);
+                }
+
+                surface.append(table);
+            };
+
+            const dashboardFixture = (surface) => {
+                const stats = document.createElement("div");
+                stats.className = "fixture-stats";
+
+                for (let index = 0; index < 4; index += 1) {
+                    const stat = document.createElement("div");
+                    stat.className = "fixture-stat";
+                    stat.append(shape("shape-panel-title"), shape("shape-stat"), shape("shape-short"));
+                    stats.append(stat);
+                }
+
+                const panels = document.createElement("div");
+                panels.className = "fixture-panels";
+
+                for (let index = 0; index < 2; index += 1) {
+                    const panel = document.createElement("div");
+                    panel.className = "fixture-panel";
+                    panel.append(shape("shape-panel-title"));
+                    appendLines(panel, 7);
+                    panels.append(panel);
+                }
+
+                surface.append(stats, panels);
+            };
+
+            const detailFixture = (surface) => {
+                const detail = document.createElement("div");
+                detail.className = "fixture-detail";
+
+                for (let index = 0; index < 3; index += 1) {
+                    const panel = document.createElement("div");
+                    panel.className = "fixture-panel";
+                    panel.append(shape("shape-panel-title"));
+                    appendLines(panel, index === 2 ? 5 : 7);
+                    detail.append(panel);
+                }
+
+                surface.append(detail);
+            };
+
+            const formFixture = (surface) => {
+                const form = document.createElement("div");
+                form.className = "fixture-form";
+
+                for (let index = 0; index < 6; index += 1) {
+                    const field = document.createElement("div");
+                    field.className = "fixture-field";
+                    field.append(shape("shape-label"), shape("shape-input"));
+                    form.append(field);
+                }
+
+                const actions = document.createElement("div");
+                actions.className = "fixture-actions";
+                actions.append(shape("shape-button"), shape("shape-button"));
+                surface.append(form, actions);
+            };
+
+            const fixtureFor = (name) => {
+                if (/(dashboard|analytics)/.test(name)) return dashboardFixture;
+                if (/(create|edit|settings|profile|system-management)/.test(name)) return formFixture;
+                if (/(show|receipt|assessment-preview|spreadsheet-import)/.test(name)) return detailFixture;
+                return listFixture;
+            };
+
+            for (const name of names) {
+                const root = document.createElement("section");
+                root.dataset.boneyard = name;
+
+                const surface = document.createElement("div");
+                surface.className = "fixture-surface";
+                heading(surface);
+                fixtureFor(name)(surface);
+                root.append(surface);
+                document.querySelector(".catalog").append(root);
+            }
+        </script>
+    </body>
+</html>

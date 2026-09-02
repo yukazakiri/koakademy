@@ -34,7 +34,7 @@ it('keeps setup and extension documentation in a separate developer area', funct
             ->where('slug', 'developer-introduction')
             ->where('type', 'developer')
             ->where('page.title', 'Introduction')
-            ->where('page.content', fn (string $content): bool => str_contains($content, 'Pick your path'))
+            ->where('page.content', fn (string $content): bool => str_contains($content, 'Pick Your Path'))
             ->where('navigation', fn (Collection $navigation): bool => $navigation->pluck('id')->all() === [
                 'start-here',
                 'system',

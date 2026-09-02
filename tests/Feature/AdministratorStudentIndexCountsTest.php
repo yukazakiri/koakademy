@@ -22,7 +22,7 @@ beforeEach(function (): void {
     Cache::flush();
 });
 
-it('uses the paginator total as the global student total on the unfiltered students index', function (): void {
+it('returns the complete student dataset for local pagination on the unfiltered students index', function (): void {
     GeneralSetting::factory()->create([
         'semester' => 2,
         'school_starting_date' => '2024-08-01',
@@ -40,10 +40,9 @@ it('uses the paginator total as the global student total on the unfiltered stude
             ->assertOk()
             ->assertInertia(fn (AssertableInertia $page) => $page
                 ->component('administrators/students/index', false)
-                ->has('students.data', 20)
+                ->has('students.data', 21)
                 ->where('students.total', 21)
                 ->where('stats.total_students', 21)
-                ->where('adminSidebarCounts.students', 21)
             );
     });
 
@@ -52,7 +51,7 @@ it('uses the paginator total as the global student total on the unfiltered stude
     ]);
 });
 
-it('keeps the global student total when students index filters are active', function (): void {
+it('keeps the global student total when client-side filters are active', function (): void {
     GeneralSetting::factory()->create([
         'semester' => 2,
         'school_starting_date' => '2024-08-01',
@@ -75,10 +74,9 @@ it('keeps the global student total when students index filters are active', func
             ->assertOk()
             ->assertInertia(fn (AssertableInertia $page) => $page
                 ->component('administrators/students/index', false)
-                ->has('students.data', 3)
-                ->where('students.total', 3)
+                ->has('students.data', 5)
+                ->where('students.total', 5)
                 ->where('stats.total_students', 5)
-                ->where('adminSidebarCounts.students', 5)
             );
     });
 
@@ -91,16 +89,10 @@ it('keeps the global student total when students index filters are active', func
         static fn (string $query): bool => $query === $globalStudentAggregateQuery,
     )))->toHaveCount(1);
 
-    $filteredPaginatorAggregateQueries = array_values(array_filter(
-        $studentAggregateQueries,
-        static fn (string $query): bool => $query !== $globalStudentAggregateQuery,
-    ));
-
-    expect($filteredPaginatorAggregateQueries)->toHaveCount(1)
-        ->and($filteredPaginatorAggregateQueries[0])->toContain('student_type = ?');
+    expect($studentAggregateQueries)->toBe([$globalStudentAggregateQuery]);
 });
 
-it('keeps the global student total when filters return no matching students', function (): void {
+it('keeps the complete dataset when client-side filters return no matching students', function (): void {
     GeneralSetting::factory()->create([
         'semester' => 2,
         'school_starting_date' => '2024-08-01',
@@ -119,14 +111,13 @@ it('keeps the global student total when filters return no matching students', fu
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page
             ->component('administrators/students/index', false)
-            ->has('students.data', 0)
-            ->where('students.total', 0)
+            ->has('students.data', 4)
+            ->where('students.total', 4)
             ->where('stats.total_students', 4)
-            ->where('adminSidebarCounts.students', 4)
         );
 });
 
-it('searches students without sqlite-specific query errors', function (string $search): void {
+it('loads the complete dataset without sqlite-specific query errors when search is supplied', function (string $search): void {
     GeneralSetting::factory()->create([
         'semester' => 2,
         'school_starting_date' => '2024-08-01',
@@ -153,8 +144,10 @@ it('searches students without sqlite-specific query errors', function (string $s
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page
             ->component('administrators/students/index', false)
-            ->has('students.data', 1)
-            ->where('students.data.0.student_id', 20240001)
+            ->has('students.data', 2)
+            ->where('students.data', fn ($students): bool => $students->contains(
+                fn (array $student): bool => $student['student_id'] === 20240001
+            ))
         );
 })->with([
     'student id' => ['20240001'],

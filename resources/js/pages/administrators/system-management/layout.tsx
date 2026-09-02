@@ -1,7 +1,8 @@
 import AdminLayout from "@/components/administrators/admin-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Head, Link } from "@inertiajs/react";
+import { AdminLink } from "@/lib/admin-navigation";
+import { Head } from "@inertiajs/react";
 import { ChevronRight, Lock } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -39,12 +40,14 @@ export default function SystemManagementLayout({ user, access, activeSection, he
                     <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
                             <div className="text-muted-foreground mb-3 flex flex-wrap items-center gap-1.5 text-xs font-medium">
-                                <Link
+                                <AdminLink
                                     href="/administrators/system-management"
+                                    prefetch
+                                    cacheFor="30s"
                                     className="hover:text-foreground focus-visible:ring-ring rounded-sm transition-colors focus-visible:ring-2 focus-visible:outline-none"
                                 >
                                     System Settings
-                                </Link>
+                                </AdminLink>
                                 <ChevronRight className="size-3.5" aria-hidden="true" />
                                 <span>{category}</span>
                             </div>

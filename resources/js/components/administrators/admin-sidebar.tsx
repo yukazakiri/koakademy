@@ -30,12 +30,13 @@ import {
     type ModuleAdminRoute,
     type RouteSection,
 } from "@/config/admin-routes";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { AdminLink } from "@/lib/admin-navigation";
 import { resolveBranding, type Branding } from "@/lib/branding";
 import { inbox as administratorNotificationsInbox } from "@/routes/administrators/notifications";
 import type { User } from "@/types/user";
 import { USER_ROLE_LABELS, UserRole } from "@/types/user-role";
-import { useIsMobile } from "@/hooks/use-mobile";
-import { Link, usePage } from "@inertiajs/react";
+import { usePage } from "@inertiajs/react";
 
 interface PageProps {
     auth?: {
@@ -369,7 +370,7 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                             return (
                                                 <SidebarMenuItem key={route.id}>
                                                     <SidebarMenuButton asChild isActive={isActive}>
-                                                        <Link href={route.link}>
+                                                        <AdminLink href={route.link} prefetch cacheFor="30s">
                                                             {route.icon}
                                                             <div className="flex flex-col">
                                                                 <span>{route.title}</span>
@@ -378,10 +379,12 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                                                         {route.parentTitle} • {route.sectionLabel}
                                                                     </span>
                                                                 )}
-                                                                {!route.isSub && <span className="text-muted-foreground text-xs">{route.sectionLabel}</span>}
+                                                                {!route.isSub && (
+                                                                    <span className="text-muted-foreground text-xs">{route.sectionLabel}</span>
+                                                                )}
                                                             </div>
                                                             {badgeContent}
-                                                        </Link>
+                                                        </AdminLink>
                                                     </SidebarMenuButton>
                                                 </SidebarMenuItem>
                                             );
@@ -402,11 +405,11 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                             return (
                                                 <SidebarMenuItem key={route.id}>
                                                     <SidebarMenuButton asChild isActive={isActive}>
-                                                        <Link href={route.link}>
+                                                        <AdminLink href={route.link} prefetch cacheFor="30s">
                                                             {route.icon}
                                                             <span>{route.title}</span>
                                                             {badgeContent}
-                                                        </Link>
+                                                        </AdminLink>
                                                     </SidebarMenuButton>
                                                     <SidebarMenuSub>
                                                         {route.subs?.map((sub, idx) => {
@@ -414,10 +417,10 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                                             return (
                                                                 <SidebarMenuSubItem key={idx}>
                                                                     <SidebarMenuSubButton asChild isActive={isSubActive}>
-                                                                        <Link href={sub.link}>
+                                                                        <AdminLink href={sub.link} prefetch cacheFor="30s">
                                                                             {sub.icon}
                                                                             <span>{sub.title}</span>
-                                                                        </Link>
+                                                                        </AdminLink>
                                                                     </SidebarMenuSubButton>
                                                                 </SidebarMenuSubItem>
                                                             );
@@ -433,11 +436,11 @@ export function AdministratorSidebar({ user }: { user: User }) {
                                         return (
                                             <SidebarMenuItem key={route.id}>
                                                 <SidebarMenuButton asChild isActive={isActive}>
-                                                    <Link href={route.link}>
+                                                    <AdminLink href={route.link} prefetch cacheFor="30s">
                                                         {route.icon}
                                                         <span>{route.title}</span>
                                                         {badgeContent}
-                                                    </Link>
+                                                    </AdminLink>
                                                 </SidebarMenuButton>
                                             </SidebarMenuItem>
                                         );
@@ -450,14 +453,16 @@ export function AdministratorSidebar({ user }: { user: User }) {
 
                 <SidebarFooter className="border-t p-3">
                     <div className="flex items-center justify-between">
-                        <Link
+                        <AdminLink
                             href="/changelog"
+                            prefetch
+                            cacheFor="30s"
                             className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium transition-colors"
                         >
                             <span className="inline-flex items-center gap-1">
                                 <span className="h-1.5 w-1.5 rounded-full bg-green-500"></span>v{version}
                             </span>
-                        </Link>
+                        </AdminLink>
                         <span className="text-muted-foreground text-xs">{organizationShortName}</span>
                     </div>
                 </SidebarFooter>
@@ -468,235 +473,234 @@ export function AdministratorSidebar({ user }: { user: User }) {
     return (
         <>
             <Sidebar
-            collapsible="icon"
-            className="overflow-hidden"
-            style={
-                {
-                    "--sidebar-width": ADMIN_SIDEBAR_WIDTH,
-                    "--sidebar-width-icon": ADMIN_SIDEBAR_ICON_WIDTH,
-                } as React.CSSProperties
-            }
-        >
-            <div className="flex h-full w-full flex-row">
-                {/* First Sidebar - Icon Navigation */}
-                <Sidebar
-                    collapsible="none"
-                    className="border-r bg-sidebar"
-                    style={
-                        {
-                            "--sidebar-width": ADMIN_SIDEBAR_ICON_WIDTH,
-                        } as React.CSSProperties
-                    }
-                >
-                    <SidebarHeader>
-                        <SidebarMenu>
-                            <SidebarMenuItem>
-                                <SidebarMenuButton size="lg" asChild className="md:h-8 md:p-0">
-                                    <Link href="/administrators/dashboard">
-                                        <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center overflow-hidden rounded-lg">
-                                            <img
-                                                src={branding.logo}
-                                                alt={`${organizationShortName} Logo`}
-                                                className="size-5 object-contain"
-                                            />
-                                        </div>
-                                        <div className="hidden">
-                                            <span className="truncate font-medium">{appName}</span>
-                                            <span className="truncate text-xs">Administrator</span>
-                                        </div>
-                                    </Link>
-                                </SidebarMenuButton>
-                            </SidebarMenuItem>
-                        </SidebarMenu>
-                    </SidebarHeader>
+                collapsible="icon"
+                className="overflow-hidden"
+                style={
+                    {
+                        "--sidebar-width": ADMIN_SIDEBAR_WIDTH,
+                        "--sidebar-width-icon": ADMIN_SIDEBAR_ICON_WIDTH,
+                    } as React.CSSProperties
+                }
+            >
+                <div className="flex h-full w-full flex-row">
+                    {/* First Sidebar - Icon Navigation */}
+                    <Sidebar
+                        collapsible="none"
+                        className="bg-sidebar border-r"
+                        style={
+                            {
+                                "--sidebar-width": ADMIN_SIDEBAR_ICON_WIDTH,
+                            } as React.CSSProperties
+                        }
+                    >
+                        <SidebarHeader>
+                            <SidebarMenu>
+                                <SidebarMenuItem>
+                                    <SidebarMenuButton size="lg" asChild className="md:h-8 md:p-0">
+                                        <AdminLink href="/administrators/dashboard" prefetch cacheFor="30s">
+                                            <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center overflow-hidden rounded-lg">
+                                                <img src={branding.logo} alt={`${organizationShortName} Logo`} className="size-5 object-contain" />
+                                            </div>
+                                            <div className="hidden">
+                                                <span className="truncate font-medium">{appName}</span>
+                                                <span className="truncate text-xs">Administrator</span>
+                                            </div>
+                                        </AdminLink>
+                                    </SidebarMenuButton>
+                                </SidebarMenuItem>
+                            </SidebarMenu>
+                        </SidebarHeader>
 
-                    <SidebarContent>
-                        <SidebarGroup>
-                            <SidebarGroupContent className="px-1.5 md:px-0">
-                                <SidebarMenu>
-                                    {sectionsWithRoutes.map((section) => {
-                                        const Icon = SECTION_ICONS[section.id];
-                                        const isActive = displayedSection === section.id;
-                                        // Calculate badge count for this section
-                                        let badgeCount = 0;
-                                        if (section.id === "support" && unresolvedHelpTicketsCount > 0) {
-                                            badgeCount = unresolvedHelpTicketsCount;
-                                        }
+                        <SidebarContent>
+                            <SidebarGroup>
+                                <SidebarGroupContent className="px-1.5 md:px-0">
+                                    <SidebarMenu>
+                                        {sectionsWithRoutes.map((section) => {
+                                            const Icon = SECTION_ICONS[section.id];
+                                            const isActive = displayedSection === section.id;
+                                            // Calculate badge count for this section
+                                            let badgeCount = 0;
+                                            if (section.id === "support" && unresolvedHelpTicketsCount > 0) {
+                                                badgeCount = unresolvedHelpTicketsCount;
+                                            }
 
-                                        return (
-                                            <SidebarMenuItem key={section.id}>
-                                                <SidebarMenuButton
-                                                    tooltip={{
-                                                        children: getSectionTitle(section.id),
-                                                        hidden: false,
-                                                    }}
-                                                    onClick={() => {
-                                                        setUserSelectedSection(section.id);
-                                                        setOpen(true);
-                                                    }}
-                                                    isActive={isActive}
-                                                    className="px-2.5 md:px-2"
-                                                >
-                                                    <Icon className="size-4" />
-                                                    <span className="sr-only">{getSectionTitle(section.id)}</span>
-                                                    {badgeCount > 0 && (
-                                                        <span className="ml-auto flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-medium text-white">
-                                                            {badgeCount > 9 ? "9+" : badgeCount}
-                                                        </span>
-                                                    )}
-                                                </SidebarMenuButton>
-                                            </SidebarMenuItem>
-                                        );
-                                    })}
-                                </SidebarMenu>
-                            </SidebarGroupContent>
-                        </SidebarGroup>
-                    </SidebarContent>
+                                            return (
+                                                <SidebarMenuItem key={section.id}>
+                                                    <SidebarMenuButton
+                                                        tooltip={{
+                                                            children: getSectionTitle(section.id),
+                                                            hidden: false,
+                                                        }}
+                                                        onClick={() => {
+                                                            setUserSelectedSection(section.id);
+                                                            setOpen(true);
+                                                        }}
+                                                        isActive={isActive}
+                                                        className="px-2.5 md:px-2"
+                                                    >
+                                                        <Icon className="size-4" />
+                                                        <span className="sr-only">{getSectionTitle(section.id)}</span>
+                                                        {badgeCount > 0 && (
+                                                            <span className="ml-auto flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-medium text-white">
+                                                                {badgeCount > 9 ? "9+" : badgeCount}
+                                                            </span>
+                                                        )}
+                                                    </SidebarMenuButton>
+                                                </SidebarMenuItem>
+                                            );
+                                        })}
+                                    </SidebarMenu>
+                                </SidebarGroupContent>
+                            </SidebarGroup>
+                        </SidebarContent>
 
-                    <SidebarFooter className="[&_[data-sidebar=menu-button]_.grid]:hidden [&_[data-sidebar=menu-button]_.ml-auto]:hidden">
-                        <SidebarMenu>
-                            <SidebarMenuItem>
-                                <NotificationsPopover
-                                    baseUrl="/administrators/notifications"
-                                    inboxUrl={administratorNotificationsInbox.url()}
-                                />
-                            </SidebarMenuItem>
-                        </SidebarMenu>
-                        <NavUser user={navUserData} />
-                    </SidebarFooter>
-                </Sidebar>
+                        <SidebarFooter className="[&_[data-sidebar=menu-button]_.grid]:hidden [&_[data-sidebar=menu-button]_.ml-auto]:hidden">
+                            <SidebarMenu>
+                                <SidebarMenuItem>
+                                    <NotificationsPopover baseUrl="/administrators/notifications" inboxUrl={administratorNotificationsInbox.url()} />
+                                </SidebarMenuItem>
+                            </SidebarMenu>
+                            <NavUser user={navUserData} />
+                        </SidebarFooter>
+                    </Sidebar>
 
-                {/* Second Sidebar - Section Content */}
-                <Sidebar
-                    collapsible="none"
-                    className="flex-1"
-                    style={
-                        {
-                            "--sidebar-width": ADMIN_SIDEBAR_CONTENT_WIDTH,
-                        } as React.CSSProperties
-                    }
-                >
-                    <SidebarHeader className="gap-2 border-b p-4">
-                        <SchoolSwitcher />
-                        <div className="flex w-full items-center justify-between">
-                            <div className="text-foreground text-base font-medium">
-                                {searchQuery.trim() ? `Search: "${searchQuery}"` : getSectionTitle(displayedSection)}
+                    {/* Second Sidebar - Section Content */}
+                    <Sidebar
+                        collapsible="none"
+                        className="flex-1"
+                        style={
+                            {
+                                "--sidebar-width": ADMIN_SIDEBAR_CONTENT_WIDTH,
+                            } as React.CSSProperties
+                        }
+                    >
+                        <SidebarHeader className="gap-2 border-b p-4">
+                            <SchoolSwitcher />
+                            <div className="flex w-full items-center justify-between">
+                                <div className="text-foreground text-base font-medium">
+                                    {searchQuery.trim() ? `Search: "${searchQuery}"` : getSectionTitle(displayedSection)}
+                                </div>
                             </div>
-                        </div>
-                        <SidebarInput placeholder="Search navigation..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-                    </SidebarHeader>
+                            <SidebarInput placeholder="Search navigation..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                        </SidebarHeader>
 
-                    <SidebarContent>
-                        <SidebarGroup className="px-0">
-                            <SidebarGroupContent>
-                                <SidebarMenu>
-                                    {searchQuery.trim() ? (
-                                        // Search results
-                                        filteredRoutes && filteredRoutes.length > 0 ? (
-                                            filteredRoutes.map((route) => {
+                        <SidebarContent>
+                            <SidebarGroup className="px-0">
+                                <SidebarGroupContent>
+                                    <SidebarMenu>
+                                        {searchQuery.trim() ? (
+                                            // Search results
+                                            filteredRoutes && filteredRoutes.length > 0 ? (
+                                                filteredRoutes.map((route) => {
+                                                    const isActive = isRouteActive(currentUrl, route.link);
+                                                    const badgeContent = renderRouteBadge(route.id, route.badge);
+                                                    return (
+                                                        <SidebarMenuItem key={route.id}>
+                                                            <SidebarMenuButton asChild isActive={isActive}>
+                                                                <AdminLink href={route.link} prefetch cacheFor="30s">
+                                                                    {route.icon}
+                                                                    <div className="flex flex-col">
+                                                                        <span>{route.title}</span>
+                                                                        {route.isSub && route.parentTitle && (
+                                                                            <span className="text-muted-foreground text-xs">
+                                                                                {route.parentTitle} • {route.sectionLabel}
+                                                                            </span>
+                                                                        )}
+                                                                        {!route.isSub && (
+                                                                            <span className="text-muted-foreground text-xs">
+                                                                                {route.sectionLabel}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    {badgeContent}
+                                                                </AdminLink>
+                                                            </SidebarMenuButton>
+                                                        </SidebarMenuItem>
+                                                    );
+                                                })
+                                            ) : (
+                                                <SidebarMenuItem>
+                                                    <div className="text-muted-foreground px-4 py-2 text-sm">
+                                                        No results found for "{searchQuery}"
+                                                    </div>
+                                                </SidebarMenuItem>
+                                            )
+                                        ) : (
+                                            // Normal section routes
+                                            activeRoutes.map((route) => {
+                                                const hasSubs = route.subs && route.subs.length > 0;
+
+                                                if (hasSubs) {
+                                                    const isActive = isParentRouteActive(currentUrl, route.link, route.subs);
+                                                    const badgeContent = renderRouteBadge(route.id, route.badge);
+
+                                                    return (
+                                                        <SidebarMenuItem key={route.id}>
+                                                            <SidebarMenuButton asChild isActive={isActive}>
+                                                                <AdminLink href={route.link} prefetch cacheFor="30s">
+                                                                    {route.icon}
+                                                                    <span>{route.title}</span>
+                                                                    {badgeContent}
+                                                                </AdminLink>
+                                                            </SidebarMenuButton>
+                                                            <SidebarMenuSub>
+                                                                {route.subs?.map((sub, idx) => {
+                                                                    const isSubActive = isRouteActive(currentUrl, sub.link, sub.link === route.link);
+                                                                    return (
+                                                                        <SidebarMenuSubItem key={idx}>
+                                                                            <SidebarMenuSubButton asChild isActive={isSubActive}>
+                                                                                <AdminLink href={sub.link} prefetch cacheFor="30s">
+                                                                                    {sub.icon}
+                                                                                    <span>{sub.title}</span>
+                                                                                </AdminLink>
+                                                                            </SidebarMenuSubButton>
+                                                                        </SidebarMenuSubItem>
+                                                                    );
+                                                                })}
+                                                            </SidebarMenuSub>
+                                                        </SidebarMenuItem>
+                                                    );
+                                                }
+
                                                 const isActive = isRouteActive(currentUrl, route.link);
                                                 const badgeContent = renderRouteBadge(route.id, route.badge);
+
                                                 return (
                                                     <SidebarMenuItem key={route.id}>
                                                         <SidebarMenuButton asChild isActive={isActive}>
-                                                            <Link href={route.link}>
+                                                            <AdminLink href={route.link} prefetch cacheFor="30s">
                                                                 {route.icon}
-                                                                <div className="flex flex-col">
-                                                                    <span>{route.title}</span>
-                                                                    {route.isSub && route.parentTitle && (
-                                                                        <span className="text-muted-foreground text-xs">
-                                                                            {route.parentTitle} • {route.sectionLabel}
-                                                                        </span>
-                                                                    )}
-                                                                    {!route.isSub && (
-                                                                        <span className="text-muted-foreground text-xs">{route.sectionLabel}</span>
-                                                                    )}
-                                                                </div>
+                                                                <span>{route.title}</span>
                                                                 {badgeContent}
-                                                            </Link>
+                                                            </AdminLink>
                                                         </SidebarMenuButton>
                                                     </SidebarMenuItem>
                                                 );
                                             })
-                                        ) : (
-                                            <SidebarMenuItem>
-                                                <div className="text-muted-foreground px-4 py-2 text-sm">No results found for "{searchQuery}"</div>
-                                            </SidebarMenuItem>
-                                        )
-                                    ) : (
-                                        // Normal section routes
-                                        activeRoutes.map((route) => {
-                                            const hasSubs = route.subs && route.subs.length > 0;
+                                        )}
+                                    </SidebarMenu>
+                                </SidebarGroupContent>
+                            </SidebarGroup>
+                        </SidebarContent>
 
-                                            if (hasSubs) {
-                                                const isActive = isParentRouteActive(currentUrl, route.link, route.subs);
-                                                const badgeContent = renderRouteBadge(route.id, route.badge);
-
-                                                return (
-                                                    <SidebarMenuItem key={route.id}>
-                                                        <SidebarMenuButton asChild isActive={isActive}>
-                                                            <Link href={route.link}>
-                                                                {route.icon}
-                                                                <span>{route.title}</span>
-                                                                {badgeContent}
-                                                            </Link>
-                                                        </SidebarMenuButton>
-                                                        <SidebarMenuSub>
-                                                            {route.subs?.map((sub, idx) => {
-                                                                const isSubActive = isRouteActive(currentUrl, sub.link, sub.link === route.link);
-                                                                return (
-                                                                    <SidebarMenuSubItem key={idx}>
-                                                                        <SidebarMenuSubButton asChild isActive={isSubActive}>
-                                                                            <Link href={sub.link}>
-                                                                                {sub.icon}
-                                                                                <span>{sub.title}</span>
-                                                                            </Link>
-                                                                        </SidebarMenuSubButton>
-                                                                    </SidebarMenuSubItem>
-                                                                );
-                                                            })}
-                                                        </SidebarMenuSub>
-                                                    </SidebarMenuItem>
-                                                );
-                                            }
-
-                                            const isActive = isRouteActive(currentUrl, route.link);
-                                            const badgeContent = renderRouteBadge(route.id, route.badge);
-
-                                            return (
-                                                <SidebarMenuItem key={route.id}>
-                                                    <SidebarMenuButton asChild isActive={isActive}>
-                                                        <Link href={route.link}>
-                                                            {route.icon}
-                                                            <span>{route.title}</span>
-                                                            {badgeContent}
-                                                        </Link>
-                                                    </SidebarMenuButton>
-                                                </SidebarMenuItem>
-                                            );
-                                        })
-                                    )}
-                                </SidebarMenu>
-                            </SidebarGroupContent>
-                        </SidebarGroup>
-                    </SidebarContent>
-
-                    <SidebarFooter className="border-t p-4">
-                        <div className="flex items-center justify-between">
-                            <Link
-                                href="/changelog"
-                                className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium transition-colors"
-                            >
-                                <span className="inline-flex items-center gap-1">
-                                    <span className="h-1.5 w-1.5 rounded-full bg-green-500"></span>v{version}
-                                </span>
-                            </Link>
-                            <span className="text-muted-foreground text-xs">{organizationShortName}</span>
-                        </div>
-                    </SidebarFooter>
-                </Sidebar>
-            </div>
-        </Sidebar>
+                        <SidebarFooter className="border-t p-4">
+                            <div className="flex items-center justify-between">
+                                <AdminLink
+                                    href="/changelog"
+                                    prefetch
+                                    cacheFor="30s"
+                                    className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium transition-colors"
+                                >
+                                    <span className="inline-flex items-center gap-1">
+                                        <span className="h-1.5 w-1.5 rounded-full bg-green-500"></span>v{version}
+                                    </span>
+                                </AdminLink>
+                                <span className="text-muted-foreground text-xs">{organizationShortName}</span>
+                            </div>
+                        </SidebarFooter>
+                    </Sidebar>
+                </div>
+            </Sidebar>
         </>
     );
 }

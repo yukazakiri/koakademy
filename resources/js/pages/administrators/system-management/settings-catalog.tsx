@@ -290,6 +290,8 @@ function SettingsNavigationList({ access, activeSection, closeOnNavigate = false
                             const link = (
                                 <Link
                                     href={item.href}
+                                    prefetch
+                                    cacheFor="30s"
                                     aria-current={active ? "page" : undefined}
                                     className={cn(
                                         "group/settings-item flex min-h-10 items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-[background-color,color,transform] duration-150 motion-reduce:transform-none",

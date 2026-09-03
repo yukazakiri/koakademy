@@ -1,10 +1,5 @@
 version: 2
 
-registries:
-  koakademy-modules:
-    type: composer-repository
-    url: https://yukazakiri.github.io/koakademy-modules
-
 updates:
   - package-ecosystem: composer
     directory: /
@@ -13,8 +8,6 @@ updates:
       time: "03:30"
       timezone: Etc/UTC
     open-pull-requests-limit: 10
-    registries:
-      - koakademy-modules
     groups:
       koakademy-modules:
         patterns:

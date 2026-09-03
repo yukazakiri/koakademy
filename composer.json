@@ -17,7 +17,7 @@
     "require": {
         "php": ">=8.5 <8.6",
         "achyutn/filament-log-viewer": "^2.0",
-        "alizharb/filament-activity-log": "^1.0",
+        "alizharb/filament-activity-log": "^2.0",
         "awcodes/filament-gravatar": "^4.0",
         "backstage/mails": "^5.0",
         "barryvdh/laravel-debugbar": "^4.0",

@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "87285876109cd5c7c57e95ffa57026dc",
+    "content-hash": "5a6787cdc9e078220e3c4e1bb3c3ff22",
     "packages": [
         {
             "name": "achyutn/filament-log-viewer",
@@ -12755,32 +12755,33 @@
         },
         {
             "name": "shuvroroy/filament-spatie-laravel-backup",
-            "version": "v3.4.0",
+            "version": "v4.0.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/shuvroroy/filament-spatie-laravel-backup.git",
-                "reference": "13cb0dc3090c3d49588f7a1d51a779fc295ea31a"
+                "reference": "46aedff7fe4f9e547e3a927f65f7831276cffb15"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/shuvroroy/filament-spatie-laravel-backup/zipball/13cb0dc3090c3d49588f7a1d51a779fc295ea31a",
-                "reference": "13cb0dc3090c3d49588f7a1d51a779fc295ea31a",
+                "url": "https://api.github.com/repos/shuvroroy/filament-spatie-laravel-backup/zipball/46aedff7fe4f9e547e3a927f65f7831276cffb15",
+                "reference": "46aedff7fe4f9e547e3a927f65f7831276cffb15",
                 "shasum": ""
             },
             "require": {
                 "filament/filament": "^4.0|^5.0",
-                "php": "^8.2",
-                "spatie/laravel-backup": "^8.0|^9.0|^10.0",
+                "illuminate/contracts": "^12.0|^13.0",
+                "php": ">=8.2 <8.6",
+                "spatie/laravel-backup": "^9.0|^10.0",
                 "spatie/laravel-package-tools": "^1.9"
             },
             "require-dev": {
                 "larastan/larastan": "^3.0",
                 "laravel/pint": "^1.0",
-                "nunomaduro/collision": "^8.1.1||^7.10.0",
-                "orchestra/testbench": "^9.0||^10.0",
-                "pestphp/pest": "^2.0||^3.0",
-                "pestphp/pest-plugin-arch": "^2.0||^3.0",
-                "pestphp/pest-plugin-laravel": "^2.0||^3.0",
+                "nunomaduro/collision": "^8.1.1",
+                "orchestra/testbench": "^10.0||^11.0",
+                "pestphp/pest": "^3.0||^4.0",
+                "pestphp/pest-plugin-arch": "^3.0||^4.0",
+                "pestphp/pest-plugin-laravel": "^3.0||^4.0",
                 "phpstan/extension-installer": "^1.4",
                 "phpstan/phpstan": "^2.1",
                 "phpstan/phpstan-deprecation-rules": "^2.0",
@@ -12819,7 +12820,7 @@
             ],
             "support": {
                 "issues": "https://github.com/shuvroroy/filament-spatie-laravel-backup/issues",
-                "source": "https://github.com/shuvroroy/filament-spatie-laravel-backup/tree/v3.4.0"
+                "source": "https://github.com/shuvroroy/filament-spatie-laravel-backup/tree/v4.0.2"
             },
             "funding": [
                 {
@@ -12827,7 +12828,7 @@
                     "type": "buy_me_a_coffee"
                 }
             ],
-            "time": "2026-03-26T05:49:07+00:00"
+            "time": "2026-08-27T18:26:49+00:00"
         },
         {
             "name": "simplestats-io/laravel-client",

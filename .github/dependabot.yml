@@ -1,6 +1,20 @@
 version: 2
 
 updates:
+  - package-ecosystem: composer
+    directory: /
+    schedule:
+      interval: daily
+      time: "03:30"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 10
+    groups:
+      koakademy-modules:
+        patterns:
+          - "koakademy/*"
+    commit-message:
+      prefix: "build(modules)"
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

@@ -1,0 +1,74 @@
+name: Update Modules
+
+on:
+  repository_dispatch:
+    types: [module-updated, module-released]
+  workflow_dispatch:
+    inputs:
+      module:
+        description: Module package name (e.g. koakademy/forms)
+        required: false
+        default: koakademy/forms
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: update-modules
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Check and bump modules
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: dom, curl, libxml, mbstring, zip, pdo, sqlite, sodium
+          coverage: none
+
+      - name: Update module dependencies via Composer
+        id: bump
+        run: |
+          target_module="${{ github.event.inputs.module || github.event.client_payload.package || 'koakademy/forms' }}"
+          echo "Target module: ${target_module}"
+
+          # Update the target module or all koakademy/* modules if none specified
+          composer update "${target_module}" --no-interaction --no-scripts
+
+          if git diff --quiet composer.json composer.lock; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No version updates detected."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Updates detected in composer lockfile."
+          fi
+
+      - name: Create Pull Request
+        if: steps.bump.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: 'build(modules): update module dependencies'
+          branch: chore/bump-modules
+          delete-branch: true
+          title: 'build(modules): update module dependencies'
+          body: |
+            Automated module version bump triggered by module release or scheduled registry update.
+
+            - Runs standard application CI to verify compatibility.
+            - Updates `composer.lock` for required `koakademy/*` module packages.
+          labels: |
+            chore
+            backend

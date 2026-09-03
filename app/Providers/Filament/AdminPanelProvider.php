@@ -156,7 +156,10 @@ final class AdminPanelProvider extends PanelProvider
 
         $panel->renderHook(
             'panels::head.end',
-            fn (): HtmlString => new HtmlString(app(AnalyticsSettingsService::class)->renderHeadMarkup())
+            fn (): HtmlString => new HtmlString(
+                app(AnalyticsSettingsService::class)->renderHeadMarkup()
+                    .app(\App\Services\SentrySettingsService::class)->renderHeadMarkup()
+            )
         );
 
         $panel->renderHook(

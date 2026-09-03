@@ -431,6 +431,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/system-management/newsletter', [App\Http\Controllers\AdministratorSystemManagementController::class, 'newsletter'])->name('system-management.newsletter.index');
         Route::get('/system-management/api', [App\Http\Controllers\AdministratorSystemManagementController::class, 'api'])->name('system-management.api.index');
         Route::get('/system-management/pulse', [App\Http\Controllers\AdministratorSystemManagementController::class, 'pulse'])->name('system-management.pulse.index');
+        Route::get('/system-management/observability', [App\Http\Controllers\AdministratorSystemManagementController::class, 'observability'])->name('system-management.observability.index');
         Route::get('/system-management/identifiers', [App\Http\Controllers\AdministratorSystemManagementController::class, 'identifiers'])->name('system-management.identifiers.index');
         Route::get('/system-management/faculty-fields', [App\Http\Controllers\AdministratorSystemManagementController::class, 'facultyFields'])->name('system-management.faculty-fields.index');
         Route::post('/system-management/school', [App\Http\Controllers\AdministratorSystemManagementController::class, 'storeSchool'])->name('system-management.school.store');
@@ -445,6 +446,8 @@ Route::middleware(['auth', 'administrators.only'])
         Route::delete('/system-management/schools/{school}/force', [App\Http\Controllers\AdministratorSystemManagementController::class, 'forceDestroySchool'])->name('system-management.schools.force-destroy');
         Route::put('/system-management/seo', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateSeo'])->name('system-management.seo.update');
         Route::put('/system-management/analytics', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateAnalytics'])->name('system-management.analytics.update');
+        Route::put('/system-management/observability', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateObservability'])->name('system-management.observability.update');
+        Route::post('/system-management/observability/test', [App\Http\Controllers\AdministratorSystemManagementController::class, 'testObservability'])->name('system-management.observability.test');
         Route::put('/system-management/brand', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateBrand'])->name('system-management.brand.update');
         Route::put('/system-management/socialite', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateSocialite'])->name('system-management.socialite.update');
         Route::put('/system-management/newsletter', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateNewsletter'])->name('system-management.newsletter.update');

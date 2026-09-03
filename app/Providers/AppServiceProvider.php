@@ -101,6 +101,8 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->scoped(GeneralSettingsService::class);
         $this->app->scoped(NewsletterSettingsService::class);
         $this->app->scoped(NewsletterSubscriptionService::class);
+        $this->app->scoped(\App\Services\SentrySettingsService::class);
+        $this->app->scoped(\App\Services\ErrorReportingService::class);
         $this->app->scoped(\App\Services\TenantContext::class);
         $this->app->bind(AssessmentFormPdfRenderer::class, LaravelAssessmentFormPdfRenderer::class);
     }
@@ -136,6 +138,7 @@ final class AppServiceProvider extends ServiceProvider
 
         $this->app->booted(function (): void {
             $this->removeMissingViewFinderPaths();
+            $this->applySentrySettings();
         });
     }
 
@@ -212,6 +215,19 @@ final class AppServiceProvider extends ServiceProvider
             Log::warning('Failed to sync feature showcase config dynamically', [
                 'error' => $e->getMessage(),
             ]);
+        }
+    }
+
+    /**
+     * Apply admin-configured error reporting settings over the env-based defaults.
+     * Best-effort: skipped during console setup/migration when the DB is unavailable.
+     */
+    private function applySentrySettings(): void
+    {
+        try {
+            app(\App\Services\ErrorReportingService::class)->applyToConfig();
+        } catch (Throwable $e) {
+            Log::debug('Skipping error reporting settings sync', ['error' => $e->getMessage()]);
         }
     }
 

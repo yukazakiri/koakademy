@@ -54,6 +54,7 @@ it('renders all refactored system management pages', function (string $url, stri
             ->has('socialite_config')
             ->has('mail_config')
             ->has('analytics')
+            ->has('sentry')
             ->has('branding')
             ->has('enrollment_pipeline')
             ->has('enrollment_stats')
@@ -75,6 +76,7 @@ it('renders all refactored system management pages', function (string $url, stri
     'identifiers page' => ['/administrators/system-management/identifiers', 'administrators/system-management/identifiers'],
     'api page' => ['/administrators/system-management/api', 'administrators/system-management/api'],
     'pulse page' => ['/administrators/system-management/pulse', 'administrators/system-management/pulse'],
+    'observability page' => ['/administrators/system-management/observability', 'administrators/system-management/observability'],
 ]);
 
 it('renders a focused settings home with only the sections the administrator can access', function (): void {

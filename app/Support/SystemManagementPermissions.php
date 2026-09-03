@@ -76,6 +76,10 @@ final class SystemManagementPermissions
                 'view' => 'View:SystemManagementPulse',
                 'update' => null,
             ],
+            'observability' => [
+                'view' => 'View:SystemManagementObservability',
+                'update' => 'Update:SystemManagementObservability',
+            ],
         ];
     }
 

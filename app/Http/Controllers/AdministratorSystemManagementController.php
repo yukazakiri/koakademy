@@ -18,6 +18,7 @@ use App\Http\Requests\Administrators\UpdateEnrollmentPipelineRequest;
 use App\Http\Requests\Administrators\UpdateFinanceDocumentSettingsRequest;
 use App\Http\Requests\Administrators\UpdateNewsletterSettingsRequest;
 use App\Http\Requests\Administrators\UpdateSchoolCurriculumCapabilitiesRequest;
+use App\Http\Requests\Administrators\UpdateSentrySettingsRequest;
 use App\Http\Requests\Administrators\UpdateSchoolLevelRequest;
 use App\Http\Requests\Administrators\UpdateSchoolRequest;
 use App\Http\Requests\Administrators\UpdateSchoolStatusRequest;
@@ -41,6 +42,7 @@ use App\Services\LogoConversionService;
 use App\Services\Newsletter\NewsletterProviderManager;
 use App\Services\Newsletter\NewsletterSettingsService;
 use App\Services\RegistrarReportingSettingsService;
+use App\Services\ErrorReportingService;
 use App\Services\SocialiteProviderService;
 use App\Services\TuitionPaymentScheduleSettingsService;
 use App\Settings\SiteSettings;
@@ -64,6 +66,7 @@ use Laravel\Pennant\Feature;
 use RuntimeException;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
+use Throwable;
 
 final class AdministratorSystemManagementController extends Controller
 {
@@ -240,6 +243,59 @@ final class AdministratorSystemManagementController extends Controller
     public function pulse(): Response
     {
         return $this->renderSystemManagementPage('administrators/system-management/pulse', 'pulse', 'viewPulse');
+    }
+
+    public function observability(ErrorReportingService $errorReporting): Response
+    {
+        return $this->renderSystemManagementPage(
+            'administrators/system-management/observability',
+            'observability',
+            'viewObservability',
+            [
+                'sentry' => $errorReporting->get()['providers']['sentry'],
+                'error_reporting' => $errorReporting->forAdministration(),
+            ],
+        );
+    }
+
+    public function updateObservability(
+        UpdateSentrySettingsRequest $request,
+        ErrorReportingService $errorReporting,
+    ): RedirectResponse {
+        $errorReporting->save($request->validated());
+
+        return Redirect::back()->with('success', 'Error reporting settings updated successfully.');
+    }
+
+    public function testObservability(
+        UpdateSentrySettingsRequest $request,
+        ErrorReportingService $errorReporting,
+    ): JsonResponse {
+        $validated = $request->validated();
+        $provider = $validated['provider'] ?? 'sentry';
+
+        if (! is_string($provider) || ! in_array($provider, ErrorReportingService::PROVIDER_KEYS, true)) {
+            return response()->json([
+                'message' => 'Select a valid provider to test.',
+            ], 422);
+        }
+
+        try {
+            $candidates = $errorReporting->sanitizeProviders($validated['providers'] ?? []);
+            $errorReporting->testProvider($provider, $candidates);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => 'Test event failed: '.$e->getMessage(),
+            ], $e instanceof RuntimeException ? 422 : 500);
+        }
+
+        $label = $errorReporting->meta()[$provider]['label'] ?? $provider;
+
+        return response()->json([
+            'message' => "Test event sent to {$label}. Check the issue stream in your {$label} project.",
+        ]);
     }
 
     public function grading(): Response
@@ -1108,6 +1164,8 @@ final class AdministratorSystemManagementController extends Controller
             'socialite_config' => $socialiteConfig,
             'mail_config' => $finalMailConfig,
             'analytics' => $analyticsService->getFrontendConfig(),
+            'error_reporting' => app(ErrorReportingService::class)->forAdministration(),
+            'sentry' => app(ErrorReportingService::class)->get()['providers']['sentry'],
             'enrollment_pipeline' => $this->enrollmentPipelineService->getConfiguration(),
             'enrollment_stats' => $this->enrollmentPipelineService->getStatsConfiguration(),
             'api_management' => $generalSettingsService->getApiManagementConfig(),
@@ -1202,6 +1260,7 @@ final class AdministratorSystemManagementController extends Controller
                 'grading' => 'updateGrading',
                 'identifiers' => 'updateIdentifiers',
                 'faculty_fields' => 'updateFacultyFields',
+                'observability' => 'updateObservability',
                 default => 'viewAny',
             }, GeneralSetting::class);
 
@@ -1222,6 +1281,7 @@ final class AdministratorSystemManagementController extends Controller
                 'identifiers' => 'viewIdentifiers',
                 'faculty_fields' => 'viewFacultyFields',
                 'pulse' => 'viewPulse',
+                'observability' => 'viewObservability',
             }, GeneralSetting::class);
 
             $access[$section] = [

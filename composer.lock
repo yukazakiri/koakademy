@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "1e1d96e84291d44f842fb7287b90acf3",
+    "content-hash": "f9b11a3f25ff35fecd6c870b47698690",
     "packages": [
         {
             "name": "achyutn/filament-log-viewer",
@@ -5479,6 +5479,70 @@
             ],
             "description": "Configurable online forms, surveys, evaluations, and record-linked submissions for KoAkademy.",
             "time": "2026-08-28T16:00:46+00:00"
+        },
+        {
+            "name": "koakademy/hr-management",
+            "version": "v1.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/yukazakiri/koakademy-module-hr-management.git",
+                "reference": "cea0f1d59e0b9c64f2d14c8b54ca67cb97436cb0"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/yukazakiri/koakademy-module-hr-management/zipball/cea0f1d59e0b9c64f2d14c8b54ca67cb97436cb0",
+                "reference": "cea0f1d59e0b9c64f2d14c8b54ca67cb97436cb0",
+                "shasum": ""
+            },
+            "require": {
+                "filament/filament": "^5.0",
+                "inertiajs/inertia-laravel": "^3.0",
+                "laravel/framework": "^13.0",
+                "nwidart/laravel-modules": "^13.0",
+                "php": ">=8.5 <8.6",
+                "spatie/laravel-permission": "^6.21"
+            },
+            "require-dev": {
+                "laravel/pint": "^1.24",
+                "orchestra/testbench": "^11.0",
+                "pestphp/pest": "^5.0",
+                "pestphp/pest-plugin-laravel": "^5.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Modules\\HrManagement\\Providers\\HrManagementServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Modules\\HrManagement\\": "app/",
+                    "Modules\\HrManagement\\Database\\Factories\\": "database/factories/",
+                    "Modules\\HrManagement\\Database\\Seeders\\": "database/seeders/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "Modules\\HrManagement\\Tests\\": "tests/"
+                }
+            },
+            "scripts": {
+                "test": [
+                    "pest --compact"
+                ]
+            },
+            "license": [
+                "AGPL-3.0-or-later"
+            ],
+            "authors": [
+                {
+                    "name": "KoAkademy contributors"
+                }
+            ],
+            "description": "Core HR, attendance, leave, and evaluation workflows for KoAkademy.",
+            "time": "2026-09-04T02:01:06+00:00"
         },
         {
             "name": "laminas/laminas-diactoros",

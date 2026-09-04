@@ -41,6 +41,7 @@
         "joaopaulolndev/filament-edit-profile": "^3.0",
         "joaopaulolndev/filament-general-settings": "^3.0",
         "koakademy/forms": "^1.0",
+        "koakademy/hr-management": "^1.0",
         "laraowl/client": "^1.0",
         "laravel/framework": "^13.0",
         "laravel/nightwatch": "^1.22",
@@ -120,6 +121,11 @@
         }
     },
     "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/yukazakiri/koakademy-module-hr-management.git",
+            "no-api": true
+        },
         {
             "type": "composer",
             "url": "https://yukazakiri.github.io/koakademy-modules"

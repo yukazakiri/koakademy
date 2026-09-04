@@ -139,6 +139,37 @@ final class RolesSeeder extends Seeder
             'manage_tokens',
             'view_tokens',
             ...SystemManagementPermissions::all(),
+            ...$this->getHrManagementPermissions(),
+        ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function getHrManagementPermissions(): array
+    {
+        if (class_exists(\Modules\HrManagement\Services\HrManagementAuthorization::class)) {
+            return \Modules\HrManagement\Services\HrManagementAuthorization::PERMISSIONS;
+        }
+
+        return [
+            'hr.dashboard.view',
+            'hr.people.view',
+            'hr.people.create',
+            'hr.people.update',
+            'hr.people.delete',
+            'hr.attendance.view',
+            'hr.attendance.manage',
+            'hr.attendance.approve',
+            'hr.leave.view',
+            'hr.leave.manage',
+            'hr.leave.approve',
+            'hr.leave.override',
+            'hr.evaluations.view',
+            'hr.evaluations.templates.manage',
+            'hr.evaluations.submit',
+            'hr.evaluations.finalize',
+            'hr.settings.manage',
         ];
     }
 
@@ -408,6 +439,7 @@ final class RolesSeeder extends Seeder
             'View:Event', 'Manage:Event',
             'ViewAuditLog',
             'ViewDashboard', 'GenerateReports',
+            ...$this->getHrManagementPermissions(),
         ]);
     }
 

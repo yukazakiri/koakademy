@@ -28,6 +28,11 @@ final class Backups extends BaseBackups
         return 'System Tools';
     }
 
+    public static function getCluster(): ?string
+    {
+        return null;
+    }
+
     public function getHeading(): string
     {
         return 'Application Backups';

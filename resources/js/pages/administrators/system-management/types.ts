@@ -17,7 +17,8 @@ export type SystemManagementSectionKey =
     | "grading"
     | "identifiers"
     | "faculty_fields"
-    | "pulse";
+    | "pulse"
+    | "observability";
 
 export interface GradingConfigPayload {
     scale: "point" | "percent" | "auto";
@@ -144,6 +145,53 @@ export interface MailConfig {
     email_from_name: string;
     delivery_mode: "log" | "external";
     managed_by: "deployment";
+}
+
+export interface SentryConfig {
+    enabled: boolean;
+    dsn: string;
+    environment: string;
+    release: string;
+    sample_rate: number;
+    traces_sample_rate: number;
+    profiles_sample_rate: number | null;
+    send_default_pii: boolean;
+    enable_logs: boolean;
+    frontend_enabled: boolean;
+    frontend_dsn: string;
+    frontend_script: string;
+    frontend_traces_sample_rate: number;
+    frontend_replays_session_sample_rate: number;
+    frontend_replays_on_error_sample_rate: number;
+}
+
+export type ErrorReportingProviderKey = "sentry" | "flare" | "bugsnag" | "honeybadger";
+
+export interface SimpleErrorReportingProviderConfig {
+    enabled: boolean;
+    api_key: string;
+    environment: string;
+    release: string;
+}
+
+export interface ErrorReportingProviderMeta {
+    key: ErrorReportingProviderKey;
+    label: string;
+    description: string;
+    package: string;
+    docs_url: string;
+    install_command: string;
+    installed: boolean;
+}
+
+export interface ErrorReportingConfig {
+    providers: {
+        sentry: SentryConfig;
+        flare: SimpleErrorReportingProviderConfig;
+        bugsnag: SimpleErrorReportingProviderConfig;
+        honeybadger: SimpleErrorReportingProviderConfig;
+    };
+    meta: Record<ErrorReportingProviderKey, ErrorReportingProviderMeta>;
 }
 
 export type NewsletterProviderName = "sequenzy" | "brevo" | "mailchimp";
@@ -405,6 +453,8 @@ export interface SystemManagementPageProps {
     mail_config: MailConfig;
     newsletter_config: NewsletterConfig;
     analytics: AnalyticsConfig;
+    sentry: SentryConfig;
+    error_reporting: ErrorReportingConfig;
     branding: BrandingSettings;
     enrollment_pipeline: EnrollmentPipelineSettings;
     enrollment_stats: EnrollmentStatsSettings;

@@ -7,10 +7,37 @@ use App\Models\GeneralSetting;
 use App\Models\User;
 use App\Services\ErrorReportingService;
 use App\Services\SentrySettingsService;
+use App\Support\SystemManagementPermissions;
 use Inertia\Testing\AssertableInertia;
+use Spatie\Permission\Models\Permission;
 
 use function Pest\Laravel\actingAs;
 use function Pest\Laravel\withoutMiddleware;
+
+function grantObservabilityPermissions(User $user, array $sections): void
+{
+    foreach ($sections as $section) {
+        $viewPermission = SystemManagementPermissions::viewPermission($section);
+
+        Permission::firstOrCreate([
+            'name' => $viewPermission,
+            'guard_name' => 'web',
+        ]);
+
+        $user->givePermissionTo($viewPermission);
+
+        $updatePermission = SystemManagementPermissions::updatePermission($section);
+
+        if ($updatePermission !== null) {
+            Permission::firstOrCreate([
+                'name' => $updatePermission,
+                'guard_name' => 'web',
+            ]);
+
+            $user->givePermissionTo($updatePermission);
+        }
+    }
+}
 
 /** @return array<string, mixed> */
 function validSentryProviderRow(array $overrides = []): array
@@ -141,11 +168,13 @@ it('migrates the legacy single-provider Sentry row', function (): void {
 });
 
 it('renders the observability page with the error reporting payload', function (): void {
+    $this->withoutVite();
+
     $user = User::factory()->create([
         'role' => UserRole::Admin,
     ]);
 
-    grantSystemManagementPermissions($user, ['observability']);
+    grantObservabilityPermissions($user, ['observability']);
 
     actingAs($user)
         ->get(portalUrlForAdministrators('/administrators/system-management/observability'))
@@ -165,7 +194,7 @@ it('updates error reporting settings from the observability form', function (): 
         'role' => UserRole::Admin,
     ]);
 
-    grantSystemManagementPermissions($user, ['observability']);
+    grantObservabilityPermissions($user, ['observability']);
     withoutMiddleware();
 
     actingAs($user)
@@ -193,7 +222,7 @@ it('rejects enabling Sentry without a DSN', function (): void {
         'role' => UserRole::Admin,
     ]);
 
-    grantSystemManagementPermissions($user, ['observability']);
+    grantObservabilityPermissions($user, ['observability']);
     withoutMiddleware();
 
     actingAs($user)
@@ -210,7 +239,7 @@ it('rejects enabling a provider without an API key', function (): void {
         'role' => UserRole::Admin,
     ]);
 
-    grantSystemManagementPermissions($user, ['observability']);
+    grantObservabilityPermissions($user, ['observability']);
     withoutMiddleware();
 
     actingAs($user)
@@ -227,7 +256,7 @@ it('forbids error reporting updates without the update permission', function ():
         'role' => UserRole::Admin,
     ]);
 
-    grantSystemManagementPermissions($user, []);
+    grantObservabilityPermissions($user, []);
     withoutMiddleware();
 
     actingAs($user)
@@ -241,7 +270,7 @@ it('refuses probe events when the provider SDK is not installed', function (): v
         'role' => UserRole::Admin,
     ]);
 
-    grantSystemManagementPermissions($user, ['observability']);
+    grantObservabilityPermissions($user, ['observability']);
     withoutMiddleware();
 
     actingAs($user)
@@ -250,7 +279,7 @@ it('refuses probe events when the provider SDK is not installed', function (): v
             array_merge(validErrorReportingPayload(), ['provider' => 'flare'])
         )
         ->assertStatus(422)
-        ->assertJsonPath('message', 'The spatie/laravel-flare SDK is not installed. Run `composer require spatie/laravel-flare` first.');
+        ->assertJsonPath('message', 'Test event failed: The spatie/laravel-flare SDK is not installed. Run `composer require spatie/laravel-flare` first.');
 });
 
 it('refuses probe events without a credential', function (): void {
@@ -259,7 +288,7 @@ it('refuses probe events without a credential', function (): void {
         'role' => UserRole::Admin,
     ]);
 
-    grantSystemManagementPermissions($user, ['observability']);
+    grantObservabilityPermissions($user, ['observability']);
     withoutMiddleware();
 
     actingAs($user)

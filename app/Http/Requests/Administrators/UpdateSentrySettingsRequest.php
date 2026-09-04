@@ -80,7 +80,6 @@ final class UpdateSentrySettingsRequest extends FormRequest
         });
     }
 
-    /** @param mixed $sentry */
     private function validateSentry(Validator $validator, mixed $sentry): void
     {
         if (! is_array($sentry) || ! ($sentry['enabled'] ?? false)) {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Models\GeneralSetting;
+use Exception;
 use Illuminate\Support\Facades\Schema;
 use RuntimeException;
 use Throwable;
@@ -18,10 +19,10 @@ use Throwable;
  */
 final class ErrorReportingService
 {
-    private const string CONFIG_KEY = 'error_reporting';
-
     /** @var list<string> */
     public const array PROVIDER_KEYS = ['sentry', 'flare', 'bugsnag', 'honeybadger'];
+
+    private const string CONFIG_KEY = 'error_reporting';
 
     public function __construct(
         private readonly SentrySettingsService $sentrySettings,
@@ -154,7 +155,6 @@ final class ErrorReportingService
     /**
      * Sanitize candidate provider rows without persisting (used by the probe endpoint).
      *
-     * @param  mixed  $providers
      * @return array<string, array<string, mixed>>
      */
     public function sanitizeProviders(mixed $providers): array
@@ -265,7 +265,7 @@ final class ErrorReportingService
             throw new RuntimeException('The installed Flare SDK does not expose a report API this panel can call.');
         }
 
-        $facade::report(new \Exception('Flare test event from KoAkademy admin panel'));
+        $facade::report(new Exception('Flare test event from KoAkademy admin panel'));
     }
 
     /** @param array<string, mixed> $candidate */
@@ -279,7 +279,7 @@ final class ErrorReportingService
             throw new RuntimeException('The installed Bugsnag SDK does not expose a report API this panel can call.');
         }
 
-        $facade::notifyException(new \Exception('Bugsnag test event from KoAkademy admin panel'));
+        $facade::notifyException(new Exception('Bugsnag test event from KoAkademy admin panel'));
     }
 
     /** @param array<string, mixed> $candidate */
@@ -293,7 +293,7 @@ final class ErrorReportingService
             throw new RuntimeException('The installed Honeybadger SDK does not expose a report API this panel can call.');
         }
 
-        $facade::notify(new \Exception('Honeybadger test event from KoAkademy admin panel'));
+        $facade::notify(new Exception('Honeybadger test event from KoAkademy admin panel'));
     }
 
     /** @return array{enabled: bool, api_key: string, environment: string, release: string} */
@@ -311,7 +311,6 @@ final class ErrorReportingService
     }
 
     /**
-     * @param  mixed  $attributes
      * @return array{enabled: bool, api_key: string, environment: string, release: string}
      */
     private function sanitizeSimpleProvider(string $key, mixed $attributes): array

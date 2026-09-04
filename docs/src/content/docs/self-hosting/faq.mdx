@@ -22,10 +22,12 @@ to the KoAkademy application, commit the generated `composer.lock`, build and
 deploy a new image, run migrations when required, and then enable the module in
 **Administrators → Marketplace**.
 
-For example, a Forms installation from the application repository is:
+For example, installing standalone modules such as Forms or HR Management from the application repository is:
 
 ```sh
 composer require koakademy/forms:^1.0
+# or for HR Management:
+# composer require koakademy/hr-management:^1.0
 php artisan migrate --force
 php artisan optimize:clear
 ```

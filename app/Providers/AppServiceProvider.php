@@ -58,10 +58,13 @@ use App\Services\Newsletter\NewsletterSettingsService;
 use App\Services\Newsletter\NewsletterSubscriptionService;
 use App\Services\VersionService;
 use App\Support\HostingSecurity;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Migrations\Migrator;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\View\FileViewFinder;
@@ -112,6 +115,21 @@ final class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        RateLimiter::for('api', function (Request $request): Limit {
+            return Limit::perMinute((int) config('api.rate_limit', 60))
+                ->by($request->user()?->getAuthIdentifier() ?? $request->ip());
+        });
+
+        RateLimiter::for('api-login', function (Request $request): Limit {
+            return Limit::perMinute((int) config('api.login_rate_limit', 5))
+                ->by(mb_strtolower((string) $request->input('email')).'|'.$request->ip());
+        });
+
+        RateLimiter::for('api-otp', function (Request $request): Limit {
+            return Limit::perMinute((int) config('api.otp_rate_limit', 5))
+                ->by((string) $request->input('challenge_id', $request->ip()));
+        });
+
         Model::unguard();
         StudentTransaction::observe(StudentTransactionObserver::class);
 

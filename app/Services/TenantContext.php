@@ -27,6 +27,15 @@ final class TenantContext
 
     private bool $resolved = false;
 
+    private bool $apiRequest = false;
+
+    public function setApiSchool(School $school): void
+    {
+        $this->currentSchool = $school;
+        $this->resolved = true;
+        $this->apiRequest = true;
+    }
+
     /**
      * Get the current school/organization for the tenant context.
      */
@@ -40,9 +49,9 @@ final class TenantContext
             return null;
         }
 
-        $schoolId = Session::get(self::SESSION_KEY);
+        $schoolId = $this->apiRequest ? null : Session::get(self::SESSION_KEY);
 
-        if (! $schoolId) {
+        if (! $this->apiRequest && ! $schoolId) {
             try {
                 $schoolId = app(GeneralSettingsService::class)->getActiveSchoolId();
             } catch (Exception) {
@@ -89,6 +98,10 @@ final class TenantContext
     {
         $this->currentSchool = $school;
         $this->resolved = true;
+
+        if ($this->apiRequest) {
+            return;
+        }
 
         if ($school instanceof School) {
             Session::put(self::SESSION_KEY, $school->id);
@@ -216,6 +229,7 @@ final class TenantContext
     {
         $this->currentSchool = null;
         $this->resolved = false;
+        $this->apiRequest = false;
         Session::forget(self::SESSION_KEY);
     }
 
@@ -226,5 +240,6 @@ final class TenantContext
     {
         $this->resolved = false;
         $this->currentSchool = null;
+        $this->apiRequest = false;
     }
 }

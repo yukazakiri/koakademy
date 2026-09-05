@@ -3,8 +3,11 @@
 declare(strict_types=1);
 
 use App\Http\Middleware\EnsureAdministrativePortalAccess;
+use App\Http\Middleware\EnsureApiEnabled;
+use App\Http\Middleware\EnsureMobileApiAbility;
 use App\Http\Middleware\FacultyIdValidationMiddleware;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\SetApiTenantContext;
 use App\Http\Middleware\SetTenantContext;
 use App\Support\HostingSecurity;
 use Illuminate\Foundation\Application;
@@ -41,6 +44,9 @@ return Application::configure(basePath: dirname(__DIR__))
             'student.only' => App\Http\Middleware\EnsureStudentAccess::class,
             'ensure.feature' => App\Http\Middleware\EnsureFeatureEnabled::class,
             'tenant.context' => SetTenantContext::class,
+            'api.ability' => EnsureMobileApiAbility::class,
+            'api.tenant' => SetApiTenantContext::class,
+            'api.enabled' => EnsureApiEnabled::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

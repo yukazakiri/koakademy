@@ -135,6 +135,16 @@ final class GeneralSettingPolicy
         return $this->canViewSection($user, 'pulse');
     }
 
+    public function viewObservability(User $user): bool
+    {
+        return $this->canViewSection($user, 'observability');
+    }
+
+    public function updateObservability(User $user): bool
+    {
+        return $this->canUpdateSection($user, 'observability');
+    }
+
     public function viewGrading(User $user): bool
     {
         return $this->canViewSection($user, 'grading');

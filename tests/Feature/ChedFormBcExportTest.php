@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Enums\CurriculumFramework;
 use App\Enums\StudentStatus;
 use App\Enums\UserRole;
+use App\Jobs\GenerateRegulatoryReportExportJob;
+use App\Models\AssessmentExport;
 use App\Models\Course;
 use App\Models\CourseType;
 use App\Models\Department;
@@ -13,8 +15,12 @@ use App\Models\SchoolCurriculumCapability;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\User;
+use App\Services\AssessmentExportCoordinator;
+use App\Services\AssessmentExportNotificationService;
 use App\Services\ChedFormBcExportService;
 use App\Services\RegulatoryReportRegistry;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 
 beforeEach(function (): void {
@@ -230,6 +236,13 @@ test('ched form bc export service generates populated workbook and preview', fun
         ->and((int) $equitySheet->getCell('C10')->getValue())->toBe(1) // Apparent physical
         ->and((int) $equitySheet->getCell('M10')->getValue())->toBe(1) // Indigenous
         ->and((int) $equitySheet->getCell('N10')->getValue())->toBe(1); // Solo parent
+
+    $summarySheet = $spreadsheet->getSheetByName('Sheet1');
+    expect($summarySheet)->not->toBeNull()
+        ->and((int) $summarySheet->getCell('B10')->getCalculatedValue())->toBe(1) // PWD male
+        ->and((int) $summarySheet->getCell('E10')->getCalculatedValue())->toBe(1) // PWD first year
+        ->and((int) $summarySheet->getCell('C19')->getCalculatedValue())->toBe(1) // Indigenous female
+        ->and((int) $summarySheet->getCell('F19')->getCalculatedValue())->toBe(1); // Indigenous second year
 });
 
 test('administrator can preview and download ched form bc report', function (): void {
@@ -284,13 +297,63 @@ test('administrator can preview and download ched form bc report', function (): 
 
     expect($previewResponse->json('generated_at'))->toBeString()->not->toBeEmpty();
 
+    Queue::fake();
+
     $exportResponse = $this->actingAs($user)
         ->get(route('administrators.registrar.reports.ched.export', [
             'school_year' => '2026-2027',
             'semester' => 1,
         ]));
 
-    $exportResponse->assertOk();
+    $exportResponse->assertAccepted()
+        ->assertJsonPath('job.type', 'regulatory_report')
+        ->assertJsonPath('job.title', 'CHED E-Form B/C');
+    Queue::assertPushed(GenerateRegulatoryReportExportJob::class);
+});
+
+test('queued ched export job stores a completed workbook', function (): void {
+    Storage::fake('local');
+    config()->set('assessment-exports.disk', 'local');
+
+    $school = School::factory()->create(['country_code' => 'PH']);
+    SchoolCurriculumCapability::factory()->for($school)->create([
+        'curriculum_framework' => CurriculumFramework::ChedPsg,
+        'is_enabled' => true,
+    ]);
+    $user = User::factory()->create([
+        'school_id' => $school->id,
+        'role' => UserRole::SuperAdmin,
+    ]);
+    $export = AssessmentExport::withoutSchoolScope()->create([
+        'user_id' => $user->id,
+        'school_id' => $school->id,
+        'status' => 'pending',
+        'stage' => 'queued',
+        'filters' => [
+            'school_year' => '2026 - 2027',
+            'semester' => 1,
+            'department_id' => 'all',
+            'course_id' => 'all',
+            'school_id' => $school->id,
+            'export_type' => 'regulatory_report',
+            'report_key' => RegulatoryReportRegistry::CHED_EFORM_BC,
+            'report_title' => 'CHED E-Form B/C',
+            'file_name_prefix' => 'CHED_Form_B-C',
+        ],
+        'message' => 'Queued',
+    ]);
+
+    (new GenerateRegulatoryReportExportJob($export->id))->handle(
+        app(RegulatoryReportRegistry::class),
+        app(AssessmentExportCoordinator::class),
+        app(AssessmentExportNotificationService::class),
+    );
+
+    $export->refresh();
+    expect($export->status)->toBe('completed')
+        ->and($export->output_name)->toEndWith('.xlsx')
+        ->and($export->output_path)->not->toBeNull();
+    Storage::disk('local')->assertExists($export->output_path);
 });
 
 test('ched form bc preview keeps foreign department and course filters scoped to active school', function (): void {

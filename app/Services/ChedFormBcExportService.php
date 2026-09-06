@@ -24,6 +24,76 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
     private const START_ROW = 10;
 
     /**
+     * @var array<string, array{row: int, predicate: string}>
+     */
+    private const SPECIAL_EQUITY_GROUPS = [
+        'pwd_total' => [
+            'row' => 9,
+            'predicate' => 'students.is_pwd = true',
+        ],
+        'apparent_physical' => [
+            'row' => 10,
+            'predicate' => "students.is_pwd = true AND (LOWER(TRIM(COALESCE(students.pwd_type, ''))) LIKE '%physical%' OR LOWER(TRIM(COALESCE(students.pwd_type, ''))) LIKE '%orthopedic%' OR LOWER(TRIM(COALESCE(students.pwd_type, ''))) LIKE '%apparent%')",
+        ],
+        'deaf' => [
+            'row' => 11,
+            'predicate' => "students.is_pwd = true AND (LOWER(TRIM(COALESCE(students.pwd_type, ''))) LIKE '%deaf%' OR LOWER(TRIM(COALESCE(students.pwd_type, ''))) LIKE '%hearing%')",
+        ],
+        'intellectual' => [
+            'row' => 12,
+            'predicate' => "students.is_pwd = true AND LOWER(TRIM(COALESCE(students.pwd_type, ''))) LIKE '%intellectual%'",
+        ],
+        'learning' => [
+            'row' => 13,
+            'predicate' => "students.is_pwd = true AND LOWER(TRIM(COALESCE(students.pwd_type, ''))) LIKE '%learning%'",
+        ],
+        'mental' => [
+            'row' => 14,
+            'predicate' => "students.is_pwd = true AND (LOWER(TRIM(COALESCE(students.pwd_type, ''))) LIKE '%mental%' OR LOWER(TRIM(COALESCE(students.pwd_type, ''))) LIKE '%psycho%')",
+        ],
+        'visual' => [
+            'row' => 15,
+            'predicate' => "students.is_pwd = true AND (LOWER(TRIM(COALESCE(students.pwd_type, ''))) LIKE '%visual%' OR LOWER(TRIM(COALESCE(students.pwd_type, ''))) LIKE '%blind%')",
+        ],
+        'speech' => [
+            'row' => 16,
+            'predicate' => "students.is_pwd = true AND (LOWER(TRIM(COALESCE(students.pwd_type, ''))) LIKE '%speech%' OR LOWER(TRIM(COALESCE(students.pwd_type, ''))) LIKE '%language%')",
+        ],
+        'cancer' => [
+            'row' => 17,
+            'predicate' => "students.is_pwd = true AND LOWER(TRIM(COALESCE(students.pwd_type, ''))) LIKE '%cancer%'",
+        ],
+        'rare_disease' => [
+            'row' => 18,
+            'predicate' => "students.is_pwd = true AND LOWER(TRIM(COALESCE(students.pwd_type, ''))) LIKE '%rare%'",
+        ],
+        'indigenous' => [
+            'row' => 19,
+            'predicate' => 'students.is_indigenous_person = true',
+        ],
+        'solo_parent' => [
+            'row' => 20,
+            'predicate' => 'students.is_solo_parent = true',
+        ],
+        'solo_parent_dependent' => [
+            'row' => 21,
+            'predicate' => 'students.is_solo_parent_dependent = true',
+        ],
+        'senior_citizen' => [
+            'row' => 22,
+            'predicate' => 'students.is_senior_citizen = true',
+        ],
+        'magna_carta' => [
+            'row' => 23,
+            'predicate' => 'students.is_magna_carta = true',
+        ],
+        'underprivileged' => [
+            'row' => 24,
+            'predicate' => 'students.is_underprivileged = true',
+        ],
+    ];
+
+    /**
      * Map course type names or course codes to sheet names in the CHED workbook.
      *
      * @var array<string, string>
@@ -81,6 +151,7 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
 
         $this->populateCurricularSheets($spreadsheet, $courses, $enrollmentCounts, $graduatesCounts);
         $this->populateSpecialEquitySheet($spreadsheet, $courses, $schoolYear, $semester, $schoolId);
+        $this->populateSpecialEquitySummarySheet($spreadsheet, $courses, $schoolYear, $semester, $schoolId);
 
         return $spreadsheet;
     }
@@ -485,6 +556,156 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
 
             $row++;
         }
+    }
+
+    /**
+     * Populate the workbook's aggregate Special Equity Groups form (Sheet1).
+     *
+     * The template has one row per equity group and separate columns for
+     * enrollment and graduates split by sex and year level.
+     *
+     * @param  Collection<int, Course>  $courses
+     */
+    private function populateSpecialEquitySummarySheet(
+        Spreadsheet $spreadsheet,
+        Collection $courses,
+        string $schoolYear,
+        ?int $semester,
+        ?int $schoolId,
+    ): void {
+        $sheet = $spreadsheet->getSheetByName('Sheet1');
+        if (! $sheet) {
+            return;
+        }
+
+        $courseIds = $courses
+            ->pluck('id')
+            ->map(static fn (mixed $courseId): string => (string) $courseId)
+            ->values()
+            ->all();
+
+        $enrQuery = StudentEnrollment::query()
+            ->join('students', function ($join): void {
+                $join->whereRaw('CAST(student_enrollment.student_id AS BIGINT) = students.id');
+            })
+            ->whereNull('student_enrollment.deleted_at')
+            ->whereNull('students.deleted_at')
+            ->where('students.status', '!=', StudentStatus::Graduated->value)
+            ->whereIn('student_enrollment.course_id', $courseIds);
+
+        if ($schoolYear !== '') {
+            $enrQuery->whereIn('student_enrollment.school_year', $this->schoolYearVariants($schoolYear));
+        }
+        if ($semester !== null) {
+            $enrQuery->where('student_enrollment.semester', $semester);
+        }
+        if ($schoolId !== null) {
+            $enrQuery->where('student_enrollment.school_id', $schoolId);
+        }
+
+        $enrollment = $this->aggregateSpecialEquityGroups($enrQuery, 'student_enrollment.academic_year');
+
+        $gradQuery = Student::query()
+            ->where('status', StudentStatus::Graduated->value)
+            ->whereNull('deleted_at')
+            ->whereIn('course_id', array_map(static fn (string $courseId): int => (int) $courseId, $courseIds));
+
+        if ($schoolYear !== '') {
+            $gradQuery->whereIn('students.graduation_school_year', $this->schoolYearVariants($schoolYear));
+        }
+        if ($semester !== null) {
+            $gradQuery->where('students.graduation_semester', $semester);
+        }
+        if ($schoolId !== null) {
+            $gradQuery->where('students.school_id', $schoolId);
+        }
+
+        $graduates = $this->aggregateSpecialEquityGroups($gradQuery, 'students.academic_year');
+
+        foreach (self::SPECIAL_EQUITY_GROUPS as $key => $definition) {
+            $row = $definition['row'];
+            $this->setEquitySummaryValues($sheet, $row, $enrollment[$key] ?? [], $graduates[$key] ?? []);
+        }
+
+        $this->setEquitySummaryTotalRow($sheet);
+    }
+
+    /**
+     * @param  Builder<\Illuminate\Database\Eloquent\Model>  $query
+     * @return array<string, array<string, int>>
+     */
+    private function aggregateSpecialEquityGroups(Builder $query, string $yearColumn): array
+    {
+        $gender = "LOWER(TRIM(COALESCE(students.gender, '')))";
+        $selects = [];
+
+        foreach (self::SPECIAL_EQUITY_GROUPS as $key => $definition) {
+            $predicate = $definition['predicate'];
+            $selects[] = "COALESCE(SUM(CASE WHEN {$predicate} AND {$gender} = 'male' THEN 1 ELSE 0 END), 0) as {$key}_male";
+            $selects[] = "COALESCE(SUM(CASE WHEN {$predicate} AND {$gender} = 'female' THEN 1 ELSE 0 END), 0) as {$key}_female";
+            foreach (range(1, 6) as $year) {
+                $selects[] = "COALESCE(SUM(CASE WHEN {$predicate} AND {$yearColumn} = {$year} THEN 1 ELSE 0 END), 0) as {$key}_year_{$year}";
+            }
+        }
+
+        $row = $query->selectRaw(implode(', ', $selects))->first();
+        if ($row === null) {
+            return [];
+        }
+
+        $attributes = collect($row->getAttributes())
+            ->map(static fn (mixed $value): int => (int) $value);
+        $groups = [];
+
+        foreach (array_keys(self::SPECIAL_EQUITY_GROUPS) as $key) {
+            $groups[$key] = [
+                'male' => $attributes->get("{$key}_male", 0),
+                'female' => $attributes->get("{$key}_female", 0),
+            ];
+            foreach (range(1, 6) as $year) {
+                $groups[$key]["year_{$year}"] = $attributes->get("{$key}_year_{$year}", 0);
+            }
+        }
+
+        return $groups;
+    }
+
+    /**
+     * @param  array<string, int>  $enrollment
+     * @param  array<string, int>  $graduates
+     */
+    private function setEquitySummaryValues(Worksheet $sheet, int $row, array $enrollment, array $graduates): void
+    {
+        $sheet->setCellValue("B{$row}", $enrollment['male'] ?? 0);
+        $sheet->setCellValue("C{$row}", $enrollment['female'] ?? 0);
+        $sheet->setCellValue("D{$row}", "=B{$row}+C{$row}");
+
+        foreach (range(1, 6) as $year) {
+            $column = chr(ord('D') + $year);
+            $sheet->setCellValue("{$column}{$row}", $enrollment["year_{$year}"] ?? 0);
+        }
+        $sheet->setCellValue("K{$row}", "=SUM(E{$row}:J{$row})");
+
+        $sheet->setCellValue("L{$row}", $graduates['male'] ?? 0);
+        $sheet->setCellValue("M{$row}", $graduates['female'] ?? 0);
+        $sheet->setCellValue("N{$row}", "=L{$row}+M{$row}");
+
+        foreach (range(1, 6) as $year) {
+            $column = chr(ord('N') + $year);
+            $sheet->setCellValue("{$column}{$row}", $graduates["year_{$year}"] ?? 0);
+        }
+        $sheet->setCellValue("U{$row}", "=SUM(O{$row}:T{$row})");
+    }
+
+    private function setEquitySummaryTotalRow(Worksheet $sheet): void
+    {
+        foreach (['B', 'C', 'E', 'F', 'G', 'H', 'I', 'J', 'L', 'M', 'O', 'P', 'Q', 'R', 'S', 'T'] as $column) {
+            $sheet->setCellValue("{$column}25", "=SUM({$column}9,{$column}19:{$column}24)");
+        }
+        $sheet->setCellValue('D25', '=B25+C25');
+        $sheet->setCellValue('K25', '=SUM(E25:J25)');
+        $sheet->setCellValue('N25', '=L25+M25');
+        $sheet->setCellValue('U25', '=SUM(O25:T25)');
     }
 
     /**

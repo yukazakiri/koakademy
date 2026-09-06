@@ -1,8 +1,42 @@
-import { type CSSProperties } from "react";
+import { Fragment, type CSSProperties } from "react";
 
 type ReportContentProps = {
     data: Record<string, unknown>;
 };
+type ReportPayload = Record<string, unknown> & {
+    type: string;
+    title?: string;
+    subtitle?: string;
+};
+type ChedGenderCounts = { male: number; female: number };
+type ChedEnrollmentYearKey = "year_5" | "year_6" | "year_7";
+type ChedReportRow = {
+    program_title: string;
+    program_code: string;
+    major: string | null;
+    major_code: string | null;
+    with_thesis: string;
+    program_status: string;
+    delivery_mode: string;
+    credit_units: number;
+    enrolment: {
+        new_freshmen: ChedGenderCounts;
+        old_first_year: ChedGenderCounts;
+        year_2: ChedGenderCounts;
+        year_3: ChedGenderCounts;
+        year_4: ChedGenderCounts;
+        year_5?: ChedGenderCounts;
+        year_6?: ChedGenderCounts;
+        year_7?: ChedGenderCounts;
+        subtotal: ChedGenderCounts;
+        total: number;
+    };
+    graduates: { male: number; female: number; total: number };
+};
+
+function isReportPayload(value: unknown): value is ReportPayload {
+    return typeof value === "object" && value !== null && "type" in value && typeof value.type === "string";
+}
 
 /**
  * ReportContent renders the formal PDF-style report inside the preview modal.
@@ -10,7 +44,7 @@ type ReportContentProps = {
  */
 export function ReportContent({ data }: ReportContentProps) {
     const school = data.school as { name: string; logo: string; contact: string; email: string; address: string } | undefined;
-    const report = data.report as Record<string, unknown>;
+    const report = isReportPayload(data.report) ? data.report : isReportPayload(data) ? data : null;
     const schoolYear = data.school_year as string;
     const semester = data.semester as string;
     const generatedAt = data.generated_at as string;
@@ -18,10 +52,14 @@ export function ReportContent({ data }: ReportContentProps) {
 
     if (!report) return null;
 
-    const reportType = report.type as string;
-    const title = report.title as string;
-    const subtitle = report.subtitle as string;
+    const reportType = report.type;
+    const title = report.title ?? "Report";
+    const subtitle = report.subtitle ?? "";
     const filtersApplied = report.filters_applied as Record<string, string | null> | undefined;
+
+    if (reportType === "ched_eform_bc") {
+        return <ChedReportContent data={data} />;
+    }
 
     return (
         <div style={{ fontFamily: "'Times New Roman', Times, serif", color: "#000", fontSize: "9pt", lineHeight: 1.3 }}>
@@ -31,9 +69,7 @@ export function ReportContent({ data }: ReportContentProps) {
                 <h1 style={{ fontSize: "14pt", fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>
                     {school?.name || "KoAkademy"}
                 </h1>
-                <div style={{ fontSize: "8pt", color: "#333", marginBottom: 2 }}>
-                    {school?.address || "123 Example Street, Sample City"}
-                </div>
+                <div style={{ fontSize: "8pt", color: "#333", marginBottom: 2 }}>{school?.address || "123 Example Street, Sample City"}</div>
                 <div style={{ fontSize: "8pt", color: "#333" }}>
                     Tel: {school?.contact || "444-5389/442-4160"}
                     {school?.email ? ` | Email: ${school.email}` : ""}
@@ -452,6 +488,210 @@ function EnrollmentSummaryReport({ report }: { report: Record<string, unknown> }
                     </tbody>
                 </table>
             </div>
+        </div>
+    );
+}
+
+function ChedReportContent({ data }: ReportContentProps) {
+    const directReport = isReportPayload(data.report) ? data.report : isReportPayload(data) ? data : null;
+    if (directReport?.type !== "ched_eform_bc") return null;
+
+    const report = directReport as ReportPayload & {
+        summary?: { total_programs?: number; total_enrolled?: number; total_graduates?: number };
+        sheets?: Record<string, ChedReportRow[]>;
+    };
+    const school = data.school as { name: string; logo: string; contact: string; email: string; address: string } | undefined;
+    const schoolYear = typeof data.school_year === "string" && data.school_year !== "" ? data.school_year : null;
+    const semester = typeof data.semester === "string" && data.semester !== "" ? data.semester : null;
+    const generatedAt = typeof data.generated_at === "string" && data.generated_at !== "" ? data.generated_at : null;
+    const generatedBy = typeof data.generated_by === "string" && data.generated_by !== "" ? data.generated_by : null;
+    const reportTitle = report.title ?? "CHED E-Form B/C - Curriculum Program Profile, Enrolment & Graduates";
+    const reportSubtitle = report.subtitle ?? null;
+    const periodDetails = [schoolYear ? `Academic Year: ${schoolYear}` : null, semester ? `Term: ${semester}` : null].filter(
+        (detail): detail is string => detail !== null,
+    );
+    const enrolmentYearColumns: Array<{ key: ChedEnrollmentYearKey; label: string }> = [
+        { key: "year_5", label: "5th Yr" },
+        { key: "year_6", label: "6th Yr" },
+        { key: "year_7", label: "7th Yr" },
+    ];
+
+    const tableStyle: CSSProperties = { width: "100%", borderCollapse: "collapse", fontSize: "7.5pt", marginBottom: 20 };
+    const thStyle: CSSProperties = {
+        border: "1px solid #111",
+        padding: "4px 3px",
+        textAlign: "center",
+        backgroundColor: "#f3f4f6",
+        fontWeight: "bold",
+    };
+    const tdStyle: CSSProperties = { border: "1px solid #ccc", padding: "3px 4px" };
+    const numStyle: CSSProperties = { textAlign: "right", fontFamily: "monospace" };
+
+    return (
+        <div style={{ fontFamily: "Arial, sans-serif", color: "#000", fontSize: "8pt", lineHeight: 1.2 }}>
+            <div style={{ textAlign: "center", marginBottom: 12, borderBottom: "2px solid #000", paddingBottom: 8 }}>
+                <h1 style={{ fontSize: "13pt", fontWeight: "bold", textTransform: "uppercase", letterSpacing: 0.5, margin: 0 }}>
+                    COMMISSION ON HIGHER EDUCATION (CHED)
+                </h1>
+                <h2 style={{ fontSize: "11pt", fontWeight: "bold", margin: "2px 0" }}>{reportTitle}</h2>
+                {reportSubtitle && <div style={{ fontSize: "8pt", color: "#444", marginBottom: 2 }}>{reportSubtitle}</div>}
+                <div style={{ fontSize: "8pt", color: "#444" }}>
+                    Institution: {school?.name || "KoAkademy"}
+                    {periodDetails.length > 0 ? ` | ${periodDetails.join(" | ")}` : ""}
+                </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "8pt", color: "#555", marginBottom: 12 }}>
+                <div>
+                    Programs: <strong>{report.summary?.total_programs ?? 0}</strong> | Enrolment:{" "}
+                    <strong>{report.summary?.total_enrolled ?? 0}</strong> | Graduates: <strong>{report.summary?.total_graduates ?? 0}</strong>
+                </div>
+                {(generatedAt || generatedBy) && (
+                    <div>
+                        {generatedAt ? `Generated: ${generatedAt}` : "Generated"}
+                        {generatedBy ? ` (${generatedBy})` : ""}
+                    </div>
+                )}
+            </div>
+
+            {Object.entries(report.sheets ?? {}).map(([sheetName, rows]) => {
+                const visibleEnrolmentYearColumns = enrolmentYearColumns.filter((column) =>
+                    rows.some((row) => row.enrolment[column.key] !== undefined),
+                );
+
+                return (
+                    <div key={sheetName} style={{ marginBottom: 25 }}>
+                        <h3
+                            style={{
+                                fontSize: "10pt",
+                                fontWeight: "bold",
+                                textTransform: "uppercase",
+                                margin: "0 0 6px 0",
+                                borderBottom: "1.5px solid #222",
+                                paddingBottom: 2,
+                            }}
+                        >
+                            Sheet: {sheetName} ({rows.length} {rows.length === 1 ? "Program" : "Programs"})
+                        </h3>
+                        <div style={{ overflowX: "auto" }}>
+                            <table style={tableStyle}>
+                                <thead>
+                                    <tr>
+                                        <th rowSpan={2} style={thStyle}>
+                                            Program Title
+                                        </th>
+                                        <th rowSpan={2} style={thStyle}>
+                                            Code
+                                        </th>
+                                        <th rowSpan={2} style={thStyle}>
+                                            Major
+                                        </th>
+                                        <th rowSpan={2} style={thStyle}>
+                                            Status
+                                        </th>
+                                        <th rowSpan={2} style={thStyle}>
+                                            Mode
+                                        </th>
+                                        <th rowSpan={2} style={thStyle}>
+                                            Units
+                                        </th>
+                                        <th colSpan={2} style={thStyle}>
+                                            New Freshmen
+                                        </th>
+                                        <th colSpan={2} style={thStyle}>
+                                            Old 1st Yr
+                                        </th>
+                                        <th colSpan={2} style={thStyle}>
+                                            2nd Yr
+                                        </th>
+                                        <th colSpan={2} style={thStyle}>
+                                            3rd Yr
+                                        </th>
+                                        <th colSpan={2} style={thStyle}>
+                                            4th Yr
+                                        </th>
+                                        {visibleEnrolmentYearColumns.map((column) => (
+                                            <th key={column.key} colSpan={2} style={thStyle}>
+                                                {column.label}
+                                            </th>
+                                        ))}
+                                        <th colSpan={2} style={thStyle}>
+                                            Sub-Total
+                                        </th>
+                                        <th rowSpan={2} style={{ ...thStyle, backgroundColor: "#e5e7eb" }}>
+                                            Enrol Total
+                                        </th>
+                                        <th colSpan={3} style={{ ...thStyle, backgroundColor: "#fef3c7" }}>
+                                            Graduates
+                                        </th>
+                                    </tr>
+                                    <tr>
+                                        <th style={thStyle}>M</th>
+                                        <th style={thStyle}>F</th>
+                                        <th style={thStyle}>M</th>
+                                        <th style={thStyle}>F</th>
+                                        <th style={thStyle}>M</th>
+                                        <th style={thStyle}>F</th>
+                                        <th style={thStyle}>M</th>
+                                        <th style={thStyle}>F</th>
+                                        <th style={thStyle}>M</th>
+                                        <th style={thStyle}>F</th>
+                                        {visibleEnrolmentYearColumns.map((column) => (
+                                            <Fragment key={column.key}>
+                                                <th style={thStyle}>M</th>
+                                                <th style={thStyle}>F</th>
+                                            </Fragment>
+                                        ))}
+                                        <th style={thStyle}>M</th>
+                                        <th style={thStyle}>F</th>
+                                        <th style={thStyle}>M</th>
+                                        <th style={thStyle}>F</th>
+                                        <th style={thStyle}>Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {rows.map((row, rowIndex) => (
+                                        <tr key={rowIndex} style={{ backgroundColor: rowIndex % 2 === 1 ? "#fafafa" : "#fff" }}>
+                                            <td style={{ ...tdStyle, fontWeight: "500" }}>{row.program_title}</td>
+                                            <td style={{ ...tdStyle, textAlign: "center" }}>{row.program_code}</td>
+                                            <td style={tdStyle}>{row.major || "—"}</td>
+                                            <td style={{ ...tdStyle, textAlign: "center" }}>{row.program_status}</td>
+                                            <td style={{ ...tdStyle, textAlign: "center" }}>{row.delivery_mode}</td>
+                                            <td style={{ ...tdStyle, ...numStyle }}>{row.credit_units}</td>
+                                            <td style={{ ...tdStyle, ...numStyle }}>{row.enrolment.new_freshmen.male}</td>
+                                            <td style={{ ...tdStyle, ...numStyle }}>{row.enrolment.new_freshmen.female}</td>
+                                            <td style={{ ...tdStyle, ...numStyle }}>{row.enrolment.old_first_year.male}</td>
+                                            <td style={{ ...tdStyle, ...numStyle }}>{row.enrolment.old_first_year.female}</td>
+                                            <td style={{ ...tdStyle, ...numStyle }}>{row.enrolment.year_2.male}</td>
+                                            <td style={{ ...tdStyle, ...numStyle }}>{row.enrolment.year_2.female}</td>
+                                            <td style={{ ...tdStyle, ...numStyle }}>{row.enrolment.year_3.male}</td>
+                                            <td style={{ ...tdStyle, ...numStyle }}>{row.enrolment.year_3.female}</td>
+                                            <td style={{ ...tdStyle, ...numStyle }}>{row.enrolment.year_4.male}</td>
+                                            <td style={{ ...tdStyle, ...numStyle }}>{row.enrolment.year_4.female}</td>
+                                            {visibleEnrolmentYearColumns.map((column) => (
+                                                <Fragment key={column.key}>
+                                                    <td style={{ ...tdStyle, ...numStyle }}>{row.enrolment[column.key]?.male ?? 0}</td>
+                                                    <td style={{ ...tdStyle, ...numStyle }}>{row.enrolment[column.key]?.female ?? 0}</td>
+                                                </Fragment>
+                                            ))}
+                                            <td style={{ ...tdStyle, ...numStyle, fontWeight: "bold" }}>{row.enrolment.subtotal.male}</td>
+                                            <td style={{ ...tdStyle, ...numStyle, fontWeight: "bold" }}>{row.enrolment.subtotal.female}</td>
+                                            <td style={{ ...tdStyle, ...numStyle, fontWeight: "bold", backgroundColor: "#f3f4f6" }}>
+                                                {row.enrolment.total}
+                                            </td>
+                                            <td style={{ ...tdStyle, ...numStyle }}>{row.graduates.male}</td>
+                                            <td style={{ ...tdStyle, ...numStyle }}>{row.graduates.female}</td>
+                                            <td style={{ ...tdStyle, ...numStyle, fontWeight: "bold", backgroundColor: "#fef9c3" }}>
+                                                {row.graduates.total}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                );
+            })}
         </div>
     );
 }

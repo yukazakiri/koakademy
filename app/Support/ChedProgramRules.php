@@ -25,6 +25,7 @@ final class ChedProgramRules
             'ched_major_code' => ['nullable', 'string', 'max:50'],
             'ched_other_delivery_mode' => ['nullable', 'string', 'max:255'],
             'ched_major' => ['nullable', 'string', 'max:255'],
+            'ched_major_code' => ['nullable', 'string', 'max:50'],
             'ched_has_thesis' => ['nullable', 'boolean'],
             'ched_program_status' => ['nullable', 'string', 'in:CO,PO,DO,NO,NA'],
             'ched_year_implemented' => ['nullable', 'integer', 'min:1900', 'max:2100'],

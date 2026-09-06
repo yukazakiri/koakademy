@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "5a6787cdc9e078220e3c4e1bb3c3ff22",
+    "content-hash": "2956de77a7eeb964e11226846b070f09",
     "packages": [
         {
             "name": "achyutn/filament-log-viewer",
@@ -4782,16 +4782,16 @@
         },
         {
             "name": "inertiajs/inertia-laravel",
-            "version": "v3.3.1",
+            "version": "v3.3.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/inertiajs/inertia-laravel.git",
-                "reference": "7bfd75e352938b703180574b943d81963555a0aa"
+                "reference": "174f5040314edeb1a2371ce18aef4736c25375f6"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/inertiajs/inertia-laravel/zipball/7bfd75e352938b703180574b943d81963555a0aa",
-                "reference": "7bfd75e352938b703180574b943d81963555a0aa",
+                "url": "https://api.github.com/repos/inertiajs/inertia-laravel/zipball/174f5040314edeb1a2371ce18aef4736c25375f6",
+                "reference": "174f5040314edeb1a2371ce18aef4736c25375f6",
                 "shasum": ""
             },
             "require": {
@@ -4848,9 +4848,9 @@
             ],
             "support": {
                 "issues": "https://github.com/inertiajs/inertia-laravel/issues",
-                "source": "https://github.com/inertiajs/inertia-laravel/tree/v3.3.1"
+                "source": "https://github.com/inertiajs/inertia-laravel/tree/v3.3.2"
             },
-            "time": "2026-08-04T21:58:51+00:00"
+            "time": "2026-09-02T07:31:03+00:00"
         },
         {
             "name": "jaybizzle/crawler-detect",

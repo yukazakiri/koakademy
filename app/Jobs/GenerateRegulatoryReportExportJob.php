@@ -148,8 +148,6 @@ final class GenerateRegulatoryReportExportJob implements ShouldBeUnique, ShouldQ
                 $coordinator->broadcast($export);
                 $notifications->sendTerminal($export);
             }
-        } catch (Throwable $throwable) {
-            app(AssessmentExportCoordinator::class)->fail($this->exportId, 'generating', $throwable);
         } finally {
             if ($temporaryPath !== null) {
                 @unlink($temporaryPath);

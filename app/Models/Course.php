@@ -99,6 +99,8 @@ final class Course extends Model
         'ched_program_code',
         'ched_major',
         'ched_major_code',
+        'ched_reporting_level',
+        'ched_other_delivery_mode',
         'ched_has_thesis',
         'ched_program_status',
         'ched_year_implemented',

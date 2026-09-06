@@ -123,11 +123,6 @@
         {
             "type": "composer",
             "url": "https://yukazakiri.github.io/koakademy-modules"
-        },
-        {
-            "type": "vcs",
-            "url": "https://github.com/yukazakiri/koakademy-module-forms.git",
-            "no-api": true
         }
     ],
     "scripts": {

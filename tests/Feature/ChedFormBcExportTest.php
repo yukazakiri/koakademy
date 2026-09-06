@@ -17,8 +17,6 @@ use App\Services\ChedFormBcExportService;
 use App\Services\RegulatoryReportRegistry;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 
-uses(Tests\TestCase::class);
-
 beforeEach(function (): void {
     Spatie\Permission\Models\Permission::firstOrCreate([
         'name' => 'ViewAny:StudentEnrollment',

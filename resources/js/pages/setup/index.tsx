@@ -201,6 +201,9 @@ interface FieldProps {
     placeholder?: string;
     description?: string;
     uppercase?: boolean;
+    maxLength?: number;
+    pattern?: string;
+    autoCapitalize?: string;
     value: string;
     onChange: (val: string) => void;
     error?: string;
@@ -214,11 +217,16 @@ function TextField({
     placeholder = "",
     description = "",
     uppercase = false,
+    maxLength,
+    pattern,
+    autoCapitalize,
     value,
     onChange,
     error,
     required = false,
 }: FieldProps) {
+    const descriptionId = description ? `${id}-description` : undefined;
+
     return (
         <div className="space-y-1.5">
             <Label htmlFor={id} className="text-foreground text-sm font-medium">
@@ -233,6 +241,11 @@ function TextField({
                 onChange={(e) => onChange(e.target.value)}
                 placeholder={placeholder}
                 autoComplete={type === "password" ? "new-password" : "off"}
+                required={required}
+                maxLength={maxLength}
+                pattern={pattern}
+                autoCapitalize={autoCapitalize}
+                aria-describedby={descriptionId}
                 className={[
                     "border-border bg-background text-foreground placeholder:text-muted-foreground/60 h-11",
                     "focus-visible:ring-primary transition-colors duration-150 focus-visible:border-transparent focus-visible:ring-2",
@@ -242,7 +255,11 @@ function TextField({
                     .filter(Boolean)
                     .join(" ")}
             />
-            {description && !error && <p className="text-muted-foreground text-xs">{description}</p>}
+            {description && !error && (
+                <p id={descriptionId} className="text-muted-foreground text-xs">
+                    {description}
+                </p>
+            )}
             {error && (
                 <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} className="text-destructive text-xs">
                     {error}
@@ -366,9 +383,7 @@ function FeatureToggle({ id, label, description, checked, onCheckedChange, icon 
     return (
         <div className="border-border hover:border-primary/30 bg-background flex items-center justify-between gap-4 rounded-lg border p-4 transition-colors">
             <div className="flex items-start gap-3">
-                <div className="bg-primary/10 text-primary mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md">
-                    {icon}
-                </div>
+                <div className="bg-primary/10 text-primary mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md">{icon}</div>
                 <div className="space-y-0.5">
                     <Label htmlFor={id} className="text-foreground cursor-pointer text-sm font-medium">
                         {label}
@@ -414,9 +429,7 @@ function StepHeader({
                 </Button>
             )}
             <div className="mb-3 flex items-center gap-2">
-                <div className="bg-primary text-primary-foreground flex h-7 w-7 items-center justify-center rounded-full">
-                    {icon}
-                </div>
+                <div className="bg-primary text-primary-foreground flex h-7 w-7 items-center justify-center rounded-full">{icon}</div>
                 <span className="text-muted-foreground text-xs font-semibold tracking-widest uppercase">
                     Step {stepNumber} of {totalSteps}
                 </span>
@@ -442,21 +455,15 @@ function AuthorityBadge({ authority }: { authority: string }) {
     };
 
     return (
-        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase ${styles[authority] ?? ""}`}>
+        <span
+            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase ${styles[authority] ?? ""}`}
+        >
             {authority}
         </span>
     );
 }
 
-function FrameworkCard({
-    framework,
-    selected,
-    onSelect,
-}: {
-    framework: FrameworkOption;
-    selected: boolean;
-    onSelect: () => void;
-}) {
+function FrameworkCard({ framework, selected, onSelect }: { framework: FrameworkOption; selected: boolean; onSelect: () => void }) {
     return (
         <div
             role="button"
@@ -526,18 +533,14 @@ function ProgramRow({
                 checked ? "border-primary/60 bg-primary/5" : "border-border bg-background hover:border-primary/30",
             ].join(" ")}
         >
-            <Checkbox
-                checked={checked}
-                onCheckedChange={onToggle}
-                className="mt-0.5 scale-110"
-            />
+            <Checkbox checked={checked} onCheckedChange={onToggle} className="mt-0.5 scale-110" />
             <span className="min-w-0 flex-1">
                 <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                     <span className="text-foreground text-sm font-medium">{title}</span>
                     <span className="text-muted-foreground font-mono text-[10px]">{code}</span>
                 </span>
                 <span className="text-muted-foreground mt-0.5 block text-xs">{meta}</span>
-                {hint && <span className="text-amber-600 dark:text-amber-400 mt-0.5 block text-[11px]">{hint}</span>}
+                {hint && <span className="mt-0.5 block text-[11px] text-amber-600 dark:text-amber-400">{hint}</span>}
             </span>
         </label>
     );
@@ -546,7 +549,11 @@ function ProgramRow({
 /* ── Page ── */
 
 export default function Setup() {
-    const { meta, branding, catalog } = usePage().props as { meta?: { appName?: string }; branding?: { logo?: string | null }; catalog?: CurriculumCatalog };
+    const { meta, branding, catalog } = usePage().props as {
+        meta?: { appName?: string };
+        branding?: { logo?: string | null };
+        catalog?: CurriculumCatalog;
+    };
     const appName = meta?.appName || "Platform";
     const logoUrl = branding?.logo || null;
     const catalogData: CurriculumCatalog | undefined = catalog;
@@ -572,6 +579,7 @@ export default function Setup() {
         // Step 2: Institution
         school_name: "",
         school_code: "",
+        country_code: "",
         school_level: "",
         school_description: "",
         school_email: "",
@@ -631,6 +639,7 @@ export default function Setup() {
         const errs: string[] = [];
         if (!data.school_name.trim()) errs.push("Please provide an institution name.");
         if (!data.school_code.trim()) errs.push("Please provide an institution code.");
+        if (!/^[A-Z]{2}$/.test(data.country_code.trim())) errs.push("Please provide a valid ISO alpha-2 country code.");
         if (!data.school_level) errs.push("Please choose the institution's school level.");
         if (errs.length) {
             errs.forEach((e) => toast.error(e));
@@ -728,7 +737,7 @@ export default function Setup() {
             onError: (errs) => {
                 toast.error("Please correct the errors and try again.");
                 if (errs.admin_name || errs.admin_email || errs.admin_password) goToStep(1);
-                else if (errs.school_name || errs.school_code || errs.school_level || errs.school_email) goToStep(2);
+                else if (errs.school_name || errs.school_code || errs.country_code || errs.school_level || errs.school_email) goToStep(2);
                 else if (errs.curriculum_framework || errs.programs) goToStep(3);
                 else if (errs.school_starting_date || errs.school_ending_date || errs.semester) goToStep(4);
             },
@@ -885,7 +894,9 @@ export default function Setup() {
                                     </div>
                                     <div className={`pt-0.5 transition-opacity duration-300 ${active || done ? "opacity-100" : "opacity-40"}`}>
                                         <div className="flex items-center gap-2">
-                                            <p className={`text-sm leading-none font-semibold ${active ? "text-foreground" : "text-muted-foreground"}`}>
+                                            <p
+                                                className={`text-sm leading-none font-semibold ${active ? "text-foreground" : "text-muted-foreground"}`}
+                                            >
                                                 {s.label}
                                             </p>
                                             {!s.required && (
@@ -910,8 +921,8 @@ export default function Setup() {
                         >
                             <p className="text-muted-foreground text-xs leading-relaxed">
                                 Steps <strong className="text-foreground">3</strong>, <strong className="text-foreground">5</strong> &{" "}
-                                <strong className="text-foreground">6</strong> are <span className="text-primary font-medium">optional</span>.
-                                You can configure them later from System Management.
+                                <strong className="text-foreground">6</strong> are <span className="text-primary font-medium">optional</span>. You can
+                                configure them later from System Management.
                             </p>
                         </motion.div>
                     )}
@@ -1060,7 +1071,7 @@ export default function Setup() {
                                                         error={errors.school_name}
                                                         required
                                                     />
-                                                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                                                         <TextField
                                                             id="school_code"
                                                             label="Institution Code"
@@ -1070,6 +1081,20 @@ export default function Setup() {
                                                             value={data.school_code}
                                                             onChange={(v) => setData("school_code", v)}
                                                             error={errors.school_code}
+                                                            required
+                                                        />
+                                                        <TextField
+                                                            id="country_code"
+                                                            label="Country Code"
+                                                            placeholder="PH"
+                                                            uppercase
+                                                            maxLength={2}
+                                                            pattern="[A-Za-z]{2}"
+                                                            autoCapitalize="characters"
+                                                            description="ISO alpha-2 for regulatory reports."
+                                                            value={data.country_code}
+                                                            onChange={(v) => setData("country_code", v.toUpperCase().slice(0, 2))}
+                                                            error={errors.country_code}
                                                             required
                                                         />
                                                         <TextField
@@ -1111,14 +1136,20 @@ export default function Setup() {
                                                                             <div
                                                                                 className={[
                                                                                     "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border",
-                                                                                    selected ? "border-primary bg-primary" : "border-muted-foreground/40",
+                                                                                    selected
+                                                                                        ? "border-primary bg-primary"
+                                                                                        : "border-muted-foreground/40",
                                                                                 ].join(" ")}
                                                                             >
-                                                                                {selected && <ShieldCheck className="text-primary-foreground h-3 w-3" />}
+                                                                                {selected && (
+                                                                                    <ShieldCheck className="text-primary-foreground h-3 w-3" />
+                                                                                )}
                                                                             </div>
                                                                             <div className="space-y-1">
                                                                                 <p className="text-foreground text-sm font-medium">{level.label}</p>
-                                                                                <p className="text-muted-foreground text-xs leading-relaxed">{level.description}</p>
+                                                                                <p className="text-muted-foreground text-xs leading-relaxed">
+                                                                                    {level.description}
+                                                                                </p>
                                                                             </div>
                                                                         </div>
                                                                     </button>
@@ -1145,7 +1176,7 @@ export default function Setup() {
                                                             onChange={(e) => setData("school_description", e.target.value)}
                                                             placeholder="A brief overview of the institution..."
                                                             rows={3}
-                                                            className="bg-background border-border placeholder:text-muted-foreground/60 resize-none leading-relaxed hover:border-primary/60 focus-visible:ring-primary focus-visible:border-transparent focus-visible:ring-2"
+                                                            className="bg-background border-border placeholder:text-muted-foreground/60 hover:border-primary/60 focus-visible:ring-primary resize-none leading-relaxed focus-visible:border-transparent focus-visible:ring-2"
                                                         />
                                                     </div>
                                                 </div>
@@ -1245,8 +1276,9 @@ export default function Setup() {
                                                     {frameworks.length === 0 ? (
                                                         <div className="border-border bg-muted/50 rounded-lg border p-4">
                                                             <p className="text-muted-foreground text-xs leading-relaxed">
-                                                                No curriculum framework applies to the selected institution level. You can skip this step and
-                                                                configure programs later from <span className="text-foreground font-medium">Curriculum & Classes</span>.
+                                                                No curriculum framework applies to the selected institution level. You can skip this
+                                                                step and configure programs later from{" "}
+                                                                <span className="text-foreground font-medium">Curriculum & Classes</span>.
                                                             </p>
                                                         </div>
                                                     ) : (
@@ -1263,8 +1295,9 @@ export default function Setup() {
                                                     )}
                                                     {catalogData && (
                                                         <p className="text-muted-foreground text-[11px]">
-                                                            Catalog researched as of <span className="text-foreground/70 font-medium">{catalogData.as_of}</span>.
-                                                            Unverified issuances are flagged for review.
+                                                            Catalog researched as of{" "}
+                                                            <span className="text-foreground/70 font-medium">{catalogData.as_of}</span>. Unverified
+                                                            issuances are flagged for review.
                                                         </p>
                                                     )}
                                                 </div>
@@ -1311,7 +1344,9 @@ export default function Setup() {
                                                                                 onClick={() => togglePrograms(filtered.map((p) => p.code))}
                                                                                 className="text-primary h-7 px-2 text-xs"
                                                                             >
-                                                                                {filtered.every((p) => data.programs.includes(p.code)) ? "Deselect all" : "Select all"}
+                                                                                {filtered.every((p) => data.programs.includes(p.code))
+                                                                                    ? "Deselect all"
+                                                                                    : "Select all"}
                                                                             </Button>
                                                                         </div>
                                                                         <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
@@ -1321,7 +1356,11 @@ export default function Setup() {
                                                                                     code={program.code}
                                                                                     title={program.title}
                                                                                     meta={`${program.units} units · ${program.year_level}-year · ${program.reference}`}
-                                                                                    hint={program.verified ? undefined : "Issuance number not yet verified — confirm with CHED."}
+                                                                                    hint={
+                                                                                        program.verified
+                                                                                            ? undefined
+                                                                                            : "Issuance number not yet verified — confirm with CHED."
+                                                                                    }
                                                                                     checked={data.programs.includes(program.code)}
                                                                                     onToggle={() => toggleProgram(program.code)}
                                                                                 />
@@ -1349,7 +1388,9 @@ export default function Setup() {
                                                             {(catalogData?.tesda ?? []).map((sector) => (
                                                                 <div key={sector.key} className="space-y-2">
                                                                     <div className="flex items-center justify-between">
-                                                                        <p className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{sector.label}</p>
+                                                                        <p className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+                                                                            {sector.label}
+                                                                        </p>
                                                                         <Button
                                                                             type="button"
                                                                             variant="ghost"
@@ -1357,7 +1398,9 @@ export default function Setup() {
                                                                             onClick={() => togglePrograms(sector.qualifications.map((q) => q.code))}
                                                                             className="text-primary h-7 px-2 text-xs"
                                                                         >
-                                                                            {sector.qualifications.every((q) => data.programs.includes(q.code)) ? "Deselect all" : "Select all"}
+                                                                            {sector.qualifications.every((q) => data.programs.includes(q.code))
+                                                                                ? "Deselect all"
+                                                                                : "Select all"}
                                                                         </Button>
                                                                     </div>
                                                                     <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
@@ -1366,8 +1409,16 @@ export default function Setup() {
                                                                                 key={q.code}
                                                                                 code={q.code}
                                                                                 title={q.title}
-                                                                                meta={q.diploma ? `TESDA Diploma · PQF Level ${q.pqf_level}` : `NC ${q.nc_level} · PQF Level ${q.pqf_level} · ${q.reference}`}
-                                                                                hint={q.superseded ? "Superseded TR — a newer Training Regulation exists." : undefined}
+                                                                                meta={
+                                                                                    q.diploma
+                                                                                        ? `TESDA Diploma · PQF Level ${q.pqf_level}`
+                                                                                        : `NC ${q.nc_level} · PQF Level ${q.pqf_level} · ${q.reference}`
+                                                                                }
+                                                                                hint={
+                                                                                    q.superseded
+                                                                                        ? "Superseded TR — a newer Training Regulation exists."
+                                                                                        : undefined
+                                                                                }
                                                                                 checked={data.programs.includes(q.code)}
                                                                                 onToggle={() => toggleProgram(q.code)}
                                                                             />
@@ -1391,21 +1442,32 @@ export default function Setup() {
                                                             </Badge>
                                                         </div>
                                                         <div className="space-y-4">
-                                                            {(currentFramework?.value === "deped_shs_revised" ? catalogData?.shs.revised : catalogData?.shs.legacy)?.map((track) => (
+                                                            {(currentFramework?.value === "deped_shs_revised"
+                                                                ? catalogData?.shs.revised
+                                                                : catalogData?.shs.legacy
+                                                            )?.map((track) => (
                                                                 <div key={track.key} className="border-border rounded-xl border p-4">
                                                                     <div className="flex items-start justify-between gap-3">
                                                                         <div className="space-y-1">
                                                                             <p className="text-foreground text-sm font-semibold">{track.name}</p>
-                                                                            <p className="text-muted-foreground text-xs leading-relaxed">{track.description}</p>
+                                                                            <p className="text-muted-foreground text-xs leading-relaxed">
+                                                                                {track.description}
+                                                                            </p>
                                                                         </div>
                                                                         <Button
                                                                             type="button"
                                                                             variant="ghost"
                                                                             size="sm"
-                                                                            onClick={() => togglePrograms(track.strands.map((s) => `${track.key}:${s.key}`))}
+                                                                            onClick={() =>
+                                                                                togglePrograms(track.strands.map((s) => `${track.key}:${s.key}`))
+                                                                            }
                                                                             className="text-primary h-7 shrink-0 px-2 text-xs"
                                                                         >
-                                                                            {track.strands.every((s) => data.programs.includes(`${track.key}:${s.key}`)) ? "Deselect" : "Select all"}
+                                                                            {track.strands.every((s) =>
+                                                                                data.programs.includes(`${track.key}:${s.key}`),
+                                                                            )
+                                                                                ? "Deselect"
+                                                                                : "Select all"}
                                                                         </Button>
                                                                     </div>
                                                                     <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -1425,12 +1487,15 @@ export default function Setup() {
                                                         </div>
                                                         <div className="border-border bg-muted/50 flex items-center justify-between gap-4 rounded-lg border p-4">
                                                             <div className="space-y-0.5">
-                                                                <Label htmlFor="seed_strand_subjects" className="text-foreground cursor-pointer text-sm font-medium">
+                                                                <Label
+                                                                    htmlFor="seed_strand_subjects"
+                                                                    className="text-foreground cursor-pointer text-sm font-medium"
+                                                                >
                                                                     Preload SHS core subjects
                                                                 </Label>
                                                                 <p className="text-muted-foreground text-xs leading-relaxed">
-                                                                    Adds the standard 15 core + applied subjects (e.g., Oral Communication, General Mathematics) to
-                                                                    each selected strand.
+                                                                    Adds the standard 15 core + applied subjects (e.g., Oral Communication, General
+                                                                    Mathematics) to each selected strand.
                                                                 </p>
                                                             </div>
                                                             <Switch
@@ -1453,20 +1518,30 @@ export default function Setup() {
                                                             {(catalogData?.matatag.phases ?? []).map((phase) => (
                                                                 <div key={phase.sy} className="border-border bg-muted/40 rounded-lg border p-3">
                                                                     <p className="text-foreground text-sm font-semibold">{phase.sy}</p>
-                                                                    <p className="text-primary mt-0.5 text-xs font-medium">{phase.grades.join(", ")}</p>
+                                                                    <p className="text-primary mt-0.5 text-xs font-medium">
+                                                                        {phase.grades.join(", ")}
+                                                                    </p>
                                                                     <p className="text-muted-foreground mt-1 text-[11px]">{phase.status}</p>
                                                                 </div>
                                                             ))}
                                                         </div>
                                                         <div className="space-y-2">
-                                                            <p className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">Learning Areas per Grade Band</p>
+                                                            <p className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+                                                                Learning Areas per Grade Band
+                                                            </p>
                                                             <div className="space-y-2">
                                                                 {Object.entries(catalogData?.matatag.learning_areas ?? {}).map(([band, areas]) => (
                                                                     <div key={band} className="border-border rounded-lg border p-3">
-                                                                        <p className="text-muted-foreground text-[11px] font-medium uppercase">{band.replaceAll("_", " ")}</p>
+                                                                        <p className="text-muted-foreground text-[11px] font-medium uppercase">
+                                                                            {band.replaceAll("_", " ")}
+                                                                        </p>
                                                                         <div className="mt-1.5 flex flex-wrap gap-1.5">
                                                                             {areas.map((area) => (
-                                                                                <Badge key={area} variant="outline" className="text-foreground/80 text-[10px]">
+                                                                                <Badge
+                                                                                    key={area}
+                                                                                    variant="outline"
+                                                                                    className="text-foreground/80 text-[10px]"
+                                                                                >
                                                                                     {area}
                                                                                 </Badge>
                                                                             ))}
@@ -1477,9 +1552,9 @@ export default function Setup() {
                                                         </div>
                                                         <div className="border-border bg-muted/50 rounded-lg border p-4">
                                                             <p className="text-muted-foreground text-xs leading-relaxed">
-                                                                The MATATAG framework is recorded on your institution for grade-band configuration. GMRC, Values
-                                                                Education, and Makabansa are reflected in the learning areas above; Mother Tongue is now used as a
-                                                                medium of instruction rather than a separate subject.
+                                                                The MATATAG framework is recorded on your institution for grade-band configuration.
+                                                                GMRC, Values Education, and Makabansa are reflected in the learning areas above;
+                                                                Mother Tongue is now used as a medium of instruction rather than a separate subject.
                                                             </p>
                                                         </div>
                                                     </div>
@@ -1491,7 +1566,12 @@ export default function Setup() {
                                                     <ChevronLeft className="mr-1 h-4 w-4" /> Back
                                                 </Button>
                                                 <div className="flex gap-2">
-                                                    <Button type="button" variant="ghost" onClick={() => goToStep(4)} className="text-muted-foreground h-11">
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        onClick={() => goToStep(4)}
+                                                        className="text-muted-foreground h-11"
+                                                    >
                                                         Skip for now
                                                     </Button>
                                                     <Button
@@ -1578,12 +1658,17 @@ export default function Setup() {
                                                                         setData("school_starting_date", preset.starts);
                                                                         setData("school_ending_date", preset.ends);
                                                                         setData("semester", "1");
-                                                                        setData("curriculum_year", `${new Date(preset.starts).getFullYear()}-${new Date(preset.ends).getFullYear()}`);
+                                                                        setData(
+                                                                            "curriculum_year",
+                                                                            `${new Date(preset.starts).getFullYear()}-${new Date(preset.ends).getFullYear()}`,
+                                                                        );
                                                                     }}
                                                                     className="border-border hover:border-primary/50 bg-muted/40 hover:bg-muted/60 flex flex-col gap-1 rounded-lg border p-3 text-left transition-colors"
                                                                 >
                                                                     <span className="text-foreground text-sm font-medium">{preset.label}</span>
-                                                                    <span className="text-muted-foreground text-[11px] leading-relaxed">{preset.note}</span>
+                                                                    <span className="text-muted-foreground text-[11px] leading-relaxed">
+                                                                        {preset.note}
+                                                                    </span>
                                                                     <span className="text-primary text-[11px] font-medium">{preset.source}</span>
                                                                 </button>
                                                             ))}
@@ -1650,12 +1735,7 @@ export default function Setup() {
                                             </div>
 
                                             <div className="flex items-center justify-between gap-3 pt-2">
-                                                <Button
-                                                    type="button"
-                                                    variant="outline"
-                                                    onClick={() => goToStep(3)}
-                                                    className="h-11"
-                                                >
+                                                <Button type="button" variant="outline" onClick={() => goToStep(3)} className="h-11">
                                                     <ChevronLeft className="mr-1 h-4 w-4" /> Back
                                                 </Button>
                                                 <div className="flex gap-2">
@@ -1728,7 +1808,7 @@ export default function Setup() {
                                                             onChange={(e) => setData("site_description", e.target.value)}
                                                             placeholder="A short tagline or description of your institution..."
                                                             rows={2}
-                                                            className="bg-background border-border placeholder:text-muted-foreground/60 resize-none leading-relaxed hover:border-primary/60 focus-visible:ring-primary focus-visible:border-transparent focus-visible:ring-2"
+                                                            className="bg-background border-border placeholder:text-muted-foreground/60 hover:border-primary/60 focus-visible:ring-primary resize-none leading-relaxed focus-visible:border-transparent focus-visible:ring-2"
                                                         />
                                                     </div>
                                                 </div>
@@ -1755,7 +1835,9 @@ export default function Setup() {
                                                                     <ImageIcon className="text-muted-foreground/60 h-8 w-8" />
                                                                     <div>
                                                                         <p className="text-foreground text-sm font-medium">Upload your logo</p>
-                                                                        <p className="text-muted-foreground text-xs">PNG, JPG, SVG, or WEBP (max 5MB)</p>
+                                                                        <p className="text-muted-foreground text-xs">
+                                                                            PNG, JPG, SVG, or WEBP (max 5MB)
+                                                                        </p>
                                                                     </div>
                                                                 </div>
                                                             )}
@@ -1780,10 +1862,12 @@ export default function Setup() {
                                                         <div className="border-border bg-muted/50 flex items-start gap-2.5 rounded-lg border p-3">
                                                             <Sparkles className="text-primary mt-0.5 h-3.5 w-3.5 shrink-0" />
                                                             <p className="text-muted-foreground text-xs leading-relaxed">
-                                                                A single upload auto-generates <span className="text-foreground font-medium">favicon</span>,{" "}
+                                                                A single upload auto-generates{" "}
+                                                                <span className="text-foreground font-medium">favicon</span>,{" "}
                                                                 <span className="text-foreground font-medium">PWA icons</span>,{" "}
                                                                 <span className="text-foreground font-medium">Apple touch icon</span>, and{" "}
-                                                                <span className="text-foreground font-medium">OG image</span> for SEO and social sharing.
+                                                                <span className="text-foreground font-medium">OG image</span> for SEO and social
+                                                                sharing.
                                                             </p>
                                                         </div>
                                                     </div>
@@ -1803,7 +1887,7 @@ export default function Setup() {
                                                                 onClick={() => setData("theme_color", color.value)}
                                                                 className={`group relative flex h-10 w-10 items-center justify-center rounded-full border-2 transition-all ${
                                                                     data.theme_color === color.value
-                                                                        ? "border-foreground scale-110 ring-2 ring-foreground/20"
+                                                                        ? "border-foreground ring-foreground/20 scale-110 ring-2"
                                                                         : "border-transparent hover:scale-105"
                                                                 }`}
                                                                 title={color.label}
@@ -1889,7 +1973,12 @@ export default function Setup() {
                                                     <ChevronLeft className="mr-1 h-4 w-4" /> Back
                                                 </Button>
                                                 <div className="flex gap-2">
-                                                    <Button type="button" variant="ghost" onClick={() => goToStep(6)} className="text-muted-foreground h-11">
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        onClick={() => goToStep(6)}
+                                                        className="text-muted-foreground h-11"
+                                                    >
                                                         Skip for now
                                                     </Button>
                                                     <Button
@@ -2120,6 +2209,10 @@ export default function Setup() {
                                                             <dd className="text-foreground font-medium">{data.school_code || "—"}</dd>
                                                         </div>
                                                         <div>
+                                                            <dt className="text-muted-foreground text-xs">Country Code</dt>
+                                                            <dd className="text-foreground font-medium">{data.country_code || "—"}</dd>
+                                                        </div>
+                                                        <div>
                                                             <dt className="text-muted-foreground text-xs">School Level</dt>
                                                             <dd className="text-foreground font-medium">{schoolLevelLabel}</dd>
                                                         </div>
@@ -2144,20 +2237,30 @@ export default function Setup() {
                                                             {data.programs.length > 0 ? (
                                                                 <div className="flex flex-wrap gap-1.5 pt-1">
                                                                     {selectedProgramTitles().map((title) => (
-                                                                        <Badge key={title} variant="outline" className="text-foreground/80 text-[10px]">
+                                                                        <Badge
+                                                                            key={title}
+                                                                            variant="outline"
+                                                                            className="text-foreground/80 text-[10px]"
+                                                                        >
                                                                             {title}
                                                                         </Badge>
                                                                     ))}
                                                                 </div>
                                                             ) : (
-                                                                <p className="text-muted-foreground text-xs">No programs selected — you can add them later.</p>
+                                                                <p className="text-muted-foreground text-xs">
+                                                                    No programs selected — you can add them later.
+                                                                </p>
                                                             )}
                                                             {data.seed_strand_subjects && (
-                                                                <p className="text-primary text-xs font-medium">SHS core subjects will be preloaded for each selected strand.</p>
+                                                                <p className="text-primary text-xs font-medium">
+                                                                    SHS core subjects will be preloaded for each selected strand.
+                                                                </p>
                                                             )}
                                                         </div>
                                                     ) : (
-                                                        <p className="text-muted-foreground mt-2 text-xs">Skipped — curriculum can be configured later from Curriculum & Classes.</p>
+                                                        <p className="text-muted-foreground mt-2 text-xs">
+                                                            Skipped — curriculum can be configured later from Curriculum & Classes.
+                                                        </p>
                                                     )}
                                                 </div>
 
@@ -2178,7 +2281,13 @@ export default function Setup() {
                                                         <div>
                                                             <dt className="text-muted-foreground text-xs">Semester / Term</dt>
                                                             <dd className="text-foreground font-medium">
-                                                                {data.semester === "1" ? "1st Semester" : data.semester === "2" ? "2nd Semester" : data.semester === "3" ? "Summer / Midyear" : "—"}
+                                                                {data.semester === "1"
+                                                                    ? "1st Semester"
+                                                                    : data.semester === "2"
+                                                                      ? "2nd Semester"
+                                                                      : data.semester === "3"
+                                                                        ? "Summer / Midyear"
+                                                                        : "—"}
                                                             </dd>
                                                         </div>
                                                         <div>
@@ -2196,7 +2305,9 @@ export default function Setup() {
                                                     <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-2">
                                                         <div>
                                                             <dt className="text-muted-foreground text-xs">Site Name</dt>
-                                                            <dd className="text-foreground font-medium">{data.site_name || data.school_name || "—"}</dd>
+                                                            <dd className="text-foreground font-medium">
+                                                                {data.site_name || data.school_name || "—"}
+                                                            </dd>
                                                         </div>
                                                         <div>
                                                             <dt className="text-muted-foreground text-xs">Currency</dt>
@@ -2205,7 +2316,10 @@ export default function Setup() {
                                                         <div>
                                                             <dt className="text-muted-foreground text-xs">Theme Color</dt>
                                                             <dd className="flex items-center gap-2 font-medium">
-                                                                <span className="border-border inline-block h-4 w-4 rounded-full border" style={{ backgroundColor: data.theme_color }} />
+                                                                <span
+                                                                    className="border-border inline-block h-4 w-4 rounded-full border"
+                                                                    style={{ backgroundColor: data.theme_color }}
+                                                                />
                                                                 <span className="text-foreground">{data.theme_color}</span>
                                                             </dd>
                                                         </div>
@@ -2223,12 +2337,18 @@ export default function Setup() {
                                                     </div>
                                                     <div className="mt-2 flex flex-wrap gap-1.5">
                                                         {enabledToggles.map((toggle) => (
-                                                            <Badge key={toggle} variant="outline" className="border-primary/30 text-primary text-[10px]">
+                                                            <Badge
+                                                                key={toggle}
+                                                                variant="outline"
+                                                                className="border-primary/30 text-primary text-[10px]"
+                                                            >
                                                                 {toggle}
                                                             </Badge>
                                                         ))}
                                                         {enabledToggles.length === 0 && (
-                                                            <p className="text-muted-foreground text-xs">All modules disabled — enable them later from System Management.</p>
+                                                            <p className="text-muted-foreground text-xs">
+                                                                All modules disabled — enable them later from System Management.
+                                                            </p>
                                                         )}
                                                     </div>
                                                 </div>

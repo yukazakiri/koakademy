@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Contracts\RegulatoryReportAdapter;
 use App\Enums\StudentStatus;
 use App\Models\Course;
 use App\Models\Student;
@@ -16,7 +17,7 @@ use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use RuntimeException;
 
-final class ChedFormBcExportService
+final class ChedFormBcExportService implements RegulatoryReportAdapter
 {
     private const TEMPLATE_PATH = 'resources/templates/ched/ched-form-bc-template.xlsx';
 

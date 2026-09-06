@@ -48,7 +48,7 @@ export type TemplateDefinition = {
     icon: LucideIcon;
     variants: TemplateFormat[];
     defaultVariant: string;
-    jurisdiction?: "philippines" | "global";
+    countryCode?: string;
     regulatoryReportKey?: string;
 };
 
@@ -278,7 +278,7 @@ export const TEMPLATES: TemplateDefinition[] = [
         formats: ["XLSX", "Print"],
         icon: GraduationCap,
         defaultVariant: "full_eform_bc",
-        jurisdiction: "philippines",
+        countryCode: "PH",
         regulatoryReportKey: "ched_eform_bc",
         variants: [
             {

@@ -14,6 +14,7 @@ use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\User;
 use App\Services\ChedFormBcExportService;
+use App\Services\RegulatoryReportRegistry;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 
 uses(Tests\TestCase::class);
@@ -273,6 +274,15 @@ test('administrator can preview and download ched form bc report', function (): 
         ->assertJsonPath('semester_value', 1)
         ->assertJsonPath('generated_by', $user->name)
         ->assertJsonStructure(['type', 'title', 'sheets', 'summary', 'school', 'school_year', 'semester', 'generated_at', 'generated_by']);
+
+    $this->actingAs($user)
+        ->get(route('administrators.registrar.reports.regulatory.preview', [
+            'reportKey' => RegulatoryReportRegistry::CHED_EFORM_BC,
+            'school_year' => '2026-2027',
+            'semester' => 1,
+        ]))
+        ->assertOk()
+        ->assertJsonPath('type', 'ched_eform_bc');
 
     expect($previewResponse->json('generated_at'))->toBeString()->not->toBeEmpty();
 

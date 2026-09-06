@@ -13,7 +13,6 @@ use App\Models\School;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\User;
-use App\Services\ChedFormBcExportService;
 use App\Services\GeneralSettingsService;
 use App\Services\RegistrarAnalyticsService;
 use App\Services\RegistrarStudentProfileImportService;
@@ -35,7 +34,6 @@ final class AdministratorRegistrarInsightsController extends Controller
     public function __construct(
         private readonly RegistrarAnalyticsService $analyticsService,
         private readonly RegistrarStudentProfileImportService $studentProfileImportService,
-        private readonly ChedFormBcExportService $chedExportService,
         private readonly RegulatoryReportRegistry $regulatoryReports,
         private readonly TenantContext $tenantContext,
     ) {}
@@ -135,15 +133,17 @@ final class AdministratorRegistrarInsightsController extends Controller
 
         $currentSchool = $this->tenantContext->getCurrentSchool();
         $regulatoryContext = $this->regulatoryReports->context($currentSchool);
-        $isPhilippineContext = $regulatoryContext['country_code'] === 'PH';
 
         return Inertia::render('administrators/registrar/reports', [
             'user' => $this->userProps($user),
             'filters' => $this->analyticsService->semesterContext(),
             'regulatory_reports' => $regulatoryContext,
             'jurisdiction' => [
-                'is_philippines' => $isPhilippineContext,
-                'regulatory_agency' => in_array('CHED', $regulatoryContext['agencies'], true) ? 'CHED' : null,
+                'country_code' => $regulatoryContext['country_code'],
+                'agencies' => $regulatoryContext['agencies'],
+                // Kept for consumers that still read the previous response shape.
+                'is_philippines' => $regulatoryContext['country_code'] === 'PH',
+                'regulatory_agency' => $regulatoryContext['agencies'][0] ?? null,
             ],
             'assessment_export_options' => [
                 'student_limits' => config('assessment-exports.student_limit_options'),
@@ -153,24 +153,35 @@ final class AdministratorRegistrarInsightsController extends Controller
 
     public function chedPreview(Request $request): JsonResponse
     {
+        return $this->regulatoryPreview($request, RegulatoryReportRegistry::CHED_EFORM_BC);
+    }
+
+    public function regulatoryPreview(Request $request, string $reportKey): JsonResponse
+    {
         $user = $request->user();
         abort_unless($user instanceof User, 401);
         Gate::authorize('viewAny', StudentEnrollment::class);
 
         $school = $this->tenantContext->getCurrentSchool();
-        abort_unless($this->regulatoryReports->isAvailable(RegulatoryReportRegistry::CHED_EFORM_BC, $school), 403);
+        abort_unless($this->regulatoryReports->definition($reportKey) !== null, 404);
+        abort_unless($this->regulatoryReports->isAvailable($reportKey, $school), 403);
 
-        $filters = $this->validatedChedFilters($request, $school);
+        $filters = $this->validatedReportFilters($request, $school);
 
-        $data = $this->chedExportService->buildPreviewData($filters);
+        $data = $this->regulatoryReports->adapter($reportKey)->buildPreviewData($filters);
 
         return response()->json([
             ...$data,
-            ...$this->chedPreviewMetadata($school, $filters, $user),
+            ...$this->reportPreviewMetadata($school, $filters, $user),
         ]);
     }
 
     public function chedExport(Request $request): StreamedResponse
+    {
+        return $this->regulatoryExport($request, RegulatoryReportRegistry::CHED_EFORM_BC);
+    }
+
+    public function regulatoryExport(Request $request, string $reportKey): StreamedResponse
     {
         $user = $request->user();
         abort_unless($user instanceof User, 401);
@@ -178,12 +189,15 @@ final class AdministratorRegistrarInsightsController extends Controller
         Gate::authorize('exportDetailed', StudentEnrollment::class);
 
         $school = $this->tenantContext->getCurrentSchool();
-        abort_unless($this->regulatoryReports->isAvailable(RegulatoryReportRegistry::CHED_EFORM_BC, $school), 403);
+        abort_unless($this->regulatoryReports->definition($reportKey) !== null, 404);
+        abort_unless($this->regulatoryReports->isAvailable($reportKey, $school), 403);
 
-        $filters = $this->validatedChedFilters($request, $school);
+        $filters = $this->validatedReportFilters($request, $school);
 
-        $spreadsheet = $this->chedExportService->generate($filters);
-        $fileName = sprintf('CHED_Form_B-C_%s.xlsx', now()->format('Y-m-d_His'));
+        $definition = $this->regulatoryReports->definition($reportKey) ?? [];
+        $filePrefix = preg_replace('/[^A-Za-z0-9_-]+/', '_', (string) ($definition['file_name_prefix'] ?? $reportKey)) ?: $reportKey;
+        $spreadsheet = $this->regulatoryReports->adapter($reportKey)->generate($filters);
+        $fileName = sprintf('%s_%s.xlsx', $filePrefix, now()->format('Y-m-d_His'));
 
         return response()->stream(
             function () use ($spreadsheet): void {
@@ -215,7 +229,7 @@ final class AdministratorRegistrarInsightsController extends Controller
     /**
      * @return array{school_year: string|null, semester: int|null, department_id: int|string, course_id: int|string, school_id: int}
      */
-    private function validatedChedFilters(Request $request, School $school): array
+    private function validatedReportFilters(Request $request, School $school): array
     {
         /** @var array{school_year?: string|null, semester?: int|string|null, department_filter?: string|null, course_filter?: string|null} $validated */
         $validated = $request->validate([
@@ -230,13 +244,13 @@ final class AdministratorRegistrarInsightsController extends Controller
                 ? GeneralSettingsService::normalizeSchoolYear($validated['school_year'])
                 : null,
             'semester' => isset($validated['semester']) ? (int) $validated['semester'] : null,
-            'department_id' => $this->chedNumericFilter($validated['department_filter'] ?? 'all'),
-            'course_id' => $this->chedNumericFilter($validated['course_filter'] ?? 'all'),
+            'department_id' => $this->numericFilter($validated['department_filter'] ?? 'all'),
+            'course_id' => $this->numericFilter($validated['course_filter'] ?? 'all'),
             'school_id' => $school->id,
         ];
     }
 
-    private function chedNumericFilter(string $value): int|string
+    private function numericFilter(string $value): int|string
     {
         return $value === 'all' ? 'all' : (int) $value;
     }
@@ -245,10 +259,10 @@ final class AdministratorRegistrarInsightsController extends Controller
      * @param  array{school_year: string|null, semester: int|null, department_id: int|string, course_id: int|string, school_id: int}  $filters
      * @return array{school: array{name: string, code: string, logo: string, contact: string, phone: string|null, email: string|null, address: string, location: string|null}, school_year: string, semester: string, semester_label: string, semester_value: int|null, generated_at: string, generated_by: string}
      */
-    private function chedPreviewMetadata(School $school, array $filters, User $user): array
+    private function reportPreviewMetadata(School $school, array $filters, User $user): array
     {
         $semesterValue = $filters['semester'];
-        $semesterLabel = $semesterValue !== null ? $this->chedSemesterLabel($semesterValue) : 'All semesters';
+        $semesterLabel = $semesterValue !== null ? $this->semesterLabel($semesterValue) : 'All semesters';
 
         return [
             'school' => [
@@ -270,7 +284,7 @@ final class AdministratorRegistrarInsightsController extends Controller
         ];
     }
 
-    private function chedSemesterLabel(int $semester): string
+    private function semesterLabel(int $semester): string
     {
         return match ($semester) {
             1 => '1st Semester',

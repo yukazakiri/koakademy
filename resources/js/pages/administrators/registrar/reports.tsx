@@ -51,9 +51,11 @@ type RegistrarReportsProps = {
 };
 type RegulatoryReportDefinition = {
     key: string;
-    agency: string;
-    country_code: string;
-    framework: string;
+    title?: string;
+    description?: string;
+    agency?: string;
+    country_code?: string;
+    framework?: string;
 };
 type RegulatoryReportsContext = {
     country_code: string | null;
@@ -103,8 +105,6 @@ type StudentDocumentPayload = {
 type PreviewData = Record<string, unknown> | StudentDocumentPayload | null;
 type AvailableCourse = { id: number; code: string; title: string | null; department: string | null; department_id?: number | null };
 
-const CHED_EFORM_BC_KEY: TemplateKey = "ched_eform_bc";
-
 const DEFAULT_REPORT_FILTERS: ReportFilters = {
     course_filter: "all",
     subject_filter: "all",
@@ -147,7 +147,7 @@ function parsePositiveIntegerFilter(value: string): number | null {
     return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
-function resolveChedCourseFilter(reportFilters: ReportFilters, availableCourses: AvailableCourse[]): string | number {
+function resolveRegulatoryCourseFilter(reportFilters: ReportFilters, availableCourses: AvailableCourse[]): string | number {
     if (reportFilters.course_filter === "all") return "all";
 
     const selectedCourse = availableCourses.find((course) => course.code === reportFilters.course_filter);
@@ -155,7 +155,7 @@ function resolveChedCourseFilter(reportFilters: ReportFilters, availableCourses:
     return selectedCourse?.id ?? parsePositiveIntegerFilter(reportFilters.course_filter) ?? "all";
 }
 
-function resolveChedDepartmentFilter(reportFilters: ReportFilters, availableCourses: AvailableCourse[]): string | number {
+function resolveRegulatoryDepartmentFilter(reportFilters: ReportFilters, availableCourses: AvailableCourse[]): string | number {
     if (reportFilters.department_filter === "all") return "all";
 
     const selectedCourse = availableCourses.find((course) => course.code === reportFilters.course_filter);
@@ -164,7 +164,7 @@ function resolveChedDepartmentFilter(reportFilters: ReportFilters, availableCour
     return parsePositiveIntegerFilter(reportFilters.department_filter) ?? "all";
 }
 
-function buildChedReportQuery(
+function buildRegulatoryReportQuery(
     reportFilters: ReportFilters,
     availableCourses: AvailableCourse[],
     schoolYear: string,
@@ -173,9 +173,21 @@ function buildChedReportQuery(
     return {
         school_year: schoolYear,
         semester,
-        department_filter: resolveChedDepartmentFilter(reportFilters, availableCourses),
-        course_filter: resolveChedCourseFilter(reportFilters, availableCourses),
+        department_filter: resolveRegulatoryDepartmentFilter(reportFilters, availableCourses),
+        course_filter: resolveRegulatoryCourseFilter(reportFilters, availableCourses),
     };
+}
+
+function isRegulatoryTemplate(template: TemplateDefinition): boolean {
+    return typeof template.regulatoryReportKey === "string" && template.regulatoryReportKey.length > 0;
+}
+
+function buildRegulatoryUrl(routeName: string, reportKey: string, query: Record<string, string | number | null | undefined>): string {
+    const url = new URL(route(routeName, { reportKey }), window.location.origin);
+    Object.entries(query).forEach(([key, value]) => {
+        if (value !== null && value !== undefined && value !== "") url.searchParams.set(key, String(value));
+    });
+    return url.toString();
 }
 
 function formatGrade(value: number | null): string {
@@ -384,7 +396,7 @@ function buildSampleOperationalReport(template: TemplateKey, variant: string): R
 }
 
 function buildClientPreview(template: TemplateKey, variant: string, selectedStudent: StudentSearchResult | null): PreviewData {
-    if (template === CHED_EFORM_BC_KEY) return null;
+    if (isRegulatoryTemplate(getTemplateDefinition(template))) return null;
 
     return STUDENT_TEMPLATES.has(template)
         ? buildSampleStudentDocument(template, variant, selectedStudent)
@@ -452,7 +464,7 @@ export default function RegistrarReports({ user, filters, regulatory_reports, as
         const nextVariant = selectedVariants[nextTemplate] ?? getTemplateDefinition(nextTemplate).defaultVariant;
         setActiveTemplate(nextTemplate);
         setPreviewData(buildClientPreview(nextTemplate, nextVariant, selectedStudent));
-        setIsSamplePreview(nextTemplate !== CHED_EFORM_BC_KEY);
+        setIsSamplePreview(!isRegulatoryTemplate(getTemplateDefinition(nextTemplate)));
     }, [activeTemplate, availableTemplates, selectedStudent, selectedVariants]);
 
     useEffect(() => {
@@ -555,7 +567,7 @@ export default function RegistrarReports({ user, filters, regulatory_reports, as
         const nextVariant = selectedVariants[key] ?? getTemplateDefinition(key).defaultVariant;
         setActiveTemplate(key);
         setPreviewData(buildClientPreview(key, nextVariant, selectedStudent));
-        setIsSamplePreview(key !== CHED_EFORM_BC_KEY);
+        setIsSamplePreview(!isRegulatoryTemplate(getTemplateDefinition(key)));
         setReportFilters(DEFAULT_REPORT_FILTERS);
     };
 
@@ -563,7 +575,7 @@ export default function RegistrarReports({ user, filters, regulatory_reports, as
         setSelectedVariants((current) => ({ ...current, [key]: variant }));
         if (key === activeTemplate) {
             setPreviewData(buildClientPreview(key, variant, selectedStudent));
-            setIsSamplePreview(key !== CHED_EFORM_BC_KEY);
+            setIsSamplePreview(!isRegulatoryTemplate(getTemplateDefinition(key)));
         }
         setVariantSettingsFor(null);
     };
@@ -571,7 +583,7 @@ export default function RegistrarReports({ user, filters, regulatory_reports, as
     const updateReportFilters = (updater: SetStateAction<ReportFilters>) => {
         setReportFilters(updater);
         setPreviewData(buildClientPreview(activeTemplate, activeVariant.key, selectedStudent));
-        setIsSamplePreview(activeTemplate !== CHED_EFORM_BC_KEY);
+        setIsSamplePreview(!isRegulatoryTemplate(template));
     };
 
     const loadPreview = useCallback(async () => {
@@ -579,7 +591,8 @@ export default function RegistrarReports({ user, filters, regulatory_reports, as
             toast.error("Select a student before generating this document.");
             return;
         }
-        if (activeTemplate === CHED_EFORM_BC_KEY) {
+        const regulatoryReportKey = template.regulatoryReportKey;
+        if (isRegulatoryTemplate(template)) {
             setPreviewData(null);
             setIsSamplePreview(false);
         }
@@ -592,10 +605,11 @@ export default function RegistrarReports({ user, filters, regulatory_reports, as
                       student_id: selectedStudent?.id,
                       purpose,
                   })
-                : activeTemplate === CHED_EFORM_BC_KEY
-                  ? buildUrl(
-                        "administrators.registrar.reports.ched.preview",
-                        buildChedReportQuery(reportFilters, availableCourses, currentSchoolYear, currentSemester),
+                : regulatoryReportKey
+                  ? buildRegulatoryUrl(
+                        "administrators.registrar.reports.regulatory.preview",
+                        regulatoryReportKey,
+                        buildRegulatoryReportQuery(reportFilters, availableCourses, currentSchoolYear, currentSemester),
                     )
                   : buildUrl("administrators.enrollments.reports.data", {
                         report_type: activeTemplate,
@@ -612,7 +626,18 @@ export default function RegistrarReports({ user, filters, regulatory_reports, as
         } finally {
             setIsLoadingPreview(false);
         }
-    }, [activeTemplate, activeVariant.key, availableCourses, currentSchoolYear, currentSemester, isStudent, purpose, reportFilters, selectedStudent]);
+    }, [
+        activeTemplate,
+        activeVariant.key,
+        availableCourses,
+        currentSchoolYear,
+        currentSemester,
+        isStudent,
+        purpose,
+        reportFilters,
+        selectedStudent,
+        template,
+    ]);
 
     const selectStudent = (student: StudentSearchResult) => {
         setSelectedStudent(student);
@@ -649,19 +674,19 @@ export default function RegistrarReports({ user, filters, regulatory_reports, as
     };
     const handleExcelDownload = () => {
         if (!previewData || isStudent) return;
-        const url =
-            activeTemplate === CHED_EFORM_BC_KEY
-                ? buildUrl(
-                      "administrators.registrar.reports.ched.export",
-                      buildChedReportQuery(reportFilters, availableCourses, currentSchoolYear, currentSemester),
-                  )
-                : buildUrl("administrators.enrollments.reports.export", {
-                      report_type: activeTemplate,
-                      variant: activeVariant.key,
-                      ...reportFilters,
-                  });
+        const url = template.regulatoryReportKey
+            ? buildRegulatoryUrl(
+                  "administrators.registrar.reports.regulatory.export",
+                  template.regulatoryReportKey,
+                  buildRegulatoryReportQuery(reportFilters, availableCourses, currentSchoolYear, currentSemester),
+              )
+            : buildUrl("administrators.enrollments.reports.export", {
+                  report_type: activeTemplate,
+                  variant: activeVariant.key,
+                  ...reportFilters,
+              });
         window.open(url, "_blank", "noopener");
-        addRecentOutput("XLSX", activeTemplate === CHED_EFORM_BC_KEY ? "CHED Form B/C Workbook" : "Operational workbook");
+        addRecentOutput("XLSX", template.regulatoryReportKey ? `${template.title} workbook` : "Operational workbook");
     };
 
     const handleGenerateBulkAssessments = async () => {

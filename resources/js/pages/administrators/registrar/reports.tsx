@@ -42,7 +42,24 @@ type StudentSearchResult = {
 type RegistrarReportsProps = {
     user: EnrollmentManagementProps["user"];
     filters: SemesterSelectorProps;
+    regulatory_reports?: RegulatoryReportsContext | null;
+    jurisdiction?: {
+        is_philippines: boolean;
+        regulatory_agency: string | null;
+    };
     assessment_export_options: EnrollmentManagementProps["assessment_export_options"];
+};
+type RegulatoryReportDefinition = {
+    key: string;
+    agency: string;
+    country_code: string;
+    framework: string;
+};
+type RegulatoryReportsContext = {
+    country_code: string | null;
+    available_report_keys: string[];
+    agencies: string[];
+    definitions: RegulatoryReportDefinition[];
 };
 type RecentOutput = { id: string; name: string; format: "PDF" | "XLSX" | "Print"; detail: string; createdAt: string };
 type StudentDocumentPayload = {
@@ -83,6 +100,10 @@ type StudentDocumentPayload = {
     generated_at: string;
     generated_by: string;
 };
+type PreviewData = Record<string, unknown> | StudentDocumentPayload | null;
+type AvailableCourse = { id: number; code: string; title: string | null; department: string | null; department_id?: number | null };
+
+const CHED_EFORM_BC_KEY: TemplateKey = "ched_eform_bc";
 
 const DEFAULT_REPORT_FILTERS: ReportFilters = {
     course_filter: "all",
@@ -98,6 +119,63 @@ function buildUrl(name: string, query: Record<string, string | number | null | u
         if (value !== null && value !== undefined && value !== "") url.searchParams.set(key, String(value));
     });
     return url.toString();
+}
+
+function resolveCurrentSchoolYear(filters: SemesterSelectorProps): string {
+    const currentSchoolYear = filters.currentSchoolYear;
+
+    if (currentSchoolYear == null) return "";
+
+    return filters.availableSchoolYears?.[currentSchoolYear] ?? "";
+}
+
+function resolveCurrentSemester(filters: SemesterSelectorProps): number | null {
+    return filters.currentSemester ?? null;
+}
+
+function resolveCurrentSemesterLabel(filters: SemesterSelectorProps): string {
+    const currentSemester = resolveCurrentSemester(filters);
+
+    if (currentSemester == null) return "";
+
+    return filters.availableSemesters?.[currentSemester] ?? `Semester ${currentSemester}`;
+}
+
+function parsePositiveIntegerFilter(value: string): number | null {
+    const parsed = Number(value);
+
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function resolveChedCourseFilter(reportFilters: ReportFilters, availableCourses: AvailableCourse[]): string | number {
+    if (reportFilters.course_filter === "all") return "all";
+
+    const selectedCourse = availableCourses.find((course) => course.code === reportFilters.course_filter);
+
+    return selectedCourse?.id ?? parsePositiveIntegerFilter(reportFilters.course_filter) ?? "all";
+}
+
+function resolveChedDepartmentFilter(reportFilters: ReportFilters, availableCourses: AvailableCourse[]): string | number {
+    if (reportFilters.department_filter === "all") return "all";
+
+    const selectedCourse = availableCourses.find((course) => course.code === reportFilters.course_filter);
+    if (selectedCourse?.department === reportFilters.department_filter && selectedCourse.department_id) return selectedCourse.department_id;
+
+    return parsePositiveIntegerFilter(reportFilters.department_filter) ?? "all";
+}
+
+function buildChedReportQuery(
+    reportFilters: ReportFilters,
+    availableCourses: AvailableCourse[],
+    schoolYear: string,
+    semester: number | null,
+): Record<string, string | number | null | undefined> {
+    return {
+        school_year: schoolYear,
+        semester,
+        department_filter: resolveChedDepartmentFilter(reportFilters, availableCourses),
+        course_filter: resolveChedCourseFilter(reportFilters, availableCourses),
+    };
 }
 
 function formatGrade(value: number | null): string {
@@ -305,17 +383,20 @@ function buildSampleOperationalReport(template: TemplateKey, variant: string): R
     };
 }
 
-function buildClientPreview(
-    template: TemplateKey,
-    variant: string,
-    selectedStudent: StudentSearchResult | null,
-): Record<string, unknown> | StudentDocumentPayload {
+function buildClientPreview(template: TemplateKey, variant: string, selectedStudent: StudentSearchResult | null): PreviewData {
+    if (template === CHED_EFORM_BC_KEY) return null;
+
     return STUDENT_TEMPLATES.has(template)
         ? buildSampleStudentDocument(template, variant, selectedStudent)
         : buildSampleOperationalReport(template, variant);
 }
 
-export default function RegistrarReports({ user, filters, assessment_export_options }: RegistrarReportsProps) {
+export default function RegistrarReports({ user, filters, regulatory_reports, assessment_export_options }: RegistrarReportsProps) {
+    const availableReportKeys = useMemo(() => new Set(regulatory_reports?.available_report_keys ?? []), [regulatory_reports?.available_report_keys]);
+    const availableTemplates = useMemo(
+        () => TEMPLATES.filter((t) => !t.regulatoryReportKey || availableReportKeys.has(t.regulatoryReportKey)),
+        [availableReportKeys],
+    );
     const [activeTemplate, setActiveTemplate] = useState<TemplateKey>("certificate_of_enrollment");
     const [catalogSearch, setCatalogSearch] = useState("");
     const [studentSearch, setStudentSearch] = useState("");
@@ -325,15 +406,13 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
     const [availableSubjects, setAvailableSubjects] = useState<Array<{ id: string | number; code: string; title: string; enrolled_count: number }>>(
         [],
     );
-    const [availableCourses, setAvailableCourses] = useState<Array<{ id: number; code: string; title: string | null; department: string | null }>>(
-        [],
-    );
+    const [availableCourses, setAvailableCourses] = useState<AvailableCourse[]>([]);
     const [isLoadingAvailableCourses, setIsLoadingAvailableCourses] = useState(false);
     const [courseOptionsError, setCourseOptionsError] = useState<string | null>(null);
     const [purpose, setPurpose] = useState("Scholarship, employment, or other lawful purpose");
     const [selectedVariants, setSelectedVariants] = useState<Record<TemplateKey, string>>(() => getDefaultTemplateVariants());
     const [variantSettingsFor, setVariantSettingsFor] = useState<TemplateKey | null>(null);
-    const [previewData, setPreviewData] = useState<Record<string, unknown> | StudentDocumentPayload>(() =>
+    const [previewData, setPreviewData] = useState<PreviewData>(() =>
         buildClientPreview("certificate_of_enrollment", getDefaultTemplateVariants().certificate_of_enrollment, null),
     );
     const [isSamplePreview, setIsSamplePreview] = useState(true);
@@ -354,12 +433,36 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
     const normalizedCatalogSearch = catalogSearch.trim().toLowerCase();
     const visibleTemplates = useMemo(
         () =>
-            TEMPLATES.filter(
+            availableTemplates.filter(
                 (item) =>
                     !normalizedCatalogSearch || `${item.title} ${item.description} ${item.group}`.toLowerCase().includes(normalizedCatalogSearch),
             ),
-        [normalizedCatalogSearch],
+        [availableTemplates, normalizedCatalogSearch],
     );
+
+    useEffect(() => {
+        if (availableTemplates.some((item) => item.key === activeTemplate)) return;
+
+        const nextTemplate = availableTemplates[0]?.key;
+        if (!nextTemplate) {
+            setPreviewData(null);
+            return;
+        }
+
+        const nextVariant = selectedVariants[nextTemplate] ?? getTemplateDefinition(nextTemplate).defaultVariant;
+        setActiveTemplate(nextTemplate);
+        setPreviewData(buildClientPreview(nextTemplate, nextVariant, selectedStudent));
+        setIsSamplePreview(nextTemplate !== CHED_EFORM_BC_KEY);
+    }, [activeTemplate, availableTemplates, selectedStudent, selectedVariants]);
+
+    useEffect(() => {
+        if (variantSettingsFor === null || availableTemplates.some((item) => item.key === variantSettingsFor)) return;
+
+        setVariantSettingsFor(null);
+    }, [availableTemplates, variantSettingsFor]);
+
+    const currentSchoolYear = resolveCurrentSchoolYear(filters);
+    const currentSemester = resolveCurrentSemester(filters);
 
     const loadCourseOptions = useCallback(async (): Promise<void> => {
         setIsLoadingAvailableCourses(true);
@@ -370,7 +473,7 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
                 headers: { Accept: "application/json" },
             });
             const payload = (await response.json().catch(() => ({}))) as {
-                courses?: Array<{ id: number; code: string; title: string | null; department: string | null }>;
+                courses?: AvailableCourse[];
                 message?: string;
             };
 
@@ -452,7 +555,7 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
         const nextVariant = selectedVariants[key] ?? getTemplateDefinition(key).defaultVariant;
         setActiveTemplate(key);
         setPreviewData(buildClientPreview(key, nextVariant, selectedStudent));
-        setIsSamplePreview(true);
+        setIsSamplePreview(key !== CHED_EFORM_BC_KEY);
         setReportFilters(DEFAULT_REPORT_FILTERS);
     };
 
@@ -460,7 +563,7 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
         setSelectedVariants((current) => ({ ...current, [key]: variant }));
         if (key === activeTemplate) {
             setPreviewData(buildClientPreview(key, variant, selectedStudent));
-            setIsSamplePreview(true);
+            setIsSamplePreview(key !== CHED_EFORM_BC_KEY);
         }
         setVariantSettingsFor(null);
     };
@@ -468,13 +571,17 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
     const updateReportFilters = (updater: SetStateAction<ReportFilters>) => {
         setReportFilters(updater);
         setPreviewData(buildClientPreview(activeTemplate, activeVariant.key, selectedStudent));
-        setIsSamplePreview(true);
+        setIsSamplePreview(activeTemplate !== CHED_EFORM_BC_KEY);
     };
 
     const loadPreview = useCallback(async () => {
         if (isStudent && !selectedStudent) {
             toast.error("Select a student before generating this document.");
             return;
+        }
+        if (activeTemplate === CHED_EFORM_BC_KEY) {
+            setPreviewData(null);
+            setIsSamplePreview(false);
         }
         setIsLoadingPreview(true);
         try {
@@ -485,7 +592,16 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
                       student_id: selectedStudent?.id,
                       purpose,
                   })
-                : buildUrl("administrators.enrollments.reports.data", { report_type: activeTemplate, variant: activeVariant.key, ...reportFilters });
+                : activeTemplate === CHED_EFORM_BC_KEY
+                  ? buildUrl(
+                        "administrators.registrar.reports.ched.preview",
+                        buildChedReportQuery(reportFilters, availableCourses, currentSchoolYear, currentSemester),
+                    )
+                  : buildUrl("administrators.enrollments.reports.data", {
+                        report_type: activeTemplate,
+                        variant: activeVariant.key,
+                        ...reportFilters,
+                    });
             const response = await fetch(url, { headers: { Accept: "application/json" } });
             const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
             if (!response.ok) throw new Error((payload.message as string | undefined) ?? "Preview failed.");
@@ -496,7 +612,7 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
         } finally {
             setIsLoadingPreview(false);
         }
-    }, [activeTemplate, activeVariant.key, isStudent, purpose, reportFilters, selectedStudent]);
+    }, [activeTemplate, activeVariant.key, availableCourses, currentSchoolYear, currentSemester, isStudent, purpose, reportFilters, selectedStudent]);
 
     const selectStudent = (student: StudentSearchResult) => {
         setSelectedStudent(student);
@@ -533,12 +649,19 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
     };
     const handleExcelDownload = () => {
         if (!previewData || isStudent) return;
-        window.open(
-            buildUrl("administrators.enrollments.reports.export", { report_type: activeTemplate, variant: activeVariant.key, ...reportFilters }),
-            "_blank",
-            "noopener",
-        );
-        addRecentOutput("XLSX", "Operational workbook");
+        const url =
+            activeTemplate === CHED_EFORM_BC_KEY
+                ? buildUrl(
+                      "administrators.registrar.reports.ched.export",
+                      buildChedReportQuery(reportFilters, availableCourses, currentSchoolYear, currentSemester),
+                  )
+                : buildUrl("administrators.enrollments.reports.export", {
+                      report_type: activeTemplate,
+                      variant: activeVariant.key,
+                      ...reportFilters,
+                  });
+        window.open(url, "_blank", "noopener");
+        addRecentOutput("XLSX", activeTemplate === CHED_EFORM_BC_KEY ? "CHED Form B/C Workbook" : "Operational workbook");
     };
 
     const handleGenerateBulkAssessments = async () => {
@@ -556,7 +679,7 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
                     {
                         id: `${Date.now()}-bulk-pdf`,
                         name: "Bulk assessment export",
-                        format: "PDF",
+                        format: "PDF" as const,
                         detail: "Queued PDF bundle",
                         createdAt: new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date()),
                     },
@@ -573,7 +696,11 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
 
     const courseOptions: ComboboxOption[] = [
         { label: "All courses", value: "all", description: "Include every active program" },
-        ...availableCourses.map((course) => ({ label: `${course.code} — ${course.title}`, value: course.code, description: course.department })),
+        ...availableCourses.map((course) => ({
+            label: `${course.code} — ${course.title}`,
+            value: course.code,
+            description: course.department ?? undefined,
+        })),
     ];
     const subjectOptions: ComboboxOption[] = [
         { label: "All subjects", value: "all", description: "Include every subject" },
@@ -614,7 +741,7 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
                                     <p className="text-sm font-semibold">Template catalog</p>
                                     <p className="text-muted-foreground mt-1 text-xs">Choose an official output.</p>
                                 </div>
-                                <Badge variant="secondary">{TEMPLATES.length}</Badge>
+                                <Badge variant="secondary">{visibleTemplates.length}</Badge>
                             </div>
                             <div className="relative">
                                 <Search className="text-muted-foreground absolute top-1/2 left-3 size-3.5 -translate-y-1/2" aria-hidden="true" />
@@ -956,9 +1083,11 @@ export default function RegistrarReports({ user, filters, assessment_export_opti
                                         <Button variant="outline" size="sm" onClick={handlePrint} disabled={!canPrint}>
                                             <Printer className="mr-2 size-3.5" /> Print
                                         </Button>
-                                        <Button variant="outline" size="sm" onClick={handlePdfDownload} disabled={!canExport}>
-                                            <Download className="mr-2 size-3.5" /> PDF
-                                        </Button>
+                                        {template.formats.includes("PDF") && (
+                                            <Button variant="outline" size="sm" onClick={handlePdfDownload} disabled={!canExport}>
+                                                <Download className="mr-2 size-3.5" /> PDF
+                                            </Button>
+                                        )}
                                         {!isStudent && (
                                             <Button variant="outline" size="sm" onClick={handleExcelDownload} disabled={!canExport}>
                                                 <FileSpreadsheet className="mr-2 size-3.5" /> XLSX
@@ -1195,7 +1324,7 @@ function TemplateVariantPreview({ template, variant }: { template: TemplateDefin
     );
 }
 
-function OperationalReportPreview({ data }: { data: Record<string, unknown>; variant: TemplateFormat }) {
+function OperationalReportPreview({ data, variant }: { data: Record<string, unknown>; variant: TemplateFormat }) {
     return (
         <div className="bg-white">
             <div className="border-b px-5 py-3 text-xs">

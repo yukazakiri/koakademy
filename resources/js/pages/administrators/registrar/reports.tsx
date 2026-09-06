@@ -672,21 +672,37 @@ export default function RegistrarReports({ user, filters, regulatory_reports, as
         window.open(url, "_blank", "noopener");
         addRecentOutput("PDF", isStudent ? (selectedStudent?.full_name ?? "Selected student") : "Current filters");
     };
-    const handleExcelDownload = () => {
+    const handleExcelDownload = async () => {
         if (!previewData || isStudent) return;
-        const url = template.regulatoryReportKey
-            ? buildRegulatoryUrl(
-                  "administrators.registrar.reports.regulatory.export",
-                  template.regulatoryReportKey,
-                  buildRegulatoryReportQuery(reportFilters, availableCourses, currentSchoolYear, currentSemester),
-              )
-            : buildUrl("administrators.enrollments.reports.export", {
-                  report_type: activeTemplate,
-                  variant: activeVariant.key,
-                  ...reportFilters,
-              });
-        window.open(url, "_blank", "noopener");
-        addRecentOutput("XLSX", template.regulatoryReportKey ? `${template.title} workbook` : "Operational workbook");
+        if (!template.regulatoryReportKey) {
+            const url = buildUrl("administrators.enrollments.reports.export", {
+                report_type: activeTemplate,
+                variant: activeVariant.key,
+                ...reportFilters,
+            });
+            window.open(url, "_blank", "noopener");
+            addRecentOutput("XLSX", "Operational workbook");
+            return;
+        }
+
+        const url = buildRegulatoryUrl(
+            "administrators.registrar.reports.regulatory.export",
+            template.regulatoryReportKey,
+            buildRegulatoryReportQuery(reportFilters, availableCourses, currentSchoolYear, currentSemester),
+        );
+        const toastId = "regulatory-report-export";
+        toast.loading("Queueing Excel export...", { id: toastId });
+        try {
+            const response = await axios.get<{ message?: string }>(url, {
+                headers: { Accept: "application/json" },
+            });
+            toast.success(response.data.message ?? "Excel export queued. You will be notified when it is ready.", { id: toastId });
+            window.dispatchEvent(new Event(ACTIVE_JOBS_REFRESH_EVENT));
+            addRecentOutput("XLSX", template.regulatoryReportKey ? `${template.title} workbook` : "Operational workbook");
+        } catch (error) {
+            const message = axios.isAxiosError<{ message?: string }>(error) ? error.response?.data?.message : null;
+            toast.error(message ?? "The Excel export could not be queued.", { id: toastId });
+        }
     };
 
     const handleGenerateBulkAssessments = async () => {

@@ -13,7 +13,9 @@ use App\Models\School;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\User;
+use App\Services\AssessmentExportPayloadService;
 use App\Services\GeneralSettingsService;
+use App\Services\QueueRegulatoryReportExportService;
 use App\Services\RegistrarAnalyticsService;
 use App\Services\RegistrarStudentProfileImportService;
 use App\Services\RegulatoryReportRegistry;
@@ -25,9 +27,7 @@ use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
 use Maatwebsite\Excel\Facades\Excel;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class AdministratorRegistrarInsightsController extends Controller
 {
@@ -35,6 +35,8 @@ final class AdministratorRegistrarInsightsController extends Controller
         private readonly RegistrarAnalyticsService $analyticsService,
         private readonly RegistrarStudentProfileImportService $studentProfileImportService,
         private readonly RegulatoryReportRegistry $regulatoryReports,
+        private readonly QueueRegulatoryReportExportService $regulatoryExportQueue,
+        private readonly AssessmentExportPayloadService $assessmentExportPayloads,
         private readonly TenantContext $tenantContext,
     ) {}
 
@@ -176,12 +178,12 @@ final class AdministratorRegistrarInsightsController extends Controller
         ]);
     }
 
-    public function chedExport(Request $request): StreamedResponse
+    public function chedExport(Request $request): JsonResponse
     {
         return $this->regulatoryExport($request, RegulatoryReportRegistry::CHED_EFORM_BC);
     }
 
-    public function regulatoryExport(Request $request, string $reportKey): StreamedResponse
+    public function regulatoryExport(Request $request, string $reportKey): JsonResponse
     {
         $user = $request->user();
         abort_unless($user instanceof User, 401);
@@ -195,22 +197,12 @@ final class AdministratorRegistrarInsightsController extends Controller
         $filters = $this->validatedReportFilters($request, $school);
 
         $definition = $this->regulatoryReports->definition($reportKey) ?? [];
-        $filePrefix = preg_replace('/[^A-Za-z0-9_-]+/', '_', (string) ($definition['file_name_prefix'] ?? $reportKey)) ?: $reportKey;
-        $spreadsheet = $this->regulatoryReports->adapter($reportKey)->generate($filters);
-        $fileName = sprintf('%s_%s.xlsx', $filePrefix, now()->format('Y-m-d_His'));
+        $export = $this->regulatoryExportQueue->queue($user, $school->id, $reportKey, $filters, $definition);
 
-        return response()->stream(
-            function () use ($spreadsheet): void {
-                $writer = new Xlsx($spreadsheet);
-                $writer->save('php://output');
-            },
-            200,
-            [
-                'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                'Content-Disposition' => sprintf('attachment; filename="%s"', $fileName),
-                'Cache-Control' => 'max-age=0',
-            ]
-        );
+        return response()->json([
+            'message' => 'Your Excel export has been queued. You will receive a download when it is ready.',
+            'job' => $this->assessmentExportPayloads->make($export),
+        ], 202);
     }
 
     /**

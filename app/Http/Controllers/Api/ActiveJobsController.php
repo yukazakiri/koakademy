@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\GenerateBulkAssessmentsJob;
+use App\Jobs\GenerateRegulatoryReportExportJob;
 use App\Models\AssessmentExport;
 use App\Services\AssessmentExportCoordinator;
 use App\Services\AssessmentExportPayloadService;
@@ -67,6 +68,29 @@ final class ActiveJobsController extends Controller
         $this->authorizeOwner($request, $assessmentExport);
         abort_unless(in_array($assessmentExport->status, ['failed', 'cancelled'], true), 409, 'Only failed or cancelled exports can be retried.');
 
+        if ($this->isRegulatoryExport($assessmentExport)) {
+            $assessmentExport->forceFill([
+                'status' => 'processing',
+                'stage' => 'queued',
+                'percentage' => 0,
+                'message' => 'Regulatory Excel export retry queued.',
+                'error_code' => null,
+                'error_message' => null,
+                'error_context' => null,
+                'cancel_requested_at' => null,
+                'completed_at' => null,
+                'failed_at' => null,
+                'dismissed_at' => null,
+                'terminal_notified_at' => null,
+                'output_disk' => null,
+                'output_path' => null,
+                'output_name' => null,
+            ])->save();
+            GenerateRegulatoryReportExportJob::dispatch($assessmentExport->id);
+
+            return response()->json(['job' => $this->payloads->make($assessmentExport->refresh())], 202);
+        }
+
         $retryState = DB::transaction(function () use ($assessmentExport): array {
             $export = AssessmentExport::query()->lockForUpdate()->findOrFail($assessmentExport->id);
             $export->items()->whereIn('status', ['failed', 'cancelled', 'processing'])->update([
@@ -116,6 +140,19 @@ final class ActiveJobsController extends Controller
             return response()->json(['job' => $this->payloads->make($assessmentExport)]);
         }
 
+        if ($this->isRegulatoryExport($assessmentExport)) {
+            $assessmentExport->forceFill([
+                'status' => 'cancelled',
+                'stage' => 'cancelled',
+                'message' => 'Regulatory Excel export cancelled.',
+                'cancel_requested_at' => now(),
+                'completed_at' => now(),
+            ])->save();
+            $this->coordinator->broadcast($assessmentExport->refresh());
+
+            return response()->json(['job' => $this->payloads->make($assessmentExport)], 202);
+        }
+
         DB::transaction(function () use ($assessmentExport): void {
             $export = AssessmentExport::query()->lockForUpdate()->findOrFail($assessmentExport->id);
             $export->forceFill([
@@ -161,5 +198,10 @@ final class ActiveJobsController extends Controller
             && (int) $export->school_id === $schoolId,
             404,
         );
+    }
+
+    private function isRegulatoryExport(AssessmentExport $export): bool
+    {
+        return ($export->filters['export_type'] ?? null) === 'regulatory_report';
     }
 }

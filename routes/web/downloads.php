@@ -225,5 +225,7 @@ Route::get('/download/enrollment-report/{filename}', function (string $filename)
 
 Route::get('/download/bulk-assessment/{assessmentExport}', [AssessmentExportDownloadController::class, 'download'])
     ->name('download.bulk-assessment');
+Route::get('/download/regulatory-report/{assessmentExport}', [AssessmentExportDownloadController::class, 'download'])
+    ->name('download.regulatory-report');
 Route::get('/download/bulk-assessment/{assessmentExport}/skipped-report', [AssessmentExportDownloadController::class, 'report'])
     ->name('download.bulk-assessment-report');

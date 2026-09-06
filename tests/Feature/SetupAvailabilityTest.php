@@ -7,6 +7,8 @@ use App\Models\GeneralSetting;
 use App\Models\School;
 use App\Models\User;
 
+uses(Tests\TestCase::class);
+
 beforeEach(function (): void {
     $this->withoutVite();
     config(['inertia.testing.ensure_pages_exist' => false]);

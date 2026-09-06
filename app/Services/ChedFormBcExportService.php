@@ -515,7 +515,7 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
 
         $results = (clone $query)
             ->join('courses', function ($join) use ($courseColumn): void {
-                $join->on($courseColumn, '=', 'courses.id');
+                $join->whereRaw("CAST({$courseColumn} AS BIGINT) = courses.id");
             })
             ->selectRaw(implode(', ', $selects))
             ->groupBy('courses.id')

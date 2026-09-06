@@ -13,7 +13,9 @@ return [
     | Regulatory exports are application-level adapters. The registry is
     | intentionally configuration-driven so an installation can disable the
     | bundled CHED adapter or add a provider for another jurisdiction without
-    | changing the shared report controller or database contract.
+    | changing the shared report controller or database contract. CHED is the
+    | only provider shipped by this repository; other providers must be added
+    | deliberately by an application or compatible module.
     |
     */
     'definitions' => [

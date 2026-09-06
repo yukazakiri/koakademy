@@ -6,6 +6,13 @@ namespace App\Contracts;
 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 
+/**
+ * Provider boundary for jurisdiction-specific regulatory reports.
+ *
+ * Implementations receive tenant-scoped, validated report filters and own
+ * provider-specific queries and workbook/preview formatting. They must not
+ * read the current request or retain tenant state between calls.
+ */
 interface RegulatoryReportAdapter
 {
     /**

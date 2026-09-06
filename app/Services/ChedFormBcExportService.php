@@ -222,7 +222,9 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
     private function queryEnrollmentMatrix(string $schoolYear, ?int $semester, ?int $schoolId): Collection
     {
         $query = StudentEnrollment::query()
-            ->join('students', 'student_enrollment.student_id', '=', 'students.id')
+            ->join('students', function ($join): void {
+                $join->whereRaw('CAST(student_enrollment.student_id AS BIGINT) = students.id');
+            })
             ->whereNull('student_enrollment.deleted_at')
             ->whereNull('students.deleted_at');
 
@@ -397,7 +399,9 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
 
         // 1. Enrollment Equity Aggregates per course
         $enrQuery = StudentEnrollment::query()
-            ->join('students', 'student_enrollment.student_id', '=', 'students.id')
+            ->join('students', function ($join): void {
+                $join->whereRaw('CAST(student_enrollment.student_id AS BIGINT) = students.id');
+            })
             ->whereNull('student_enrollment.deleted_at')
             ->whereNull('students.deleted_at')
             ->where('students.status', '!=', StudentStatus::Graduated->value);

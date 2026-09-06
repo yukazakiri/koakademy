@@ -44,6 +44,7 @@ use App\Services\RegistrarReportingSettingsService;
 use App\Services\SocialiteProviderService;
 use App\Services\TuitionPaymentScheduleSettingsService;
 use App\Settings\SiteSettings;
+use App\Support\IsoAlpha2CountryCodes;
 use App\Support\SystemManagementPermissions;
 use Exception;
 use Illuminate\Database\QueryException;
@@ -383,6 +384,7 @@ final class AdministratorSystemManagementController extends Controller
         School::create([
             'name' => $validated['name'],
             'code' => $validated['code'],
+            'country_code' => $validated['country_code'] ?? null,
             'school_level' => $validated['school_level'],
             'description' => $validated['description'] ?? null,
             'location' => $validated['location'] ?? null,
@@ -422,10 +424,15 @@ final class AdministratorSystemManagementController extends Controller
     {
         $this->authorize('updateSchool', GeneralSetting::class);
 
+        if ($request->exists('country_code')) {
+            $request->merge(['country_code' => IsoAlpha2CountryCodes::normalize($request->input('country_code'))]);
+        }
+
         $validated = $request->validate([
             'school_id' => 'required|exists:schools,id',
             'name' => 'required|string|max:255',
             'code' => 'required|string|max:50',
+            'country_code' => IsoAlpha2CountryCodes::nullableRules(),
             'school_level' => ['required', Rule::enum(SchoolLevel::class)],
             'description' => 'nullable|string',
             'location' => 'nullable|string|max:255',
@@ -434,7 +441,7 @@ final class AdministratorSystemManagementController extends Controller
         ]);
 
         $school = School::findOrFail($validated['school_id']);
-        $school->update([
+        $updates = [
             'name' => $validated['name'],
             'code' => $validated['code'],
             'school_level' => $validated['school_level'],
@@ -442,7 +449,13 @@ final class AdministratorSystemManagementController extends Controller
             'location' => $validated['location'] ?? null,
             'phone' => $validated['phone'] ?? null,
             'email' => $validated['email'] ?? null,
-        ]);
+        ];
+
+        if ($request->exists('country_code')) {
+            $updates['country_code'] = $validated['country_code'] ?? null;
+        }
+
+        $school->update($updates);
 
         return Redirect::back()->with('success', 'School details updated successfully.');
     }
@@ -451,7 +464,7 @@ final class AdministratorSystemManagementController extends Controller
     {
         $validated = $request->validated();
 
-        $school->update([
+        $updates = [
             'name' => $validated['name'],
             'code' => $validated['code'],
             'school_level' => $validated['school_level'],
@@ -461,7 +474,13 @@ final class AdministratorSystemManagementController extends Controller
             'email' => $validated['email'] ?? null,
             'dean_name' => $validated['dean_name'] ?? null,
             'dean_email' => $validated['dean_email'] ?? null,
-        ]);
+        ];
+
+        if ($request->exists('country_code')) {
+            $updates['country_code'] = $validated['country_code'] ?? null;
+        }
+
+        $school->update($updates);
 
         return Redirect::back()->with('success', 'School record updated successfully.');
     }

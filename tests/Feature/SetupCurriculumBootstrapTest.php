@@ -128,6 +128,7 @@ function setupPayload(array $overrides = []): array
         'admin_password_confirmation' => 'password123',
         'school_name' => 'Example Academy',
         'school_code' => 'EXA',
+        'country_code' => 'PH',
         'school_level' => SchoolLevel::HigherEducation->value,
         'school_starting_date' => '2026-06-08',
         'school_ending_date' => '2027-03-31',

@@ -2,6 +2,10 @@
 
 declare(strict_types=1);
 
+$_SERVER['APP_BASE_PATH'] = $_SERVER['APP_BASE_PATH'] ?? dirname(__DIR__);
+$_ENV['APP_BASE_PATH'] = $_ENV['APP_BASE_PATH'] ?? $_SERVER['APP_BASE_PATH'];
+putenv('APP_BASE_PATH='.$_SERVER['APP_BASE_PATH']);
+
 /*
 |--------------------------------------------------------------------------
 | Test Case

@@ -20,6 +20,7 @@ use Override;
  * @property int $id
  * @property string $name
  * @property string $code
+ * @property string|null $country_code
  * @property SchoolLevel|null $school_level
  * @property string|null $curriculum_framework
  * @property string|null $curriculum_reference
@@ -46,6 +47,7 @@ use Override;
  * @method static Builder<static>|School newQuery()
  * @method static Builder<static>|School query()
  * @method static Builder<static>|School whereCode($value)
+ * @method static Builder<static>|School whereCountryCode($value)
  * @method static Builder<static>|School whereCreatedAt($value)
  * @method static Builder<static>|School whereDeanEmail($value)
  * @method static Builder<static>|School whereDeanName($value)
@@ -74,6 +76,7 @@ final class School extends Model
     protected $fillable = [
         'name',
         'code',
+        'country_code',
         'school_level',
         'curriculum_framework',
         'curriculum_reference',
@@ -253,10 +256,12 @@ final class School extends Model
         // Ensure code is uppercase when creating/updating
         self::creating(function (School $school): void {
             $school->code = mb_strtoupper($school->code);
+            $school->country_code = self::normalizeCountryCode($school->country_code);
         });
 
         self::updating(function (School $school): void {
             $school->code = mb_strtoupper($school->code);
+            $school->country_code = self::normalizeCountryCode($school->country_code);
         });
 
         // When deleting a school, handle related records
@@ -289,5 +294,12 @@ final class School extends Model
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
         ];
+    }
+
+    private static function normalizeCountryCode(?string $countryCode): ?string
+    {
+        $normalized = mb_strtoupper(mb_trim((string) $countryCode));
+
+        return $normalized !== '' ? $normalized : null;
     }
 }

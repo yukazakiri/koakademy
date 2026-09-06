@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\CurriculumBootstrapService;
 use App\Services\LogoConversionService;
 use App\Settings\SiteSettings;
+use App\Support\IsoAlpha2CountryCodes;
 use App\Support\PhilippineCurriculumCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -98,6 +99,10 @@ final class SetupController extends Controller
             abort(403, 'Setup has already been completed.');
         }
 
+        if ($request->has('country_code')) {
+            $request->merge(['country_code' => mb_strtoupper(mb_trim((string) $request->input('country_code')))]);
+        }
+
         $request->validate([
             // Step 1: Administrator (required)
             'admin_name' => ['required', 'string', 'max:255'],
@@ -106,6 +111,7 @@ final class SetupController extends Controller
             // Step 2: Institution (required name & code)
             'school_name' => ['required', 'string', 'max:255'],
             'school_code' => ['required', 'string', 'max:50', 'unique:schools,code'],
+            'country_code' => ['required', 'string', 'regex:/\A[A-Z]{2}\z/', Rule::in(IsoAlpha2CountryCodes::codes())],
             'school_level' => ['required', Rule::enum(SchoolLevel::class)],
             'school_description' => ['nullable', 'string', 'max:1000'],
             'school_email' => ['nullable', 'string', 'email', 'max:255'],
@@ -198,6 +204,7 @@ final class SetupController extends Controller
             $school = School::create([
                 'name' => $request->input('school_name'),
                 'code' => $request->input('school_code'),
+                'country_code' => $request->input('country_code'),
                 'school_level' => $request->input('school_level'),
                 'curriculum_framework' => $framework?->value,
                 'curriculum_reference' => $curriculumReference,

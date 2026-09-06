@@ -51,6 +51,7 @@ export interface School {
     id: number;
     name: string;
     code: string;
+    country_code?: string | null;
     school_level?: string | null;
     description?: string;
     dean_name?: string;

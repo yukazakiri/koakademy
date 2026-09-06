@@ -10,9 +10,12 @@ final class ChedProgramRules
     public static function validationRules(): array
     {
         return [
+            'ched_program_code' => ['nullable', 'string', 'max:50'],
             'ched_major' => ['nullable', 'string', 'max:255'],
+            'ched_major_code' => ['nullable', 'string', 'max:50'],
             'ched_has_thesis' => ['nullable', 'boolean'],
             'ched_program_status' => ['nullable', 'string', 'in:CO,PO,DO,NO,NA'],
+            'ched_year_implemented' => ['nullable', 'integer', 'min:1900', 'max:2100'],
             'ched_authority_category' => ['nullable', 'string', 'in:GP,GR,BR,OT'],
             'ched_authority_serial' => ['nullable', 'string', 'max:100'],
             'ched_authority_year' => ['nullable', 'integer', 'min:1900', 'max:2100'],

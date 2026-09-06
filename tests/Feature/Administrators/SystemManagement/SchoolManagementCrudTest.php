@@ -12,6 +12,8 @@ use Spatie\Permission\Models\Permission;
 
 use function Pest\Laravel\actingAs;
 
+uses(Tests\TestCase::class);
+
 function grantSchoolManagementPermission(User $user): void
 {
     foreach (['View:SystemManagementSchool', 'Update:SystemManagementSchool'] as $permission) {

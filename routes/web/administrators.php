@@ -142,6 +142,8 @@ Route::middleware(['auth', 'administrators.only'])
             ->middleware('throttle:10,1')
             ->name('registrar.analytics.student-profile-imports.confirm');
         Route::get('/registrar/reports', [AdministratorRegistrarInsightsController::class, 'reports'])->name('registrar.reports.index');
+        Route::get('/registrar/reports/ched/preview', [AdministratorRegistrarInsightsController::class, 'chedPreview'])->name('registrar.reports.ched.preview');
+        Route::get('/registrar/reports/ched/export', [AdministratorRegistrarInsightsController::class, 'chedExport'])->name('registrar.reports.ched.export');
         Route::get('/registrar/documents/preview', [AdministratorRegistrarDocumentController::class, 'preview'])->name('registrar.documents.preview');
         Route::get('/registrar/documents/pdf', [AdministratorRegistrarDocumentController::class, 'pdf'])->name('registrar.documents.pdf');
         Route::get('/enrollments/create', [AdministratorEnrollmentManagementController::class, 'create'])->name('enrollments.create');

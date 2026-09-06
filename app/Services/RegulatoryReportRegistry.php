@@ -12,6 +12,12 @@ final class RegulatoryReportRegistry
 {
     public const string CHED_EFORM_BC = 'ched_eform_bc';
 
+    public const string CHED_BACCALAUREATE = 'ched_baccalaureate';
+
+    public const string CHED_SPECIAL_EQUITY = 'ched_special_equity';
+
+    public const string CHED_EQUITY_ENROLLMENT = 'ched_equity_enrollment';
+
     /**
      * @return array<string, array<string, mixed>>
      */

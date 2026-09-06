@@ -139,17 +139,46 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
             throw new RuntimeException("CHED Form B/C template file not found at: {$templateFile}");
         }
 
-        $spreadsheet = IOFactory::load($templateFile);
+        $reportKey = $filters['report_key'] ?? RegulatoryReportRegistry::CHED_EFORM_BC;
+        $sheetNames = match ($reportKey) {
+            RegulatoryReportRegistry::CHED_BACCALAUREATE => ['Baccalaureate', 'References'],
+            RegulatoryReportRegistry::CHED_SPECIAL_EQUITY => ['NEW Special Equity Groups Form '],
+            RegulatoryReportRegistry::CHED_EQUITY_ENROLLMENT => ['Sheet1'],
+            default => null,
+        };
+        $reader = IOFactory::createReaderForFile($templateFile);
+        $reader->setLoadSheetsOnly($sheetNames);
+        $spreadsheet = $reader->load($templateFile);
 
         $schoolYear = GeneralSettingsService::normalizeSchoolYear((string) ($filters['school_year'] ?? ''));
         $semester = ! empty($filters['semester']) ? (int) $filters['semester'] : null;
         $schoolId = isset($filters['school_id']) ? (int) $filters['school_id'] : null;
 
         $courses = $this->queryCourses($filters);
+
+        if ($reportKey === RegulatoryReportRegistry::CHED_SPECIAL_EQUITY) {
+            $this->populateSpecialEquitySheet($spreadsheet, $courses, $schoolYear, $semester, $schoolId);
+
+            return $spreadsheet;
+        }
+
+        if ($reportKey === RegulatoryReportRegistry::CHED_EQUITY_ENROLLMENT) {
+            $this->populateSpecialEquitySummarySheet($spreadsheet, $courses, $schoolYear, $semester, $schoolId, enrollmentOnly: true);
+            $sheet = $spreadsheet->getSheetByName('Sheet1');
+            $sheet->removeColumn('L', 10);
+            $sheet->getPageSetup()->setPrintArea('A1:K25');
+
+            return $spreadsheet;
+        }
+
         $enrollmentCounts = $this->queryEnrollmentMatrix($schoolYear, $semester, $schoolId);
         $graduatesCounts = $this->queryGraduatesMatrix($schoolYear, $semester, $schoolId);
 
         $this->populateCurricularSheets($spreadsheet, $courses, $enrollmentCounts, $graduatesCounts);
+        if ($reportKey === RegulatoryReportRegistry::CHED_BACCALAUREATE) {
+            return $spreadsheet;
+        }
+
         $this->populateSpecialEquitySheet($spreadsheet, $courses, $schoolYear, $semester, $schoolId);
         $this->populateSpecialEquitySummarySheet($spreadsheet, $courses, $schoolYear, $semester, $schoolId);
 
@@ -172,6 +201,10 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
      */
     public function buildPreviewData(array $filters = []): array
     {
+        if (in_array($filters['report_key'] ?? null, [RegulatoryReportRegistry::CHED_SPECIAL_EQUITY, RegulatoryReportRegistry::CHED_EQUITY_ENROLLMENT], true)) {
+            return $this->buildEquityPreviewData($filters);
+        }
+
         $schoolYear = GeneralSettingsService::normalizeSchoolYear((string) ($filters['school_year'] ?? ''));
         $semester = ! empty($filters['semester']) ? (int) $filters['semester'] : null;
         $schoolId = isset($filters['school_id']) ? (int) $filters['school_id'] : null;
@@ -253,7 +286,9 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
 
         return [
             'type' => 'ched_eform_bc',
-            'title' => 'CHED E-Form B/C - Curriculum Program Profile, Enrolment & Graduates',
+            'title' => ($filters['report_key'] ?? null) === RegulatoryReportRegistry::CHED_BACCALAUREATE
+                ? 'CHED Baccalaureate - Program Profile, Enrolment & Graduates'
+                : 'CHED E-Form B/C - Curriculum Program Profile, Enrolment & Graduates',
             'subtitle' => "School Year: {$schoolYear}".($semester ? " Term {$semester}" : ''),
             'sheets' => $sheetsData,
             'summary' => [
@@ -284,7 +319,13 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
             $query->where('id', $filters['course_id']);
         }
 
-        return $query->orderBy('code')->get();
+        $courses = $query->orderBy('code')->get();
+
+        if (($filters['report_key'] ?? null) === RegulatoryReportRegistry::CHED_BACCALAUREATE) {
+            return $courses->filter(fn (Course $course): bool => $this->resolveSheetName($course) === 'Baccalaureate')->values();
+        }
+
+        return $courses;
     }
 
     /**
@@ -572,6 +613,7 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
         string $schoolYear,
         ?int $semester,
         ?int $schoolId,
+        bool $enrollmentOnly = false,
     ): void {
         $sheet = $spreadsheet->getSheetByName('Sheet1');
         if (! $sheet) {
@@ -604,6 +646,15 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
         }
 
         $enrollment = $this->aggregateSpecialEquityGroups($enrQuery, 'student_enrollment.academic_year');
+
+        if ($enrollmentOnly) {
+            foreach (self::SPECIAL_EQUITY_GROUPS as $key => $definition) {
+                $this->setEquitySummaryValues($sheet, $definition['row'], $enrollment[$key] ?? [], []);
+            }
+            $this->setEquitySummaryTotalRow($sheet);
+
+            return;
+        }
 
         $gradQuery = Student::query()
             ->where('status', StudentStatus::Graduated->value)
@@ -755,6 +806,58 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
         $normalized = GeneralSettingsService::normalizeSchoolYear($schoolYear);
 
         return array_values(array_unique([$normalized, str_replace(' ', '', $normalized)]));
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return array<string, mixed>
+     */
+    private function buildEquityPreviewData(array $filters): array
+    {
+        $spreadsheet = $this->generate($filters);
+        $sheet = $spreadsheet->getSheet(0);
+        $enrollmentOnly = $filters['report_key'] === RegulatoryReportRegistry::CHED_EQUITY_ENROLLMENT;
+        $tables = [];
+
+        if ($enrollmentOnly) {
+            $rows = [];
+            foreach (range(9, 25) as $row) {
+                $values = [(string) $sheet->getCell("A{$row}")->getValue()];
+                foreach (range(2, 11) as $column) {
+                    $values[] = (int) $sheet->getCell([$column, $row])->getCalculatedValue();
+                }
+                $rows[] = $values;
+            }
+            $tables[] = [
+                'title' => 'Actual Distribution by Special Equity Group (Enrollment)',
+                'headers' => ['Special equity group', 'Male', 'Female', 'Sex total', '1st year', '2nd year', '3rd year', '4th year', '5th year', '6th year', 'Year level total'],
+                'rows' => $rows,
+            ];
+        } else {
+            foreach (['Enrollment' => 3, 'Graduates' => 20] as $title => $startColumn) {
+                $headers = ['Curricular program', 'Major'];
+                foreach (range($startColumn, $startColumn + 16) as $column) {
+                    $headers[] = (string) ($sheet->getCell([$column, 6])->getValue() ?? $sheet->getCell([$column, 5])->getValue());
+                }
+                $rows = [];
+                for ($row = self::START_ROW; $sheet->getCell("A{$row}")->getValue() !== null; $row++) {
+                    $values = [(string) $sheet->getCell("A{$row}")->getValue(), (string) $sheet->getCell("B{$row}")->getValue()];
+                    foreach (range($startColumn, $startColumn + 16) as $column) {
+                        $values[] = (int) $sheet->getCell([$column, $row])->getCalculatedValue();
+                    }
+                    $rows[] = $values;
+                }
+                $tables[] = ['title' => "Actual Distribution by Special Equity Group ({$title})", 'headers' => $headers, 'rows' => $rows];
+            }
+        }
+
+        $spreadsheet->disconnectWorksheets();
+
+        return [
+            'type' => 'ched_equity',
+            'title' => $enrollmentOnly ? 'Actual Distribution by Special Equity Group (Enrollment)' : 'CHED Special Equity Groups',
+            'tables' => $tables,
+        ];
     }
 
     private function setTextCell(Worksheet $sheet, string $coordinate, mixed $value): void

@@ -8,7 +8,10 @@ export type TemplateKey =
     | "enrolled_by_course"
     | "enrolled_by_subject"
     | "enrollment_summary"
-    | "ched_eform_bc";
+    | "ched_eform_bc"
+    | "ched_baccalaureate"
+    | "ched_special_equity"
+    | "ched_equity_enrollment";
 
 export type TemplateFormat = {
     key: string;
@@ -292,6 +295,72 @@ export const TEMPLATES: TemplateDefinition[] = [
                     "Annual Graduates (M/F)",
                     "Special Equity Groups (PWDs, IPs, Solo Parents, Senior Citizens)",
                 ],
+                orientation: "landscape",
+            },
+        ],
+    },
+    {
+        key: "ched_baccalaureate",
+        title: "CHED Baccalaureate",
+        description: "Baccalaureate program profile, enrollment by sex and year, and graduates.",
+        group: "Operational reports",
+        mode: "report",
+        formats: ["XLSX", "Print"],
+        icon: GraduationCap,
+        defaultVariant: "official",
+        countryCode: "PH",
+        regulatoryReportKey: "ched_baccalaureate",
+        variants: [
+            {
+                key: "official",
+                title: "Official template",
+                description: "Baccalaureate program profile, enrollment by sex and year, and graduates.",
+                structure: "ched_matrix",
+                includes: ["Baccalaureate programs", "Enrollment by sex and year", "Graduates"],
+                orientation: "landscape",
+            },
+        ],
+    },
+    {
+        key: "ched_special_equity",
+        title: "CHED Special Equity Groups",
+        description: "Enrollment and graduate equity counts by curricular program and major.",
+        group: "Operational reports",
+        mode: "report",
+        formats: ["XLSX", "Print"],
+        icon: Users,
+        defaultVariant: "official",
+        countryCode: "PH",
+        regulatoryReportKey: "ched_special_equity",
+        variants: [
+            {
+                key: "official",
+                title: "Official template",
+                description: "Enrollment and graduate equity counts by curricular program and major.",
+                structure: "ched_matrix",
+                includes: ["Program and major", "Enrollment equity groups", "Graduate equity groups"],
+                orientation: "landscape",
+            },
+        ],
+    },
+    {
+        key: "ched_equity_enrollment",
+        title: "Actual Distribution by Special Equity Group (Enrollment)",
+        description: "Enrollment distribution for each equity group, by sex and year level.",
+        group: "Operational reports",
+        mode: "report",
+        formats: ["XLSX", "Print"],
+        icon: BarChart3,
+        defaultVariant: "official",
+        countryCode: "PH",
+        regulatoryReportKey: "ched_equity_enrollment",
+        variants: [
+            {
+                key: "official",
+                title: "Official template",
+                description: "Enrollment distribution for each equity group, by sex and year level.",
+                structure: "ched_matrix",
+                includes: ["Special equity groups", "Male and female counts", "Year levels 1–6", "Group totals"],
                 orientation: "landscape",
             },
         ],

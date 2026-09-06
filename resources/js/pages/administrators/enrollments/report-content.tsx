@@ -61,6 +61,10 @@ export function ReportContent({ data }: ReportContentProps) {
         return <ChedReportContent data={data} />;
     }
 
+    if (reportType === "ched_equity") {
+        return <ChedEquityReportContent data={data} report={report} />;
+    }
+
     return (
         <div style={{ fontFamily: "'Times New Roman', Times, serif", color: "#000", fontSize: "9pt", lineHeight: 1.3 }}>
             {/* Header */}
@@ -488,6 +492,62 @@ function EnrollmentSummaryReport({ report }: { report: Record<string, unknown> }
                     </tbody>
                 </table>
             </div>
+        </div>
+    );
+}
+
+function ChedEquityReportContent({ data, report }: ReportContentProps & { report: ReportPayload }) {
+    const school = data.school as { name?: string } | undefined;
+    const tables = report.tables as Array<{ title: string; headers: string[]; rows: Array<Array<string | number>> }>;
+    const cellStyle: CSSProperties = { border: "1px solid #aaa", padding: "4px 6px" };
+
+    return (
+        <div style={{ fontFamily: "Arial, sans-serif", color: "#000", fontSize: "8pt" }}>
+            <div style={{ textAlign: "center", marginBottom: 16 }}>
+                <h1 style={{ fontSize: "13pt", fontWeight: "bold" }}>COMMISSION ON HIGHER EDUCATION (CHED)</h1>
+                <h2 style={{ fontSize: "11pt", fontWeight: "bold" }}>{report.title}</h2>
+                <p>{school?.name}</p>
+                <p>
+                    {String(data.school_year ?? "")} · {String(data.semester ?? "")}
+                </p>
+            </div>
+            {tables.map((table) => (
+                <div key={table.title} style={{ overflowX: "auto", marginBottom: 20 }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                        <caption style={{ textAlign: "left", fontWeight: "bold", paddingBottom: 8 }}>{table.title}</caption>
+                        <thead>
+                            <tr>
+                                {table.headers.map((header, index) => (
+                                    <th key={index} scope="col" style={{ ...cellStyle, background: "#e2efda" }}>
+                                        {header}
+                                    </th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {table.rows.map((row, rowIndex) => (
+                                <tr key={rowIndex}>
+                                    {row.map((value, columnIndex) => (
+                                        <td key={columnIndex} style={{ ...cellStyle, textAlign: typeof value === "number" ? "right" : "left" }}>
+                                            {value}
+                                        </td>
+                                    ))}
+                                </tr>
+                            ))}
+                            {table.rows.length === 0 && (
+                                <tr>
+                                    <td colSpan={table.headers.length} style={cellStyle}>
+                                        No programs match the selected filters.
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            ))}
+            <p>
+                Generated: {String(data.generated_at ?? "")} · {String(data.generated_by ?? "")}
+            </p>
         </div>
     );
 }

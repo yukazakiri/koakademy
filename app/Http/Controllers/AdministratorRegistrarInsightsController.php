@@ -170,7 +170,10 @@ final class AdministratorRegistrarInsightsController extends Controller
 
         $filters = $this->validatedReportFilters($request, $school);
 
-        $data = $this->regulatoryReports->adapter($reportKey)->buildPreviewData($filters);
+        $data = $this->regulatoryReports->adapter($reportKey)->buildPreviewData([
+            ...$filters,
+            'report_key' => $reportKey,
+        ]);
 
         return response()->json([
             ...$data,

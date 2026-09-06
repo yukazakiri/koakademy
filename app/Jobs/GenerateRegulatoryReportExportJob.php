@@ -27,18 +27,13 @@ final class GenerateRegulatoryReportExportJob implements ShouldBeUnique, ShouldQ
     use Queueable;
     use SerializesModels;
 
-    public int $timeout;
-
     public int $tries;
 
     public bool $failOnTimeout = true;
 
     public function __construct(public string $exportId)
     {
-        $this->timeout = (int) config('assessment-exports.merge.timeout', 1800);
         $this->tries = (int) config('assessment-exports.merge.tries', 2);
-        $this->onConnection((string) config('assessment-exports.connection'));
-        $this->onQueue((string) config('assessment-exports.render_queue'));
     }
 
     /** @return array<int, int> */

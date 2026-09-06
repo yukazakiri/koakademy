@@ -23,6 +23,98 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 
+test('separate ched reports export only their selected layout and preview the same counts', function (): void {
+    $school = School::factory()->create();
+    $college = CourseType::firstOrCreate(['name' => 'College Undergraduate']);
+    $masters = CourseType::firstOrCreate(['name' => 'Masters']);
+    $course = Course::factory()->create(['school_id' => $school->id, 'course_type_id' => $college->id, 'code' => 'AAA', 'is_active' => true]);
+    $otherCourse = Course::factory()->create(['school_id' => $school->id, 'course_type_id' => $masters->id, 'code' => 'ZZZ', 'is_active' => true]);
+    $student = Student::factory()->minimal()->create([
+        'school_id' => $school->id, 'course_id' => $course->id, 'gender' => 'Male',
+        'is_pwd' => true, 'pwd_type' => 'Apparent physical disability',
+    ]);
+    StudentEnrollment::factory()->create([
+        'school_id' => $school->id, 'student_id' => $student->id, 'course_id' => $course->id,
+        'academic_year' => 2, 'school_year' => '2026-2027', 'semester' => 1,
+    ]);
+    $graduate = Student::factory()->minimal()->graduated()->create([
+        'school_id' => $school->id, 'course_id' => $course->id, 'gender' => 'Female',
+        'is_solo_parent' => true, 'graduation_school_year' => '2026-2027', 'graduation_semester' => 1,
+    ]);
+    StudentEnrollment::factory()->create([
+        'school_id' => $school->id, 'student_id' => $graduate->id, 'course_id' => $course->id,
+        'academic_year' => 4, 'school_year' => '2026-2027', 'semester' => 1,
+    ]);
+    $otherStudent = Student::factory()->minimal()->create([
+        'school_id' => $school->id, 'course_id' => $otherCourse->id, 'gender' => 'Female', 'is_solo_parent' => true,
+    ]);
+    StudentEnrollment::factory()->create([
+        'school_id' => $school->id, 'student_id' => $otherStudent->id, 'course_id' => $otherCourse->id,
+        'academic_year' => 1, 'school_year' => '2026-2027', 'semester' => 1,
+    ]);
+    $filters = ['school_id' => $school->id, 'school_year' => '2026 - 2027', 'semester' => 1];
+    $service = app(ChedFormBcExportService::class);
+
+    $baccalaureateFilters = [...$filters, 'report_key' => RegulatoryReportRegistry::CHED_BACCALAUREATE];
+    $baccalaureate = $service->generate($baccalaureateFilters);
+    expect($baccalaureate->getSheetNames())->toBe(['Baccalaureate', 'References'])
+        ->and($baccalaureate->getSheet(0)->getCell('A10')->getValue())->toBe($course->title)
+        ->and($baccalaureate->getSheet(0)->getCell('A11')->getValue())->toBeNull()
+        ->and(array_keys($service->buildPreviewData($baccalaureateFilters)['sheets']))->toBe(['Baccalaureate']);
+
+    $equityFilters = [...$filters, 'course_id' => $course->id, 'report_key' => RegulatoryReportRegistry::CHED_SPECIAL_EQUITY];
+    $equity = $service->generate($equityFilters);
+    expect($equity->getSheetNames())->toBe(['NEW Special Equity Groups Form '])
+        ->and((int) $equity->getSheet(0)->getCell('C10')->getCalculatedValue())->toBe(1)
+        ->and((int) $equity->getSheet(0)->getCell('AE10')->getCalculatedValue())->toBe(1)
+        ->and($equity->getSheet(0)->getCell('A11')->getValue())->toBeNull();
+    $preview = $service->buildPreviewData($equityFilters);
+    expect($preview['tables'])->toHaveCount(2)
+        ->and($preview['tables'][0]['rows'][0][2])->toBe(1)
+        ->and($preview['tables'][1]['rows'][0][13])->toBe(1);
+
+    $distributionFilters = [...$filters, 'course_id' => $course->id, 'report_key' => RegulatoryReportRegistry::CHED_EQUITY_ENROLLMENT];
+    $distribution = $service->generate($distributionFilters);
+    expect($distribution->getSheetNames())->toBe(['Sheet1'])
+        ->and($distribution->getSheet(0)->getCell('L4')->getValue())->toBeNull()
+        ->and((int) $distribution->getSheet(0)->getCell('B9')->getCalculatedValue())->toBe(1)
+        ->and((int) $distribution->getSheet(0)->getCell('F10')->getCalculatedValue())->toBe(1)
+        ->and((int) $distribution->getSheet(0)->getCell('D20')->getCalculatedValue())->toBe(0)
+        ->and((int) $distribution->getSheet(0)->getCell('D25')->getCalculatedValue())->toBe(1);
+    $preview = $service->buildPreviewData($distributionFilters);
+    expect($preview['tables'])->toHaveCount(1)
+        ->and($preview['tables'][0]['rows'][0][1])->toBe(1)
+        ->and($preview['tables'][0]['rows'][1][5])->toBe(1)
+        ->and($preview['tables'][0]['rows'][16][3])->toBe(1);
+});
+
+test('separate ched report endpoints queue the selected report on the default worker', function (string $key): void {
+    Queue::fake();
+    $school = School::factory()->create(['country_code' => 'PH']);
+    SchoolCurriculumCapability::factory()->for($school)->create([
+        'curriculum_framework' => CurriculumFramework::ChedPsg, 'is_enabled' => true,
+    ]);
+    $user = User::factory()->create(['school_id' => $school->id, 'role' => UserRole::SuperAdmin]);
+    $registry = app(RegulatoryReportRegistry::class);
+    expect($registry->context($school)['available_report_keys'])->toContain($key);
+    $this->actingAs($user)
+        ->getJson(route('administrators.registrar.reports.regulatory.preview', ['reportKey' => $key]))
+        ->assertOk()->assertJsonPath('type', $key === RegulatoryReportRegistry::CHED_BACCALAUREATE ? 'ched_eform_bc' : 'ched_equity');
+    $this->actingAs($user)
+        ->getJson(route('administrators.registrar.reports.regulatory.export', ['reportKey' => $key]))
+        ->assertAccepted()
+        ->assertJsonPath('job.metadata.filters.report_key', $key)
+        ->assertJsonPath('job.title', $registry->definition($key)['title']);
+    Queue::assertPushed(GenerateRegulatoryReportExportJob::class, fn (GenerateRegulatoryReportExportJob $job): bool => $job->connection === null && $job->queue === null
+    );
+    $school->curriculumCapabilities()->update(['is_enabled' => false]);
+    $this->getJson(route('administrators.registrar.reports.regulatory.export', ['reportKey' => $key]))->assertForbidden();
+})->with([
+    RegulatoryReportRegistry::CHED_BACCALAUREATE,
+    RegulatoryReportRegistry::CHED_SPECIAL_EQUITY,
+    RegulatoryReportRegistry::CHED_EQUITY_ENROLLMENT,
+]);
+
 beforeEach(function (): void {
     Spatie\Permission\Models\Permission::firstOrCreate([
         'name' => 'ViewAny:StudentEnrollment',
@@ -311,7 +403,7 @@ test('administrator can preview and download ched form bc report', function (): 
     Queue::assertPushed(GenerateRegulatoryReportExportJob::class);
 });
 
-test('queued ched export job stores a completed workbook', function (): void {
+test('queued ched export job stores a completed workbook', function (string $reportKey, array $expectedSheets): void {
     Storage::fake('local');
     config()->set('assessment-exports.disk', 'local');
 
@@ -336,7 +428,7 @@ test('queued ched export job stores a completed workbook', function (): void {
             'course_id' => 'all',
             'school_id' => $school->id,
             'export_type' => 'regulatory_report',
-            'report_key' => RegulatoryReportRegistry::CHED_EFORM_BC,
+            'report_key' => $reportKey,
             'report_title' => 'CHED E-Form B/C',
             'file_name_prefix' => 'CHED_Form_B-C',
         ],
@@ -354,7 +446,16 @@ test('queued ched export job stores a completed workbook', function (): void {
         ->and($export->output_name)->toEndWith('.xlsx')
         ->and($export->output_path)->not->toBeNull();
     Storage::disk('local')->assertExists($export->output_path);
-});
+    $saved = PhpOffice\PhpSpreadsheet\IOFactory::load(Storage::disk('local')->path($export->output_path));
+    expect($saved->getSheetNames())->toBe($expectedSheets);
+    $saved->disconnectWorksheets();
+    $this->actingAs($user)->get(route('download.regulatory-report', $export))->assertOk()->assertDownload($export->output_name);
+})->with([
+    'full workbook' => [RegulatoryReportRegistry::CHED_EFORM_BC, ['Doctoral', 'Masters', 'Post-Baccalaureate', 'Baccalaureate', 'Pre-Baccalaureate', 'VocTech', 'Basic', 'NEW Special Equity Groups Form ', 'Sheet1', 'References']],
+    'baccalaureate' => [RegulatoryReportRegistry::CHED_BACCALAUREATE, ['Baccalaureate', 'References']],
+    'special equity' => [RegulatoryReportRegistry::CHED_SPECIAL_EQUITY, ['NEW Special Equity Groups Form ']],
+    'enrollment distribution' => [RegulatoryReportRegistry::CHED_EQUITY_ENROLLMENT, ['Sheet1']],
+]);
 
 test('ched form bc preview keeps foreign department and course filters scoped to active school', function (): void {
     $school = School::factory()->create(['country_code' => 'PH']);

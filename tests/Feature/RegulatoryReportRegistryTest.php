@@ -7,6 +7,8 @@ use App\Models\School;
 use App\Services\ChedFormBcExportService;
 use App\Services\RegulatoryReportRegistry;
 
+uses(Tests\TestCase::class);
+
 test('regulatory report providers can be configured without a country or framework lock', function (): void {
     $school = School::factory()->create(['country_code' => 'US']);
     $originalDefinitions = config('regulatory-reports.definitions');

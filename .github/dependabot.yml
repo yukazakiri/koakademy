@@ -8,7 +8,6 @@ updates:
       time: "03:30"
       timezone: Etc/UTC
     open-pull-requests-limit: 10
-    workflow_dispatch: true
     groups:
       koakademy-modules:
         patterns:
@@ -23,7 +22,6 @@ updates:
       day: monday
       time: "04:00"
       timezone: Etc/UTC
-    workflow_dispatch: true
     groups:
       github-actions:
         patterns:
@@ -36,7 +34,6 @@ updates:
       day: monday
       time: "04:30"
       timezone: Etc/UTC
-    workflow_dispatch: true
     groups:
       docker-base-images:
         patterns:

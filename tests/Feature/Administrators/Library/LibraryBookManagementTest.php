@@ -203,3 +203,76 @@ it('returns distinct filtered identifier suggestions with a bounded result set',
         ->assertUnprocessable()
         ->assertJsonValidationErrors('field');
 });
+
+it('allows librarian to view create page and store a book', function (): void {
+    $this->withoutVite();
+
+    $librarian = User::factory()->create([
+        'role' => UserRole::Librarian,
+    ]);
+
+    $author = Author::query()->create(['name' => 'Librarian Author']);
+    $category = Category::query()->create(['name' => 'Librarian Category']);
+
+    actingAs($librarian)
+        ->get(route('administrators.library.books.create'))
+        ->assertSuccessful();
+
+    actingAs($librarian)
+        ->post(route('administrators.library.books.store'), [
+            'title' => 'Librarian Created Book',
+            'author_id' => $author->id,
+            'category_id' => $category->id,
+            'total_copies' => 5,
+            'status' => 'available',
+        ])
+        ->assertRedirect(route('administrators.library.books.index'));
+
+    $book = Book::query()->where('title', 'Librarian Created Book')->first();
+    expect($book)->not->toBeNull()
+        ->and($book?->total_copies)->toBe(5)
+        ->and($book?->available_copies)->toBe(5)
+        ->and($book?->status)->toBe('available');
+});
+
+it('stores a book with cover image upload', function (): void {
+    \Illuminate\Support\Facades\Storage::fake('public');
+
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $author = Author::query()->create(['name' => 'Cover Image Author']);
+    $category = Category::query()->create(['name' => 'Cover Image Category']);
+
+    $file = \Illuminate\Http\UploadedFile::fake()->image('cover.jpg', 600, 800);
+
+    actingAs($admin)
+        ->post(route('administrators.library.books.store'), [
+            'title' => 'Book with Uploaded Cover',
+            'author_id' => $author->id,
+            'category_id' => $category->id,
+            'total_copies' => 2,
+            'status' => 'available',
+            'cover_image_upload' => $file,
+        ])
+        ->assertRedirect(route('administrators.library.books.index'));
+
+    $book = Book::query()->where('title', 'Book with Uploaded Cover')->first();
+    expect($book)->not->toBeNull()
+        ->and($book?->cover_image_path)->not->toBeNull();
+
+    \Illuminate\Support\Facades\Storage::disk('public')->assertExists($book?->cover_image_path);
+});
+
+it('validates required fields on book creation', function (): void {
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+
+    actingAs($admin)
+        ->post(route('administrators.library.books.store'), [])
+        ->assertSessionHasErrors([
+            'title',
+            'author_id',
+            'category_id',
+            'total_copies',
+            'status',
+        ]);
+});
+

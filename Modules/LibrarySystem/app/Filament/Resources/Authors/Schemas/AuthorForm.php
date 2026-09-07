@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace Modules\LibrarySystem\Filament\Resources\Authors\Schemas;
 
-// use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
@@ -36,23 +37,16 @@ final class AuthorForm
                 ->maxLength(255)
                 ->columnSpanFull(),
 
-            TextInput::make('email')
-                ->email()
-                ->maxLength(255)
-                ->unique(Author::class, 'email', ignoreRecord: true),
-
             TextInput::make('nationality')
                 ->maxLength(100),
 
-            TextInput::make('birth_year')
-                ->numeric()
-                ->minValue(1000)
-                ->maxValue(date('Y')),
+            DatePicker::make('birth_date')
+                ->label('Birth Date')
+                ->maxDate('today'),
 
-            TextInput::make('death_year')
-                ->numeric()
-                ->minValue(1000)
-                ->maxValue(date('Y')),
+            Textarea::make('biography')
+                ->maxLength(2000)
+                ->columnSpanFull(),
         ];
     }
 
@@ -61,7 +55,7 @@ final class AuthorForm
         return [
             Placeholder::make('id')
                 ->label('Author ID')
-                ->content(fn (?Author $record): ?string => $record?->id),
+                ->content(fn (?Author $record): ?string => $record?->id ? (string) $record->id : null),
 
             Placeholder::make('created_at')
                 ->label('Created at')
@@ -69,7 +63,8 @@ final class AuthorForm
 
             Placeholder::make('books_count')
                 ->label('Books Written')
-                ->content(fn (Author $record): ?string => $record?->books_count ?? '0'),
+                ->content(fn (Author $record): ?string => (string) ($record->books_count ?? '0')),
         ];
     }
 }
+

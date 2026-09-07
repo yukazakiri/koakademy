@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "2956de77a7eeb964e11226846b070f09",
+    "content-hash": "8de77a70c94be53aea9b968d18265f0f",
     "packages": [
         {
             "name": "achyutn/filament-log-viewer",
@@ -20627,16 +20627,16 @@
         },
         {
             "name": "pestphp/pest-plugin-evals",
-            "version": "v5.0.2",
+            "version": "v5.0.3",
             "source": {
                 "type": "git",
                 "url": "https://github.com/pestphp/pest-plugin-evals.git",
-                "reference": "9a3c112d810327c50b9040983bf39481220e0093"
+                "reference": "6e2f2c652def5d342edbdddc08b2cde4c64c7118"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/pestphp/pest-plugin-evals/zipball/9a3c112d810327c50b9040983bf39481220e0093",
-                "reference": "9a3c112d810327c50b9040983bf39481220e0093",
+                "url": "https://api.github.com/repos/pestphp/pest-plugin-evals/zipball/6e2f2c652def5d342edbdddc08b2cde4c64c7118",
+                "reference": "6e2f2c652def5d342edbdddc08b2cde4c64c7118",
                 "shasum": ""
             },
             "require": {
@@ -20698,7 +20698,7 @@
                 "unit"
             ],
             "support": {
-                "source": "https://github.com/pestphp/pest-plugin-evals/tree/v5.0.2"
+                "source": "https://github.com/pestphp/pest-plugin-evals/tree/v5.0.3"
             },
             "funding": [
                 {
@@ -20714,7 +20714,7 @@
                     "type": "patreon"
                 }
             ],
-            "time": "2026-08-21T08:56:54+00:00"
+            "time": "2026-09-03T13:37:38+00:00"
         },
         {
             "name": "pestphp/pest-plugin-laravel",
@@ -21291,16 +21291,16 @@
         },
         {
             "name": "phpunit/php-code-coverage",
-            "version": "14.3.1",
+            "version": "14.3.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/sebastianbergmann/php-code-coverage.git",
-                "reference": "6ce313bb110384148d1dc7695a99175f59529069"
+                "reference": "93d62632fb675b76c9b941fdcfcfa10ffb9dea75"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/sebastianbergmann/php-code-coverage/zipball/6ce313bb110384148d1dc7695a99175f59529069",
-                "reference": "6ce313bb110384148d1dc7695a99175f59529069",
+                "url": "https://api.github.com/repos/sebastianbergmann/php-code-coverage/zipball/93d62632fb675b76c9b941fdcfcfa10ffb9dea75",
+                "reference": "93d62632fb675b76c9b941fdcfcfa10ffb9dea75",
                 "shasum": ""
             },
             "require": {
@@ -21319,7 +21319,7 @@
                 "theseer/tokenizer": "^2.0.1"
             },
             "require-dev": {
-                "phpunit/phpunit": "^13.3.1"
+                "phpunit/phpunit": "^13.3.2"
             },
             "suggest": {
                 "ext-pcov": "PHP extension that provides line coverage",
@@ -21357,7 +21357,7 @@
             "support": {
                 "issues": "https://github.com/sebastianbergmann/php-code-coverage/issues",
                 "security": "https://github.com/sebastianbergmann/php-code-coverage/security/policy",
-                "source": "https://github.com/sebastianbergmann/php-code-coverage/tree/14.3.1"
+                "source": "https://github.com/sebastianbergmann/php-code-coverage/tree/14.3.2"
             },
             "funding": [
                 {
@@ -21377,7 +21377,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-08-16T05:23:47+00:00"
+            "time": "2026-09-04T03:46:43+00:00"
         },
         {
             "name": "phpunit/php-file-iterator",

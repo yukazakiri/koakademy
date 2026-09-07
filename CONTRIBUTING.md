@@ -204,6 +204,14 @@ KoAkademy maintains a **single-source documentation system**:
 
 Standalone domain extensions (such as the Forms module) live in dedicated repositories under the [KoAkademy module registry](https://github.com/yukazakiri/koakademy-modules). Check the [Module Creation Guide](ARCHITECTURE.md) and registry guidelines before publishing a new module package.
 
+## Regulatory Report Providers
+
+Regulatory exports use a configuration-driven adapter contract so contributors can add compatible providers without coupling the shared registrar controller to one jurisdiction. Read the [Regulatory Report Provider guide](https://github.com/yukazakiri/koakademy/blob/master/docs/src/content/docs/development/regulatory-report-providers.mdx) before changing this area.
+
+Only the CHED E-Form B/C provider is built into this repository today. A new provider is an opt-in addition: it must implement `App\Contracts\RegulatoryReportAdapter`, add a definition under `config/regulatory-reports.php` (or an equivalent module configuration), and include authorization, tenant-isolation, preview, and workbook tests. Do not describe an unimplemented provider as supported, and do not add provider-specific assumptions to shared school or enrollment models.
+
+If a provider has a user-facing registrar template, add its frontend template definition and renderer as part of the same contribution. The generic preview and export routes are available to configured providers, while the existing CHED template and legacy CHED routes remain compatible with current installations.
+
 ## License & Legal
 
 By contributing, you agree that your code will be licensed under KoAkademy's [GNU AGPL-3.0-or-later](LICENSE.md) license. Ensure you have the rights to submit the code and preserve copyright notices for third-party material.

@@ -21,6 +21,7 @@ use App\Http\Requests\Administrators\UpdateSchoolCurriculumCapabilitiesRequest;
 use App\Http\Requests\Administrators\UpdateSchoolLevelRequest;
 use App\Http\Requests\Administrators\UpdateSchoolRequest;
 use App\Http\Requests\Administrators\UpdateSchoolStatusRequest;
+use App\Http\Requests\Administrators\UpdateSentrySettingsRequest;
 use App\Http\Requests\Administrators\UpdateTuitionPaymentScheduleSettingsRequest;
 use App\Models\Course;
 use App\Models\EnrollmentPolicy;
@@ -32,6 +33,7 @@ use App\Models\User;
 use App\Services\AnalyticsSettingsService;
 use App\Services\CurriculumCapabilityResolver;
 use App\Services\EnrollmentPipelineService;
+use App\Services\ErrorReportingService;
 use App\Services\FacultyCustomFieldDefinitionService;
 use App\Services\FinanceDocumentSettingsService;
 use App\Services\GeneralSettingsService;
@@ -44,6 +46,7 @@ use App\Services\RegistrarReportingSettingsService;
 use App\Services\SocialiteProviderService;
 use App\Services\TuitionPaymentScheduleSettingsService;
 use App\Settings\SiteSettings;
+use App\Support\IsoAlpha2CountryCodes;
 use App\Support\SystemManagementPermissions;
 use Exception;
 use Illuminate\Database\QueryException;
@@ -64,6 +67,7 @@ use Laravel\Pennant\Feature;
 use RuntimeException;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
+use Throwable;
 
 final class AdministratorSystemManagementController extends Controller
 {
@@ -242,6 +246,59 @@ final class AdministratorSystemManagementController extends Controller
         return $this->renderSystemManagementPage('administrators/system-management/pulse', 'pulse', 'viewPulse');
     }
 
+    public function observability(ErrorReportingService $errorReporting): Response
+    {
+        return $this->renderSystemManagementPage(
+            'administrators/system-management/observability',
+            'observability',
+            'viewObservability',
+            [
+                'sentry' => $errorReporting->get()['providers']['sentry'],
+                'error_reporting' => $errorReporting->forAdministration(),
+            ],
+        );
+    }
+
+    public function updateObservability(
+        UpdateSentrySettingsRequest $request,
+        ErrorReportingService $errorReporting,
+    ): RedirectResponse {
+        $errorReporting->save($request->validated());
+
+        return Redirect::back()->with('success', 'Error reporting settings updated successfully.');
+    }
+
+    public function testObservability(
+        UpdateSentrySettingsRequest $request,
+        ErrorReportingService $errorReporting,
+    ): JsonResponse {
+        $validated = $request->validated();
+        $provider = $validated['provider'] ?? 'sentry';
+
+        if (! is_string($provider) || ! in_array($provider, ErrorReportingService::PROVIDER_KEYS, true)) {
+            return response()->json([
+                'message' => 'Select a valid provider to test.',
+            ], 422);
+        }
+
+        try {
+            $candidates = $errorReporting->sanitizeProviders($validated['providers'] ?? []);
+            $errorReporting->testProvider($provider, $candidates);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => 'Test event failed: '.$e->getMessage(),
+            ], $e instanceof RuntimeException ? 422 : 500);
+        }
+
+        $label = $errorReporting->meta()[$provider]['label'] ?? $provider;
+
+        return response()->json([
+            'message' => "Test event sent to {$label}. Check the issue stream in your {$label} project.",
+        ]);
+    }
+
     public function grading(): Response
     {
         return $this->renderSystemManagementPage('administrators/system-management/grading', 'grading', 'viewGrading');
@@ -383,6 +440,7 @@ final class AdministratorSystemManagementController extends Controller
         School::create([
             'name' => $validated['name'],
             'code' => $validated['code'],
+            'country_code' => $validated['country_code'] ?? null,
             'school_level' => $validated['school_level'],
             'description' => $validated['description'] ?? null,
             'location' => $validated['location'] ?? null,
@@ -422,10 +480,15 @@ final class AdministratorSystemManagementController extends Controller
     {
         $this->authorize('updateSchool', GeneralSetting::class);
 
+        if ($request->exists('country_code')) {
+            $request->merge(['country_code' => IsoAlpha2CountryCodes::normalize($request->input('country_code'))]);
+        }
+
         $validated = $request->validate([
             'school_id' => 'required|exists:schools,id',
             'name' => 'required|string|max:255',
             'code' => 'required|string|max:50',
+            'country_code' => IsoAlpha2CountryCodes::nullableRules(),
             'school_level' => ['required', Rule::enum(SchoolLevel::class)],
             'description' => 'nullable|string',
             'location' => 'nullable|string|max:255',
@@ -434,7 +497,7 @@ final class AdministratorSystemManagementController extends Controller
         ]);
 
         $school = School::findOrFail($validated['school_id']);
-        $school->update([
+        $updates = [
             'name' => $validated['name'],
             'code' => $validated['code'],
             'school_level' => $validated['school_level'],
@@ -442,7 +505,13 @@ final class AdministratorSystemManagementController extends Controller
             'location' => $validated['location'] ?? null,
             'phone' => $validated['phone'] ?? null,
             'email' => $validated['email'] ?? null,
-        ]);
+        ];
+
+        if ($request->exists('country_code')) {
+            $updates['country_code'] = $validated['country_code'] ?? null;
+        }
+
+        $school->update($updates);
 
         return Redirect::back()->with('success', 'School details updated successfully.');
     }
@@ -451,7 +520,7 @@ final class AdministratorSystemManagementController extends Controller
     {
         $validated = $request->validated();
 
-        $school->update([
+        $updates = [
             'name' => $validated['name'],
             'code' => $validated['code'],
             'school_level' => $validated['school_level'],
@@ -461,7 +530,13 @@ final class AdministratorSystemManagementController extends Controller
             'email' => $validated['email'] ?? null,
             'dean_name' => $validated['dean_name'] ?? null,
             'dean_email' => $validated['dean_email'] ?? null,
-        ]);
+        ];
+
+        if ($request->exists('country_code')) {
+            $updates['country_code'] = $validated['country_code'] ?? null;
+        }
+
+        $school->update($updates);
 
         return Redirect::back()->with('success', 'School record updated successfully.');
     }
@@ -1108,6 +1183,8 @@ final class AdministratorSystemManagementController extends Controller
             'socialite_config' => $socialiteConfig,
             'mail_config' => $finalMailConfig,
             'analytics' => $analyticsService->getFrontendConfig(),
+            'error_reporting' => app(ErrorReportingService::class)->forAdministration(),
+            'sentry' => app(ErrorReportingService::class)->get()['providers']['sentry'],
             'enrollment_pipeline' => $this->enrollmentPipelineService->getConfiguration(),
             'enrollment_stats' => $this->enrollmentPipelineService->getStatsConfiguration(),
             'api_management' => $generalSettingsService->getApiManagementConfig(),
@@ -1202,6 +1279,7 @@ final class AdministratorSystemManagementController extends Controller
                 'grading' => 'updateGrading',
                 'identifiers' => 'updateIdentifiers',
                 'faculty_fields' => 'updateFacultyFields',
+                'observability' => 'updateObservability',
                 default => 'viewAny',
             }, GeneralSetting::class);
 
@@ -1222,6 +1300,7 @@ final class AdministratorSystemManagementController extends Controller
                 'identifiers' => 'viewIdentifiers',
                 'faculty_fields' => 'viewFacultyFields',
                 'pulse' => 'viewPulse',
+                'observability' => 'viewObservability',
             }, GeneralSetting::class);
 
             $access[$section] = [

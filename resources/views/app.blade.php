@@ -166,6 +166,7 @@
 
     @viteReactRefresh
     @vite(['resources/js/App.tsx', 'resources/css/app.css'])
+    {!! app(\App\Services\SentrySettingsService::class)->renderHeadMarkup() !!}
     @inertiaHead
 </head>
 

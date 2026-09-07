@@ -32,6 +32,7 @@ import type { CurriculumCapability, School, SystemManagementPageProps } from "./
 interface CreateSchoolFormData {
     name: string;
     code: string;
+    country_code: string;
     school_level: string;
     description: string;
     location: string;
@@ -45,6 +46,7 @@ interface SchoolDetailsFormData {
     school_id: string;
     name: string;
     code: string;
+    country_code: string;
     school_level: string;
     description: string;
     location: string;
@@ -97,6 +99,7 @@ export default function SystemManagementSchoolPage({
         school_id: active_school?.id?.toString() || "",
         name: active_school?.name || "",
         code: active_school?.code || "",
+        country_code: active_school?.country_code || "",
         school_level: active_school?.school_level || "",
         description: active_school?.description || "",
         location: active_school?.location || "",
@@ -106,6 +109,7 @@ export default function SystemManagementSchoolPage({
     const createSchoolForm = useForm<CreateSchoolFormData>({
         name: "",
         code: "",
+        country_code: "",
         school_level: "",
         description: "",
         location: "",
@@ -117,6 +121,7 @@ export default function SystemManagementSchoolPage({
     const editSchoolForm = useForm<CreateSchoolFormData>({
         name: "",
         code: "",
+        country_code: "",
         school_level: "",
         description: "",
         location: "",
@@ -197,6 +202,7 @@ export default function SystemManagementSchoolPage({
             school_id: active_school.id.toString(),
             name: active_school.name,
             code: active_school.code,
+            country_code: active_school.country_code || "",
             school_level: active_school.school_level || "",
             description: active_school.description || "",
             location: active_school.location || "",
@@ -223,6 +229,7 @@ export default function SystemManagementSchoolPage({
         editSchoolForm.setData({
             name: school.name,
             code: school.code,
+            country_code: school.country_code || "",
             school_level: school.school_level || "",
             description: school.description || "",
             location: school.location || "",
@@ -460,7 +467,7 @@ export default function SystemManagementSchoolPage({
                                                     <Building2 className="text-muted-foreground h-4 w-4" />
                                                     <h3 className="text-foreground text-sm font-medium">Primary Information</h3>
                                                 </div>
-                                                <div className="grid gap-5 sm:grid-cols-2">
+                                                <div className="grid gap-5 sm:grid-cols-3">
                                                     <div className="space-y-2.5">
                                                         <Label
                                                             htmlFor="school_name"
@@ -488,6 +495,32 @@ export default function SystemManagementSchoolPage({
                                                             onChange={(event) => schoolDetailsForm.setData("code", event.target.value)}
                                                             className="bg-background uppercase"
                                                         />
+                                                    </div>
+                                                    <div className="space-y-2.5">
+                                                        <Label
+                                                            htmlFor="school_country_code"
+                                                            className="text-muted-foreground text-xs font-semibold tracking-wider uppercase"
+                                                        >
+                                                            Country Code
+                                                        </Label>
+                                                        <Input
+                                                            id="school_country_code"
+                                                            value={schoolDetailsForm.data.country_code}
+                                                            onChange={(event) =>
+                                                                schoolDetailsForm.setData(
+                                                                    "country_code",
+                                                                    event.target.value.toUpperCase().slice(0, 2),
+                                                                )
+                                                            }
+                                                            maxLength={2}
+                                                            pattern="[A-Za-z]{2}"
+                                                            autoCapitalize="characters"
+                                                            aria-describedby="school_country_code_hint"
+                                                            className="bg-background font-mono uppercase"
+                                                        />
+                                                        <p id="school_country_code_hint" className="text-muted-foreground text-xs">
+                                                            ISO alpha-2, e.g. PH.
+                                                        </p>
                                                     </div>
                                                 </div>
 
@@ -969,7 +1002,7 @@ export default function SystemManagementSchoolPage({
                         <DialogDescription>Add another campus profile for multi-school setup.</DialogDescription>
                     </DialogHeader>
                     <form onSubmit={handleCreateSchool} className="space-y-4">
-                        <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="grid gap-4 sm:grid-cols-3">
                             <div className="space-y-2">
                                 <Label htmlFor="new_school_name" className="text-muted-foreground text-xs font-semibold uppercase">
                                     School Name
@@ -992,6 +1025,24 @@ export default function SystemManagementSchoolPage({
                                     required
                                     className="uppercase"
                                 />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="new_school_country_code" className="text-muted-foreground text-xs font-semibold uppercase">
+                                    Country Code
+                                </Label>
+                                <Input
+                                    id="new_school_country_code"
+                                    value={createSchoolForm.data.country_code}
+                                    onChange={(event) => createSchoolForm.setData("country_code", event.target.value.toUpperCase().slice(0, 2))}
+                                    maxLength={2}
+                                    pattern="[A-Za-z]{2}"
+                                    autoCapitalize="characters"
+                                    aria-describedby="new_school_country_code_hint"
+                                    className="font-mono uppercase"
+                                />
+                                <p id="new_school_country_code_hint" className="text-muted-foreground text-xs">
+                                    ISO alpha-2.
+                                </p>
                             </div>
                         </div>
                         <div className="space-y-2">
@@ -1025,7 +1076,7 @@ export default function SystemManagementSchoolPage({
                                 className="resize-none"
                             />
                         </div>
-                        <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="grid gap-4 sm:grid-cols-3">
                             <div className="space-y-2">
                                 <Label htmlFor="new_school_phone" className="text-muted-foreground text-xs font-semibold uppercase">
                                     Phone
@@ -1124,6 +1175,24 @@ export default function SystemManagementSchoolPage({
                                     required
                                     className="uppercase"
                                 />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="edit_school_country_code" className="text-muted-foreground text-xs font-semibold uppercase">
+                                    Country Code
+                                </Label>
+                                <Input
+                                    id="edit_school_country_code"
+                                    value={editSchoolForm.data.country_code}
+                                    onChange={(event) => editSchoolForm.setData("country_code", event.target.value.toUpperCase().slice(0, 2))}
+                                    maxLength={2}
+                                    pattern="[A-Za-z]{2}"
+                                    autoCapitalize="characters"
+                                    aria-describedby="edit_school_country_code_hint"
+                                    className="font-mono uppercase"
+                                />
+                                <p id="edit_school_country_code_hint" className="text-muted-foreground text-xs">
+                                    ISO alpha-2.
+                                </p>
                             </div>
                         </div>
 

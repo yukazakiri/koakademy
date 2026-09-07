@@ -11,11 +11,15 @@ final class AssessmentExportPayloadService
     /** @return array<string, mixed> */
     public function make(AssessmentExport $export, bool $withFailures = false): array
     {
+        $filters = $export->filters;
+        $isRegulatory = ($filters['export_type'] ?? null) === 'regulatory_report';
+        $downloadRoute = $isRegulatory ? 'download.regulatory-report' : 'download.bulk-assessment';
+
         $payload = [
             'id' => $export->id,
             'user_id' => $export->user_id,
-            'type' => 'bulk_assessment',
-            'title' => 'Bulk Assessment Export',
+            'type' => $isRegulatory ? 'regulatory_report' : 'bulk_assessment',
+            'title' => $isRegulatory ? (string) ($filters['report_title'] ?? 'Regulatory Report') : 'Bulk Assessment Export',
             'status' => $export->status,
             'stage' => $export->stage,
             'percentage' => $export->percentage,
@@ -38,10 +42,10 @@ final class AssessmentExportPayloadService
                 'failed_count' => $export->failed_count,
                 'merged_parts' => $export->merged_parts,
                 'total_parts' => $export->total_parts,
-                'filters' => $export->filters,
-                'report_url' => $export->report_path ? route('download.bulk-assessment-report', $export, false) : null,
+                'filters' => $filters,
+                'report_url' => $export->report_path && ! $isRegulatory ? route('download.bulk-assessment-report', $export, false) : null,
             ],
-            'download_url' => $export->output_path ? route('download.bulk-assessment', $export, false) : null,
+            'download_url' => $export->output_path ? route($downloadRoute, $export, false) : null,
             'error' => $export->error_message ? [
                 'code' => $export->error_code,
                 'summary' => $export->error_message,

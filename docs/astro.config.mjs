@@ -69,6 +69,7 @@ export default defineConfig({
                     collapsed: true,
                     items: [
                         { slug: "development/enrollment-policy-extensions", label: "Policy Extensions" },
+                        { slug: "development/regulatory-report-providers", label: "Regulatory Reports" },
                         { slug: "maintainers/create-module", label: "Module Authoring" },
                         { slug: "maintainers/module-registry", label: "Module Registry" },
                     ],

@@ -97,6 +97,23 @@ choices. This preserves enabled bundled modules and administrator decisions
 during upgrades. A package that was not present in the previous image may
 appear disabled until an administrator enables it.
 
+## Regulatory reporting
+
+The release ships only the CHED E-Form B/C regulatory report provider. It is
+enabled by default for Philippine schools with the CHED PSG curriculum
+capability. To hide it without removing code, data, or existing installation
+state, set this application environment variable and restart the workers:
+
+```dotenv
+REGULATORY_REPORT_CHED_ENABLED=false
+```
+
+Compatible providers can be added by an application or Composer module through
+the `RegulatoryReportAdapter` contract and the configuration registry. They are
+not auto-discovered or implied to be supported. See the [Regulatory Report
+Provider guide](https://github.com/yukazakiri/koakademy/blob/master/docs/src/content/docs/development/regulatory-report-providers.mdx)
+for the adapter, scope, route, frontend, and test requirements.
+
 ## Application and routing
 
 Caddy terminates HTTPS and is the only public service. It forwards to the internal FrankenPHP app over the Swarm overlay. The installer sets:

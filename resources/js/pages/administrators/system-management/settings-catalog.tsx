@@ -22,6 +22,7 @@ import {
     Palette,
     Settings2,
     Share2,
+    Siren,
     Webhook,
 } from "lucide-react";
 
@@ -227,6 +228,15 @@ export const systemSettingsItems: SystemSettingsItem[] = [
         keywords: ["health", "pulse", "metrics", "queue", "performance"],
         icon: Activity,
         mode: "monitor",
+    },
+    {
+        key: "observability",
+        group: "system",
+        label: "Error Reporting",
+        description: "Configure Sentry, Flare, Bugsnag, and Honeybadger error reporting providers.",
+        href: "/administrators/system-management/observability",
+        keywords: ["sentry", "flare", "bugsnag", "honeybadger", "error", "exception", "observability", "tracing", "monitoring", "dsn"],
+        icon: Siren,
     },
 ];
 

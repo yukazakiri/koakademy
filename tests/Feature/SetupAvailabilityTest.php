@@ -47,6 +47,32 @@ it('stores the selected school level during setup', function (): void {
     expect(GeneralSetting::query()->first()?->is_setup)->toBeTrue();
 });
 
+it('stores the normalized country code during setup', function (): void {
+    $this->post('/setup', validSetupPayload([
+        'country_code' => ' us ',
+    ]))->assertRedirect('/');
+
+    $school = School::query()->first();
+
+    expect($school)->not->toBeNull();
+    expect($school?->country_code)->toBe('US');
+    expect(GeneralSetting::query()->first()?->is_setup)->toBeTrue();
+});
+
+it('requires a country code during setup', function (): void {
+    $payload = validSetupPayload();
+    unset($payload['country_code']);
+
+    $this->post('/setup', $payload)
+        ->assertSessionHasErrors('country_code');
+});
+
+it('rejects an invalid country code during setup', function (): void {
+    $this->post('/setup', validSetupPayload([
+        'country_code' => 'ZZ',
+    ]))->assertSessionHasErrors('country_code');
+});
+
 it('requires a school level during setup', function (): void {
     $payload = validSetupPayload();
     unset($payload['school_level']);
@@ -70,6 +96,7 @@ function validSetupPayload(array $overrides = []): array
         'admin_password_confirmation' => 'password123',
         'school_name' => 'Example Academy',
         'school_code' => 'EXA',
+        'country_code' => 'PH',
         'school_level' => SchoolLevel::HigherEducation->value,
         'school_description' => 'Example institution.',
         'school_email' => 'info@example.edu',

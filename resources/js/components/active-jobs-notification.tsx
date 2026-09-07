@@ -168,7 +168,7 @@ function JobCompletedContent({ job, onDismiss }: { job: ActiveJob; onDismiss: ()
                         rel="noopener noreferrer"
                         className="bg-primary text-primary-foreground inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium"
                     >
-                        <Download className="size-3" /> Download PDF
+                        <Download className="size-3" /> {job.type === "regulatory_report" ? "Download XLSX" : "Download PDF"}
                     </a>
                 )}
                 {job.metadata.report_url && (

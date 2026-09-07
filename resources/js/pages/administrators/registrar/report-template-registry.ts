@@ -2,7 +2,16 @@ import type { LucideIcon } from "lucide-react";
 import { Award, BarChart3, ClipboardList, FileText, GraduationCap, Users } from "lucide-react";
 
 export type TemplateKey =
-    "certificate_of_enrollment" | "registration_form" | "grade_report" | "enrolled_by_course" | "enrolled_by_subject" | "enrollment_summary";
+    | "certificate_of_enrollment"
+    | "registration_form"
+    | "grade_report"
+    | "enrolled_by_course"
+    | "enrolled_by_subject"
+    | "enrollment_summary"
+    | "ched_eform_bc"
+    | "ched_baccalaureate"
+    | "ched_special_equity"
+    | "ched_equity_enrollment";
 
 export type TemplateFormat = {
     key: string;
@@ -26,7 +35,8 @@ export type TemplateFormat = {
         | "subject_student_list"
         | "summary_breakdown"
         | "summary_leadership"
-        | "summary_status";
+        | "summary_status"
+        | "ched_matrix";
     includes: string[];
     orientation: "portrait" | "landscape";
 };
@@ -41,6 +51,8 @@ export type TemplateDefinition = {
     icon: LucideIcon;
     variants: TemplateFormat[];
     defaultVariant: string;
+    countryCode?: string;
+    regulatoryReportKey?: string;
 };
 
 export const TEMPLATES: TemplateDefinition[] = [
@@ -256,6 +268,99 @@ export const TEMPLATES: TemplateDefinition[] = [
                 description: "A concise operational report centered on active, completed, and other enrollment statuses.",
                 structure: "summary_status",
                 includes: ["Total enrolled", "Status counts", "Status percentage", "Period metadata"],
+                orientation: "landscape",
+            },
+        ],
+    },
+    {
+        key: "ched_eform_bc",
+        title: "CHED E-Form B/C",
+        description: "Official Philippine CHED Institutional Report for Curriculum Program Profile, Enrolment, and Graduates.",
+        group: "Operational reports",
+        mode: "report",
+        formats: ["XLSX", "Print"],
+        icon: GraduationCap,
+        defaultVariant: "full_eform_bc",
+        countryCode: "PH",
+        regulatoryReportKey: "ched_eform_bc",
+        variants: [
+            {
+                key: "full_eform_bc",
+                title: "Official Workbook (Full)",
+                description: "Complete CHED Form B/C multi-sheet workbook matching the official Commission on Higher Education template.",
+                structure: "ched_matrix",
+                includes: [
+                    "Curricular Program Profile",
+                    "Disaggregated Enrolment (Year 1-7 M/F)",
+                    "Annual Graduates (M/F)",
+                    "Special Equity Groups (PWDs, IPs, Solo Parents, Senior Citizens)",
+                ],
+                orientation: "landscape",
+            },
+        ],
+    },
+    {
+        key: "ched_baccalaureate",
+        title: "CHED Baccalaureate",
+        description: "Baccalaureate program profile, enrollment by sex and year, and graduates.",
+        group: "Operational reports",
+        mode: "report",
+        formats: ["XLSX", "Print"],
+        icon: GraduationCap,
+        defaultVariant: "official",
+        countryCode: "PH",
+        regulatoryReportKey: "ched_baccalaureate",
+        variants: [
+            {
+                key: "official",
+                title: "Official template",
+                description: "Baccalaureate program profile, enrollment by sex and year, and graduates.",
+                structure: "ched_matrix",
+                includes: ["Baccalaureate programs", "Enrollment by sex and year", "Graduates"],
+                orientation: "landscape",
+            },
+        ],
+    },
+    {
+        key: "ched_special_equity",
+        title: "CHED Special Equity Groups",
+        description: "Enrollment and graduate equity counts by curricular program and major.",
+        group: "Operational reports",
+        mode: "report",
+        formats: ["XLSX", "Print"],
+        icon: Users,
+        defaultVariant: "official",
+        countryCode: "PH",
+        regulatoryReportKey: "ched_special_equity",
+        variants: [
+            {
+                key: "official",
+                title: "Official template",
+                description: "Enrollment and graduate equity counts by curricular program and major.",
+                structure: "ched_matrix",
+                includes: ["Program and major", "Enrollment equity groups", "Graduate equity groups"],
+                orientation: "landscape",
+            },
+        ],
+    },
+    {
+        key: "ched_equity_enrollment",
+        title: "Actual Distribution by Special Equity Group (Enrollment)",
+        description: "Enrollment distribution for each equity group, by sex and year level.",
+        group: "Operational reports",
+        mode: "report",
+        formats: ["XLSX", "Print"],
+        icon: BarChart3,
+        defaultVariant: "official",
+        countryCode: "PH",
+        regulatoryReportKey: "ched_equity_enrollment",
+        variants: [
+            {
+                key: "official",
+                title: "Official template",
+                description: "Enrollment distribution for each equity group, by sex and year level.",
+                structure: "ched_matrix",
+                includes: ["Special equity groups", "Male and female counts", "Year levels 1–6", "Group totals"],
                 orientation: "landscape",
             },
         ],

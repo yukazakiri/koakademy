@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support;
 
 use App\Models\Student;
+use App\Settings\SiteSettings;
 use BackedEnum;
 use Carbon\CarbonInterface;
 use DateTimeImmutable;
@@ -74,8 +75,19 @@ final class RegistrarStudentProfileWorkbook
         ['key' => 'is_indigenous_person', 'label' => 'Indigenous Person', 'group' => 'Origin and Equity', 'type' => 'boolean', 'read' => ['student.is_indigenous_person'], 'write' => ['student.is_indigenous_person']],
         ['key' => 'indigenous_group', 'label' => 'Indigenous Group', 'group' => 'Origin and Equity', 'type' => 'string', 'max' => 100, 'read' => ['student.indigenous_group'], 'write' => ['student.indigenous_group']],
         ['key' => 'is_pwd', 'label' => 'Person with Disability', 'group' => 'Origin and Equity', 'type' => 'boolean', 'read' => ['student.is_pwd'], 'write' => ['student.is_pwd']],
-        ['key' => 'pwd_type', 'label' => 'Disability Type', 'group' => 'Origin and Equity', 'type' => 'string', 'max' => 100, 'read' => ['student.pwd_type'], 'write' => ['student.pwd_type']],
+        ['key' => 'pwd_type', 'label' => 'Disability Type', 'group' => 'Origin and Equity', 'type' => 'choice', 'max' => 100, 'read' => ['student.pwd_type'], 'write' => ['student.pwd_type'], 'options' => [
+            'Apparent Physical Disability' => 'Apparent Physical Disability',
+            'Deaf/Hard of Hearing Disability' => 'Deaf/Hard of Hearing Disability',
+            'Intellectual Disability' => 'Intellectual Disability',
+            'Learning Disability' => 'Learning Disability',
+            'Mental/Psycho social Disability' => 'Mental/Psycho social Disability',
+            'Visual Disability' => 'Visual Disability',
+            'Speech and Language Impairment' => 'Speech and Language Impairment',
+            'Non-apparent Cancer' => 'Non-apparent Cancer',
+            'Non-apparent Rare Disease' => 'Non-apparent Rare Disease',
+        ]],
         ['key' => 'is_solo_parent', 'label' => 'Solo Parent', 'group' => 'Origin and Equity', 'type' => 'boolean', 'read' => ['student.is_solo_parent'], 'write' => ['student.is_solo_parent']],
+        ['key' => 'is_solo_parent_dependent', 'label' => 'Dependent of a Solo Parent', 'group' => 'Origin and Equity', 'type' => 'boolean', 'read' => ['student.is_solo_parent_dependent'], 'write' => ['student.is_solo_parent_dependent']],
         ['key' => 'is_senior_citizen', 'label' => 'Senior Citizen', 'group' => 'Origin and Equity', 'type' => 'boolean', 'read' => ['student.is_senior_citizen'], 'write' => ['student.is_senior_citizen']],
         ['key' => 'is_magna_carta', 'label' => 'Magna Carta Beneficiary', 'group' => 'Origin and Equity', 'type' => 'boolean', 'read' => ['student.is_magna_carta'], 'write' => ['student.is_magna_carta']],
         ['key' => 'is_underprivileged', 'label' => 'Underprivileged', 'group' => 'Origin and Equity', 'type' => 'boolean', 'read' => ['student.is_underprivileged'], 'write' => ['student.is_underprivileged']],
@@ -134,13 +146,31 @@ final class RegistrarStudentProfileWorkbook
     /** @return list<array<string, mixed>> */
     public function fields(): array
     {
-        return self::PROFILE_FIELDS;
+        $mode = (string) config('income_brackets.default_mode', 'annual');
+        $currency = app(SiteSettings::class)->getCurrency();
+        $symbol = match ($currency) {
+            'PHP' => '₱',
+            'USD' => '$',
+            default => $currency,
+        };
+        $options = collect(config('income_brackets.modes.'.$mode.'.brackets', []))
+            ->mapWithKeys(fn (array $bracket, string $key): array => [$key => str_replace('{symbol}', $symbol, $bracket['label'])])
+            ->all();
+
+        return array_map(function (array $field) use ($options): array {
+            if (in_array($field['key'], ['family_income_bracket', 'father_income_bracket', 'mother_income_bracket'], true) && $options !== []) {
+                $field['type'] = 'choice';
+                $field['options'] = $options;
+            }
+
+            return $field;
+        }, self::PROFILE_FIELDS);
     }
 
     /** @return array<string, mixed>|null */
     public function field(string $key): ?array
     {
-        foreach (self::PROFILE_FIELDS as $field) {
+        foreach ($this->fields() as $field) {
             if ($field['key'] === $key) {
                 return $field;
             }

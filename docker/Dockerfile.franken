@@ -106,6 +106,8 @@ ENV OCTANE_SERVER=frankenphp
 ENV TZ=${TZ}
 ENV ROOT=${ROOT}
 ENV USER=laravel
+ENV INERTIA_SSR_ENABLED=true
+ENV INERTIA_SSR_RUNTIME=/usr/bin/node
 ENV COMPOSER_FUND=0
 ENV COMPOSER_MAX_PARALLEL_HTTP=48
 ENV XDG_CONFIG_HOME=${ROOT}/.config
@@ -121,6 +123,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zip \
     unzip \
     supervisor \
+    nodejs \
     libcap2-bin \
     librsvg2-bin \
     mdbtools \
@@ -164,6 +167,7 @@ COPY docker/php.ini ${PHP_INI_DIR}/conf.d/99-custom.ini
 COPY --link docker/supervisord.conf /etc/supervisord.conf
 COPY --link docker/supervisord.frankenphp.conf /etc/supervisor/conf.d/
 COPY --link docker/supervisord.frankenphp.no-horizon.conf /etc/supervisor/conf.d/
+COPY --link docker/supervisord.inertia-ssr.conf /etc/supervisor/conf.d/
 COPY --link docker/supervisord.horizon.conf /etc/supervisor/conf.d/
 COPY --link docker/supervisord.scheduler.conf /etc/supervisor/conf.d/
 COPY --link docker/supervisord.pulse.conf /etc/supervisor/conf.d/
@@ -197,6 +201,7 @@ RUN groupadd --force -g ${GROUP_ID} ${USER} \
 COPY --chown=${USER}:${USER} --from=vendor /app/vendor ./vendor
 COPY --chown=${USER}:${USER} --from=build-assets /app/public/build ./public/build
 COPY --chown=${USER}:${USER} . .
+COPY --chown=${USER}:${USER} --from=build-assets /app/bootstrap/ssr ./bootstrap/ssr
 
 # R2 uses Laravel's S3 filesystem driver. Keep its adapter in the production
 # image so storage-backed branding and uploads cannot turn page rendering into

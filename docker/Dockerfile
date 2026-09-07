@@ -107,6 +107,8 @@ ENV TERM=xterm-color
 ENV TZ=${TZ}
 ENV ROOT=${ROOT}
 ENV USER=laravel
+ENV INERTIA_SSR_ENABLED=true
+ENV INERTIA_SSR_RUNTIME=/usr/bin/node
 ENV COMPOSER_FUND=0
 ENV COMPOSER_MAX_PARALLEL_HTTP=48
 ENV XDG_CONFIG_HOME=${ROOT}/.config
@@ -127,6 +129,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     supervisor \
     nginx \
+    nodejs \
     libpng-dev \
     libjpeg62-turbo-dev \
     libfreetype6-dev \
@@ -179,6 +182,7 @@ COPY --link docker/php-fpm.conf /usr/local/etc/php-fpm.d/www.conf
 COPY --link docker/supervisord.conf /etc/supervisord.conf
 COPY --link docker/supervisord.web.conf /etc/supervisor/conf.d/
 COPY --link docker/supervisord.web.no-horizon.conf /etc/supervisor/conf.d/
+COPY --link docker/supervisord.inertia-ssr.conf /etc/supervisor/conf.d/
 COPY --link docker/supervisord.horizon.conf /etc/supervisor/conf.d/
 COPY --link docker/supervisord.scheduler.conf /etc/supervisor/conf.d/
 COPY --link docker/supervisord.pulse.conf /etc/supervisor/conf.d/
@@ -217,6 +221,7 @@ RUN groupadd --force -g ${GROUP_ID} ${USER} \
 COPY --chown=${USER}:${USER} --from=vendor /app/vendor ./vendor
 COPY --chown=${USER}:${USER} --from=build-assets /app/public/build ./public/build
 COPY --chown=${USER}:${USER} . .
+COPY --chown=${USER}:${USER} --from=build-assets /app/bootstrap/ssr ./bootstrap/ssr
 
 # R2 uses Laravel's S3 filesystem driver. Keep its adapter in the production
 # image so storage-backed branding and uploads cannot turn page rendering into

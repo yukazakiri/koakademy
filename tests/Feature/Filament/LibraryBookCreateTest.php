@@ -84,6 +84,89 @@ it('clamps available copies to total copies during creation', function (): void 
         ->and($mutatedData['available_copies'])->toBe(3);
 });
 
+it('derives initial availability from total copies when available_copies is omitted or empty', function (): void {
+    $page = new CreateBook();
+    $reflection = new ReflectionClass($page);
+    $mutateMethod = $reflection->getMethod('mutateFormDataBeforeCreate');
+
+    $mutatedData = $mutateMethod->invoke($page, [
+        'title' => 'Unset Available Copies Book',
+        'total_copies' => 5,
+    ]);
+
+    expect($mutatedData['total_copies'])->toBe(5)
+        ->and($mutatedData['available_copies'])->toBe(5);
+
+    $mutatedEmptyData = $mutateMethod->invoke($page, [
+        'title' => 'Empty Available Copies Book',
+        'total_copies' => 7,
+        'available_copies' => '',
+    ]);
+
+    expect($mutatedEmptyData['total_copies'])->toBe(7)
+        ->and($mutatedEmptyData['available_copies'])->toBe(7);
+});
+
+it('routes borrow record creation through stock accounting', function (): void {
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $borrower = User::factory()->create(['role' => UserRole::Student]);
+
+    $author = Author::query()->create(['name' => 'Borrow Author']);
+    $category = Category::query()->create(['name' => 'Borrow Category']);
+
+    $book = Book::query()->create([
+        'title' => 'Stock Test Book',
+        'author_id' => $author->id,
+        'category_id' => $category->id,
+        'total_copies' => 2,
+        'available_copies' => 2,
+        'status' => 'available',
+    ]);
+
+    $stockService = app(\Modules\LibrarySystem\Services\LibraryBorrowStockService::class);
+
+    $record = \Modules\LibrarySystem\Models\BorrowRecord::query()->create([
+        'book_id' => $book->id,
+        'user_id' => $borrower->id,
+        'borrowed_at' => now(),
+        'due_date' => now()->addDays(7),
+        'status' => 'borrowed',
+    ]);
+    $stockService->recordCreated($record);
+
+    expect($book->fresh()->available_copies)->toBe(1)
+        ->and($book->fresh()->status)->toBe('available');
+
+    // Borrow second copy -> available copies should drop to 0 and status becomes borrowed
+    $record2 = \Modules\LibrarySystem\Models\BorrowRecord::query()->create([
+        'book_id' => $book->id,
+        'user_id' => $borrower->id,
+        'borrowed_at' => now(),
+        'due_date' => now()->addDays(7),
+        'status' => 'borrowed',
+    ]);
+    $stockService->recordCreated($record2);
+
+    expect($book->fresh()->available_copies)->toBe(0)
+        ->and($book->fresh()->status)->toBe('borrowed');
+
+    // Cannot borrow when 0 available copies
+    expect($stockService->canBorrow($book->fresh(), 'borrowed'))->toBeFalse();
+
+    // Return record -> available copies increases back to 1 and status returns to available
+    $record2->update(['status' => 'returned', 'returned_at' => now()]);
+    $stockService->recordUpdated($record2, $book->id, 'borrowed');
+
+    expect($book->fresh()->available_copies)->toBe(1)
+        ->and($book->fresh()->status)->toBe('available');
+
+    // Delete record 1 -> available copies increases back to 2
+    $record->delete();
+    $stockService->recordDeleted($record);
+
+    expect($book->fresh()->available_copies)->toBe(2);
+});
+
 it('authorizes authors and categories for administrative and librarian roles', function (): void {
     $librarian = User::factory()->create(['role' => UserRole::Librarian]);
     $student = User::factory()->create(['role' => UserRole::Student]);

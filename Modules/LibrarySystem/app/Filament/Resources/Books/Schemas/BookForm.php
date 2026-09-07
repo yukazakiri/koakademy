@@ -124,14 +124,23 @@ final class BookForm
                 ->numeric()
                 ->required()
                 ->default(1)
-                ->minValue(1),
+                ->minValue(1)
+                ->live(onBlur: true)
+                ->afterStateUpdated(function (mixed $state, callable $set, callable $get, ?Book $record): void {
+                    if (! $record) {
+                        $currentAvailable = $get('available_copies');
+                        if ($currentAvailable === null || $currentAvailable === '' || (int) $currentAvailable === 1) {
+                            $set('available_copies', $state);
+                        }
+                    }
+                }),
 
             TextInput::make('available_copies')
                 ->label('Available Copies')
                 ->numeric()
-                ->default(1)
                 ->minValue(0)
-                ->helperText('Defaults to total copies if left matching.'),
+                ->placeholder(fn (callable $get): ?string => $get('total_copies') ? (string) $get('total_copies') : '1')
+                ->helperText('Defaults to total copies if left blank.'),
         ];
     }
 

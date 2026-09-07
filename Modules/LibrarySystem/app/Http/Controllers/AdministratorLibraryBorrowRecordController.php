@@ -14,9 +14,14 @@ use Inertia\Response;
 use Modules\LibrarySystem\Http\Requests\Administrators\LibraryBorrowRecordRequest;
 use Modules\LibrarySystem\Models\Book;
 use Modules\LibrarySystem\Models\BorrowRecord;
+use Modules\LibrarySystem\Services\LibraryBorrowStockService;
 
 final class AdministratorLibraryBorrowRecordController extends Controller
 {
+    public function __construct(
+        private readonly LibraryBorrowStockService $stockService,
+    ) {}
+
     public function index(Request $request): Response
     {
         $search = $request->input('search');
@@ -110,21 +115,17 @@ final class AdministratorLibraryBorrowRecordController extends Controller
     {
         $validated = $this->normalizeBorrowRecordData($request->validated());
         $book = Book::findOrFail($validated['book_id']);
-        $impact = $this->borrowImpact($validated['status']);
 
-        if ($impact < 0 && $book->available_copies <= 0) {
+        if (! $this->stockService->canBorrow($book, $validated['status'])) {
             return back()->with('flash', [
                 'type' => 'error',
                 'message' => 'This book has no available copies left.',
             ]);
         }
 
-        DB::transaction(function () use ($validated, $book, $impact): void {
-            BorrowRecord::create($validated);
-
-            if ($impact !== 0) {
-                $this->applyAvailabilityDelta($book, $impact);
-            }
+        DB::transaction(function () use ($validated): void {
+            $record = BorrowRecord::create($validated);
+            $this->stockService->recordCreated($record);
         });
 
         return redirect()
@@ -157,47 +158,23 @@ final class AdministratorLibraryBorrowRecordController extends Controller
     public function update(LibraryBorrowRecordRequest $request, BorrowRecord $borrowRecord): RedirectResponse
     {
         $validated = $this->normalizeBorrowRecordData($request->validated());
-        $originalBook = $borrowRecord->book;
-        $originalImpact = $this->borrowImpact($borrowRecord->status);
-        $newImpact = $this->borrowImpact($validated['status']);
+        $originalBookId = (int) $borrowRecord->book_id;
+        $originalStatus = (string) $borrowRecord->status;
 
         $newBook = $borrowRecord->book_id === $validated['book_id']
-            ? $originalBook
+            ? $borrowRecord->book
             : Book::findOrFail($validated['book_id']);
 
-        $availableCopies = $newBook?->available_copies ?? 0;
-
-        if ($newBook && $newBook->is($originalBook) && $originalImpact < 0) {
-            $availableCopies += 1;
-        }
-
-        if ($newImpact < 0 && $availableCopies <= 0) {
+        if (! $newBook || ! $this->stockService->canUpdateBorrow($borrowRecord, $newBook, $validated['status'])) {
             return back()->with('flash', [
                 'type' => 'error',
                 'message' => 'This book has no available copies left.',
             ]);
         }
 
-        DB::transaction(function () use ($borrowRecord, $validated, $originalBook, $originalImpact, $newBook, $newImpact): void {
+        DB::transaction(function () use ($borrowRecord, $validated, $originalBookId, $originalStatus): void {
             $borrowRecord->update($validated);
-
-            if ($originalBook && $newBook && $originalBook->is($newBook)) {
-                $delta = $newImpact - $originalImpact;
-
-                if ($delta !== 0) {
-                    $this->applyAvailabilityDelta($originalBook, $delta);
-                }
-
-                return;
-            }
-
-            if ($originalBook && $originalImpact !== 0) {
-                $this->applyAvailabilityDelta($originalBook, -$originalImpact);
-            }
-
-            if ($newBook && $newImpact !== 0) {
-                $this->applyAvailabilityDelta($newBook, $newImpact);
-            }
+            $this->stockService->recordUpdated($borrowRecord, $originalBookId, $originalStatus);
         });
 
         return redirect()
@@ -210,15 +187,9 @@ final class AdministratorLibraryBorrowRecordController extends Controller
 
     public function destroy(BorrowRecord $borrowRecord): RedirectResponse
     {
-        $book = $borrowRecord->book;
-        $impact = $this->borrowImpact($borrowRecord->status);
-
-        DB::transaction(function () use ($borrowRecord, $book, $impact): void {
+        DB::transaction(function () use ($borrowRecord): void {
             $borrowRecord->delete();
-
-            if ($book && $impact !== 0) {
-                $this->applyAvailabilityDelta($book, -$impact);
-            }
+            $this->stockService->recordDeleted($borrowRecord);
         });
 
         return redirect()
@@ -227,11 +198,6 @@ final class AdministratorLibraryBorrowRecordController extends Controller
                 'type' => 'success',
                 'message' => 'Borrow record deleted.',
             ]);
-    }
-
-    private function borrowImpact(string $status): int
-    {
-        return in_array($status, ['borrowed', 'lost'], true) ? -1 : 0;
     }
 
     private function normalizeBorrowRecordData(array $validated): array
@@ -243,17 +209,6 @@ final class AdministratorLibraryBorrowRecordController extends Controller
         }
 
         return $validated;
-    }
-
-    private function applyAvailabilityDelta(Book $book, int $delta): void
-    {
-        $book->available_copies = max(0, min($book->total_copies, $book->available_copies + $delta));
-
-        if ($book->status !== 'maintenance') {
-            $book->status = $book->available_copies > 0 ? 'available' : 'borrowed';
-        }
-
-        $book->save();
     }
 
     private function getBorrowOptions(): array

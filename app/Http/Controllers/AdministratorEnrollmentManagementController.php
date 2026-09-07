@@ -2267,6 +2267,7 @@ final class AdministratorEnrollmentManagementController extends Controller
                 'id' => $course->id,
                 'code' => $course->code,
                 'title' => $course->title,
+                'department_id' => $course->department_id,
                 'department' => $course->department?->code,
                 'label' => $course->code.' - '.$course->title,
             ])

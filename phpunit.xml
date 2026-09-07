@@ -40,6 +40,7 @@
         <server name="TELESCOPE_ENABLED" value="false"/>
         <server name="NIGHTWATCH_ENABLED" value="false"/>
         <server name="SIMPLESTATS_ENABLED" value="false"/>
+        <server name="INERTIA_SSR_ENABLED" value="false"/>
         <server name="LARAVEL_PDF_DRIVER" value="gotenberg"/>
         <server name="LARAVEL_PDF_PRODUCTION_DRIVER" value="gotenberg"/>
         <server name="LARAVEL_PDF_STAGING_DRIVER" value="gotenberg"/>

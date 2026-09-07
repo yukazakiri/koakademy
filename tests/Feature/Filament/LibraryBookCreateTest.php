@@ -123,9 +123,9 @@ it('routes borrow record creation through stock accounting', function (): void {
         'status' => 'available',
     ]);
 
-    $stockService = app(\Modules\LibrarySystem\Services\LibraryBorrowStockService::class);
+    $stockService = app(Modules\LibrarySystem\Services\LibraryBorrowStockService::class);
 
-    $record = \Modules\LibrarySystem\Models\BorrowRecord::query()->create([
+    $record = Modules\LibrarySystem\Models\BorrowRecord::query()->create([
         'book_id' => $book->id,
         'user_id' => $borrower->id,
         'borrowed_at' => now(),
@@ -138,7 +138,7 @@ it('routes borrow record creation through stock accounting', function (): void {
         ->and($book->fresh()->status)->toBe('available');
 
     // Borrow second copy -> available copies should drop to 0 and status becomes borrowed
-    $record2 = \Modules\LibrarySystem\Models\BorrowRecord::query()->create([
+    $record2 = Modules\LibrarySystem\Models\BorrowRecord::query()->create([
         'book_id' => $book->id,
         'user_id' => $borrower->id,
         'borrowed_at' => now(),
@@ -193,5 +193,3 @@ it('configures book form schema matching database columns without invalid fields
         ->and($detailsNames)->toContain('pages', 'location', 'cover_image', 'cover_image_path', 'description')
         ->and($detailsNames)->not->toContain('language', 'price');
 });
-
-

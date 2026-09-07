@@ -236,13 +236,13 @@ it('allows librarian to view create page and store a book', function (): void {
 });
 
 it('stores a book with cover image upload', function (): void {
-    \Illuminate\Support\Facades\Storage::fake('public');
+    Illuminate\Support\Facades\Storage::fake('public');
 
     $admin = User::factory()->create(['role' => UserRole::Admin]);
     $author = Author::query()->create(['name' => 'Cover Image Author']);
     $category = Category::query()->create(['name' => 'Cover Image Category']);
 
-    $file = \Illuminate\Http\UploadedFile::fake()->image('cover.jpg', 600, 800);
+    $file = Illuminate\Http\UploadedFile::fake()->image('cover.jpg', 600, 800);
 
     actingAs($admin)
         ->post(route('administrators.library.books.store'), [
@@ -259,7 +259,7 @@ it('stores a book with cover image upload', function (): void {
     expect($book)->not->toBeNull()
         ->and($book?->cover_image_path)->not->toBeNull();
 
-    \Illuminate\Support\Facades\Storage::disk('public')->assertExists($book?->cover_image_path);
+    Illuminate\Support\Facades\Storage::disk('public')->assertExists($book?->cover_image_path);
 });
 
 it('validates required fields on book creation', function (): void {
@@ -275,4 +275,3 @@ it('validates required fields on book creation', function (): void {
             'status',
         ]);
 });
-

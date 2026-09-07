@@ -27,7 +27,7 @@ final class BorrowRecordForm
                             ->searchable()
                             ->preload()
                             ->required()
-                            ->getOptionLabelFromRecordUsing(fn (Book $record): string => "{$record->title} - " . ($record->author?->name ?? 'Unknown') . " ({$record->available_copies} available)"),
+                            ->getOptionLabelFromRecordUsing(fn (Book $record): string => "{$record->title} - ".($record->author?->name ?? 'Unknown')." ({$record->available_copies} available)"),
                         Select::make('user_id')
                             ->label('Borrower')
                             ->relationship('user', 'name')

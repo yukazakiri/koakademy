@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "2956de77a7eeb964e11226846b070f09",
+    "content-hash": "7314f3b82223fd9a3b83f6db044405c7",
     "packages": [
         {
             "name": "achyutn/filament-log-viewer",
@@ -5499,16 +5499,16 @@
         },
         {
             "name": "koakademy/forms",
-            "version": "v1.3.0",
+            "version": "v1.4.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/yukazakiri/koakademy-module-forms.git",
-                "reference": "9dfa57bb7472f4f9921eb27d63d26b858a645391"
+                "reference": "5a86d1104064f9fb56ba29cdab50b7cbe9be9f3c"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/yukazakiri/koakademy-module-forms/zipball/9dfa57bb7472f4f9921eb27d63d26b858a645391",
-                "reference": "9dfa57bb7472f4f9921eb27d63d26b858a645391",
+                "url": "https://api.github.com/repos/yukazakiri/koakademy-module-forms/zipball/5a86d1104064f9fb56ba29cdab50b7cbe9be9f3c",
+                "reference": "5a86d1104064f9fb56ba29cdab50b7cbe9be9f3c",
                 "shasum": ""
             },
             "require": {
@@ -5536,20 +5536,11 @@
             "autoload": {
                 "psr-4": {
                     "Modules\\Forms\\": "app/",
-                    "Modules\\Forms\\Database\\Factories\\": "database/factories/",
-                    "Modules\\Forms\\Database\\Seeders\\": "database/seeders/"
+                    "Modules\\Forms\\Database\\Seeders\\": "database/seeders/",
+                    "Modules\\Forms\\Database\\Factories\\": "database/factories/"
                 }
             },
-            "autoload-dev": {
-                "psr-4": {
-                    "Modules\\Forms\\Tests\\": "tests/"
-                }
-            },
-            "scripts": {
-                "test": [
-                    "pest --compact"
-                ]
-            },
+            "notification-url": "https://packagist.org/downloads/",
             "license": [
                 "AGPL-3.0-or-later"
             ],
@@ -5559,7 +5550,11 @@
                 }
             ],
             "description": "Configurable online forms, surveys, evaluations, and record-linked submissions for KoAkademy.",
-            "time": "2026-08-28T16:00:46+00:00"
+            "support": {
+                "issues": "https://github.com/yukazakiri/koakademy-module-forms/issues",
+                "source": "https://github.com/yukazakiri/koakademy-module-forms/tree/v1.4.0"
+            },
+            "time": "2026-09-06T08:52:16+00:00"
         },
         {
             "name": "laminas/laminas-diactoros",

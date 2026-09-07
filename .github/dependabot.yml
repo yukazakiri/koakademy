@@ -8,6 +8,11 @@ updates:
       time: "03:30"
       timezone: Etc/UTC
     open-pull-requests-limit: 10
+    # KoAkademy modules are released and deployed together with the app.
+    # Do not apply Dependabot's default three-day version cooldown to them.
+    cooldown:
+      exclude:
+        - "koakademy/*"
     groups:
       koakademy-modules:
         patterns:

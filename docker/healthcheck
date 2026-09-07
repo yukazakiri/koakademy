@@ -28,6 +28,13 @@ if [ "${container_mode}" = "http" ]; then
         check_supervisor_program "php-fpm"
     fi
 
+    inertia_ssr_enabled=$(printf '%s' "${INERTIA_SSR_ENABLED:-true}" | tr '[:upper:]' '[:lower:]')
+    case "${inertia_ssr_enabled}" in
+        true|1|yes|on)
+            check_supervisor_program "inertia-ssr"
+            ;;
+    esac
+
     php -r '
         $port = getenv("PORT") ?: "8000";
         $timeout = (float) (getenv("HEALTHCHECK_TIMEOUT") ?: "2");

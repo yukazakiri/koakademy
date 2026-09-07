@@ -9,7 +9,7 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
-use Modules\Librarysystem\Models\Category;
+use Modules\LibrarySystem\Models\Category;
 
 final class CategoryForm
 {
@@ -33,8 +33,14 @@ final class CategoryForm
         return [
             TextInput::make('name')
                 ->required()
-                ->maxLength(255)
+                ->maxLength(100)
                 ->unique(Category::class, 'name', ignoreRecord: true),
+
+            TextInput::make('color')
+                ->label('Hex Color')
+                ->default('#6366f1')
+                ->maxLength(7)
+                ->placeholder('#6366f1'),
 
             Textarea::make('description')
                 ->maxLength(500)
@@ -47,7 +53,7 @@ final class CategoryForm
         return [
             Placeholder::make('id')
                 ->label('Category ID')
-                ->content(fn (?Category $record): ?string => $record?->id),
+                ->content(fn (?Category $record): ?string => $record?->id ? (string) $record->id : null),
 
             Placeholder::make('created_at')
                 ->label('Created at')
@@ -55,7 +61,7 @@ final class CategoryForm
 
             Placeholder::make('books_count')
                 ->label('Books in Category')
-                ->content(fn (Category $record): ?string => $record?->books_count ?? '0'),
+                ->content(fn (Category $record): ?string => (string) ($record->books_count ?? '0')),
         ];
     }
 }

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Modules\LibrarySystem\Policies;
 
+use App\Enums\UserRole;
+use App\Models\User;
 use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
 use Modules\LibrarySystem\Models\BorrowRecord;
@@ -11,6 +13,20 @@ use Modules\LibrarySystem\Models\BorrowRecord;
 final class BorrowRecordPolicy
 {
     use HandlesAuthorization;
+
+    public function before(AuthUser $authUser): ?bool
+    {
+        if ($authUser instanceof User && in_array($authUser->role, [
+            UserRole::Developer,
+            UserRole::SuperAdmin,
+            UserRole::Admin,
+            UserRole::Librarian,
+        ], true)) {
+            return true;
+        }
+
+        return null;
+    }
 
     public function viewAny(AuthUser $authUser): bool
     {

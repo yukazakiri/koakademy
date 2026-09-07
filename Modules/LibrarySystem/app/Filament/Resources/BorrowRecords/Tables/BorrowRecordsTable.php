@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace Modules\LibrarySystem\Filament\Resources\BorrowRecords\Tables;
 
 use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Actions\ForceDeleteAction;
 use Filament\Actions\ForceDeleteBulkAction;
+use Filament\Actions\RestoreAction;
 use Filament\Actions\RestoreBulkAction;
 use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\BadgeColumn;
@@ -16,7 +19,9 @@ use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
+use Illuminate\Support\Collection;
 use Modules\LibrarySystem\Models\BorrowRecord;
+use Modules\LibrarySystem\Services\LibraryBorrowStockService;
 
 final class BorrowRecordsTable
 {
@@ -83,12 +88,36 @@ final class BorrowRecordsTable
             ->recordActions([
                 ViewAction::make(),
                 EditAction::make(),
+                DeleteAction::make()
+                    ->after(fn (BorrowRecord $record) => app(LibraryBorrowStockService::class)->recordDeleted($record)),
+                RestoreAction::make()
+                    ->after(fn (BorrowRecord $record) => app(LibraryBorrowStockService::class)->recordRestored($record)),
+                ForceDeleteAction::make()
+                    ->after(fn (BorrowRecord $record) => app(LibraryBorrowStockService::class)->recordDeleted($record)),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
-                    DeleteBulkAction::make(),
-                    ForceDeleteBulkAction::make(),
-                    RestoreBulkAction::make(),
+                    DeleteBulkAction::make()
+                        ->after(function (Collection $records): void {
+                            $service = app(LibraryBorrowStockService::class);
+                            foreach ($records as $record) {
+                                $service->recordDeleted($record);
+                            }
+                        }),
+                    ForceDeleteBulkAction::make()
+                        ->after(function (Collection $records): void {
+                            $service = app(LibraryBorrowStockService::class);
+                            foreach ($records as $record) {
+                                $service->recordDeleted($record);
+                            }
+                        }),
+                    RestoreBulkAction::make()
+                        ->after(function (Collection $records): void {
+                            $service = app(LibraryBorrowStockService::class);
+                            foreach ($records as $record) {
+                                $service->recordRestored($record);
+                            }
+                        }),
                 ]),
             ])
             ->defaultSort('borrowed_at', 'desc');

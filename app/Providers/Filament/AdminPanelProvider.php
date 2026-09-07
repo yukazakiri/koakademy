@@ -144,7 +144,7 @@ final class AdminPanelProvider extends PanelProvider
 
         $isTestingEnvironment = ($_ENV['APP_ENV'] ?? $_SERVER['APP_ENV'] ?? null) === 'testing';
 
-        if (! $isTestingEnvironment) {
+        if (! $isTestingEnvironment || config('filament-modules.enabled_in_testing', false)) {
             $plugins[] = ModulesPlugin::make();
         }
 

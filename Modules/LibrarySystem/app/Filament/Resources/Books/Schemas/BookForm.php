@@ -36,9 +36,7 @@ final class BookForm
                     ->columnSpan([
                         'lg' => fn (?Book $record): int => $record instanceof Book ? 2 : 3,
                     ])
-                    ->collapsed()
-                    ->hidden(fn (?Book $record): bool => ! $record instanceof Book)
-                    ->lazy(),
+                    ->collapsible(),
             ])
             ->columns(3);
     }
@@ -53,7 +51,7 @@ final class BookForm
 
             TextInput::make('isbn')
                 ->label('ISBN')
-                ->maxLength(20),
+                ->maxLength(50),
 
             TextInput::make('call_number')
                 ->label('Call Number')
@@ -73,9 +71,11 @@ final class BookForm
                     TextInput::make('name')
                         ->required()
                         ->maxLength(255),
-                    TextInput::make('email')
-                        ->email()
-                        ->maxLength(255),
+                    TextInput::make('nationality')
+                        ->maxLength(100),
+                    DatePicker::make('birth_date')
+                        ->label('Birth Date')
+                        ->maxDate('today'),
                     Textarea::make('biography')
                         ->maxLength(1000),
                 ]),
@@ -89,7 +89,12 @@ final class BookForm
                 ->createOptionForm([
                     TextInput::make('name')
                         ->required()
-                        ->maxLength(255),
+                        ->maxLength(100),
+                    TextInput::make('color')
+                        ->label('Hex Color')
+                        ->default('#6366f1')
+                        ->maxLength(7)
+                        ->placeholder('#6366f1'),
                     Textarea::make('description')
                         ->maxLength(500),
                 ]),
@@ -97,19 +102,45 @@ final class BookForm
             TextInput::make('publisher')
                 ->maxLength(255),
 
-            DatePicker::make('published_date')
-                ->maxDate('today'),
-
-            TextInput::make('edition')
+            TextInput::make('publication_year')
+                ->label('Publication Year')
                 ->numeric()
-                ->default(1),
+                ->minValue(1500)
+                ->maxValue((int) date('Y') + 1)
+                ->placeholder('YYYY'),
+
+            Select::make('status')
+                ->label('Status')
+                ->options([
+                    'available' => 'Available',
+                    'borrowed' => 'Borrowed',
+                    'maintenance' => 'Maintenance',
+                ])
+                ->default('available')
+                ->required(),
 
             TextInput::make('total_copies')
                 ->label('Total Copies')
                 ->numeric()
                 ->required()
                 ->default(1)
-                ->minValue(1),
+                ->minValue(1)
+                ->live(onBlur: true)
+                ->afterStateUpdated(function (mixed $state, callable $set, callable $get, ?Book $record): void {
+                    if (! $record) {
+                        $currentAvailable = $get('available_copies');
+                        if ($currentAvailable === null || $currentAvailable === '' || (int) $currentAvailable === 1) {
+                            $set('available_copies', $state);
+                        }
+                    }
+                }),
+
+            TextInput::make('available_copies')
+                ->label('Available Copies')
+                ->numeric()
+                ->minValue(0)
+                ->placeholder(fn (callable $get): ?string => $get('total_copies') ? (string) $get('total_copies') : '1')
+                ->helperText('Defaults to total copies if left blank.'),
         ];
     }
 
@@ -118,50 +149,47 @@ final class BookForm
         return [
             Placeholder::make('id')
                 ->label('Book ID')
-                ->content(fn (?Book $record): ?string => $record?->id),
+                ->content(fn (?Book $record): ?string => $record?->id ? (string) $record->id : null),
 
             Placeholder::make('created_at')
                 ->label('Created at')
-                ->content(fn (Book $record): ?string => $record->created_at?->diffForHumans()),
+                ->content(fn (?Book $record): ?string => $record?->created_at?->diffForHumans()),
 
-            Placeholder::make('available_copies')
-                ->label('Available Copies')
-                ->content(fn (Book $record): ?string => $record?->available_copies ?? '0'),
+            Placeholder::make('updated_at')
+                ->label('Updated at')
+                ->content(fn (?Book $record): ?string => $record?->updated_at?->diffForHumans()),
         ];
     }
 
     private static function getBookDetailsSection(): array
     {
         return [
-            Textarea::make('description')
-                ->columnSpanFull()
-                ->maxLength(1000),
-
-            TextInput::make('language')
-                ->maxLength(50)
-                ->default('English'),
-
             TextInput::make('pages')
                 ->numeric()
                 ->minValue(1),
 
-            TextInput::make('price')
-                ->numeric()
-                ->prefix('$')
-                ->minValue(0),
+            TextInput::make('location')
+                ->label('Shelf Location')
+                ->maxLength(255)
+                ->placeholder('e.g., Main Library · A-12'),
 
-            FileUpload::make('cover_image')
-                ->label('Cover Image')
+            TextInput::make('cover_image')
+                ->label('Cover Image URL')
+                ->maxLength(255)
+                ->placeholder('https://…'),
+
+            FileUpload::make('cover_image_path')
+                ->label('Cover Image Upload')
                 ->image()
                 ->disk('public')
-                ->directory('book-covers')
+                ->directory('library/books/covers')
                 ->visibility('public')
                 ->columnSpanFull(),
 
-            TextInput::make('location')
-                ->label('Shelf Location')
-                ->maxLength(100)
-                ->placeholder('e.g., A1-B2-C3'),
+            Textarea::make('description')
+                ->columnSpanFull()
+                ->rows(4)
+                ->maxLength(2000),
         ];
     }
 }

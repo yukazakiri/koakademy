@@ -89,6 +89,7 @@ export function CatalogRelationField({ id, kind, options, value, onValueChange, 
 
     const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
+        event.stopPropagation();
 
         const name = quickCreate.data.name.trim();
 

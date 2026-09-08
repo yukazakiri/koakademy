@@ -40,7 +40,8 @@ it('stores a book with its library identifiers', function (): void {
             'location' => 'Main Library A-12',
             'status' => 'available',
         ])
-        ->assertRedirect(route('administrators.library.books.index'));
+        ->assertRedirect(route('administrators.library.books.index'))
+        ->assertSessionHas('flash.message', 'Book added to the catalog.');
 
     $book = Book::query()
         ->where('accession_number', 'ACC-2026-0001')
@@ -267,6 +268,25 @@ it('validates required fields on book creation', function (): void {
 
     actingAs($admin)
         ->post(route('administrators.library.books.store'), [])
+        ->assertSessionHasErrors([
+            'title',
+            'author_id',
+            'category_id',
+            'total_copies',
+            'status',
+        ]);
+});
+
+it('returns required field errors for an Inertia book creation request', function (): void {
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+
+    actingAs($admin)
+        ->withHeaders([
+            'X-Inertia' => 'true',
+            'X-Requested-With' => 'XMLHttpRequest',
+        ])
+        ->post(route('administrators.library.books.store'), [])
+        ->assertRedirect()
         ->assertSessionHasErrors([
             'title',
             'author_id',

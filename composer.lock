@@ -20622,16 +20622,16 @@
         },
         {
             "name": "pestphp/pest-plugin-evals",
-            "version": "v5.0.2",
+            "version": "v5.0.3",
             "source": {
                 "type": "git",
                 "url": "https://github.com/pestphp/pest-plugin-evals.git",
-                "reference": "9a3c112d810327c50b9040983bf39481220e0093"
+                "reference": "6e2f2c652def5d342edbdddc08b2cde4c64c7118"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/pestphp/pest-plugin-evals/zipball/9a3c112d810327c50b9040983bf39481220e0093",
-                "reference": "9a3c112d810327c50b9040983bf39481220e0093",
+                "url": "https://api.github.com/repos/pestphp/pest-plugin-evals/zipball/6e2f2c652def5d342edbdddc08b2cde4c64c7118",
+                "reference": "6e2f2c652def5d342edbdddc08b2cde4c64c7118",
                 "shasum": ""
             },
             "require": {
@@ -20693,7 +20693,7 @@
                 "unit"
             ],
             "support": {
-                "source": "https://github.com/pestphp/pest-plugin-evals/tree/v5.0.2"
+                "source": "https://github.com/pestphp/pest-plugin-evals/tree/v5.0.3"
             },
             "funding": [
                 {
@@ -20709,7 +20709,7 @@
                     "type": "patreon"
                 }
             ],
-            "time": "2026-08-21T08:56:54+00:00"
+            "time": "2026-09-03T13:37:38+00:00"
         },
         {
             "name": "pestphp/pest-plugin-laravel",

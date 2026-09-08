@@ -14,9 +14,30 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { router } from "@inertiajs/react";
-import { AlertTriangle, ArrowRight, CheckCircle2, Layers3, ListChecks, ShieldCheck, Sparkles, Users } from "lucide-react";
+import {
+    AlertTriangle,
+    ArrowRight,
+    CheckCircle2,
+    Clock,
+    FileCode2,
+    FileSpreadsheet,
+    Layers,
+    Layers3,
+    ListChecks,
+    Plus,
+    Search,
+    ShieldAlert,
+    ShieldCheck,
+    Sparkles,
+    Users,
+    Workflow,
+    X,
+} from "lucide-react";
+import { useMemo, useState } from "react";
+
 import { BlueprintShell } from "./enrollment-policy/components/blueprint-shell";
 import { CreatePolicyDialog } from "./enrollment-policy/components/create-policy-dialog";
 import { PolicyHelpDrawer } from "./enrollment-policy/components/help-drawer";
@@ -48,18 +69,29 @@ export default function EnrollmentBlueprintWorkspace({
     const canUpdate = access.sections.pipeline?.can_update ?? false;
     const editor = usePolicyEditor(enrollment_policies);
     const current = blueprintSteps.find((step) => step.id === editor.currentStep) ?? blueprintSteps[0];
+    const [policySearch, setPolicySearch] = useState("");
+
+    const filteredPolicies = useMemo(() => {
+        const q = policySearch.trim().toLowerCase();
+        if (!q) return enrollment_policies;
+        return enrollment_policies.filter(
+            (p) => p.name.toLowerCase().includes(q) || Object.values(p.scope).some((v) => String(v).toLowerCase().includes(q)),
+        );
+    }, [enrollment_policies, policySearch]);
 
     return (
         <SystemManagementLayout
             user={user}
             access={access}
             activeSection="pipeline"
-            heading="Admissions & Enrollment"
-            description="Design, test, and publish the enrollment journey with safe, future-only changes."
+            heading="Admissions & Enrollment Engine"
+            description="Architect, simulate, and publish structured applicant journeys, academic clearance, and tuition billing blueprints."
         >
             <div className="space-y-6">
+                {/* Engine Rollout Status Alert */}
                 <RolloutBanner rollout={enrollment_rollout} canUpdate={canUpdate} />
 
+                {/* Telemetry Readiness Overview */}
                 <OverviewDashboard
                     policies={enrollment_policies}
                     rollout={enrollment_rollout}
@@ -68,73 +100,118 @@ export default function EnrollmentBlueprintWorkspace({
                     onRecommendedAction={() => editor.setCurrentStep(recommendedStep(editor.completedSteps))}
                 />
 
-                <div className="grid items-start gap-5 2xl:grid-cols-[19rem_minmax(0,1fr)]">
+                {/* Master Detail Workspace */}
+                <div className="grid items-start gap-5 2xl:grid-cols-[18.5rem_minmax(0,1fr)]">
+                    {/* Left Blueprint Selector Rail */}
                     <aside className="space-y-4 2xl:sticky 2xl:top-4">
-                        <Card>
-                            <CardHeader className="pb-3">
-                                <div className="flex items-center justify-between gap-3">
-                                    <div>
-                                        <CardTitle className="text-base">Blueprints</CardTitle>
-                                        <CardDescription className="mt-1">Choose what you want to configure.</CardDescription>
+                        <Card className="border-border/60 bg-card/70 shadow-xs backdrop-blur-xs">
+                            <CardHeader className="p-4 pb-3 border-b border-border/40">
+                                <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2">
+                                        <Layers className="size-4 text-primary" />
+                                        <CardTitle className="text-xs font-semibold uppercase tracking-wider text-foreground">
+                                            Policy Blueprints
+                                        </CardTitle>
                                     </div>
-                                    <Badge variant="secondary">{enrollment_policies.length}</Badge>
+                                    <Badge variant="outline" className="font-mono text-[10px] px-1.5 h-4.5 border-border/60">
+                                        {enrollment_policies.length}
+                                    </Badge>
                                 </div>
                             </CardHeader>
-                            <CardContent className="space-y-2">
-                                {enrollment_policies.map((policy) => (
-                                    <PolicyPicker
-                                        key={policy.id}
-                                        policy={policy}
-                                        selected={editor.policy?.id === policy.id}
-                                        onSelect={() => editor.setPolicyId(policy.id)}
-                                    />
-                                ))}
-                                {enrollment_policies.length === 0 ? (
-                                    <div className="text-muted-foreground rounded-xl border border-dashed p-4 text-sm leading-6">
-                                        Start with a global blueprint. Legacy enrollment remains active until you explicitly activate policies.
+
+                            <CardContent className="p-3 space-y-2">
+                                {enrollment_policies.length > 3 && (
+                                    <div className="relative">
+                                        <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                                        <Input
+                                            value={policySearch}
+                                            onChange={(e) => setPolicySearch(e.target.value)}
+                                            placeholder="Filter blueprints..."
+                                            className="h-8 pl-8 text-xs bg-background/70"
+                                        />
                                     </div>
-                                ) : null}
+                                )}
+
+                                <div className="space-y-1.5 max-h-[360px] overflow-y-auto pr-0.5">
+                                    {filteredPolicies.map((policy) => (
+                                        <PolicyPicker
+                                            key={policy.id}
+                                            policy={policy}
+                                            selected={editor.policy?.id === policy.id}
+                                            onSelect={() => editor.setPolicyId(policy.id)}
+                                        />
+                                    ))}
+                                    {filteredPolicies.length === 0 && (
+                                        <div className="text-center py-6 text-xs text-muted-foreground">
+                                            No matching blueprints found.
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="pt-2 border-t border-border/40">
+                                    <CreatePolicyDialog
+                                        presets={enrollment_presets}
+                                        options={enrollment_operator_options}
+                                        hasPublishedGlobalPolicy={has_global_published_policy}
+                                        canUpdate={canUpdate}
+                                    />
+                                </div>
                             </CardContent>
                         </Card>
 
-                        <CreatePolicyDialog
-                            presets={enrollment_presets}
-                            options={enrollment_operator_options}
-                            hasPublishedGlobalPolicy={has_global_published_policy}
-                            canUpdate={canUpdate}
-                        />
-
-                        <div className="bg-muted/25 rounded-xl border p-4">
-                            <p className="flex items-center gap-2 text-sm font-semibold">
-                                <ShieldCheck className="text-primary size-4" /> Safe by default
+                        {/* Safe by Default Notice */}
+                        <div className="rounded-xl border border-border/50 bg-muted/20 p-3.5 space-y-1.5">
+                            <p className="flex items-center gap-2 text-xs font-semibold text-foreground">
+                                <ShieldCheck className="size-4 text-emerald-500" />
+                                <span>Zero-Risk Simulation</span>
                             </p>
-                            <p className="text-muted-foreground mt-2 text-xs leading-5 text-pretty">
-                                Drafts and simulations do not change student records. Published changes apply only to future matching enrollments.
+                            <p className="text-[11px] text-muted-foreground leading-relaxed">
+                                Drafts and simulation tests never mutate active student records. Published rules apply only to future enrollments.
                             </p>
                         </div>
                     </aside>
 
+                    {/* Right Blueprint Studio Workspace */}
                     <main className="min-w-0">
                         {!editor.policy || !editor.version ? (
                             <EmptyWorkspace onCreate={() => undefined} />
                         ) : (
                             <div className="space-y-4">
-                                <div className="bg-card flex flex-col gap-3 rounded-2xl border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                                {/* Blueprint Header Status Strip */}
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-border/60 bg-card/75 p-4 shadow-xs backdrop-blur-xs">
                                     <div className="min-w-0">
                                         <div className="flex flex-wrap items-center gap-2">
-                                            <h2 className="truncate text-lg font-semibold">{editor.policy.name}</h2>
-                                            <Badge variant={editor.version.state === "draft" ? "secondary" : "default"}>
-                                                Version {editor.version.version} · {editor.version.state}
+                                            <h2 className="text-base font-bold text-foreground truncate">{editor.policy.name}</h2>
+                                            <Badge
+                                                variant="outline"
+                                                className={cn(
+                                                    "text-[10px] font-mono px-2 h-5",
+                                                    editor.version.state === "draft"
+                                                        ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                                                        : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+                                                )}
+                                            >
+                                                v{editor.version.version} • {editor.version.state.toUpperCase()}
                                             </Badge>
                                         </div>
-                                        <p className="text-muted-foreground mt-1 text-sm">
-                                            Stage {blueprintSteps.findIndex((step) => step.id === editor.currentStep) + 1} of {blueprintSteps.length}:{" "}
-                                            {current.title}
+                                        <p className="text-xs text-muted-foreground mt-0.5">
+                                            Stage {blueprintSteps.findIndex((step) => step.id === editor.currentStep) + 1} of{" "}
+                                            {blueprintSteps.length}: <span className="font-semibold text-foreground/80">{current.title}</span>
                                         </p>
                                     </div>
-                                    <div className="text-muted-foreground flex items-center gap-2 text-xs">
-                                        <span className={cn("size-2 rounded-full", editor.dirty ? "bg-amber-500" : "bg-emerald-500")} />
-                                        {editor.dirty ? "Unsaved changes" : "Latest draft saved"}
+
+                                    <div className="flex items-center gap-2 self-start sm:self-center">
+                                        <div className="flex items-center gap-1.5 rounded-lg border border-border/50 bg-background/50 px-2.5 py-1 text-xs text-muted-foreground">
+                                            <span
+                                                className={cn(
+                                                    "size-2 rounded-full",
+                                                    editor.dirty ? "bg-amber-500 animate-pulse" : "bg-emerald-500",
+                                                )}
+                                            />
+                                            <span className="font-medium text-[11px]">
+                                                {editor.dirty ? "Unsaved edits" : "Draft synced"}
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -147,7 +224,7 @@ export default function EnrollmentBlueprintWorkspace({
                                     onStepChange={editor.setCurrentStep}
                                     onSave={editor.save}
                                 >
-                                    {editor.currentStep === "scope" ? (
+                                    {editor.currentStep === "scope" && (
                                         <ScopeSection
                                             policy={editor.policy}
                                             version={editor.version}
@@ -155,8 +232,8 @@ export default function EnrollmentBlueprintWorkspace({
                                             loading={editor.loadingInheritance}
                                             documentationUrl={enrollment_documentation_url}
                                         />
-                                    ) : null}
-                                    {editor.currentStep === "eligibility" ? (
+                                    )}
+                                    {editor.currentStep === "eligibility" && (
                                         <EligibilitySection
                                             effective={editor.effectiveConfiguration}
                                             local={editor.localConfiguration}
@@ -166,8 +243,8 @@ export default function EnrollmentBlueprintWorkspace({
                                             onChange={editor.updateConfiguration}
                                             onHelp={editor.openHelp}
                                         />
-                                    ) : null}
-                                    {editor.currentStep === "documents" ? (
+                                    )}
+                                    {editor.currentStep === "documents" && (
                                         <DocumentsSection
                                             effective={editor.effectiveConfiguration}
                                             local={editor.localConfiguration}
@@ -175,8 +252,8 @@ export default function EnrollmentBlueprintWorkspace({
                                             onChange={editor.updateConfiguration}
                                             onHelp={editor.openHelp}
                                         />
-                                    ) : null}
-                                    {editor.currentStep === "assignment" ? (
+                                    )}
+                                    {editor.currentStep === "assignment" && (
                                         <AssignmentSection
                                             effective={editor.effectiveConfiguration}
                                             local={editor.localConfiguration}
@@ -186,8 +263,8 @@ export default function EnrollmentBlueprintWorkspace({
                                             onChange={editor.updateConfiguration}
                                             onHelp={editor.openHelp}
                                         />
-                                    ) : null}
-                                    {editor.currentStep === "billing" ? (
+                                    )}
+                                    {editor.currentStep === "billing" && (
                                         <BillingSection
                                             effective={editor.effectiveConfiguration}
                                             local={editor.localConfiguration}
@@ -197,8 +274,8 @@ export default function EnrollmentBlueprintWorkspace({
                                             onChange={editor.updateConfiguration}
                                             onHelp={editor.openHelp}
                                         />
-                                    ) : null}
-                                    {editor.currentStep === "workflow" ? (
+                                    )}
+                                    {editor.currentStep === "workflow" && (
                                         <WorkflowSection
                                             effective={editor.effectiveConfiguration}
                                             local={editor.localConfiguration}
@@ -207,8 +284,8 @@ export default function EnrollmentBlueprintWorkspace({
                                             inheritance={editor.inheritanceData}
                                             onChange={editor.updateConfiguration}
                                         />
-                                    ) : null}
-                                    {editor.currentStep === "publish" ? (
+                                    )}
+                                    {editor.currentStep === "publish" && (
                                         <PublishSection
                                             key={`${editor.policy.id}-${editor.version.id}`}
                                             policy={editor.policy}
@@ -223,7 +300,7 @@ export default function EnrollmentBlueprintWorkspace({
                                             canUpdate={canUpdate}
                                             onFix={editor.setCurrentStep}
                                         />
-                                    ) : null}
+                                    )}
                                 </BlueprintShell>
                             </div>
                         )}
@@ -247,46 +324,65 @@ function RolloutBanner({ rollout, canUpdate }: { rollout: EnrollmentPolicyPagePr
     const label = active ? "Policy engine active" : ready ? "Ready to activate" : "Legacy enrollment active";
 
     return (
-        <Alert className={cn("rounded-2xl", active ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/30 bg-amber-500/5")}>
-            <ShieldCheck className="size-4" />
-            <AlertTitle className="flex flex-wrap items-center gap-2">
-                {label}
-                <Badge variant="outline">{rollout.legacy_enrollments} legacy</Badge>
-                <Badge variant="outline">{rollout.policy_enrollments} policy</Badge>
-            </AlertTitle>
-            <AlertDescription className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <span className="max-w-3xl">
-                    {active
-                        ? "New enrollments use published blueprints. Existing enrollments remain pinned to their original runtime and policy snapshot."
-                        : "Your deployed workflow remains authoritative. Review the compatibility report, simulate a global blueprint, then activate explicitly."}
-                </span>
-                {active && canUpdate ? (
+        <Alert
+            className={cn(
+                "rounded-xl border shadow-xs p-4",
+                active
+                    ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-950 dark:text-emerald-200"
+                    : ready
+                      ? "border-sky-500/30 bg-sky-500/5 text-sky-950 dark:text-sky-200"
+                      : "border-amber-500/30 bg-amber-500/5 text-amber-950 dark:text-amber-200",
+            )}
+        >
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="flex items-start gap-3">
+                    <ShieldCheck className="size-4.5 mt-0.5 text-primary shrink-0" />
+                    <div>
+                        <AlertTitle className="text-sm font-semibold flex items-center gap-2">
+                            <span>{label}</span>
+                            <Badge variant="outline" className="font-mono text-[10px] h-4.5 border-border/60">
+                                {rollout.policy_enrollments} policy records
+                            </Badge>
+                            <Badge variant="outline" className="font-mono text-[10px] h-4.5 border-border/60">
+                                {rollout.legacy_enrollments} legacy records
+                            </Badge>
+                        </AlertTitle>
+                        <AlertDescription className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                            {active
+                                ? "New admissions follow matching blueprints. Prior enrollments remain locked to their pinned policy snapshot."
+                                : "Authoritative workflow is active. Simulate your blueprint, verify calculations, then switch live mode."}
+                        </AlertDescription>
+                    </div>
+                </div>
+
+                {active && canUpdate && (
                     <AlertDialog>
                         <AlertDialogTrigger asChild>
-                            <Button size="sm" variant="outline" className="h-10 shrink-0">
-                                Use legacy for future enrollments
+                            <Button size="sm" variant="outline" className="h-8 text-xs shrink-0 self-start sm:self-center bg-background">
+                                Revert Future Enrollments to Legacy
                             </Button>
                         </AlertDialogTrigger>
                         <AlertDialogContent>
                             <AlertDialogHeader>
-                                <AlertDialogTitle>Return future enrollments to legacy?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                    This affects only enrollments created after deactivation. Existing policy enrollments remain pinned and
-                                    operational.
+                                <AlertDialogTitle className="text-base font-semibold">Revert future admissions to legacy?</AlertDialogTitle>
+                                <AlertDialogDescription className="text-xs">
+                                    This applies solely to new registrations submitted after deactivation. Already enrolled students keep their
+                                    pinned policy snapshot.
                                 </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                                <AlertDialogCancel>Keep policies active</AlertDialogCancel>
+                                <AlertDialogCancel className="text-xs h-8">Keep Policies Active</AlertDialogCancel>
                                 <AlertDialogAction
+                                    className="text-xs h-8"
                                     onClick={() => router.post(deactivate.url(), { confirmation: "return new enrollments to legacy" })}
                                 >
-                                    Use legacy for future enrollments
+                                    Revert to Legacy
                                 </AlertDialogAction>
                             </AlertDialogFooter>
                         </AlertDialogContent>
                     </AlertDialog>
-                ) : null}
-            </AlertDescription>
+                )}
+            </div>
         </Alert>
     );
 }
@@ -307,45 +403,56 @@ function OverviewDashboard({
     const warningCount = rollout.errors.length + rollout.migration_warnings;
     const remaining = Math.max(0, blueprintSteps.length - completedSteps);
     const nextAction = !selectedPolicy
-        ? "Create your global blueprint"
+        ? "Create global blueprint"
         : completedSteps < blueprintSteps.length - 1
-          ? "Continue the guided setup"
+          ? "Continue guided setup"
           : rollout.active
-            ? "Review your next policy change"
-            : "Test the blueprint and prepare activation";
+            ? "Inspect next policy change"
+            : "Test blueprint & activate";
 
     return (
         <section aria-labelledby="workspace-overview" className="space-y-3">
-            <div className="flex items-end justify-between gap-4">
-                <div>
-                    <p className="text-primary text-xs font-semibold tracking-wide uppercase">Workspace overview</p>
-                    <h2 id="workspace-overview" className="mt-1 text-xl font-semibold tracking-tight">
-                        Enrollment readiness at a glance
-                    </h2>
+            <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        Admissions Pipeline Telemetry
+                    </span>
                 </div>
-                <Button variant="ghost" className="hidden h-10 sm:inline-flex" onClick={onRecommendedAction}>
-                    {nextAction} <ArrowRight className="size-4" />
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    className="hidden sm:inline-flex h-8 gap-1 text-xs text-primary hover:text-primary"
+                    onClick={onRecommendedAction}
+                >
+                    <span>{nextAction}</span>
+                    <ArrowRight className="size-3.5" />
                 </Button>
             </div>
+
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <OverviewCard
                     icon={ShieldCheck}
-                    label="Rollout status"
-                    value={rollout.active ? "Policy engine active" : rollout.ready ? "Ready to activate" : "Legacy active"}
+                    label="Engine State"
+                    value={rollout.active ? "Engine active" : rollout.ready ? "Ready to activate" : "Legacy active"}
                     tone={rollout.active ? "emerald" : "amber"}
                 />
-                <OverviewCard icon={Layers3} label="Policy coverage" value={`${policies.length} blueprint${policies.length === 1 ? "" : "s"}`} />
-                <OverviewCard icon={ListChecks} label="Setup progress" value={`${remaining} stage${remaining === 1 ? "" : "s"} remaining`} />
+                <OverviewCard
+                    icon={Layers3}
+                    label="Active Coverage"
+                    value={`${policies.length} blueprint${policies.length === 1 ? "" : "s"} defined`}
+                />
+                <OverviewCard
+                    icon={ListChecks}
+                    label="Stage Progression"
+                    value={`${remaining} stage${remaining === 1 ? "" : "s"} remaining`}
+                />
                 <OverviewCard
                     icon={warningCount ? AlertTriangle : CheckCircle2}
-                    label="Needs attention"
-                    value={warningCount ? `${warningCount} warning${warningCount === 1 ? "" : "s"}` : "No rollout warnings"}
+                    label="Health Diagnostics"
+                    value={warningCount ? `${warningCount} warning${warningCount === 1 ? "" : "s"}` : "Clean (No warnings)"}
                     tone={warningCount ? "amber" : "emerald"}
                 />
             </div>
-            <Button variant="outline" className="h-11 w-full justify-between sm:hidden" onClick={onRecommendedAction}>
-                {nextAction} <ArrowRight className="size-4" />
-            </Button>
         </section>
     );
 }
@@ -362,22 +469,21 @@ function OverviewCard({
     tone?: "default" | "amber" | "emerald";
 }) {
     return (
-        <Card className="shadow-none">
-            <CardContent className="flex min-h-24 items-start gap-3 p-4">
-                <div
-                    className={cn(
-                        "bg-primary/8 text-primary flex size-9 shrink-0 items-center justify-center rounded-xl",
-                        tone === "amber" && "bg-amber-500/10 text-amber-700 dark:text-amber-300",
-                        tone === "emerald" && "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-                    )}
-                >
-                    <Icon className="size-4" />
-                </div>
-                <div className="min-w-0">
-                    <p className="text-muted-foreground text-xs">{label}</p>
-                    <p className="mt-1 text-sm leading-5 font-semibold text-pretty">{value}</p>
-                </div>
-            </CardContent>
+        <Card className="border-border/60 bg-card/70 shadow-xs p-3.5 flex items-start gap-3">
+            <div
+                className={cn(
+                    "flex size-9 shrink-0 items-center justify-center rounded-xl",
+                    tone === "amber" && "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                    tone === "emerald" && "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+                    tone === "default" && "bg-primary/10 text-primary",
+                )}
+            >
+                <Icon className="size-4" />
+            </div>
+            <div className="min-w-0">
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{label}</p>
+                <p className="mt-0.5 text-xs font-semibold text-foreground truncate">{value}</p>
+            </div>
         </Card>
     );
 }
@@ -392,44 +498,54 @@ function PolicyPicker({ policy, selected, onSelect }: { policy: Policy; selected
             onClick={onSelect}
             aria-pressed={selected}
             className={cn(
-                "w-full rounded-xl border p-3 text-left transition-[border-color,background-color,box-shadow,scale] duration-150 active:scale-[0.98] motion-reduce:transition-none",
-                selected ? "border-primary bg-primary/5 shadow-sm" : "hover:border-primary/35 hover:bg-muted/40",
+                "w-full rounded-xl border p-2.5 text-left transition-all outline-none",
+                selected
+                    ? "border-primary bg-primary/5 shadow-xs ring-1 ring-primary/20"
+                    : "border-border/50 hover:bg-muted/50 hover:border-border",
             )}
         >
-            <span className="flex items-start justify-between gap-2">
-                <span className="line-clamp-2 text-sm font-semibold">{policy.name}</span>
-                {selected ? <CheckCircle2 className="text-primary size-4 shrink-0" /> : null}
-            </span>
-            <span className="mt-2 flex flex-wrap gap-1">
-                <Badge variant="outline" className="text-[10px] font-normal">
+            <div className="flex items-start justify-between gap-2">
+                <span className="line-clamp-1 text-xs font-semibold text-foreground">{policy.name}</span>
+                {selected && <CheckCircle2 className="size-3.5 text-primary shrink-0 mt-0.5" />}
+            </div>
+
+            <div className="mt-1.5 flex flex-wrap gap-1">
+                <Badge variant="outline" className="text-[9.5px] px-1 h-4 font-mono border-border/50">
                     {scopeValues.length ? scopeValues.slice(0, 2).join(" · ") : "Global"}
                 </Badge>
-                <Badge variant={draft ? "secondary" : policy.active_version_id ? "default" : "outline"} className="text-[10px]">
+                <Badge
+                    variant="outline"
+                    className={cn(
+                        "text-[9.5px] px-1 h-4",
+                        draft
+                            ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                            : policy.active_version_id
+                              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                              : "border-border/60 text-muted-foreground",
+                    )}
+                >
                     {draft ? "Draft" : policy.active_version_id ? "Published" : "Setup"}
                 </Badge>
-            </span>
+            </div>
         </button>
     );
 }
 
 function EmptyWorkspace({ onCreate }: { onCreate: () => void }) {
     return (
-        <Card className="border-dashed">
-            <CardContent className="flex min-h-[34rem] flex-col items-center justify-center px-6 text-center">
-                <div className="bg-primary/10 text-primary flex size-14 items-center justify-center rounded-2xl">
-                    <Sparkles className="size-7" />
+        <Card className="border-dashed border-border/70 bg-card/40">
+            <CardContent className="flex min-h-[28rem] flex-col items-center justify-center p-8 text-center">
+                <div className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                    <Sparkles className="size-6" />
                 </div>
-                <h2 className="mt-5 text-xl font-semibold">Build your first enrollment blueprint</h2>
-                <p className="text-muted-foreground mt-2 max-w-md text-sm leading-6 text-pretty">
-                    Choose a template, confirm who it covers, and follow seven guided stages. Your live enrollment process stays unchanged until
-                    activation.
+                <h2 className="mt-4 text-base font-semibold text-foreground">Create your first admissions blueprint</h2>
+                <p className="mt-1.5 max-w-md text-xs text-muted-foreground leading-relaxed">
+                    Choose a template, define coverage scope, and step through the 7 guided stages. Your live admission workflow continues uninterrupted until published.
                 </p>
-                <div className="text-muted-foreground mt-6 flex items-center gap-2 text-sm">
-                    <Users className="size-4" /> Designed for school administrators—no JSON or code required
+                <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground font-medium">
+                    <Users className="size-3.5" />
+                    <span>Visual administrator studio — zero code or raw schema editing</span>
                 </div>
-                <Button className="mt-6 h-11" onClick={onCreate} disabled>
-                    Use “New blueprint” to begin
-                </Button>
             </CardContent>
         </Card>
     );

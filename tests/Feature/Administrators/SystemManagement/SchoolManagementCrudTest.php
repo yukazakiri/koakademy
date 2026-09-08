@@ -55,6 +55,177 @@ it('updates any school record from system management', function (): void {
         ->and($school->dean_email)->toBe('dean.updated@example.com');
 });
 
+it('rejects invalid country codes when storing a school', function (): void {
+    $admin = User::factory()->create([
+        'role' => UserRole::Admin,
+        'school_id' => null,
+    ]);
+    grantSchoolManagementPermission($admin);
+
+    actingAs($admin)
+        ->post(route('administrators.system-management.school.store'), [
+            'name' => 'New School',
+            'code' => 'NEW01',
+            'country_code' => 'ZZ',
+            'school_level' => SchoolLevel::HigherEducation->value,
+        ])
+        ->assertRedirect()
+        ->assertSessionHasErrors('country_code');
+
+    expect(School::query()->count())->toBe(0);
+});
+
+it('rejects invalid country codes on direct school detail updates', function (): void {
+    $admin = User::factory()->create([
+        'role' => UserRole::Admin,
+        'school_id' => null,
+    ]);
+    grantSchoolManagementPermission($admin);
+    $school = School::factory()->create([
+        'country_code' => 'PH',
+    ]);
+
+    actingAs($admin)
+        ->put(route('administrators.system-management.school-details.update'), [
+            'school_id' => $school->id,
+            'name' => 'Updated School Name',
+            'code' => 'UPD01',
+            'country_code' => 'ZZ',
+            'school_level' => SchoolLevel::HigherEducation->value,
+            'description' => 'Updated description',
+            'location' => 'Updated location',
+            'phone' => '+63 900 000 0000',
+            'email' => 'school-updated@example.com',
+        ])
+        ->assertRedirect()
+        ->assertSessionHasErrors('country_code');
+
+    expect($school->refresh()->country_code)->toBe('PH');
+});
+
+it('rejects invalid country codes on managed school updates', function (): void {
+    $admin = User::factory()->create([
+        'role' => UserRole::Admin,
+        'school_id' => null,
+    ]);
+    grantSchoolManagementPermission($admin);
+    $school = School::factory()->create([
+        'country_code' => 'PH',
+    ]);
+
+    actingAs($admin)
+        ->put(route('administrators.system-management.schools.update', $school), [
+            'name' => 'Updated School Name',
+            'code' => 'UPD01',
+            'country_code' => 'ZZ',
+            'school_level' => SchoolLevel::HigherEducation->value,
+            'description' => 'Updated description',
+            'location' => 'Updated location',
+            'phone' => '+63 900 000 0000',
+            'email' => 'school-updated@example.com',
+            'dean_name' => 'Dean Updated',
+            'dean_email' => 'dean.updated@example.com',
+        ])
+        ->assertRedirect()
+        ->assertSessionHasErrors('country_code');
+
+    expect($school->refresh()->country_code)->toBe('PH');
+});
+
+it('normalizes trimmed lowercase country codes when storing a school', function (): void {
+    $admin = User::factory()->create([
+        'role' => UserRole::Admin,
+        'school_id' => null,
+    ]);
+    grantSchoolManagementPermission($admin);
+
+    actingAs($admin)
+        ->post(route('administrators.system-management.school.store'), [
+            'name' => 'New School',
+            'code' => 'NEW01',
+            'country_code' => ' us ',
+            'school_level' => SchoolLevel::HigherEducation->value,
+        ])
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    expect(School::query()->sole()->country_code)->toBe('US');
+});
+
+it('normalizes trimmed lowercase country codes on direct school detail updates and allows clearing them', function (): void {
+    $admin = User::factory()->create([
+        'role' => UserRole::Admin,
+        'school_id' => null,
+    ]);
+    grantSchoolManagementPermission($admin);
+    $school = School::factory()->create([
+        'country_code' => 'PH',
+    ]);
+
+    actingAs($admin)
+        ->put(route('administrators.system-management.school-details.update'), [
+            'school_id' => $school->id,
+            'name' => 'Updated School Name',
+            'code' => 'UPD01',
+            'country_code' => ' us ',
+            'school_level' => SchoolLevel::HigherEducation->value,
+            'description' => 'Updated description',
+            'location' => 'Updated location',
+            'phone' => '+63 900 000 0000',
+            'email' => 'school-updated@example.com',
+        ])
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    expect($school->refresh()->country_code)->toBe('US');
+
+    actingAs($admin)
+        ->put(route('administrators.system-management.school-details.update'), [
+            'school_id' => $school->id,
+            'name' => 'Updated School Name',
+            'code' => 'UPD01',
+            'country_code' => '   ',
+            'school_level' => SchoolLevel::HigherEducation->value,
+            'description' => 'Updated description',
+            'location' => 'Updated location',
+            'phone' => '+63 900 000 0000',
+            'email' => 'school-updated@example.com',
+        ])
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    expect($school->refresh()->country_code)->toBeNull();
+});
+
+it('allows clearing the managed school country code', function (): void {
+    $admin = User::factory()->create([
+        'role' => UserRole::Admin,
+        'school_id' => null,
+    ]);
+    grantSchoolManagementPermission($admin);
+    $school = School::factory()->create([
+        'country_code' => 'PH',
+    ]);
+
+    actingAs($admin)
+        ->put(route('administrators.system-management.schools.update', $school), [
+            'name' => 'Updated School Name',
+            'code' => 'UPD01',
+            'country_code' => '   ',
+            'school_level' => SchoolLevel::HigherEducation->value,
+            'description' => 'Updated description',
+            'location' => 'Updated location',
+            'phone' => '+63 900 000 0000',
+            'email' => 'school-updated@example.com',
+            'dean_name' => 'Dean Updated',
+            'dean_email' => 'dean.updated@example.com',
+        ])
+        ->assertRedirect()
+        ->assertSessionHas('success');
+
+    expect($school->refresh()->country_code)->toBeNull();
+});
+
 it('updates an institution school level from onboarding', function (): void {
     $admin = User::factory()->create([
         'role' => UserRole::Admin,

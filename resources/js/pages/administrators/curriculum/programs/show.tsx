@@ -64,6 +64,11 @@ type ProgramPayload = {
     bundled_qualifications: string[] | null;
     advanced_topics: string | null;
     ched_major: string | null;
+    ched_reporting_level: string | null;
+    ched_program_code: string | null;
+    ched_major_code: string | null;
+    ched_year_implemented: number | null;
+    ched_other_delivery_mode: string | null;
     ched_has_thesis: boolean | null;
     ched_program_status: string | null;
     ched_authority_category: string | null;
@@ -116,7 +121,13 @@ interface Props {
     classification_options: ClassificationOption[];
     departments: DepartmentOption[];
     course_types: { id: number; name: string }[];
-    ched_options: { has_thesis: ChedOption[]; program_statuses: ChedOption[]; authority_categories: ChedOption[]; delivery_modes: ChedOption[] };
+    ched_options: {
+        reporting_levels: ChedOption[];
+        has_thesis: ChedOption[];
+        program_statuses: ChedOption[];
+        authority_categories: ChedOption[];
+        delivery_modes: ChedOption[];
+    };
 }
 
 const yearOptions = [
@@ -175,6 +186,11 @@ export default function CurriculumProgramShow({
         bundled_qualifications: (program.bundled_qualifications ?? []).join(", "),
         advanced_topics: program.advanced_topics ?? "",
         ched_major: program.ched_major ?? "",
+        ched_reporting_level: program.ched_reporting_level ?? "",
+        ched_program_code: program.ched_program_code ?? "",
+        ched_major_code: program.ched_major_code ?? "",
+        ched_year_implemented: fmt(program.ched_year_implemented),
+        ched_other_delivery_mode: program.ched_other_delivery_mode ?? "",
         ched_has_thesis: program.ched_has_thesis === null ? "" : program.ched_has_thesis ? "1" : "0",
         ched_program_status: program.ched_program_status ?? "",
         ched_authority_category: program.ched_authority_category ?? "",
@@ -721,7 +737,8 @@ export default function CurriculumProgramShow({
                                             <div className="md:col-span-2">
                                                 <p className="text-sm font-semibold">TESDA pathway details</p>
                                                 <p className="text-muted-foreground text-xs">
-                                                    Use an institutional diploma when this pathway bundles multiple qualifications and includes an internship.
+                                                    Use an institutional diploma when this pathway bundles multiple qualifications and includes an
+                                                    internship.
                                                 </p>
                                             </div>
                                             <div className="grid gap-2">
@@ -836,6 +853,47 @@ export default function CurriculumProgramShow({
                                                 Leave unknown fields empty; they will remain in the reporting-quality queue.
                                             </p>
                                         </div>
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="ched-reporting-level">CHED worksheet / education level</Label>
+                                            <Select
+                                                value={programForm.data.ched_reporting_level || "__unknown"}
+                                                onValueChange={(value) =>
+                                                    programForm.setData("ched_reporting_level", value === "__unknown" ? "" : (value ?? ""))
+                                                }
+                                            >
+                                                <SelectTrigger id="ched-reporting-level">
+                                                    <SelectValue placeholder="Select education level" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="__unknown">Unknown</SelectItem>
+                                                    {ched_options.reporting_levels.map((option) => (
+                                                        <SelectItem key={option.value} value={option.value}>
+                                                            {option.label}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            <FieldError message={programForm.errors.ched_reporting_level} />
+                                        </div>
+                                        {(
+                                            [
+                                                { key: "ched_program_code", label: "Official CHED program code", type: "text" },
+                                                { key: "ched_major_code", label: "CHED major code (if applicable)", type: "text" },
+                                                { key: "ched_year_implemented", label: "Year implemented (PO / DO)", type: "number" },
+                                                { key: "ched_other_delivery_mode", label: "Other delivery mode (OT)", type: "text" },
+                                            ] as const
+                                        ).map((field) => (
+                                            <div key={field.key} className="grid gap-2">
+                                                <Label htmlFor={field.key}>{field.label}</Label>
+                                                <Input
+                                                    id={field.key}
+                                                    type={field.type}
+                                                    value={programForm.data[field.key]}
+                                                    onChange={(event) => programForm.setData(field.key, event.target.value)}
+                                                />
+                                                <FieldError message={programForm.errors[field.key]} />
+                                            </div>
+                                        ))}
                                         <div className="grid gap-2">
                                             <Label>Major</Label>
                                             <Input

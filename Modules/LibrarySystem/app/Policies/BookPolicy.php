@@ -14,6 +14,20 @@ final class BookPolicy
 {
     use HandlesAuthorization;
 
+    public function before(AuthUser $authUser, string $ability): ?bool
+    {
+        if ($authUser instanceof User && in_array($authUser->role, [
+            UserRole::Developer,
+            UserRole::SuperAdmin,
+            UserRole::Admin,
+            UserRole::Librarian,
+        ], true)) {
+            return true;
+        }
+
+        return null;
+    }
+
     public function viewAny(AuthUser $authUser): bool
     {
         return $authUser->can('ViewAny:Book');

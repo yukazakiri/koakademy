@@ -4,6 +4,14 @@
 
 KoAkademy is a production-capable beta. It provides a hardened reference topology, health endpoint, migrations, tests, and operator docs. Each institution remains responsible for staging, capacity planning, backups, monitoring, privacy, security review, and recovery exercises.
 
+## Which regulatory reporting providers are built in?
+
+Only the CHED E-Form B/C provider is built into this release. Compatible
+providers for other jurisdictions can be added by an application or Composer
+module through the documented adapter contract, but they are not bundled or
+supported until their implementation, scope rules, tests, and documentation
+are contributed explicitly. See the [Regulatory Report Provider guide](https://github.com/yukazakiri/koakademy/blob/master/docs/src/content/docs/development/regulatory-report-providers.mdx).
+
 ## Which release is supported?
 
 Only the latest stable, non-prerelease release is supported. Development and prerelease images are for evaluation. Read the changelog and release notes before upgrading.

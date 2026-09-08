@@ -31,6 +31,7 @@ import {
     CheckCircle2,
     Clock,
     Compass,
+    Globe,
     GraduationCap,
     Info,
     Layers,
@@ -58,6 +59,7 @@ import type { CurriculumCapability, School, SystemManagementPageProps } from "./
 interface CreateSchoolFormData {
     name: string;
     code: string;
+    country_code: string;
     school_level: string;
     description: string;
     location: string;
@@ -71,6 +73,7 @@ interface SchoolDetailsFormData {
     school_id: string;
     name: string;
     code: string;
+    country_code: string;
     school_level: string;
     description: string;
     location: string;
@@ -124,6 +127,7 @@ export default function SystemManagementSchoolPage({
         school_id: active_school?.id?.toString() || "",
         name: active_school?.name || "",
         code: active_school?.code || "",
+        country_code: active_school?.country_code || "",
         school_level: active_school?.school_level || "",
         description: active_school?.description || "",
         location: active_school?.location || "",
@@ -134,6 +138,7 @@ export default function SystemManagementSchoolPage({
     const createSchoolForm = useForm<CreateSchoolFormData>({
         name: "",
         code: "",
+        country_code: "",
         school_level: "",
         description: "",
         location: "",
@@ -146,6 +151,7 @@ export default function SystemManagementSchoolPage({
     const editSchoolForm = useForm<CreateSchoolFormData>({
         name: "",
         code: "",
+        country_code: "",
         school_level: "",
         description: "",
         location: "",
@@ -182,6 +188,7 @@ export default function SystemManagementSchoolPage({
             school_id: active_school.id.toString(),
             name: active_school.name,
             code: active_school.code,
+            country_code: active_school.country_code || "",
             school_level: active_school.school_level || "",
             description: active_school.description || "",
             location: active_school.location || "",
@@ -249,6 +256,7 @@ export default function SystemManagementSchoolPage({
         editSchoolForm.setData({
             name: school.name,
             code: school.code,
+            country_code: school.country_code || "",
             school_level: school.school_level || "",
             description: school.description || "",
             location: school.location || "",
@@ -341,6 +349,7 @@ export default function SystemManagementSchoolPage({
             (s) =>
                 s.name.toLowerCase().includes(query) ||
                 s.code.toLowerCase().includes(query) ||
+                (s.country_code && s.country_code.toLowerCase().includes(query)) ||
                 (s.location && s.location.toLowerCase().includes(query)) ||
                 (s.dean_name && s.dean_name.toLowerCase().includes(query)),
         );
@@ -372,6 +381,11 @@ export default function SystemManagementSchoolPage({
                                         <Badge variant="outline" className="font-mono text-[10px] px-1.5 h-5 border-border/60">
                                             {active_school.code}
                                         </Badge>
+                                        {active_school.country_code && (
+                                            <Badge variant="outline" className="font-mono text-[10px] px-1.5 h-5 border-border/60">
+                                                {active_school.country_code}
+                                            </Badge>
+                                        )}
                                         <Badge variant="outline" className="text-[10px] px-1.5 h-5 border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
                                             Operating Campus
                                         </Badge>
@@ -490,7 +504,7 @@ export default function SystemManagementSchoolPage({
                                                 />
                                             </div>
 
-                                            <div className="space-y-1.5 sm:col-span-3">
+                                            <div className="space-y-1.5 sm:col-span-2">
                                                 <Label htmlFor="school_level" className="text-xs font-semibold">
                                                     Primary Education Tier
                                                 </Label>
@@ -510,6 +524,22 @@ export default function SystemManagementSchoolPage({
                                                         ))}
                                                     </SelectContent>
                                                 </Select>
+                                            </div>
+
+                                            <div className="space-y-1.5">
+                                                <Label htmlFor="school_country_code" className="text-xs font-semibold">
+                                                    Country Code (ISO 3166-1)
+                                                </Label>
+                                                <Input
+                                                    id="school_country_code"
+                                                    value={schoolDetailsForm.data.country_code}
+                                                    onChange={(e) => schoolDetailsForm.setData("country_code", e.target.value.toUpperCase().slice(0, 2))}
+                                                    maxLength={2}
+                                                    pattern="[A-Za-z]{2}"
+                                                    autoCapitalize="characters"
+                                                    placeholder="PH"
+                                                    className="font-mono text-xs uppercase"
+                                                />
                                             </div>
 
                                             <div className="space-y-1.5 sm:col-span-3">
@@ -954,6 +984,11 @@ export default function SystemManagementSchoolPage({
                                                         <Badge variant="outline" className="font-mono text-[10px] px-1.5 h-4.5">
                                                             {school.code}
                                                         </Badge>
+                                                        {school.country_code && (
+                                                            <Badge variant="outline" className="font-mono text-[10px] px-1.5 h-4.5 border-border/60">
+                                                                {school.country_code}
+                                                            </Badge>
+                                                        )}
                                                         <Badge
                                                             variant={school.is_active ? "outline" : "secondary"}
                                                             className={cn(
@@ -1073,6 +1108,12 @@ export default function SystemManagementSchoolPage({
                                                 <p className="font-semibold text-xs text-foreground truncate">{school.name}</p>
                                                 <div className="flex items-center gap-1.5 mt-0.5">
                                                     <span className="font-mono text-[10px] text-muted-foreground">{school.code}</span>
+                                                    {school.country_code && (
+                                                        <>
+                                                            <span className="text-muted-foreground/50">•</span>
+                                                            <span className="font-mono text-[10px] text-muted-foreground">{school.country_code}</span>
+                                                        </>
+                                                    )}
                                                     <span className="text-muted-foreground/50">•</span>
                                                     <span className="text-[10px] text-muted-foreground">{schoolLevelLabel(school.school_level)}</span>
                                                 </div>
@@ -1153,25 +1194,43 @@ export default function SystemManagementSchoolPage({
                                 </div>
                             </div>
 
-                            <div className="space-y-1.5">
-                                <Label htmlFor="new_school_level" className="text-xs font-semibold">
-                                    Education Level
-                                </Label>
-                                <Select
-                                    value={createSchoolForm.data.school_level}
-                                    onValueChange={(val) => createSchoolForm.setData("school_level", val ?? "")}
-                                >
-                                    <SelectTrigger id="new_school_level" className="h-8.5 text-xs">
-                                        <SelectValue placeholder="Select primary level" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {SCHOOL_LEVEL_OPTIONS.map((opt) => (
-                                            <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                                {opt.label}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                            <div className="grid gap-3 sm:grid-cols-3">
+                                <div className="space-y-1.5 sm:col-span-2">
+                                    <Label htmlFor="new_school_level" className="text-xs font-semibold">
+                                        Education Level
+                                    </Label>
+                                    <Select
+                                        value={createSchoolForm.data.school_level}
+                                        onValueChange={(val) => createSchoolForm.setData("school_level", val ?? "")}
+                                    >
+                                        <SelectTrigger id="new_school_level" className="h-8.5 text-xs">
+                                            <SelectValue placeholder="Select primary level" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {SCHOOL_LEVEL_OPTIONS.map((opt) => (
+                                                <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                                                    {opt.label}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="new_school_country_code" className="text-xs font-semibold">
+                                        Country Code
+                                    </Label>
+                                    <Input
+                                        id="new_school_country_code"
+                                        value={createSchoolForm.data.country_code}
+                                        onChange={(e) => createSchoolForm.setData("country_code", e.target.value.toUpperCase().slice(0, 2))}
+                                        maxLength={2}
+                                        pattern="[A-Za-z]{2}"
+                                        autoCapitalize="characters"
+                                        placeholder="PH"
+                                        className="font-mono text-xs uppercase"
+                                    />
+                                </div>
                             </div>
 
                             <div className="space-y-1.5">
@@ -1313,25 +1372,43 @@ export default function SystemManagementSchoolPage({
                                 </div>
                             </div>
 
-                            <div className="space-y-1.5">
-                                <Label htmlFor="edit_school_level" className="text-xs font-semibold">
-                                    Education Level
-                                </Label>
-                                <Select
-                                    value={editSchoolForm.data.school_level}
-                                    onValueChange={(val) => editSchoolForm.setData("school_level", val ?? "")}
-                                >
-                                    <SelectTrigger id="edit_school_level" className="h-8.5 text-xs">
-                                        <SelectValue placeholder="Select primary level" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {SCHOOL_LEVEL_OPTIONS.map((opt) => (
-                                            <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                                {opt.label}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                            <div className="grid gap-3 sm:grid-cols-3">
+                                <div className="space-y-1.5 sm:col-span-2">
+                                    <Label htmlFor="edit_school_level" className="text-xs font-semibold">
+                                        Education Level
+                                    </Label>
+                                    <Select
+                                        value={editSchoolForm.data.school_level}
+                                        onValueChange={(val) => editSchoolForm.setData("school_level", val ?? "")}
+                                    >
+                                        <SelectTrigger id="edit_school_level" className="h-8.5 text-xs">
+                                            <SelectValue placeholder="Select primary level" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {SCHOOL_LEVEL_OPTIONS.map((opt) => (
+                                                <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                                                    {opt.label}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="edit_school_country_code" className="text-xs font-semibold">
+                                        Country Code
+                                    </Label>
+                                    <Input
+                                        id="edit_school_country_code"
+                                        value={editSchoolForm.data.country_code}
+                                        onChange={(e) => editSchoolForm.setData("country_code", e.target.value.toUpperCase().slice(0, 2))}
+                                        maxLength={2}
+                                        pattern="[A-Za-z]{2}"
+                                        autoCapitalize="characters"
+                                        placeholder="PH"
+                                        className="font-mono text-xs uppercase"
+                                    />
+                                </div>
                             </div>
 
                             <div className="space-y-1.5">

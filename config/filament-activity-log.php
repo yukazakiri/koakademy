@@ -174,7 +174,6 @@ return [
     |
     */
     'timeline' => [
-        'show_action' => true,
         'icon' => 'heroicon-m-clock',
     ],
 
@@ -251,7 +250,6 @@ return [
     */
     'widgets' => [
         'enabled' => true,
-        'dashboard' => true,
         'widgets' => [
             AlizHarb\ActivityLog\Widgets\ActivityChartWidget::class,
             AlizHarb\ActivityLog\Widgets\LatestActivityWidget::class,

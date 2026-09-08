@@ -30,7 +30,7 @@ final class BookInfolist
                 Section::make('Cover Image')
                     ->schema(self::getCoverImageSection())
                     ->collapsed()
-                    ->hidden(fn (Book $record): bool => ! $record->cover_image),
+                    ->hidden(fn (Book $record): bool => ! ($record->cover_image_path || $record->cover_image)),
             ]);
     }
 
@@ -73,13 +73,19 @@ final class BookInfolist
             TextEntry::make('publisher')
                 ->label('Publisher'),
 
-            TextEntry::make('published_date')
-                ->label('Published Date')
-                ->date('M d, Y'),
+            TextEntry::make('publication_year')
+                ->label('Publication Year')
+                ->placeholder('—'),
 
-            TextEntry::make('edition')
-                ->label('Edition')
-                ->suffix(' Edition'),
+            TextEntry::make('status')
+                ->label('Status')
+                ->badge()
+                ->color(fn (string $state): string => match ($state) {
+                    'available' => 'success',
+                    'borrowed' => 'warning',
+                    'maintenance' => 'danger',
+                    default => 'gray',
+                }),
 
             TextEntry::make('total_copies')
                 ->label('Total Copies')
@@ -101,22 +107,16 @@ final class BookInfolist
                 ->columnSpanFull()
                 ->markdown(),
 
-            TextEntry::make('language')
-                ->label('Language')
-                ->badge(),
-
             TextEntry::make('pages')
                 ->label('Pages')
-                ->suffix(' pages'),
-
-            TextEntry::make('price')
-                ->label('Price')
-                ->money('USD'),
+                ->suffix(' pages')
+                ->placeholder('—'),
 
             TextEntry::make('location')
                 ->label('Shelf Location')
                 ->badge()
-                ->color('gray'),
+                ->color('gray')
+                ->placeholder('—'),
 
             TextEntry::make('created_at')
                 ->label('Added to Library')
@@ -130,6 +130,7 @@ final class BookInfolist
             ImageEntry::make('cover_image')
                 ->label('Cover Image')
                 ->disk('public')
+                ->state(fn (Book $record): ?string => $record->cover_image_path ?: $record->cover_image)
                 ->height(300)
                 ->columnSpanFull(),
         ];

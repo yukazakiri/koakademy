@@ -2,6 +2,26 @@
 
 declare(strict_types=1);
 
+$_SERVER['APP_BASE_PATH'] = $_SERVER['APP_BASE_PATH'] ?? dirname(__DIR__);
+$_ENV['APP_BASE_PATH'] = $_ENV['APP_BASE_PATH'] ?? $_SERVER['APP_BASE_PATH'];
+putenv('APP_BASE_PATH='.$_SERVER['APP_BASE_PATH']);
+
+spl_autoload_register(function (string $class): bool {
+    if (str_starts_with($class, 'Modules\\')) {
+        $parts = explode('\\', $class);
+        $module = $parts[1] ?? '';
+        $sub = implode('/', array_slice($parts, 2));
+        $file = dirname(__DIR__)."/Modules/{$module}/app/{$sub}.php";
+        if (is_file($file)) {
+            require_once $file;
+
+            return true;
+        }
+    }
+
+    return false;
+}, true, true);
+
 /*
 |--------------------------------------------------------------------------
 | Test Case

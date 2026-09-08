@@ -58,10 +58,13 @@ use App\Services\Newsletter\NewsletterSettingsService;
 use App\Services\Newsletter\NewsletterSubscriptionService;
 use App\Services\VersionService;
 use App\Support\HostingSecurity;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Migrations\Migrator;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\View\FileViewFinder;
@@ -101,6 +104,8 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->scoped(GeneralSettingsService::class);
         $this->app->scoped(NewsletterSettingsService::class);
         $this->app->scoped(NewsletterSubscriptionService::class);
+        $this->app->scoped(\App\Services\SentrySettingsService::class);
+        $this->app->scoped(\App\Services\ErrorReportingService::class);
         $this->app->scoped(\App\Services\TenantContext::class);
         $this->app->bind(AssessmentFormPdfRenderer::class, LaravelAssessmentFormPdfRenderer::class);
     }
@@ -110,6 +115,21 @@ final class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        RateLimiter::for('api', function (Request $request): Limit {
+            return Limit::perMinute((int) config('api.rate_limit', 60))
+                ->by($request->user()?->getAuthIdentifier() ?? $request->ip());
+        });
+
+        RateLimiter::for('api-login', function (Request $request): Limit {
+            return Limit::perMinute((int) config('api.login_rate_limit', 5))
+                ->by(mb_strtolower((string) $request->input('email')).'|'.$request->ip());
+        });
+
+        RateLimiter::for('api-otp', function (Request $request): Limit {
+            return Limit::perMinute((int) config('api.otp_rate_limit', 5))
+                ->by((string) $request->input('challenge_id', $request->ip()));
+        });
+
         Model::unguard();
         StudentTransaction::observe(StudentTransactionObserver::class);
 
@@ -136,6 +156,7 @@ final class AppServiceProvider extends ServiceProvider
 
         $this->app->booted(function (): void {
             $this->removeMissingViewFinderPaths();
+            $this->applySentrySettings();
         });
     }
 
@@ -212,6 +233,19 @@ final class AppServiceProvider extends ServiceProvider
             Log::warning('Failed to sync feature showcase config dynamically', [
                 'error' => $e->getMessage(),
             ]);
+        }
+    }
+
+    /**
+     * Apply admin-configured error reporting settings over the env-based defaults.
+     * Best-effort: skipped during console setup/migration when the DB is unavailable.
+     */
+    private function applySentrySettings(): void
+    {
+        try {
+            app(\App\Services\ErrorReportingService::class)->applyToConfig();
+        } catch (Throwable $e) {
+            Log::debug('Skipping error reporting settings sync', ['error' => $e->getMessage()]);
         }
     }
 

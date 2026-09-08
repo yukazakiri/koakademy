@@ -5,8 +5,23 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 import { useForm } from "@inertiajs/react";
-import { AlertTriangle, FileBadge2, Loader2, MailCheck, ReceiptText, Save } from "lucide-react";
+import {
+    AlertTriangle,
+    CheckCircle2,
+    FileBadge2,
+    FileCheck,
+    FileText,
+    History,
+    Loader2,
+    Lock,
+    MailCheck,
+    QrCode,
+    ReceiptText,
+    Save,
+    Shield,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import SystemManagementLayout from "./layout";
@@ -14,7 +29,11 @@ import type { FinanceDocumentSettings, SystemManagementPageProps } from "./types
 
 type FinanceDocumentForm = Omit<FinanceDocumentSettings, "mail_delivery_available">;
 
-export default function FinanceDocumentsSettingsPage({ user, finance_document_settings: settings, access }: SystemManagementPageProps) {
+export default function FinanceDocumentsSettingsPage({
+    user,
+    finance_document_settings: settings,
+    access,
+}: SystemManagementPageProps) {
     const form = useForm<FinanceDocumentForm>({
         automatic_receipts_enabled: settings.automatic_receipts_enabled,
         require_paper_or_reference: settings.require_paper_or_reference,
@@ -35,77 +54,120 @@ export default function FinanceDocumentsSettingsPage({ user, finance_document_se
             access={access}
             activeSection="finance_documents"
             heading="Finance Documents"
-            description="Control how official student eReceipts and eInvoices are issued and delivered."
+            description="Control how official student eReceipts and eInvoices are generated, secured, and delivered."
         >
-            {!settings.mail_delivery_available ? (
-                <Alert variant="destructive">
-                    <AlertTriangle className="size-4" />
-                    <AlertTitle>Email delivery is unavailable</AlertTitle>
-                    <AlertDescription>
-                        Enable the Email notification channel and configure a sender address before documents can be delivered.
-                    </AlertDescription>
-                </Alert>
-            ) : (
-                <Alert>
-                    <MailCheck className="size-4" />
-                    <AlertTitle>Email delivery is ready</AlertTitle>
-                    <AlertDescription>Official finance documents will use the configured application mail provider.</AlertDescription>
-                </Alert>
-            )}
+            <div className="space-y-6">
+                {!settings.mail_delivery_available ? (
+                    <Alert variant="destructive" className="border-destructive/30 bg-destructive/5">
+                        <AlertTriangle className="size-4 text-destructive" />
+                        <AlertTitle className="text-sm font-semibold">Email delivery is unavailable</AlertTitle>
+                        <AlertDescription className="text-xs">
+                            Enable the Email notification channel and configure a sender address before documents can be delivered.
+                        </AlertDescription>
+                    </Alert>
+                ) : (
+                    <Alert className="border-emerald-500/30 bg-emerald-500/5 text-emerald-900 dark:text-emerald-200">
+                        <MailCheck className="size-4 text-emerald-600 dark:text-emerald-400" />
+                        <AlertTitle className="text-sm font-semibold">Email delivery is active</AlertTitle>
+                        <AlertDescription className="text-xs text-muted-foreground">
+                            Official finance documents will use the configured application mail provider.
+                        </AlertDescription>
+                    </Alert>
+                )}
 
-            <Card>
-                <CardHeader className="flex-row items-start justify-between gap-4">
-                    <div>
-                        <CardTitle className="flex items-center gap-2">
-                            <FileBadge2 className="size-5" />
-                            Issuance policy
-                        </CardTitle>
-                        <CardDescription className="mt-1">
-                            Documents are immutable after issuance and include a public QR verification code.
-                        </CardDescription>
-                    </div>
-                    <Button onClick={submit} disabled={form.processing || !access.sections.finance_documents?.can_update}>
-                        {form.processing ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-                        Save settings
-                    </Button>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    <SettingRow
-                        icon={ReceiptText}
-                        label="Automatic official eReceipts"
-                        description="Queue one eReceipt when a positive transaction reaches paid or completed status."
-                        checked={form.data.automatic_receipts_enabled}
-                        onChange={(checked) => form.setData("automatic_receipts_enabled", checked)}
-                    />
-                    <SettingRow
-                        icon={FileBadge2}
-                        label="Require a paper O.R. reference"
-                        description="Hold eReceipt delivery until staff enter the institution's paper Official Receipt number."
-                        checked={form.data.require_paper_or_reference}
-                        onChange={(checked) => form.setData("require_paper_or_reference", checked)}
-                    />
-                    <SettingRow
-                        icon={MailCheck}
-                        label="Manual outstanding-balance eInvoices"
-                        description="Allow finance staff to issue an official eInvoice from an unpaid Billing Desk row."
-                        checked={form.data.manual_invoices_enabled}
-                        onChange={(checked) => form.setData("manual_invoices_enabled", checked)}
-                    />
-                </CardContent>
-            </Card>
+                {/* Issuance Policy Card */}
+                <Card className="border-border/60 bg-card/70 shadow-xs backdrop-blur-xs">
+                    <CardHeader className="flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border/40 pb-4">
+                        <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                                <CardTitle className="text-base font-semibold">Issuance & Delivery Policy</CardTitle>
+                                <Badge variant="outline" className="text-[11px] font-normal border-border/60">
+                                    Official Records
+                                </Badge>
+                            </div>
+                            <CardDescription className="text-xs">
+                                Issued receipts and invoices are cryptographically stamped and include a public QR verification code.
+                            </CardDescription>
+                        </div>
 
-            <Card>
-                <CardHeader>
-                    <CardTitle className="text-base">Document contract</CardTitle>
-                </CardHeader>
-                <CardContent className="flex flex-wrap gap-2 text-sm">
-                    <Badge variant="outline">Institution-issued</Badge>
-                    <Badge variant="outline">Immutable snapshot</Badge>
-                    <Badge variant="outline">Private PDF storage</Badge>
-                    <Badge variant="outline">QR verification</Badge>
-                    <Badge variant="outline">Audited delivery attempts</Badge>
-                </CardContent>
-            </Card>
+                        <Button
+                            onClick={submit}
+                            disabled={form.processing || !access.sections.finance_documents?.can_update}
+                            className="h-9 gap-1.5 self-start sm:self-center"
+                        >
+                            {form.processing ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                            <span>Save Settings</span>
+                        </Button>
+                    </CardHeader>
+
+                    <CardContent className="pt-4 divide-y divide-border/40">
+                        <SettingRow
+                            icon={ReceiptText}
+                            label="Automatic Official eReceipts"
+                            description="Automatically queue and generate an official eReceipt when a positive tuition transaction reaches paid or completed status."
+                            checked={form.data.automatic_receipts_enabled}
+                            onChange={(checked) => form.setData("automatic_receipts_enabled", checked)}
+                        />
+                        <SettingRow
+                            icon={FileBadge2}
+                            label="Require Paper O.R. Reference"
+                            description="Hold eReceipt delivery until finance staff record the physical paper Official Receipt booklet reference number."
+                            checked={form.data.require_paper_or_reference}
+                            onChange={(checked) => form.setData("require_paper_or_reference", checked)}
+                        />
+                        <SettingRow
+                            icon={MailCheck}
+                            label="Manual Outstanding Balance eInvoices"
+                            description="Allow authorized finance officers to dispatch an official Statement of Account eInvoice directly from unpaid Billing Desk accounts."
+                            checked={form.data.manual_invoices_enabled}
+                            onChange={(checked) => form.setData("manual_invoices_enabled", checked)}
+                        />
+                    </CardContent>
+                </Card>
+
+                {/* Document Security & Contract Specifications */}
+                <Card className="border-border/60 bg-card/70 shadow-xs backdrop-blur-xs">
+                    <CardHeader className="pb-3 border-b border-border/40">
+                        <div className="flex items-center gap-2">
+                            <Shield className="size-4 text-primary" />
+                            <CardTitle className="text-sm font-semibold">Document Contract & Security Guarantees</CardTitle>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="pt-4">
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                            <div className="flex items-start gap-2.5 rounded-lg border border-border/40 bg-background/50 p-3">
+                                <FileCheck className="size-4 text-emerald-500 mt-0.5 shrink-0" />
+                                <div>
+                                    <p className="text-xs font-semibold text-foreground">Immutable PDF Record</p>
+                                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                                        Once finalized, document contents and totals cannot be altered or overwritten.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-start gap-2.5 rounded-lg border border-border/40 bg-background/50 p-3">
+                                <QrCode className="size-4 text-sky-500 mt-0.5 shrink-0" />
+                                <div>
+                                    <p className="text-xs font-semibold text-foreground">Public QR Verification</p>
+                                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                                        Students, banks, and auditors can scan the QR code to verify document authenticity online.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-start gap-2.5 rounded-lg border border-border/40 bg-background/50 p-3">
+                                <History className="size-4 text-violet-500 mt-0.5 shrink-0" />
+                                <div>
+                                    <p className="text-xs font-semibold text-foreground">Delivery Audit Log</p>
+                                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                                        Every email delivery attempt, receipt download, and timestamp is tracked.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
         </SystemManagementLayout>
     );
 }
@@ -124,14 +186,16 @@ function SettingRow({
     onChange: (checked: boolean) => void;
 }) {
     return (
-        <div className="flex items-center justify-between gap-5 rounded-lg border p-4">
-            <div className="flex items-start gap-3">
-                <div className="bg-primary/10 text-primary rounded-lg p-2">
-                    <Icon className="size-5" />
+        <div className="flex items-center justify-between gap-5 py-4 first:pt-2 last:pb-2">
+            <div className="flex items-start gap-3.5">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary mt-0.5">
+                    <Icon className="size-4" />
                 </div>
                 <div>
-                    <Label className="text-sm font-semibold">{label}</Label>
-                    <p className="text-muted-foreground mt-1 max-w-2xl text-sm">{description}</p>
+                    <Label className="text-sm font-semibold text-foreground cursor-pointer" onClick={() => onChange(!checked)}>
+                        {label}
+                    </Label>
+                    <p className="text-xs text-muted-foreground mt-0.5 max-w-2xl leading-relaxed">{description}</p>
                 </div>
             </div>
             <Switch checked={checked} onCheckedChange={onChange} aria-label={label} />

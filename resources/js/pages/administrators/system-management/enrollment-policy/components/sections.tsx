@@ -1195,12 +1195,12 @@ export function PublishSection({
             {/* Advanced JSON Migration Details */}
             <details className="rounded-xl border border-border/60 bg-card/50 text-xs">
                 <summary className="flex cursor-pointer items-center justify-between p-3.5 font-semibold text-muted-foreground hover:text-foreground">
-                    <span>Advanced Schema Backup & JSON Import</span>
+                    <span>Advanced backup and technical details</span>
                     <span className="text-[10px] font-mono uppercase bg-muted/60 px-2 py-0.5 rounded">Technical</span>
                 </summary>
                 <div className="space-y-3.5 border-t border-border/40 p-4">
                     <p className="text-muted-foreground text-xs leading-relaxed">
-                        Export an encrypted snapshot or import an existing blueprint configuration into a new working draft.
+                        JSON is never edited here. Upload a trusted KoAkademy backup, review its plain-language summary, and import it as a separate draft.
                     </p>
                     <Input type="file" accept="application/json,.json" onChange={(event) => readImport(event.target.files?.[0], setImportPreview)} className="h-8.5 text-xs" />
                     {importPreview && (

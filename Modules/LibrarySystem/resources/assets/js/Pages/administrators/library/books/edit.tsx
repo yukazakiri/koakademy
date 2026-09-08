@@ -130,6 +130,20 @@ function getBookFormErrors(errors: object): BookFormError[] {
     });
 }
 
+function getBookErrors(errors: Record<string, unknown>): Record<string, unknown> {
+    const bookBag = errors.book;
+
+    if (bookBag && typeof bookBag === "object" && !Array.isArray(bookBag)) {
+        return bookBag as Record<string, unknown>;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(errors, "digitalEdition")) {
+        return {};
+    }
+
+    return errors;
+}
+
 export default function LibraryBookEdit({ user, book, options }: Props) {
     const form = useForm<BookFormData>({
         title: book?.title ?? "",
@@ -156,8 +170,7 @@ export default function LibraryBookEdit({ user, book, options }: Props) {
     const errorSummaryRef = useRef<HTMLDivElement | null>(null);
     const coverPreview = coverUploadPreview ?? (form.data.cover_image ? form.data.cover_image : book?.cover_image_url ? book.cover_image_url : null);
     const HeaderIcon = book ? BookOpen : BookPlus;
-    const pageErrors = page.props.errors ?? {};
-    const visibleBookErrors = Object.keys(pageErrors).length > 0 ? pageErrors : bookErrors;
+    const visibleBookErrors = Object.keys(bookErrors).length > 0 ? bookErrors : getBookErrors(page.props.errors ?? {});
     const bookFormErrors = getBookFormErrors(visibleBookErrors);
     const bookError = (field: string) => normalizeBookError(visibleBookErrors[field]);
 
@@ -172,9 +185,11 @@ export default function LibraryBookEdit({ user, book, options }: Props) {
     };
 
     const handleRequestError = (errors: object) => {
-        setBookErrors(errors);
-        form.setError(errors);
-        const errorCount = getBookFormErrors(errors).length;
+        const scopedErrors = getBookErrors(errors as Record<string, unknown>);
+
+        setBookErrors(scopedErrors);
+        form.setError(scopedErrors);
+        const errorCount = getBookFormErrors(scopedErrors).length;
 
         toast.error(book ? "Book could not be updated." : "Book could not be created.", {
             description:
@@ -191,6 +206,7 @@ export default function LibraryBookEdit({ user, book, options }: Props) {
         event.preventDefault();
 
         const requestOptions = {
+            errorBag: "book",
             forceFormData: true,
             preserveScroll: true,
             onSuccess: () => {
@@ -601,6 +617,7 @@ function DigitalEditionSection({ book, rightsBases }: { book: BookRecord; rights
                 rights_confirmed: false,
             }));
             form.post(storeDigitalEdition.url(book.id), {
+                errorBag: "digitalEdition",
                 forceFormData: true,
                 preserveScroll: true,
                 onSuccess: () => form.setData("pdf", null),
@@ -610,6 +627,7 @@ function DigitalEditionSection({ book, rightsBases }: { book: BookRecord; rights
 
         if (edition) {
             form.put(updateDigitalEdition.url(book.id), {
+                errorBag: "digitalEdition",
                 preserveScroll: true,
             });
         }

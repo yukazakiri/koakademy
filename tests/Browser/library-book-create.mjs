@@ -9,7 +9,7 @@ if (!email || !password) {
     throw new Error("Set LIBRARY_E2E_EMAIL and LIBRARY_E2E_PASSWORD before running this smoke test.");
 }
 
-async function clickVisibleCommandItem(page) {
+async function clickVisibleCommandItem(page, expectedLabel = null) {
     await page.waitForFunction(() =>
         [...document.querySelectorAll("[cmdk-item]")].some((element) => {
             const rect = element.getBoundingClientRect();
@@ -18,13 +18,36 @@ async function clickVisibleCommandItem(page) {
     );
 
     for (const item of await page.$$("[cmdk-item]")) {
-        if (await item.boundingBox()) {
+        if (
+            (await item.boundingBox()) &&
+            (expectedLabel === null || (await item.evaluate((element, label) => (element.textContent ?? "").includes(label), expectedLabel)))
+        ) {
             await item.click();
             return;
         }
     }
 
-    throw new Error("No visible catalog option was available.");
+    throw new Error(`No visible catalog option${expectedLabel ? ` named ${expectedLabel}` : ""} was available.`);
+}
+
+async function createCatalogOption(page, kind, name) {
+    await page.click(`button[aria-label="Create a new ${kind}"]`);
+    await page.waitForSelector('[role="dialog"]');
+    await page.locator(`#${kind}_id-quick-name`).fill(name);
+    await page.click('[role="dialog"] button[type="submit"]');
+    await page.waitForFunction(
+        ({ id, expectedName }) => document.querySelector(`#${id}`)?.textContent?.includes(expectedName) ?? false,
+        {},
+        { id: `${kind}_id`, expectedName: name },
+    );
+    await page.waitForSelector('[role="dialog"]', { hidden: true });
+}
+
+async function selectCatalogOption(page, fieldId, name) {
+    await page.click(`#${fieldId}`);
+    await page.waitForSelector("[cmdk-item]");
+    await clickVisibleCommandItem(page, name);
+    await waitForCommandItemsToClose(page);
 }
 
 async function waitForCommandItemsToClose(page) {
@@ -67,12 +90,12 @@ try {
     await page.waitForFunction(() => window.location.pathname.endsWith("/administrators/library/books/create"), { timeout: 15000 });
     await page.waitForSelector('[data-testid="book-form"]');
 
+    const testAuthorName = `Browser Author ${Date.now()}`;
+    const testCategoryName = `Browser Category ${Date.now()}`;
     const requestCountBeforeQuickCreate = bookRequestCount;
-    await page.click('button[aria-label="Create a new author"]');
-    await page.waitForSelector('[role="dialog"]');
+    await createCatalogOption(page, "author", testAuthorName);
+    await createCatalogOption(page, "category", testCategoryName);
     assert.equal(bookRequestCount, requestCountBeforeQuickCreate, "quick-create controls must not submit the book form");
-    await page.click('[role="dialog"] button[type="button"]');
-    await page.waitForSelector('[role="dialog"]', { hidden: true });
 
     await page.click('[data-testid="book-submit"]');
     await page.waitForSelector('[data-testid="book-form-errors"]');
@@ -86,11 +109,11 @@ try {
     const title = `Browser Book ${Date.now()}`;
     await page.locator("#title").fill(title);
 
-    for (const fieldId of ["author_id", "category_id"]) {
-        await page.click(`#${fieldId}`);
-        await page.waitForSelector("[cmdk-item]");
-        await clickVisibleCommandItem(page);
-        await waitForCommandItemsToClose(page);
+    for (const [fieldId, optionName] of [
+        ["author_id", testAuthorName],
+        ["category_id", testCategoryName],
+    ]) {
+        await selectCatalogOption(page, fieldId, optionName);
         assert.doesNotMatch(await page.$eval(`#${fieldId}`, (element) => element.textContent ?? ""), /Search (authors|categories)/i);
     }
 
@@ -102,11 +125,11 @@ try {
     await page.waitForSelector('[data-testid="book-form"]');
     await page.locator("#title").fill(`Network Failure Book ${Date.now()}`);
 
-    for (const fieldId of ["author_id", "category_id"]) {
-        await page.click(`#${fieldId}`);
-        await page.waitForSelector("[cmdk-item]");
-        await clickVisibleCommandItem(page);
-        await waitForCommandItemsToClose(page);
+    for (const [fieldId, optionName] of [
+        ["author_id", testAuthorName],
+        ["category_id", testCategoryName],
+    ]) {
+        await selectCatalogOption(page, fieldId, optionName);
     }
 
     await page.setOfflineMode(true);

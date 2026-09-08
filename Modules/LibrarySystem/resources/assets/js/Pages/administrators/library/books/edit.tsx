@@ -16,9 +16,23 @@ import { Textarea } from "@/components/ui/textarea";
 import { index as libraryBooksIndex } from "@/routes/administrators/library/books";
 import { read as readDigitalBook } from "@/routes/library/books";
 import type { User } from "@/types/user";
-import { Head, Link, router, useForm } from "@inertiajs/react";
-import { ArrowLeft, BookOpen, BookPlus, CheckCircle2, Download, FileCheck2, FileText, Save, ShieldCheck, Trash2, UploadCloud } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { Head, Link, router, useForm, usePage } from "@inertiajs/react";
+import {
+    ArrowLeft,
+    BookOpen,
+    BookPlus,
+    CheckCircle2,
+    Download,
+    FileCheck2,
+    FileText,
+    Loader2,
+    Save,
+    ShieldCheck,
+    Trash2,
+    UploadCloud,
+} from "lucide-react";
+import { useRef, useState, type FormEvent } from "react";
+import { toast } from "sonner";
 import { CatalogIdentifierField, CatalogRelationField, type CatalogOption } from "./components/catalog-entry-controls";
 
 interface BookFormData {
@@ -89,6 +103,33 @@ interface Props {
     };
 }
 
+interface BookPageProps {
+    errors?: Record<string, unknown>;
+}
+
+interface BookFormError {
+    field: string;
+    message: string;
+}
+
+function normalizeBookError(value: unknown): string | null {
+    if (Array.isArray(value)) {
+        const firstMessage = value.find((message): message is string => typeof message === "string" && message.trim() !== "");
+
+        return firstMessage ?? null;
+    }
+
+    return typeof value === "string" && value.trim() !== "" ? value : null;
+}
+
+function getBookFormErrors(errors: object): BookFormError[] {
+    return Object.entries(errors).flatMap(([field, value]) => {
+        const message = normalizeBookError(value);
+
+        return message ? [{ field, message }] : [];
+    });
+}
+
 export default function LibraryBookEdit({ user, book, options }: Props) {
     const form = useForm<BookFormData>({
         title: book?.title ?? "",
@@ -109,9 +150,16 @@ export default function LibraryBookEdit({ user, book, options }: Props) {
         status: book?.status ?? "available",
     });
 
+    const page = usePage<BookPageProps>();
     const [coverUploadPreview, setCoverUploadPreview] = useState<string | null>(null);
+    const [bookErrors, setBookErrors] = useState<Record<string, unknown>>({});
+    const errorSummaryRef = useRef<HTMLDivElement | null>(null);
     const coverPreview = coverUploadPreview ?? (form.data.cover_image ? form.data.cover_image : book?.cover_image_url ? book.cover_image_url : null);
     const HeaderIcon = book ? BookOpen : BookPlus;
+    const pageErrors = page.props.errors ?? {};
+    const visibleBookErrors = Object.keys(pageErrors).length > 0 ? pageErrors : bookErrors;
+    const bookFormErrors = getBookFormErrors(visibleBookErrors);
+    const bookError = (field: string) => normalizeBookError(visibleBookErrors[field]);
 
     const handleTotalCopiesChange = (value: string) => {
         const availableCopiesFollowTotal = !book && form.data.available_copies === form.data.total_copies;
@@ -123,27 +171,84 @@ export default function LibraryBookEdit({ user, book, options }: Props) {
         }
     };
 
-    const handleSubmit = (event: FormEvent) => {
+    const handleRequestError = (errors: object) => {
+        setBookErrors(errors);
+        form.setError(errors);
+        const errorCount = getBookFormErrors(errors).length;
+
+        toast.error(book ? "Book could not be updated." : "Book could not be created.", {
+            description:
+                errorCount > 0 ? "Review the highlighted fields and try again." : "Please try again or contact support if the problem continues.",
+        });
+
+        window.setTimeout(() => {
+            errorSummaryRef.current?.focus({ preventScroll: true });
+            errorSummaryRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 0);
+    };
+
+    const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
+
+        const requestOptions = {
+            forceFormData: true,
+            preserveScroll: true,
+            onSuccess: () => {
+                setBookErrors({});
+                toast.success(book ? "Book updated successfully." : "Book created successfully.", { id: "library-book-save" });
+            },
+            onError: handleRequestError,
+            onHttpException: () => {
+                toast.error(book ? "Book could not be updated." : "Book could not be created.", {
+                    description: "The server returned an unexpected response. Please try again.",
+                });
+
+                return false;
+            },
+            onNetworkError: () => {
+                toast.error(book ? "Book could not be updated." : "Book could not be created.", {
+                    description: "The connection was interrupted. Check your network and try again.",
+                });
+
+                return false;
+            },
+        };
 
         if (book) {
             form.transform((data) => ({ ...data, _method: "put" }));
-            form.post(updateBook.url(book.id), {
-                forceFormData: true,
-            });
+            form.post(updateBook.url(book.id), requestOptions);
             return;
         }
 
-        form.post(storeBook.url(), {
-            forceFormData: true,
-        });
+        form.post(storeBook.url(), requestOptions);
     };
 
     return (
         <AdminLayout user={user} title={book ? "Edit Book" : "Add Book"}>
             <Head title={`Administrators • ${book ? "Edit" : "Add"} Book`} />
 
-            <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+            <form onSubmit={handleSubmit} className="flex flex-col gap-6" data-testid="book-form">
+                {bookFormErrors.length > 0 && (
+                    <div
+                        ref={errorSummaryRef}
+                        id="book-form-errors"
+                        data-testid="book-form-errors"
+                        role="alert"
+                        tabIndex={-1}
+                        className="border-destructive/30 bg-destructive/10 text-destructive rounded-2xl border p-4 outline-none"
+                    >
+                        <p className="font-semibold">Review the highlighted fields before saving.</p>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
+                            {bookFormErrors.map(({ field, message }) => (
+                                <li key={field}>
+                                    <a className="underline underline-offset-2" href={`#${field}`}>
+                                        {message}
+                                    </a>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
                 <Card className="to-background relative overflow-hidden border-0 bg-gradient-to-br from-emerald-500/12 via-sky-500/5 shadow-xs ring-1 ring-emerald-700/10">
                     <div className="pointer-events-none absolute -top-20 -right-16 size-52 rounded-full bg-emerald-400/10 blur-3xl" />
                     <CardHeader className="relative flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
@@ -169,9 +274,16 @@ export default function LibraryBookEdit({ user, book, options }: Props) {
                                     Back to books
                                 </Link>
                             </Button>
-                            <Button type="submit" size="lg" className="transition-transform active:scale-[0.96]" disabled={form.processing}>
-                                <Save className="size-4" />
-                                {book ? "Save changes" : "Create book"}
+                            <Button
+                                nativeButton
+                                type="submit"
+                                size="lg"
+                                className="transition-transform active:scale-[0.96]"
+                                disabled={form.processing}
+                                data-testid="book-submit"
+                            >
+                                {form.processing ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                                {form.processing ? (book ? "Saving…" : "Creating…") : book ? "Save changes" : "Create book"}
                             </Button>
                         </div>
                     </CardHeader>
@@ -202,8 +314,13 @@ export default function LibraryBookEdit({ user, book, options }: Props) {
                                     placeholder="Enter the title as it appears on the book"
                                     className="h-11 rounded-xl"
                                     autoFocus={!book}
+                                    aria-invalid={Boolean(bookError("title"))}
                                 />
-                                {form.errors.title && <p className="text-destructive text-xs">{form.errors.title}</p>}
+                                {bookError("title") && (
+                                    <p id="title-error" className="text-destructive text-xs">
+                                        {bookError("title")}
+                                    </p>
+                                )}
                             </div>
 
                             <CatalogRelationField
@@ -212,7 +329,7 @@ export default function LibraryBookEdit({ user, book, options }: Props) {
                                 options={options.authors}
                                 value={form.data.author_id}
                                 onValueChange={(value) => form.setData("author_id", value)}
-                                error={form.errors.author_id}
+                                error={bookError("author_id") ?? undefined}
                             />
 
                             <CatalogRelationField
@@ -221,7 +338,7 @@ export default function LibraryBookEdit({ user, book, options }: Props) {
                                 options={options.categories}
                                 value={form.data.category_id}
                                 onValueChange={(value) => form.setData("category_id", value)}
-                                error={form.errors.category_id}
+                                error={bookError("category_id") ?? undefined}
                             />
 
                             <CatalogIdentifierField
@@ -229,7 +346,7 @@ export default function LibraryBookEdit({ user, book, options }: Props) {
                                 kind="isbn"
                                 value={form.data.isbn}
                                 onValueChange={(value) => form.setData("isbn", value)}
-                                error={form.errors.isbn}
+                                error={bookError("isbn") ?? undefined}
                             />
 
                             <CatalogIdentifierField
@@ -237,7 +354,7 @@ export default function LibraryBookEdit({ user, book, options }: Props) {
                                 kind="call_number"
                                 value={form.data.call_number}
                                 onValueChange={(value) => form.setData("call_number", value)}
-                                error={form.errors.call_number}
+                                error={bookError("call_number") ?? undefined}
                             />
 
                             <div className="space-y-2">
@@ -248,9 +365,10 @@ export default function LibraryBookEdit({ user, book, options }: Props) {
                                     onChange={(event) => form.setData("accession_number", event.target.value)}
                                     placeholder="Copy-specific accession code"
                                     className="h-11 rounded-xl"
+                                    aria-invalid={Boolean(bookError("accession_number"))}
                                 />
                                 <p className="text-muted-foreground text-xs text-pretty">Use a unique code for this physical catalog record.</p>
-                                {form.errors.accession_number && <p className="text-destructive text-xs">{form.errors.accession_number}</p>}
+                                {bookError("accession_number") && <p className="text-destructive text-xs">{bookError("accession_number")}</p>}
                             </div>
 
                             <div className="space-y-2">
@@ -273,8 +391,9 @@ export default function LibraryBookEdit({ user, book, options }: Props) {
                                     onChange={(event) => form.setData("publication_year", event.target.value)}
                                     placeholder="YYYY"
                                     className="h-11 rounded-xl"
+                                    aria-invalid={Boolean(bookError("publication_year"))}
                                 />
-                                {form.errors.publication_year && <p className="text-destructive text-xs">{form.errors.publication_year}</p>}
+                                {bookError("publication_year") && <p className="text-destructive text-xs">{bookError("publication_year")}</p>}
                             </div>
 
                             <div className="space-y-2">
@@ -327,8 +446,9 @@ export default function LibraryBookEdit({ user, book, options }: Props) {
                                         value={form.data.total_copies}
                                         onChange={(event) => handleTotalCopiesChange(event.target.value)}
                                         className="h-10 rounded-xl tabular-nums"
+                                        aria-invalid={Boolean(bookError("total_copies"))}
                                     />
-                                    {form.errors.total_copies && <p className="text-destructive text-xs">{form.errors.total_copies}</p>}
+                                    {bookError("total_copies") && <p className="text-destructive text-xs">{bookError("total_copies")}</p>}
                                 </div>
                                 <div className="space-y-2">
                                     <Label htmlFor="available_copies">Available Copies</Label>
@@ -338,8 +458,9 @@ export default function LibraryBookEdit({ user, book, options }: Props) {
                                         value={form.data.available_copies}
                                         onChange={(event) => form.setData("available_copies", event.target.value)}
                                         className="h-10 rounded-xl tabular-nums"
+                                        aria-invalid={Boolean(bookError("available_copies"))}
                                     />
-                                    {form.errors.available_copies && <p className="text-destructive text-xs">{form.errors.available_copies}</p>}
+                                    {bookError("available_copies") && <p className="text-destructive text-xs">{bookError("available_copies")}</p>}
                                 </div>
                                 <div className="space-y-2">
                                     <Label htmlFor="location">Shelf Location</Label>
@@ -352,9 +473,9 @@ export default function LibraryBookEdit({ user, book, options }: Props) {
                                     />
                                 </div>
                                 <div className="space-y-2">
-                                    <Label>Status</Label>
+                                    <Label htmlFor="status">Status</Label>
                                     <Select value={form.data.status} onValueChange={(value) => form.setData("status", value)}>
-                                        <SelectTrigger className="h-10 rounded-xl">
+                                        <SelectTrigger id="status" className="h-10 rounded-xl" aria-invalid={Boolean(bookError("status"))}>
                                             <SelectValue placeholder="Select status" />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -365,7 +486,7 @@ export default function LibraryBookEdit({ user, book, options }: Props) {
                                             ))}
                                         </SelectContent>
                                     </Select>
-                                    {form.errors.status && <p className="text-destructive text-xs">{form.errors.status}</p>}
+                                    {bookError("status") && <p className="text-destructive text-xs">{bookError("status")}</p>}
                                 </div>
                                 <div className="space-y-2">
                                     <Label htmlFor="cover_image">Cover Image URL</Label>
@@ -384,13 +505,14 @@ export default function LibraryBookEdit({ user, book, options }: Props) {
                                         type="file"
                                         accept="image/*"
                                         className="h-10 rounded-xl"
+                                        aria-invalid={Boolean(bookError("cover_image_upload"))}
                                         onChange={(event) => {
                                             const file = event.target.files?.[0] || null;
                                             form.setData("cover_image_upload", file);
                                             setCoverUploadPreview(file ? URL.createObjectURL(file) : null);
                                         }}
                                     />
-                                    {form.errors.cover_image_upload && <p className="text-destructive text-xs">{form.errors.cover_image_upload}</p>}
+                                    {bookError("cover_image_upload") && <p className="text-destructive text-xs">{bookError("cover_image_upload")}</p>}
                                 </div>
                                 {coverPreview && (
                                     <div className="bg-muted/40 overflow-hidden rounded-xl p-2">
@@ -706,8 +828,8 @@ function DigitalEditionSection({ book, rightsBases }: { book: BookRecord; rights
                                         onCheckedChange={(checked) => form.setData("rights_confirmed", checked === true)}
                                     />
                                     <Label htmlFor="rights_confirmed" className="text-sm leading-6">
-                                        I reviewed the documentation and confirm KoAkademy has the right to provide this PDF to authenticated users under
-                                        the selected terms.
+                                        I reviewed the documentation and confirm KoAkademy has the right to provide this PDF to authenticated users
+                                        under the selected terms.
                                     </Label>
                                 </div>
                             )}

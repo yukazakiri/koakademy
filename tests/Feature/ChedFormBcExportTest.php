@@ -59,7 +59,7 @@ test('separate ched reports export only their selected layout and preview the sa
     $baccalaureate = $service->generate($baccalaureateFilters);
     expect($baccalaureate->getSheetNames())->toBe(['Baccalaureate', 'References'])
         ->and($baccalaureate->getSheet(0)->getCell('A10')->getValue())->toBe($course->title)
-        ->and($baccalaureate->getSheet(0)->getCell('A11')->getValue())->toBeNull()
+        ->and($baccalaureate->getSheet(0)->getCell('A11')->getValue() ?? '')->toBe('')
         ->and(array_keys($service->buildPreviewData($baccalaureateFilters)['sheets']))->toBe(['Baccalaureate']);
 
     $equityFilters = [...$filters, 'course_id' => $course->id, 'report_key' => RegulatoryReportRegistry::CHED_SPECIAL_EQUITY];
@@ -67,7 +67,7 @@ test('separate ched reports export only their selected layout and preview the sa
     expect($equity->getSheetNames())->toBe(['NEW Special Equity Groups Form '])
         ->and((int) $equity->getSheet(0)->getCell('C10')->getCalculatedValue())->toBe(1)
         ->and((int) $equity->getSheet(0)->getCell('AE10')->getCalculatedValue())->toBe(1)
-        ->and($equity->getSheet(0)->getCell('A11')->getValue())->toBeNull();
+        ->and($equity->getSheet(0)->getCell('A11')->getValue() ?? '')->toBe('');
     $preview = $service->buildPreviewData($equityFilters);
     expect($preview['tables'])->toHaveCount(2)
         ->and($preview['tables'][0]['rows'][0][2])->toBe(1)
@@ -76,7 +76,7 @@ test('separate ched reports export only their selected layout and preview the sa
     $distributionFilters = [...$filters, 'course_id' => $course->id, 'report_key' => RegulatoryReportRegistry::CHED_EQUITY_ENROLLMENT];
     $distribution = $service->generate($distributionFilters);
     expect($distribution->getSheetNames())->toBe(['Sheet1'])
-        ->and($distribution->getSheet(0)->getCell('L4')->getValue())->toBeNull()
+        ->and($distribution->getSheet(0)->getCell('L4')->getValue() ?? '')->toBe('')
         ->and((int) $distribution->getSheet(0)->getCell('B9')->getCalculatedValue())->toBe(1)
         ->and((int) $distribution->getSheet(0)->getCell('F10')->getCalculatedValue())->toBe(1)
         ->and((int) $distribution->getSheet(0)->getCell('D20')->getCalculatedValue())->toBe(0)

@@ -1,4 +1,5 @@
 import { toast } from "sonner";
+import { route } from "ziggy-js";
 
 interface SubmitForm<TForm = any> {
     put: (url: string, options: { onSuccess: () => void; onError: () => void }) => void;

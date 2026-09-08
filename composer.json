@@ -122,7 +122,8 @@
     "repositories": [
         {
             "type": "composer",
-            "url": "https://yukazakiri.github.io/koakademy-modules"
+            "url": "https://yukazakiri.github.io/koakademy-modules",
+            "canonical": false
         }
     ],
     "scripts": {

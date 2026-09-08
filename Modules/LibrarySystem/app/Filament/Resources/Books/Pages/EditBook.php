@@ -22,4 +22,18 @@ final class EditBook extends EditRecord
             RestoreAction::make(),
         ];
     }
+
+    protected function mutateFormDataBeforeSave(array $data): array
+    {
+        $totalCopies = max(1, (int) ($data['total_copies'] ?? 1));
+        $availableCopies = isset($data['available_copies']) && $data['available_copies'] !== null && $data['available_copies'] !== ''
+            ? (int) $data['available_copies']
+            : $totalCopies;
+
+        $data['total_copies'] = $totalCopies;
+        $data['available_copies'] = min($availableCopies, $totalCopies);
+        $data['status'] = $data['status'] ?? 'available';
+
+        return $data;
+    }
 }

@@ -1,8 +1,9 @@
 import AdminLayout from "@/components/administrators/admin-layout";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { create as createBook } from "@/routes/administrators/library/books";
 import type { User } from "@/types/user";
 import { Head, Link } from "@inertiajs/react";
 import { BookOpen, BookText, BookmarkCheck, ClipboardList, FolderOpen, GraduationCap, Library, Share2 } from "lucide-react";
@@ -96,9 +97,9 @@ export default function LibraryIndex({ user, stats, recent }: Props) {
                             </div>
                         </div>
                         <div className="flex flex-wrap gap-2">
-                            <Button asChild>
-                                <Link href={route("administrators.library.books.create")}>Add Book</Link>
-                            </Button>
+                            <Link href={createBook.url()} className={buttonVariants()}>
+                                Add Book
+                            </Link>
                             <Button variant="outline" asChild>
                                 <Link href={route("administrators.library.research-papers.create")}>Add Research</Link>
                             </Button>

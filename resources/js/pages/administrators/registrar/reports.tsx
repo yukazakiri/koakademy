@@ -4,18 +4,37 @@ import AdminLayout from "@/components/administrators/admin-layout";
 import { SemesterSelector, type SemesterSelectorProps } from "@/components/semester-selector";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 import { BulkReportsDialog } from "@/pages/administrators/enrollments/enrollment-dialogs";
 import { ReportContent } from "@/pages/administrators/enrollments/report-content";
 import type { BulkReportFilters, EnrollmentManagementProps, ReportFilters } from "@/pages/administrators/enrollments/types";
 import { Head } from "@inertiajs/react";
 import axios from "axios";
-import { Check, ChevronRight, Download, FileSpreadsheet, FileText, Loader2, Printer, Search, Settings2, Sparkles } from "lucide-react";
+import {
+    ArrowLeftRight,
+    Check,
+    ChevronRight,
+    Download,
+    FileSpreadsheet,
+    FileText,
+    Layers,
+    Loader2,
+    PanelRightClose,
+    Printer,
+    RefreshCw,
+    Search,
+    SlidersHorizontal,
+    Sparkles,
+    ZoomIn,
+    ZoomOut,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode, type SetStateAction } from "react";
 import { toast } from "sonner";
 import { route } from "ziggy-js";
@@ -104,6 +123,9 @@ type StudentDocumentPayload = {
 };
 type PreviewData = Record<string, unknown> | StudentDocumentPayload | null;
 type AvailableCourse = { id: number; code: string; title: string | null; department: string | null; department_id?: number | null };
+type CatalogCategory = "all" | "student" | "report" | "regulatory";
+type PaperSize = "letter" | "a4" | "legal";
+type PreviewOrientation = "variant" | "portrait" | "landscape";
 
 const DEFAULT_REPORT_FILTERS: ReportFilters = {
     course_filter: "all",
@@ -111,6 +133,42 @@ const DEFAULT_REPORT_FILTERS: ReportFilters = {
     department_filter: "all",
     year_level_filter: "all",
     status_filter: "active",
+};
+
+const CATALOG_CATEGORIES: Array<{ key: CatalogCategory; label: string }> = [
+    { key: "all", label: "All templates" },
+    { key: "student", label: "Student documents" },
+    { key: "report", label: "Operational reports" },
+    { key: "regulatory", label: "CHED & regulatory" },
+];
+
+const OPERATIONAL_DEPARTMENT_OPTIONS = [
+    { value: "all", label: "All departments" },
+    { value: "IT", label: "Information Technology" },
+    { value: "HM", label: "Hospitality Management" },
+    { value: "BA", label: "Business Administration" },
+    { value: "TESDA", label: "TESDA" },
+];
+
+const PAPER_SIZE_OPTIONS: Array<{ value: PaperSize; label: string; shortLabel: string }> = [
+    { value: "letter", label: "US Letter", shortLabel: "8.5 x 11" },
+    { value: "a4", label: "A4", shortLabel: "210 x 297" },
+    { value: "legal", label: "US Legal", shortLabel: "8.5 x 14" },
+];
+
+const PAPER_DIMENSION_CLASSES: Record<PaperSize, Record<"portrait" | "landscape", string>> = {
+    letter: {
+        portrait: "w-[816px] min-h-[1056px]",
+        landscape: "w-[1056px] min-h-[816px]",
+    },
+    a4: {
+        portrait: "w-[794px] min-h-[1123px]",
+        landscape: "w-[1123px] min-h-[794px]",
+    },
+    legal: {
+        portrait: "w-[816px] min-h-[1344px]",
+        landscape: "w-[1344px] min-h-[816px]",
+    },
 };
 
 function buildUrl(name: string, query: Record<string, string | number | null | undefined>): string {
@@ -410,6 +468,7 @@ export default function RegistrarReports({ user, filters, regulatory_reports, as
         [availableReportKeys],
     );
     const [activeTemplate, setActiveTemplate] = useState<TemplateKey>("certificate_of_enrollment");
+    const [catalogCategory, setCatalogCategory] = useState<CatalogCategory>("all");
     const [catalogSearch, setCatalogSearch] = useState("");
     const [studentSearch, setStudentSearch] = useState("");
     const [studentResults, setStudentResults] = useState<StudentSearchResult[]>([]);
@@ -423,6 +482,10 @@ export default function RegistrarReports({ user, filters, regulatory_reports, as
     const [courseOptionsError, setCourseOptionsError] = useState<string | null>(null);
     const [purpose, setPurpose] = useState("Scholarship, employment, or other lawful purpose");
     const [selectedVariants, setSelectedVariants] = useState<Record<TemplateKey, string>>(() => getDefaultTemplateVariants());
+    const [previewOrientation, setPreviewOrientation] = useState<PreviewOrientation>("variant");
+    const [paperSize, setPaperSize] = useState<PaperSize>("letter");
+    const [previewZoom, setPreviewZoom] = useState(100);
+    const [isInspectorOpen, setIsInspectorOpen] = useState(true);
     const [variantSettingsFor, setVariantSettingsFor] = useState<TemplateKey | null>(null);
     const [previewData, setPreviewData] = useState<PreviewData>(() =>
         buildClientPreview("certificate_of_enrollment", getDefaultTemplateVariants().certificate_of_enrollment, null),
@@ -442,14 +505,36 @@ export default function RegistrarReports({ user, filters, regulatory_reports, as
     const template = getTemplateDefinition(activeTemplate);
     const activeVariant = getTemplateVariant(activeTemplate, selectedVariants[activeTemplate]);
     const isStudent = STUDENT_TEMPLATES.has(activeTemplate);
+    const activeIsRegulatory = isRegulatoryTemplate(template);
+    const effectiveOrientation = previewOrientation === "variant" ? activeVariant.orientation : previewOrientation;
+    const isLandscape = effectiveOrientation === "landscape";
+    const paperDimensionClass = PAPER_DIMENSION_CLASSES[paperSize][effectiveOrientation];
     const normalizedCatalogSearch = catalogSearch.trim().toLowerCase();
+    const catalogCounts = useMemo(
+        () => ({
+            all: availableTemplates.length,
+            student: availableTemplates.filter((item) => item.mode === "student").length,
+            report: availableTemplates.filter((item) => item.mode === "report" && !isRegulatoryTemplate(item)).length,
+            regulatory: availableTemplates.filter((item) => isRegulatoryTemplate(item)).length,
+        }),
+        [availableTemplates],
+    );
     const visibleTemplates = useMemo(
         () =>
-            availableTemplates.filter(
-                (item) =>
-                    !normalizedCatalogSearch || `${item.title} ${item.description} ${item.group}`.toLowerCase().includes(normalizedCatalogSearch),
-            ),
-        [availableTemplates, normalizedCatalogSearch],
+            availableTemplates.filter((item) => {
+                const matchesCategory =
+                    catalogCategory === "all"
+                        ? true
+                        : catalogCategory === "student"
+                          ? item.mode === "student"
+                          : catalogCategory === "regulatory"
+                            ? isRegulatoryTemplate(item)
+                            : item.mode === "report" && !isRegulatoryTemplate(item);
+                const searchableText = `${item.title} ${item.description} ${item.group} ${item.variants.map((variant) => variant.title).join(" ")}`;
+
+                return matchesCategory && (!normalizedCatalogSearch || searchableText.toLowerCase().includes(normalizedCatalogSearch));
+            }),
+        [availableTemplates, catalogCategory, normalizedCatalogSearch],
     );
 
     useEffect(() => {
@@ -658,7 +743,9 @@ export default function RegistrarReports({ user, filters, regulatory_reports, as
     };
     const handlePdfDownload = () => {
         if (!canExport) {
-            toast.error("Select a student before downloading this document.");
+            toast.error(
+                isSamplePreview ? "Generate a live preview before downloading this document." : "Select a student before downloading this document.",
+            );
             return;
         }
         const url = isStudent
@@ -673,7 +760,10 @@ export default function RegistrarReports({ user, filters, regulatory_reports, as
         addRecentOutput("PDF", isStudent ? (selectedStudent?.full_name ?? "Selected student") : "Current filters");
     };
     const handleExcelDownload = async () => {
-        if (!previewData || isStudent) return;
+        if (!canExport || isStudent) {
+            if (!isStudent) toast.error("Generate a live preview before exporting this report.");
+            return;
+        }
         if (!template.regulatoryReportKey) {
             const url = buildUrl("administrators.enrollments.reports.export", {
                 report_type: activeTemplate,
@@ -751,454 +841,815 @@ export default function RegistrarReports({ user, filters, regulatory_reports, as
             description: `${subject.enrolled_count} enrolled`,
         })),
     ];
+    const regulatoryDepartmentOptions = useMemo(() => {
+        const departments = new Map<string, string>();
+        availableCourses.forEach((course) => {
+            if (course.department_id) departments.set(String(course.department_id), course.department ?? `Department ${course.department_id}`);
+        });
+
+        return [{ value: "all", label: "All departments" }, ...Array.from(departments, ([value, label]) => ({ value, label }))];
+    }, [availableCourses]);
+    const departmentOptions = activeIsRegulatory ? regulatoryDepartmentOptions : OPERATIONAL_DEPARTMENT_OPTIONS;
+    const selectedCourseLabel = courseOptions.find((option) => option.value === reportFilters.course_filter)?.label ?? "All courses";
+    const selectedSubjectLabel = subjectOptions.find((option) => option.value === reportFilters.subject_filter)?.label ?? "All subjects";
+    const selectedDepartmentLabel = departmentOptions.find((option) => option.value === reportFilters.department_filter)?.label ?? "All departments";
+    const selectedPeriodLabel = `${currentSchoolYear || "Current school year"}${currentSemester ? ` · ${resolveCurrentSemesterLabel(filters)}` : ""}`;
+    const scopeSummary = isStudent
+        ? selectedStudent
+            ? selectedStudent.full_name
+            : "Sample student only"
+        : activeIsRegulatory
+          ? `${selectedDepartmentLabel} · ${selectedCourseLabel} · ${selectedPeriodLabel}`
+          : [
+                activeTemplate === "enrolled_by_subject" ? selectedSubjectLabel : selectedCourseLabel,
+                selectedDepartmentLabel,
+                reportFilters.year_level_filter === "all" ? "All year levels" : `Year ${reportFilters.year_level_filter}`,
+                reportFilters.status_filter === "active" ? "Active records" : "Active and deleted records",
+            ].join(" · ");
     const settingsTemplate = variantSettingsFor ? getTemplateDefinition(variantSettingsFor) : null;
-    const canExport = Boolean(previewData) && (!isStudent || Boolean(selectedStudent));
-    const canPrint = canExport && !isSamplePreview;
+    const canExport = Boolean(previewData) && !isSamplePreview && (!isStudent || Boolean(selectedStudent));
+    const canPrint = canExport;
 
     return (
         <AdminLayout user={user} title="Registrar Reports">
             <Head title="Administrators • Registrar Reports" />
-            <style>{`@media print { body * { visibility: hidden !important; } #registrar-print-sheet, #registrar-print-sheet * { visibility: visible !important; } #registrar-print-sheet { position: absolute; inset: 0; width: 100%; background: #fff !important; padding: 0 !important; } .registrar-preview-paper { box-shadow: none !important; border: 0 !important; max-width: none !important; } }`}</style>
-            <div className="space-y-7 pb-10">
-                <header className="flex flex-col gap-5 border-b pb-6 xl:flex-row xl:items-end xl:justify-between">
-                    <div className="max-w-2xl space-y-2">
-                        <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.2em] uppercase">Registrar workspace</p>
-                        <h1 className="text-3xl font-semibold tracking-[-0.04em]">Documents, ready when you are.</h1>
-                        <p className="text-muted-foreground text-sm leading-6">
-                            Prepare official student documents and operational reports for the current academic period.
-                        </p>
-                    </div>
-                    <div className="flex flex-col gap-2 xl:items-end">
-                        <SemesterSelector {...filters} />
-                        <span className="text-muted-foreground text-xs">PDF and print layouts use the school record on file.</span>
-                    </div>
-                </header>
+            <style>{`
+                @page {
+                    size: ${paperSize} ${effectiveOrientation};
+                    margin: 10mm;
+                }
 
-                <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
-                    <Card className="bg-card/80 h-fit rounded-2xl backdrop-blur-xl">
-                        <div className="border-b p-4">
-                            <div className="mb-3 flex items-center justify-between gap-3">
-                                <div>
-                                    <p className="text-sm font-semibold">Template catalog</p>
-                                    <p className="text-muted-foreground mt-1 text-xs">Choose an official output.</p>
+                @media print {
+                    body * { visibility: hidden !important; }
+                    #registrar-print-sheet, #registrar-print-sheet * { visibility: visible !important; }
+                    #registrar-print-sheet {
+                        position: absolute;
+                        inset: 0;
+                        width: 100% !important;
+                        max-width: none !important;
+                        min-height: auto !important;
+                        background: #fff !important;
+                        padding: 0 !important;
+                        box-shadow: none !important;
+                        border: 0 !important;
+                    }
+                    .registrar-preview-paper {
+                        box-shadow: none !important;
+                        border: 0 !important;
+                        max-width: none !important;
+                    }
+                }
+            `}</style>
+            <div className="max-w-full overflow-hidden pb-10">
+                <div className="space-y-5">
+                    <header className="flex flex-col gap-4 border-b pb-5 lg:flex-row lg:items-end lg:justify-between">
+                        <div className="max-w-3xl space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <Badge variant="outline" className="gap-1.5 text-[11px] font-semibold tracking-[0.14em] uppercase">
+                                    <span className="bg-primary size-1.5 rounded-full" aria-hidden="true" />
+                                    Registrar studio
+                                </Badge>
+                                <Badge variant={activeIsRegulatory ? "default" : "secondary"} className="text-[11px]">
+                                    {activeIsRegulatory
+                                        ? "CHED / regulatory"
+                                        : template.mode === "student"
+                                          ? "Student document"
+                                          : "Operational report"}
+                                </Badge>
+                                <span className="text-muted-foreground text-xs">{selectedPeriodLabel}</span>
+                            </div>
+                            <div>
+                                <h1 className="text-2xl font-semibold tracking-[-0.04em] text-balance sm:text-3xl">Document and report studio</h1>
+                                <p className="text-muted-foreground mt-2 max-w-2xl text-sm leading-6 text-pretty">
+                                    Build live registrar documents from verified records while keeping browser-only paper, zoom, and orientation
+                                    controls out of backend export payloads.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex flex-col gap-2 lg:items-end">
+                            <SemesterSelector {...filters} />
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setIsBulkReportsOpen(true)}
+                                className="gap-1.5 transition-[background-color,border-color,box-shadow,transform,color] active:scale-[0.96]"
+                            >
+                                <Download className="size-3.5" aria-hidden="true" />
+                                Bulk assessments
+                            </Button>
+                        </div>
+                    </header>
+
+                    <Card className="bg-card/85 rounded-2xl py-0 shadow-xs backdrop-blur-xl">
+                        <CardHeader className="gap-3 border-b p-4">
+                            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <CardTitle className="flex items-center gap-2 text-sm font-semibold tracking-[0.08em] uppercase">
+                                        <Layers className="text-primary size-4" aria-hidden="true" />
+                                        Template shelf
+                                    </CardTitle>
+                                    <div className="bg-muted/70 flex rounded-lg p-0.5 text-xs">
+                                        {CATALOG_CATEGORIES.map((category) => (
+                                            <button
+                                                key={category.key}
+                                                type="button"
+                                                onClick={() => setCatalogCategory(category.key)}
+                                                className={cn(
+                                                    "focus-visible:ring-ring rounded-md px-2.5 py-1 font-medium transition-[background-color,box-shadow,color,transform] outline-none focus-visible:ring-2 active:scale-[0.96]",
+                                                    catalogCategory === category.key
+                                                        ? "bg-background text-foreground shadow-xs"
+                                                        : "text-muted-foreground hover:text-foreground",
+                                                )}
+                                                aria-pressed={catalogCategory === category.key}
+                                            >
+                                                {category.label} ({catalogCounts[category.key]})
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
-                                <Badge variant="secondary">{visibleTemplates.length}</Badge>
+                                <div className="relative w-full lg:w-80">
+                                    <Search className="text-muted-foreground absolute top-1/2 left-3 size-3.5 -translate-y-1/2" aria-hidden="true" />
+                                    <Input
+                                        value={catalogSearch}
+                                        onChange={(event) => setCatalogSearch(event.target.value)}
+                                        placeholder="Search templates, variants, or outputs"
+                                        className="h-9 pl-8 text-xs"
+                                        aria-label="Search report templates"
+                                    />
+                                </div>
                             </div>
-                            <div className="relative">
-                                <Search className="text-muted-foreground absolute top-1/2 left-3 size-3.5 -translate-y-1/2" aria-hidden="true" />
-                                <Input
-                                    value={catalogSearch}
-                                    onChange={(event) => setCatalogSearch(event.target.value)}
-                                    placeholder="Find a template"
-                                    className="h-9 pl-8 text-xs"
-                                />
-                            </div>
-                        </div>
-                        <div className="space-y-5 p-3">
-                            {(["Student documents", "Operational reports"] as const).map((group) => {
-                                const groupTemplates = visibleTemplates.filter((item) => item.group === group);
-                                if (groupTemplates.length === 0) return null;
-                                return (
-                                    <section key={group} className="space-y-2">
-                                        <p className="text-muted-foreground px-2 text-[10px] font-semibold tracking-[0.16em] uppercase">{group}</p>
-                                        <div className="space-y-1">
-                                            {groupTemplates.map((item) => (
-                                                <div
-                                                    key={item.key}
-                                                    className={`flex items-stretch border transition-[background-color,border-color,box-shadow] duration-200 motion-reduce:transition-none ${activeTemplate === item.key ? "border-primary/30 bg-primary/8 shadow-xs" : "hover:border-border hover:bg-muted/50 border-transparent"}`}
-                                                >
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleTemplateSelect(item.key)}
-                                                        className="focus-visible:ring-ring/45 flex min-w-0 flex-1 items-start gap-3 px-2.5 py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset"
-                                                        aria-pressed={activeTemplate === item.key}
-                                                    >
-                                                        <item.icon
-                                                            className={`mt-0.5 size-4 shrink-0 ${activeTemplate === item.key ? "text-primary" : "text-muted-foreground"}`}
-                                                            aria-hidden="true"
-                                                        />
-                                                        <span className="min-w-0 flex-1">
-                                                            <span className="flex items-center justify-between gap-2">
-                                                                <span className="text-sm font-medium">{item.title}</span>
-                                                                {activeTemplate === item.key && (
-                                                                    <Check className="text-primary size-3.5 shrink-0" aria-hidden="true" />
-                                                                )}
-                                                            </span>
-                                                            <span className="text-muted-foreground mt-1 block text-xs leading-5">
-                                                                {item.description}
-                                                            </span>
-                                                        </span>
-                                                    </button>
-                                                    <Button
-                                                        type="button"
-                                                        variant="ghost"
-                                                        size="icon-sm"
-                                                        className="text-muted-foreground hover:text-foreground mt-2 mr-1.5 shrink-0 self-start"
-                                                        onClick={() => {
-                                                            handleTemplateSelect(item.key);
-                                                            setVariantSettingsFor(item.key);
-                                                        }}
-                                                        aria-label={`Choose a format for ${item.title}`}
-                                                        title={`Choose a format for ${item.title}`}
-                                                    >
-                                                        <Settings2 aria-hidden="true" />
-                                                    </Button>
-                                                </div>
-                                            ))}
+                        </CardHeader>
+                        <CardContent className="p-3">
+                            <div className="overflow-x-auto pb-1">
+                                <div className="flex min-w-0 gap-2.5">
+                                    {visibleTemplates.length === 0 ? (
+                                        <div className="text-muted-foreground w-full rounded-xl border border-dashed px-4 py-8 text-center text-sm">
+                                            No templates match the current shelf filter.
                                         </div>
-                                    </section>
-                                );
-                            })}
-                            <section className="space-y-2 border-t pt-4">
-                                <p className="text-muted-foreground px-2 text-[10px] font-semibold tracking-[0.16em] uppercase">Bulk operations</p>
-                                <button
-                                    type="button"
-                                    onClick={() => setIsBulkReportsOpen(true)}
-                                    className="hover:bg-muted/50 flex w-full items-start gap-3 border border-transparent px-2.5 py-3 text-left transition-colors"
-                                >
-                                    <Download className="text-muted-foreground mt-0.5 size-4 shrink-0" />
-                                    <span>
-                                        <span className="block text-sm font-medium">Bulk assessment export</span>
-                                        <span className="text-muted-foreground mt-1 block text-xs leading-5">
-                                            Queue printable assessment PDFs for a scoped student group.
-                                        </span>
-                                    </span>
-                                </button>
-                            </section>
-                        </div>
+                                    ) : (
+                                        visibleTemplates.map((item) => {
+                                            const isSelected = activeTemplate === item.key;
+                                            const Icon = item.icon;
+                                            const currentVariant = getTemplateVariant(item.key, selectedVariants[item.key]);
+                                            const itemIsRegulatory = isRegulatoryTemplate(item);
+
+                                            return (
+                                                <button
+                                                    type="button"
+                                                    key={item.key}
+                                                    onClick={() => handleTemplateSelect(item.key)}
+                                                    className={cn(
+                                                        "group focus-visible:ring-ring flex min-h-40 w-64 shrink-0 flex-col justify-between rounded-xl border p-3 text-left transition-[background-color,border-color,box-shadow,transform,color] outline-none focus-visible:ring-2 active:scale-[0.96] motion-reduce:transition-none",
+                                                        isSelected
+                                                            ? "border-primary/45 bg-primary/8 ring-primary/25 shadow-sm ring-1"
+                                                            : "border-border/70 bg-muted/20 hover:border-primary/30 hover:bg-muted/50 hover:shadow-xs",
+                                                    )}
+                                                    aria-pressed={isSelected}
+                                                >
+                                                    <span className="flex items-start justify-between gap-3">
+                                                        <span
+                                                            className={cn(
+                                                                "flex size-9 shrink-0 items-center justify-center rounded-lg border transition-[background-color,border-color,color]",
+                                                                isSelected
+                                                                    ? "border-primary/50 bg-primary text-primary-foreground"
+                                                                    : "border-border bg-background text-muted-foreground group-hover:text-foreground",
+                                                            )}
+                                                        >
+                                                            <Icon className="size-4" aria-hidden="true" />
+                                                        </span>
+                                                        <span className="flex flex-wrap justify-end gap-1">
+                                                            <Badge
+                                                                variant={currentVariant.orientation === "landscape" ? "default" : "outline"}
+                                                                className="text-[9px] uppercase"
+                                                            >
+                                                                {currentVariant.orientation}
+                                                            </Badge>
+                                                            {itemIsRegulatory && (
+                                                                <Badge variant="secondary" className="text-[9px] uppercase">
+                                                                    CHED
+                                                                </Badge>
+                                                            )}
+                                                        </span>
+                                                    </span>
+                                                    <span className="mt-3 min-w-0">
+                                                        <span className="block truncate text-sm font-semibold">{item.title}</span>
+                                                        <span className="text-muted-foreground mt-1 line-clamp-2 block text-xs leading-5">
+                                                            {item.description}
+                                                        </span>
+                                                    </span>
+                                                    <span className="text-muted-foreground mt-3 flex items-center justify-between gap-2 border-t pt-2 text-[11px]">
+                                                        <span className="truncate">{currentVariant.title}</span>
+                                                        {isSelected && <Check className="text-primary size-3.5 shrink-0" aria-hidden="true" />}
+                                                    </span>
+                                                </button>
+                                            );
+                                        })
+                                    )}
+                                </div>
+                            </div>
+                        </CardContent>
                     </Card>
 
-                    <main className="min-w-0 space-y-5">
-                        <section className="flex flex-col gap-4 border-b pb-5 md:flex-row md:items-start md:justify-between">
-                            <div className="flex items-start gap-3">
-                                <div className="bg-primary/10 text-primary flex size-10 shrink-0 items-center justify-center rounded-xl">
-                                    <template.icon className="size-5" aria-hidden="true" />
-                                </div>
-                                <div>
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        <h2 className="text-xl font-semibold tracking-tight">{template.title}</h2>
-                                        <Badge variant="outline">{template.mode === "student" ? "Student document" : "Operational report"}</Badge>
+                    <Card className="bg-card/95 rounded-2xl py-0 shadow-xs">
+                        <CardContent className="p-3 sm:p-4">
+                            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                                <div className="flex min-w-0 items-start gap-3">
+                                    <div className="bg-primary/10 text-primary flex size-10 shrink-0 items-center justify-center rounded-xl">
+                                        <template.icon className="size-5" aria-hidden="true" />
                                     </div>
-                                    <p className="text-muted-foreground mt-1 text-sm">
-                                        {template.description} <span className="text-foreground/70">· {activeVariant.title}</span>
-                                    </p>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <div className="text-muted-foreground flex items-center gap-2 text-xs">
-                                    {template.formats.map((format) => (
-                                        <span key={format} className="inline-flex items-center gap-1">
-                                            {format === "PDF" ? (
-                                                <FileText className="size-3.5" />
-                                            ) : format === "XLSX" ? (
-                                                <FileSpreadsheet className="size-3.5" />
-                                            ) : (
-                                                <Printer className="size-3.5" />
-                                            )}
-                                            {format}
-                                        </span>
-                                    ))}
-                                </div>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="icon-sm"
-                                    onClick={() => setVariantSettingsFor(activeTemplate)}
-                                    aria-label={`Choose a format for ${template.title}`}
-                                    title="Choose document format"
-                                >
-                                    <Settings2 aria-hidden="true" />
-                                </Button>
-                            </div>
-                        </section>
-                        <div className="grid gap-5 2xl:grid-cols-[minmax(300px,0.42fr)_minmax(0,0.58fr)]">
-                            <Card className="rounded-2xl">
-                                <CardContent className="space-y-5 p-5">
-                                    {isStudent ? (
-                                        <div className="space-y-3">
-                                            <div>
-                                                <Label htmlFor="student-search">Student</Label>
-                                                <p className="text-muted-foreground mt-1 text-xs">Search by name, student number, or program.</p>
-                                            </div>
-                                            <div className="relative">
-                                                <Search
-                                                    className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2"
-                                                    aria-hidden="true"
-                                                />
-                                                <Input
-                                                    id="student-search"
-                                                    value={studentSearch}
-                                                    onChange={(event) => setStudentSearch(event.target.value)}
-                                                    placeholder="Type at least 2 characters"
-                                                    className="h-11 pl-9"
-                                                />
-                                                {isSearchingStudents && (
-                                                    <Loader2 className="text-muted-foreground absolute top-1/2 right-3 size-4 -translate-y-1/2 animate-spin" />
+                                    <div className="min-w-0">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <h2 className="truncate text-lg font-semibold tracking-tight">{template.title}</h2>
+                                            <Badge variant="outline">{activeVariant.title}</Badge>
+                                            <Badge variant={isSamplePreview ? "secondary" : "default"} className="gap-1 text-[10px]">
+                                                {isSamplePreview ? (
+                                                    <Sparkles className="size-3" aria-hidden="true" />
+                                                ) : (
+                                                    <Check className="size-3" aria-hidden="true" />
                                                 )}
-                                            </div>
-                                            {studentResults.length > 0 && (
-                                                <div className="divide-y border">
-                                                    {studentResults.slice(0, 8).map((student) => (
-                                                        <button
-                                                            type="button"
-                                                            key={student.id}
-                                                            onClick={() => selectStudent(student)}
-                                                            className="hover:bg-muted/50 flex w-full items-center justify-between gap-3 p-3 text-left transition-colors"
-                                                        >
-                                                            <span className="min-w-0">
-                                                                <span className="block truncate text-sm font-medium">{student.full_name}</span>
-                                                                <span className="text-muted-foreground mt-0.5 block truncate text-xs">
-                                                                    {student.student_id ?? "No student number"} ·{" "}
-                                                                    {student.course_code ?? "No program"} ·{" "}
-                                                                    {student.formatted_academic_year ?? "No year level"}
-                                                                </span>
-                                                            </span>
-                                                            <ChevronRight className="text-muted-foreground size-4 shrink-0" />
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            )}
-                                            {selectedStudent && (
-                                                <div className="border-primary/25 bg-primary/6 flex items-start justify-between gap-3 border p-3">
-                                                    <div>
-                                                        <p className="text-sm font-semibold">{selectedStudent.full_name}</p>
-                                                        <p className="text-muted-foreground mt-1 text-xs">
-                                                            {selectedStudent.student_id ?? "No student number"} ·{" "}
-                                                            {selectedStudent.course_code ?? "No program"} ·{" "}
-                                                            {selectedStudent.formatted_academic_year ?? "No year level"}
-                                                        </p>
-                                                    </div>
-                                                    <button
-                                                        type="button"
-                                                        className="text-muted-foreground hover:text-foreground text-xs underline"
-                                                        onClick={() => setSelectedStudent(null)}
-                                                    >
-                                                        Change
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-4">
-                                            <div>
-                                                <p className="text-sm font-semibold">Report scope</p>
-                                                <p className="text-muted-foreground mt-1 text-xs">Filters apply to the selected academic period.</p>
-                                            </div>
-                                            {activeTemplate === "enrolled_by_course" && (
-                                                <Combobox
-                                                    label="Course"
-                                                    options={courseOptions}
-                                                    value={reportFilters.course_filter}
-                                                    onValueChange={(value) =>
-                                                        updateReportFilters((current) => ({ ...current, course_filter: value }))
-                                                    }
-                                                    placeholder="All courses"
-                                                    searchPlaceholder="Search courses"
-                                                />
-                                            )}
-                                            {activeTemplate === "enrolled_by_subject" && (
-                                                <Combobox
-                                                    label="Subject"
-                                                    options={subjectOptions}
-                                                    value={reportFilters.subject_filter}
-                                                    onValueChange={(value) =>
-                                                        updateReportFilters((current) => ({ ...current, subject_filter: value }))
-                                                    }
-                                                    placeholder="All subjects"
-                                                    searchPlaceholder="Search subjects"
-                                                />
-                                            )}
-                                            {(activeTemplate === "enrolled_by_course" || activeTemplate === "enrollment_summary") && (
-                                                <div className="space-y-2">
-                                                    <Label>Department</Label>
-                                                    <Select
-                                                        value={reportFilters.department_filter}
-                                                        onValueChange={(value) =>
-                                                            updateReportFilters((current) => ({ ...current, department_filter: value }))
-                                                        }
-                                                    >
-                                                        <SelectTrigger>
-                                                            <SelectValue placeholder="All departments" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            {[
-                                                                ["all", "All departments"],
-                                                                ["IT", "Information Technology"],
-                                                                ["HM", "Hospitality Management"],
-                                                                ["BA", "Business Administration"],
-                                                                ["TESDA", "TESDA"],
-                                                            ].map(([value, label]) => (
-                                                                <SelectItem key={value} value={value}>
-                                                                    {label}
-                                                                </SelectItem>
-                                                            ))}
-                                                        </SelectContent>
-                                                    </Select>
-                                                </div>
-                                            )}
-                                            {activeTemplate === "enrolled_by_course" && (
-                                                <div className="space-y-2">
-                                                    <Label>Year level</Label>
-                                                    <Select
-                                                        value={reportFilters.year_level_filter}
-                                                        onValueChange={(value) =>
-                                                            updateReportFilters((current) => ({ ...current, year_level_filter: value }))
-                                                        }
-                                                    >
-                                                        <SelectTrigger>
-                                                            <SelectValue placeholder="All year levels" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            <SelectItem value="all">All year levels</SelectItem>
-                                                            {[1, 2, 3, 4, 5, 6].map((year) => (
-                                                                <SelectItem key={year} value={String(year)}>
-                                                                    Year {year}
-                                                                </SelectItem>
-                                                            ))}
-                                                        </SelectContent>
-                                                    </Select>
-                                                </div>
-                                            )}
-                                            <div className="space-y-2">
-                                                <Label>Enrollment records</Label>
-                                                <Select
-                                                    value={reportFilters.status_filter}
-                                                    onValueChange={(value) =>
-                                                        updateReportFilters((current) => ({ ...current, status_filter: value }))
-                                                    }
-                                                >
-                                                    <SelectTrigger>
-                                                        <SelectValue placeholder="Active only" />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        <SelectItem value="active">Active only</SelectItem>
-                                                        <SelectItem value="all">Include deleted</SelectItem>
-                                                    </SelectContent>
-                                                </Select>
-                                            </div>
-                                        </div>
-                                    )}
-                                    {activeTemplate === "certificate_of_enrollment" && (
-                                        <div className="space-y-2 border-t pt-4">
-                                            <Label htmlFor="document-purpose">Purpose line</Label>
-                                            <Input id="document-purpose" value={purpose} onChange={(event) => setPurpose(event.target.value)} />
-                                        </div>
-                                    )}
-                                    <div className="border-t pt-4">
-                                        <Button
-                                            className="w-full"
-                                            onClick={() => void loadPreview()}
-                                            disabled={isLoadingPreview || (isStudent && !selectedStudent)}
-                                        >
-                                            {isLoadingPreview ? (
-                                                <Loader2 className="mr-2 size-4 animate-spin" />
-                                            ) : (
-                                                <FileText className="mr-2 size-4" />
-                                            )}
-                                            {isLoadingPreview ? "Preparing preview" : "Generate preview"}
-                                        </Button>
-                                        <p className="text-muted-foreground mt-2 text-center text-[11px]">
-                                            The layout changes instantly when you choose another format. PDF and print use the current record.
-                                        </p>
-                                    </div>
-                                </CardContent>
-                            </Card>
-
-                            <section className="min-w-0 space-y-4">
-                                <div className="flex items-center justify-between gap-3">
-                                    <div>
-                                        <div className="flex items-center gap-2">
-                                            <p className="text-sm font-semibold">Preview</p>
-                                            <Badge variant={isSamplePreview ? "secondary" : "outline"} className="gap-1 text-[10px]">
-                                                {isSamplePreview && <Sparkles className="size-3" aria-hidden="true" />}
-                                                {isSamplePreview ? "Sample layout" : "Live record"}
+                                                {isSamplePreview ? "Sample" : "Live"}
                                             </Badge>
                                         </div>
-                                        <p className="text-muted-foreground mt-1 text-xs">
-                                            {isSamplePreview
-                                                ? "This instant preview uses sample data. Generate a live preview before release."
-                                                : "Review the official layout before releasing it."}
-                                        </p>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <Button variant="outline" size="sm" onClick={handlePrint} disabled={!canPrint}>
-                                            <Printer className="mr-2 size-3.5" /> Print
-                                        </Button>
-                                        {template.formats.includes("PDF") && (
-                                            <Button variant="outline" size="sm" onClick={handlePdfDownload} disabled={!canExport}>
-                                                <Download className="mr-2 size-3.5" /> PDF
-                                            </Button>
-                                        )}
-                                        {!isStudent && (
-                                            <Button variant="outline" size="sm" onClick={handleExcelDownload} disabled={!canExport}>
-                                                <FileSpreadsheet className="mr-2 size-3.5" /> XLSX
-                                            </Button>
-                                        )}
+                                        <p className="text-muted-foreground mt-1 line-clamp-1 text-xs">{scopeSummary}</p>
                                     </div>
                                 </div>
-                                <div
-                                    id="registrar-print-sheet"
-                                    className="registrar-preview-paper bg-muted/25 min-h-[640px] border p-4 shadow-sm sm:p-7"
-                                >
-                                    {previewData ? (
-                                        isStudent ? (
-                                            <StudentDocumentPreview data={previewData as StudentDocumentPayload} />
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setPreviewOrientation(isLandscape ? "portrait" : "landscape")}
+                                        className="gap-1.5 transition-[background-color,border-color,box-shadow,transform,color] active:scale-[0.96]"
+                                        aria-label={`Switch browser preview to ${isLandscape ? "portrait" : "landscape"}`}
+                                    >
+                                        <ArrowLeftRight className="size-3.5" aria-hidden="true" />
+                                        {isLandscape ? "Landscape" : "Portrait"}
+                                    </Button>
+                                    <Select value={paperSize} onValueChange={(value) => setPaperSize(value as PaperSize)}>
+                                        <SelectTrigger className="h-8 w-28 text-xs" aria-label="Preview paper size">
+                                            <SelectValue placeholder="Paper" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {PAPER_SIZE_OPTIONS.map((option) => (
+                                                <SelectItem key={option.value} value={option.value}>
+                                                    {option.label}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <div className="bg-muted/50 flex items-center gap-1 rounded-lg border p-0.5" aria-label="Preview zoom controls">
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon-xs"
+                                            onClick={() => setPreviewZoom((current) => Math.max(current - 10, 60))}
+                                            disabled={previewZoom <= 60}
+                                            aria-label="Zoom preview out"
+                                        >
+                                            <ZoomOut className="size-3" aria-hidden="true" />
+                                        </Button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setPreviewZoom(100)}
+                                            className="focus-visible:ring-ring text-muted-foreground hover:text-foreground min-w-10 rounded-md px-1.5 py-1 text-[11px] tabular-nums transition-[color,background-color] outline-none focus-visible:ring-2"
+                                            aria-label="Reset preview zoom to 100 percent"
+                                        >
+                                            {previewZoom}%
+                                        </button>
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon-xs"
+                                            onClick={() => setPreviewZoom((current) => Math.min(current + 10, 140))}
+                                            disabled={previewZoom >= 140}
+                                            aria-label="Zoom preview in"
+                                        >
+                                            <ZoomIn className="size-3" aria-hidden="true" />
+                                        </Button>
+                                    </div>
+                                    <Button
+                                        type="button"
+                                        variant={isInspectorOpen ? "default" : "outline"}
+                                        size="sm"
+                                        onClick={() => setIsInspectorOpen((open) => !open)}
+                                        className="gap-1.5 transition-[background-color,border-color,box-shadow,transform,color] active:scale-[0.96]"
+                                    >
+                                        <SlidersHorizontal className="size-3.5" aria-hidden="true" />
+                                        {isInspectorOpen ? "Inspector" : "Show inspector"}
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        onClick={() => void loadPreview()}
+                                        disabled={isLoadingPreview || (isStudent && !selectedStudent)}
+                                        className="gap-1.5 transition-[background-color,border-color,box-shadow,transform,color] active:scale-[0.96]"
+                                    >
+                                        {isLoadingPreview ? (
+                                            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
                                         ) : (
-                                            <OperationalReportPreview data={previewData} variant={activeVariant} />
-                                        )
-                                    ) : (
-                                        <div className="text-muted-foreground flex min-h-[580px] flex-col items-center justify-center border border-dashed text-center">
-                                            <FileText className="text-muted-foreground/40 size-10" aria-hidden="true" />
-                                            <p className="text-foreground mt-4 text-sm font-medium">Your document will appear here</p>
-                                            <p className="mt-1 max-w-xs text-xs leading-5">
-                                                Select a student or scope a report, then generate a preview to inspect the printable output.
-                                            </p>
-                                        </div>
+                                            <RefreshCw className="size-3.5" aria-hidden="true" />
+                                        )}
+                                        {isSamplePreview ? "Fetch live" : "Refresh"}
+                                    </Button>
+                                    <Button variant="outline" size="sm" onClick={handlePrint} disabled={!canPrint} className="gap-1.5">
+                                        <Printer className="size-3.5" aria-hidden="true" />
+                                        Print
+                                    </Button>
+                                    {template.formats.includes("PDF") && (
+                                        <Button variant="outline" size="sm" onClick={handlePdfDownload} disabled={!canExport} className="gap-1.5">
+                                            <Download className="size-3.5" aria-hidden="true" />
+                                            PDF
+                                        </Button>
+                                    )}
+                                    {!isStudent && (
+                                        <Button variant="outline" size="sm" onClick={handleExcelDownload} disabled={!canExport} className="gap-1.5">
+                                            <FileSpreadsheet className="size-3.5" aria-hidden="true" />
+                                            XLSX
+                                        </Button>
                                     )}
                                 </div>
-                            </section>
-                        </div>
-
-                        <section className="border-t pt-5">
-                            <div className="mb-3 flex items-end justify-between gap-3">
-                                <div>
-                                    <p className="text-sm font-semibold">Recent outputs</p>
-                                    <p className="text-muted-foreground mt-1 text-xs">Files and print actions started in this session.</p>
-                                </div>
-                                <span className="text-muted-foreground text-xs">{recentOutputs.length} recorded</span>
                             </div>
-                            {recentOutputs.length === 0 ? (
-                                <div className="text-muted-foreground border border-dashed px-4 py-7 text-center text-xs">
-                                    No outputs yet. Your recent print and download actions will show here.
+                        </CardContent>
+                    </Card>
+
+                    <div className={cn("grid min-w-0 items-start gap-5", isInspectorOpen ? "xl:grid-cols-[minmax(0,1fr)_23rem]" : "xl:grid-cols-1")}>
+                        <section className="min-w-0 space-y-3">
+                            <div className="flex flex-col gap-2 px-1 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">
+                                    <Badge variant={isSamplePreview ? "secondary" : "default"} className="gap-1 text-[10px]">
+                                        {isSamplePreview && <Sparkles className="size-3" aria-hidden="true" />}
+                                        {isSamplePreview ? "Sample layout preview" : "Live official preview"}
+                                    </Badge>
+                                    <span>
+                                        {paperSize.toUpperCase()} · {effectiveOrientation.toUpperCase()}
+                                    </span>
+                                    <span>{activeVariant.title}</span>
                                 </div>
-                            ) : (
-                                <div className="divide-y border">
-                                    {recentOutputs.map((output) => (
-                                        <div key={output.id} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                                            <div className="flex items-center gap-3">
-                                                <div className="bg-muted flex size-8 items-center justify-center">
-                                                    {output.format === "XLSX" ? (
-                                                        <FileSpreadsheet className="size-4" />
-                                                    ) : output.format === "Print" ? (
-                                                        <Printer className="size-4" />
-                                                    ) : (
-                                                        <FileText className="size-4" />
-                                                    )}
+                                <p className="text-muted-foreground text-xs">
+                                    {isSamplePreview
+                                        ? "Generate a live preview before print, PDF, or XLSX output."
+                                        : "Exports use the current server routes and payloads."}
+                                </p>
+                            </div>
+                            <div className="bg-muted/50 max-w-full overflow-auto rounded-2xl border p-4 shadow-inner sm:p-6 lg:p-8">
+                                <div
+                                    className="flex min-w-max justify-center"
+                                    style={{
+                                        transform: `scale(${previewZoom / 100})`,
+                                        transformOrigin: "top center",
+                                        transition: "transform 150ms ease-out",
+                                    }}
+                                >
+                                    <div
+                                        id="registrar-print-sheet"
+                                        className={cn(
+                                            "registrar-preview-paper overflow-hidden rounded-sm border bg-white text-slate-900 shadow-[0_2px_8px_rgb(0_0_0/0.06),0_18px_44px_rgb(0_0_0/0.14)] transition-[width,min-height,box-shadow,border-color]",
+                                            paperDimensionClass,
+                                        )}
+                                    >
+                                        {previewData ? (
+                                            isStudent ? (
+                                                <StudentDocumentPreview data={previewData as StudentDocumentPayload} />
+                                            ) : (
+                                                <OperationalReportPreview data={previewData} variant={activeVariant} />
+                                            )
+                                        ) : (
+                                            <div className="text-muted-foreground flex min-h-[580px] flex-col items-center justify-center border border-dashed p-8 text-center">
+                                                <FileText className="text-muted-foreground/40 size-10" aria-hidden="true" />
+                                                <p className="text-foreground mt-4 text-sm font-medium">Your live document will appear here</p>
+                                                <p className="mt-1 max-w-xs text-xs leading-5">
+                                                    Select a student or scope a CHED/operational report, then fetch live data to inspect the printable
+                                                    output.
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        {isInspectorOpen && (
+                            <aside className="min-w-0 space-y-4">
+                                <Card className="rounded-2xl py-0 shadow-xs">
+                                    <CardHeader className="flex-row items-center justify-between gap-3 border-b p-4">
+                                        <div>
+                                            <CardTitle className="flex items-center gap-2 text-sm">
+                                                <SlidersHorizontal className="text-primary size-4" aria-hidden="true" />
+                                                Inspector
+                                            </CardTitle>
+                                            <CardDescription className="text-xs">Scope, data, and browser layout controls.</CardDescription>
+                                        </div>
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon-sm"
+                                            onClick={() => setIsInspectorOpen(false)}
+                                            aria-label="Hide report inspector"
+                                        >
+                                            <PanelRightClose className="size-4" aria-hidden="true" />
+                                        </Button>
+                                    </CardHeader>
+                                    <CardContent className="p-4">
+                                        <Tabs defaultValue="scope" className="w-full">
+                                            <TabsList className="grid w-full grid-cols-3">
+                                                <TabsTrigger value="scope" className="text-xs">
+                                                    Scope
+                                                </TabsTrigger>
+                                                <TabsTrigger value="data" className="text-xs">
+                                                    Data
+                                                </TabsTrigger>
+                                                <TabsTrigger value="layout" className="text-xs">
+                                                    Layout
+                                                </TabsTrigger>
+                                            </TabsList>
+                                            <TabsContent value="scope" className="mt-4 space-y-4">
+                                                {isStudent ? (
+                                                    <div className="space-y-4">
+                                                        <div className="space-y-2">
+                                                            <Label htmlFor="student-search">Student</Label>
+                                                            <div className="relative">
+                                                                <Search
+                                                                    className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2"
+                                                                    aria-hidden="true"
+                                                                />
+                                                                <Input
+                                                                    id="student-search"
+                                                                    value={studentSearch}
+                                                                    onChange={(event) => setStudentSearch(event.target.value)}
+                                                                    placeholder="Type at least 2 characters"
+                                                                    className="h-10 pl-9"
+                                                                />
+                                                                {isSearchingStudents && (
+                                                                    <Loader2
+                                                                        className="text-muted-foreground absolute top-1/2 right-3 size-4 -translate-y-1/2 animate-spin"
+                                                                        aria-hidden="true"
+                                                                    />
+                                                                )}
+                                                            </div>
+                                                            {studentResults.length > 0 && (
+                                                                <div className="bg-background max-h-64 overflow-y-auto rounded-xl border shadow-sm">
+                                                                    {studentResults.slice(0, 8).map((student) => (
+                                                                        <button
+                                                                            type="button"
+                                                                            key={student.id}
+                                                                            onClick={() => selectStudent(student)}
+                                                                            className="focus-visible:ring-ring hover:bg-muted/50 flex w-full items-center justify-between gap-3 border-b p-3 text-left transition-[background-color,color,transform] outline-none last:border-b-0 focus-visible:ring-2 active:scale-[0.96]"
+                                                                        >
+                                                                            <span className="min-w-0">
+                                                                                <span className="block truncate text-sm font-medium">
+                                                                                    {student.full_name}
+                                                                                </span>
+                                                                                <span className="text-muted-foreground mt-0.5 block truncate text-xs">
+                                                                                    {student.student_id ?? "No student number"} ·{" "}
+                                                                                    {student.course_code ?? "No program"} ·{" "}
+                                                                                    {student.formatted_academic_year ?? "No year level"}
+                                                                                </span>
+                                                                            </span>
+                                                                            <ChevronRight
+                                                                                className="text-muted-foreground size-4 shrink-0"
+                                                                                aria-hidden="true"
+                                                                            />
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        {selectedStudent ? (
+                                                            <div className="border-primary/25 bg-primary/6 flex items-start justify-between gap-3 rounded-xl border p-3">
+                                                                <div className="min-w-0">
+                                                                    <p className="truncate text-sm font-semibold">{selectedStudent.full_name}</p>
+                                                                    <p className="text-muted-foreground mt-1 text-xs">
+                                                                        {selectedStudent.student_id ?? "No student number"} ·{" "}
+                                                                        {selectedStudent.course_code ?? "No program"} ·{" "}
+                                                                        {selectedStudent.formatted_academic_year ?? "No year level"}
+                                                                    </p>
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    className="focus-visible:ring-ring text-muted-foreground hover:text-foreground rounded px-1 text-xs underline transition-[color,box-shadow] outline-none focus-visible:ring-2"
+                                                                    onClick={() => setSelectedStudent(null)}
+                                                                >
+                                                                    Change
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="text-muted-foreground bg-muted/20 rounded-xl border border-dashed px-3 py-4 text-center text-xs">
+                                                                Live student documents require a selected student record.
+                                                            </div>
+                                                        )}
+                                                        {activeTemplate === "certificate_of_enrollment" && (
+                                                            <div className="space-y-2 border-t pt-4">
+                                                                <Label htmlFor="document-purpose">Purpose line</Label>
+                                                                <Input
+                                                                    id="document-purpose"
+                                                                    value={purpose}
+                                                                    onChange={(event) => setPurpose(event.target.value)}
+                                                                />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ) : activeIsRegulatory ? (
+                                                    <div className="space-y-4">
+                                                        <div className="bg-muted/25 rounded-xl border p-3 text-xs">
+                                                            <p className="font-semibold">Regulatory period</p>
+                                                            <p className="text-muted-foreground mt-1">{selectedPeriodLabel}</p>
+                                                        </div>
+                                                        <Combobox
+                                                            label="CHED course"
+                                                            options={courseOptions}
+                                                            value={reportFilters.course_filter}
+                                                            onValueChange={(value) =>
+                                                                updateReportFilters((current) => ({ ...current, course_filter: value }))
+                                                            }
+                                                            placeholder="All courses"
+                                                            searchPlaceholder="Search courses"
+                                                            emptyText={isLoadingAvailableCourses ? "Loading courses..." : "No courses found."}
+                                                            disabled={isLoadingAvailableCourses}
+                                                        />
+                                                        <div className="space-y-2">
+                                                            <Label>CHED department</Label>
+                                                            <Select
+                                                                value={reportFilters.department_filter}
+                                                                onValueChange={(value) =>
+                                                                    updateReportFilters((current) => ({ ...current, department_filter: value }))
+                                                                }
+                                                            >
+                                                                <SelectTrigger>
+                                                                    <SelectValue placeholder="All departments" />
+                                                                </SelectTrigger>
+                                                                <SelectContent>
+                                                                    {departmentOptions.map((option) => (
+                                                                        <SelectItem key={option.value} value={option.value}>
+                                                                            {option.label}
+                                                                        </SelectItem>
+                                                                    ))}
+                                                                </SelectContent>
+                                                            </Select>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="space-y-4">
+                                                        {activeTemplate !== "enrolled_by_subject" && (
+                                                            <Combobox
+                                                                label="Course"
+                                                                options={courseOptions}
+                                                                value={reportFilters.course_filter}
+                                                                onValueChange={(value) =>
+                                                                    updateReportFilters((current) => ({ ...current, course_filter: value }))
+                                                                }
+                                                                placeholder="All courses"
+                                                                searchPlaceholder="Search courses"
+                                                                emptyText={isLoadingAvailableCourses ? "Loading courses..." : "No courses found."}
+                                                                disabled={isLoadingAvailableCourses}
+                                                            />
+                                                        )}
+                                                        {activeTemplate === "enrolled_by_subject" && (
+                                                            <Combobox
+                                                                label="Subject"
+                                                                options={subjectOptions}
+                                                                value={reportFilters.subject_filter}
+                                                                onValueChange={(value) =>
+                                                                    updateReportFilters((current) => ({ ...current, subject_filter: value }))
+                                                                }
+                                                                placeholder="All subjects"
+                                                                searchPlaceholder="Search subjects"
+                                                            />
+                                                        )}
+                                                        {(activeTemplate === "enrolled_by_course" || activeTemplate === "enrollment_summary") && (
+                                                            <div className="space-y-2">
+                                                                <Label>Department</Label>
+                                                                <Select
+                                                                    value={reportFilters.department_filter}
+                                                                    onValueChange={(value) =>
+                                                                        updateReportFilters((current) => ({ ...current, department_filter: value }))
+                                                                    }
+                                                                >
+                                                                    <SelectTrigger>
+                                                                        <SelectValue placeholder="All departments" />
+                                                                    </SelectTrigger>
+                                                                    <SelectContent>
+                                                                        {OPERATIONAL_DEPARTMENT_OPTIONS.map((option) => (
+                                                                            <SelectItem key={option.value} value={option.value}>
+                                                                                {option.label}
+                                                                            </SelectItem>
+                                                                        ))}
+                                                                    </SelectContent>
+                                                                </Select>
+                                                            </div>
+                                                        )}
+                                                        {(activeTemplate === "enrolled_by_course" || activeTemplate === "enrollment_summary") && (
+                                                            <div className="space-y-2">
+                                                                <Label>Year level</Label>
+                                                                <Select
+                                                                    value={reportFilters.year_level_filter}
+                                                                    onValueChange={(value) =>
+                                                                        updateReportFilters((current) => ({ ...current, year_level_filter: value }))
+                                                                    }
+                                                                >
+                                                                    <SelectTrigger>
+                                                                        <SelectValue placeholder="All year levels" />
+                                                                    </SelectTrigger>
+                                                                    <SelectContent>
+                                                                        <SelectItem value="all">All year levels</SelectItem>
+                                                                        {[1, 2, 3, 4, 5, 6].map((year) => (
+                                                                            <SelectItem key={year} value={String(year)}>
+                                                                                Year {year}
+                                                                            </SelectItem>
+                                                                        ))}
+                                                                    </SelectContent>
+                                                                </Select>
+                                                            </div>
+                                                        )}
+                                                        <div className="space-y-2">
+                                                            <Label>Enrollment records</Label>
+                                                            <Select
+                                                                value={reportFilters.status_filter}
+                                                                onValueChange={(value) =>
+                                                                    updateReportFilters((current) => ({ ...current, status_filter: value }))
+                                                                }
+                                                            >
+                                                                <SelectTrigger>
+                                                                    <SelectValue placeholder="Active only" />
+                                                                </SelectTrigger>
+                                                                <SelectContent>
+                                                                    <SelectItem value="active">Active only</SelectItem>
+                                                                    <SelectItem value="all">Include deleted</SelectItem>
+                                                                </SelectContent>
+                                                            </Select>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </TabsContent>
+                                            <TabsContent value="data" className="mt-4 space-y-4">
+                                                <div className="space-y-2">
+                                                    <p className="text-sm font-semibold">Variant</p>
+                                                    <div className="space-y-2">
+                                                        {template.variants.map((variant) => {
+                                                            const isSelected = activeVariant.key === variant.key;
+
+                                                            return (
+                                                                <button
+                                                                    key={variant.key}
+                                                                    type="button"
+                                                                    onClick={() => handleVariantSelect(activeTemplate, variant.key)}
+                                                                    className={cn(
+                                                                        "focus-visible:ring-ring flex w-full items-start justify-between gap-3 rounded-xl border p-3 text-left transition-[background-color,border-color,box-shadow,transform,color] outline-none focus-visible:ring-2 active:scale-[0.96]",
+                                                                        isSelected
+                                                                            ? "border-primary/45 bg-primary/8 shadow-xs"
+                                                                            : "border-border hover:border-primary/30 hover:bg-muted/40",
+                                                                    )}
+                                                                    aria-pressed={isSelected}
+                                                                >
+                                                                    <span className="min-w-0">
+                                                                        <span className="block text-sm font-medium">{variant.title}</span>
+                                                                        <span className="text-muted-foreground mt-1 block text-xs leading-5">
+                                                                            {variant.description}
+                                                                        </span>
+                                                                    </span>
+                                                                    <Badge
+                                                                        variant={variant.orientation === "landscape" ? "default" : "outline"}
+                                                                        className="text-[9px] uppercase"
+                                                                    >
+                                                                        {variant.orientation}
+                                                                    </Badge>
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
                                                 </div>
-                                                <div>
-                                                    <p className="text-sm font-medium">{output.name}</p>
+                                                <div className="space-y-2 border-t pt-4">
+                                                    <p className="text-sm font-semibold">Included fields</p>
+                                                    <div className="flex flex-wrap gap-1.5">
+                                                        {activeVariant.includes.map((item) => (
+                                                            <Badge key={item} variant="secondary" className="text-[10px]">
+                                                                {item}
+                                                            </Badge>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </TabsContent>
+                                            <TabsContent value="layout" className="mt-4 space-y-4">
+                                                <div className="space-y-2">
+                                                    <Label>Browser preview orientation</Label>
+                                                    <div className="bg-muted/60 grid grid-cols-3 gap-1 rounded-lg p-1 text-xs">
+                                                        {(["variant", "portrait", "landscape"] as const).map((orientation) => (
+                                                            <button
+                                                                key={orientation}
+                                                                type="button"
+                                                                onClick={() => setPreviewOrientation(orientation)}
+                                                                className={cn(
+                                                                    "focus-visible:ring-ring rounded-md px-2 py-1.5 font-medium capitalize transition-[background-color,box-shadow,color,transform] outline-none focus-visible:ring-2 active:scale-[0.96]",
+                                                                    previewOrientation === orientation
+                                                                        ? "bg-background text-foreground shadow-xs"
+                                                                        : "text-muted-foreground hover:text-foreground",
+                                                                )}
+                                                                aria-pressed={previewOrientation === orientation}
+                                                            >
+                                                                {orientation}
+                                                            </button>
+                                                        ))}
+                                                    </div>
                                                     <p className="text-muted-foreground text-xs">
-                                                        {output.detail} · {output.createdAt}
+                                                        Effective canvas: {effectiveOrientation}. Backend PDF routes are unchanged.
                                                     </p>
                                                 </div>
+                                                <div className="space-y-2">
+                                                    <Label>Paper size</Label>
+                                                    <div className="grid gap-2">
+                                                        {PAPER_SIZE_OPTIONS.map((option) => {
+                                                            const isSelected = paperSize === option.value;
+
+                                                            return (
+                                                                <button
+                                                                    key={option.value}
+                                                                    type="button"
+                                                                    onClick={() => setPaperSize(option.value)}
+                                                                    className={cn(
+                                                                        "focus-visible:ring-ring flex items-center justify-between rounded-xl border px-3 py-2 text-left transition-[background-color,border-color,box-shadow,transform,color] outline-none focus-visible:ring-2 active:scale-[0.96]",
+                                                                        isSelected
+                                                                            ? "border-primary/45 bg-primary/8"
+                                                                            : "border-border hover:border-primary/30 hover:bg-muted/40",
+                                                                    )}
+                                                                    aria-pressed={isSelected}
+                                                                >
+                                                                    <span className="text-sm font-medium">{option.label}</span>
+                                                                    <span className="text-muted-foreground text-xs">{option.shortLabel}</span>
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-2 border-t pt-4">
+                                                    <Label>Zoom</Label>
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <Button
+                                                            type="button"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            onClick={() => setPreviewZoom((current) => Math.max(current - 10, 60))}
+                                                            disabled={previewZoom <= 60}
+                                                        >
+                                                            <ZoomOut className="size-3.5" aria-hidden="true" />
+                                                            Out
+                                                        </Button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setPreviewZoom(100)}
+                                                            className="focus-visible:ring-ring hover:bg-muted rounded-lg px-3 py-2 text-sm font-semibold tabular-nums transition-[background-color,color] outline-none focus-visible:ring-2"
+                                                        >
+                                                            {previewZoom}%
+                                                        </button>
+                                                        <Button
+                                                            type="button"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            onClick={() => setPreviewZoom((current) => Math.min(current + 10, 140))}
+                                                            disabled={previewZoom >= 140}
+                                                        >
+                                                            <ZoomIn className="size-3.5" aria-hidden="true" />
+                                                            In
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            </TabsContent>
+                                        </Tabs>
+                                    </CardContent>
+                                </Card>
+
+                                <Card className="rounded-2xl py-0 shadow-xs">
+                                    <CardHeader className="border-b p-4">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div>
+                                                <CardTitle className="text-sm">Recent outputs</CardTitle>
+                                                <CardDescription className="text-xs">Session print and export actions.</CardDescription>
                                             </div>
-                                            <Badge variant="outline">{output.format}</Badge>
+                                            <Badge variant="outline">{recentOutputs.length}</Badge>
                                         </div>
-                                    ))}
-                                </div>
-                            )}
-                        </section>
-                    </main>
+                                    </CardHeader>
+                                    <CardContent className="p-0">
+                                        {recentOutputs.length === 0 ? (
+                                            <div className="text-muted-foreground px-4 py-6 text-center text-xs">No outputs yet.</div>
+                                        ) : (
+                                            <div className="divide-y">
+                                                {recentOutputs.map((output) => (
+                                                    <div key={output.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                                                        <div className="min-w-0">
+                                                            <p className="truncate text-sm font-medium">{output.name}</p>
+                                                            <p className="text-muted-foreground truncate text-xs">
+                                                                {output.detail} · {output.createdAt}
+                                                            </p>
+                                                        </div>
+                                                        <Badge variant="outline">{output.format}</Badge>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            </aside>
+                        )}
+                    </div>
                 </div>
             </div>
             <Sheet open={variantSettingsFor !== null} onOpenChange={(open) => !open && setVariantSettingsFor(null)}>

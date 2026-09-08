@@ -59,7 +59,7 @@ export default function LibraryBooksIndex({ user, books, stats, filters, options
     useEffect(() => {
         if (!flash?.message) return;
         if (flash.type === "success") {
-            toast.success(flash.message);
+            toast.success(flash.message, { id: "library-book-save" });
         } else if (flash.type === "error") {
             toast.error(flash.message);
         } else {

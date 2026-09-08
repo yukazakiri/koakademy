@@ -1,8 +1,9 @@
 import AdminLayout from "@/components/administrators/admin-layout";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { create as createBook } from "@/routes/administrators/library/books";
 import type { User } from "@/types/user";
 import { Head, Link, router } from "@inertiajs/react";
 import { BookOpen, Plus, Search } from "lucide-react";
@@ -79,19 +80,11 @@ export default function LibraryBooksIndex({ user, books, stats, filters, options
     };
 
     const handleSortFieldChange = (value: string) => {
-        router.get(
-            route("administrators.library.books.index"),
-            { ...filters, sort: value, page: 1 },
-            { preserveState: true, replace: true },
-        );
+        router.get(route("administrators.library.books.index"), { ...filters, sort: value, page: 1 }, { preserveState: true, replace: true });
     };
 
     const handleSortDirectionChange = (value: string) => {
-        router.get(
-            route("administrators.library.books.index"),
-            { ...filters, direction: value, page: 1 },
-            { preserveState: true, replace: true },
-        );
+        router.get(route("administrators.library.books.index"), { ...filters, direction: value, page: 1 }, { preserveState: true, replace: true });
     };
 
     const sortFieldOptions = [
@@ -139,12 +132,10 @@ export default function LibraryBooksIndex({ user, books, stats, filters, options
                                 <span>Borrowed: {stats.borrowed_books}</span>
                             </div>
                         </div>
-                        <Button asChild className="gap-2">
-                            <Link href={route("administrators.library.books.create")}>
-                                <Plus className="h-4 w-4" />
-                                Add Book
-                            </Link>
-                        </Button>
+                        <Link href={createBook.url()} className={buttonVariants({ className: "gap-2" })}>
+                            <Plus className="h-4 w-4" />
+                            Add Book
+                        </Link>
                     </CardHeader>
                 </Card>
 

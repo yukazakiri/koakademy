@@ -17,11 +17,37 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { update as updateCurriculumCapabilities } from "@/routes/administrators/system-management/schools/curriculum-capabilities";
 import { router, useForm } from "@inertiajs/react";
-import { AlertTriangle, Building2, Calendar, Check, GraduationCap, Loader2, Mail, MapPin, Pencil, Phone, Plus, Save, Trash2 } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
+import {
+    AlertTriangle,
+    BookOpen,
+    Building2,
+    Calendar,
+    CalendarDays,
+    Check,
+    CheckCircle2,
+    Clock,
+    Compass,
+    GraduationCap,
+    Info,
+    Layers,
+    Loader2,
+    Mail,
+    MapPin,
+    Pencil,
+    Phone,
+    Plus,
+    Save,
+    Search,
+    Shield,
+    Trash2,
+    Users,
+    X,
+} from "lucide-react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { route } from "ziggy-js";
 
@@ -53,26 +79,23 @@ interface SchoolDetailsFormData {
 }
 
 const SCHOOL_LEVEL_OPTIONS = [
-    { value: "higher_education", label: "College / University", description: "Undergraduate, graduate, and university-level programs." },
-    { value: "junior_high", label: "Middle School / Junior High School", description: "Middle school or junior high school operations." },
-    { value: "senior_high", label: "Senior High School", description: "Senior high school programs, usually grades 11 to 12." },
-    { value: "elementary", label: "Elementary / Grade School", description: "Elementary or grade school operations." },
-    {
-        value: "technical_vocational",
-        label: "TESDA / Technical-Vocational",
-        description: "Technical and vocational education and training programs.",
-    },
+    { value: "higher_education", label: "College / University", description: "Undergraduate, graduate, and university programs." },
+    { value: "junior_high", label: "Junior High School", description: "Middle school or junior high school grades 7 to 10." },
+    { value: "senior_high", label: "Senior High School", description: "Senior high school grades 11 to 12." },
+    { value: "elementary", label: "Elementary School", description: "Elementary or primary school grades 1 to 6." },
+    { value: "technical_vocational", label: "TESDA / Technical-Vocational", description: "Vocational education and training programs." },
 ];
 
 const CURRICULUM_FRAMEWORKS = [
-    { value: "ched_psg", label: "CHED-aligned degree programs", levels: ["higher_education"] },
-    { value: "deped_matatag", label: "DepEd MATATAG Curriculum", levels: ["elementary", "junior_high"] },
-    { value: "deped_shs_k12", label: "DepEd Senior High (K–12)", levels: ["senior_high"] },
-    { value: "deped_shs_revised", label: "DepEd Revised SHS", levels: ["senior_high"] },
-    { value: "tesda_tr", label: "TESDA Training Regulations", levels: ["higher_education", "technical_vocational"] },
+    { value: "ched_psg", label: "CHED-aligned degree programs", levels: ["higher_education"], badgeColor: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300" },
+    { value: "deped_matatag", label: "DepEd MATATAG Curriculum", levels: ["elementary", "junior_high"], badgeColor: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" },
+    { value: "deped_shs_k12", label: "DepEd Senior High (K–12)", levels: ["senior_high"], badgeColor: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300" },
+    { value: "deped_shs_revised", label: "DepEd Revised SHS", levels: ["senior_high"], badgeColor: "border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300" },
+    { value: "tesda_tr", label: "TESDA Training Regulations", levels: ["higher_education", "technical_vocational"], badgeColor: "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300" },
 ];
 
-const schoolLevelLabel = (value?: string | null): string => SCHOOL_LEVEL_OPTIONS.find((option) => option.value === value)?.label ?? "Not configured";
+const schoolLevelLabel = (value?: string | null): string =>
+    SCHOOL_LEVEL_OPTIONS.find((option) => option.value === value)?.label ?? "Not configured";
 
 export default function SystemManagementSchoolPage({
     user,
@@ -88,9 +111,13 @@ export default function SystemManagementSchoolPage({
 }: SystemManagementPageProps) {
     const [isAddSchoolOpen, setIsAddSchoolOpen] = useState(false);
     const [isEditSchoolOpen, setIsEditSchoolOpen] = useState(false);
+    const [isSwitchSchoolOpen, setIsSwitchSchoolOpen] = useState(false);
     const [editingSchool, setEditingSchool] = useState<School | null>(null);
     const [deletingSchool, setDeletingSchool] = useState<School | null>(null);
     const [capabilities, setCapabilities] = useState<CurriculumCapability[]>(curriculum_capabilities);
+    const [directorySearch, setDirectorySearch] = useState("");
+
+    const canUpdate = access.sections.school?.can_update ?? false;
 
     const schoolForm = useForm({ school_id: active_school?.id?.toString() || "" });
     const schoolDetailsForm = useForm<SchoolDetailsFormData>({
@@ -103,6 +130,7 @@ export default function SystemManagementSchoolPage({
         phone: active_school?.phone || "",
         email: active_school?.email || "",
     });
+
     const createSchoolForm = useForm<CreateSchoolFormData>({
         name: "",
         code: "",
@@ -114,6 +142,7 @@ export default function SystemManagementSchoolPage({
         dean_name: "",
         dean_email: "",
     });
+
     const editSchoolForm = useForm<CreateSchoolFormData>({
         name: "",
         code: "",
@@ -137,10 +166,33 @@ export default function SystemManagementSchoolPage({
         setCapabilities(curriculum_capabilities);
     }, [curriculum_capabilities]);
 
+    useEffect(() => {
+        academicCalendarForm.setData({
+            semester: system_semester ?? 1,
+            school_starting_date: system_school_starting_date ?? "",
+            school_ending_date: system_school_ending_date ?? "",
+            maximum_registrar_year_level: registrar_reporting.maximum_year_level,
+        });
+    }, [registrar_reporting.maximum_year_level, system_semester, system_school_starting_date, system_school_ending_date]);
+
+    useEffect(() => {
+        if (!active_school) return;
+
+        schoolDetailsForm.setData({
+            school_id: active_school.id.toString(),
+            name: active_school.name,
+            code: active_school.code,
+            school_level: active_school.school_level || "",
+            description: active_school.description || "",
+            location: active_school.location || "",
+            phone: active_school.phone || "",
+            email: active_school.email || "",
+        });
+        schoolForm.setData("school_id", active_school.id.toString());
+    }, [active_school]);
+
     const saveCurriculumCapabilities = (): void => {
-        if (!active_school) {
-            return;
-        }
+        if (!active_school) return;
 
         router.put(
             updateCurriculumCapabilities(active_school.id),
@@ -179,32 +231,6 @@ export default function SystemManagementSchoolPage({
         ]);
     };
 
-    useEffect(() => {
-        academicCalendarForm.setData({
-            semester: system_semester ?? 1,
-            school_starting_date: system_school_starting_date ?? "",
-            school_ending_date: system_school_ending_date ?? "",
-            maximum_registrar_year_level: registrar_reporting.maximum_year_level,
-        });
-    }, [registrar_reporting.maximum_year_level, system_semester, system_school_starting_date, system_school_ending_date]);
-
-    useEffect(() => {
-        if (!active_school) {
-            return;
-        }
-
-        schoolDetailsForm.setData({
-            school_id: active_school.id.toString(),
-            name: active_school.name,
-            code: active_school.code,
-            school_level: active_school.school_level || "",
-            description: active_school.description || "",
-            location: active_school.location || "",
-            phone: active_school.phone || "",
-            email: active_school.email || "",
-        });
-    }, [active_school]);
-
     const handleCreateSchool = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
 
@@ -236,10 +262,7 @@ export default function SystemManagementSchoolPage({
 
     const handleUpdateSchool = (event: FormEvent<HTMLFormElement>): void => {
         event.preventDefault();
-
-        if (!editingSchool) {
-            return;
-        }
+        if (!editingSchool) return;
 
         editSchoolForm.put(route("administrators.system-management.schools.update", editingSchool.id), {
             preserveScroll: true,
@@ -268,9 +291,7 @@ export default function SystemManagementSchoolPage({
     };
 
     const handleDeleteSchool = (): void => {
-        if (!deletingSchool) {
-            return;
-        }
+        if (!deletingSchool) return;
 
         router.delete(route("administrators.system-management.schools.destroy", deletingSchool.id), {
             preserveScroll: true,
@@ -286,9 +307,7 @@ export default function SystemManagementSchoolPage({
     };
 
     const handleForceDeleteSchool = (): void => {
-        if (!deletingSchool) {
-            return;
-        }
+        if (!deletingSchool) return;
 
         router.delete(route("administrators.system-management.schools.force-destroy", deletingSchool.id), {
             preserveScroll: true,
@@ -303,353 +322,345 @@ export default function SystemManagementSchoolPage({
         });
     };
 
+    // Calculate approximate school year duration
+    const schoolYearDuration = useMemo(() => {
+        if (!academicCalendarForm.data.school_starting_date || !academicCalendarForm.data.school_ending_date) return null;
+        const start = new Date(academicCalendarForm.data.school_starting_date);
+        const end = new Date(academicCalendarForm.data.school_ending_date);
+        const diffTime = Math.abs(end.getTime() - start.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        const months = Math.round((diffDays / 30.4375) * 10) / 10;
+        return `${months} months (${diffDays} days)`;
+    }, [academicCalendarForm.data.school_starting_date, academicCalendarForm.data.school_ending_date]);
+
+    // Filter directory schools
+    const filteredSchools = useMemo(() => {
+        const query = directorySearch.trim().toLowerCase();
+        if (!query) return schools;
+        return schools.filter(
+            (s) =>
+                s.name.toLowerCase().includes(query) ||
+                s.code.toLowerCase().includes(query) ||
+                (s.location && s.location.toLowerCase().includes(query)) ||
+                (s.dean_name && s.dean_name.toLowerCase().includes(query)),
+        );
+    }, [schools, directorySearch]);
+
     return (
         <SystemManagementLayout
             user={user}
             access={access}
             activeSection="school"
             heading="Institution & Campus"
-            description="Manage the active institution, campus identity, contacts, and academic calendar used throughout the portal."
+            description="Manage the operating campus, institutional profile, curriculum frameworks, and academic calendar."
         >
-            <Tabs defaultValue="active" className="w-full space-y-6">
-                <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-                    <TabsList className="grid w-full grid-cols-2 sm:w-[400px]">
-                        <TabsTrigger value="active" className="text-sm">
-                            Active Environment
+            <div className="space-y-6">
+                {/* Active Campus Scope Bar */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-xl border border-border/60 bg-card/65 p-4 shadow-xs backdrop-blur-xs">
+                    <div className="flex items-center gap-3.5 min-w-0">
+                        <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-xs">
+                            <Building2 className="size-5" />
+                        </div>
+
+                        <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-semibold text-sm text-foreground truncate">
+                                    {active_school ? active_school.name : "No Active Campus"}
+                                </span>
+                                {active_school && (
+                                    <>
+                                        <Badge variant="outline" className="font-mono text-[10px] px-1.5 h-5 border-border/60">
+                                            {active_school.code}
+                                        </Badge>
+                                        <Badge variant="outline" className="text-[10px] px-1.5 h-5 border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+                                            Operating Campus
+                                        </Badge>
+                                    </>
+                                )}
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                                {active_school?.location || "Campus address unconfigured"} • {schoolLevelLabel(active_school?.school_level)}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setIsSwitchSchoolOpen(true)}
+                            className="h-8.5 gap-1.5 text-xs bg-background/80"
+                        >
+                            <Compass className="size-3.5" />
+                            <span>Switch Campus ({schools.length})</span>
+                        </Button>
+
+                        <Button
+                            size="sm"
+                            onClick={() => setIsAddSchoolOpen(true)}
+                            disabled={!canUpdate}
+                            className="h-8.5 gap-1.5 text-xs shadow-xs"
+                        >
+                            <Plus className="size-3.5" />
+                            <span>Add Campus</span>
+                        </Button>
+                    </div>
+                </div>
+
+                {/* Main Tabbed Console */}
+                <Tabs defaultValue="profile" className="space-y-6">
+                    <TabsList className="h-9 p-1 bg-muted/50 border border-border/40">
+                        <TabsTrigger value="profile" className="text-xs px-3.5">
+                            Campus Profile
                         </TabsTrigger>
-                        <TabsTrigger value="directory" className="text-sm">
-                            School Directory
+                        <TabsTrigger value="curriculum" className="text-xs px-3.5">
+                            Curriculum Pathways ({capabilities.length})
+                        </TabsTrigger>
+                        <TabsTrigger value="calendar" className="text-xs px-3.5">
+                            Academic Calendar
+                        </TabsTrigger>
+                        <TabsTrigger value="directory" className="text-xs px-3.5">
+                            All Campuses ({schools.length})
                         </TabsTrigger>
                     </TabsList>
 
-                    <Button onClick={() => setIsAddSchoolOpen(true)} className="w-full shrink-0 shadow-sm sm:w-auto">
-                        <Plus className="mr-2 h-4 w-4" />
-                        Add New Campus
-                    </Button>
-                </div>
-
-                <TabsContent value="active" className="space-y-6 focus-visible:ring-0 focus-visible:outline-none">
-                    <div className="grid gap-6 lg:grid-cols-12">
-                        {/* Sidebar: Active School Switcher */}
-                        <div className="space-y-6 lg:col-span-4 xl:col-span-3">
-                            <Card className="border-muted-foreground/10 flex h-full flex-col shadow-sm">
-                                <CardHeader className="bg-muted/30 border-b pb-4">
-                                    <div className="mb-1 flex items-center gap-2">
-                                        <div className="bg-primary/10 text-primary rounded-md p-1.5">
-                                            <Building2 className="h-4 w-4" />
-                                        </div>
-                                        <CardTitle className="text-base">Current Context</CardTitle>
+                    {/* Tab 1: Campus Profile */}
+                    <TabsContent value="profile" className="mt-0 space-y-6">
+                        {active_school ? (
+                            <Card className="border-border/60 bg-card/70 shadow-xs backdrop-blur-xs">
+                                <CardHeader className="flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border/40 pb-4">
+                                    <div>
+                                        <CardTitle className="text-base font-semibold">Campus Profile & Legal Identity</CardTitle>
+                                        <CardDescription className="text-xs mt-0.5">
+                                            Official contact numbers, emails, physical address, and education tier for {active_school.name}.
+                                        </CardDescription>
                                     </div>
-                                    <CardDescription>Select the school instance this portal manages right now.</CardDescription>
+
+                                    <Button
+                                        onClick={() =>
+                                            submitSystemForm({
+                                                form: schoolDetailsForm,
+                                                routeName: "administrators.system-management.school-details.update",
+                                                successMessage: "Campus details updated successfully.",
+                                                errorMessage: "Failed to update campus details.",
+                                            })
+                                        }
+                                        disabled={schoolDetailsForm.processing || !schoolDetailsForm.isDirty || !canUpdate}
+                                        className="h-9 gap-1.5 shrink-0 self-start sm:self-center shadow-xs"
+                                    >
+                                        {schoolDetailsForm.processing ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                                        <span>Save Profile</span>
+                                    </Button>
                                 </CardHeader>
-                                <CardContent className="flex flex-grow flex-col space-y-4 p-4">
-                                    <div className="grid max-h-[300px] gap-2 overflow-y-auto pr-1 sm:max-h-none">
-                                        {schools.map((school) => (
-                                            <button
-                                                key={school.id}
-                                                type="button"
-                                                onClick={() => schoolForm.setData("school_id", school.id.toString())}
-                                                className={cn(
-                                                    "hover:bg-accent hover:border-accent-foreground/20 group flex items-center justify-between rounded-lg border p-3 text-left transition-all",
-                                                    schoolForm.data.school_id === school.id.toString()
-                                                        ? "border-primary bg-primary/5 ring-primary/20 shadow-sm ring-1"
-                                                        : "bg-background border-transparent",
-                                                )}
-                                            >
-                                                <div className="flex items-center gap-3 overflow-hidden pr-2">
-                                                    <div
-                                                        className={cn(
-                                                            "flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors",
-                                                            schoolForm.data.school_id === school.id.toString()
-                                                                ? "bg-primary text-primary-foreground"
-                                                                : "bg-muted text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary",
-                                                        )}
-                                                    >
-                                                        <Building2 className="h-4 w-4" />
-                                                    </div>
-                                                    <div className="flex min-w-0 flex-col">
-                                                        <span className="text-foreground truncate text-sm leading-tight font-medium">
-                                                            {school.name}
-                                                        </span>
-                                                        <span className="text-muted-foreground mt-0.5 truncate text-xs">{school.code}</span>
-                                                    </div>
-                                                </div>
 
-                                                {schoolForm.data.school_id === school.id.toString() && (
-                                                    <div className="bg-primary text-primary-foreground flex h-5 w-5 shrink-0 items-center justify-center rounded-full shadow-sm">
-                                                        <Check className="h-3 w-3" />
-                                                    </div>
-                                                )}
-                                            </button>
-                                        ))}
-                                    </div>
+                                <CardContent className="pt-6 space-y-6">
+                                    {/* Core Campus Identity */}
+                                    <div className="space-y-4">
+                                        <div className="flex items-center gap-2 border-b border-border/40 pb-2">
+                                            <Building2 className="size-4 text-primary" />
+                                            <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider">
+                                                Identity & Institutional Classification
+                                            </h3>
+                                        </div>
 
-                                    <div className="mt-auto space-y-3 pt-4">
-                                        <Button
-                                            className="w-full shadow-sm"
-                                            onClick={() =>
-                                                submitSystemForm({
-                                                    form: schoolForm,
-                                                    routeName: "administrators.system-management.school.update",
-                                                    successMessage: "Active school updated successfully.",
-                                                    errorMessage: "Failed to update active school.",
-                                                })
-                                            }
-                                            disabled={schoolForm.processing || schoolForm.data.school_id === active_school?.id?.toString()}
-                                        >
-                                            {schoolForm.processing ? (
-                                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                            ) : (
-                                                <Save className="mr-2 h-4 w-4" />
-                                            )}
-                                            Apply Selection
-                                        </Button>
+                                        <div className="grid gap-4 sm:grid-cols-3">
+                                            <div className="space-y-1.5 sm:col-span-2">
+                                                <Label htmlFor="school_name" className="text-xs font-semibold">
+                                                    Institutional Name
+                                                </Label>
+                                                <Input
+                                                    id="school_name"
+                                                    value={schoolDetailsForm.data.name}
+                                                    onChange={(e) => schoolDetailsForm.setData("name", e.target.value)}
+                                                    placeholder="e.g. KoAkademy University - Main Campus"
+                                                    className="text-sm font-medium"
+                                                />
+                                            </div>
 
-                                        <div className="rounded-md border border-amber-500/20 bg-amber-500/10 p-3">
-                                            <div className="flex items-start gap-2.5">
-                                                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-500" />
-                                                <p className="text-xs leading-relaxed font-medium text-amber-800 dark:text-amber-400">
-                                                    Changing the active context reloads global configurations.
-                                                </p>
+                                            <div className="space-y-1.5">
+                                                <Label htmlFor="school_code" className="text-xs font-semibold">
+                                                    Campus Code
+                                                </Label>
+                                                <Input
+                                                    id="school_code"
+                                                    value={schoolDetailsForm.data.code}
+                                                    onChange={(e) => schoolDetailsForm.setData("code", e.target.value.toUpperCase())}
+                                                    placeholder="MAIN01"
+                                                    className="font-mono text-sm uppercase"
+                                                />
+                                            </div>
+
+                                            <div className="space-y-1.5 sm:col-span-3">
+                                                <Label htmlFor="school_level" className="text-xs font-semibold">
+                                                    Primary Education Tier
+                                                </Label>
+                                                <Select
+                                                    value={schoolDetailsForm.data.school_level}
+                                                    onValueChange={(val) => schoolDetailsForm.setData("school_level", val ?? "")}
+                                                >
+                                                    <SelectTrigger id="school_level" className="h-9 text-xs">
+                                                        <SelectValue placeholder="Select primary level" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {SCHOOL_LEVEL_OPTIONS.map((opt) => (
+                                                            <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                                                                <span className="font-semibold">{opt.label}</span>
+                                                                <span className="text-muted-foreground ml-2 text-[11px]">— {opt.description}</span>
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+
+                                            <div className="space-y-1.5 sm:col-span-3">
+                                                <Label htmlFor="school_description" className="text-xs font-semibold">
+                                                    Institutional Description & Mission
+                                                </Label>
+                                                <Textarea
+                                                    id="school_description"
+                                                    value={schoolDetailsForm.data.description}
+                                                    onChange={(e) => schoolDetailsForm.setData("description", e.target.value)}
+                                                    rows={3}
+                                                    placeholder="Brief overview of this school campus..."
+                                                    className="text-xs resize-none"
+                                                />
                                             </div>
                                         </div>
                                     </div>
-                                </CardContent>
-                            </Card>
-                        </div>
 
-                        {/* Main Content: School Details Form */}
-                        <div className="lg:col-span-8 xl:col-span-9">
-                            <Card className="border-muted-foreground/10 h-full shadow-sm">
-                                <CardHeader className="bg-muted/30 relative overflow-hidden border-b pb-0">
-                                    <div className="text-primary pointer-events-none absolute top-0 right-0 p-6 opacity-5">
-                                        <Building2 className="h-32 w-32" />
-                                    </div>
-                                    <div className="relative z-10 flex flex-col justify-between gap-4 pb-6 sm:flex-row sm:items-end">
-                                        <div className="space-y-1.5">
-                                            <CardTitle className="text-xl">Settings & Details</CardTitle>
-                                            <CardDescription>Manage the profile configuration for the active school.</CardDescription>
+                                    {/* Official Contact & Physical Location */}
+                                    <div className="space-y-4 pt-2">
+                                        <div className="flex items-center gap-2 border-b border-border/40 pb-2">
+                                            <MapPin className="size-4 text-primary" />
+                                            <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider">
+                                                Contact & Physical Location
+                                            </h3>
                                         </div>
-                                        <Button
-                                            onClick={() =>
-                                                submitSystemForm({
-                                                    form: schoolDetailsForm,
-                                                    routeName: "administrators.system-management.school-details.update",
-                                                    successMessage: "School details updated successfully.",
-                                                    errorMessage: "Failed to update school details.",
-                                                })
-                                            }
-                                            disabled={schoolDetailsForm.processing || !active_school || !schoolDetailsForm.isDirty}
-                                            className="shrink-0 shadow-sm"
-                                        >
-                                            {schoolDetailsForm.processing ? (
-                                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                            ) : (
-                                                <Save className="mr-2 h-4 w-4" />
-                                            )}
-                                            Save Settings
-                                        </Button>
-                                    </div>
-                                </CardHeader>
-                                <CardContent className="p-6">
-                                    {active_school ? (
-                                        <div className="max-w-3xl space-y-8">
-                                            {/* Primary Info */}
-                                            <div className="space-y-4">
-                                                <div className="flex items-center gap-2 border-b pb-2">
-                                                    <Building2 className="text-muted-foreground h-4 w-4" />
-                                                    <h3 className="text-foreground text-sm font-medium">Primary Information</h3>
-                                                </div>
-                                                <div className="grid gap-5 sm:grid-cols-2">
-                                                    <div className="space-y-2.5">
-                                                        <Label
-                                                            htmlFor="school_name"
-                                                            className="text-muted-foreground text-xs font-semibold tracking-wider uppercase"
-                                                        >
-                                                            School Name
-                                                        </Label>
-                                                        <Input
-                                                            id="school_name"
-                                                            value={schoolDetailsForm.data.name}
-                                                            onChange={(event) => schoolDetailsForm.setData("name", event.target.value)}
-                                                            className="bg-background"
-                                                        />
-                                                    </div>
-                                                    <div className="space-y-2.5">
-                                                        <Label
-                                                            htmlFor="school_code"
-                                                            className="text-muted-foreground text-xs font-semibold tracking-wider uppercase"
-                                                        >
-                                                            Campus Code
-                                                        </Label>
-                                                        <Input
-                                                            id="school_code"
-                                                            value={schoolDetailsForm.data.code}
-                                                            onChange={(event) => schoolDetailsForm.setData("code", event.target.value)}
-                                                            className="bg-background uppercase"
-                                                        />
-                                                    </div>
-                                                </div>
 
-                                                <div className="space-y-2.5">
-                                                    <Label
-                                                        htmlFor="school_level"
-                                                        className="text-muted-foreground text-xs font-semibold tracking-wider uppercase"
-                                                    >
-                                                        School Level
-                                                    </Label>
-                                                    <Select
-                                                        value={schoolDetailsForm.data.school_level}
-                                                        onValueChange={(value) => schoolDetailsForm.setData("school_level", value ?? "")}
-                                                    >
-                                                        <SelectTrigger id="school_level" className="bg-background">
-                                                            <SelectValue placeholder="Choose school level" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            {SCHOOL_LEVEL_OPTIONS.map((option) => (
-                                                                <SelectItem key={option.value} value={option.value}>
-                                                                    {option.label}
-                                                                </SelectItem>
-                                                            ))}
-                                                        </SelectContent>
-                                                    </Select>
-                                                </div>
-
-                                                <div className="space-y-2.5">
-                                                    <Label
-                                                        htmlFor="school_description"
-                                                        className="text-muted-foreground text-xs font-semibold tracking-wider uppercase"
-                                                    >
-                                                        Description
-                                                    </Label>
-                                                    <Textarea
-                                                        id="school_description"
-                                                        value={schoolDetailsForm.data.description}
-                                                        onChange={(event) => schoolDetailsForm.setData("description", event.target.value)}
-                                                        rows={4}
-                                                        className="bg-background resize-none leading-relaxed"
+                                        <div className="grid gap-4 sm:grid-cols-2">
+                                            <div className="space-y-1.5">
+                                                <Label htmlFor="school_phone" className="text-xs font-semibold">
+                                                    Official Phone / Trunkline
+                                                </Label>
+                                                <div className="relative">
+                                                    <Phone className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                                                    <Input
+                                                        id="school_phone"
+                                                        value={schoolDetailsForm.data.phone}
+                                                        onChange={(e) => schoolDetailsForm.setData("phone", e.target.value)}
+                                                        placeholder="+63 2 8000 0000"
+                                                        className="pl-8 text-xs font-mono"
                                                     />
                                                 </div>
                                             </div>
 
-                                            {/* Contact Info */}
-                                            <div className="space-y-4">
-                                                <div className="flex items-center gap-2 border-b pb-2">
-                                                    <Phone className="text-muted-foreground h-4 w-4" />
-                                                    <h3 className="text-foreground text-sm font-medium">Contact Details</h3>
+                                            <div className="space-y-1.5">
+                                                <Label htmlFor="school_email" className="text-xs font-semibold">
+                                                    Official Inquiries Email
+                                                </Label>
+                                                <div className="relative">
+                                                    <Mail className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                                                    <Input
+                                                        id="school_email"
+                                                        type="email"
+                                                        value={schoolDetailsForm.data.email}
+                                                        onChange={(e) => schoolDetailsForm.setData("email", e.target.value)}
+                                                        placeholder="registrar@school.edu.ph"
+                                                        className="pl-8 text-xs font-mono"
+                                                    />
                                                 </div>
-                                                <div className="grid gap-5 sm:grid-cols-2">
-                                                    <div className="space-y-2.5">
-                                                        <Label
-                                                            htmlFor="school_phone"
-                                                            className="text-muted-foreground text-xs font-semibold tracking-wider uppercase"
-                                                        >
-                                                            Phone Number
-                                                        </Label>
-                                                        <div className="relative">
-                                                            <Phone className="text-muted-foreground absolute top-2.5 left-3 h-4 w-4" />
-                                                            <Input
-                                                                id="school_phone"
-                                                                value={schoolDetailsForm.data.phone}
-                                                                onChange={(event) => schoolDetailsForm.setData("phone", event.target.value)}
-                                                                className="bg-background pl-9"
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                    <div className="space-y-2.5">
-                                                        <Label
-                                                            htmlFor="school_email"
-                                                            className="text-muted-foreground text-xs font-semibold tracking-wider uppercase"
-                                                        >
-                                                            Email Address
-                                                        </Label>
-                                                        <div className="relative">
-                                                            <Mail className="text-muted-foreground absolute top-2.5 left-3 h-4 w-4" />
-                                                            <Input
-                                                                id="school_email"
-                                                                type="email"
-                                                                value={schoolDetailsForm.data.email}
-                                                                onChange={(event) => schoolDetailsForm.setData("email", event.target.value)}
-                                                                className="bg-background pl-9"
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                    <div className="space-y-2.5 sm:col-span-2">
-                                                        <Label
-                                                            htmlFor="school_location"
-                                                            className="text-muted-foreground text-xs font-semibold tracking-wider uppercase"
-                                                        >
-                                                            Location / Address
-                                                        </Label>
-                                                        <div className="relative">
-                                                            <MapPin className="text-muted-foreground absolute top-2.5 left-3 h-4 w-4" />
-                                                            <Input
-                                                                id="school_location"
-                                                                value={schoolDetailsForm.data.location}
-                                                                onChange={(event) => schoolDetailsForm.setData("location", event.target.value)}
-                                                                className="bg-background pl-9"
-                                                            />
-                                                        </div>
-                                                    </div>
+                                            </div>
+
+                                            <div className="space-y-1.5 sm:col-span-2">
+                                                <Label htmlFor="school_location" className="text-xs font-semibold">
+                                                    Campus Street Address & City
+                                                </Label>
+                                                <div className="relative">
+                                                    <MapPin className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                                                    <Input
+                                                        id="school_location"
+                                                        value={schoolDetailsForm.data.location}
+                                                        onChange={(e) => schoolDetailsForm.setData("location", e.target.value)}
+                                                        placeholder="University Avenue, Metro Manila, Philippines"
+                                                        className="pl-8 text-xs"
+                                                    />
                                                 </div>
                                             </div>
                                         </div>
-                                    ) : (
-                                        <div className="flex flex-col items-center justify-center py-16 text-center">
-                                            <div className="bg-muted mb-4 rounded-full p-4">
-                                                <Building2 className="text-muted-foreground h-8 w-8" />
-                                            </div>
-                                            <h3 className="text-lg font-medium">No Active School Selected</h3>
-                                            <p className="text-muted-foreground mt-1 max-w-sm text-sm">
-                                                Please select a school from the context sidebar to view and edit its details.
-                                            </p>
-                                        </div>
-                                    )}
+                                    </div>
                                 </CardContent>
                             </Card>
-                        </div>
-                    </div>
+                        ) : (
+                            <Card className="border-dashed border-border/80 p-8 text-center">
+                                <Building2 className="mx-auto size-8 text-muted-foreground opacity-60" />
+                                <h3 className="mt-3 text-sm font-semibold">No Active School Selected</h3>
+                                <p className="mt-1 text-xs text-muted-foreground">Select a campus to review and configure its profile.</p>
+                            </Card>
+                        )}
+                    </TabsContent>
 
-                    <Card className="border-primary/15 overflow-hidden shadow-sm">
-                        <CardHeader className="bg-primary/[0.03] border-b">
-                            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-                                <div className="space-y-1.5">
-                                    <CardTitle className="text-base">Supported curriculum pathways</CardTitle>
-                                    <CardDescription>
-                                        Enable the education levels and frameworks this school may offer. The curriculum workspace only shows matching
-                                        creation paths.
+                    {/* Tab 2: Curriculum Pathways */}
+                    <TabsContent value="curriculum" className="mt-0 space-y-6">
+                        <Card className="border-border/60 bg-card/70 shadow-xs backdrop-blur-xs">
+                            <CardHeader className="flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border/40 pb-4">
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <CardTitle className="text-base font-semibold">Supported Curriculum Pathways</CardTitle>
+                                        <Badge variant="outline" className="text-xs border-border/60">
+                                            {capabilities.length} Frameworks
+                                        </Badge>
+                                    </div>
+                                    <CardDescription className="text-xs mt-0.5">
+                                        Authorizes program creation rules for CHED degree courses, DepEd MATATAG, K-12 SHS, and TESDA regulations.
                                     </CardDescription>
                                 </div>
-                                <div className="flex gap-2">
-                                    <Button type="button" variant="outline" size="sm" onClick={addCurriculumCapability} disabled={!active_school}>
-                                        <Plus className="mr-1.5 h-3.5 w-3.5" />
-                                        Add pathway
+
+                                <div className="flex items-center gap-2 self-start sm:self-center">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={addCurriculumCapability}
+                                        disabled={!active_school || !canUpdate}
+                                        className="h-8.5 gap-1.5 text-xs bg-background/80"
+                                    >
+                                        <Plus className="size-3.5" />
+                                        <span>Add Pathway</span>
                                     </Button>
-                                    <Button type="button" size="sm" onClick={saveCurriculumCapabilities} disabled={!active_school}>
-                                        <Save className="mr-1.5 h-3.5 w-3.5" />
-                                        Save pathways
+
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        onClick={saveCurriculumCapabilities}
+                                        disabled={!active_school || !canUpdate}
+                                        className="h-8.5 gap-1.5 text-xs shadow-xs"
+                                    >
+                                        <Save className="size-3.5" />
+                                        <span>Save Pathways</span>
                                     </Button>
                                 </div>
-                            </div>
-                        </CardHeader>
-                        <CardContent className="p-0">
-                            {capabilities.length === 0 ? (
-                                <p className="text-muted-foreground p-6 text-sm">Add a supported pathway before creating programs for this school.</p>
-                            ) : (
-                                <div className="divide-y">
-                                    {capabilities.map((capability, index) => {
+                            </CardHeader>
+
+                            <CardContent className="p-0 divide-y divide-border/40">
+                                {capabilities.length === 0 ? (
+                                    <div className="p-8 text-center text-xs text-muted-foreground">
+                                        No supported curriculum pathways registered for this campus. Click &quot;Add Pathway&quot; to authorize program frameworks.
+                                    </div>
+                                ) : (
+                                    capabilities.map((capability, index) => {
                                         const frameworkOptions = CURRICULUM_FRAMEWORKS.filter((framework) =>
                                             framework.levels.includes(capability.school_level),
                                         );
+                                        const matchedFramework = CURRICULUM_FRAMEWORKS.find((f) => f.value === capability.curriculum_framework);
 
                                         return (
                                             <div
                                                 key={capability.id}
-                                                className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.35fr)_auto] md:items-end"
+                                                className="grid gap-3.5 p-4 sm:grid-cols-[1fr_1.2fr_1.5fr_auto] sm:items-end hover:bg-muted/20 transition-colors"
                                             >
                                                 <div className="space-y-1.5">
-                                                    <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-                                                        Education level
+                                                    <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                                        Education Level
                                                     </Label>
                                                     <Select
                                                         value={capability.school_level}
@@ -672,22 +683,30 @@ export default function SystemManagementSchoolPage({
                                                             );
                                                         }}
                                                     >
-                                                        <SelectTrigger>
+                                                        <SelectTrigger className="h-8.5 text-xs bg-background">
                                                             <SelectValue />
                                                         </SelectTrigger>
                                                         <SelectContent>
                                                             {SCHOOL_LEVEL_OPTIONS.map((option) => (
-                                                                <SelectItem key={option.value} value={option.value}>
+                                                                <SelectItem key={option.value} value={option.value} className="text-xs">
                                                                     {option.label}
                                                                 </SelectItem>
                                                             ))}
                                                         </SelectContent>
                                                     </Select>
                                                 </div>
+
                                                 <div className="space-y-1.5">
-                                                    <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-                                                        Framework
-                                                    </Label>
+                                                    <div className="flex items-center justify-between">
+                                                        <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                                            Regulatory Framework
+                                                        </Label>
+                                                        {matchedFramework && (
+                                                            <Badge variant="outline" className={cn("text-[9.5px] px-1 h-4", matchedFramework.badgeColor)}>
+                                                                Standard
+                                                            </Badge>
+                                                        )}
+                                                    </div>
                                                     <Select
                                                         value={capability.curriculum_framework}
                                                         onValueChange={(value) =>
@@ -700,21 +719,22 @@ export default function SystemManagementSchoolPage({
                                                             )
                                                         }
                                                     >
-                                                        <SelectTrigger>
+                                                        <SelectTrigger className="h-8.5 text-xs bg-background">
                                                             <SelectValue />
                                                         </SelectTrigger>
                                                         <SelectContent>
                                                             {frameworkOptions.map((option) => (
-                                                                <SelectItem key={option.value} value={option.value}>
+                                                                <SelectItem key={option.value} value={option.value} className="text-xs">
                                                                     {option.label}
                                                                 </SelectItem>
                                                             ))}
                                                         </SelectContent>
                                                     </Select>
                                                 </div>
+
                                                 <div className="space-y-1.5">
-                                                    <Label className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-                                                        Reference (optional)
+                                                    <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                                        Regulatory Reference / DepEd Order
                                                     </Label>
                                                     <Input
                                                         value={capability.reference}
@@ -725,127 +745,51 @@ export default function SystemManagementSchoolPage({
                                                                 ),
                                                             )
                                                         }
-                                                        placeholder="Official policy, TR, or local reference"
+                                                        placeholder="CMO No. 25, DepEd Order 21, TESDA TR"
+                                                        className="h-8.5 text-xs font-mono"
                                                     />
                                                 </div>
+
                                                 <Button
                                                     type="button"
                                                     variant="ghost"
                                                     size="icon"
-                                                    onClick={() =>
-                                                        setCapabilities((current) => current.filter((_, itemIndex) => itemIndex !== index))
-                                                    }
+                                                    onClick={() => setCapabilities((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                                                    className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                                                     aria-label="Remove pathway"
                                                 >
-                                                    <Trash2 className="text-muted-foreground h-4 w-4" />
+                                                    <Trash2 className="size-3.5" />
                                                 </Button>
                                             </div>
                                         );
-                                    })}
-                                </div>
-                            )}
-                        </CardContent>
-                    </Card>
+                                    })
+                                )}
+                            </CardContent>
+                        </Card>
+                    </TabsContent>
 
-                    {/* Academic Calendar Defaults */}
-                    <Card className="border-muted-foreground/10 shadow-sm">
-                        <CardHeader className="bg-muted/30 border-b pb-4">
-                            <div className="mb-1 flex items-center gap-2">
-                                <div className="bg-primary/10 text-primary rounded-md p-1.5">
-                                    <Calendar className="h-4 w-4" />
-                                </div>
-                                <CardTitle className="text-base">Academic Calendar Defaults</CardTitle>
-                            </div>
-                            <CardDescription>
-                                Configure the system-wide default semester, school year dates, and the highest registrar year level shown in reports.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="p-6">
-                            <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
-                                <div className="space-y-2.5">
-                                    <Label htmlFor="system_semester" className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-                                        Default Semester
-                                    </Label>
-                                    <Select
-                                        value={academicCalendarForm.data.semester.toString()}
-                                        onValueChange={(value) => academicCalendarForm.setData("semester", parseInt(value ?? "1"))}
-                                    >
-                                        <SelectTrigger id="system_semester" className="bg-background">
-                                            <SelectValue placeholder="Select semester" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {Object.entries(available_semesters ?? {}).map(([key, label]) => (
-                                                <SelectItem key={key} value={key}>
-                                                    {label}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="space-y-2.5">
-                                    <Label
-                                        htmlFor="maximum_registrar_year_level"
-                                        className="text-muted-foreground text-xs font-semibold tracking-wider uppercase"
-                                    >
-                                        Highest Registrar Year Level
-                                    </Label>
-                                    <Input
-                                        id="maximum_registrar_year_level"
-                                        type="number"
-                                        min="2"
-                                        max="7"
-                                        value={academicCalendarForm.data.maximum_registrar_year_level}
-                                        onChange={(event) =>
-                                            academicCalendarForm.setData("maximum_registrar_year_level", Number(event.target.value || 4))
-                                        }
-                                        className="bg-background"
-                                    />
-                                    <p className="text-muted-foreground text-xs">Reports show Year 1 through this level. The default is Year 4.</p>
-                                </div>
-                                <div className="space-y-2.5">
-                                    <Label
-                                        htmlFor="school_starting_date"
-                                        className="text-muted-foreground text-xs font-semibold tracking-wider uppercase"
-                                    >
-                                        School Starting Date
-                                    </Label>
-                                    <div className="relative">
-                                        <Calendar className="text-muted-foreground absolute top-2.5 left-3 h-4 w-4" />
-                                        <Input
-                                            id="school_starting_date"
-                                            type="date"
-                                            value={academicCalendarForm.data.school_starting_date}
-                                            onChange={(event) => academicCalendarForm.setData("school_starting_date", event.target.value)}
-                                            className="bg-background pl-9"
-                                        />
+                    {/* Tab 3: Academic Calendar Defaults */}
+                    <TabsContent value="calendar" className="mt-0 space-y-6">
+                        <Card className="border-border/60 bg-card/70 shadow-xs backdrop-blur-xs">
+                            <CardHeader className="flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border/40 pb-4">
+                                <div className="flex items-start gap-3">
+                                    <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary mt-0.5">
+                                        <Calendar className="size-5" />
+                                    </div>
+                                    <div>
+                                        <CardTitle className="text-base font-semibold">Academic Calendar Defaults</CardTitle>
+                                        <CardDescription className="text-xs mt-0.5">
+                                            System-wide standard term, starting/ending boundaries, and registrar year progression depth.
+                                        </CardDescription>
                                     </div>
                                 </div>
-                                <div className="space-y-2.5">
-                                    <Label
-                                        htmlFor="school_ending_date"
-                                        className="text-muted-foreground text-xs font-semibold tracking-wider uppercase"
-                                    >
-                                        School Ending Date
-                                    </Label>
-                                    <div className="relative">
-                                        <Calendar className="text-muted-foreground absolute top-2.5 left-3 h-4 w-4" />
-                                        <Input
-                                            id="school_ending_date"
-                                            type="date"
-                                            value={academicCalendarForm.data.school_ending_date}
-                                            onChange={(event) => academicCalendarForm.setData("school_ending_date", event.target.value)}
-                                            className="bg-background pl-9"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="mt-6 flex justify-end">
+
                                 <Button
                                     onClick={() =>
                                         submitSystemForm({
                                             form: academicCalendarForm,
                                             routeName: "administrators.system-management.academic-calendar.update",
-                                            successMessage: "Academic calendar defaults updated successfully.",
+                                            successMessage: "Academic calendar defaults saved successfully.",
                                             errorMessage: "Failed to update academic calendar defaults.",
                                         })
                                     }
@@ -855,405 +799,660 @@ export default function SystemManagementSchoolPage({
                                             academicCalendarForm.data.semester === (system_semester ?? 1) &&
                                             academicCalendarForm.data.school_starting_date === (system_school_starting_date ?? "") &&
                                             academicCalendarForm.data.school_ending_date === (system_school_ending_date ?? "") &&
-                                            academicCalendarForm.data.maximum_registrar_year_level === registrar_reporting.maximum_year_level)
+                                            academicCalendarForm.data.maximum_registrar_year_level === registrar_reporting.maximum_year_level) ||
+                                        !canUpdate
                                     }
-                                    className="shadow-sm"
+                                    className="h-9 gap-1.5 shrink-0 self-start sm:self-center shadow-xs"
                                 >
-                                    {academicCalendarForm.processing ? (
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    ) : (
-                                        <Save className="mr-2 h-4 w-4" />
-                                    )}
-                                    Save Calendar Defaults
+                                    {academicCalendarForm.processing ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                                    <span>Save Calendar Defaults</span>
                                 </Button>
-                            </div>
-                        </CardContent>
-                    </Card>
-                </TabsContent>
+                            </CardHeader>
 
-                <TabsContent value="directory" className="space-y-6 focus-visible:ring-0 focus-visible:outline-none">
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        {schools.map((school) => (
-                            <Card
-                                key={school.id}
-                                className="border-muted-foreground/10 hover:border-primary/20 flex flex-col overflow-hidden shadow-sm transition-colors"
-                            >
-                                <div className={cn("h-1.5 w-full", school.is_active ? "bg-primary" : "bg-muted")} />
-                                <CardHeader className="px-5 pb-3">
-                                    <div className="flex items-start justify-between">
-                                        <div>
-                                            <CardTitle className="flex items-center gap-2 text-lg leading-tight">
-                                                {school.name}
-                                                {active_school?.id === school.id && <Check className="text-primary h-4 w-4" />}
-                                            </CardTitle>
-                                            <div className="mt-1.5 flex items-center gap-2">
-                                                <Badge variant="outline" className="px-1.5 font-mono text-[10px]">
-                                                    {school.code}
-                                                </Badge>
-                                                <Badge variant={school.is_active ? "default" : "secondary"} className="px-1.5 text-[10px]">
-                                                    {school.is_active ? "Active" : "Inactive"}
-                                                </Badge>
-                                                <Badge variant="outline" className="px-1.5 text-[10px]">
-                                                    {schoolLevelLabel(school.school_level)}
-                                                </Badge>
-                                                {active_school?.id === school.id && (
-                                                    <Badge className="border-blue-200 bg-blue-50 px-1.5 text-[10px] text-blue-700 hover:bg-blue-50 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
-                                                        Operating
-                                                    </Badge>
+                            <CardContent className="pt-6 space-y-6">
+                                <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+                                    <div className="space-y-1.5 rounded-xl border border-border/50 bg-background/50 p-4">
+                                        <Label htmlFor="system_semester" className="text-xs font-semibold text-foreground">
+                                            Default System Semester
+                                        </Label>
+                                        <Select
+                                            value={academicCalendarForm.data.semester.toString()}
+                                            onValueChange={(value) => academicCalendarForm.setData("semester", parseInt(value ?? "1"))}
+                                        >
+                                            <SelectTrigger id="system_semester" className="h-9 text-xs bg-background">
+                                                <SelectValue placeholder="Select semester" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {Object.entries(available_semesters ?? {}).map(([key, label]) => (
+                                                    <SelectItem key={key} value={key} className="text-xs">
+                                                        {label}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        <p className="text-[11px] text-muted-foreground mt-1">Pre-selected for new classes and enrollments.</p>
+                                    </div>
+
+                                    <div className="space-y-1.5 rounded-xl border border-border/50 bg-background/50 p-4">
+                                        <Label htmlFor="school_starting_date" className="text-xs font-semibold text-foreground">
+                                            School Year Opening Date
+                                        </Label>
+                                        <div className="relative">
+                                            <CalendarDays className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                                            <Input
+                                                id="school_starting_date"
+                                                type="date"
+                                                value={academicCalendarForm.data.school_starting_date}
+                                                onChange={(e) => academicCalendarForm.setData("school_starting_date", e.target.value)}
+                                                className="pl-8 text-xs font-mono"
+                                            />
+                                        </div>
+                                        <p className="text-[11px] text-muted-foreground mt-1">First day of instruction for current term.</p>
+                                    </div>
+
+                                    <div className="space-y-1.5 rounded-xl border border-border/50 bg-background/50 p-4">
+                                        <Label htmlFor="school_ending_date" className="text-xs font-semibold text-foreground">
+                                            School Year Closing Date
+                                        </Label>
+                                        <div className="relative">
+                                            <CalendarDays className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                                            <Input
+                                                id="school_ending_date"
+                                                type="date"
+                                                value={academicCalendarForm.data.school_ending_date}
+                                                onChange={(e) => academicCalendarForm.setData("school_ending_date", e.target.value)}
+                                                className="pl-8 text-xs font-mono"
+                                            />
+                                        </div>
+                                        <p className="text-[11px] text-muted-foreground mt-1">
+                                            {schoolYearDuration ? `Cycle: ${schoolYearDuration}` : "End of academic period."}
+                                        </p>
+                                    </div>
+
+                                    <div className="space-y-1.5 rounded-xl border border-border/50 bg-background/50 p-4">
+                                        <Label htmlFor="maximum_registrar_year_level" className="text-xs font-semibold text-foreground">
+                                            Highest Registrar Year Level
+                                        </Label>
+                                        <Input
+                                            id="maximum_registrar_year_level"
+                                            type="number"
+                                            min="2"
+                                            max="7"
+                                            value={academicCalendarForm.data.maximum_registrar_year_level}
+                                            onChange={(e) =>
+                                                academicCalendarForm.setData("maximum_registrar_year_level", Number(e.target.value || 4))
+                                            }
+                                            className="h-9 font-mono text-sm"
+                                        />
+                                        <p className="text-[11px] text-muted-foreground mt-1">Standard: 4 (College) or 5 (Engineering/Arch).</p>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </TabsContent>
+
+                    {/* Tab 4: All Campuses Directory */}
+                    <TabsContent value="directory" className="mt-0 space-y-5">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                            <div className="relative w-full sm:max-w-xs">
+                                <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                                <Input
+                                    value={directorySearch}
+                                    onChange={(e) => setDirectorySearch(e.target.value)}
+                                    placeholder="Search campuses by name, code, dean..."
+                                    className="h-8.5 pl-8 pr-7 text-xs bg-background/80"
+                                />
+                                {directorySearch && (
+                                    <button
+                                        onClick={() => setDirectorySearch("")}
+                                        className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                    >
+                                        <X className="size-3" />
+                                    </button>
+                                )}
+                            </div>
+
+                            <Badge variant="outline" className="text-xs font-mono h-6 border-border/60 self-end sm:self-center">
+                                Showing {filteredSchools.length} of {schools.length} Campuses
+                            </Badge>
+                        </div>
+
+                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                            {filteredSchools.map((school) => {
+                                const isOperating = active_school?.id === school.id;
+
+                                return (
+                                    <Card
+                                        key={school.id}
+                                        className={cn(
+                                            "flex flex-col justify-between rounded-xl border border-border/60 bg-card/70 shadow-xs transition-all hover:border-border hover:shadow-md",
+                                            isOperating && "border-primary/50 ring-1 ring-primary/20",
+                                        )}
+                                    >
+                                        <CardHeader className="p-4.5 pb-3">
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="min-w-0">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <h3 className="font-semibold text-sm text-foreground truncate">{school.name}</h3>
+                                                        {isOperating && (
+                                                            <TooltipProvider delay={150}>
+                                                                <Tooltip>
+                                                                    <TooltipTrigger
+                                                                        render={
+                                                                            <span className="flex size-4 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                                                                                <Check className="size-2.5" />
+                                                                            </span>
+                                                                        }
+                                                                    />
+                                                                    <TooltipContent className="text-xs">Active operating campus</TooltipContent>
+                                                                </Tooltip>
+                                                            </TooltipProvider>
+                                                        )}
+                                                    </div>
+
+                                                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                                                        <Badge variant="outline" className="font-mono text-[10px] px-1.5 h-4.5">
+                                                            {school.code}
+                                                        </Badge>
+                                                        <Badge
+                                                            variant={school.is_active ? "outline" : "secondary"}
+                                                            className={cn(
+                                                                "text-[10px] px-1.5 h-4.5 font-normal",
+                                                                school.is_active
+                                                                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                                                                    : "border-border/60 text-muted-foreground",
+                                                            )}
+                                                        >
+                                                            {school.is_active ? "Active" : "Inactive"}
+                                                        </Badge>
+                                                        <Badge variant="outline" className="text-[10px] px-1.5 h-4.5 border-border/60">
+                                                            {schoolLevelLabel(school.school_level)}
+                                                        </Badge>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </CardHeader>
+
+                                        <CardContent className="px-4.5 py-1 text-xs text-muted-foreground space-y-2">
+                                            <p className="line-clamp-2 leading-relaxed">{school.description || "No description provided."}</p>
+
+                                            <div className="pt-2 border-t border-border/30 space-y-1 text-[11px]">
+                                                <div className="flex items-center gap-2 truncate">
+                                                    <MapPin className="size-3 text-muted-foreground shrink-0" />
+                                                    <span className="truncate">{school.location || "Location unset"}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2 truncate">
+                                                    <Mail className="size-3 text-muted-foreground shrink-0" />
+                                                    <span className="truncate font-mono">{school.email || "No email"}</span>
+                                                </div>
+                                                {school.dean_name && (
+                                                    <div className="flex items-center gap-2 truncate">
+                                                        <GraduationCap className="size-3 text-muted-foreground shrink-0" />
+                                                        <span className="truncate font-medium text-foreground/80">{school.dean_name}</span>
+                                                    </div>
                                                 )}
                                             </div>
-                                        </div>
-                                    </div>
-                                </CardHeader>
-                                <CardContent className="flex-grow space-y-2.5 px-5 pb-4 text-sm">
-                                    <p className="text-muted-foreground line-clamp-2 text-xs leading-relaxed">
-                                        {school.description || "No description provided."}
-                                    </p>
-                                    <div className="mt-3 space-y-1.5 border-t pt-3">
-                                        <div className="text-muted-foreground flex items-center gap-2">
-                                            <MapPin className="h-3.5 w-3.5 shrink-0" />
-                                            <span className="truncate text-xs">{school.location || "No location set"}</span>
-                                        </div>
-                                        <div className="text-muted-foreground flex items-center gap-2">
-                                            <Mail className="h-3.5 w-3.5 shrink-0" />
-                                            <span className="truncate text-xs">{school.email || "No email"}</span>
-                                        </div>
-                                        {school.dean_name && (
-                                            <div className="text-muted-foreground flex items-center gap-2">
-                                                <GraduationCap className="h-3.5 w-3.5 shrink-0" />
-                                                <span className="truncate text-xs">{school.dean_name}</span>
-                                            </div>
-                                        )}
-                                    </div>
-                                </CardContent>
-                                <div className="bg-muted/20 flex flex-wrap gap-2 border-t p-3">
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="h-8 flex-1 text-xs font-medium"
-                                        onClick={() => openEditDialog(school)}
-                                    >
-                                        <Pencil className="mr-1.5 h-3 w-3" />
-                                        Edit
-                                    </Button>
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="h-8 flex-1 text-xs font-medium"
-                                        onClick={() => handleToggleSchoolStatus(school)}
-                                    >
-                                        {school.is_active ? "Deactivate" : "Activate"}
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="text-destructive hover:bg-destructive/10 hover:text-destructive h-8 w-8 shrink-0"
-                                        onClick={() => setDeletingSchool(school)}
-                                        disabled={schools.length <= 1}
-                                        title="Archive Campus"
-                                    >
-                                        <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                </div>
-                            </Card>
-                        ))}
-                    </div>
-                </TabsContent>
-            </Tabs>
+                                        </CardContent>
 
-            {/* Dialogs */}
-            <Dialog open={isAddSchoolOpen} onOpenChange={setIsAddSchoolOpen}>
-                <DialogContent className="sm:max-w-[520px]">
-                    <DialogHeader>
-                        <DialogTitle>Create School</DialogTitle>
-                        <DialogDescription>Add another campus profile for multi-school setup.</DialogDescription>
-                    </DialogHeader>
-                    <form onSubmit={handleCreateSchool} className="space-y-4">
-                        <div className="grid gap-4 sm:grid-cols-2">
-                            <div className="space-y-2">
-                                <Label htmlFor="new_school_name" className="text-muted-foreground text-xs font-semibold uppercase">
-                                    School Name
-                                </Label>
-                                <Input
-                                    id="new_school_name"
-                                    value={createSchoolForm.data.name}
-                                    onChange={(event) => createSchoolForm.setData("name", event.target.value)}
-                                    required
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="new_school_code" className="text-muted-foreground text-xs font-semibold uppercase">
-                                    School Code
-                                </Label>
-                                <Input
-                                    id="new_school_code"
-                                    value={createSchoolForm.data.code}
-                                    onChange={(event) => createSchoolForm.setData("code", event.target.value)}
-                                    required
-                                    className="uppercase"
-                                />
-                            </div>
+                                        <div className="mt-4 flex items-center justify-between gap-2 border-t border-border/40 bg-muted/20 p-2.5">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => openEditDialog(school)}
+                                                disabled={!canUpdate}
+                                                className="h-7.5 px-2.5 text-xs flex-1 bg-background"
+                                            >
+                                                <Pencil className="size-3 mr-1" />
+                                                Edit
+                                            </Button>
+
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => handleToggleSchoolStatus(school)}
+                                                disabled={!canUpdate}
+                                                className="h-7.5 px-2.5 text-xs flex-1 bg-background"
+                                            >
+                                                {school.is_active ? "Deactivate" : "Activate"}
+                                            </Button>
+
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                onClick={() => setDeletingSchool(school)}
+                                                disabled={schools.length <= 1 || !canUpdate}
+                                                className="size-7.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
+                                                title="Archive Campus"
+                                            >
+                                                <Trash2 className="size-3.5" />
+                                            </Button>
+                                        </div>
+                                    </Card>
+                                );
+                            })}
                         </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="new_school_level" className="text-muted-foreground text-xs font-semibold uppercase">
-                                School Level
-                            </Label>
-                            <Select
-                                value={createSchoolForm.data.school_level}
-                                onValueChange={(value) => createSchoolForm.setData("school_level", value ?? "")}
-                            >
-                                <SelectTrigger id="new_school_level">
-                                    <SelectValue placeholder="Choose school level" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {SCHOOL_LEVEL_OPTIONS.map((option) => (
-                                        <SelectItem key={option.value} value={option.value}>
-                                            {option.label}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                    </TabsContent>
+                </Tabs>
+
+                {/* Switch Active Campus Dialog */}
+                <Dialog open={isSwitchSchoolOpen} onOpenChange={setIsSwitchSchoolOpen}>
+                    <DialogContent className="sm:max-w-[480px]">
+                        <DialogHeader>
+                            <DialogTitle className="text-base font-semibold">Switch Active Campus Context</DialogTitle>
+                            <DialogDescription className="text-xs">
+                                Select the active school instance to manage its students, billing, and programs.
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1 py-2">
+                            {schools.map((school) => {
+                                const isSelected = schoolForm.data.school_id === school.id.toString();
+
+                                return (
+                                    <button
+                                        key={school.id}
+                                        type="button"
+                                        onClick={() => schoolForm.setData("school_id", school.id.toString())}
+                                        className={cn(
+                                            "w-full flex items-center justify-between rounded-xl border p-3 text-left transition-all outline-none",
+                                            isSelected
+                                                ? "border-primary bg-primary/5 shadow-xs ring-1 ring-primary/20"
+                                                : "border-border/60 hover:bg-muted/60",
+                                        )}
+                                    >
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <div
+                                                className={cn(
+                                                    "flex size-9 shrink-0 items-center justify-center rounded-lg transition-colors",
+                                                    isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
+                                                )}
+                                            >
+                                                <Building2 className="size-4" />
+                                            </div>
+                                            <div className="min-w-0">
+                                                <p className="font-semibold text-xs text-foreground truncate">{school.name}</p>
+                                                <div className="flex items-center gap-1.5 mt-0.5">
+                                                    <span className="font-mono text-[10px] text-muted-foreground">{school.code}</span>
+                                                    <span className="text-muted-foreground/50">•</span>
+                                                    <span className="text-[10px] text-muted-foreground">{schoolLevelLabel(school.school_level)}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {isSelected && (
+                                            <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xs">
+                                                <Check className="size-3" />
+                                            </span>
+                                        )}
+                                    </button>
+                                );
+                            })}
                         </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="new_school_description" className="text-muted-foreground text-xs font-semibold uppercase">
-                                Description
-                            </Label>
-                            <Textarea
-                                id="new_school_description"
-                                value={createSchoolForm.data.description}
-                                onChange={(event) => createSchoolForm.setData("description", event.target.value)}
-                                className="resize-none"
-                            />
-                        </div>
-                        <div className="grid gap-4 sm:grid-cols-2">
-                            <div className="space-y-2">
-                                <Label htmlFor="new_school_phone" className="text-muted-foreground text-xs font-semibold uppercase">
-                                    Phone
-                                </Label>
-                                <Input
-                                    id="new_school_phone"
-                                    value={createSchoolForm.data.phone}
-                                    onChange={(event) => createSchoolForm.setData("phone", event.target.value)}
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="new_school_email" className="text-muted-foreground text-xs font-semibold uppercase">
-                                    Email
-                                </Label>
-                                <Input
-                                    id="new_school_email"
-                                    type="email"
-                                    value={createSchoolForm.data.email}
-                                    onChange={(event) => createSchoolForm.setData("email", event.target.value)}
-                                />
-                            </div>
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="new_school_location" className="text-muted-foreground text-xs font-semibold uppercase">
-                                Location
-                            </Label>
-                            <Input
-                                id="new_school_location"
-                                value={createSchoolForm.data.location}
-                                onChange={(event) => createSchoolForm.setData("location", event.target.value)}
-                            />
-                        </div>
-                        <div className="grid gap-4 sm:grid-cols-2">
-                            <div className="space-y-2">
-                                <Label htmlFor="new_school_dean_name" className="text-muted-foreground text-xs font-semibold uppercase">
-                                    Dean Name (optional)
-                                </Label>
-                                <Input
-                                    id="new_school_dean_name"
-                                    value={createSchoolForm.data.dean_name}
-                                    onChange={(event) => createSchoolForm.setData("dean_name", event.target.value)}
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="new_school_dean_email" className="text-muted-foreground text-xs font-semibold uppercase">
-                                    Dean Email (optional)
-                                </Label>
-                                <Input
-                                    id="new_school_dean_email"
-                                    type="email"
-                                    value={createSchoolForm.data.dean_email}
-                                    onChange={(event) => createSchoolForm.setData("dean_email", event.target.value)}
-                                />
-                            </div>
-                        </div>
-                        <DialogFooter>
-                            <Button type="button" variant="outline" onClick={() => setIsAddSchoolOpen(false)}>
+
+                        <DialogFooter className="border-t border-border/40 pt-3">
+                            <Button type="button" variant="outline" size="sm" onClick={() => setIsSwitchSchoolOpen(false)} className="h-8 text-xs">
                                 Cancel
                             </Button>
-                            <Button type="submit" disabled={createSchoolForm.processing || !createSchoolForm.data.school_level}>
-                                {createSchoolForm.processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                                Create
+                            <Button
+                                size="sm"
+                                onClick={() => {
+                                    submitSystemForm({
+                                        form: schoolForm,
+                                        routeName: "administrators.system-management.school.update",
+                                        successMessage: "Operating campus context updated.",
+                                        errorMessage: "Failed to update operating campus.",
+                                    });
+                                    setIsSwitchSchoolOpen(false);
+                                }}
+                                disabled={schoolForm.processing || schoolForm.data.school_id === active_school?.id?.toString() || !canUpdate}
+                                className="h-8 gap-1.5 text-xs"
+                            >
+                                {schoolForm.processing ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+                                <span>Apply Campus Selection</span>
                             </Button>
                         </DialogFooter>
-                    </form>
-                </DialogContent>
-            </Dialog>
+                    </DialogContent>
+                </Dialog>
 
-            <Dialog open={isEditSchoolOpen} onOpenChange={setIsEditSchoolOpen}>
-                <DialogContent className="sm:max-w-[620px]">
-                    <DialogHeader>
-                        <DialogTitle>Edit School Profile</DialogTitle>
-                        <DialogDescription>Update the details of the selected campus.</DialogDescription>
-                    </DialogHeader>
-                    <form onSubmit={handleUpdateSchool} className="space-y-4">
-                        <div className="grid gap-4 sm:grid-cols-2">
-                            <div className="space-y-2">
-                                <Label htmlFor="edit_school_name" className="text-muted-foreground text-xs font-semibold uppercase">
-                                    School Name
+                {/* Create Campus Dialog */}
+                <Dialog open={isAddSchoolOpen} onOpenChange={setIsAddSchoolOpen}>
+                    <DialogContent className="sm:max-w-[540px]">
+                        <DialogHeader>
+                            <DialogTitle className="text-base font-semibold">Register New Campus Profile</DialogTitle>
+                            <DialogDescription className="text-xs">
+                                Add another school or branch campus to your multi-institution workspace.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <form onSubmit={handleCreateSchool} className="space-y-4 pt-2">
+                            <div className="grid gap-3 sm:grid-cols-3">
+                                <div className="space-y-1.5 sm:col-span-2">
+                                    <Label htmlFor="new_school_name" className="text-xs font-semibold">
+                                        Campus Name
+                                    </Label>
+                                    <Input
+                                        id="new_school_name"
+                                        value={createSchoolForm.data.name}
+                                        onChange={(e) => createSchoolForm.setData("name", e.target.value)}
+                                        placeholder="KoAkademy - South Campus"
+                                        required
+                                        className="text-xs"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="new_school_code" className="text-xs font-semibold">
+                                        Code
+                                    </Label>
+                                    <Input
+                                        id="new_school_code"
+                                        value={createSchoolForm.data.code}
+                                        onChange={(e) => createSchoolForm.setData("code", e.target.value.toUpperCase())}
+                                        placeholder="STH02"
+                                        required
+                                        className="uppercase font-mono text-xs"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <Label htmlFor="new_school_level" className="text-xs font-semibold">
+                                    Education Level
                                 </Label>
-                                <Input
-                                    id="edit_school_name"
-                                    value={editSchoolForm.data.name}
-                                    onChange={(event) => editSchoolForm.setData("name", event.target.value)}
-                                    required
+                                <Select
+                                    value={createSchoolForm.data.school_level}
+                                    onValueChange={(val) => createSchoolForm.setData("school_level", val ?? "")}
+                                >
+                                    <SelectTrigger id="new_school_level" className="h-8.5 text-xs">
+                                        <SelectValue placeholder="Select primary level" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {SCHOOL_LEVEL_OPTIONS.map((opt) => (
+                                            <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                                                {opt.label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <Label htmlFor="new_school_description" className="text-xs font-semibold">
+                                    Campus Description
+                                </Label>
+                                <Textarea
+                                    id="new_school_description"
+                                    value={createSchoolForm.data.description}
+                                    onChange={(e) => createSchoolForm.setData("description", e.target.value)}
+                                    rows={2}
+                                    placeholder="Brief details about this campus..."
+                                    className="text-xs resize-none"
                                 />
                             </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="edit_school_code" className="text-muted-foreground text-xs font-semibold uppercase">
-                                    School Code
+
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="new_school_phone" className="text-xs font-semibold">
+                                        Phone Number
+                                    </Label>
+                                    <Input
+                                        id="new_school_phone"
+                                        value={createSchoolForm.data.phone}
+                                        onChange={(e) => createSchoolForm.setData("phone", e.target.value)}
+                                        placeholder="+63 2 8000 0000"
+                                        className="text-xs font-mono"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="new_school_email" className="text-xs font-semibold">
+                                        Email Address
+                                    </Label>
+                                    <Input
+                                        id="new_school_email"
+                                        type="email"
+                                        value={createSchoolForm.data.email}
+                                        onChange={(e) => createSchoolForm.setData("email", e.target.value)}
+                                        placeholder="campus@school.edu.ph"
+                                        className="text-xs font-mono"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <Label htmlFor="new_school_location" className="text-xs font-semibold">
+                                    Physical Address / Location
                                 </Label>
                                 <Input
-                                    id="edit_school_code"
-                                    value={editSchoolForm.data.code}
-                                    onChange={(event) => editSchoolForm.setData("code", event.target.value)}
-                                    required
-                                    className="uppercase"
+                                    id="new_school_location"
+                                    value={createSchoolForm.data.location}
+                                    onChange={(e) => createSchoolForm.setData("location", e.target.value)}
+                                    placeholder="City, Province"
+                                    className="text-xs"
                                 />
                             </div>
-                        </div>
 
-                        <div className="space-y-2">
-                            <Label htmlFor="edit_school_level" className="text-muted-foreground text-xs font-semibold uppercase">
-                                School Level
-                            </Label>
-                            <Select
-                                value={editSchoolForm.data.school_level}
-                                onValueChange={(value) => editSchoolForm.setData("school_level", value ?? "")}
-                            >
-                                <SelectTrigger id="edit_school_level">
-                                    <SelectValue placeholder="Choose school level" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {SCHOOL_LEVEL_OPTIONS.map((option) => (
-                                        <SelectItem key={option.value} value={option.value}>
-                                            {option.label}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="new_school_dean_name" className="text-xs font-semibold">
+                                        Dean / Administrator Name
+                                    </Label>
+                                    <Input
+                                        id="new_school_dean_name"
+                                        value={createSchoolForm.data.dean_name}
+                                        onChange={(e) => createSchoolForm.setData("dean_name", e.target.value)}
+                                        placeholder="Dr. John Doe"
+                                        className="text-xs"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="new_school_dean_email" className="text-xs font-semibold">
+                                        Dean Email
+                                    </Label>
+                                    <Input
+                                        id="new_school_dean_email"
+                                        type="email"
+                                        value={createSchoolForm.data.dean_email}
+                                        onChange={(e) => createSchoolForm.setData("dean_email", e.target.value)}
+                                        placeholder="dean@school.edu.ph"
+                                        className="text-xs font-mono"
+                                    />
+                                </div>
+                            </div>
 
-                        <div className="space-y-2">
-                            <Label htmlFor="edit_school_description" className="text-muted-foreground text-xs font-semibold uppercase">
-                                Description
-                            </Label>
-                            <Textarea
-                                id="edit_school_description"
-                                value={editSchoolForm.data.description}
-                                onChange={(event) => editSchoolForm.setData("description", event.target.value)}
-                                rows={3}
-                                className="resize-none"
-                            />
-                        </div>
+                            <DialogFooter className="border-t border-border/40 pt-3">
+                                <Button type="button" variant="outline" size="sm" onClick={() => setIsAddSchoolOpen(false)} className="h-8 text-xs">
+                                    Cancel
+                                </Button>
+                                <Button
+                                    type="submit"
+                                    size="sm"
+                                    disabled={createSchoolForm.processing || !createSchoolForm.data.school_level || !canUpdate}
+                                    className="h-8 gap-1.5 text-xs"
+                                >
+                                    {createSchoolForm.processing ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+                                    <span>Create Campus</span>
+                                </Button>
+                            </DialogFooter>
+                        </form>
+                    </DialogContent>
+                </Dialog>
 
-                        <div className="grid gap-4 sm:grid-cols-2">
-                            <div className="space-y-2">
-                                <Label htmlFor="edit_school_location" className="text-muted-foreground text-xs font-semibold uppercase">
-                                    Location
+                {/* Edit Campus Dialog */}
+                <Dialog open={isEditSchoolOpen} onOpenChange={setIsEditSchoolOpen}>
+                    <DialogContent className="sm:max-w-[580px]">
+                        <DialogHeader>
+                            <DialogTitle className="text-base font-semibold">Edit Campus Profile</DialogTitle>
+                            <DialogDescription className="text-xs">
+                                Update official information for {editingSchool?.name}.
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <form onSubmit={handleUpdateSchool} className="space-y-4 pt-2">
+                            <div className="grid gap-3 sm:grid-cols-3">
+                                <div className="space-y-1.5 sm:col-span-2">
+                                    <Label htmlFor="edit_school_name" className="text-xs font-semibold">
+                                        Campus Name
+                                    </Label>
+                                    <Input
+                                        id="edit_school_name"
+                                        value={editSchoolForm.data.name}
+                                        onChange={(e) => editSchoolForm.setData("name", e.target.value)}
+                                        required
+                                        className="text-xs font-medium"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="edit_school_code" className="text-xs font-semibold">
+                                        Campus Code
+                                    </Label>
+                                    <Input
+                                        id="edit_school_code"
+                                        value={editSchoolForm.data.code}
+                                        onChange={(e) => editSchoolForm.setData("code", e.target.value.toUpperCase())}
+                                        required
+                                        className="uppercase font-mono text-xs"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <Label htmlFor="edit_school_level" className="text-xs font-semibold">
+                                    Education Level
+                                </Label>
+                                <Select
+                                    value={editSchoolForm.data.school_level}
+                                    onValueChange={(val) => editSchoolForm.setData("school_level", val ?? "")}
+                                >
+                                    <SelectTrigger id="edit_school_level" className="h-8.5 text-xs">
+                                        <SelectValue placeholder="Select primary level" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {SCHOOL_LEVEL_OPTIONS.map((opt) => (
+                                            <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                                                {opt.label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <Label htmlFor="edit_school_description" className="text-xs font-semibold">
+                                    Description
+                                </Label>
+                                <Textarea
+                                    id="edit_school_description"
+                                    value={editSchoolForm.data.description}
+                                    onChange={(e) => editSchoolForm.setData("description", e.target.value)}
+                                    rows={2}
+                                    className="text-xs resize-none"
+                                />
+                            </div>
+
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="edit_school_phone" className="text-xs font-semibold">
+                                        Phone Number
+                                    </Label>
+                                    <Input
+                                        id="edit_school_phone"
+                                        value={editSchoolForm.data.phone}
+                                        onChange={(e) => editSchoolForm.setData("phone", e.target.value)}
+                                        className="text-xs font-mono"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="edit_school_email" className="text-xs font-semibold">
+                                        Email Address
+                                    </Label>
+                                    <Input
+                                        id="edit_school_email"
+                                        type="email"
+                                        value={editSchoolForm.data.email}
+                                        onChange={(e) => editSchoolForm.setData("email", e.target.value)}
+                                        className="text-xs font-mono"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <Label htmlFor="edit_school_location" className="text-xs font-semibold">
+                                    Campus Location
                                 </Label>
                                 <Input
                                     id="edit_school_location"
                                     value={editSchoolForm.data.location}
-                                    onChange={(event) => editSchoolForm.setData("location", event.target.value)}
+                                    onChange={(e) => editSchoolForm.setData("location", e.target.value)}
+                                    className="text-xs"
                                 />
                             </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="edit_school_phone" className="text-muted-foreground text-xs font-semibold uppercase">
-                                    Phone
-                                </Label>
-                                <Input
-                                    id="edit_school_phone"
-                                    value={editSchoolForm.data.phone}
-                                    onChange={(event) => editSchoolForm.setData("phone", event.target.value)}
-                                />
+
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="edit_school_dean_name" className="text-xs font-semibold">
+                                        Dean / Administrator Name
+                                    </Label>
+                                    <Input
+                                        id="edit_school_dean_name"
+                                        value={editSchoolForm.data.dean_name}
+                                        onChange={(e) => editSchoolForm.setData("dean_name", e.target.value)}
+                                        className="text-xs"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="edit_school_dean_email" className="text-xs font-semibold">
+                                        Dean Email
+                                    </Label>
+                                    <Input
+                                        id="edit_school_dean_email"
+                                        type="email"
+                                        value={editSchoolForm.data.dean_email}
+                                        onChange={(e) => editSchoolForm.setData("dean_email", e.target.value)}
+                                        className="text-xs font-mono"
+                                    />
+                                </div>
                             </div>
-                        </div>
 
-                        <div className="grid gap-4 sm:grid-cols-2">
-                            <div className="space-y-2">
-                                <Label htmlFor="edit_school_email" className="text-muted-foreground text-xs font-semibold uppercase">
-                                    Email
-                                </Label>
-                                <Input
-                                    id="edit_school_email"
-                                    type="email"
-                                    value={editSchoolForm.data.email}
-                                    onChange={(event) => editSchoolForm.setData("email", event.target.value)}
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="edit_school_dean_name" className="text-muted-foreground text-xs font-semibold uppercase">
-                                    Dean Name
-                                </Label>
-                                <Input
-                                    id="edit_school_dean_name"
-                                    value={editSchoolForm.data.dean_name}
-                                    onChange={(event) => editSchoolForm.setData("dean_name", event.target.value)}
-                                />
-                            </div>
-                        </div>
+                            <DialogFooter className="border-t border-border/40 pt-3">
+                                <Button type="button" variant="outline" size="sm" onClick={() => setIsEditSchoolOpen(false)} className="h-8 text-xs">
+                                    Cancel
+                                </Button>
+                                <Button
+                                    type="submit"
+                                    size="sm"
+                                    disabled={editSchoolForm.processing || !editSchoolForm.data.school_level || !canUpdate}
+                                    className="h-8 gap-1.5 text-xs"
+                                >
+                                    {editSchoolForm.processing ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+                                    <span>Update Profile</span>
+                                </Button>
+                            </DialogFooter>
+                        </form>
+                    </DialogContent>
+                </Dialog>
 
-                        <div className="space-y-2">
-                            <Label htmlFor="edit_school_dean_email" className="text-muted-foreground text-xs font-semibold uppercase">
-                                Dean Email
-                            </Label>
-                            <Input
-                                id="edit_school_dean_email"
-                                type="email"
-                                value={editSchoolForm.data.dean_email}
-                                onChange={(event) => editSchoolForm.setData("dean_email", event.target.value)}
-                            />
-                        </div>
-
-                        <DialogFooter className="mt-4 border-t pt-2">
-                            <Button type="button" variant="outline" onClick={() => setIsEditSchoolOpen(false)}>
-                                Cancel
-                            </Button>
-                            <Button type="submit" disabled={editSchoolForm.processing || !editSchoolForm.data.school_level}>
-                                {editSchoolForm.processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                                Update Profile
-                            </Button>
-                        </DialogFooter>
-                    </form>
-                </DialogContent>
-            </Dialog>
-
-            <AlertDialog open={deletingSchool !== null} onOpenChange={(open) => !open && setDeletingSchool(null)}>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>Delete School?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            Archive will soft-delete <strong>{deletingSchool?.name}</strong>. Force delete will permanently remove it and purge
-                            related school records.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                            onClick={handleForceDeleteSchool}
-                        >
-                            Force Delete
-                        </AlertDialogAction>
-                        <AlertDialogAction onClick={handleDeleteSchool}>Archive Setting</AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
+                {/* Archive / Delete Confirmation Dialog */}
+                <AlertDialog open={deletingSchool !== null} onOpenChange={(open) => !open && setDeletingSchool(null)}>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle className="text-base font-semibold">Archive Campus {deletingSchool?.name}?</AlertDialogTitle>
+                            <AlertDialogDescription className="text-xs">
+                                Archive will soft-delete <strong>{deletingSchool?.name}</strong> from operational campus selectors. Force delete permanently removes it and related school references.
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel className="text-xs h-8">Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90 text-xs h-8"
+                                onClick={handleForceDeleteSchool}
+                            >
+                                Force Delete
+                            </AlertDialogAction>
+                            <AlertDialogAction onClick={handleDeleteSchool} className="text-xs h-8">
+                                Archive Campus
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+            </div>
         </SystemManagementLayout>
     );
 }

@@ -13,6 +13,7 @@ import axios from "axios";
 import { ExternalLink, FlaskConical, Globe, Loader2, PackageCheck, PackageX, Save, Send, Server, Siren, Terminal } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { route } from "ziggy-js";
 
 import { submitSystemForm } from "./form-submit";
 import SystemManagementLayout from "./layout";
@@ -607,7 +608,7 @@ export default function SystemManagementObservabilityPage({ user, sentry, error_
                     <SimpleProviderCard
                         key={key}
                         meta={meta[key]}
-                        data={form.data.providers[key]}
+                        data={form.data.providers[key] as SimpleErrorReportingProviderConfig}
                         onChange={(patch) => setSimple(key, patch)}
                         testing={testingProvider === key}
                         onTest={() => sendTestEvent(key)}

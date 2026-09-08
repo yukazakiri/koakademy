@@ -2,7 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { Check, ChevronLeft, ChevronRight, CircleDashed, Save } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, CircleDashed, Loader2, Save } from "lucide-react";
 import type { ReactNode } from "react";
 import { blueprintSteps } from "../configuration";
 import type { BlueprintStepId } from "../types";
@@ -32,70 +32,101 @@ export function BlueprintShell({
     const next = blueprintSteps[currentIndex + 1];
 
     return (
-        <section className="bg-card overflow-hidden rounded-2xl shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_10px_34px_-18px_rgba(0,0,0,0.32)] dark:shadow-[0_0_0_1px_rgba(255,255,255,0.08)]">
-            <div className="grid min-h-[720px] xl:grid-cols-[16rem_minmax(0,1fr)]">
-                <aside className="bg-muted/35 border-b p-4 xl:border-r xl:border-b-0 xl:p-5">
-                    <div className="mb-5 space-y-2">
-                        <div className="flex items-center justify-between gap-3 text-xs font-medium">
-                            <span className="text-muted-foreground">Blueprint progress</span>
-                            <span className="tabular-nums">{progress}%</span>
+        <section className="overflow-hidden rounded-2xl border border-border/60 bg-card/75 shadow-xs backdrop-blur-xs">
+            <div className="grid min-h-[680px] xl:grid-cols-[16rem_minmax(0,1fr)]">
+                {/* Stepper Rail */}
+                <aside className="border-b border-border/50 bg-muted/20 p-4 xl:border-r xl:border-b-0 xl:p-5">
+                    <div className="mb-4 space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                            <span className="font-semibold uppercase tracking-wider text-muted-foreground text-[10px]">
+                                Blueprint Progress
+                            </span>
+                            <span className="font-mono font-semibold text-foreground text-xs">{progress}%</span>
                         </div>
-                        <Progress value={progress} className="h-1.5" />
+                        <Progress value={progress} className="h-1.5 bg-muted/60" />
                     </div>
 
+                    {/* Desktop Vertical Stepper / Mobile Horizontal Track */}
                     <nav
-                        aria-label="Enrollment policy setup"
-                        className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-2 xl:block xl:space-y-1 xl:overflow-visible xl:pb-0"
+                        aria-label="Enrollment policy workflow stages"
+                        className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-2 xl:block xl:space-y-1.5 xl:overflow-visible xl:pb-0 scrollbar-none"
                     >
                         {blueprintSteps.map((step, index) => {
-                            const current = step.id === currentStep;
-                            const complete = completedSteps.includes(step.id);
+                            const isCurrent = step.id === currentStep;
+                            const isComplete = completedSteps.includes(step.id);
+
                             return (
                                 <button
                                     type="button"
                                     key={step.id}
                                     onClick={() => onStepChange(step.id)}
-                                    aria-current={current ? "step" : undefined}
+                                    aria-current={isCurrent ? "step" : undefined}
                                     className={cn(
-                                        "group flex min-h-11 min-w-[13rem] items-start gap-3 rounded-xl px-3 py-3 text-left transition-[background-color,box-shadow,scale] duration-150 ease-out active:scale-[0.96] motion-reduce:transition-none xl:w-full xl:min-w-0",
-                                        current
-                                            ? "bg-background text-foreground shadow-[0_0_0_1px_rgba(0,0,0,0.07),0_4px_12px_-8px_rgba(0,0,0,0.3)] dark:shadow-[0_0_0_1px_rgba(255,255,255,0.1)]"
-                                            : "text-muted-foreground hover:bg-background/70 hover:text-foreground",
+                                        "group flex min-h-11 min-w-[12.5rem] items-start gap-3 rounded-xl p-2.5 text-left transition-all outline-none xl:w-full xl:min-w-0",
+                                        isCurrent
+                                            ? "border border-border/80 bg-background text-foreground shadow-xs font-medium"
+                                            : "border border-transparent text-muted-foreground hover:bg-background/60 hover:text-foreground",
                                     )}
                                 >
                                     <span
                                         className={cn(
-                                            "mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg text-xs font-semibold",
-                                            current && "bg-primary text-primary-foreground",
-                                            !current && complete && "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300",
-                                            !current && !complete && "bg-muted text-muted-foreground",
+                                            "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-lg text-xs font-semibold transition-colors",
+                                            isCurrent && "bg-primary text-primary-foreground shadow-xs",
+                                            !isCurrent && isComplete && "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+                                            !isCurrent && !isComplete && "bg-muted/80 text-muted-foreground",
                                         )}
                                     >
-                                        {complete ? <Check className="size-3.5" /> : index + 1}
+                                        {isComplete ? <Check className="size-3.5 stroke-[2.5]" /> : index + 1}
                                     </span>
-                                    <span className="min-w-0">
-                                        <span className="block text-sm font-semibold">{step.shortTitle}</span>
-                                        <span className="mt-0.5 hidden text-xs leading-5 text-pretty xl:block">{step.description}</span>
-                                    </span>
+
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center justify-between gap-1">
+                                            <span className="block text-xs font-semibold tracking-tight text-foreground truncate">
+                                                {step.shortTitle}
+                                            </span>
+                                            {isCurrent && (
+                                                <span className="size-1.5 rounded-full bg-primary shrink-0" />
+                                            )}
+                                        </div>
+                                        <span className="mt-0.5 hidden text-[11px] leading-relaxed text-muted-foreground line-clamp-1 xl:block">
+                                            {step.description}
+                                        </span>
+                                    </div>
                                 </button>
                             );
                         })}
                     </nav>
                 </aside>
 
-                <div className="flex min-w-0 flex-col">
-                    <div className="flex-1 p-4 sm:p-6 lg:p-8">{children}</div>
+                {/* Content Workspace Area */}
+                <div className="flex min-w-0 flex-col justify-between">
+                    <div className="flex-1 p-4 sm:p-6 lg:p-7">{children}</div>
 
-                    <footer className="bg-card/95 sticky bottom-0 z-20 flex flex-wrap items-center justify-between gap-3 border-t px-4 py-4 backdrop-blur sm:px-6">
+                    {/* Sticky Action Footer */}
+                    <footer className="sticky bottom-0 z-20 flex flex-wrap items-center justify-between gap-3 border-t border-border/50 bg-card/90 px-4 py-3.5 backdrop-blur-md sm:px-6">
                         <div className="flex items-center gap-2">
-                            {previous ? (
-                                <Button type="button" variant="outline" className="h-11" onClick={() => onStepChange(previous.id)}>
-                                    <ChevronLeft className="size-4" /> Back
+                            {previous && (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8.5 gap-1.5 text-xs bg-background"
+                                    onClick={() => onStepChange(previous.id)}
+                                >
+                                    <ChevronLeft className="size-3.5" />
+                                    <span>Back</span>
                                 </Button>
-                            ) : null}
-                            <Badge variant={dirty ? "secondary" : "outline"} className="hidden h-8 sm:inline-flex">
-                                {dirty ? <CircleDashed className="mr-1 size-3.5" /> : <Check className="mr-1 size-3.5" />}
-                                {dirty ? "Unsaved changes" : "Draft saved"}
+                            )}
+
+                            <Badge
+                                variant="outline"
+                                className={cn(
+                                    "h-7 gap-1.5 px-2 text-[11px] font-normal border-border/60",
+                                    dirty ? "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30" : "bg-muted/40 text-muted-foreground",
+                                )}
+                            >
+                                <span className={cn("size-1.5 rounded-full", dirty ? "bg-amber-500" : "bg-emerald-500")} />
+                                <span>{dirty ? "Unsaved changes" : "Draft saved"}</span>
                             </Badge>
                         </div>
 
@@ -103,17 +134,27 @@ export function BlueprintShell({
                             <Button
                                 type="button"
                                 variant="outline"
-                                className="h-11"
+                                size="sm"
+                                className="h-8.5 gap-1.5 text-xs bg-background"
                                 disabled={!canUpdate || saving || !dirty}
                                 onClick={() => onSave(false)}
                             >
-                                <Save className="size-4" /> {saving ? "Saving…" : "Save draft"}
+                                {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+                                <span>{saving ? "Saving..." : "Save Draft"}</span>
                             </Button>
-                            {next ? (
-                                <Button type="button" className="h-11 pr-3.5 pl-4" disabled={!canUpdate || saving} onClick={() => onSave(true)}>
-                                    Save and continue <ChevronRight className="size-4" />
+
+                            {next && (
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    className="h-8.5 gap-1.5 text-xs shadow-xs"
+                                    disabled={!canUpdate || saving}
+                                    onClick={() => onSave(true)}
+                                >
+                                    <span>Save & Continue</span>
+                                    <ChevronRight className="size-3.5" />
                                 </Button>
-                            ) : null}
+                            )}
                         </div>
                     </footer>
                 </div>

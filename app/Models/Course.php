@@ -116,6 +116,7 @@ final class Course extends Model
         'is_active',
         'school_id',
         'school_curriculum_capability_id',
+        'industry_course_code_id',
         'curriculum_kind',
         'curriculum_stage',
         'curriculum_framework',
@@ -191,6 +192,23 @@ final class Course extends Model
     public function schoolCurriculumCapability(): BelongsTo
     {
         return $this->belongsTo(SchoolCurriculumCapability::class);
+    }
+
+    public function industryCourseCode(): BelongsTo
+    {
+        return $this->belongsTo(IndustryCourseCode::class, 'industry_course_code_id');
+    }
+
+    /**
+     * Official authority code for regulatory exports. Prefers the linked
+     * industry code registry entry, falls back to the legacy free-text
+     * CHED program code, then the local program code.
+     */
+    public function officialAuthorityCode(): ?string
+    {
+        return $this->industryCourseCode?->code
+            ?? $this->ched_program_code
+            ?? $this->code;
     }
 
     public function subjects()

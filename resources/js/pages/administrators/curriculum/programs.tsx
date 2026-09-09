@@ -9,6 +9,7 @@ import {
     updateProgram,
 } from "@/actions/App/Http/Controllers/AdministratorCurriculumManagementController";
 import AdminLayout from "@/components/administrators/admin-layout";
+import { type AuthorityCodeOption, AuthorityCodePicker } from "@/components/administrators/authority-code-picker";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -71,6 +72,7 @@ import {
     X,
 } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { AuthorityCodeImportDialog, type AuthoritySummary } from "./authority-code-import-dialog";
 
 interface DepartmentOption {
     id: number;
@@ -95,6 +97,7 @@ interface CurriculumProgramsProps {
     capabilities: CurriculumCapability[];
     catalog_templates: CatalogTemplate[];
     shs_pathways: ShsPathway[];
+    authority_codes: AuthorityCodesProps;
 }
 
 type CurriculumCapability = {
@@ -126,6 +129,11 @@ type CatalogTemplate = {
 
 type ShsPathway = { id: number; title: string; strands_count: number; subjects_count: number };
 
+type AuthorityCodesProps = {
+    is_ched_accredited: boolean;
+    authorities: AuthoritySummary[];
+};
+
 type ProgramSummary = {
     id: number;
     code: string;
@@ -151,6 +159,8 @@ type ProgramSummary = {
     internship_hours: number | null;
     bundled_qualifications: string[] | null;
     advanced_topics: string | null;
+    industry_course_code_id: number | null;
+    industry_course_code_label: string | null;
 };
 
 type CurriculumVersion = {
@@ -216,6 +226,8 @@ type ProgramEditData = {
     internship_hours: string;
     bundled_qualifications: string;
     advanced_topics: string;
+    industry_course_code_id: string;
+    industry_course_code_label: string;
 };
 
 const FieldError = ({ message }: { message?: string }) => (message ? <p className="text-destructive mt-1 text-xs font-medium">{message}</p> : null);
@@ -281,6 +293,7 @@ export default function CurriculumPrograms({
     capabilities,
     catalog_templates,
     shs_pathways,
+    authority_codes,
 }: CurriculumProgramsProps) {
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [createStep, setCreateStep] = useState<CreateStep>("identity");
@@ -333,6 +346,8 @@ export default function CurriculumPrograms({
         internship_hours: "",
         bundled_qualifications: "",
         advanced_topics: "",
+        industry_course_code_id: "",
+        industry_course_code_label: "",
     });
 
     const editForm = useForm<ProgramEditData>({
@@ -351,6 +366,8 @@ export default function CurriculumPrograms({
         internship_hours: "",
         bundled_qualifications: "",
         advanced_topics: "",
+        industry_course_code_id: "",
+        industry_course_code_label: "",
     });
 
     const selectedCapability = capabilities.find((capability) => capability.id === createForm.data.capability_id) ?? null;
@@ -478,6 +495,7 @@ export default function CurriculumPrograms({
                     "curriculum_stage",
                     "curriculum_year",
                     "department_id",
+                    "industry_course_code_id",
                     "title",
                 ];
 
@@ -511,6 +529,8 @@ export default function CurriculumPrograms({
             internship_hours: program.internship_hours?.toString() ?? "",
             bundled_qualifications: program.bundled_qualifications?.join(", ") ?? "",
             advanced_topics: program.advanced_topics ?? "",
+            industry_course_code_id: program.industry_course_code_id?.toString() ?? "",
+            industry_course_code_label: program.industry_course_code_label ?? "",
         });
     };
 
@@ -540,6 +560,7 @@ export default function CurriculumPrograms({
                       advanced_topics: editForm.data.advanced_topics,
                   }
                 : {}),
+            industry_course_code_id: editForm.data.industry_course_code_id || null,
         };
 
         editForm.transform(() => payload);
@@ -859,6 +880,7 @@ export default function CurriculumPrograms({
                                 </Link>
                             </Button>
                         )}
+                        <AuthorityCodeImportDialog authorities={authority_codes.authorities} isChedAccredited={authority_codes.is_ched_accredited} />
                         <Button className="rounded-lg px-4 shadow-sm" onClick={() => setIsCreateOpen(true)}>
                             <Plus className="size-4" /> Add program
                         </Button>
@@ -1448,6 +1470,34 @@ export default function CurriculumPrograms({
                                     </div>
                                 </div>
 
+                                {authority_codes.authorities.length > 0 && (
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="create-authority-code">
+                                            Official authority code{" "}
+                                            <span className="text-muted-foreground font-normal">
+                                                (optional{authority_codes.is_ched_accredited ? " · CHED-accredited" : ""})
+                                            </span>
+                                        </Label>
+                                        <AuthorityCodePicker
+                                            id="create-authority-code"
+                                            value={createForm.data.industry_course_code_id}
+                                            onSelect={(option: AuthorityCodeOption | null) => {
+                                                createForm.setData("industry_course_code_id", option ? String(option.id) : "");
+                                                createForm.setData("industry_course_code_label", option ? option.label : "");
+                                                if (option && !createForm.data.title.trim()) {
+                                                    createForm.setData("title", option.title);
+                                                }
+                                            }}
+                                            error={createForm.errors.industry_course_code_id}
+                                        />
+                                        <p className="text-muted-foreground text-xs">
+                                            Links this program to an imported regulator list. Picking a code suggests the official title when yours is
+                                            empty.
+                                        </p>
+                                        <FieldError message={createForm.errors.industry_course_code_id} />
+                                    </div>
+                                )}
+
                                 <div className="grid gap-4 md:grid-cols-2">
                                     {createForm.data.curriculum_kind === "program" && (
                                         <div className="grid gap-2">
@@ -1810,6 +1860,24 @@ export default function CurriculumPrograms({
                                     </Select>
                                     <FieldError message={editForm.errors.course_type_id} />
                                 </div>
+                            </div>
+                        )}
+
+                        {authority_codes.authorities.length > 0 && (
+                            <div className="grid gap-2">
+                                <Label htmlFor="edit-authority-code">
+                                    Official authority code <span className="text-muted-foreground font-normal">(optional)</span>
+                                </Label>
+                                <AuthorityCodePicker
+                                    id="edit-authority-code"
+                                    value={editForm.data.industry_course_code_id}
+                                    onSelect={(option: AuthorityCodeOption | null) => {
+                                        editForm.setData("industry_course_code_id", option ? String(option.id) : "");
+                                        editForm.setData("industry_course_code_label", option ? option.label : "");
+                                    }}
+                                    error={editForm.errors.industry_course_code_id}
+                                />
+                                <FieldError message={editForm.errors.industry_course_code_id} />
                             </div>
                         )}
 

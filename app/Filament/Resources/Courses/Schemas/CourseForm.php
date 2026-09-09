@@ -103,6 +103,68 @@ final class CourseForm
                                             ->columnSpanFull()
                                             ->placeholder('Overview of the program, outcomes, or notes for staff.')
                                             ->helperText('Optional. Shown where program context is displayed.'),
+                                        Select::make('industry_course_code_id')
+                                            ->label('Official authority code')
+                                            ->relationship('industryCourseCode', 'title')
+                                            ->getOptionLabelFromRecordUsing(fn ($record): string => $record->displayLabel())
+                                            ->searchable()
+                                            ->preload()
+                                            ->columnSpanFull()
+                                            ->helperText('Link this program to an official code from an imported regulator list (e.g. CHED PSCED). Used by regulatory exports.'),
+                                    ]),
+                            ]),
+                        Tab::make('Regulatory codes')
+                            ->icon(Heroicon::OutlinedBuildingLibrary)
+                            ->schema([
+                                Section::make('Authority classification')
+                                    ->description('Free-text regulatory fields stay editable; link the official code above so exports stay consistent.')
+                                    ->columns(2)
+                                    ->schema([
+                                        TextInput::make('ched_program_code')
+                                            ->label('CHED program code')
+                                            ->maxLength(50)
+                                            ->placeholder('e.g., 464108')
+                                            ->helperText('Falls back to the linked authority code when blank.'),
+                                        TextInput::make('ched_major')
+                                            ->label('Major')
+                                            ->maxLength(255)
+                                            ->columnSpanFull(),
+                                        TextInput::make('ched_major_code')
+                                            ->label('Major code')
+                                            ->maxLength(50),
+                                        TextInput::make('ched_year_implemented')
+                                            ->label('Year implemented')
+                                            ->numeric()
+                                            ->minValue(1900)
+                                            ->maxValue(2100),
+                                        TextInput::make('ched_program_status')
+                                            ->label('Program status')
+                                            ->maxLength(2)
+                                            ->placeholder('CO, PO, DO, NO, NA'),
+                                        TextInput::make('ched_authority_category')
+                                            ->label('Authority category')
+                                            ->maxLength(2)
+                                            ->placeholder('GP, GR, BR, OT'),
+                                        TextInput::make('ched_authority_serial')
+                                            ->label('Authority serial')
+                                            ->maxLength(255),
+                                        TextInput::make('ched_authority_year')
+                                            ->label('Authority year')
+                                            ->numeric()
+                                            ->minValue(1900)
+                                            ->maxValue(2100),
+                                        TextInput::make('ched_delivery_mode')
+                                            ->label('Delivery mode')
+                                            ->maxLength(2)
+                                            ->placeholder('SE, TR, SD, TD, DE, OT'),
+                                        TextInput::make('ched_normal_length_years')
+                                            ->label('Normal length (years)')
+                                            ->numeric()
+                                            ->minValue(0),
+                                        TextInput::make('ched_program_credit_units')
+                                            ->label('Program credit units')
+                                            ->numeric()
+                                            ->minValue(0),
                                     ]),
                             ]),
                         Tab::make('Structure & scheduling')

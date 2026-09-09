@@ -447,6 +447,9 @@ final class RegistrarAnalyticsService
             'missing_program_metadata_count' => (clone $query)->where(function (Builder $query): void {
                 $query->whereNull('courses.ched_program_status')->orWhereNull('courses.ched_authority_category')->orWhereNull('courses.ched_delivery_mode')->orWhereNull('courses.ched_normal_length_years')->orWhereNull('courses.ched_program_credit_units');
             })->count(),
+            'missing_authority_code_count' => (clone $query)->whereNotNull('courses.id')->where(function (Builder $query): void {
+                $query->whereNull('courses.industry_course_code_id')->whereNull('courses.ched_program_code');
+            })->count(),
             'reporting_confirmation_missing_count' => (clone $query)->whereNull('students.profile_reporting_confirmed_at')->count(),
             'missing_graduation_period_count' => $graduateMissing,
         ];

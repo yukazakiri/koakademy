@@ -92,19 +92,39 @@ final class AdministratorIndustryCodeController extends Controller
     {
         Gate::authorize('viewAny', IndustryCourseCode::class);
 
-        $schoolId = $this->tenantContext->getCurrentSchoolId();
-        abort_if($schoolId === null, 422, 'Choose an active school before searching authority codes.');
+        $school = $this->currentSchool();
+        abort_if($school === null, 422, 'Choose an active school before searching authority codes.');
+        $schoolId = $school->id;
+
+        $eligibleAuthorities = CodeAuthority::query()
+            ->where('school_id', $schoolId)
+            ->where('is_active', true)
+            ->get()
+            ->filter(fn (CodeAuthority $authority): bool => $authority->matchesSchool($school));
+
+        $eligibleAuthorityIds = $eligibleAuthorities->pluck('id')->all();
+
+        if ($eligibleAuthorityIds === []) {
+            return response()->json(['codes' => []]);
+        }
+
+        $authorityId = request()->query('code_authority_id');
+        if (is_numeric($authorityId)) {
+            $parsedId = (int) $authorityId;
+            if (! in_array($parsedId, $eligibleAuthorityIds, true)) {
+                return response()->json(['codes' => []]);
+            }
+            $targetAuthorityIds = [$parsedId];
+        } else {
+            $targetAuthorityIds = $eligibleAuthorityIds;
+        }
 
         $query = IndustryCourseCode::query()
             ->with('authority:id,name,key')
             ->where('is_active', true)
+            ->whereIn('code_authority_id', $targetAuthorityIds)
             ->orderBy('code')
             ->limit(50);
-
-        $authorityId = request()->query('code_authority_id');
-        if (is_numeric($authorityId)) {
-            $query->where('code_authority_id', (int) $authorityId);
-        }
 
         $search = mb_trim((string) request()->query('q', ''));
         if ($search !== '') {

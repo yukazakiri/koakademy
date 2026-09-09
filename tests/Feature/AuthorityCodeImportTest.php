@@ -264,3 +264,215 @@ it('prevents linking a program to another school’s authority code', function (
         'industry_course_code_id' => $foreignCode->id,
     ])->assertSessionHasErrors('industry_course_code_id');
 });
+
+it('enforces specific create and update permissions during import confirmation', function (): void {
+    $school = chedAccreditedSchool();
+    $authority = CodeAuthority::query()->create([
+        'school_id' => $school->id,
+        'key' => 'ched',
+        'name' => 'CHED',
+        'schema' => CodeAuthority::defaultSchema(),
+        'is_active' => true,
+    ]);
+
+    IndustryCourseCode::query()->create([
+        'school_id' => $school->id,
+        'code_authority_id' => $authority->id,
+        'code' => '140101',
+        'title' => 'Old Title',
+        'source' => 'manual',
+    ]);
+
+    // Admin has both to stage
+    $stager = authorityCodeAdmin($school);
+    $upload = authorityCodeWorkbook([
+        ['Code', 'Title'],
+        ['140101', 'Updated Title'],
+        ['464108', 'Brand New Title'],
+    ]);
+
+    $response = $this->actingAs($stager)->post(route('administrators.curriculum.code-authority-imports.store'), [
+        'file' => $upload,
+        'code_authority_id' => $authority->id,
+    ], ['Accept' => 'application/json'])->assertCreated();
+
+    $importId = $response->json('import.id');
+    $updateRowId = $response->json('import.rows.0.id');
+    $createRowId = $response->json('import.rows.1.id');
+
+    // User with only Create permission cannot confirm an update row
+    $creatorOnly = User::factory()->create(['school_id' => $school->id, 'role' => UserRole::Registrar]);
+    $creatorOnly->givePermissionTo(['ViewAny:IndustryCourseCode', 'Create:IndustryCourseCode']);
+    app(TenantContext::class)->setCurrentSchool($school);
+
+    // Staged by stager, so let's test authorizeRows via service
+    $import = App\Models\CodeAuthorityImport::query()->where('public_id', $importId)->firstOrFail();
+
+    expect(fn () => app(App\Services\CodeAuthorityImportService::class)->confirm($import, $creatorOnly, [$updateRowId]))
+        ->toThrow(Symfony\Component\HttpKernel\Exception\HttpException::class);
+
+    // User with only Update permission cannot confirm a create row
+    $updaterOnly = User::factory()->create(['school_id' => $school->id, 'role' => UserRole::Registrar]);
+    $updaterOnly->givePermissionTo(['ViewAny:IndustryCourseCode', 'Update:IndustryCourseCode']);
+
+    expect(fn () => app(App\Services\CodeAuthorityImportService::class)->confirm($import, $updaterOnly, [$createRowId]))
+        ->toThrow(Symfony\Component\HttpKernel\Exception\HttpException::class);
+});
+
+it('restricts search results to eligible active authorities matching the school', function (): void {
+    $school = chedAccreditedSchool();
+    $admin = authorityCodeAdmin($school);
+
+    $activeChed = CodeAuthority::query()->create([
+        'school_id' => $school->id,
+        'key' => 'ched',
+        'name' => 'CHED',
+        'country_code' => 'PH',
+        'curriculum_framework' => 'ched_psg',
+        'is_active' => true,
+    ]);
+    $inactiveAuth = CodeAuthority::query()->create([
+        'school_id' => $school->id,
+        'key' => 'inactive_auth',
+        'name' => 'Inactive Authority',
+        'is_active' => false,
+    ]);
+    $foreignAuth = CodeAuthority::query()->create([
+        'school_id' => $school->id,
+        'key' => 'foreign_auth',
+        'name' => 'Foreign Authority',
+        'country_code' => 'US', // School is PH
+        'is_active' => true,
+    ]);
+
+    IndustryCourseCode::query()->create([
+        'school_id' => $school->id,
+        'code_authority_id' => $activeChed->id,
+        'code' => '464108',
+        'title' => 'Information Technology',
+        'source' => 'manual',
+    ]);
+    IndustryCourseCode::query()->create([
+        'school_id' => $school->id,
+        'code_authority_id' => $inactiveAuth->id,
+        'code' => '999001',
+        'title' => 'Hidden Code Inactive',
+        'source' => 'manual',
+    ]);
+    IndustryCourseCode::query()->create([
+        'school_id' => $school->id,
+        'code_authority_id' => $foreignAuth->id,
+        'code' => '999002',
+        'title' => 'Hidden Code Foreign',
+        'source' => 'manual',
+    ]);
+
+    $res = $this->actingAs($admin)->getJson(route('administrators.curriculum.authority-codes.search'))
+        ->assertOk();
+
+    $codes = collect($res->json('codes'))->pluck('code')->all();
+    expect($codes)->toContain('464108')
+        ->and($codes)->not->toContain('999001')
+        ->and($codes)->not->toContain('999002');
+});
+
+it('does not leak non-CHED authority codes into CHED Form B/C exports', function (): void {
+    $school = chedAccreditedSchool();
+    $admin = authorityCodeAdmin($school);
+    $department = Department::factory()->create(['school_id' => $school->id]);
+    $courseType = App\Models\CourseType::factory()->create();
+
+    $tesdaAuth = CodeAuthority::query()->create([
+        'school_id' => $school->id,
+        'key' => 'tesda',
+        'name' => 'Technical Education and Skills Development Authority',
+        'curriculum_framework' => 'tesda_tr',
+        'is_active' => true,
+    ]);
+    $tesdaCode = IndustryCourseCode::query()->create([
+        'school_id' => $school->id,
+        'code_authority_id' => $tesdaAuth->id,
+        'code' => 'TESDA-NC2',
+        'title' => 'Cookery NC II',
+        'source' => 'manual',
+    ]);
+
+    $course = Course::factory()->create([
+        'school_id' => $school->id,
+        'department_id' => $department->id,
+        'course_type_id' => $courseType->id,
+        'code' => 'BSIT',
+        'title' => 'Bachelor of Science in Information Technology',
+        'ched_program_code' => 'CHED-IT-001',
+        'industry_course_code_id' => $tesdaCode->id,
+    ]);
+
+    // officialChedProgramCode refuses the non-CHED code and falls back to ched_program_code
+    expect($course->officialChedProgramCode())->toBe('CHED-IT-001');
+
+    $preview = app(App\Services\ChedFormBcExportService::class)->buildPreviewData([
+        'school_id' => $school->id,
+        'school_year' => '2024 - 2025',
+        'semester' => 1,
+        'report_key' => App\Services\RegulatoryReportRegistry::CHED_BACCALAUREATE,
+    ]);
+
+    $row = collect($preview['sheets']['Baccalaureate'] ?? [])->firstWhere('course_id', $course->id);
+    expect($row['program_code'] ?? null)->toBe('CHED-IT-001');
+});
+
+it('checks policy permissions in Filament resources', function (): void {
+    $school = chedAccreditedSchool();
+    $dean = User::factory()->create(['school_id' => $school->id, 'role' => UserRole::Dean]);
+    // Dean does not have Delete:CodeAuthority
+    $this->actingAs($dean);
+
+    expect(App\Filament\Resources\CodeAuthorities\CodeAuthorityResource::canDelete(new CodeAuthority))->toBeFalse()
+        ->and(App\Filament\Resources\IndustryCourseCodes\IndustryCourseCodeResource::canDelete(new IndustryCourseCode))->toBeFalse();
+});
+
+it('counts distinct courses missing authority codes in quality analytics', function (): void {
+    $school = chedAccreditedSchool();
+    app(TenantContext::class)->setCurrentSchool($school);
+
+    $department = Department::factory()->create(['school_id' => $school->id]);
+    $courseWithoutCode = Course::factory()->create([
+        'school_id' => $school->id,
+        'department_id' => $department->id,
+        'is_active' => true,
+        'ched_program_code' => null,
+        'industry_course_code_id' => null,
+    ]);
+    $courseWithCode = Course::factory()->create([
+        'school_id' => $school->id,
+        'department_id' => $department->id,
+        'is_active' => true,
+        'ched_program_code' => 'CHED-01',
+    ]);
+
+    $student1 = App\Models\Student::factory()->create(['school_id' => $school->id, 'course_id' => $courseWithoutCode->id]);
+    $student2 = App\Models\Student::factory()->create(['school_id' => $school->id, 'course_id' => $courseWithoutCode->id]);
+
+    App\Models\StudentEnrollment::factory()->create([
+        'school_id' => $school->id,
+        'student_id' => $student1->id,
+        'course_id' => $courseWithoutCode->id,
+        'school_year' => '2024 - 2025',
+        'semester' => 1,
+    ]);
+    App\Models\StudentEnrollment::factory()->create([
+        'school_id' => $school->id,
+        'student_id' => $student2->id,
+        'course_id' => $courseWithoutCode->id,
+        'school_year' => '2024 - 2025',
+        'semester' => 1,
+    ]);
+
+    $data = app(App\Services\RegistrarAnalyticsService::class)->build([
+        'school_year' => '2024 - 2025',
+        'semester' => 1,
+    ]);
+
+    // Count is 1 distinct course, not 2 enrollment rows
+    expect($data['quality']['missing_authority_code_count'])->toBe(1);
+});

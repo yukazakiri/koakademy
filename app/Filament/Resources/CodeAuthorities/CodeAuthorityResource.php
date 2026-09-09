@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\CodeAuthorities;
 
-use App\Enums\UserRole;
 use App\Filament\Resources\CodeAuthorities\Pages\CreateCodeAuthority;
 use App\Filament\Resources\CodeAuthorities\Pages\EditCodeAuthority;
 use App\Filament\Resources\CodeAuthorities\Pages\ListCodeAuthorities;
@@ -41,50 +40,32 @@ final class CodeAuthorityResource extends Resource
 
     public static function canViewAny(): bool
     {
-        $user = auth()->user();
-
-        if ($user?->role->isAdministrative()) {
-            return true;
-        }
-
-        return (bool) $user?->role->isStudentServices();
+        return auth()->user()?->can('viewAny', CodeAuthority::class) ?? false;
     }
 
     public static function canCreate(): bool
     {
-        $user = auth()->user();
-
-        if ($user?->role->isAdministrative()) {
-            return true;
-        }
-
-        return $user?->role === UserRole::Registrar;
+        return auth()->user()?->can('create', CodeAuthority::class) ?? false;
     }
 
     public static function canView($record): bool
     {
-        return self::canViewAny();
+        return auth()->user()?->can('view', $record) ?? false;
     }
 
     public static function canEdit($record): bool
     {
-        $user = auth()->user();
-
-        if ($user?->role->isAdministrative()) {
-            return true;
-        }
-
-        return $user?->role === UserRole::Registrar;
+        return auth()->user()?->can('update', $record) ?? false;
     }
 
     public static function canDelete($record): bool
     {
-        return auth()->user()?->role->isAdministrative() ?? false;
+        return auth()->user()?->can('delete', $record) ?? false;
     }
 
     public static function canDeleteAny(): bool
     {
-        return auth()->user()?->role->isAdministrative() ?? false;
+        return auth()->user()?->can('deleteAny', CodeAuthority::class) ?? false;
     }
 
     public static function form(Schema $schema): Schema

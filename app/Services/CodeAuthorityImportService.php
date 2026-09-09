@@ -11,8 +11,10 @@ use App\Models\CodeAuthorityImportRow;
 use App\Models\IndustryCourseCode;
 use App\Models\User;
 use DateTimeInterface;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Maatwebsite\Excel\Facades\Excel;
@@ -119,12 +121,14 @@ final readonly class CodeAuthorityImportService
                 throw ValidationException::withMessages(['row_ids' => 'Select at least one ready row to import.']);
             }
 
+            $this->authorizeRows($actor, $rows);
+
             $locked->rows()
                 ->where('status', 'ready')
                 ->whereNotIn('id', $rows->pluck('id'))
                 ->update([
                     'status' => 'skipped',
-                    'result' => ['message' => 'Not selected for confirmation.'],
+                    'result' => json_encode(['message' => 'Not selected for confirmation.']),
                     'updated_at' => now(),
                 ]);
 
@@ -225,6 +229,21 @@ final readonly class CodeAuthorityImportService
             'warnings' => $warnings === [] ? null : $warnings,
             'status' => $errors === [] ? 'ready' : 'invalid',
         ];
+    }
+
+    /** @param Collection<int, CodeAuthorityImportRow> $rows */
+    private function authorizeRows(User $actor, Collection $rows): void
+    {
+        $hasCreate = $rows->contains(fn (CodeAuthorityImportRow $row): bool => $row->action === 'create');
+        $hasUpdate = $rows->contains(fn (CodeAuthorityImportRow $row): bool => $row->action === 'update');
+
+        if ($hasCreate && ! Gate::forUser($actor)->allows('create', IndustryCourseCode::class)) {
+            abort(403, 'You do not have permission to create authority codes.');
+        }
+
+        if ($hasUpdate && ! Gate::forUser($actor)->allows('update', IndustryCourseCode::class)) {
+            abort(403, 'You do not have permission to update authority codes.');
+        }
     }
 
     private function apply(CodeAuthorityImportRow $row, int $schoolId, CodeAuthority $authority): void

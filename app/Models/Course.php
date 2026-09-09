@@ -211,6 +211,26 @@ final class Course extends Model
             ?? $this->code;
     }
 
+    /**
+     * Official CHED program code specifically for CHED Form B/C exports.
+     * Prefers linked industry code only if its authority is CHED-aligned.
+     * Otherwise preserves legacy ched_program_code or local course code.
+     */
+    public function officialChedProgramCode(): string
+    {
+        $code = $this->industryCourseCode;
+
+        if ($code instanceof IndustryCourseCode && $this->isChedAuthority($code->authority)) {
+            return (string) $code->code;
+        }
+
+        if (filled($this->ched_program_code)) {
+            return (string) $this->ched_program_code;
+        }
+
+        return (string) $this->code;
+    }
+
     public function subjects()
     {
         return $this->hasMany(Subject::class, 'course_id', 'id');
@@ -325,6 +345,22 @@ final class Course extends Model
             'internship_hours' => 'integer',
             'bundled_qualifications' => 'array',
         ];
+    }
+
+    private function isChedAuthority(?CodeAuthority $authority): bool
+    {
+        if (! $authority instanceof CodeAuthority) {
+            return false;
+        }
+
+        $key = mb_strtolower((string) $authority->key);
+        $framework = mb_strtolower((string) $authority->curriculum_framework);
+        $name = mb_strtolower((string) $authority->name);
+
+        return $key === 'ched'
+            || $framework === 'ched_psg'
+            || str_contains($name, 'ched')
+            || str_contains($name, 'commission on higher education');
     }
 
     private function resolveDepartmentIdFromLegacyValue(mixed $value): ?int

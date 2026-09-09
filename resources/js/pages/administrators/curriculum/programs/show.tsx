@@ -875,6 +875,7 @@ export default function CurriculumProgramShow({
                                                 <AuthorityCodePicker
                                                     id="program-authority-code"
                                                     value={programForm.data.industry_course_code_id}
+                                                    initialLabel={programForm.data.industry_course_code_label}
                                                     onSelect={(option: AuthorityCodeOption | null) => {
                                                         programForm.setData("industry_course_code_id", option ? String(option.id) : "");
                                                         programForm.setData("industry_course_code_label", option ? option.label : "");

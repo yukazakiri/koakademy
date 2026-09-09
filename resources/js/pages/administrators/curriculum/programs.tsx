@@ -1481,6 +1481,7 @@ export default function CurriculumPrograms({
                                         <AuthorityCodePicker
                                             id="create-authority-code"
                                             value={createForm.data.industry_course_code_id}
+                                            initialLabel={createForm.data.industry_course_code_label}
                                             onSelect={(option: AuthorityCodeOption | null) => {
                                                 createForm.setData("industry_course_code_id", option ? String(option.id) : "");
                                                 createForm.setData("industry_course_code_label", option ? option.label : "");
@@ -1871,6 +1872,7 @@ export default function CurriculumPrograms({
                                 <AuthorityCodePicker
                                     id="edit-authority-code"
                                     value={editForm.data.industry_course_code_id}
+                                    initialLabel={editForm.data.industry_course_code_label}
                                     onSelect={(option: AuthorityCodeOption | null) => {
                                         editForm.setData("industry_course_code_id", option ? String(option.id) : "");
                                         editForm.setData("industry_course_code_label", option ? option.label : "");

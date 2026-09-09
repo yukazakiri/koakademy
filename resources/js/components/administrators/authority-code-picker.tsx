@@ -20,6 +20,7 @@ export interface AuthorityCodeOption {
 
 interface AuthorityCodePickerProps {
     value: string;
+    initialLabel?: string | null;
     authorityId?: string;
     onSelect: (option: AuthorityCodeOption | null) => void;
     placeholder?: string;
@@ -34,6 +35,7 @@ interface AuthorityCodePickerProps {
  */
 export function AuthorityCodePicker({
     value,
+    initialLabel = null,
     authorityId,
     onSelect,
     placeholder = "Search official code or title…",
@@ -43,12 +45,23 @@ export function AuthorityCodePicker({
 }: AuthorityCodePickerProps) {
     const [open, setOpen] = useState(false);
     const [inputValue, setInputValue] = useState("");
-    const [initialLabel, setInitialLabel] = useState<string | null>(null);
+    const [selectedLabel, setSelectedLabel] = useState<string | null>(initialLabel);
     const [debouncedValue] = useDebounce(inputValue, 300);
     const [options, setOptions] = useState<AuthorityCodeOption[]>([]);
     const [loading, setLoading] = useState(false);
     const abortRef = useRef<AbortController | null>(null);
     const blurTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    useEffect(() => {
+        setSelectedLabel(initialLabel);
+    }, [initialLabel]);
+
+    useEffect(() => {
+        if (!value) {
+            setSelectedLabel(null);
+            setInputValue("");
+        }
+    }, [value]);
 
     useEffect(() => {
         return () => {
@@ -95,7 +108,7 @@ export function AuthorityCodePicker({
 
     const handleSelect = useCallback(
         (option: AuthorityCodeOption) => {
-            setInitialLabel(option.label);
+            setSelectedLabel(option.label);
             setInputValue("");
             onSelect(option);
             setOpen(false);
@@ -104,12 +117,12 @@ export function AuthorityCodePicker({
     );
 
     const handleClear = useCallback(() => {
-        setInitialLabel(null);
+        setSelectedLabel(null);
         setInputValue("");
         onSelect(null);
     }, [onSelect]);
 
-    const shownValue = inputValue !== "" ? inputValue : (initialLabel ?? "");
+    const shownValue = inputValue !== "" ? inputValue : (selectedLabel ?? "");
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
@@ -123,9 +136,11 @@ export function AuthorityCodePicker({
                         aria-autocomplete="list"
                         value={shownValue}
                         onChange={(event) => {
-                            setInputValue(event.target.value);
-                            if (initialLabel) setInitialLabel(null);
-                            if (value) onSelect(null);
+                            const nextValue = event.target.value;
+                            setInputValue(nextValue);
+                            if (value && nextValue === "") {
+                                handleClear();
+                            }
                         }}
                         placeholder={placeholder}
                         disabled={disabled}
@@ -139,7 +154,12 @@ export function AuthorityCodePicker({
                             if (!disabled && options.length > 0) setOpen(true);
                         }}
                         onBlur={() => {
-                            blurTimeout.current = setTimeout(() => setOpen(false), 200);
+                            blurTimeout.current = setTimeout(() => {
+                                setOpen(false);
+                                if (value && selectedLabel) {
+                                    setInputValue("");
+                                }
+                            }, 200);
                         }}
                     />
                 </PopoverTrigger>

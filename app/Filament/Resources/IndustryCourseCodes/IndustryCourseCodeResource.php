@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\IndustryCourseCodes;
 
-use App\Enums\UserRole;
 use App\Filament\Resources\IndustryCourseCodes\Pages\CreateIndustryCourseCode;
 use App\Filament\Resources\IndustryCourseCodes\Pages\EditIndustryCourseCode;
 use App\Filament\Resources\IndustryCourseCodes\Pages\ListIndustryCourseCodes;
@@ -41,54 +40,32 @@ final class IndustryCourseCodeResource extends Resource
 
     public static function canViewAny(): bool
     {
-        $user = auth()->user();
-
-        if ($user?->role->isAdministrative()) {
-            return true;
-        }
-
-        if ($user?->role->isFaculty()) {
-            return true;
-        }
-
-        return (bool) $user?->role->isStudentServices();
+        return auth()->user()?->can('viewAny', IndustryCourseCode::class) ?? false;
     }
 
     public static function canCreate(): bool
     {
-        $user = auth()->user();
-
-        if ($user?->role->isAdministrative()) {
-            return true;
-        }
-
-        return $user?->role === UserRole::Registrar;
+        return auth()->user()?->can('create', IndustryCourseCode::class) ?? false;
     }
 
     public static function canView($record): bool
     {
-        return self::canViewAny();
+        return auth()->user()?->can('view', $record) ?? false;
     }
 
     public static function canEdit($record): bool
     {
-        $user = auth()->user();
-
-        if ($user?->role->isAdministrative()) {
-            return true;
-        }
-
-        return $user?->role === UserRole::Registrar;
+        return auth()->user()?->can('update', $record) ?? false;
     }
 
     public static function canDelete($record): bool
     {
-        return auth()->user()?->role->isAdministrative() ?? false;
+        return auth()->user()?->can('delete', $record) ?? false;
     }
 
     public static function canDeleteAny(): bool
     {
-        return auth()->user()?->role->isAdministrative() ?? false;
+        return auth()->user()?->can('deleteAny', IndustryCourseCode::class) ?? false;
     }
 
     public static function form(Schema $schema): Schema

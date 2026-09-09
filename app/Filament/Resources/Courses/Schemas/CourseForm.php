@@ -6,6 +6,9 @@ namespace App\Filament\Resources\Courses\Schemas;
 
 use App\Models\Course;
 use App\Models\Department;
+use App\Models\IndustryCourseCode;
+use App\Services\TenantContext;
+use Closure;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -15,6 +18,7 @@ use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Database\Eloquent\Builder;
 
 final class CourseForm
 {
@@ -105,10 +109,40 @@ final class CourseForm
                                             ->helperText('Optional. Shown where program context is displayed.'),
                                         Select::make('industry_course_code_id')
                                             ->label('Official authority code')
-                                            ->relationship('industryCourseCode', 'title')
+                                            ->relationship(
+                                                name: 'industryCourseCode',
+                                                titleAttribute: 'title',
+                                                modifyQueryUsing: fn (Builder $query, callable $get): Builder => $query
+                                                    ->when(
+                                                        $get('school_id') ?? app(TenantContext::class)->getCurrentSchoolId(),
+                                                        fn (Builder $q, $schoolId): Builder => $q->where('school_id', $schoolId)
+                                                    )
+                                                    ->where('is_active', true)
+                                            )
                                             ->getOptionLabelFromRecordUsing(fn ($record): string => $record->displayLabel())
                                             ->searchable()
                                             ->preload()
+                                            ->rules([
+                                                fn (callable $get): Closure => function (string $attribute, mixed $value, Closure $fail) use ($get): void {
+                                                    if (! $value) {
+                                                        return;
+                                                    }
+
+                                                    $schoolId = $get('school_id') ?? app(TenantContext::class)->getCurrentSchoolId();
+                                                    if (! $schoolId) {
+                                                        return;
+                                                    }
+
+                                                    $matches = IndustryCourseCode::query()
+                                                        ->where('id', $value)
+                                                        ->where('school_id', $schoolId)
+                                                        ->exists();
+
+                                                    if (! $matches) {
+                                                        $fail('The selected authority code belongs to another school.');
+                                                    }
+                                                },
+                                            ])
                                             ->columnSpanFull()
                                             ->helperText('Link this program to an official code from an imported regulator list (e.g. CHED PSCED). Used by regulatory exports.'),
                                     ]),

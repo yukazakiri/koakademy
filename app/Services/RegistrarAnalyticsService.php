@@ -75,7 +75,7 @@ final class RegistrarAnalyticsService
 
         return [
             'analytics' => $analytics,
-            'quality' => $this->quality($reporting),
+            'quality' => $this->quality($reporting, $filters),
             'report' => $report,
             'generatedAt' => now()->toIso8601String(),
         ];
@@ -430,11 +430,28 @@ final class RegistrarAnalyticsService
         });
     }
 
-    private function quality(Builder $query): array
+    /** @param array<string, int|string|null> $filters */
+    private function quality(Builder $query, array $filters = []): array
     {
         $graduateMissing = (clone $query)->where('students.status', StudentStatus::Graduated->value)->where(function (Builder $query): void {
             $query->whereNull('students.graduation_school_year')->orWhereNull('students.graduation_semester');
         })->count();
+
+        $coursesQuery = Course::query()->where('is_active', true);
+        if (! empty($filters['department_id']) && $filters['department_id'] !== 'all') {
+            $coursesQuery->where('department_id', $filters['department_id']);
+        }
+        if (! empty($filters['course_id']) && $filters['course_id'] !== 'all') {
+            $coursesQuery->where('id', $filters['course_id']);
+        }
+
+        $missingAuthorityCodeCount = $coursesQuery
+            ->whereNull('industry_course_code_id')
+            ->where(function (Builder $q): void {
+                $q->whereNull('ched_program_code')
+                    ->orWhereRaw("TRIM(COALESCE(ched_program_code, '')) = ''");
+            })
+            ->count();
 
         return [
             'missing_department_count' => (clone $query)->whereNull('departments.id')->count(),
@@ -447,9 +464,7 @@ final class RegistrarAnalyticsService
             'missing_program_metadata_count' => (clone $query)->where(function (Builder $query): void {
                 $query->whereNull('courses.ched_program_status')->orWhereNull('courses.ched_authority_category')->orWhereNull('courses.ched_delivery_mode')->orWhereNull('courses.ched_normal_length_years')->orWhereNull('courses.ched_program_credit_units');
             })->count(),
-            'missing_authority_code_count' => (clone $query)->whereNotNull('courses.id')->where(function (Builder $query): void {
-                $query->whereNull('courses.industry_course_code_id')->whereNull('courses.ched_program_code');
-            })->count(),
+            'missing_authority_code_count' => $missingAuthorityCodeCount,
             'reporting_confirmation_missing_count' => (clone $query)->whereNull('students.profile_reporting_confirmed_at')->count(),
             'missing_graduation_period_count' => $graduateMissing,
         ];

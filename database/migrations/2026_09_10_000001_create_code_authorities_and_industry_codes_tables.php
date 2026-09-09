@@ -30,8 +30,8 @@ return new class extends Migration
             $table->id();
             $table->foreignId('school_id')->constrained('schools')->restrictOnDelete();
             $table->foreignId('code_authority_id')->constrained('code_authorities')->cascadeOnDelete();
-            $table->string('code');
-            $table->string('title');
+            $table->string('code', 100);
+            $table->string('title', 500);
             $table->json('attributes')->nullable();
             $table->string('source', 12)->default('manual');
             $table->boolean('is_active')->default(true);
@@ -67,8 +67,8 @@ return new class extends Migration
             $table->foreignId('code_authority_import_id')->constrained()->cascadeOnDelete();
             $table->foreignId('school_id')->constrained('schools')->restrictOnDelete();
             $table->unsignedInteger('row_number');
-            $table->string('code')->nullable();
-            $table->string('title')->nullable();
+            $table->string('code', 100)->nullable();
+            $table->string('title', 500)->nullable();
             $table->string('action', 12)->nullable();
             $table->text('payload')->nullable();
             $table->json('errors')->nullable();

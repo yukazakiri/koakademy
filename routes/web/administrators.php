@@ -14,6 +14,7 @@ use App\Http\Controllers\AdministratorFacultyImportController;
 use App\Http\Controllers\AdministratorFacultyManagementController;
 use App\Http\Controllers\AdministratorFinanceController;
 use App\Http\Controllers\AdministratorGlobalSearchController;
+use App\Http\Controllers\AdministratorIndustryCodeController;
 use App\Http\Controllers\AdministratorModuleMarketplaceController;
 use App\Http\Controllers\AdministratorRegistrarDocumentController;
 use App\Http\Controllers\AdministratorRegistrarInsightsController;
@@ -348,6 +349,17 @@ Route::middleware(['auth', 'administrators.only'])
         Route::put('/curriculum/programs/{course}', [AdministratorCurriculumManagementController::class, 'updateProgram'])->name('curriculum.programs.update');
         Route::put('/curriculum/programs/{course}/toggle-status', [AdministratorCurriculumManagementController::class, 'toggleProgramStatus'])->name('curriculum.programs.toggle-status');
         Route::delete('/curriculum/programs/{course}', [AdministratorCurriculumManagementController::class, 'destroyProgram'])->name('curriculum.programs.destroy');
+        // Industry / authority course codes (per-school regulatory lists, populated by import)
+        Route::get('/curriculum/code-authorities', [AdministratorIndustryCodeController::class, 'authorities'])->name('curriculum.code-authorities.index');
+        Route::post('/curriculum/code-authorities', [AdministratorIndustryCodeController::class, 'storeAuthority'])->name('curriculum.code-authorities.store');
+        Route::put('/curriculum/code-authorities/{codeAuthority}', [AdministratorIndustryCodeController::class, 'updateAuthority'])->name('curriculum.code-authorities.update');
+        Route::get('/curriculum/authority-codes/search', [AdministratorIndustryCodeController::class, 'searchCodes'])->name('curriculum.authority-codes.search');
+        Route::post('/curriculum/authority-codes', [AdministratorIndustryCodeController::class, 'storeCode'])->name('curriculum.authority-codes.store');
+        Route::put('/curriculum/authority-codes/{industryCourseCode}', [AdministratorIndustryCodeController::class, 'updateCode'])->name('curriculum.authority-codes.update');
+        Route::get('/curriculum/code-authorities/{codeAuthority}/template', [AdministratorIndustryCodeController::class, 'downloadTemplate'])->name('curriculum.code-authorities.template');
+        Route::post('/curriculum/code-authority-imports', [AdministratorIndustryCodeController::class, 'storeImport'])->middleware('throttle:10,1')->name('curriculum.code-authority-imports.store');
+        Route::post('/curriculum/code-authority-imports/{codeAuthorityImport}/confirm', [AdministratorIndustryCodeController::class, 'confirmImport'])->middleware('throttle:20,1')->name('curriculum.code-authority-imports.confirm');
+
         Route::post('/curriculum/programs/{course}/subjects', [AdministratorCurriculumManagementController::class, 'storeSubject'])->name('curriculum.programs.subjects.store');
         Route::put('/curriculum/programs/{course}/subjects/{subject}', [AdministratorCurriculumManagementController::class, 'updateSubject'])->name('curriculum.programs.subjects.update');
         Route::delete('/curriculum/programs/{course}/subjects/{subject}', [AdministratorCurriculumManagementController::class, 'destroySubject'])->name('curriculum.programs.subjects.destroy');

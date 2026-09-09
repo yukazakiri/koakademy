@@ -248,7 +248,7 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
             $rowData = [
                 'course_id' => $course->id,
                 'program_title' => $course->title,
-                'program_code' => $course->ched_program_code ?: $course->code,
+                'program_code' => $course->officialChedProgramCode(),
                 'major' => $course->ched_major,
                 'major_code' => $course->ched_major_code,
                 'with_thesis' => $course->ched_has_thesis ? '1 - Yes' : '2 - No',
@@ -306,7 +306,7 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
     private function queryCourses(array $filters): Collection
     {
         $query = Course::query()
-            ->with(['courseType', 'department'])
+            ->with(['courseType', 'department', 'industryCourseCode.authority'])
             ->where('is_active', true);
 
         if (! empty($filters['school_id'])) {
@@ -443,7 +443,7 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
 
             // Program Information (Columns A - Q)
             $this->setTextCell($sheet, "A{$row}", $course->title);
-            $this->setTextCell($sheet, "B{$row}", $course->ched_program_code ?: $course->code);
+            $this->setTextCell($sheet, "B{$row}", $course->officialChedProgramCode());
             $this->setTextCell($sheet, "C{$row}", $course->ched_major ?: '');
             $this->setTextCell($sheet, "D{$row}", $course->ched_major_code ?: '');
             $sheet->setCellValue("E{$row}", $course->ched_has_thesis ? 1 : 2);

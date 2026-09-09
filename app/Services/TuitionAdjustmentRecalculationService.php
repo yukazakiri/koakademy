@@ -7,9 +7,12 @@ namespace App\Services;
 use App\Models\StudentTuition;
 
 /**
- * Keeps a Finance-approved assessment frozen when enrollment subjects or rates change.
- * Academic edits can proceed, but assessment charges remain unchanged until
- * Finance reviews and applies a new assessment revision preview.
+ * Keeps a Finance-approved assessment revision frozen when enrollment subjects or
+ * rates change. Academic edits can proceed, but assessment charges remain
+ * unchanged until Finance reviews and applies a new assessment revision preview.
+ *
+ * Legacy assessment adjustments (no linked active revision) keep their additive
+ * behavior: recalculated base plus stored reconciliation delta.
  */
 final readonly class TuitionAdjustmentRecalculationService
 {
@@ -26,7 +29,9 @@ final readonly class TuitionAdjustmentRecalculationService
         $assessmentAdjustment = round((float) ($existingTuition->assessment_adjustment ?? 0), 2);
         $hasActiveRevision = $existingTuition->active_revision_id !== null;
 
-        if ($hasActiveRevision || abs($assessmentAdjustment) >= 0.005) {
+        // Only revision-locked assessments freeze. Legacy adjustments predate
+        // immutable revisions and stay additive so academic edits still apply.
+        if ($hasActiveRevision) {
             $frozenTotal = (float) $existingTuition->overall_tuition;
             $recalculatedBase = round((float) ($attributes['overall_tuition'] ?? 0), 2);
             $hasDiscrepancy = abs($recalculatedBase - $frozenTotal) > 0.005;
@@ -44,6 +49,18 @@ final readonly class TuitionAdjustmentRecalculationService
             ];
         }
 
-        return $attributes;
+        if (abs($assessmentAdjustment) < 0.005) {
+            return $attributes;
+        }
+
+        $recalculatedBase = round((float) ($attributes['overall_tuition'] ?? 0), 2);
+        $assessedTotal = round($recalculatedBase + $assessmentAdjustment, 2);
+
+        return [
+            ...$attributes,
+            'overall_tuition' => $assessedTotal,
+            'total_balance' => $assessedTotal,
+            'assessment_adjustment' => $assessmentAdjustment,
+        ];
     }
 }

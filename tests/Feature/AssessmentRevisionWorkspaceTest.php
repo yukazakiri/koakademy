@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Enums\PaymentMethod;
 use App\Enums\UserRole;
 use App\Finance\RecordFinancePayment;
+use App\Models\AssessmentRevision;
 use App\Models\Course;
 use App\Models\FeeScheduleVersion;
 use App\Models\GeneralSetting;
@@ -310,9 +311,17 @@ it('freezes approved assessments when academic edits change enrolled subjects', 
         'discount' => 0,
     ]);
 
+    $revision = AssessmentRevision::query()->create([
+        'student_tuition_id' => $tuition->id,
+        'student_enrollment_id' => $enrollment->id,
+        'overall_tuition' => 12000.0,
+        'fingerprint' => 'test-fingerprint',
+    ]);
+    $tuition->forceFill(['active_revision_id' => $revision->id])->save();
+
     $recalc = app(TuitionAdjustmentRecalculationService::class);
     // Academic edit recomputes raw overall to 15000 due to added subject
-    $preserved = $recalc->preserveFinanceAdjustment($tuition, [
+    $preserved = $recalc->preserveFinanceAdjustment($tuition->refresh(), [
         'overall_tuition' => 15000.00,
         'total_tuition' => 15000.00,
         'total_lectures' => 13000.00,
@@ -324,6 +333,41 @@ it('freezes approved assessments when academic edits change enrolled subjects', 
     expect($preserved['overall_tuition'])->toBe(12000.00)
         ->and($preserved['total_tuition'])->toBe(12000.00)
         ->and($preserved['needs_finance_review'])->toBeTrue();
+});
+
+it('keeps legacy assessment adjustments additive without an active revision', function (): void {
+    $course = Course::factory()->create(['lec_per_unit' => 500, 'lab_per_unit' => 1000]);
+    $student = Student::factory()->create(['course_id' => $course->id]);
+    $enrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'school_year' => '2026 - 2027',
+        'semester' => 1,
+    ]);
+    $tuition = StudentTuition::query()->create([
+        'student_id' => $student->id,
+        'enrollment_id' => $enrollment->id,
+        'school_year' => '2026 - 2027',
+        'semester' => 1,
+        'academic_year' => 1,
+        'total_tuition' => 12000,
+        'total_lectures' => 10000,
+        'total_laboratory' => 2000,
+        'overall_tuition' => 12000,
+        'total_balance' => 12000,
+        'assessment_adjustment' => 500,
+        'paid' => 0,
+        'discount' => 0,
+    ]);
+
+    $preserved = app(TuitionAdjustmentRecalculationService::class)->preserveFinanceAdjustment($tuition, [
+        'overall_tuition' => 15000.00,
+        'total_balance' => 15000.00,
+    ]);
+
+    expect($preserved['overall_tuition'])->toBe(15500.00)
+        ->and($preserved['total_balance'])->toBe(15500.00)
+        ->and($preserved['assessment_adjustment'])->toBe(500.0);
 });
 
 it('unifies balance, paid, and credit totals across billing, SOA, and adjustment serialization', function (): void {

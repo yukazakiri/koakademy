@@ -12,8 +12,10 @@ use App\Http\Requests\Administrators\ResolveTuitionAdjustmentRowsRequest;
 use App\Http\Requests\Administrators\StoreTuitionAdjustmentBatchRequest;
 use App\Http\Requests\Administrators\StoreTuitionAdjustmentSpreadsheetImportRequest;
 use App\Models\Course;
+use App\Models\FeeScheduleVersion;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
+use App\Models\StudentTuition;
 use App\Models\TuitionAdjustment;
 use App\Models\TuitionAdjustmentSpreadsheetImport;
 use App\Models\User;
@@ -25,6 +27,7 @@ use App\Services\TuitionPaymentScheduleSettingsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -49,6 +52,14 @@ final class AdministratorTuitionAdjustmentController extends Controller
             'school_years' => $settings->getAvailableSchoolYears(),
             'semesters' => $settings->getAvailableSemesters(),
             'courses' => Course::query()->where('is_active', true)->orderBy('code')->get(['id', 'code', 'title']),
+            'fee_schedules' => Schema::hasTable('fee_schedule_versions')
+                ? FeeScheduleVersion::query()
+                    ->where('is_active', true)
+                    ->where('school_year', $schoolYear)
+                    ->where('semester', $semester)
+                    ->with('course:id,code,title')
+                    ->get()
+                : collect([]),
             'student_types' => collect(StudentType::cases())->map(fn (StudentType $type): array => ['value' => $type->value, 'label' => $type->getLabel()])->values(),
             'schedule_settings' => $this->scheduleSettings->get(),
             'workspace_layout' => data_get($request->user()?->preferences, 'finance.tuition_adjustments.layout', 'inspector'),
@@ -98,6 +109,42 @@ final class AdministratorTuitionAdjustmentController extends Controller
         })->values();
 
         return response()->json(['rows' => $results]);
+    }
+
+    public function preview(Request $request): JsonResponse
+    {
+        abort_unless($request->user()?->can('view_tuition_fees'), 403);
+        $validated = $request->validate([
+            'rows' => ['required', 'array'],
+            'rows.*.client_row_id' => ['nullable', 'string'],
+            'rows.*.enrollment_id' => ['required', 'integer'],
+            'rows.*.tuition_id' => ['required', 'integer'],
+            'rows.*.total_fees' => ['nullable', 'numeric'],
+            'rows.*.opening_paid' => ['nullable', 'numeric'],
+            'rows.*.balance' => ['nullable', 'numeric'],
+            'rows.*.lecture' => ['nullable', 'numeric'],
+            'rows.*.gross_lecture' => ['nullable', 'numeric'],
+            'rows.*.laboratory' => ['nullable', 'numeric'],
+            'rows.*.miscellaneous' => ['nullable', 'numeric'],
+            'rows.*.discount' => ['nullable', 'integer', 'min:0', 'max:100'],
+            'rows.*.required_downpayment' => ['nullable', 'numeric'],
+            'rows.*.installments' => ['nullable', 'array'],
+            'calculation_method' => ['nullable', 'string', 'in:reconciled_assessment,fee_rates'],
+            'fee_schedule_version_id' => ['nullable', 'integer', 'exists:fee_schedule_versions,id'],
+        ]);
+
+        return response()->json($this->adjustments->previewBatch(
+            rows: $validated['rows'],
+            calculationMethod: $validated['calculation_method'] ?? 'reconciled_assessment',
+            feeScheduleVersionId: isset($validated['fee_schedule_version_id']) ? (int) $validated['fee_schedule_version_id'] : null,
+        ));
+    }
+
+    public function revisions(Request $request, StudentTuition $tuition): JsonResponse
+    {
+        abort_unless($request->user()?->can('view_tuition_fees'), 403);
+
+        return response()->json(['revisions' => $this->adjustments->history($tuition->id)]);
     }
 
     public function storeBatch(StoreTuitionAdjustmentBatchRequest $request): JsonResponse

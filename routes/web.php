@@ -252,6 +252,8 @@ Route::domain(config('app.portal_host'))->group(function () {
     | Administrator Portal Routes
     |--------------------------------------------------------------------------
     */
+    Route::redirect('/finance/reports', '/administrators/finance/reports');
+    Route::redirect('/finance', '/administrators/finance');
     require __DIR__.'/web/administrators.php';
 
     /*

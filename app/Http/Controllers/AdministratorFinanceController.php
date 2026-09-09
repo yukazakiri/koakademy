@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Enums\PaymentMethod;
+use App\Enums\UserRole;
 use App\Finance\FinancePaymentChargeCatalog;
 use App\Finance\RecordFinancePayment;
 use App\Http\Requests\ResendFinancialDocumentRequest;
@@ -866,7 +867,7 @@ final class AdministratorFinanceController extends Controller
 
     public function reports(GeneralSettingsService $settingsService): Response|RedirectResponse
     {
-        $this->authorizeFinanceAccess();
+        $this->authorizeFinanceReportsAccess();
 
         $user = Auth::user();
 
@@ -905,7 +906,7 @@ final class AdministratorFinanceController extends Controller
      */
     public function dailyCollectionReport(Request $request): \Illuminate\Http\JsonResponse
     {
-        $this->authorizeFinanceAccess();
+        $this->authorizeFinanceReportsAccess();
 
         $validated = $request->validate([
             'date' => ['nullable', 'date'],
@@ -954,7 +955,7 @@ final class AdministratorFinanceController extends Controller
      */
     public function collectionReport(Request $request): \Illuminate\Http\JsonResponse
     {
-        $this->authorizeFinanceAccess();
+        $this->authorizeFinanceReportsAccess();
 
         $validated = $request->validate([
             'start_date' => ['required', 'date'],
@@ -1020,7 +1021,7 @@ final class AdministratorFinanceController extends Controller
      */
     public function outstandingBalancesReport(Request $request, GeneralSettingsService $settingsService): \Illuminate\Http\JsonResponse
     {
-        $this->authorizeFinanceAccess();
+        $this->authorizeFinanceReportsAccess();
 
         $validated = $request->validate([
             'school_year' => ['nullable', 'string'],
@@ -1082,7 +1083,7 @@ final class AdministratorFinanceController extends Controller
      */
     public function scholarshipReport(Request $request, GeneralSettingsService $settingsService): \Illuminate\Http\JsonResponse
     {
-        $this->authorizeFinanceAccess();
+        $this->authorizeFinanceReportsAccess();
 
         $validated = $request->validate([
             'school_year' => ['nullable', 'string'],
@@ -1145,7 +1146,7 @@ final class AdministratorFinanceController extends Controller
      */
     public function revenueBreakdownReport(Request $request, GeneralSettingsService $settingsService): \Illuminate\Http\JsonResponse
     {
-        $this->authorizeFinanceAccess();
+        $this->authorizeFinanceReportsAccess();
 
         $validated = $request->validate([
             'school_year' => ['nullable', 'string'],
@@ -1210,7 +1211,7 @@ final class AdministratorFinanceController extends Controller
      */
     public function fullyPaidReport(Request $request, GeneralSettingsService $settingsService): \Illuminate\Http\JsonResponse
     {
-        $this->authorizeFinanceAccess();
+        $this->authorizeFinanceReportsAccess();
 
         $validated = $request->validate([
             'school_year' => ['nullable', 'string'],
@@ -1260,7 +1261,7 @@ final class AdministratorFinanceController extends Controller
      */
     public function cashierPerformanceReport(Request $request): \Illuminate\Http\JsonResponse
     {
-        $this->authorizeFinanceAccess();
+        $this->authorizeFinanceReportsAccess();
 
         $validated = $request->validate([
             'start_date' => ['required', 'date'],
@@ -1307,6 +1308,42 @@ final class AdministratorFinanceController extends Controller
         $user = Auth::user();
 
         $this->abortUnlessUserHasAnyPermission($user instanceof User ? $user : null, 'View:Cashier');
+    }
+
+    private function authorizeFinanceReportsAccess(): void
+    {
+        $user = Auth::user();
+
+        $this->abortUnlessUserHasAnyPermission(
+            $user instanceof User ? $user : null,
+            [
+                'generate_reports',
+                'GenerateReports',
+                'View:Cashier',
+                'view_payments',
+                'process_payments',
+                'view_tuition_fees',
+                'manage_tuition_fees',
+                'export_data',
+                'ExportData',
+                'ViewPayments',
+                'ProcessPayments',
+                'ViewAny:Transaction',
+                'View:Transaction',
+                'ViewAny:Report',
+                'View:Report',
+            ],
+            [
+                UserRole::Admin,
+                UserRole::SuperAdmin,
+                UserRole::Developer,
+                UserRole::AccountingOfficer,
+                UserRole::BursarOfficer,
+                UserRole::Cashier,
+                UserRole::President,
+                UserRole::VicePresident,
+            ]
+        );
     }
 
     /** @return array{layout: string, density: string, history_visibility: string, default_payment_method: string} */

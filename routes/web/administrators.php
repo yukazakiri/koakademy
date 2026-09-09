@@ -254,6 +254,12 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/finance/tuition-adjustments/resolve', [AdministratorTuitionAdjustmentController::class, 'resolve'])
             ->middleware('throttle:120,1')
             ->name('finance.tuition-adjustments.resolve');
+        Route::post('/finance/tuition-adjustments/preview', [AdministratorTuitionAdjustmentController::class, 'preview'])
+            ->middleware('throttle:60,1')
+            ->name('finance.tuition-adjustments.preview');
+        Route::get('/finance/tuition-adjustments/revisions/{tuition}', [AdministratorTuitionAdjustmentController::class, 'revisions'])
+            ->whereNumber('tuition')
+            ->name('finance.tuition-adjustments.revisions');
         Route::post('/finance/tuition-adjustments/batch', [AdministratorTuitionAdjustmentController::class, 'storeBatch'])
             ->middleware('throttle:30,1')
             ->name('finance.tuition-adjustments.batch.store');

@@ -167,6 +167,7 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
             $sheet = $spreadsheet->getSheetByName('Sheet1');
             $sheet->removeColumn('L', 10);
             $sheet->getPageSetup()->setPrintArea('A1:K25');
+            $spreadsheet->getCalculationEngine()->clearCalculationCache();
 
             return $spreadsheet;
         }

@@ -23,6 +23,7 @@ final readonly class StatementOfAccountService
     public function __construct(
         private SchoolBrandingService $branding,
         private SiteSettings $siteSettings,
+        private ?EnrollmentBillingService $billing = null,
     ) {}
 
     /** @return array<string, mixed> */
@@ -69,8 +70,12 @@ final readonly class StatementOfAccountService
             ];
         })->values()->all();
 
+        $billing = $this->billing ?? app(EnrollmentBillingService::class);
         $assessment = (float) ($tuition?->overall_tuition ?? 0);
-        $balance = max(0, (float) ($tuition?->total_balance ?? 0));
+        $totalPaid = $tuition ? $billing->totalPaid($tuition) : 0.0;
+        $position = $tuition ? $billing->accountPosition($tuition, $totalPaid) : ['balance_due' => 0.0, 'credit' => 0.0];
+        $balance = (float) $position['balance_due'];
+        $credit = (float) $position['credit'];
 
         return [
             'student' => [
@@ -96,8 +101,9 @@ final readonly class StatementOfAccountService
                 'total_miscelaneous_fees' => (float) $tuition->total_miscelaneous_fees,
                 'discount' => (float) $tuition->discount,
                 'overall_tuition' => $assessment,
-                'total_paid' => max(0, $assessment - $balance),
+                'total_paid' => $totalPaid,
                 'total_balance' => $balance,
+                'credit' => $credit,
             ] : null,
             'transactions' => $payments,
             'generated_at' => now()->format('F d, Y h:i A'),

@@ -79,6 +79,44 @@ it('allows cashier users to view the finance reports page', function (): void {
         ->assertOk();
 });
 
+it('allows accounting officer and bursar officer roles to view finance reports via spatie roles and permissions', function (): void {
+    $accountingOfficer = User::factory()->create([
+        'role' => UserRole::AccountingOfficer,
+    ]);
+    Role::findOrCreate(UserRole::AccountingOfficer->value, 'web');
+    $accountingOfficer->assignRole(UserRole::AccountingOfficer->value);
+
+    $this->actingAs($accountingOfficer)
+        ->get(portalUrlForAdministrators('/administrators/finance/reports'))
+        ->assertOk();
+
+    $bursar = User::factory()->create([
+        'role' => UserRole::BursarOfficer,
+    ]);
+    Role::findOrCreate(UserRole::BursarOfficer->value, 'web');
+    $bursar->assignRole(UserRole::BursarOfficer->value);
+
+    $this->actingAs($bursar)
+        ->get(portalUrlForAdministrators('/administrators/finance/reports'))
+        ->assertOk();
+
+    $superAdmin = User::factory()->create([
+        'role' => UserRole::SuperAdmin,
+    ]);
+
+    $this->actingAs($superAdmin)
+        ->get(portalUrlForAdministrators('/administrators/finance/reports'))
+        ->assertOk();
+});
+
+it('redirects /finance/reports to /administrators/finance/reports', function (): void {
+    $user = User::factory()->create(['role' => UserRole::SuperAdmin]);
+
+    $this->actingAs($user)
+        ->get(portalUrlForAdministrators('/finance/reports'))
+        ->assertRedirect(portalUrlForAdministrators('/administrators/finance/reports'));
+});
+
 it('shares cashier desk data on the finance dashboard', function (): void {
     $user = User::factory()->create([
         'role' => UserRole::Admin,

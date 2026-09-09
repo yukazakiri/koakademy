@@ -258,6 +258,7 @@ final class RolesSeeder extends Seeder
             'User', 'Student', 'Faculty', 'Course', 'Subject',
             'Enrollment', 'Event', 'Announcement', 'AuditLog', 'Inventory',
             'Department', 'Room', 'Class', 'Mail',
+            'IndustryCourseCode', 'CodeAuthority',
             'ViewDashboard', 'GenerateReports',
         ], ['Delete', 'ForceDelete', 'Restore']);
     }
@@ -268,6 +269,7 @@ final class RolesSeeder extends Seeder
             'User', 'Student', 'Faculty', 'Course', 'Subject',
             'Enrollment', 'Event', 'Announcement', 'Inventory',
             'Department', 'Room', 'Class',
+            'IndustryCourseCode', 'CodeAuthority',
             'ViewDashboard',
         ], ['Delete', 'ForceDelete']);
     }
@@ -278,6 +280,7 @@ final class RolesSeeder extends Seeder
             'User', 'Student', 'Faculty', 'Course', 'Subject',
             'Enrollment', 'Event', 'Announcement',
             'Room', 'Class',
+            'IndustryCourseCode', 'CodeAuthority',
             'ViewDashboard',
         ], ['Delete', 'ForceDelete']);
     }
@@ -288,6 +291,7 @@ final class RolesSeeder extends Seeder
             'Student', 'Course', 'Subject',
             'Enrollment', 'Event', 'Announcement',
             'Class',
+            'IndustryCourseCode', 'CodeAuthority',
             'ViewDashboard',
         ]);
     }
@@ -318,10 +322,11 @@ final class RolesSeeder extends Seeder
             'Student', 'ShsStudent', 'Enrollment',
             'Course', 'Subject', 'Class', 'Room',
             'Event', 'Announcement',
+            'IndustryCourseCode', 'CodeAuthority',
             'QuickEnroll', 'ManageEnrollments',
             'ViewIdCard', 'VerifyIdCard',
             'ViewClearance', 'ManageClearance',
-            'ViewDashboard', 'GenerateReports', 'ExportData',
+            'ViewDashboard', 'GenerateReports', 'ExportData', 'ImportData',
         ]);
     }
 
@@ -331,8 +336,9 @@ final class RolesSeeder extends Seeder
             'Student', 'ShsStudent', 'Enrollment',
             'Course', 'Subject', 'Class', 'Room',
             'Event', 'Announcement',
+            'IndustryCourseCode', 'CodeAuthority',
             'ViewIdCard', 'VerifyIdCard',
-            'ViewDashboard', 'ExportData',
+            'ViewDashboard', 'ExportData', 'ImportData',
         ]);
     }
 

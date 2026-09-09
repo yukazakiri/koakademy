@@ -34,6 +34,13 @@ final class IndustryCourseCodesTable
                     ->searchable()
                     ->sortable()
                     ->wrap(),
+                TextColumn::make('category_name')
+                    ->label('Category / Discipline')
+                    ->searchable()
+                    ->sortable()
+                    ->placeholder('—')
+                    ->description(fn ($record): ?string => $record->category_code ? "Code: {$record->category_code}" : null)
+                    ->toggleable(),
                 TextColumn::make('authority.name')
                     ->label('Authority')
                     ->badge()

@@ -32,6 +32,11 @@ const definitions: PageDefinitionInput[] = [
     { routePattern: /^\/administrators\/classes\/create$/, component: "administrators/classes/create", variant: "form" },
     { routePattern: /^\/administrators\/classes$/, component: "administrators/classes/index", variant: "list" },
     { routePattern: /^\/administrators\/curriculum$/, component: "administrators/curriculum/programs", variant: "list" },
+    {
+        routePattern: /^\/administrators\/curriculum\/authority-codes$/,
+        component: "administrators/curriculum/authority-codes/index",
+        variant: "list",
+    },
     { routePattern: /^\/administrators\/curriculum\/programs\/[^/]+$/, component: "administrators/curriculum/programs/show", variant: "detail" },
     { routePattern: /^\/administrators\/curriculum\/programs$/, component: "administrators/curriculum/programs", variant: "list" },
     { routePattern: /^\/administrators\/departments\/[^/]+\/edit$/, component: "administrators/departments/edit", variant: "form" },

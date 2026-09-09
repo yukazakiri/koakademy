@@ -32,12 +32,15 @@ return new class extends Migration
             $table->foreignId('code_authority_id')->constrained('code_authorities')->cascadeOnDelete();
             $table->string('code', 100);
             $table->string('title', 500);
+            $table->string('category_code', 50)->nullable();
+            $table->string('category_name', 255)->nullable();
             $table->json('attributes')->nullable();
             $table->string('source', 12)->default('manual');
             $table->boolean('is_active')->default(true);
             $table->timestamps();
 
             $table->unique(['school_id', 'code_authority_id', 'code'], 'industry_codes_school_authority_code_unique');
+            $table->index(['school_id', 'code_authority_id', 'category_code'], 'industry_codes_school_authority_category_index');
             $table->index(['school_id', 'code_authority_id', 'is_active'], 'industry_codes_school_authority_state_index');
         });
 
@@ -69,6 +72,8 @@ return new class extends Migration
             $table->unsignedInteger('row_number');
             $table->string('code', 100)->nullable();
             $table->string('title', 500)->nullable();
+            $table->string('category_code', 50)->nullable();
+            $table->string('category_name', 255)->nullable();
             $table->string('action', 12)->nullable();
             $table->text('payload')->nullable();
             $table->json('errors')->nullable();

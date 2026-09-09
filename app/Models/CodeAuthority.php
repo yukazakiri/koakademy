@@ -55,6 +55,8 @@ final class CodeAuthority extends Model
         return [
             ['key' => 'code', 'label' => 'Code', 'required' => true],
             ['key' => 'title', 'label' => 'Title', 'required' => true],
+            ['key' => 'category_code', 'label' => 'Category / Discipline Code', 'required' => false],
+            ['key' => 'category_name', 'label' => 'Category / Discipline Name', 'required' => false],
         ];
     }
 

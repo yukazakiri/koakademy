@@ -175,6 +175,8 @@ final readonly class CodeAuthorityImportService
                 'source_row' => $row->row_number,
                 'code' => $row->code,
                 'title' => $row->title,
+                'category_code' => $row->category_code,
+                'category_name' => $row->category_name,
                 'status' => $row->status,
                 'action' => $row->action,
                 'errors' => $row->errors ?? [],
@@ -195,6 +197,8 @@ final readonly class CodeAuthorityImportService
         $warnings = $input['_warnings'] ?? [];
         $code = $this->normalizeCode($input['code'] ?? null);
         $title = $this->string($input['title'] ?? null);
+        $categoryCode = $this->normalizeCode($input['category_code'] ?? null);
+        $categoryName = $this->string($input['category_name'] ?? null);
 
         if ($code === null) {
             $errors[] = 'Code is required.';
@@ -218,10 +222,14 @@ final readonly class CodeAuthorityImportService
             'row_number' => $rowNumber,
             'code' => $code,
             'title' => $title,
+            'category_code' => $categoryCode,
+            'category_name' => $categoryName,
             'action' => $action,
             'payload' => [
                 'code' => $code,
                 'title' => $title,
+                'category_code' => $categoryCode,
+                'category_name' => $categoryName,
                 'attributes' => $input['attributes'] ?? [],
                 'unmapped_attributes' => $input['unmapped_attributes'] ?? [],
             ],
@@ -251,6 +259,8 @@ final readonly class CodeAuthorityImportService
         $payload = $row->payload ?? [];
         $code = $this->normalizeCode($payload['code'] ?? $row->code);
         $title = $this->string($payload['title'] ?? $row->title);
+        $categoryCode = $this->normalizeCode($payload['category_code'] ?? $row->category_code);
+        $categoryName = $this->string($payload['category_name'] ?? $row->category_name);
 
         if ($code === null || $title === null) {
             throw ValidationException::withMessages([
@@ -271,6 +281,8 @@ final readonly class CodeAuthorityImportService
             $record->forceFill([
                 'code' => $code,
                 'title' => $title,
+                'category_code' => $categoryCode,
+                'category_name' => $categoryName,
                 'attributes' => $attributes,
                 'source' => 'import',
                 'is_active' => true,
@@ -281,6 +293,8 @@ final readonly class CodeAuthorityImportService
                 'code_authority_id' => $authority->id,
                 'code' => $code,
                 'title' => $title,
+                'category_code' => $categoryCode,
+                'category_name' => $categoryName,
                 'attributes' => $attributes,
                 'source' => 'import',
                 'is_active' => true,
@@ -290,6 +304,8 @@ final readonly class CodeAuthorityImportService
         $row->forceFill([
             'code' => $code,
             'title' => $title,
+            'category_code' => $categoryCode,
+            'category_name' => $categoryName,
             'action' => 'applied',
             'status' => 'applied',
             'result' => ['industry_course_code_id' => $record->id],
@@ -390,7 +406,12 @@ final readonly class CodeAuthorityImportService
      */
     private function fieldProposals(array $rows, CodeAuthority $authority): array
     {
-        $known = ['code', 'title', 'psced_code', '6-digit_psced_code', '6_digit_psced_code', 'program_code', 'course_code', 'name', 'program_title', 'psced_name', 'course_title'];
+        $known = [
+            'code', 'title', 'psced_code', '6-digit_psced_code', '6_digit_psced_code', 'program_code', 'course_code',
+            'name', 'program_title', 'psced_name', 'course_title',
+            'category_code', 'category_name', 'discipline_code', '2-digit_psced_discipline', '2_digit_psced_discipline',
+            'psced_discipline', 'discipline', 'discipline_group', 'category', 'group_code', 'group_name', 'cluster_code', 'cluster_name',
+        ];
         foreach ($authority->columnDefinitions() as $definition) {
             $known[] = $this->normalizedHeader($definition['key']);
         }
@@ -448,10 +469,26 @@ final readonly class CodeAuthorityImportService
             ?? $normalized['course_title']
             ?? null;
 
+        $categoryCode = $normalized['category_code']
+            ?? $normalized['2-digit_psced_discipline']
+            ?? $normalized['2_digit_psced_discipline']
+            ?? $normalized['discipline_code']
+            ?? $normalized['psced_discipline']
+            ?? $normalized['group_code']
+            ?? $normalized['cluster_code']
+            ?? null;
+
+        $categoryName = $normalized['category_name']
+            ?? $normalized['discipline_group']
+            ?? $normalized['category']
+            ?? $normalized['group_name']
+            ?? $normalized['cluster_name']
+            ?? null;
+
         $schemaKeys = array_map(fn (array $definition): string => $this->normalizedHeader($definition['key']), $authority->columnDefinitions());
         $attributes = [];
         foreach ($schemaKeys as $key) {
-            if (in_array($key, ['code', 'title'], true)) {
+            if (in_array($key, ['code', 'title', 'category_code', 'category_name'], true)) {
                 continue;
             }
             if (array_key_exists($key, $normalized) && $this->string($normalized[$key]) !== null) {
@@ -472,6 +509,8 @@ final readonly class CodeAuthorityImportService
         return [
             'code' => $this->string($code),
             'title' => $this->string($title),
+            'category_code' => $this->string($categoryCode),
+            'category_name' => $this->string($categoryName),
             'attributes' => $attributes,
             'unmapped_attributes' => $unmapped,
         ];

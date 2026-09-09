@@ -16,14 +16,24 @@ code, and import row is tenant-scoped by `school_id`.
 | Record | Meaning |
 | ------ | ------- |
 | `CodeAuthority` | A regulator list one school tracks (name, optional `country_code`, optional `curriculum_framework`, ordered column `schema`). |
-| `IndustryCourseCode` | One official code: fixed `code` + `title`, plus a schemaless `attributes` bag for every other spreadsheet column. Unique per `[school, authority, code]`. |
+| `IndustryCourseCode` | One official code: `code`, `title`, `category_code` (e.g. 2-digit discipline), `category_name` (e.g. discipline group), plus a schemaless `attributes` bag for extra columns. Unique per `[school, authority, code]`. |
 | `CodeAuthorityImport` | A staged spreadsheet: `field_proposals` for unknown columns, per-row `ready/invalid` states, then confirm. |
 
-Only `code` and `title` are fixed columns. A different country's spreadsheet
-with completely different columns works without a migration: unknown
+Each official code captures both the course level identifier and its parent
+discipline / category group. A different country's spreadsheet with
+completely different columns works without a migration: unknown
 populated columns become **field proposals** the registrar ticks to adopt,
-which extends that authority's `schema` (same idea as the faculty bulk
-import's custom-field proposals).
+which extends that authority's `schema`.
+
+## Registrar management page
+
+Registrars and administrators can manage codes and authorities at
+`/administrators/curriculum/authority-codes`:
+- Browse codes with search across codes, titles, category codes, and discipline names.
+- Filter by regulatory authority, category / discipline group, or active status.
+- Full CRUD: register single codes, edit existing ones, toggle status, or delete unneeded codes.
+- Manage regulatory authorities: create, edit, or delete authorities.
+- Launch bulk spreadsheet import or download headers-only templates.
 
 ## Registrar flow
 

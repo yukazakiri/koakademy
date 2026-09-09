@@ -13,6 +13,7 @@ use App\Http\Requests\Administrators\UpdateCodeAuthorityRequest;
 use App\Http\Requests\Administrators\UpdateIndustryCourseCodeRequest;
 use App\Models\CodeAuthority;
 use App\Models\CodeAuthorityImport;
+use App\Models\Course;
 use App\Models\IndustryCourseCode;
 use App\Models\School;
 use App\Models\User;
@@ -21,7 +22,11 @@ use App\Services\CurriculumCapabilityResolver;
 use App\Services\TenantContext;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Inertia\Inertia;
+use Inertia\Response;
 use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
@@ -37,6 +42,106 @@ final class AdministratorIndustryCodeController extends Controller
         private readonly TenantContext $tenantContext,
         private readonly CurriculumCapabilityResolver $capabilities,
     ) {}
+
+    public function index(Request $request): Response|RedirectResponse
+    {
+        $user = $request->user();
+        if (! $user instanceof User) {
+            return redirect('/login');
+        }
+
+        Gate::authorize('viewAny', IndustryCourseCode::class);
+
+        $school = $this->currentSchool();
+        abort_if($school === null, 422, 'Choose an active school before managing authority codes.');
+
+        $authorityQuery = CodeAuthority::query()
+            ->where('school_id', $school->id)
+            ->withCount(['codes', 'codes as active_codes_count' => fn (Builder $q) => $q->where('is_active', true)])
+            ->orderBy('name');
+
+        $authorities = $authorityQuery->get();
+
+        $search = mb_trim((string) $request->query('search', ''));
+        $selectedAuthorityId = $request->query('authority_id');
+        $selectedCategory = $request->query('category_code');
+        $status = $request->query('status', 'all');
+
+        $codesQuery = IndustryCourseCode::query()
+            ->where('school_id', $school->id)
+            ->with(['authority:id,name,key', 'school:id,name'])
+            ->withCount('courses')
+            ->orderBy('code');
+
+        if (is_numeric($selectedAuthorityId)) {
+            $codesQuery->where('code_authority_id', (int) $selectedAuthorityId);
+        }
+
+        if (is_string($selectedCategory) && $selectedCategory !== '' && $selectedCategory !== 'all') {
+            $codesQuery->where('category_code', $selectedCategory);
+        }
+
+        if ($status === 'active') {
+            $codesQuery->where('is_active', true);
+        } elseif ($status === 'inactive') {
+            $codesQuery->where('is_active', false);
+        }
+
+        if ($search !== '') {
+            $like = '%'.mb_strtolower($search).'%';
+            $codesQuery->where(function (Builder $inner) use ($like): void {
+                $inner->whereRaw('lower(code) like ?', [$like])
+                    ->orWhereRaw('lower(title) like ?', [$like])
+                    ->orWhereRaw('lower(coalesce(category_code, \'\')) like ?', [$like])
+                    ->orWhereRaw('lower(coalesce(category_name, \'\')) like ?', [$like]);
+            });
+        }
+
+        $allCodes = IndustryCourseCode::query()->where('school_id', $school->id);
+
+        $distinctCategories = (clone $allCodes)
+            ->whereNotNull('category_name')
+            ->whereRaw("TRIM(COALESCE(category_name, '')) != ''")
+            ->selectRaw('category_code, category_name, count(*) as count')
+            ->groupBy('category_code', 'category_name')
+            ->orderBy('category_name')
+            ->get()
+            ->map(fn ($row): array => [
+                'code' => $row->category_code,
+                'name' => $row->category_name,
+                'count' => (int) $row->count,
+                'label' => $row->category_code ? "{$row->category_code} · {$row->category_name}" : (string) $row->category_name,
+            ])
+            ->values();
+
+        $stats = [
+            'total_codes' => (clone $allCodes)->count(),
+            'active_codes' => (clone $allCodes)->where('is_active', true)->count(),
+            'total_categories' => $distinctCategories->count(),
+            'total_authorities' => $authorities->count(),
+            'linked_programs_count' => Course::query()->where('school_id', $school->id)->whereNotNull('industry_course_code_id')->count(),
+        ];
+
+        return Inertia::render('administrators/curriculum/authority-codes/index', [
+            'user' => [
+                'name' => $user->name,
+                'email' => $user->email,
+                'avatar' => $user->avatar_url ?? null,
+                'role' => $user->role?->getLabel() ?? 'Administrator',
+            ],
+            'stats' => $stats,
+            'is_ched_accredited' => $this->isChedAccredited($school),
+            'authorities' => $authorities->map(fn (CodeAuthority $auth): array => $this->authorityPayload($auth, $school))->values(),
+            'categories' => $distinctCategories,
+            'codes' => $codesQuery->paginate(30)->withQueryString(),
+            'filters' => [
+                'search' => $search,
+                'authority_id' => $selectedAuthorityId,
+                'category_code' => $selectedCategory,
+                'status' => $status,
+            ],
+        ]);
+    }
 
     public function authorities(): JsonResponse
     {
@@ -58,7 +163,7 @@ final class AdministratorIndustryCodeController extends Controller
         ]);
     }
 
-    public function storeAuthority(StoreCodeAuthorityRequest $request): JsonResponse
+    public function storeAuthority(StoreCodeAuthorityRequest $request): JsonResponse|RedirectResponse
     {
         $schoolId = $this->tenantContext->getCurrentSchoolId();
         abort_if($schoolId === null, 422, 'Choose an active school before creating an authority.');
@@ -72,20 +177,43 @@ final class AdministratorIndustryCodeController extends Controller
             'is_active' => true,
         ]);
 
+        if (! $request->wantsJson()) {
+            return redirect()->back()->with('success', "Authority “{$authority->name}” created successfully.");
+        }
+
         return response()->json([
             'authority' => $this->authorityPayload($authority->refresh(), $authority->school),
         ], 201);
     }
 
-    public function updateAuthority(UpdateCodeAuthorityRequest $request, CodeAuthority $codeAuthority): JsonResponse
+    public function updateAuthority(UpdateCodeAuthorityRequest $request, CodeAuthority $codeAuthority): JsonResponse|RedirectResponse
     {
         $this->ensureSameSchool($codeAuthority->school_id);
 
         $codeAuthority->update($request->validated());
 
+        if (! $request->wantsJson()) {
+            return redirect()->back()->with('success', "Authority “{$codeAuthority->name}” updated successfully.");
+        }
+
         return response()->json([
             'authority' => $this->authorityPayload($codeAuthority->refresh(), $codeAuthority->school),
         ]);
+    }
+
+    public function destroyAuthority(CodeAuthority $codeAuthority): JsonResponse|RedirectResponse
+    {
+        $this->ensureSameSchool($codeAuthority->school_id);
+        Gate::authorize('delete', $codeAuthority);
+
+        $name = $codeAuthority->name;
+        $codeAuthority->delete();
+
+        if (request()->wantsJson()) {
+            return response()->json(['success' => true]);
+        }
+
+        return redirect()->back()->with('success', "Authority “{$name}” deleted successfully.");
     }
 
     public function searchCodes(): JsonResponse
@@ -140,6 +268,8 @@ final class AdministratorIndustryCodeController extends Controller
                 'id' => $code->id,
                 'code' => $code->code,
                 'title' => $code->title,
+                'category_code' => $code->category_code,
+                'category_name' => $code->category_name,
                 'label' => $code->displayLabel(),
                 'authority_id' => $code->code_authority_id,
                 'authority_name' => $code->authority?->name,
@@ -148,7 +278,7 @@ final class AdministratorIndustryCodeController extends Controller
         ]);
     }
 
-    public function storeCode(StoreIndustryCourseCodeRequest $request): JsonResponse
+    public function storeCode(StoreIndustryCourseCodeRequest $request): JsonResponse|RedirectResponse
     {
         $schoolId = $this->tenantContext->getCurrentSchoolId();
         abort_if($schoolId === null, 422, 'Choose an active school before registering a code.');
@@ -173,11 +303,17 @@ final class AdministratorIndustryCodeController extends Controller
             'is_active' => $validated['is_active'] ?? true,
         ]);
 
+        if (! $request->wantsJson()) {
+            return redirect()->back()->with('success', "Authority course code “{$code->code}” created successfully.");
+        }
+
         return response()->json([
             'code' => [
                 'id' => $code->id,
                 'code' => $code->code,
                 'title' => $code->title,
+                'category_code' => $code->category_code,
+                'category_name' => $code->category_name,
                 'label' => $code->displayLabel(),
                 'authority_id' => $code->code_authority_id,
                 'attributes' => $code->attributes ?? [],
@@ -185,7 +321,7 @@ final class AdministratorIndustryCodeController extends Controller
         ], 201);
     }
 
-    public function updateCode(UpdateIndustryCourseCodeRequest $request, IndustryCourseCode $industryCourseCode): JsonResponse
+    public function updateCode(UpdateIndustryCourseCodeRequest $request, IndustryCourseCode $industryCourseCode): JsonResponse|RedirectResponse
     {
         $this->ensureSameSchool($industryCourseCode->school_id);
 
@@ -204,16 +340,37 @@ final class AdministratorIndustryCodeController extends Controller
 
         $industryCourseCode->update($validated);
 
+        if (! $request->wantsJson()) {
+            return redirect()->back()->with('success', "Authority course code “{$industryCourseCode->code}” updated successfully.");
+        }
+
         return response()->json([
             'code' => [
                 'id' => $industryCourseCode->id,
                 'code' => $industryCourseCode->code,
                 'title' => $industryCourseCode->title,
+                'category_code' => $industryCourseCode->category_code,
+                'category_name' => $industryCourseCode->category_name,
                 'label' => $industryCourseCode->displayLabel(),
                 'authority_id' => $industryCourseCode->code_authority_id,
                 'attributes' => $industryCourseCode->attributes ?? [],
             ],
         ]);
+    }
+
+    public function destroyCode(IndustryCourseCode $industryCourseCode): JsonResponse|RedirectResponse
+    {
+        $this->ensureSameSchool($industryCourseCode->school_id);
+        Gate::authorize('delete', $industryCourseCode);
+
+        $codeStr = $industryCourseCode->code;
+        $industryCourseCode->delete();
+
+        if (request()->wantsJson()) {
+            return response()->json(['success' => true]);
+        }
+
+        return redirect()->back()->with('success', "Authority course code “{$codeStr}” deleted successfully.");
     }
 
     public function downloadTemplate(CodeAuthority $codeAuthority): BinaryFileResponse

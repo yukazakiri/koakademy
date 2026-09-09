@@ -24,6 +24,8 @@ use Laravel\Scout\Searchable;
  * @property int $code_authority_id
  * @property string $code
  * @property string $title
+ * @property string|null $category_code
+ * @property string|null $category_name
  * @property array<string, mixed>|null $attributes
  * @property string $source
  * @property bool $is_active
@@ -42,6 +44,8 @@ final class IndustryCourseCode extends Model
         'code_authority_id',
         'code',
         'title',
+        'category_code',
+        'category_name',
         'attributes',
         'source',
         'is_active',
@@ -76,11 +80,19 @@ final class IndustryCourseCode extends Model
             'id' => (int) $this->id,
             'code' => $this->code,
             'title' => $this->title,
+            'category_code' => $this->category_code,
+            'category_name' => $this->category_name,
         ];
     }
 
     public function displayLabel(): string
     {
+        if ($this->category_name) {
+            $category = $this->category_code ? "{$this->category_code} · {$this->category_name}" : $this->category_name;
+
+            return sprintf('%s — %s (%s)', (string) $this->code, (string) $this->title, $category);
+        }
+
         return sprintf('%s — %s', (string) $this->code, (string) $this->title);
     }
 

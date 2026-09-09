@@ -14,6 +14,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $row_number
  * @property string|null $code
  * @property string|null $title
+ * @property string|null $category_code
+ * @property string|null $category_name
  * @property string|null $action
  * @property array<string, mixed>|null $payload
  * @property array<int, string>|null $errors
@@ -34,6 +36,8 @@ final class CodeAuthorityImportRow extends Model
         'row_number',
         'code',
         'title',
+        'category_code',
+        'category_name',
         'action',
         'payload',
         'errors',

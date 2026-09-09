@@ -34,6 +34,8 @@ type ImportRow = {
     source_row: number;
     code: string | null;
     title: string | null;
+    category_code: string | null;
+    category_name: string | null;
     status: "ready" | "invalid" | "applied" | "skipped";
     action: string | null;
     errors: string[];
@@ -454,6 +456,12 @@ export function AuthorityCodeImportDialog({ authorities, isChedAccredited }: { a
                                                 <span className="text-muted-foreground truncate">
                                                     {row.title ?? `Spreadsheet row ${row.source_row}`}
                                                 </span>
+                                                {row.category_name && (
+                                                    <span className="text-muted-foreground hidden max-w-[200px] truncate text-xs sm:inline">
+                                                        ({row.category_code ? `${row.category_code} · ` : ""}
+                                                        {row.category_name})
+                                                    </span>
+                                                )}
                                                 {row.errors.length > 0 && <XCircle className="text-destructive ml-auto size-4 shrink-0" />}
                                                 {row.errors.length === 0 && row.warnings.length > 0 && (
                                                     <AlertTriangle className="ml-auto size-4 shrink-0 text-amber-500" />

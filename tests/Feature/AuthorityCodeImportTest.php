@@ -19,13 +19,19 @@ use Maatwebsite\Excel\Facades\Excel;
 use Spatie\Permission\Models\Permission;
 
 beforeEach(function (): void {
-    foreach (['ViewAny:IndustryCourseCode', 'Create:IndustryCourseCode', 'Update:IndustryCourseCode', 'ViewAny:CodeAuthority', 'Create:CodeAuthority', 'Update:CodeAuthority'] as $permission) {
+    foreach ([
+        'ViewAny:IndustryCourseCode', 'Create:IndustryCourseCode', 'Update:IndustryCourseCode', 'Delete:IndustryCourseCode',
+        'ViewAny:CodeAuthority', 'Create:CodeAuthority', 'Update:CodeAuthority', 'Delete:CodeAuthority',
+    ] as $permission) {
         Permission::findOrCreate($permission, 'web');
     }
 });
 
 /** @param list<string> $permissions */
-function authorityCodeAdmin(School $school, array $permissions = ['ViewAny:IndustryCourseCode', 'Create:IndustryCourseCode', 'Update:IndustryCourseCode', 'ViewAny:CodeAuthority', 'Create:CodeAuthority', 'Update:CodeAuthority']): User
+function authorityCodeAdmin(School $school, array $permissions = [
+    'ViewAny:IndustryCourseCode', 'Create:IndustryCourseCode', 'Update:IndustryCourseCode', 'Delete:IndustryCourseCode',
+    'ViewAny:CodeAuthority', 'Create:CodeAuthority', 'Update:CodeAuthority', 'Delete:CodeAuthority',
+]): User
 {
     // Admin role passes the curriculum program request gates; explicit
     // permissions pass the authority/code Gate checks.
@@ -77,9 +83,9 @@ it('lets a registrar create a CHED authority and import its spreadsheet with new
     ])->assertCreated()->json('authority.id');
 
     $upload = authorityCodeWorkbook([
-        ['6-Digit PSCED Code', 'PSCED Name', '2-digit PSCED Discipline', 'Discipline Group'],
-        ['140101.0', 'Elementary Education', '14.0', 'Education Science and Teacher Training'],
-        ['464108.0', 'Information Technology', '47.0', 'IT-Related Disciplines'],
+        ['6-Digit PSCED Code', 'PSCED Name', '2-digit PSCED Discipline', 'Discipline Group', 'Special Regional Notes'],
+        ['140101.0', 'Elementary Education', '14.0', 'Education Science and Teacher Training', 'Priority discipline region 4A'],
+        ['464108.0', 'Information Technology', '47.0', 'IT-Related Disciplines', 'Priority discipline nation-wide'],
     ]);
 
     $response = $this->actingAs($admin)->post(route('administrators.curriculum.code-authority-imports.store'), [
@@ -103,7 +109,14 @@ it('lets a registrar create a CHED authority and import its spreadsheet with new
 
     $code = IndustryCourseCode::query()->where('code', '464108')->firstOrFail();
     expect($code->title)->toBe('Information Technology')
+        ->and($code->category_code)->toBe('47')
+        ->and($code->category_name)->toBe('IT-Related Disciplines')
         ->and($code->source)->toBe('import');
+
+    $elem = IndustryCourseCode::query()->where('code', '140101')->firstOrFail();
+    expect($elem->title)->toBe('Elementary Education')
+        ->and($elem->category_code)->toBe('14')
+        ->and($elem->category_name)->toBe('Education Science and Teacher Training');
 
     // Adopted columns extend the authority schema for future templates.
     expect(CodeAuthority::query()->findOrFail($authorityId)->columnDefinitions())
@@ -475,4 +488,127 @@ it('counts distinct courses missing authority codes in quality analytics', funct
 
     // Count is 1 distinct course, not 2 enrollment rows
     expect($data['quality']['missing_authority_code_count'])->toBe(1);
+});
+
+it('renders the authority codes management CRUD page with stats and categories', function (): void {
+    $school = chedAccreditedSchool();
+    $admin = authorityCodeAdmin($school);
+
+    $authority = CodeAuthority::query()->create([
+        'school_id' => $school->id,
+        'key' => 'ched',
+        'name' => 'CHED',
+        'country_code' => 'PH',
+        'curriculum_framework' => 'ched_psg',
+        'is_active' => true,
+    ]);
+
+    IndustryCourseCode::query()->create([
+        'school_id' => $school->id,
+        'code_authority_id' => $authority->id,
+        'code' => '464108',
+        'title' => 'Information Technology',
+        'category_code' => '47',
+        'category_name' => 'IT-Related Disciplines',
+        'source' => 'import',
+        'is_active' => true,
+    ]);
+
+    $response = $this->actingAs($admin)
+        ->get(route('administrators.curriculum.authority-codes.index'))
+        ->assertOk();
+
+    $response->assertInertia(fn (Inertia\Testing\AssertableInertia $page) => $page
+        ->component('administrators/curriculum/authority-codes/index')
+        ->has('stats')
+        ->where('stats.total_codes', 1)
+        ->where('stats.total_categories', 1)
+        ->has('categories', 1)
+        ->has('codes.data', 1)
+        ->where('codes.data.0.category_code', '47')
+        ->where('codes.data.0.category_name', 'IT-Related Disciplines')
+    );
+});
+
+it('supports full CRUD for authority course codes including category metadata', function (): void {
+    $school = chedAccreditedSchool();
+    $admin = authorityCodeAdmin($school);
+
+    $authority = CodeAuthority::query()->create([
+        'school_id' => $school->id,
+        'key' => 'ched',
+        'name' => 'CHED',
+        'country_code' => 'PH',
+        'curriculum_framework' => 'ched_psg',
+        'is_active' => true,
+    ]);
+
+    // Create
+    $this->actingAs($admin)
+        ->post(route('administrators.curriculum.authority-codes.store'), [
+            'code_authority_id' => $authority->id,
+            'code' => '541601',
+            'title' => 'Civil Engineering',
+            'category_code' => '54',
+            'category_name' => 'Engineering and Tech',
+            'is_active' => true,
+        ])
+        ->assertRedirect();
+
+    $code = IndustryCourseCode::query()->where('code', '541601')->firstOrFail();
+    expect($code->title)->toBe('Civil Engineering')
+        ->and($code->category_code)->toBe('54')
+        ->and($code->category_name)->toBe('Engineering and Tech');
+
+    // Update
+    $this->actingAs($admin)
+        ->put(route('administrators.curriculum.authority-codes.update', $code), [
+            'title' => 'Civil Engineering (Revised)',
+            'category_code' => '54',
+            'category_name' => 'Engineering and Technology',
+            'is_active' => true,
+        ])
+        ->assertRedirect();
+
+    $code->refresh();
+    expect($code->title)->toBe('Civil Engineering (Revised)')
+        ->and($code->category_name)->toBe('Engineering and Technology');
+
+    // Delete
+    $this->actingAs($admin)
+        ->delete(route('administrators.curriculum.authority-codes.destroy', $code))
+        ->assertRedirect();
+
+    expect(IndustryCourseCode::query()->where('id', $code->id)->exists())->toBeFalse();
+});
+
+it('supports deleting an authority and cascades its codes', function (): void {
+    $school = chedAccreditedSchool();
+    $admin = authorityCodeAdmin($school, [
+        'ViewAny:CodeAuthority', 'Create:CodeAuthority', 'Update:CodeAuthority', 'Delete:CodeAuthority',
+        'ViewAny:IndustryCourseCode', 'Create:IndustryCourseCode', 'Update:IndustryCourseCode', 'Delete:IndustryCourseCode',
+    ]);
+
+    $authority = CodeAuthority::query()->create([
+        'school_id' => $school->id,
+        'key' => 'temp_auth',
+        'name' => 'Temporary Authority',
+        'is_active' => true,
+    ]);
+
+    $code = IndustryCourseCode::query()->create([
+        'school_id' => $school->id,
+        'code_authority_id' => $authority->id,
+        'code' => 'TEMP-01',
+        'title' => 'Temporary Course',
+        'category_code' => '99',
+        'category_name' => 'Temporary Group',
+    ]);
+
+    $this->actingAs($admin)
+        ->delete(route('administrators.curriculum.code-authorities.destroy', $authority))
+        ->assertRedirect();
+
+    expect(CodeAuthority::query()->where('id', $authority->id)->exists())->toBeFalse()
+        ->and(IndustryCourseCode::query()->where('id', $code->id)->exists())->toBeFalse();
 });

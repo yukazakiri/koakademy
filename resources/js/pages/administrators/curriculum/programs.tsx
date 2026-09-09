@@ -887,6 +887,18 @@ export default function CurriculumPrograms({
                     </div>
                 </header>
 
+                <div className="border-border/70 flex items-center gap-2 border-b pb-2">
+                    <Link href={curriculumIndex().url} className="bg-primary/10 text-primary rounded-lg px-3 py-1.5 text-sm font-semibold transition">
+                        Academic Programs
+                    </Link>
+                    <Link
+                        href="/administrators/curriculum/authority-codes"
+                        className="text-muted-foreground hover:bg-muted/60 hover:text-foreground rounded-lg px-3 py-1.5 text-sm font-medium transition"
+                    >
+                        Authority Codes & Disciplines
+                    </Link>
+                </div>
+
                 <section className="border-border/80 bg-card overflow-hidden rounded-2xl border shadow-sm" aria-label="Catalog overview">
                     <div className="grid divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
                         <div className="flex items-center justify-between gap-4 px-5 py-4 sm:p-5">

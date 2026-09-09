@@ -40,6 +40,16 @@ final class IndustryCourseCodeForm
                             ->maxLength(500)
                             ->columnSpanFull()
                             ->placeholder('e.g., Information Technology'),
+                        TextInput::make('category_code')
+                            ->label('Category / Discipline code')
+                            ->maxLength(50)
+                            ->placeholder('e.g., 47 or 14')
+                            ->helperText('Code for the overarching discipline or category group.'),
+                        TextInput::make('category_name')
+                            ->label('Category / Discipline name')
+                            ->maxLength(255)
+                            ->placeholder('e.g., IT-Related Disciplines')
+                            ->helperText('Name of the discipline group or category.'),
                         Select::make('source')
                             ->label('Source')
                             ->options([

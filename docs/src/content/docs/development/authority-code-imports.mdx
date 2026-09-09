@@ -1,0 +1,86 @@
+---
+title: Authority Code Imports
+description: Let registrars import per-school regulatory course-code lists (such as CHED PSCED) without bundling country data.
+---
+
+# Authority Code Imports
+
+KoAkademy ships **no regulator course list**. Schools that follow a national
+authority (for example a CHED-accredited Philippine school importing the
+2008 PSCED spreadsheet) register that authority at runtime and import the
+spreadsheet themselves. The file never leaves their school: every authority,
+code, and import row is tenant-scoped by `school_id`.
+
+## Concepts
+
+| Record | Meaning |
+| ------ | ------- |
+| `CodeAuthority` | A regulator list one school tracks (name, optional `country_code`, optional `curriculum_framework`, ordered column `schema`). |
+| `IndustryCourseCode` | One official code: fixed `code` + `title`, plus a schemaless `attributes` bag for every other spreadsheet column. Unique per `[school, authority, code]`. |
+| `CodeAuthorityImport` | A staged spreadsheet: `field_proposals` for unknown columns, per-row `ready/invalid` states, then confirm. |
+
+Only `code` and `title` are fixed columns. A different country's spreadsheet
+with completely different columns works without a migration: unknown
+populated columns become **field proposals** the registrar ticks to adopt,
+which extends that authority's `schema` (same idea as the faculty bulk
+import's custom-field proposals).
+
+## Registrar flow
+
+1. Open the program catalog and choose **Import official codes**.
+2. Pick the authority (or create one: name + key; `PH` + `ched_psg` is
+   suggested automatically for CHED-accredited schools) and download the
+   headers-only template when needed.
+3. Drop the regulator's `.xlsx`, `.xls`, or `.csv`. It must contain a code
+   column (`Code`, `PSCED Code`, `Program Code`, …) and a title column
+   (`Title`, `Name`, `PSCED Name`, …). Excel float artifacts (`140101.0`)
+   are normalized automatically.
+4. Review rows, tick new columns to keep, confirm the ready rows.
+   Re-importing the same file updates existing codes instead of duplicating
+   them (`update` action per row).
+5. Link programs to codes with the authority-code picker on the program
+   create / edit / detail screens. Linking only *suggests* the official
+   title — it never overwrites registrar-entered data silently.
+
+Authorities gate themselves the same way report providers do: a set
+`country_code` limits visibility to schools with that country, and a set
+`curriculum_framework` limits visibility to schools with that enabled
+curriculum capability. A school without a country set matches any country,
+so fresh installs are never locked out.
+
+## Reporting link
+
+`Course::officialAuthorityCode()` prefers the linked registry code, then
+the legacy free-text `ched_program_code`, then the local program code.
+CHED E-Form B/C reads through this helper, so linking codes upgrades
+exports with no template change. Registrar analytics adds
+`missing_authority_code_count` for programs with neither a linked code nor
+a legacy program code.
+
+## Configuration
+
+`config/authority-codes.php` holds global toggles only:
+
+```dotenv
+AUTHORITY_CODE_IMPORT_MAX_ROWS=10000
+AUTHORITY_CODE_IMPORT_MAX_MB=10
+```
+
+## Permissions
+
+`CodeAuthorityPolicy` and `IndustryCourseCodePolicy` follow the standard
+11-method policy shape, so `RolesSeeder` auto-generates their permissions.
+Registrars (and assistant registrars, deans, chairs) receive the
+`*IndustryCourseCode` / `*CodeAuthority` grants; import staging and
+confirmation reuse the code create/update grants, mirroring the faculty
+import.
+
+## Tests
+
+```bash
+php artisan test --compact tests/Feature/AuthorityCodeImportTest.php
+```
+
+Covers staging with column adoption, invalid/duplicate rows, per-school
+isolation, program linkage with export preference, and cross-school
+link rejection.

@@ -10,9 +10,11 @@ use App\Http\Requests\StoreCurriculumProgramRequest;
 use App\Http\Requests\StoreCurriculumSubjectRequest;
 use App\Http\Requests\UpdateCurriculumProgramRequest;
 use App\Http\Requests\UpdateCurriculumSubjectRequest;
+use App\Models\CodeAuthority;
 use App\Models\Course;
 use App\Models\Department;
 use App\Models\EnrollmentPolicy;
+use App\Models\IndustryCourseCode;
 use App\Models\PendingEnrollment;
 use App\Models\School;
 use App\Models\ShsTrack;
@@ -44,7 +46,7 @@ final class AdministratorCurriculumManagementController extends Controller
     {
         $school = $this->currentSchool($tenantContext);
         $programs = Course::query()
-            ->with(['department:id,name,code', 'courseType:id,name'])
+            ->with(['department:id,name,code', 'courseType:id,name', 'industryCourseCode:id,code,title,code_authority_id'])
             ->withCount([
                 'subjects',
                 'subjects as prerequisites_count' => fn ($query) => $query->whereNotNull('pre_riquisite'),
@@ -93,6 +95,7 @@ final class AdministratorCurriculumManagementController extends Controller
             'capabilities' => $school ? $capabilityResolver->forSchool($school)->values() : [],
             'catalog_templates' => $this->catalogTemplates(),
             'shs_pathways' => $this->shsPathways(),
+            'authority_codes' => $this->authorityCodeProps($school),
         ]);
     }
 
@@ -105,6 +108,8 @@ final class AdministratorCurriculumManagementController extends Controller
                 ->orderBy('code'),
             'department:id,name,code',
             'courseType:id,name',
+            'industryCourseCode:id,code,title,code_authority_id',
+            'industryCourseCode.authority:id,name,key',
         ]);
 
         $subjects = $course->subjects;
@@ -146,6 +151,7 @@ final class AdministratorCurriculumManagementController extends Controller
             ]),
             'course_types' => \App\Models\CourseType::query()->select(['id', 'name'])->orderBy('name')->get(),
             'ched_options' => ChedProgramRules::options(),
+            'authority_codes' => $this->authorityCodeProps($course->school),
         ]);
     }
 
@@ -174,6 +180,8 @@ final class AdministratorCurriculumManagementController extends Controller
         $validated['is_active'] = true;
         $validated['description'] ??= '';
 
+        $this->resolveIndustryCourseCode($validated, $school);
+
         if ($school !== null) {
             $validated['school_id'] = $school->id;
         }
@@ -191,7 +199,11 @@ final class AdministratorCurriculumManagementController extends Controller
 
     public function updateProgram(UpdateCurriculumProgramRequest $request, Course $course): RedirectResponse
     {
-        $course->update($request->validated());
+        $validated = $request->validated();
+
+        $this->resolveIndustryCourseCode($validated, $course->school);
+
+        $course->update($validated);
 
         return Redirect::back()->with('success', 'Program updated successfully.');
     }
@@ -511,12 +523,75 @@ final class AdministratorCurriculumManagementController extends Controller
             ->all();
     }
 
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private function resolveIndustryCourseCode(array &$validated, ?School $school): void
+    {
+        if (! array_key_exists('industry_course_code_id', $validated) || $validated['industry_course_code_id'] === null || $validated['industry_course_code_id'] === '') {
+            $validated['industry_course_code_id'] = null;
+
+            return;
+        }
+
+        $code = IndustryCourseCode::query()->find($validated['industry_course_code_id']);
+
+        if (! $code instanceof IndustryCourseCode) {
+            throw ValidationException::withMessages([
+                'industry_course_code_id' => 'The selected authority code does not exist.',
+            ]);
+        }
+
+        if ($school instanceof School && (int) $code->school_id !== (int) $school->id) {
+            throw ValidationException::withMessages([
+                'industry_course_code_id' => 'The selected authority code belongs to another school.',
+            ]);
+        }
+
+        $validated['industry_course_code_id'] = $code->id;
+    }
+
+    /** @return array<string, mixed> */
+    private function authorityCodeProps(?School $school): array
+    {
+        if (! $school instanceof School) {
+            return ['is_ched_accredited' => false, 'authorities' => []];
+        }
+
+        $authorities = CodeAuthority::query()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get()
+            ->filter(fn (CodeAuthority $authority): bool => $authority->matchesSchool($school))
+            ->map(fn (CodeAuthority $authority): array => [
+                'id' => $authority->id,
+                'key' => $authority->key,
+                'name' => $authority->name,
+                'codes_count' => $authority->codes()->where('is_active', true)->count(),
+            ])
+            ->values()
+            ->all();
+
+        return [
+            'is_ched_accredited' => $this->capabilitiesFor($school)->contains(fn (array $capability): bool => ($capability['curriculum_framework'] ?? null) === 'ched_psg'),
+            'authorities' => $authorities,
+        ];
+    }
+
+    /** @return Collection<int, array<string, mixed>> */
+    private function capabilitiesFor(School $school): Collection
+    {
+        return app(CurriculumCapabilityResolver::class)->forSchool($school);
+    }
+
     private function programPayload(Course $course): array
     {
         return [
             'id' => $course->id,
             'code' => $course->code,
             'title' => $course->title,
+            'industry_course_code_id' => $course->industry_course_code_id,
+            'industry_course_code_label' => $course->industryCourseCode?->displayLabel(),
             'department' => $course->department?->code,
             'curriculum_year' => $course->curriculum_year,
             'subjects_count' => $course->subjects_count ?? $course->subjects()->count(),
@@ -542,6 +617,9 @@ final class AdministratorCurriculumManagementController extends Controller
             'id' => $course->id,
             'code' => $course->code,
             'title' => $course->title,
+            'industry_course_code_id' => $course->industry_course_code_id,
+            'industry_course_code_label' => $course->industryCourseCode?->displayLabel(),
+            'industry_course_code_authority' => $course->industryCourseCode?->authority?->name,
             'description' => $course->description,
             'department_id' => $course->department_id,
             'department_name' => $course->department?->name,

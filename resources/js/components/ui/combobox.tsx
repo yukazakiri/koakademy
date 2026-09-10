@@ -73,6 +73,10 @@ export function Combobox({
 
   // Custom filter function for cmdk
   const filterFunction = React.useCallback((value: string, search: string) => {
+    if (value.startsWith("create-")) {
+      return 1
+    }
+
     const option = options.find((opt) => opt.value === value)
     if (!option) return 0
 

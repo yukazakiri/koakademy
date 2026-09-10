@@ -80,6 +80,9 @@ COPY --from=wayfinder /app/resources/js/actions ./resources/js/actions
 COPY --from=wayfinder /app/resources/js/routes ./resources/js/routes
 COPY --from=wayfinder /app/resources/js/wayfinder ./resources/js/wayfinder
 RUN WAYFINDER_GENERATE=false npm run build
+# SSR runs in the production container, so retain only its runtime dependency
+# tree after the asset build has completed.
+RUN npm prune --omit=dev
 
 # -----------------------------------------------------------------------------
 # Stage 4: Final Runtime Image (FrankenPHP served through Laravel Octane)
@@ -199,9 +202,16 @@ RUN groupadd --force -g ${GROUP_ID} ${USER} \
 
 # Copy application code from build stages
 COPY --chown=${USER}:${USER} --from=vendor /app/vendor ./vendor
+COPY --chown=${USER}:${USER} --from=build-assets /app/node_modules ./node_modules
 COPY --chown=${USER}:${USER} --from=build-assets /app/public/build ./public/build
 COPY --chown=${USER}:${USER} . .
 COPY --chown=${USER}:${USER} --from=build-assets /app/bootstrap/ssr ./bootstrap/ssr
+
+# Validate the generated SSR bundle against the pruned production tree: resolve
+# every bare package import Node must load when the SSR server boots, so a
+# dev-only runtime import fails the build instead of the healthcheck.
+RUN test -f bootstrap/ssr/ssr.js \
+    && node --input-type=module -e "import('node:fs').then(async ({ readFileSync }) => { const src = readFileSync('bootstrap/ssr/ssr.js', 'utf8'); const specs = [...new Set([...src.matchAll(/from\s+['\"]([^'\"./][^'\"]*)['\"]/g)].map((m) => m[1]))]; if (!specs.length) throw new Error('no SSR externals found in bootstrap/ssr/ssr.js'); for (const spec of specs) await import(spec); console.log('SSR externals OK: ' + specs.join(', ')); })"
 
 # R2 uses Laravel's S3 filesystem driver. Keep its adapter in the production
 # image so storage-backed branding and uploads cannot turn page rendering into

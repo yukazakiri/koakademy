@@ -426,76 +426,6 @@ final class RegistrarStudentProfileWorkbook
         return [$text, null];
     }
 
-    private function choiceAlias(string $key, string $text): ?string
-    {
-        $normalized = mb_strtolower(mb_trim($text));
-
-        return match ($key) {
-            'region_of_origin' => match (true) {
-                str_contains($normalized, 'national capital region') => 'NCR',
-                str_contains($normalized, 'cordillera administrative region') => 'CAR',
-                str_contains($normalized, 'ilocos') => 'Region I',
-                str_contains($normalized, 'cagayan valley') => 'Region II',
-                str_contains($normalized, 'central luzon') => 'Region III',
-                str_contains($normalized, 'calabarzon') => 'Region IV-A',
-                str_contains($normalized, 'mimaropa') => 'Region IV-B',
-                str_contains($normalized, 'bicol') => 'Region V',
-                str_contains($normalized, 'western visayas') => 'Region VI',
-                str_contains($normalized, 'central visayas') => 'Region VII',
-                str_contains($normalized, 'eastern visayas') => 'Region VIII',
-                str_contains($normalized, 'zamboanga peninsula') => 'Region IX',
-                str_contains($normalized, 'northern mindanao') => 'Region X',
-                str_contains($normalized, 'davao') => 'Region XI',
-                str_contains($normalized, 'soccsksargen') => 'Region XII',
-                str_contains($normalized, 'caraga') => 'Region XIII',
-                str_contains($normalized, 'bangsamoro') => 'BARMM',
-                default => null,
-            },
-            'pwd_type' => match ($normalized) {
-                'visual' => 'Visual Disability',
-                'hearing' => 'Hearing Disability',
-                'speech', 'speech_and_language' => 'Speech and Language Impairment',
-                'physical', 'physical_orthopedic', 'orthopedic' => 'Physical / Orthopedic Disability',
-                'intellectual' => 'Intellectual Disability',
-                'learning' => 'Learning Disability',
-                'psychosocial', 'psychosocial_mental' => 'Psychosocial / Mental Health Disability',
-                'chronic', 'chronic_illness' => 'Disability Due to Chronic Illness',
-                'multiple' => 'Multiple Disabilities',
-                'other' => 'Other',
-                default => null,
-            },
-            'religion' => match ($normalized) {
-                'roman_catholic' => 'Roman Catholic',
-                'islam' => 'Islam',
-                'iglesia_ni_cristo' => 'Iglesia ni Cristo',
-                'born_again_christian' => 'Born Again Christian',
-                'seventh_day_adventist' => 'Seventh-day Adventist',
-                'protestant' => 'Protestant',
-                'evangelical_christian' => 'Evangelical Christian',
-                'buddhist' => 'Buddhist',
-                'hindu' => 'Hindu',
-                'none' => 'None',
-                'prefer_not_to_say' => 'Prefer not to say',
-                'other' => 'Other',
-                default => null,
-            },
-            'emergency_contact_relationship', 'guardian_relationship' => match ($normalized) {
-                'mother' => 'Mother',
-                'father' => 'Father',
-                'sibling' => 'Sibling',
-                'spouse' => 'Spouse',
-                'grandparent' => 'Grandparent',
-                'aunt' => 'Aunt',
-                'uncle' => 'Uncle',
-                'cousin' => 'Cousin',
-                'legal_guardian', 'guardian' => 'Legal Guardian',
-                'other' => 'Other',
-                default => null,
-            },
-            default => null,
-        };
-    }
-
     /** @return array{0: string|null, 1: string|null} */
     public function normalizeIntakeCategory(mixed $value): array
     {
@@ -600,6 +530,76 @@ final class RegistrarStudentProfileWorkbook
             'intake_category' => $row['intake_category'] ?? null,
             'year_level' => (int) ($row['year_level'] ?? 0),
         ];
+    }
+
+    private function choiceAlias(string $key, string $text): ?string
+    {
+        $normalized = mb_strtolower(mb_trim($text));
+
+        return match ($key) {
+            'region_of_origin' => match (true) {
+                str_contains($normalized, 'national capital region') => 'NCR',
+                str_contains($normalized, 'cordillera administrative region') => 'CAR',
+                str_contains($normalized, 'ilocos') => 'Region I',
+                str_contains($normalized, 'cagayan valley') => 'Region II',
+                str_contains($normalized, 'central luzon') => 'Region III',
+                str_contains($normalized, 'calabarzon') => 'Region IV-A',
+                str_contains($normalized, 'mimaropa') => 'Region IV-B',
+                str_contains($normalized, 'bicol') => 'Region V',
+                str_contains($normalized, 'western visayas') => 'Region VI',
+                str_contains($normalized, 'central visayas') => 'Region VII',
+                str_contains($normalized, 'eastern visayas') => 'Region VIII',
+                str_contains($normalized, 'zamboanga peninsula') => 'Region IX',
+                str_contains($normalized, 'northern mindanao') => 'Region X',
+                str_contains($normalized, 'davao') => 'Region XI',
+                str_contains($normalized, 'soccsksargen') => 'Region XII',
+                str_contains($normalized, 'caraga') => 'Region XIII',
+                str_contains($normalized, 'bangsamoro') => 'BARMM',
+                default => null,
+            },
+            'pwd_type' => match ($normalized) {
+                'visual' => 'Visual Disability',
+                'hearing' => 'Hearing Disability',
+                'speech', 'speech_and_language' => 'Speech and Language Impairment',
+                'physical', 'physical_orthopedic', 'orthopedic' => 'Physical / Orthopedic Disability',
+                'intellectual' => 'Intellectual Disability',
+                'learning' => 'Learning Disability',
+                'psychosocial', 'psychosocial_mental' => 'Psychosocial / Mental Health Disability',
+                'chronic', 'chronic_illness' => 'Disability Due to Chronic Illness',
+                'multiple' => 'Multiple Disabilities',
+                'other' => 'Other',
+                default => null,
+            },
+            'religion' => match ($normalized) {
+                'roman_catholic' => 'Roman Catholic',
+                'islam' => 'Islam',
+                'iglesia_ni_cristo' => 'Iglesia ni Cristo',
+                'born_again_christian' => 'Born Again Christian',
+                'seventh_day_adventist' => 'Seventh-day Adventist',
+                'protestant' => 'Protestant',
+                'evangelical_christian' => 'Evangelical Christian',
+                'buddhist' => 'Buddhist',
+                'hindu' => 'Hindu',
+                'none' => 'None',
+                'prefer_not_to_say' => 'Prefer not to say',
+                'other' => 'Other',
+                default => null,
+            },
+            'emergency_contact_relationship', 'guardian_relationship' => match ($normalized) {
+                'mother' => 'Mother',
+                'father' => 'Father',
+                'sibling' => 'Sibling',
+                'spouse' => 'Spouse',
+                'grandparent' => 'Grandparent',
+                'aunt' => 'Aunt',
+                'uncle' => 'Uncle',
+                'cousin' => 'Cousin',
+                'legal_guardian', 'guardian' => 'Legal Guardian',
+                'other' => 'Other',
+                default => null,
+            },
+            default => null,
+        };
     }
 
     /** @param array<string, mixed> $field */

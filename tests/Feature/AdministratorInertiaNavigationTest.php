@@ -207,6 +207,22 @@ it('keeps a complete administrator page catalog mapped to existing React compone
     }
 });
 
+it('does not replace administrator pages with client-side loading shells', function (): void {
+    $layoutSource = file_get_contents(resource_path('js/components/administrators/admin-layout.tsx'));
+    $navigationSource = file_get_contents(resource_path('js/lib/admin-navigation.tsx'));
+    $resolverSource = file_get_contents(resource_path('js/lib/inertia-page-resolver.tsx'));
+
+    expect($layoutSource)->toBeString()
+        ->not->toContain('AdminPageNavigationSkeleton')
+        ->not->toContain('navigationDefinition');
+    expect($navigationSource)->toBeString()
+        ->not->toContain('loadingPageProps')
+        ->not->toContain('resolveAdminPageDefinition');
+    expect($resolverSource)->toBeString()
+        ->not->toContain('AdminInstantPage')
+        ->not->toContain('__adminLoading');
+});
+
 it('registers every administrator page component with an admin skeleton definition', function (): void {
     $definitionSource = file_get_contents(resource_path('js/config/admin-page-definitions.ts'));
     $registrySource = file_get_contents(resource_path('js/bones/registry.ts'));

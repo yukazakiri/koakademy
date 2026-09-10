@@ -194,7 +194,8 @@ it('returns available course options for report filters', function (): void {
 
     $response->assertOk()
         ->assertJsonCount(1, 'courses')
-        ->assertJsonPath('courses.0.code', 'BSIT');
+        ->assertJsonPath('courses.0.code', 'BSIT')
+        ->assertJsonPath('courses.0.department_id', $course->department_id);
 });
 
 it('returns available subject options for report filters', function (): void {

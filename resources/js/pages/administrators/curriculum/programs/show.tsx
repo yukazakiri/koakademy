@@ -1,4 +1,5 @@
 import AdminLayout from "@/components/administrators/admin-layout";
+import { AuthorityCodePicker, type AuthorityCodeOption } from "@/components/administrators/authority-code-picker";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -64,6 +65,11 @@ type ProgramPayload = {
     bundled_qualifications: string[] | null;
     advanced_topics: string | null;
     ched_major: string | null;
+    ched_reporting_level: string | null;
+    ched_program_code: string | null;
+    ched_major_code: string | null;
+    ched_year_implemented: number | null;
+    ched_other_delivery_mode: string | null;
     ched_has_thesis: boolean | null;
     ched_program_status: string | null;
     ched_authority_category: string | null;
@@ -75,6 +81,9 @@ type ProgramPayload = {
     ched_program_credit_units: number | null;
     ched_tuition_per_unit: string | number | null;
     ched_program_fee: string | number | null;
+    industry_course_code_id: number | null;
+    industry_course_code_label: string | null;
+    industry_course_code_authority: string | null;
 };
 type SubjectPayload = {
     id: number;
@@ -116,7 +125,17 @@ interface Props {
     classification_options: ClassificationOption[];
     departments: DepartmentOption[];
     course_types: { id: number; name: string }[];
-    ched_options: { has_thesis: ChedOption[]; program_statuses: ChedOption[]; authority_categories: ChedOption[]; delivery_modes: ChedOption[] };
+    ched_options: {
+        reporting_levels: ChedOption[];
+        has_thesis: ChedOption[];
+        program_statuses: ChedOption[];
+        authority_categories: ChedOption[];
+        delivery_modes: ChedOption[];
+    };
+    authority_codes: {
+        is_ched_accredited: boolean;
+        authorities: { id: number; key: string; name: string; codes_count: number }[];
+    };
 }
 
 const yearOptions = [
@@ -143,6 +162,7 @@ export default function CurriculumProgramShow({
     departments,
     course_types,
     ched_options,
+    authority_codes,
 }: Props) {
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [editSubject, setEditSubject] = useState<SubjectPayload | null>(null);
@@ -175,6 +195,11 @@ export default function CurriculumProgramShow({
         bundled_qualifications: (program.bundled_qualifications ?? []).join(", "),
         advanced_topics: program.advanced_topics ?? "",
         ched_major: program.ched_major ?? "",
+        ched_reporting_level: program.ched_reporting_level ?? "",
+        ched_program_code: program.ched_program_code ?? "",
+        ched_major_code: program.ched_major_code ?? "",
+        ched_year_implemented: fmt(program.ched_year_implemented),
+        ched_other_delivery_mode: program.ched_other_delivery_mode ?? "",
         ched_has_thesis: program.ched_has_thesis === null ? "" : program.ched_has_thesis ? "1" : "0",
         ched_program_status: program.ched_program_status ?? "",
         ched_authority_category: program.ched_authority_category ?? "",
@@ -186,6 +211,8 @@ export default function CurriculumProgramShow({
         ched_program_credit_units: fmt(program.ched_program_credit_units),
         ched_tuition_per_unit: fmt(program.ched_tuition_per_unit),
         ched_program_fee: fmt(program.ched_program_fee),
+        industry_course_code_id: program.industry_course_code_id ? String(program.industry_course_code_id) : "",
+        industry_course_code_label: program.industry_course_code_label ?? "",
     });
 
     const defaultSubject: SubjectFormData = {
@@ -721,7 +748,8 @@ export default function CurriculumProgramShow({
                                             <div className="md:col-span-2">
                                                 <p className="text-sm font-semibold">TESDA pathway details</p>
                                                 <p className="text-muted-foreground text-xs">
-                                                    Use an institutional diploma when this pathway bundles multiple qualifications and includes an internship.
+                                                    Use an institutional diploma when this pathway bundles multiple qualifications and includes an
+                                                    internship.
                                                 </p>
                                             </div>
                                             <div className="grid gap-2">
@@ -836,6 +864,74 @@ export default function CurriculumProgramShow({
                                                 Leave unknown fields empty; they will remain in the reporting-quality queue.
                                             </p>
                                         </div>
+                                        {authority_codes.authorities.length > 0 && (
+                                            <div className="grid gap-2 lg:col-span-2">
+                                                <Label htmlFor="program-authority-code">
+                                                    Official authority code{" "}
+                                                    <span className="text-muted-foreground font-normal">
+                                                        (optional{authority_codes.is_ched_accredited ? " · CHED-accredited" : ""})
+                                                    </span>
+                                                </Label>
+                                                <AuthorityCodePicker
+                                                    id="program-authority-code"
+                                                    value={programForm.data.industry_course_code_id}
+                                                    initialLabel={programForm.data.industry_course_code_label}
+                                                    onSelect={(option: AuthorityCodeOption | null) => {
+                                                        programForm.setData("industry_course_code_id", option ? String(option.id) : "");
+                                                        programForm.setData("industry_course_code_label", option ? option.label : "");
+                                                    }}
+                                                    error={programForm.errors.industry_course_code_id}
+                                                />
+                                                {program.industry_course_code_authority && (
+                                                    <p className="text-muted-foreground text-xs">
+                                                        Currently linked: {program.industry_course_code_label} ·{" "}
+                                                        {program.industry_course_code_authority}
+                                                    </p>
+                                                )}
+                                                <FieldError message={programForm.errors.industry_course_code_id} />
+                                            </div>
+                                        )}
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="ched-reporting-level">CHED worksheet / education level</Label>
+                                            <Select
+                                                value={programForm.data.ched_reporting_level || "__unknown"}
+                                                onValueChange={(value) =>
+                                                    programForm.setData("ched_reporting_level", value === "__unknown" ? "" : (value ?? ""))
+                                                }
+                                            >
+                                                <SelectTrigger id="ched-reporting-level">
+                                                    <SelectValue placeholder="Select education level" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="__unknown">Unknown</SelectItem>
+                                                    {ched_options.reporting_levels.map((option) => (
+                                                        <SelectItem key={option.value} value={option.value}>
+                                                            {option.label}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            <FieldError message={programForm.errors.ched_reporting_level} />
+                                        </div>
+                                        {(
+                                            [
+                                                { key: "ched_program_code", label: "Official CHED program code", type: "text" },
+                                                { key: "ched_major_code", label: "CHED major code (if applicable)", type: "text" },
+                                                { key: "ched_year_implemented", label: "Year implemented (PO / DO)", type: "number" },
+                                                { key: "ched_other_delivery_mode", label: "Other delivery mode (OT)", type: "text" },
+                                            ] as const
+                                        ).map((field) => (
+                                            <div key={field.key} className="grid gap-2">
+                                                <Label htmlFor={field.key}>{field.label}</Label>
+                                                <Input
+                                                    id={field.key}
+                                                    type={field.type}
+                                                    value={programForm.data[field.key]}
+                                                    onChange={(event) => programForm.setData(field.key, event.target.value)}
+                                                />
+                                                <FieldError message={programForm.errors[field.key]} />
+                                            </div>
+                                        ))}
                                         <div className="grid gap-2">
                                             <Label>Major</Label>
                                             <Input

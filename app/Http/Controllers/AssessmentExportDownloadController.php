@@ -17,7 +17,7 @@ final class AssessmentExportDownloadController extends Controller
         $this->authorizeDownload($request, $assessmentExport, $tenants);
         abort_unless($assessmentExport->status === 'completed' && $assessmentExport->output_path !== null, 404);
         $disk = $assessmentExport->output_disk ?? (string) config('assessment-exports.disk');
-        abort_unless(Storage::disk($disk)->exists($assessmentExport->output_path), 404, 'Bulk assessment export not found.');
+        abort_unless(Storage::disk($disk)->exists($assessmentExport->output_path), 404, 'Export file not found.');
 
         return Storage::disk($disk)->download($assessmentExport->output_path, $assessmentExport->output_name ?? 'bulk-assessments.pdf');
     }

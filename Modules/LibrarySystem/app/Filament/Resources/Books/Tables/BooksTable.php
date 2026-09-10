@@ -31,6 +31,7 @@ final class BooksTable
                     ->disk('public')
                     ->square()
                     ->size(50)
+                    ->state(fn (Book $record): ?string => $record->cover_image_path ?: $record->cover_image)
                     ->defaultImageUrl('/images/no-book-cover.png'),
 
                 TextColumn::make('title')
@@ -79,17 +80,19 @@ final class BooksTable
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
-                TextColumn::make('published_date')
-                    ->label('Published')
-                    ->date('M d, Y')
+                TextColumn::make('publication_year')
+                    ->label('Year')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
-                TextColumn::make('edition')
-                    ->label('Edition')
-                    ->suffix(' Edition')
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('status')
+                    ->badge()
+                    ->color(fn (string $state): string => match ($state) {
+                        'available' => 'success',
+                        'borrowed' => 'warning',
+                        'maintenance' => 'danger',
+                        default => 'gray',
+                    }),
 
                 BadgeColumn::make('total_copies')
                     ->label('Total')
@@ -123,6 +126,13 @@ final class BooksTable
                     ->relationship('category', 'name')
                     ->searchable()
                     ->preload(),
+
+                SelectFilter::make('status')
+                    ->options([
+                        'available' => 'Available',
+                        'borrowed' => 'Borrowed',
+                        'maintenance' => 'Maintenance',
+                    ]),
 
                 Filter::make('available_only')
                     ->label('Available Only')

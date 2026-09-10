@@ -3,11 +3,19 @@
 This repository is distributed as a self-hosted application. The public
 documentation should help an operator decide whether KoAkademy fits their
 institution, install it safely, and find the deeper operational guides without
-duplicating those guides in the README.
+duplicating those guides in the README. This note also records the
+documentation surface for the configurable regulatory report provider boundary.
+Detailed provider implementation guidance lives in
+`docs/src/content/docs/development/regulatory-report-providers.mdx`.
 
 ## README improvement checklist
 
 - [x] Explain the product, its self-hosted purpose, and beta status.
+- [x] Provide a quick-start path and link to deployment documentation.
+- [x] Point contributors to `CONTRIBUTING.md` and the provider extension guide.
+- [x] Describe how to verify locally through the contributor and development guides.
+- [x] Link to deeper architecture, operations, API, and module documentation.
+- [x] State that only CHED E-Form B/C is built in for regulatory reporting.
 - [x] Provide the supported Linux one-line installer command, domain example,
   and a safe inspection path.
 - [x] Identify Docker Compose as the manual deployment fallback.
@@ -19,6 +27,7 @@ duplicating those guides in the README.
   operated and safe for non-production data.
 - [x] Document the signed module registry, Composer installation boundary,
   Marketplace enablement, and container update lifecycle.
+- [ ] Add provider-specific screenshots only when a second supported provider has a stable UI.
 
 ## FAQ draft
 
@@ -61,6 +70,25 @@ institutional data.
 Use GitHub Private Vulnerability Reporting as described in `SECURITY.md`; do
 not include student data, credentials, or sensitive logs in public issues.
 
+### Which regulatory providers are supported?
+
+Only the CHED E-Form B/C provider is bundled. Other providers may be added by
+an application or compatible Composer module through
+`RegulatoryReportAdapter`, but they are not supported until their implementation
+and tests are contributed and documented.
+
+### Can an installation disable CHED without uninstalling it?
+
+Yes. Set `REGULATORY_REPORT_CHED_ENABLED=false` and restart the application
+workers. This hides CHED from the available provider list without deleting
+provider code, migrations, or existing installation data.
+
+### Where should a new provider put its jurisdiction-specific data?
+
+Keep provider-specific migrations, columns, mappings, and workbook logic in the
+provider or module. Do not broaden shared school or enrollment contracts merely
+to fit one agency's template.
+
 ## Architecture recommendations
 
 Keep `ARCHITECTURE.md` as the short system map and the documentation site as
@@ -83,6 +111,17 @@ story is:
   application lockfile/image update; legacy source-tree modules do not
   auto-switch to packages.
 
+The regulatory provider guide documents this additional flow:
+
+1. The registrar controller authenticates the user and authorizes the report action.
+2. The tenant context supplies the current school; the controller validates and normalizes filters.
+3. `RegulatoryReportRegistry` selects an enabled, school-compatible definition.
+4. The configured `RegulatoryReportAdapter` builds preview data or returns a `PhpSpreadsheet` workbook.
+5. The controller adds common metadata or streams the workbook through the generic route.
+
+This keeps provider-specific behavior behind an explicit contract while
+preserving the CHED key, legacy routes, and existing installations.
+
 ## Licensing, citation, and reproducibility
 
 - The repository and Composer package identify `AGPL-3.0-or-later`; retain the
@@ -92,6 +131,12 @@ story is:
 - Reproducible installation is based on an exact stable Git tag, checksummed
   release assets, and immutable container image metadata. Public release checks
   should verify the asset bundle on a clean Linux host before publication.
+- Provider contributions must include licensing and attribution information
+  for any external agency template, mapping, or specification they reproduce.
+- Reproducible provider verification consists of the focused Pest tests,
+  `npm run docs:check`, and the documentation build described in the provider
+  guide. The documentation build requires the dependencies in
+  `docs/package.json`.
 - Do not publish real institutional data, credentials, production logs, or
   provider secrets in examples or fixtures.
 - Registry releases must preserve the existing public signing key; key
@@ -99,6 +144,10 @@ story is:
 
 ## Intentionally deferred
 
+- A separate package-discovery API for regulatory providers is deferred. Current extensions register explicit configuration during application or module boot.
+- DepEd, TESDA, and other jurisdiction-specific report implementations are deferred until a contributor supplies a complete adapter, source mapping, tests, and documentation.
+- A provider marketplace/catalog is deferred. The existing module marketplace does not imply regulatory-report support.
+- Citation metadata is deferred unless the project later accompanies a research or benchmark release.
 - Windows and macOS installers.
 - A hosted demo or managed SaaS distribution.
 - A formal long-term support matrix and response-time promise.

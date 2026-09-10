@@ -14,6 +14,7 @@ use App\Http\Controllers\AdministratorFacultyImportController;
 use App\Http\Controllers\AdministratorFacultyManagementController;
 use App\Http\Controllers\AdministratorFinanceController;
 use App\Http\Controllers\AdministratorGlobalSearchController;
+use App\Http\Controllers\AdministratorIndustryCodeController;
 use App\Http\Controllers\AdministratorModuleMarketplaceController;
 use App\Http\Controllers\AdministratorRegistrarDocumentController;
 use App\Http\Controllers\AdministratorRegistrarInsightsController;
@@ -142,6 +143,15 @@ Route::middleware(['auth', 'administrators.only'])
             ->middleware('throttle:10,1')
             ->name('registrar.analytics.student-profile-imports.confirm');
         Route::get('/registrar/reports', [AdministratorRegistrarInsightsController::class, 'reports'])->name('registrar.reports.index');
+        Route::get('/registrar/reports/regulatory/{reportKey}/preview', [AdministratorRegistrarInsightsController::class, 'regulatoryPreview'])
+            ->where('reportKey', '[a-z0-9_-]+')
+            ->name('registrar.reports.regulatory.preview');
+        Route::get('/registrar/reports/regulatory/{reportKey}/export', [AdministratorRegistrarInsightsController::class, 'regulatoryExport'])
+            ->where('reportKey', '[a-z0-9_-]+')
+            ->name('registrar.reports.regulatory.export');
+        // Legacy aliases retained for existing bookmarks and integrations.
+        Route::get('/registrar/reports/ched/preview', [AdministratorRegistrarInsightsController::class, 'chedPreview'])->name('registrar.reports.ched.preview');
+        Route::get('/registrar/reports/ched/export', [AdministratorRegistrarInsightsController::class, 'chedExport'])->name('registrar.reports.ched.export');
         Route::get('/registrar/documents/preview', [AdministratorRegistrarDocumentController::class, 'preview'])->name('registrar.documents.preview');
         Route::get('/registrar/documents/pdf', [AdministratorRegistrarDocumentController::class, 'pdf'])->name('registrar.documents.pdf');
         Route::get('/enrollments/create', [AdministratorEnrollmentManagementController::class, 'create'])->name('enrollments.create');
@@ -244,6 +254,12 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/finance/tuition-adjustments/resolve', [AdministratorTuitionAdjustmentController::class, 'resolve'])
             ->middleware('throttle:120,1')
             ->name('finance.tuition-adjustments.resolve');
+        Route::post('/finance/tuition-adjustments/preview', [AdministratorTuitionAdjustmentController::class, 'preview'])
+            ->middleware('throttle:60,1')
+            ->name('finance.tuition-adjustments.preview');
+        Route::get('/finance/tuition-adjustments/revisions/{tuition}', [AdministratorTuitionAdjustmentController::class, 'revisions'])
+            ->whereNumber('tuition')
+            ->name('finance.tuition-adjustments.revisions');
         Route::post('/finance/tuition-adjustments/batch', [AdministratorTuitionAdjustmentController::class, 'storeBatch'])
             ->middleware('throttle:30,1')
             ->name('finance.tuition-adjustments.batch.store');
@@ -339,6 +355,17 @@ Route::middleware(['auth', 'administrators.only'])
         Route::put('/curriculum/programs/{course}', [AdministratorCurriculumManagementController::class, 'updateProgram'])->name('curriculum.programs.update');
         Route::put('/curriculum/programs/{course}/toggle-status', [AdministratorCurriculumManagementController::class, 'toggleProgramStatus'])->name('curriculum.programs.toggle-status');
         Route::delete('/curriculum/programs/{course}', [AdministratorCurriculumManagementController::class, 'destroyProgram'])->name('curriculum.programs.destroy');
+        // Industry / authority course codes (per-school regulatory lists, populated by import)
+        Route::get('/curriculum/code-authorities', [AdministratorIndustryCodeController::class, 'authorities'])->name('curriculum.code-authorities.index');
+        Route::post('/curriculum/code-authorities', [AdministratorIndustryCodeController::class, 'storeAuthority'])->name('curriculum.code-authorities.store');
+        Route::put('/curriculum/code-authorities/{codeAuthority}', [AdministratorIndustryCodeController::class, 'updateAuthority'])->name('curriculum.code-authorities.update');
+        Route::get('/curriculum/authority-codes/search', [AdministratorIndustryCodeController::class, 'searchCodes'])->name('curriculum.authority-codes.search');
+        Route::post('/curriculum/authority-codes', [AdministratorIndustryCodeController::class, 'storeCode'])->name('curriculum.authority-codes.store');
+        Route::put('/curriculum/authority-codes/{industryCourseCode}', [AdministratorIndustryCodeController::class, 'updateCode'])->name('curriculum.authority-codes.update');
+        Route::get('/curriculum/code-authorities/{codeAuthority}/template', [AdministratorIndustryCodeController::class, 'downloadTemplate'])->name('curriculum.code-authorities.template');
+        Route::post('/curriculum/code-authority-imports', [AdministratorIndustryCodeController::class, 'storeImport'])->middleware('throttle:10,1')->name('curriculum.code-authority-imports.store');
+        Route::post('/curriculum/code-authority-imports/{codeAuthorityImport}/confirm', [AdministratorIndustryCodeController::class, 'confirmImport'])->middleware('throttle:20,1')->name('curriculum.code-authority-imports.confirm');
+
         Route::post('/curriculum/programs/{course}/subjects', [AdministratorCurriculumManagementController::class, 'storeSubject'])->name('curriculum.programs.subjects.store');
         Route::put('/curriculum/programs/{course}/subjects/{subject}', [AdministratorCurriculumManagementController::class, 'updateSubject'])->name('curriculum.programs.subjects.update');
         Route::delete('/curriculum/programs/{course}/subjects/{subject}', [AdministratorCurriculumManagementController::class, 'destroySubject'])->name('curriculum.programs.subjects.destroy');
@@ -431,6 +458,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/system-management/newsletter', [App\Http\Controllers\AdministratorSystemManagementController::class, 'newsletter'])->name('system-management.newsletter.index');
         Route::get('/system-management/api', [App\Http\Controllers\AdministratorSystemManagementController::class, 'api'])->name('system-management.api.index');
         Route::get('/system-management/pulse', [App\Http\Controllers\AdministratorSystemManagementController::class, 'pulse'])->name('system-management.pulse.index');
+        Route::get('/system-management/observability', [App\Http\Controllers\AdministratorSystemManagementController::class, 'observability'])->name('system-management.observability.index');
         Route::get('/system-management/identifiers', [App\Http\Controllers\AdministratorSystemManagementController::class, 'identifiers'])->name('system-management.identifiers.index');
         Route::get('/system-management/faculty-fields', [App\Http\Controllers\AdministratorSystemManagementController::class, 'facultyFields'])->name('system-management.faculty-fields.index');
         Route::post('/system-management/school', [App\Http\Controllers\AdministratorSystemManagementController::class, 'storeSchool'])->name('system-management.school.store');
@@ -445,6 +473,8 @@ Route::middleware(['auth', 'administrators.only'])
         Route::delete('/system-management/schools/{school}/force', [App\Http\Controllers\AdministratorSystemManagementController::class, 'forceDestroySchool'])->name('system-management.schools.force-destroy');
         Route::put('/system-management/seo', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateSeo'])->name('system-management.seo.update');
         Route::put('/system-management/analytics', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateAnalytics'])->name('system-management.analytics.update');
+        Route::put('/system-management/observability', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateObservability'])->name('system-management.observability.update');
+        Route::post('/system-management/observability/test', [App\Http\Controllers\AdministratorSystemManagementController::class, 'testObservability'])->name('system-management.observability.test');
         Route::put('/system-management/brand', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateBrand'])->name('system-management.brand.update');
         Route::put('/system-management/socialite', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateSocialite'])->name('system-management.socialite.update');
         Route::put('/system-management/newsletter', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateNewsletter'])->name('system-management.newsletter.update');

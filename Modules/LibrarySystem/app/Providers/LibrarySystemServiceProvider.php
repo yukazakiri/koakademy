@@ -7,8 +7,14 @@ namespace Modules\LibrarySystem\Providers;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
+use Modules\LibrarySystem\Models\Author;
 use Modules\LibrarySystem\Models\Book;
+use Modules\LibrarySystem\Models\BorrowRecord;
+use Modules\LibrarySystem\Models\Category;
+use Modules\LibrarySystem\Policies\AuthorPolicy;
 use Modules\LibrarySystem\Policies\BookPolicy;
+use Modules\LibrarySystem\Policies\BorrowRecordPolicy;
+use Modules\LibrarySystem\Policies\CategoryPolicy;
 use Nwidart\Modules\Traits\PathNamespace;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
@@ -27,6 +33,9 @@ final class LibrarySystemServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Gate::policy(Book::class, BookPolicy::class);
+        Gate::policy(Author::class, AuthorPolicy::class);
+        Gate::policy(Category::class, CategoryPolicy::class);
+        Gate::policy(BorrowRecord::class, BorrowRecordPolicy::class);
         $this->registerCommands();
         $this->registerCommandSchedules();
         $this->registerTranslations();

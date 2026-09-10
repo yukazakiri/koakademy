@@ -96,9 +96,14 @@ final class Course extends Model
         'miscellaneous',
         'miscelaneous',
         'remarks',
+        'ched_program_code',
         'ched_major',
+        'ched_major_code',
+        'ched_reporting_level',
+        'ched_other_delivery_mode',
         'ched_has_thesis',
         'ched_program_status',
+        'ched_year_implemented',
         'ched_authority_category',
         'ched_authority_serial',
         'ched_authority_year',
@@ -111,6 +116,7 @@ final class Course extends Model
         'is_active',
         'school_id',
         'school_curriculum_capability_id',
+        'industry_course_code_id',
         'curriculum_kind',
         'curriculum_stage',
         'curriculum_framework',
@@ -186,6 +192,43 @@ final class Course extends Model
     public function schoolCurriculumCapability(): BelongsTo
     {
         return $this->belongsTo(SchoolCurriculumCapability::class);
+    }
+
+    public function industryCourseCode(): BelongsTo
+    {
+        return $this->belongsTo(IndustryCourseCode::class, 'industry_course_code_id');
+    }
+
+    /**
+     * Official authority code for regulatory exports. Prefers the linked
+     * industry code registry entry, falls back to the legacy free-text
+     * CHED program code, then the local program code.
+     */
+    public function officialAuthorityCode(): ?string
+    {
+        return $this->industryCourseCode?->code
+            ?? $this->ched_program_code
+            ?? $this->code;
+    }
+
+    /**
+     * Official CHED program code specifically for CHED Form B/C exports.
+     * Prefers linked industry code only if its authority is CHED-aligned.
+     * Otherwise preserves legacy ched_program_code or local course code.
+     */
+    public function officialChedProgramCode(): string
+    {
+        $code = $this->industryCourseCode;
+
+        if ($code instanceof IndustryCourseCode && $this->isChedAuthority($code->authority)) {
+            return (string) $code->code;
+        }
+
+        if (filled($this->ched_program_code)) {
+            return (string) $this->ched_program_code;
+        }
+
+        return (string) $this->code;
     }
 
     public function subjects()
@@ -291,6 +334,7 @@ final class Course extends Model
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
             'ched_has_thesis' => 'boolean',
+            'ched_year_implemented' => 'integer',
             'ched_authority_year' => 'integer',
             'ched_normal_length_years' => 'decimal:1',
             'ched_program_credit_units' => 'integer',
@@ -301,6 +345,22 @@ final class Course extends Model
             'internship_hours' => 'integer',
             'bundled_qualifications' => 'array',
         ];
+    }
+
+    private function isChedAuthority(?CodeAuthority $authority): bool
+    {
+        if (! $authority instanceof CodeAuthority) {
+            return false;
+        }
+
+        $key = mb_strtolower((string) $authority->key);
+        $framework = mb_strtolower((string) $authority->curriculum_framework);
+        $name = mb_strtolower((string) $authority->name);
+
+        return $key === 'ched'
+            || $framework === 'ched_psg'
+            || str_contains($name, 'ched')
+            || str_contains($name, 'commission on higher education');
     }
 
     private function resolveDepartmentIdFromLegacyValue(mixed $value): ?int

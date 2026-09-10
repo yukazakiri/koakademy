@@ -1,5 +1,96 @@
 # Changelog
 
+## [1.24.0](https://github.com/yukazakiri/koakademy/compare/v1.23.0...v1.24.0) (2026-09-08)
+
+
+### Features
+
+* **admin:** add Boneyard skeleton loading system ([#215](https://github.com/yukazakiri/koakademy/issues/215)) ([9c1641f](https://github.com/yukazakiri/koakademy/commit/9c1641fbc598932759d581a84dc257fd5caa327f))
+* **admin:** multi-provider error reporting settings ([#222](https://github.com/yukazakiri/koakademy/issues/222)) ([0c1f07e](https://github.com/yukazakiri/koakademy/commit/0c1f07e2e584ee9db770b574dd71755b9331da6b))
+* **api:** add mobile API foundation ([#223](https://github.com/yukazakiri/koakademy/issues/223)) ([65f3f09](https://github.com/yukazakiri/koakademy/commit/65f3f099b0121aa58893a38fad1e5d51d0dd73a6))
+* **ched:** add course reporting metadata ([68e99d3](https://github.com/yukazakiri/koakademy/commit/68e99d393c9dcd0f0e88db0ceecf4dce250becaa))
+* **curriculum:** add CHED worksheet metadata ([#225](https://github.com/yukazakiri/koakademy/issues/225)) ([055ad65](https://github.com/yukazakiri/koakademy/commit/055ad6500441e354a6a567a1f4910c8e6a6639d5))
+* **dependabot:** enable manual workflow dispatch for all ecosystems ([8b8d153](https://github.com/yukazakiri/koakademy/commit/8b8d1537e713956592536808358a2be94873277a))
+* **registrar:** redesign reports page with orientation-adaptive studio layout ([#241](https://github.com/yukazakiri/koakademy/issues/241)) ([435817f](https://github.com/yukazakiri/koakademy/commit/435817fd0f1514b639e7544802a188e156a5ea5b))
+* **reports:** add configurable regulatory reporting providers ([#224](https://github.com/yukazakiri/koakademy/issues/224)) ([3c8a85b](https://github.com/yukazakiri/koakademy/commit/3c8a85bb8b1c94cd1373313846d61afb605b675e))
+* **reports:** complete and queue CHED workbook exports ([#233](https://github.com/yukazakiri/koakademy/issues/233)) ([befe002](https://github.com/yukazakiri/koakademy/commit/befe0024bd1e9728deef0d9d55e36bb04ca64caf))
+* **reports:** make regulatory providers configurable ([ebaf613](https://github.com/yukazakiri/koakademy/commit/ebaf61352f839341b2845b7c4e67b7e5c642f719))
+* **reports:** separate CHED exports on the default queue ([#234](https://github.com/yukazakiri/koakademy/issues/234)) ([a1d6aaf](https://github.com/yukazakiri/koakademy/commit/a1d6aaf18ccfbe477f2509a7820b89ae01dc08c4))
+* **schools:** validate country codes in managed school flows ([81b5c58](https://github.com/yukazakiri/koakademy/commit/81b5c581f063903524f3e50f36b15737719daded))
+* **setup:** capture school country code ([dbf4b26](https://github.com/yukazakiri/koakademy/commit/dbf4b2688d5c7f280f51b709a9846da1d59500e6))
+* **system-management:** redesign layouts and implement blueprint studio stage forms ([#248](https://github.com/yukazakiri/koakademy/issues/248)) ([74892c3](https://github.com/yukazakiri/koakademy/commit/74892c3d2936aba16b9c73badab21f3c04e2286e))
+* **ui-ux-pro-max:** Add design intelligence skill ([374f22e](https://github.com/yukazakiri/koakademy/commit/374f22ea53422133a074bc15054e3112489a4667))
+
+
+### Bug Fixes
+
+* **admin:** stabilize SSR navigation ([#237](https://github.com/yukazakiri/koakademy/issues/237)) ([bf0d054](https://github.com/yukazakiri/koakademy/commit/bf0d054c594bd8ce7d1093e25fb449e859ba3fca))
+* **classes:** guard against undefined options on administrator classes index ([#250](https://github.com/yukazakiri/koakademy/issues/250)) ([e8ed2c9](https://github.com/yukazakiri/koakademy/commit/e8ed2c90e67f30d5758f80d5681eebe3ffb5ca21))
+* **dependabot:** remove unsupported workflow dispatch keys ([d304518](https://github.com/yukazakiri/koakademy/commit/d30451811fcca3e866e691cfe3dbc86b8e733d5d))
+* **deps:** resolve forms package from Packagist ([1d0816a](https://github.com/yukazakiri/koakademy/commit/1d0816aa7c5fd7d40cd39cc0d8eba6806eb4b042))
+* **deps:** restore automatic module updates ([0f91145](https://github.com/yukazakiri/koakademy/commit/0f911451c2cae552bfcdc0eb977bb9c0e9b74a28))
+* **forms:** hide portal nav on standalone forms ([#235](https://github.com/yukazakiri/koakademy/issues/235)) ([6e994b7](https://github.com/yukazakiri/koakademy/commit/6e994b797c0483fff681f48829d78c6bfaebe37b))
+* **library:** fix book creation authorization and align Filament schemas with database ([#240](https://github.com/yukazakiri/koakademy/issues/240)) ([efa45d2](https://github.com/yukazakiri/koakademy/commit/efa45d2d3bd94eaafee402f9c684fd4b88cba7bf))
+* **library:** make administrator book creation clickable ([#242](https://github.com/yukazakiri/koakademy/issues/242)) ([ec93af2](https://github.com/yukazakiri/koakademy/commit/ec93af2092bbebee41d8ef47ae8d124fa46d44d8))
+* **library:** surface book creation failures ([#249](https://github.com/yukazakiri/koakademy/issues/249)) ([6bdca43](https://github.com/yukazakiri/koakademy/commit/6bdca430bd733d70750aef757e8875c1289b2d78))
+* **profile:** allow non-reporting student tab saves ([#216](https://github.com/yukazakiri/koakademy/issues/216)) ([ad88288](https://github.com/yukazakiri/koakademy/commit/ad88288f7afdaa593c14890e2c3bdee3ffaf2ca8))
+* **reports:** cast CHED course join keys ([#232](https://github.com/yukazakiri/koakademy/issues/232)) ([e5b16b9](https://github.com/yukazakiri/koakademy/commit/e5b16b94d9c17f852c0fd9ef997c43d3fb81f75c))
+* **reports:** support PostgreSQL CHED enrollment joins ([#231](https://github.com/yukazakiri/koakademy/issues/231)) ([788b65c](https://github.com/yukazakiri/koakademy/commit/788b65cc3b9e206d629f59d75b389256c35d77df))
+
+
+### Performance Improvements
+
+* **admin:** optimize Inertia navigation ([654a53f](https://github.com/yukazakiri/koakademy/commit/654a53fe03a940b6848af17f3618690cf0a9fc19))
+* **students:** optimize Records navigation and table ([3a67664](https://github.com/yukazakiri/koakademy/commit/3a67664ac3a7eea30537f3624448464627a9c2ce))
+
+
+### Build System
+
+* **deps:** bump actions/deploy-pages from 5.0.0 to 5.0.1 in the github-actions group ([#230](https://github.com/yukazakiri/koakademy/issues/230)) ([265d49d](https://github.com/yukazakiri/koakademy/commit/265d49d828565048dc14707e06cf02320646df24))
+* **deps:** bump composer from `8fa35f4` to `d8f6343` in /docker in the docker-base-images group ([#227](https://github.com/yukazakiri/koakademy/issues/227)) ([740bc3d](https://github.com/yukazakiri/koakademy/commit/740bc3dd6d34af3382b1ed3faac5b4740df8998c))
+* **deps:** bump the docker-base-images group in /docker with 2 updates ([#218](https://github.com/yukazakiri/koakademy/issues/218)) ([9294cc2](https://github.com/yukazakiri/koakademy/commit/9294cc23001a637b0d2629ec9ffb4780709f635b))
+* **deps:** bump the docker-base-images group in /docker with 3 updates ([#214](https://github.com/yukazakiri/koakademy/issues/214)) ([4087375](https://github.com/yukazakiri/koakademy/commit/4087375046e3dea44a0c1fab7684508e5dbbabda))
+* **deps:** configure Dependabot for Composer ecosystem ([#217](https://github.com/yukazakiri/koakademy/issues/217)) ([0dc529c](https://github.com/yukazakiri/koakademy/commit/0dc529cac78d5dbd7894780e11f41049768807de))
+* **modules:** align forms metadata with 1.1.3 ([a073b95](https://github.com/yukazakiri/koakademy/commit/a073b9520deab74b0b28740e0c8f12d626f2a170))
+* **modules:** bump alizharb/filament-activity-log from 1.5.0 to 2.0.0 ([#220](https://github.com/yukazakiri/koakademy/issues/220)) ([8f82787](https://github.com/yukazakiri/koakademy/commit/8f82787ac327720313402a52751cb2e2330f0445))
+* **modules:** bump cweagans/composer-patches from 1.7.3 to 2.0.0 ([#221](https://github.com/yukazakiri/koakademy/issues/221)) ([27422af](https://github.com/yukazakiri/koakademy/commit/27422af88fc3df24611bc0b119f10e6542be2b53))
+* **modules:** bump inertiajs/inertia-laravel from 3.3.1 to 3.3.2 ([#229](https://github.com/yukazakiri/koakademy/issues/229)) ([56fca34](https://github.com/yukazakiri/koakademy/commit/56fca34ff4758cc5cb1ab02f7da0f1d6626f1fd5))
+* **modules:** bump inertiajs/inertia-laravel from 3.3.2 to 3.3.3 ([#239](https://github.com/yukazakiri/koakademy/issues/239)) ([ff36cfd](https://github.com/yukazakiri/koakademy/commit/ff36cfd1fe8820042980b929f71dbb69d4200b7b))
+* **modules:** bump laravel/boost from 2.7.0 to 2.7.1 ([#244](https://github.com/yukazakiri/koakademy/issues/244)) ([8733589](https://github.com/yukazakiri/koakademy/commit/873358986466ae763b26d14e3e5b2bcdbdc595e6))
+* **modules:** bump laravel/pao from 1.1.4 to 1.1.5 ([#243](https://github.com/yukazakiri/koakademy/issues/243)) ([0f1ca0b](https://github.com/yukazakiri/koakademy/commit/0f1ca0bf11b588ad714fcef90e53c6b0b14a4ea7))
+* **modules:** bump laravel/pint from 1.30.5 to 1.31.0 ([#247](https://github.com/yukazakiri/koakademy/issues/247)) ([877a304](https://github.com/yukazakiri/koakademy/commit/877a304e63225559719d1f105b5ffb042b6a565f))
+* **modules:** bump pestphp/pest from 5.1.3 to 5.1.4 ([#246](https://github.com/yukazakiri/koakademy/issues/246)) ([db62d88](https://github.com/yukazakiri/koakademy/commit/db62d88e6965773091a98edcec88675d6af7ee97))
+* **modules:** bump pestphp/pest-plugin-evals from 5.0.2 to 5.0.3 ([#236](https://github.com/yukazakiri/koakademy/issues/236)) ([2577d73](https://github.com/yukazakiri/koakademy/commit/2577d7396a287e18c649f7217cccd983e23ee1dc))
+* **modules:** bump rector/rector from 2.6.5 to 2.6.6 ([#228](https://github.com/yukazakiri/koakademy/issues/228)) ([6e265b4](https://github.com/yukazakiri/koakademy/commit/6e265b4e5873b894376d0b4ab6f90e5860f7e805))
+* **modules:** bump shuvroroy/filament-spatie-laravel-backup from 3.4.0 to 4.0.2 ([#219](https://github.com/yukazakiri/koakademy/issues/219)) ([9326f54](https://github.com/yukazakiri/koakademy/commit/9326f549fc04057c17ee30b9031523dcef7960b7))
+* **modules:** publish forms metadata as 1.1.4 ([d451c18](https://github.com/yukazakiri/koakademy/commit/d451c1814186b0419f06408dc2008a34d14b4dc7))
+* **modules:** refresh forms on image builds ([0f4c7db](https://github.com/yukazakiri/koakademy/commit/0f4c7dbda0293c9ec8a0e25b83c822e1304fd7e6))
+* **modules:** update forms builder notifications ([34dd6e5](https://github.com/yukazakiri/koakademy/commit/34dd6e55fcbe33ff0156f75a5a26a20602ec247a))
+* **modules:** update forms editor experience ([ceefa49](https://github.com/yukazakiri/koakademy/commit/ceefa49c5eff8a351490cbd05fbe8b27a6da0fe1))
+* **modules:** update forms guest prefill ([2455033](https://github.com/yukazakiri/koakademy/commit/245503363127016144204ee5802bfb7091d1be67))
+* **modules:** update forms manual review fallback ([5e0d043](https://github.com/yukazakiri/koakademy/commit/5e0d043154b83e1827ffc70fc8acec353a6782bb))
+* **modules:** update forms preview fix ([037c662](https://github.com/yukazakiri/koakademy/commit/037c6629e1fb86e4d396a9ac3f23f9b9e02f3541))
+* **modules:** update forms profile flow ([dbfcd06](https://github.com/yukazakiri/koakademy/commit/dbfcd06275674ff9845157fe86d61ba28b9895f7))
+* **modules:** update forms student experience ([20bb4f1](https://github.com/yukazakiri/koakademy/commit/20bb4f1a498880419f6d5e13f907618f84f3dd31))
+* **modules:** update forms to 1.1.1 ([b8fd71f](https://github.com/yukazakiri/koakademy/commit/b8fd71fb988a01b445eb9aae3363b189ba6716a9))
+* **modules:** upgrade forms to 1.1.2 ([7c045c4](https://github.com/yukazakiri/koakademy/commit/7c045c4552225fe9e650bf4f1c8e952e6ac8d0c9))
+
+
+### Documentation
+
+* overhaul documentation site and expand self-hosting guides ([78eaf25](https://github.com/yukazakiri/koakademy/commit/78eaf252a7ee09c7f34e505f4f2190756f8e9404))
+
+
+### Tests
+
+* remove duplicate Pest test case binding ([2ea1c1b](https://github.com/yukazakiri/koakademy/commit/2ea1c1b7120abf2bb27663d3f74d589b59cb711c))
+* remove redundant feature test bindings ([5a533af](https://github.com/yukazakiri/koakademy/commit/5a533afcafe620803845d22278c3a1eba73a6042))
+
+
+### Maintenance
+
+* **deps:** update composer dependencies ([eb7d368](https://github.com/yukazakiri/koakademy/commit/eb7d368d1ac502d9dae9c47f9e3a4bc1e3ca8c37))
+
 ## [1.23.0](https://github.com/yukazakiri/koakademy/compare/v1.22.0...v1.23.0) (2026-08-27)
 
 

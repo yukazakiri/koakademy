@@ -110,6 +110,7 @@ jobs:
       PULSE_ENABLED: "false"
       TELESCOPE_ENABLED: "false"
       NIGHTWATCH_ENABLED: "false"
+      INERTIA_SSR_ENABLED: "false"
 
     steps:
       - name: Check out repository

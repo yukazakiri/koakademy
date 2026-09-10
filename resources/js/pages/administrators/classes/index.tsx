@@ -141,6 +141,23 @@ type SelectedClass = {
 
 type ClassDialogTab = "details" | "schedule" | "settings";
 
+export type ClassOptions = {
+    classifications: SelectOption[];
+    sections: SelectOption[];
+    semesters: SelectOption[];
+    grade_levels: SelectOption[];
+    day_of_week: SelectOption[];
+    courses: EntityOption[];
+    faculties: EntityOption[];
+    rooms: EntityOption[];
+    shs_tracks: EntityOption[];
+};
+
+export type ClassDefaults = {
+    semester: string;
+    school_year: string;
+};
+
 interface ClassesIndexProps {
     user: User;
     filament: {
@@ -149,9 +166,9 @@ interface ClassesIndexProps {
             create_url: string;
         };
     };
-    classes: ClassRow[];
-    selected_class: SelectedClass | null;
-    filters: {
+    classes?: ClassRow[];
+    selected_class?: SelectedClass | null;
+    filters?: {
         search?: string | null;
         classification?: string | null;
         course_id?: number | null;
@@ -169,25 +186,16 @@ interface ClassesIndexProps {
         sort?: string | null;
         direction?: string | null;
     };
-    options: {
-        classifications: SelectOption[];
-        sections: SelectOption[];
-        semesters: SelectOption[];
-        grade_levels: SelectOption[];
-        day_of_week: SelectOption[];
-        courses: EntityOption[];
-        faculties: EntityOption[];
-        rooms: EntityOption[];
-        shs_tracks: EntityOption[];
-    };
-    defaults: {
-        semester: string;
-        school_year: string;
-    };
+    options?: Partial<ClassOptions>;
+    defaults?: Partial<ClassDefaults>;
 }
 
-function createActiveFilters(filters: ClassesIndexProps["filters"]): FilterType[] {
+function createActiveFilters(filters?: ClassesIndexProps["filters"]): FilterType[] {
     const activeFilters: FilterType[] = [];
+
+    if (!filters) {
+        return activeFilters;
+    }
 
     if (filters.classification) {
         activeFilters.push({ id: "classification", field: "classification", operator: "is", values: [filters.classification] });
@@ -437,11 +445,83 @@ function SchedulePlanner({
     );
 }
 
-export default function AdministratorClassesIndex({ user, classes, selected_class, filters, options, defaults }: ClassesIndexProps) {
-    const [search, setSearch] = React.useState(filters.search || "");
+const DEFAULT_OPTIONS: ClassOptions = {
+    classifications: [
+        { value: "all", label: "All" },
+        { value: "college", label: "College" },
+        { value: "shs", label: "SHS" },
+    ],
+    sections: [
+        { value: "A", label: "Section A" },
+        { value: "B", label: "Section B" },
+        { value: "C", label: "Section C" },
+        { value: "D", label: "Section D" },
+    ],
+    semesters: [
+        { value: "1", label: "1st Semester" },
+        { value: "2", label: "2nd Semester" },
+        { value: "summer", label: "Summer" },
+    ],
+    grade_levels: [
+        { value: "Grade 11", label: "Grade 11" },
+        { value: "Grade 12", label: "Grade 12" },
+    ],
+    day_of_week: [
+        { value: "Monday", label: "Monday" },
+        { value: "Tuesday", label: "Tuesday" },
+        { value: "Wednesday", label: "Wednesday" },
+        { value: "Thursday", label: "Thursday" },
+        { value: "Friday", label: "Friday" },
+        { value: "Saturday", label: "Saturday" },
+        { value: "Sunday", label: "Sunday" },
+    ],
+    courses: [],
+    faculties: [],
+    rooms: [],
+    shs_tracks: [],
+};
+
+const DEFAULT_DEFAULTS: ClassDefaults = {
+    semester: "1",
+    school_year: "",
+};
+
+export default function AdministratorClassesIndex({
+    user,
+    classes = [],
+    selected_class,
+    filters = {},
+    options: rawOptions,
+    defaults: rawDefaults,
+}: ClassesIndexProps) {
+    const options: ClassOptions = React.useMemo(
+        () => ({
+            classifications: rawOptions?.classifications ?? DEFAULT_OPTIONS.classifications,
+            sections: rawOptions?.sections ?? DEFAULT_OPTIONS.sections,
+            semesters: rawOptions?.semesters ?? DEFAULT_OPTIONS.semesters,
+            grade_levels: rawOptions?.grade_levels ?? DEFAULT_OPTIONS.grade_levels,
+            day_of_week: rawOptions?.day_of_week ?? DEFAULT_OPTIONS.day_of_week,
+            courses: rawOptions?.courses ?? DEFAULT_OPTIONS.courses,
+            faculties: rawOptions?.faculties ?? DEFAULT_OPTIONS.faculties,
+            rooms: rawOptions?.rooms ?? DEFAULT_OPTIONS.rooms,
+            shs_tracks: rawOptions?.shs_tracks ?? DEFAULT_OPTIONS.shs_tracks,
+        }),
+        [rawOptions],
+    );
+
+    const defaults: ClassDefaults = React.useMemo(
+        () => ({
+            semester: rawDefaults?.semester ?? DEFAULT_DEFAULTS.semester,
+            school_year: rawDefaults?.school_year ?? DEFAULT_DEFAULTS.school_year,
+        }),
+        [rawDefaults],
+    );
+
+    const classList = React.useMemo(() => (Array.isArray(classes) ? classes : []), [classes]);
+    const [search, setSearch] = React.useState(filters?.search || "");
     const [isSelectedClassLoading, setIsSelectedClassLoading] = React.useState(false);
     const [viewMode, setViewMode] = React.useState<"grid" | "list">("list");
-    const [sortOption, setSortOption] = React.useState(`${filters.sort ?? "created_at"}:${filters.direction ?? "desc"}`);
+    const [sortOption, setSortOption] = React.useState(`${filters?.sort ?? "created_at"}:${filters?.direction ?? "desc"}`);
     const [activeFilters, setActiveFilters] = React.useState<FilterType[]>(() => createActiveFilters(filters));
     const [isEditOpen, setIsEditOpen] = React.useState(false);
     const [isCopyOpen, setIsCopyOpen] = React.useState(false);
@@ -475,7 +555,7 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
     const [subjectCodeTouched, setSubjectCodeTouched] = React.useState(false);
 
     const filteredClasses = React.useMemo(() => {
-        let result = classes;
+        let result = classList;
 
         // Apply search filter
         const searchTerm = search.trim().toLowerCase();
@@ -528,7 +608,7 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
         }
 
         return result;
-    }, [classes, search, activeFilters]);
+    }, [classList, search, activeFilters]);
 
     const visibleClasses = filteredClasses;
 
@@ -602,7 +682,7 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
                 label: "Class Type",
                 type: "select",
                 icon: <GraduationCap className="h-4 w-4" />,
-                options: options.classifications
+                options: (options.classifications ?? [])
                     .filter((option) => option.value !== "all")
                     .map((option) => ({ ...option, icon: <GraduationCap className="text-muted-foreground h-4 w-4" /> })),
             },
@@ -611,7 +691,7 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
                 label: "Course",
                 type: "select",
                 icon: <BookOpen className="h-4 w-4" />,
-                options: options.courses.map((option) => ({
+                options: (options.courses ?? []).map((option) => ({
                     value: option.id,
                     label: option.label,
                     icon: <BookOpen className="text-muted-foreground h-4 w-4" />,
@@ -622,7 +702,7 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
                 label: "SHS Track",
                 type: "select",
                 icon: <Layers className="h-4 w-4" />,
-                options: options.shs_tracks.map((option) => ({
+                options: (options.shs_tracks ?? []).map((option) => ({
                     value: option.id,
                     label: option.label,
                     icon: <Layers className="text-muted-foreground h-4 w-4" />,
@@ -633,7 +713,7 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
                 label: "Faculty",
                 type: "select",
                 icon: <Users className="h-4 w-4" />,
-                options: options.faculties.map((option) => ({
+                options: (options.faculties ?? []).map((option) => ({
                     value: option.id,
                     label: option.label,
                     icon: <Users className="text-muted-foreground h-4 w-4" />,
@@ -644,7 +724,7 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
                 label: "Room",
                 type: "select",
                 icon: <MapPin className="h-4 w-4" />,
-                options: options.rooms.map((option) => ({
+                options: (options.rooms ?? []).map((option) => ({
                     value: option.id,
                     label: option.label,
                     icon: <MapPin className="text-muted-foreground h-4 w-4" />,
@@ -655,7 +735,7 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
                 label: "Semester",
                 type: "select",
                 icon: <CalendarIcon className="h-4 w-4" />,
-                options: options.semesters.map((option) => ({ ...option, icon: <CalendarIcon className="text-muted-foreground h-4 w-4" /> })),
+                options: (options.semesters ?? []).map((option) => ({ ...option, icon: <CalendarIcon className="text-muted-foreground h-4 w-4" /> })),
             },
             {
                 key: "academic_year",
@@ -673,7 +753,7 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
                 label: "SHS Grade",
                 type: "select",
                 icon: <GraduationCap className="h-4 w-4" />,
-                options: options.grade_levels.map((option) => ({ ...option, icon: <GraduationCap className="text-muted-foreground h-4 w-4" /> })),
+                options: (options.grade_levels ?? []).map((option) => ({ ...option, icon: <GraduationCap className="text-muted-foreground h-4 w-4" /> })),
             },
             {
                 key: "available_slots",
@@ -2178,7 +2258,7 @@ export default function AdministratorClassesIndex({ user, classes, selected_clas
             <ClassCompareDialog
                 open={isCompareOpen}
                 onOpenChange={setIsCompareOpen}
-                classes={classes.map((c) => ({ id: c.id, record_title: c.record_title, subject_code: c.subject_code, section: c.section }))}
+                classes={classList.map((c) => ({ id: c.id, record_title: c.record_title, subject_code: c.subject_code, section: c.section }))}
             />
         </AdminLayout>
     );

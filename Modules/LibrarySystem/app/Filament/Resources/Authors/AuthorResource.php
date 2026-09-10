@@ -33,6 +33,36 @@ final class AuthorResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'name';
 
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->can('viewAny', Author::class) ?? false;
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->can('create', Author::class) ?? false;
+    }
+
+    public static function canView($record): bool
+    {
+        return auth()->user()?->can('view', $record) ?? false;
+    }
+
+    public static function canEdit($record): bool
+    {
+        return auth()->user()?->can('update', $record) ?? false;
+    }
+
+    public static function canDelete($record): bool
+    {
+        return auth()->user()?->can('delete', $record) ?? false;
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return auth()->user()?->can('deleteAny', Author::class) ?? false;
+    }
+
     public static function form(Schema $schema): Schema
     {
         return AuthorForm::configure($schema);

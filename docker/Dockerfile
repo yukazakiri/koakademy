@@ -6,7 +6,7 @@ ARG APP_URL=https://koakademy.yukazaki.com
 # -----------------------------------------------------------------------------
 # Stage 1: Install PHP Dependencies
 # -----------------------------------------------------------------------------
-FROM composer:2.10@sha256:4d71c3c2109c61d5415544264b59ad4087e4c5b7244481723664138fd36d5040 AS vendor
+FROM composer:2.10@sha256:d8f6343d3fae98107426bc49163ccad46ef85aabd4a27d80a74401fab4aba332 AS vendor
 WORKDIR /app
 COPY composer.json composer.lock ./
 RUN composer install \
@@ -57,7 +57,7 @@ RUN composer dump-autoload --optimize --classmap-authoritative --no-dev --no-scr
 # -----------------------------------------------------------------------------
 # Stage 2: Generate Wayfinder Files (requires the application's PHP version)
 # -----------------------------------------------------------------------------
-FROM php:8.5-fpm@sha256:3c8e184204a94c0e00ea8d58156b4181cd7e65a0b77c8bf0edc5c3b47d06fec2 AS wayfinder
+FROM php:8.5-fpm@sha256:70076c1cae0cd0ba6761832417e3a1df3e5560f0544eb0fe40357373e54420fe AS wayfinder
 # The application boots during wayfinder:generate and config/backup.php
 # instantiates ZipArchive, so the extension must be present in this stage.
 RUN apt-get update && apt-get install -y --no-install-recommends libzip-dev \
@@ -86,7 +86,7 @@ RUN WAYFINDER_GENERATE=false npm run build
 # -----------------------------------------------------------------------------
 # Stage 4: Final Runtime Image
 # -----------------------------------------------------------------------------
-FROM php:8.5-fpm@sha256:3c8e184204a94c0e00ea8d58156b4181cd7e65a0b77c8bf0edc5c3b47d06fec2
+FROM php:8.5-fpm@sha256:70076c1cae0cd0ba6761832417e3a1df3e5560f0544eb0fe40357373e54420fe
 
 LABEL maintainer="Yuka <128908897+yukazakiri@users.noreply.github.com>"
 LABEL org.opencontainers.image.title="KoAkademy"
@@ -107,6 +107,8 @@ ENV TERM=xterm-color
 ENV TZ=${TZ}
 ENV ROOT=${ROOT}
 ENV USER=laravel
+ENV INERTIA_SSR_ENABLED=true
+ENV INERTIA_SSR_RUNTIME=/usr/bin/node
 ENV COMPOSER_FUND=0
 ENV COMPOSER_MAX_PARALLEL_HTTP=48
 ENV XDG_CONFIG_HOME=${ROOT}/.config
@@ -127,6 +129,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     supervisor \
     nginx \
+    nodejs \
     libpng-dev \
     libjpeg62-turbo-dev \
     libfreetype6-dev \
@@ -179,6 +182,7 @@ COPY --link docker/php-fpm.conf /usr/local/etc/php-fpm.d/www.conf
 COPY --link docker/supervisord.conf /etc/supervisord.conf
 COPY --link docker/supervisord.web.conf /etc/supervisor/conf.d/
 COPY --link docker/supervisord.web.no-horizon.conf /etc/supervisor/conf.d/
+COPY --link docker/supervisord.inertia-ssr.conf /etc/supervisor/conf.d/
 COPY --link docker/supervisord.horizon.conf /etc/supervisor/conf.d/
 COPY --link docker/supervisord.scheduler.conf /etc/supervisor/conf.d/
 COPY --link docker/supervisord.pulse.conf /etc/supervisor/conf.d/
@@ -217,6 +221,7 @@ RUN groupadd --force -g ${GROUP_ID} ${USER} \
 COPY --chown=${USER}:${USER} --from=vendor /app/vendor ./vendor
 COPY --chown=${USER}:${USER} --from=build-assets /app/public/build ./public/build
 COPY --chown=${USER}:${USER} . .
+COPY --chown=${USER}:${USER} --from=build-assets /app/bootstrap/ssr ./bootstrap/ssr
 
 # R2 uses Laravel's S3 filesystem driver. Keep its adapter in the production
 # image so storage-backed branding and uploads cannot turn page rendering into

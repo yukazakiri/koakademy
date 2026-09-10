@@ -144,7 +144,7 @@ final class AdminPanelProvider extends PanelProvider
 
         $isTestingEnvironment = ($_ENV['APP_ENV'] ?? $_SERVER['APP_ENV'] ?? null) === 'testing';
 
-        if (! $isTestingEnvironment) {
+        if (! $isTestingEnvironment || config('filament-modules.enabled_in_testing', false)) {
             $plugins[] = ModulesPlugin::make();
         }
 
@@ -156,7 +156,10 @@ final class AdminPanelProvider extends PanelProvider
 
         $panel->renderHook(
             'panels::head.end',
-            fn (): HtmlString => new HtmlString(app(AnalyticsSettingsService::class)->renderHeadMarkup())
+            fn (): HtmlString => new HtmlString(
+                app(AnalyticsSettingsService::class)->renderHeadMarkup()
+                    .app(\App\Services\SentrySettingsService::class)->renderHeadMarkup()
+            )
         );
 
         $panel->renderHook(

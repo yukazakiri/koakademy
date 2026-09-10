@@ -1,8 +1,11 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { Link } from "@inertiajs/react";
+import { motion, useReducedMotion } from "framer-motion";
 import type { LucideIcon } from "lucide-react";
 import {
     Activity,
@@ -12,24 +15,90 @@ import {
     Calculator,
     CalendarClock,
     Check,
+    ChevronRight,
     FileBadge2,
     Fingerprint,
     Globe,
     Hash,
+    Layers,
     List,
     Lock,
     Mail,
     Palette,
+    Search,
     Settings2,
     Share2,
+    Siren,
     Webhook,
+    X,
 } from "lucide-react";
+import { useMemo, useState } from "react";
 
 import type { SystemManagementAccess, SystemManagementSectionKey } from "./types";
 
 export type SystemSettingsGroupKey = "institution" | "academic_operations" | "experience" | "communications" | "integrations" | "system";
 
 type SettingsMode = "editable" | "deployment" | "monitor";
+
+export interface CategoryTheme {
+    accentBg: string;
+    accentText: string;
+    accentBorder: string;
+    badgeClass: string;
+    pillClass: string;
+    glowClass: string;
+}
+
+export const categoryThemes: Record<SystemSettingsGroupKey, CategoryTheme> = {
+    institution: {
+        accentBg: "bg-sky-500/10 dark:bg-sky-500/15",
+        accentText: "text-sky-600 dark:text-sky-400",
+        accentBorder: "border-sky-500/20",
+        badgeClass: "bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-300/40 dark:border-sky-700/40",
+        pillClass: "hover:border-sky-500/40",
+        glowClass: "from-sky-500/10 to-indigo-500/10",
+    },
+    academic_operations: {
+        accentBg: "bg-emerald-500/10 dark:bg-emerald-500/15",
+        accentText: "text-emerald-600 dark:text-emerald-400",
+        accentBorder: "border-emerald-500/20",
+        badgeClass: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-300/40 dark:border-emerald-700/40",
+        pillClass: "hover:border-emerald-500/40",
+        glowClass: "from-emerald-500/10 to-teal-500/10",
+    },
+    experience: {
+        accentBg: "bg-violet-500/10 dark:bg-violet-500/15",
+        accentText: "text-violet-600 dark:text-violet-400",
+        accentBorder: "border-violet-500/20",
+        badgeClass: "bg-violet-500/10 text-violet-700 dark:text-violet-300 border-violet-300/40 dark:border-violet-700/40",
+        pillClass: "hover:border-violet-500/40",
+        glowClass: "from-violet-500/10 to-purple-500/10",
+    },
+    communications: {
+        accentBg: "bg-amber-500/10 dark:bg-amber-500/15",
+        accentText: "text-amber-600 dark:text-amber-400",
+        accentBorder: "border-amber-500/20",
+        badgeClass: "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-300/40 dark:border-amber-700/40",
+        pillClass: "hover:border-amber-500/40",
+        glowClass: "from-amber-500/10 to-orange-500/10",
+    },
+    integrations: {
+        accentBg: "bg-indigo-500/10 dark:bg-indigo-500/15",
+        accentText: "text-indigo-600 dark:text-indigo-400",
+        accentBorder: "border-indigo-500/20",
+        badgeClass: "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-300/40 dark:border-indigo-700/40",
+        pillClass: "hover:border-indigo-500/40",
+        glowClass: "from-indigo-500/10 to-blue-500/10",
+    },
+    system: {
+        accentBg: "bg-rose-500/10 dark:bg-rose-500/15",
+        accentText: "text-rose-600 dark:text-rose-400",
+        accentBorder: "border-rose-500/20",
+        badgeClass: "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-300/40 dark:border-rose-700/40",
+        pillClass: "hover:border-rose-500/40",
+        glowClass: "from-rose-500/10 to-pink-500/10",
+    },
+};
 
 export interface SystemSettingsGroup {
     key: SystemSettingsGroupKey;
@@ -228,6 +297,15 @@ export const systemSettingsItems: SystemSettingsItem[] = [
         icon: Activity,
         mode: "monitor",
     },
+    {
+        key: "observability",
+        group: "system",
+        label: "Error Reporting",
+        description: "Configure Sentry, Flare, Bugsnag, and Honeybadger error reporting providers.",
+        href: "/administrators/system-management/observability",
+        keywords: ["sentry", "flare", "bugsnag", "honeybadger", "error", "exception", "observability", "tracing", "monitoring", "dsn"],
+        icon: Siren,
+    },
 ];
 
 export function getSystemSettingsItem(section: SystemManagementSectionKey): SystemSettingsItem {
@@ -249,94 +327,264 @@ export function getVisibleSystemSettingsGroups(access: SystemManagementAccess): 
         .filter((group) => group.items.length > 0);
 }
 
-export function getSystemSettingsStatus(item: SystemSettingsItem, access: SystemManagementAccess): { label: string; icon: LucideIcon } {
+export function getSiblingSettingsItems(section: SystemManagementSectionKey, access: SystemManagementAccess): SystemSettingsItem[] {
+    const current = getSystemSettingsItem(section);
+    return systemSettingsItems.filter((item) => item.group === current.group && access.sections[item.key]?.can_view);
+}
+
+export interface SystemSettingsStatusDetails {
+    label: string;
+    icon: LucideIcon;
+    dotColor: string;
+    badgeVariant: "default" | "secondary" | "outline";
+    badgeClass: string;
+}
+
+export function getSystemSettingsStatus(item: SystemSettingsItem, access: SystemManagementAccess): SystemSettingsStatusDetails {
     if (item.mode === "deployment") {
-        return { label: "Deployment-managed", icon: Settings2 };
+        return {
+            label: "Deployment-managed",
+            icon: Settings2,
+            dotColor: "bg-sky-500",
+            badgeVariant: "outline",
+            badgeClass: "border-sky-500/30 bg-sky-500/5 text-sky-700 dark:text-sky-300",
+        };
     }
 
     if (item.mode === "monitor") {
-        return { label: "Monitor only", icon: Activity };
+        return {
+            label: "Live monitor",
+            icon: Activity,
+            dotColor: "bg-emerald-500 animate-pulse",
+            badgeVariant: "outline",
+            badgeClass: "border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300",
+        };
     }
 
     if (!access.sections[item.key]?.can_update) {
-        return { label: "Read-only", icon: Lock };
+        return {
+            label: "Read-only",
+            icon: Lock,
+            dotColor: "bg-zinc-400 dark:bg-zinc-500",
+            badgeVariant: "outline",
+            badgeClass: "border-border/60 bg-muted/50 text-muted-foreground",
+        };
     }
 
-    return { label: "Editable", icon: Check };
+    return {
+        label: "Editable",
+        icon: Check,
+        dotColor: "bg-primary",
+        badgeVariant: "outline",
+        badgeClass: "border-primary/25 bg-primary/5 text-foreground font-medium",
+    };
 }
 
 interface SystemSettingsNavigationProps {
     access: SystemManagementAccess;
     activeSection: SystemManagementSectionKey;
     mobile?: boolean;
+    collapsed?: boolean;
+    onToggleCollapse?: () => void;
 }
 
-function SettingsNavigationList({ access, activeSection, closeOnNavigate = false }: SystemSettingsNavigationProps & { closeOnNavigate?: boolean }) {
+function SettingsNavigationList({
+    access,
+    activeSection,
+    collapsed = false,
+    filterQuery = "",
+    closeOnNavigate = false,
+}: SystemSettingsNavigationProps & { filterQuery?: string; closeOnNavigate?: boolean }) {
+    const reducedMotion = useReducedMotion();
+    const query = filterQuery.trim().toLowerCase();
+
+    const visibleGroups = useMemo(() => {
+        return getVisibleSystemSettingsGroups(access)
+            .map((group) => ({
+                ...group,
+                items: group.items.filter((item) => {
+                    if (!query) return true;
+                    return (
+                        item.label.toLowerCase().includes(query) ||
+                        item.description.toLowerCase().includes(query) ||
+                        item.keywords.some((kw) => kw.toLowerCase().includes(query))
+                    );
+                }),
+            }))
+            .filter((group) => group.items.length > 0);
+    }, [access, query]);
+
+    if (visibleGroups.length === 0) {
+        return (
+            <div className="px-3 py-8 text-center text-xs text-muted-foreground">
+                <Search className="mx-auto mb-2 size-4 opacity-50" />
+                No matching settings
+            </div>
+        );
+    }
+
     return (
-        <nav aria-label="System Settings sections" className="space-y-5">
-            {getVisibleSystemSettingsGroups(access).map((group) => (
-                <section key={group.key} aria-labelledby={`settings-group-${group.key}`}>
-                    <h2
-                        id={`settings-group-${group.key}`}
-                        className="text-muted-foreground px-2 text-[0.7rem] font-semibold tracking-[0.08em] uppercase"
-                    >
-                        {group.label}
-                    </h2>
-                    <div className="mt-1 space-y-0.5">
-                        {group.items.map((item) => {
-                            const Icon = item.icon;
-                            const active = item.key === activeSection;
+        <TooltipProvider delay={150}>
+            <nav aria-label="System Settings sections" className="space-y-4">
+                {visibleGroups.map((group) => {
+                    const theme = categoryThemes[group.key];
 
-                            const link = (
-                                <Link
-                                    href={item.href}
-                                    prefetch
-                                    cacheFor="30s"
-                                    aria-current={active ? "page" : undefined}
-                                    className={cn(
-                                        "group/settings-item flex min-h-10 items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-[background-color,color,transform] duration-150 motion-reduce:transform-none",
-                                        active
-                                            ? "bg-primary text-primary-foreground shadow-sm"
-                                            : "text-muted-foreground hover:bg-muted hover:text-foreground active:scale-[0.985]",
-                                    )}
-                                >
-                                    <Icon className="size-4 shrink-0" aria-hidden="true" />
-                                    <span className="min-w-0 truncate">{item.label}</span>
-                                </Link>
-                            );
+                    return (
+                        <section key={group.key} aria-labelledby={`settings-nav-group-${group.key}`} className="space-y-1">
+                            {!collapsed && (
+                                <div className="flex items-center justify-between px-2.5 py-1">
+                                    <h2
+                                        id={`settings-nav-group-${group.key}`}
+                                        className="text-[10.5px] font-semibold tracking-wider text-muted-foreground uppercase"
+                                    >
+                                        {group.label}
+                                    </h2>
+                                    <span className="text-[10px] font-mono text-muted-foreground/60">{group.items.length}</span>
+                                </div>
+                            )}
 
-                            return closeOnNavigate ? (
-                                <SheetClose asChild key={item.key}>
-                                    {link}
-                                </SheetClose>
-                            ) : (
-                                <div key={item.key}>{link}</div>
-                            );
-                        })}
-                    </div>
-                </section>
-            ))}
-        </nav>
+                            <div className="space-y-0.5">
+                                {group.items.map((item) => {
+                                    const Icon = item.icon;
+                                    const active = item.key === activeSection;
+                                    const status = getSystemSettingsStatus(item, access);
+
+                                    const linkContent = (
+                                        <Link
+                                            href={item.href}
+                                            prefetch
+                                            cacheFor="30s"
+                                            aria-current={active ? "page" : undefined}
+                                            className={cn(
+                                                "group relative flex items-center gap-2.5 rounded-lg text-sm font-medium transition-colors outline-none",
+                                                collapsed ? "h-9 w-9 justify-center p-0 mx-auto" : "h-9 px-2.5 py-1.5",
+                                                active
+                                                    ? "bg-accent/80 text-foreground font-semibold shadow-xs"
+                                                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground active:scale-[0.985]",
+                                            )}
+                                        >
+                                            {active && (
+                                                <motion.span
+                                                    layoutId={reducedMotion ? undefined : "active-settings-nav-pill"}
+                                                    className="absolute inset-0 rounded-lg bg-accent border border-border/80"
+                                                    transition={{ type: "spring", bounce: 0.15, duration: 0.3 }}
+                                                    aria-hidden="true"
+                                                />
+                                            )}
+
+                                            <span
+                                                className={cn(
+                                                    "relative z-10 flex size-6 shrink-0 items-center justify-center rounded-md transition-colors",
+                                                    active
+                                                        ? cn(theme.accentBg, theme.accentText)
+                                                        : "bg-muted/50 text-muted-foreground group-hover:bg-muted group-hover:text-foreground",
+                                                )}
+                                            >
+                                                <Icon className="size-3.5" aria-hidden="true" />
+                                            </span>
+
+                                            {!collapsed && (
+                                                <>
+                                                    <span className="relative z-10 min-w-0 flex-1 truncate text-xs sm:text-[13px]">
+                                                        {item.label}
+                                                    </span>
+                                                    <span
+                                                        className={cn("relative z-10 size-1.5 shrink-0 rounded-full", status.dotColor)}
+                                                        title={status.label}
+                                                        aria-label={status.label}
+                                                    />
+                                                </>
+                                            )}
+                                        </Link>
+                                    );
+
+                                    if (collapsed) {
+                                        return (
+                                            <Tooltip key={item.key}>
+                                                <TooltipTrigger render={linkContent} />
+                                                <TooltipContent side="right" className="text-xs">
+                                                    <p className="font-semibold">{item.label}</p>
+                                                    <p className="text-muted-foreground text-[11px]">{status.label}</p>
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        );
+                                    }
+
+                                    return closeOnNavigate ? (
+                                        <SheetClose asChild key={item.key}>
+                                            {linkContent}
+                                        </SheetClose>
+                                    ) : (
+                                        <div key={item.key}>{linkContent}</div>
+                                    );
+                                })}
+                            </div>
+                        </section>
+                    );
+                })}
+            </nav>
+        </TooltipProvider>
     );
 }
 
-export function SystemSettingsNavigation({ access, activeSection, mobile = false }: SystemSettingsNavigationProps) {
+export function SystemSettingsNavigation({
+    access,
+    activeSection,
+    mobile = false,
+    collapsed = false,
+}: SystemSettingsNavigationProps) {
+    const [filterQuery, setFilterQuery] = useState("");
+
     if (mobile) {
         return (
             <Sheet>
                 <SheetTrigger asChild>
-                    <Button variant="outline" size="sm" className="gap-2 lg:hidden">
-                        <Settings2 className="size-4" />
-                        Browse settings
+                    <Button variant="outline" size="sm" className="h-8 gap-2 text-xs font-medium lg:hidden">
+                        <Settings2 className="size-3.5" />
+                        Settings Menu
                     </Button>
                 </SheetTrigger>
-                <SheetContent side="left" className="w-[min(22rem,88vw)] p-0 motion-reduce:transition-none">
-                    <SheetHeader className="border-b pr-12">
-                        <SheetTitle>System Settings</SheetTitle>
-                        <SheetDescription>Browse the settings available to your role.</SheetDescription>
+                <SheetContent side="left" className="flex flex-col w-[min(20rem,88vw)] p-0">
+                    <SheetHeader className="border-b px-4 py-3.5">
+                        <div className="flex items-center gap-2">
+                            <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                                <Settings2 className="size-4" />
+                            </span>
+                            <div>
+                                <SheetTitle className="text-sm font-semibold">System Settings</SheetTitle>
+                                <SheetDescription className="text-xs">Institutional preferences</SheetDescription>
+                            </div>
+                        </div>
                     </SheetHeader>
-                    <div className="min-h-0 flex-1 overflow-y-auto p-4">
-                        <SettingsNavigationList access={access} activeSection={activeSection} closeOnNavigate />
+
+                    <div className="px-3 pt-3">
+                        <div className="relative">
+                            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                            <Input
+                                value={filterQuery}
+                                onChange={(e) => setFilterQuery(e.target.value)}
+                                placeholder="Quick filter..."
+                                className="h-8 pl-8 pr-7 text-xs bg-muted/40"
+                            />
+                            {filterQuery && (
+                                <button
+                                    onClick={() => setFilterQuery("")}
+                                    className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                    aria-label="Clear filter"
+                                >
+                                    <X className="size-3" />
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+                        <SettingsNavigationList
+                            access={access}
+                            activeSection={activeSection}
+                            filterQuery={filterQuery}
+                            closeOnNavigate
+                        />
                     </div>
                 </SheetContent>
             </Sheet>
@@ -344,15 +592,56 @@ export function SystemSettingsNavigation({ access, activeSection, mobile = false
     }
 
     return (
-        <aside className="hidden lg:block">
-            <div className="border-border/70 bg-card/90 [@media(prefers-contrast:more)]:border-foreground/60 [@media(prefers-reduced-transparency:reduce)]:bg-card sticky top-6 rounded-2xl border p-3 shadow-sm backdrop-blur-xl">
-                <div className="mb-4 flex items-center gap-2 px-2 pt-1">
-                    <span className="bg-primary/10 text-primary flex size-7 items-center justify-center rounded-lg">
-                        <Settings2 className="size-4" aria-hidden="true" />
-                    </span>
-                    <span className="text-sm font-semibold">System Settings</span>
+        <aside
+            className={cn(
+                "hidden lg:block shrink-0 transition-[width] duration-200 ease-out",
+                collapsed ? "w-12" : "w-60 xl:w-64",
+            )}
+        >
+            <div className="sticky top-6 rounded-xl border border-border/60 bg-card/65 p-2 shadow-xs backdrop-blur-md">
+                {!collapsed && (
+                    <div className="mb-3 space-y-2 px-1 pt-1">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <span className="flex size-6 items-center justify-center rounded-md bg-primary/10 text-primary">
+                                    <Layers className="size-3.5" aria-hidden="true" />
+                                </span>
+                                <span className="text-xs font-semibold tracking-tight text-foreground">Navigation</span>
+                            </div>
+                            <Badge variant="outline" className="h-5 px-1.5 text-[10px] font-mono text-muted-foreground">
+                                16 sections
+                            </Badge>
+                        </div>
+
+                        <div className="relative">
+                            <Search className="pointer-events-none absolute top-1/2 left-2 size-3 -translate-y-1/2 text-muted-foreground" />
+                            <Input
+                                value={filterQuery}
+                                onChange={(e) => setFilterQuery(e.target.value)}
+                                placeholder="Filter sections..."
+                                className="h-7.5 pl-7 pr-6 text-xs bg-muted/30 border-border/50"
+                            />
+                            {filterQuery && (
+                                <button
+                                    onClick={() => setFilterQuery("")}
+                                    className="absolute top-1/2 right-1.5 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                    aria-label="Clear filter"
+                                >
+                                    <X className="size-2.5" />
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                <div className="max-h-[calc(100vh-10rem)] overflow-y-auto pr-0.5 scrollbar-thin">
+                    <SettingsNavigationList
+                        access={access}
+                        activeSection={activeSection}
+                        collapsed={collapsed}
+                        filterQuery={filterQuery}
+                    />
                 </div>
-                <SettingsNavigationList access={access} activeSection={activeSection} />
             </div>
         </aside>
     );
@@ -360,11 +649,13 @@ export function SystemSettingsNavigation({ access, activeSection, mobile = false
 
 export function SystemSettingsStateBadge({ item, access }: { item: SystemSettingsItem; access: SystemManagementAccess }) {
     const status = getSystemSettingsStatus(item, access);
-    const Icon = status.icon;
 
     return (
-        <Badge variant="outline" className="border-border/70 bg-background/70 text-muted-foreground gap-1.5">
-            <Icon className="size-3" aria-hidden="true" />
+        <Badge
+            variant="outline"
+            className={cn("gap-1.5 text-xs font-normal border-border/60 bg-background/60", status.badgeClass)}
+        >
+            <span className={cn("size-1.5 rounded-full shrink-0", status.dotColor)} aria-hidden="true" />
             {status.label}
         </Badge>
     );

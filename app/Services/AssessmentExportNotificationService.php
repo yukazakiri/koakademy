@@ -25,27 +25,32 @@ final class AssessmentExportNotificationService
             return;
         }
 
+        $isRegulatory = ($export->filters['export_type'] ?? null) === 'regulatory_report';
+
         $notification = Notification::make()->body($this->body($export));
 
         if ($export->status === 'completed' && $export->output_path !== null) {
             $actions = [
-                Action::make('download')->label('Download PDF')->url(route('download.bulk-assessment', $export))->openUrlInNewTab(),
+                Action::make('download')
+                    ->label($isRegulatory ? 'Download XLSX' : 'Download PDF')
+                    ->url(route($isRegulatory ? 'download.regulatory-report' : 'download.bulk-assessment', $export))
+                    ->openUrlInNewTab(),
             ];
-            if ($export->report_path !== null) {
+            if ($export->report_path !== null && ! $isRegulatory) {
                 $actions[] = Action::make('report')->label('Skipped report')->url(route('download.bulk-assessment-report', $export))->openUrlInNewTab();
             }
-            $notification->title('Bulk Assessment PDF Ready')->success()->actions($actions);
+            $notification->title($isRegulatory ? 'Regulatory Excel Report Ready' : 'Bulk Assessment PDF Ready')->success()->actions($actions);
         } elseif ($export->status === 'completed') {
-            $notification->title('Bulk Assessment Export Finished')->info();
-            if ($export->report_path !== null) {
+            $notification->title($isRegulatory ? 'Regulatory Excel Report Finished' : 'Bulk Assessment Export Finished')->info();
+            if ($export->report_path !== null && ! $isRegulatory) {
                 $notification->actions([
                     Action::make('report')->label('Skipped report')->url(route('download.bulk-assessment-report', $export))->openUrlInNewTab(),
                 ]);
             }
         } elseif ($export->status === 'cancelled') {
-            $notification->title('Bulk Assessment Export Cancelled')->warning();
+            $notification->title($isRegulatory ? 'Regulatory Excel Report Cancelled' : 'Bulk Assessment Export Cancelled')->warning();
         } else {
-            $notification->title('Bulk Assessment Generation Failed')->danger()->actions([
+            $notification->title($isRegulatory ? 'Regulatory Excel Report Failed' : 'Bulk Assessment Generation Failed')->danger()->actions([
                 Action::make('details')
                     ->label('View details')
                     ->url(route('administrators.enrollments.index', ['assessment_export' => $export->id])),

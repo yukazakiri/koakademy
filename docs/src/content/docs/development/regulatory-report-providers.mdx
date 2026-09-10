@@ -1,0 +1,174 @@
+---
+title: Regulatory Report Providers
+description: Add jurisdiction-specific reporting adapters without coupling the shared registrar workflow to one provider.
+---
+
+# Regulatory Report Providers
+
+KoAkademy keeps regulatory exports behind a small adapter contract. The shared registrar workflow is responsible for authentication, authorization, current-school scoping, filter validation, availability checks, filenames, and streaming the final XLSX file. A provider owns the jurisdiction-specific query and workbook or preview shape.
+
+## Current support boundary
+
+Only one provider is built into this repository:
+
+| Provider | Report key | Scope | Status |
+| -------- | ---------- | ----- | ------ |
+| Commission on Higher Education E-Form B/C | `ched_eform_bc` | Philippines (`PH`) with the `ched_psg` curriculum capability | Built in and enabled by default |
+
+No other national, regional, or institutional reporting provider is bundled. DepEd, TESDA, and other future providers must be implemented, tested, and installed explicitly before they can be described as supported.
+
+The built-in CHED provider can be disabled without removing code:
+
+```dotenv
+REGULATORY_REPORT_CHED_ENABLED=false
+```
+
+Disabling it removes CHED from the available provider list while preserving the existing application and database installation.
+
+## Adapter contract
+
+Implement `App\Contracts\RegulatoryReportAdapter`:
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace App\Reports\Example;
+
+use App\Contracts\RegulatoryReportAdapter;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+
+final class ExampleReportAdapter implements RegulatoryReportAdapter
+{
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return array<string, mixed>
+     */
+    public function buildPreviewData(array $filters = []): array
+    {
+        // Query only records belonging to (int) $filters['school_id'].
+        // Return provider-specific preview data under stable keys such as
+        // "report"; the shared controller adds common metadata.
+
+        return ['report' => []];
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    public function generate(array $filters = []): Spreadsheet
+    {
+        // Build and return a PhpSpreadsheet workbook. Do not stream here.
+
+        return new Spreadsheet();
+    }
+}
+```
+
+The controller currently passes these normalized filters to both methods:
+
+| Key | Shape | Meaning |
+| --- | ----- | ------- |
+| `school_id` | `int` | Current tenant school selected by the server |
+| `school_year` | `string\|null` | Normalized school-year value, or all school years |
+| `semester` | `int\|null` | `1`, `2`, `3`, or all semesters |
+| `department_id` | `int\|"all"` | Department filter |
+| `course_id` | `int\|"all"` | Course filter |
+
+Adapters should treat the filter array as input, scope every query by `school_id`, and return deterministic results for the selected period. Do not read the current request, infer a tenant from global state, or retain models, users, or request objects on the adapter. This keeps providers safe for queues and long-running workers.
+
+Preview data should keep provider-specific data under its own keys. The shared controller supplies these common metadata keys and may overwrite collisions: `school`, `school_year`, `semester`, `semester_label`, `semester_value`, `generated_at`, and `generated_by`.
+
+## Registering a provider
+
+Add a definition alongside the existing `ched_eform_bc` entry in `config/regulatory-reports.php`, or add the equivalent definition from a compatible module during application boot:
+
+```php
+use App\Reports\Example\ExampleReportAdapter;
+
+return [
+    'definitions' => [
+        // Keep the existing `ched_eform_bc` definition unchanged.
+        'example_regulator' => [
+            'key' => 'example_regulator',
+            'title' => 'Example regulator report',
+            'description' => 'Provider-specific report description.',
+            'agency' => 'Example regulator',
+            'country_code' => 'US',
+            'framework' => null,
+            'adapter' => ExampleReportAdapter::class,
+            'file_name_prefix' => 'Example_Regulator_Report',
+            'enabled' => true,
+        ],
+    ],
+];
+```
+
+Definitions are filtered as follows:
+
+- `enabled: false` disables a provider without deleting its code or data.
+- A string `country_code` limits availability to schools with the same country code.
+- A string `framework` limits availability to schools with an enabled matching curriculum capability.
+- `null` or an omitted country/framework value means that dimension is not restricted.
+- `adapter` must resolve to a class implementing `RegulatoryReportAdapter`.
+- `key` must be a lowercase URL-safe identifier and match the definition key.
+- `file_name_prefix` is sanitized before it is used for downloads.
+
+For a Composer module, keep the provider class, migrations, configuration, and tests in the module. Register the definition during the module's service-provider boot phase or provide an installation-specific config merge. Do not rely on arbitrary class-name discovery. The host application must be able to see the definition before the registrar page or route is resolved.
+
+The registry intentionally exposes only public definition metadata to the frontend. Adapter class names and enablement internals are never sent to the browser.
+
+## Generic routes and frontend integration
+
+Every enabled and school-compatible definition uses the same authorized routes:
+
+```text
+GET /administrators/registrar/reports/regulatory/{reportKey}/preview
+GET /administrators/registrar/reports/regulatory/{reportKey}/export
+```
+
+Use the named routes `administrators.registrar.reports.regulatory.preview` and `administrators.registrar.reports.regulatory.export`. Pass the report key as the route parameter and the normalized report filters as query parameters.
+
+The existing React registrar report page recognizes a template with `regulatoryReportKey` and sends it to the generic routes. A provider that should appear in that page must also add a frontend template definition and a renderer for its preview payload. A provider may instead use the generic endpoints directly if it does not ship a UI template.
+
+The CHED aliases remain available for existing integrations:
+
+```text
+GET /administrators/registrar/reports/ched/preview
+GET /administrators/registrar/reports/ched/export
+```
+
+Do not remove or repurpose those aliases when adding another provider.
+
+## Compatibility and data ownership
+
+Provider additions must be additive for existing installations:
+
+- Do not rename or remove the CHED key, routes, configuration variable, workbook sheets, or legacy aliases.
+- Keep provider-specific migrations and columns isolated from shared school and enrollment contracts unless the domain change is independently justified.
+- Make new provider definitions disabled by default when enabling them could change an existing installation's output or data access.
+- Preserve tenant authorization through the shared controller; an adapter must not broaden access by accepting a caller-supplied school ID.
+- Keep provider-specific frontend payloads and workbook structures versioned in tests.
+- Document any external template, agency specification, or mapping used by the provider.
+
+## Test checklist
+
+At minimum, a provider contribution should cover:
+
+1. The provider is available only when its definition is enabled and the current school matches its scope.
+2. Preview and export use the current school and selected filters.
+3. Unauthorized users cannot preview or export it.
+4. A school outside the provider's country/framework scope receives no access.
+5. The workbook opens and contains the provider's required sheets, headers, and representative data.
+6. Existing CHED tests and legacy aliases still pass.
+
+Run the focused tests while developing, then the repository checks before opening a pull request:
+
+```sh
+php artisan test --compact tests/Feature/ChedFormBcExportTest.php tests/Feature/RegulatoryReportRegistryTest.php
+npm run docs:check
+npm --prefix docs run build
+```
+
+This extension point is deliberately narrow: contributors can add compatible providers, but the core release advertises only the provider that is implemented and shipped with it.

@@ -147,6 +147,14 @@ volume. Never commit the private key. See the [module registry deployment
 guide](docs/src/content/docs/maintainers/module-registry.mdx) for release and
 update procedures.
 
+### Regulatory reporting providers
+
+Regulatory reports use an adapter contract and configuration registry so
+compatible providers can be added by contributors or modules. Only CHED
+E-Form B/C is built in and supported by this release; other jurisdictions
+require an explicit provider implementation and installation. See the
+[Regulatory Report Provider guide](docs/src/content/docs/development/regulatory-report-providers.mdx).
+
 ### Layout
 
 | Path            |                                                                           |

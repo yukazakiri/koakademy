@@ -207,8 +207,11 @@ COPY --chown=${USER}:${USER} --from=build-assets /app/public/build ./public/buil
 COPY --chown=${USER}:${USER} . .
 COPY --chown=${USER}:${USER} --from=build-assets /app/bootstrap/ssr ./bootstrap/ssr
 
-RUN test -f node_modules/@inertiajs/react/package.json \
-    && node --input-type=module -e "import('@inertiajs/react').then(() => process.exit(0))"
+# Validate the generated SSR bundle against the pruned production tree: resolve
+# every bare package import Node must load when the SSR server boots, so a
+# dev-only runtime import fails the build instead of the healthcheck.
+RUN test -f bootstrap/ssr/ssr.js \
+    && node --input-type=module -e "import('node:fs').then(async ({ readFileSync }) => { const src = readFileSync('bootstrap/ssr/ssr.js', 'utf8'); const specs = [...new Set([...src.matchAll(/from\s+['\"]([^'\"./][^'\"]*)['\"]/g)].map((m) => m[1]))]; if (!specs.length) throw new Error('no SSR externals found in bootstrap/ssr/ssr.js'); for (const spec of specs) await import(spec); console.log('SSR externals OK: ' + specs.join(', ')); })"
 
 # R2 uses Laravel's S3 filesystem driver. Keep its adapter in the production
 # image so storage-backed branding and uploads cannot turn page rendering into

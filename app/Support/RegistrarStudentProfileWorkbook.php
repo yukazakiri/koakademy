@@ -60,16 +60,69 @@ final class RegistrarStudentProfileWorkbook
         ['key' => 'birth_date', 'label' => 'Birth Date', 'group' => 'Identity', 'type' => 'date', 'read' => ['student.birth_date'], 'write' => ['student.birth_date']],
         ['key' => 'email', 'label' => 'Email', 'group' => 'Contact', 'type' => 'email', 'max' => 255, 'read' => ['student.email'], 'write' => ['student.email']],
         ['key' => 'phone', 'label' => 'Phone / Personal Contact', 'group' => 'Contact', 'type' => 'string', 'max' => 30, 'read' => ['contact.personal_contact', 'student.phone', 'contacts.personal_contact'], 'write' => ['student.phone', 'contact.personal_contact', 'contacts.personal_contact']],
-        ['key' => 'civil_status', 'label' => 'Civil Status', 'group' => 'Personal', 'type' => 'string', 'max' => 50, 'read' => ['student.civil_status', 'personal.civil_status'], 'write' => ['student.civil_status', 'personal.civil_status']],
-        ['key' => 'nationality', 'label' => 'Nationality / Citizenship', 'group' => 'Personal', 'type' => 'string', 'max' => 50, 'read' => ['student.nationality', 'personal.citizenship', 'contacts.personal_info.citizenship'], 'write' => ['student.nationality', 'personal.citizenship', 'contacts.personal_info.citizenship']],
-        ['key' => 'religion', 'label' => 'Religion', 'group' => 'Personal', 'type' => 'string', 'max' => 50, 'read' => ['student.religion', 'personal.religion'], 'write' => ['student.religion', 'personal.religion']],
+        ['key' => 'civil_status', 'label' => 'Civil Status', 'group' => 'Personal', 'type' => 'choice', 'max' => 50, 'read' => ['student.civil_status', 'personal.civil_status'], 'write' => ['student.civil_status', 'personal.civil_status'], 'options' => [
+            'single' => 'Single',
+            'married' => 'Married',
+            'widowed' => 'Widowed',
+            'separated' => 'Separated',
+            'annulled' => 'Annulled',
+        ]],
+        ['key' => 'nationality', 'label' => 'Nationality / Citizenship', 'group' => 'Personal', 'type' => 'choice', 'max' => 50, 'read' => ['student.nationality', 'personal.citizenship', 'contacts.personal_info.citizenship'], 'write' => ['student.nationality', 'personal.citizenship', 'contacts.personal_info.citizenship'], 'options' => [
+            'Filipino' => 'Filipino',
+            'American' => 'American',
+            'Australian' => 'Australian',
+            'British' => 'British',
+            'Canadian' => 'Canadian',
+            'Chinese' => 'Chinese',
+            'Indian' => 'Indian',
+            'Indonesian' => 'Indonesian',
+            'Japanese' => 'Japanese',
+            'Korean' => 'Korean',
+            'Malaysian' => 'Malaysian',
+            'Singaporean' => 'Singaporean',
+            'Thai' => 'Thai',
+            'Vietnamese' => 'Vietnamese',
+            'Other' => 'Other',
+        ]],
+        ['key' => 'religion', 'label' => 'Religion', 'group' => 'Personal', 'type' => 'choice', 'max' => 50, 'read' => ['student.religion', 'personal.religion'], 'write' => ['student.religion', 'personal.religion'], 'options' => [
+            'Roman Catholic' => 'Roman Catholic',
+            'Islam' => 'Islam',
+            'Iglesia ni Cristo' => 'Iglesia ni Cristo',
+            'Born Again Christian' => 'Born Again Christian',
+            'Seventh-day Adventist' => 'Seventh-day Adventist',
+            'Protestant' => 'Protestant',
+            'Evangelical Christian' => 'Evangelical Christian',
+            'Buddhist' => 'Buddhist',
+            'Hindu' => 'Hindu',
+            'None' => 'None',
+            'Prefer not to say' => 'Prefer not to say',
+            'Other' => 'Other',
+        ]],
         ['key' => 'current_address', 'label' => 'Current Address', 'group' => 'Address', 'type' => 'string', 'max' => 500, 'read' => ['personal.current_adress', 'student.address', 'contacts.personal_info.current_address'], 'write' => ['student.address', 'personal.current_adress', 'contacts.personal_info.current_address']],
         ['key' => 'permanent_address', 'label' => 'Permanent Address', 'group' => 'Address', 'type' => 'string', 'max' => 500, 'read' => ['personal.permanent_address', 'contacts.personal_info.permanent_address'], 'write' => ['personal.permanent_address', 'contacts.personal_info.permanent_address']],
         ['key' => 'birthplace', 'label' => 'Birthplace', 'group' => 'Personal', 'type' => 'string', 'max' => 255, 'read' => ['personal.birthplace', 'personal.place_of_birth', 'contacts.personal_info.birthplace'], 'write' => ['personal.birthplace', 'personal.place_of_birth', 'contacts.personal_info.birthplace']],
         ['key' => 'weight', 'label' => 'Weight', 'group' => 'Personal', 'type' => 'number', 'read' => ['personal.weight', 'contacts.personal_info.weight'], 'write' => ['personal.weight', 'contacts.personal_info.weight']],
         ['key' => 'height', 'label' => 'Height', 'group' => 'Personal', 'type' => 'number', 'read' => ['personal.height', 'contacts.personal_info.height'], 'write' => ['personal.height', 'contacts.personal_info.height']],
         ['key' => 'ethnicity', 'label' => 'Ethnicity', 'group' => 'Origin and Equity', 'type' => 'string', 'max' => 100, 'read' => ['student.ethnicity'], 'write' => ['student.ethnicity']],
-        ['key' => 'region_of_origin', 'label' => 'Region of Origin', 'group' => 'Origin and Equity', 'type' => 'string', 'max' => 100, 'read' => ['student.region_of_origin'], 'write' => ['student.region_of_origin']],
+        ['key' => 'region_of_origin', 'label' => 'Region of Origin', 'group' => 'Origin and Equity', 'type' => 'choice', 'max' => 100, 'read' => ['student.region_of_origin'], 'write' => ['student.region_of_origin'], 'options' => [
+            'NCR' => 'NCR',
+            'CAR' => 'CAR',
+            'Region I' => 'Region I',
+            'Region II' => 'Region II',
+            'Region III' => 'Region III',
+            'Region IV-A' => 'Region IV-A',
+            'Region IV-B' => 'Region IV-B',
+            'Region V' => 'Region V',
+            'Region VI' => 'Region VI',
+            'Region VII' => 'Region VII',
+            'Region VIII' => 'Region VIII',
+            'Region IX' => 'Region IX',
+            'Region X' => 'Region X',
+            'Region XI' => 'Region XI',
+            'Region XII' => 'Region XII',
+            'Region XIII' => 'Region XIII',
+            'BARMM' => 'BARMM',
+        ]],
         ['key' => 'province_of_origin', 'label' => 'Province of Origin', 'group' => 'Origin and Equity', 'type' => 'string', 'max' => 100, 'read' => ['student.province_of_origin'], 'write' => ['student.province_of_origin']],
         ['key' => 'city_of_origin', 'label' => 'City / Municipality of Origin', 'group' => 'Origin and Equity', 'type' => 'string', 'max' => 100, 'read' => ['student.city_of_origin'], 'write' => ['student.city_of_origin']],
         ['key' => 'is_indigenous_person', 'label' => 'Indigenous Person', 'group' => 'Origin and Equity', 'type' => 'boolean', 'read' => ['student.is_indigenous_person'], 'write' => ['student.is_indigenous_person']],
@@ -98,7 +151,18 @@ final class RegistrarStudentProfileWorkbook
         ['key' => 'emergency_contact_name', 'label' => 'Emergency Contact Name', 'group' => 'Emergency Contact', 'type' => 'string', 'max' => 100, 'read' => ['contact.emergency_contact_name', 'student.emergency_contact', 'contacts.emergency_contact_name'], 'write' => ['student.emergency_contact', 'contact.emergency_contact_name', 'contacts.emergency_contact_name']],
         ['key' => 'emergency_contact_phone', 'label' => 'Emergency Contact Phone', 'group' => 'Emergency Contact', 'type' => 'string', 'max' => 30, 'read' => ['contact.emergency_contact_phone', 'contacts.emergency_contact_phone'], 'write' => ['contact.emergency_contact_phone', 'contacts.emergency_contact_phone']],
         ['key' => 'emergency_contact_address', 'label' => 'Emergency Contact Address', 'group' => 'Emergency Contact', 'type' => 'string', 'max' => 500, 'read' => ['contact.emergency_contact_address', 'contacts.emergency_contact_address'], 'write' => ['contact.emergency_contact_address', 'contacts.emergency_contact_address']],
-        ['key' => 'emergency_contact_relationship', 'label' => 'Emergency Contact Relationship', 'group' => 'Emergency Contact', 'type' => 'string', 'max' => 100, 'read' => ['contact.emergency_contact_relationship', 'contacts.emergency_contact_relationship'], 'write' => ['contact.emergency_contact_relationship', 'contacts.emergency_contact_relationship']],
+        ['key' => 'emergency_contact_relationship', 'label' => 'Emergency Contact Relationship', 'group' => 'Emergency Contact', 'type' => 'choice', 'max' => 100, 'read' => ['contact.emergency_contact_relationship', 'contacts.emergency_contact_relationship'], 'write' => ['contact.emergency_contact_relationship', 'contacts.emergency_contact_relationship'], 'options' => [
+            'Mother' => 'Mother',
+            'Father' => 'Father',
+            'Sibling' => 'Sibling',
+            'Spouse' => 'Spouse',
+            'Grandparent' => 'Grandparent',
+            'Aunt' => 'Aunt',
+            'Uncle' => 'Uncle',
+            'Cousin' => 'Cousin',
+            'Legal Guardian' => 'Legal Guardian',
+            'Other' => 'Other',
+        ]],
         ['key' => 'facebook_contact', 'label' => 'Facebook', 'group' => 'Contact', 'type' => 'string', 'max' => 255, 'read' => ['contact.facebook_contact', 'contact.facebook', 'contacts.facebook'], 'write' => ['contact.facebook_contact', 'contact.facebook', 'contacts.facebook']],
         ['key' => 'twitter', 'label' => 'X / Twitter', 'group' => 'Contact', 'type' => 'string', 'max' => 255, 'read' => ['contact.twitter', 'contacts.twitter'], 'write' => ['contact.twitter', 'contacts.twitter']],
         ['key' => 'instagram', 'label' => 'Instagram', 'group' => 'Contact', 'type' => 'string', 'max' => 255, 'read' => ['contact.instagram', 'contacts.instagram'], 'write' => ['contact.instagram', 'contacts.instagram']],
@@ -112,7 +176,18 @@ final class RegistrarStudentProfileWorkbook
         ['key' => 'mother_contact', 'label' => "Mother's Contact", 'group' => 'Parent and Guardian', 'type' => 'string', 'max' => 30, 'read' => ['parent.mother_contact', 'contacts.parents.mother_contact'], 'write' => ['parent.mother_contact', 'contacts.parents.mother_contact']],
         ['key' => 'mother_email', 'label' => "Mother's Email", 'group' => 'Parent and Guardian', 'type' => 'email', 'max' => 255, 'read' => ['parent.mother_email', 'contacts.parents.mother_email'], 'write' => ['parent.mother_email', 'contacts.parents.mother_email']],
         ['key' => 'guardian_name', 'label' => 'Guardian Name', 'group' => 'Parent and Guardian', 'type' => 'string', 'max' => 100, 'read' => ['parent.guardian_name', 'contacts.parents.guardian_name'], 'write' => ['parent.guardian_name', 'contacts.parents.guardian_name']],
-        ['key' => 'guardian_relationship', 'label' => 'Guardian Relationship', 'group' => 'Parent and Guardian', 'type' => 'string', 'max' => 100, 'read' => ['parent.guardian_relationship', 'contacts.parents.guardian_relationship'], 'write' => ['parent.guardian_relationship', 'contacts.parents.guardian_relationship']],
+        ['key' => 'guardian_relationship', 'label' => 'Guardian Relationship', 'group' => 'Parent and Guardian', 'type' => 'choice', 'max' => 100, 'read' => ['parent.guardian_relationship', 'contacts.parents.guardian_relationship'], 'write' => ['parent.guardian_relationship', 'contacts.parents.guardian_relationship'], 'options' => [
+            'Mother' => 'Mother',
+            'Father' => 'Father',
+            'Sibling' => 'Sibling',
+            'Spouse' => 'Spouse',
+            'Grandparent' => 'Grandparent',
+            'Aunt' => 'Aunt',
+            'Uncle' => 'Uncle',
+            'Cousin' => 'Cousin',
+            'Legal Guardian' => 'Legal Guardian',
+            'Other' => 'Other',
+        ]],
         ['key' => 'guardian_contact', 'label' => 'Guardian Contact', 'group' => 'Parent and Guardian', 'type' => 'string', 'max' => 30, 'read' => ['parent.guardian_contact', 'contacts.parents.guardian_contact'], 'write' => ['parent.guardian_contact', 'contacts.parents.guardian_contact']],
         ['key' => 'guardian_email', 'label' => 'Guardian Email', 'group' => 'Parent and Guardian', 'type' => 'email', 'max' => 255, 'read' => ['parent.guardian_email', 'contacts.parents.guardian_email'], 'write' => ['parent.guardian_email', 'contacts.parents.guardian_email']],
         ['key' => 'family_address', 'label' => 'Family Address', 'group' => 'Parent and Guardian', 'type' => 'string', 'max' => 500, 'read' => ['parent.family_address', 'contacts.parents.family_address'], 'write' => ['parent.family_address', 'contacts.parents.family_address']],
@@ -253,8 +328,17 @@ final class RegistrarStudentProfileWorkbook
             return filter_var($value, FILTER_VALIDATE_BOOL) ? 'Yes' : 'No';
         }
 
-        if (isset($field['options'][(string) $value])) {
-            return $field['options'][(string) $value];
+        if (isset($field['options'])) {
+            foreach ($field['options'] as $optionKey => $label) {
+                if (strcasecmp((string) $optionKey, (string) $value) === 0 || strcasecmp((string) $label, (string) $value) === 0) {
+                    return $label;
+                }
+            }
+
+            $alias = $this->choiceAlias($key, (string) $value);
+            if ($alias !== null) {
+                return $alias;
+            }
         }
 
         return (string) $value;
@@ -322,9 +406,14 @@ final class RegistrarStudentProfileWorkbook
         if ($field['type'] === 'choice') {
             $normalized = mb_strtolower($text);
             foreach ($field['options'] ?? [] as $optionValue => $label) {
-                if ($normalized === mb_strtolower($optionValue) || $normalized === mb_strtolower($label)) {
-                    return [$optionValue, null];
+                if ($normalized === mb_strtolower((string) $optionValue) || $normalized === mb_strtolower((string) $label)) {
+                    return [(string) $optionValue, null];
                 }
+            }
+
+            $alias = $this->choiceAlias($key, $text);
+            if ($alias !== null) {
+                return [$alias, null];
             }
 
             return [null, $field['label'].' contains an unsupported value.'];
@@ -441,6 +530,76 @@ final class RegistrarStudentProfileWorkbook
             'intake_category' => $row['intake_category'] ?? null,
             'year_level' => (int) ($row['year_level'] ?? 0),
         ];
+    }
+
+    private function choiceAlias(string $key, string $text): ?string
+    {
+        $normalized = mb_strtolower(mb_trim($text));
+
+        return match ($key) {
+            'region_of_origin' => match (true) {
+                str_contains($normalized, 'national capital region') => 'NCR',
+                str_contains($normalized, 'cordillera administrative region') => 'CAR',
+                str_contains($normalized, 'ilocos') => 'Region I',
+                str_contains($normalized, 'cagayan valley') => 'Region II',
+                str_contains($normalized, 'central luzon') => 'Region III',
+                str_contains($normalized, 'calabarzon') => 'Region IV-A',
+                str_contains($normalized, 'mimaropa') => 'Region IV-B',
+                str_contains($normalized, 'bicol') => 'Region V',
+                str_contains($normalized, 'western visayas') => 'Region VI',
+                str_contains($normalized, 'central visayas') => 'Region VII',
+                str_contains($normalized, 'eastern visayas') => 'Region VIII',
+                str_contains($normalized, 'zamboanga peninsula') => 'Region IX',
+                str_contains($normalized, 'northern mindanao') => 'Region X',
+                str_contains($normalized, 'davao') => 'Region XI',
+                str_contains($normalized, 'soccsksargen') => 'Region XII',
+                str_contains($normalized, 'caraga') => 'Region XIII',
+                str_contains($normalized, 'bangsamoro') => 'BARMM',
+                default => null,
+            },
+            'pwd_type' => match ($normalized) {
+                'visual' => 'Visual Disability',
+                'hearing' => 'Hearing Disability',
+                'speech', 'speech_and_language' => 'Speech and Language Impairment',
+                'physical', 'physical_orthopedic', 'orthopedic' => 'Physical / Orthopedic Disability',
+                'intellectual' => 'Intellectual Disability',
+                'learning' => 'Learning Disability',
+                'psychosocial', 'psychosocial_mental' => 'Psychosocial / Mental Health Disability',
+                'chronic', 'chronic_illness' => 'Disability Due to Chronic Illness',
+                'multiple' => 'Multiple Disabilities',
+                'other' => 'Other',
+                default => null,
+            },
+            'religion' => match ($normalized) {
+                'roman_catholic' => 'Roman Catholic',
+                'islam' => 'Islam',
+                'iglesia_ni_cristo' => 'Iglesia ni Cristo',
+                'born_again_christian' => 'Born Again Christian',
+                'seventh_day_adventist' => 'Seventh-day Adventist',
+                'protestant' => 'Protestant',
+                'evangelical_christian' => 'Evangelical Christian',
+                'buddhist' => 'Buddhist',
+                'hindu' => 'Hindu',
+                'none' => 'None',
+                'prefer_not_to_say' => 'Prefer not to say',
+                'other' => 'Other',
+                default => null,
+            },
+            'emergency_contact_relationship', 'guardian_relationship' => match ($normalized) {
+                'mother' => 'Mother',
+                'father' => 'Father',
+                'sibling' => 'Sibling',
+                'spouse' => 'Spouse',
+                'grandparent' => 'Grandparent',
+                'aunt' => 'Aunt',
+                'uncle' => 'Uncle',
+                'cousin' => 'Cousin',
+                'legal_guardian', 'guardian' => 'Legal Guardian',
+                'other' => 'Other',
+                default => null,
+            },
+            default => null,
+        };
     }
 
     /** @param array<string, mixed> $field */

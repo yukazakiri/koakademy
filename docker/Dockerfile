@@ -82,6 +82,9 @@ COPY --from=wayfinder /app/resources/js/actions ./resources/js/actions
 COPY --from=wayfinder /app/resources/js/routes ./resources/js/routes
 COPY --from=wayfinder /app/resources/js/wayfinder ./resources/js/wayfinder
 RUN WAYFINDER_GENERATE=false npm run build
+# SSR runs in the production container, so retain only its runtime dependency
+# tree after the asset build has completed.
+RUN npm prune --omit=dev
 
 # -----------------------------------------------------------------------------
 # Stage 4: Final Runtime Image
@@ -219,9 +222,13 @@ RUN groupadd --force -g ${GROUP_ID} ${USER} \
 
 # Copy application code from build stages
 COPY --chown=${USER}:${USER} --from=vendor /app/vendor ./vendor
+COPY --chown=${USER}:${USER} --from=build-assets /app/node_modules ./node_modules
 COPY --chown=${USER}:${USER} --from=build-assets /app/public/build ./public/build
 COPY --chown=${USER}:${USER} . .
 COPY --chown=${USER}:${USER} --from=build-assets /app/bootstrap/ssr ./bootstrap/ssr
+
+RUN test -f node_modules/@inertiajs/react/package.json \
+    && node --input-type=module -e "import('@inertiajs/react').then(() => process.exit(0))"
 
 # R2 uses Laravel's S3 filesystem driver. Keep its adapter in the production
 # image so storage-backed branding and uploads cannot turn page rendering into

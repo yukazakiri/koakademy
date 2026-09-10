@@ -40,6 +40,8 @@ interface ComboboxProps {
   createLabel?: string
 }
 
+const CREATE_ITEM_VALUE = "__cmdk_create_item_option__"
+
 export function Combobox({
   options,
   value,
@@ -73,7 +75,7 @@ export function Combobox({
 
   // Custom filter function for cmdk
   const filterFunction = React.useCallback((value: string, search: string) => {
-    if (value.startsWith("create-")) {
+    if (value === CREATE_ITEM_VALUE) {
       return 1
     }
 
@@ -126,7 +128,7 @@ export function Combobox({
               <CommandGroup className="max-h-64 overflow-auto">
                 {canCreate && (
                   <CommandItem
-                    value={`create-${normalizedSearch}`}
+                    value={CREATE_ITEM_VALUE}
                     onSelect={() => handleSelect(normalizedSearch)}
                     className="flex items-center gap-2"
                   >

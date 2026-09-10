@@ -67,35 +67,35 @@ final class RegistrarStudentProfileWorkbook
             'annulled' => 'Annulled',
         ]],
         ['key' => 'nationality', 'label' => 'Nationality / Citizenship', 'group' => 'Personal', 'type' => 'choice', 'max' => 50, 'read' => ['student.nationality', 'personal.citizenship', 'contacts.personal_info.citizenship'], 'write' => ['student.nationality', 'personal.citizenship', 'contacts.personal_info.citizenship'], 'options' => [
-            'filipino' => 'Filipino',
-            'american' => 'American',
-            'australian' => 'Australian',
-            'british' => 'British',
-            'canadian' => 'Canadian',
-            'chinese' => 'Chinese',
-            'indian' => 'Indian',
-            'indonesian' => 'Indonesian',
-            'japanese' => 'Japanese',
-            'korean' => 'Korean',
-            'malaysian' => 'Malaysian',
-            'singaporean' => 'Singaporean',
-            'thai' => 'Thai',
-            'vietnamese' => 'Vietnamese',
-            'other' => 'Other',
+            'Filipino' => 'Filipino',
+            'American' => 'American',
+            'Australian' => 'Australian',
+            'British' => 'British',
+            'Canadian' => 'Canadian',
+            'Chinese' => 'Chinese',
+            'Indian' => 'Indian',
+            'Indonesian' => 'Indonesian',
+            'Japanese' => 'Japanese',
+            'Korean' => 'Korean',
+            'Malaysian' => 'Malaysian',
+            'Singaporean' => 'Singaporean',
+            'Thai' => 'Thai',
+            'Vietnamese' => 'Vietnamese',
+            'Other' => 'Other',
         ]],
         ['key' => 'religion', 'label' => 'Religion', 'group' => 'Personal', 'type' => 'choice', 'max' => 50, 'read' => ['student.religion', 'personal.religion'], 'write' => ['student.religion', 'personal.religion'], 'options' => [
-            'roman_catholic' => 'Roman Catholic',
-            'islam' => 'Islam',
-            'iglesia_ni_cristo' => 'Iglesia ni Cristo',
-            'born_again_christian' => 'Born Again Christian',
-            'seventh_day_adventist' => 'Seventh-day Adventist',
-            'protestant' => 'Protestant',
-            'evangelical_christian' => 'Evangelical Christian',
-            'buddhist' => 'Buddhist',
-            'hindu' => 'Hindu',
-            'none' => 'None',
-            'prefer_not_to_say' => 'Prefer not to say',
-            'other' => 'Other',
+            'Roman Catholic' => 'Roman Catholic',
+            'Islam' => 'Islam',
+            'Iglesia ni Cristo' => 'Iglesia ni Cristo',
+            'Born Again Christian' => 'Born Again Christian',
+            'Seventh-day Adventist' => 'Seventh-day Adventist',
+            'Protestant' => 'Protestant',
+            'Evangelical Christian' => 'Evangelical Christian',
+            'Buddhist' => 'Buddhist',
+            'Hindu' => 'Hindu',
+            'None' => 'None',
+            'Prefer not to say' => 'Prefer not to say',
+            'Other' => 'Other',
         ]],
         ['key' => 'current_address', 'label' => 'Current Address', 'group' => 'Address', 'type' => 'string', 'max' => 500, 'read' => ['personal.current_adress', 'student.address', 'contacts.personal_info.current_address'], 'write' => ['student.address', 'personal.current_adress', 'contacts.personal_info.current_address']],
         ['key' => 'permanent_address', 'label' => 'Permanent Address', 'group' => 'Address', 'type' => 'string', 'max' => 500, 'read' => ['personal.permanent_address', 'contacts.personal_info.permanent_address'], 'write' => ['personal.permanent_address', 'contacts.personal_info.permanent_address']],
@@ -104,23 +104,23 @@ final class RegistrarStudentProfileWorkbook
         ['key' => 'height', 'label' => 'Height', 'group' => 'Personal', 'type' => 'number', 'read' => ['personal.height', 'contacts.personal_info.height'], 'write' => ['personal.height', 'contacts.personal_info.height']],
         ['key' => 'ethnicity', 'label' => 'Ethnicity', 'group' => 'Origin and Equity', 'type' => 'string', 'max' => 100, 'read' => ['student.ethnicity'], 'write' => ['student.ethnicity']],
         ['key' => 'region_of_origin', 'label' => 'Region of Origin', 'group' => 'Origin and Equity', 'type' => 'choice', 'max' => 100, 'read' => ['student.region_of_origin'], 'write' => ['student.region_of_origin'], 'options' => [
-            'NCR' => 'National Capital Region (NCR)',
-            'CAR' => 'Cordillera Administrative Region (CAR)',
-            'Region I' => 'Region I - Ilocos Region',
-            'Region II' => 'Region II - Cagayan Valley',
-            'Region III' => 'Region III - Central Luzon',
-            'Region IV-A' => 'Region IV-A - CALABARZON',
-            'Region IV-B' => 'Region IV-B - MIMAROPA',
-            'Region V' => 'Region V - Bicol Region',
-            'Region VI' => 'Region VI - Western Visayas',
-            'Region VII' => 'Region VII - Central Visayas',
-            'Region VIII' => 'Region VIII - Eastern Visayas',
-            'Region IX' => 'Region IX - Zamboanga Peninsula',
-            'Region X' => 'Region X - Northern Mindanao',
-            'Region XI' => 'Region XI - Davao Region',
-            'Region XII' => 'Region XII - SOCCSKSARGEN',
-            'Region XIII' => 'Region XIII - Caraga',
-            'BARMM' => 'Bangsamoro Autonomous Region in Muslim Mindanao (BARMM)',
+            'NCR' => 'NCR',
+            'CAR' => 'CAR',
+            'Region I' => 'Region I',
+            'Region II' => 'Region II',
+            'Region III' => 'Region III',
+            'Region IV-A' => 'Region IV-A',
+            'Region IV-B' => 'Region IV-B',
+            'Region V' => 'Region V',
+            'Region VI' => 'Region VI',
+            'Region VII' => 'Region VII',
+            'Region VIII' => 'Region VIII',
+            'Region IX' => 'Region IX',
+            'Region X' => 'Region X',
+            'Region XI' => 'Region XI',
+            'Region XII' => 'Region XII',
+            'Region XIII' => 'Region XIII',
+            'BARMM' => 'BARMM',
         ]],
         ['key' => 'province_of_origin', 'label' => 'Province of Origin', 'group' => 'Origin and Equity', 'type' => 'string', 'max' => 100, 'read' => ['student.province_of_origin'], 'write' => ['student.province_of_origin']],
         ['key' => 'city_of_origin', 'label' => 'City / Municipality of Origin', 'group' => 'Origin and Equity', 'type' => 'string', 'max' => 100, 'read' => ['student.city_of_origin'], 'write' => ['student.city_of_origin']],
@@ -128,16 +128,16 @@ final class RegistrarStudentProfileWorkbook
         ['key' => 'indigenous_group', 'label' => 'Indigenous Group', 'group' => 'Origin and Equity', 'type' => 'string', 'max' => 100, 'read' => ['student.indigenous_group'], 'write' => ['student.indigenous_group']],
         ['key' => 'is_pwd', 'label' => 'Person with Disability', 'group' => 'Origin and Equity', 'type' => 'boolean', 'read' => ['student.is_pwd'], 'write' => ['student.is_pwd']],
         ['key' => 'pwd_type', 'label' => 'Disability Type', 'group' => 'Origin and Equity', 'type' => 'choice', 'max' => 100, 'read' => ['student.pwd_type'], 'write' => ['student.pwd_type'], 'options' => [
-            'visual' => 'Visual Disability',
-            'hearing' => 'Hearing Disability',
-            'speech_and_language' => 'Speech and Language Impairment',
-            'physical_orthopedic' => 'Physical / Orthopedic Disability',
-            'intellectual' => 'Intellectual Disability',
-            'learning' => 'Learning Disability',
-            'psychosocial_mental' => 'Psychosocial / Mental Health Disability',
-            'chronic_illness' => 'Disability Due to Chronic Illness',
-            'multiple' => 'Multiple Disabilities',
-            'other' => 'Other',
+            'Visual Disability' => 'Visual Disability',
+            'Hearing Disability' => 'Hearing Disability',
+            'Speech and Language Impairment' => 'Speech and Language Impairment',
+            'Physical / Orthopedic Disability' => 'Physical / Orthopedic Disability',
+            'Intellectual Disability' => 'Intellectual Disability',
+            'Learning Disability' => 'Learning Disability',
+            'Psychosocial / Mental Health Disability' => 'Psychosocial / Mental Health Disability',
+            'Disability Due to Chronic Illness' => 'Disability Due to Chronic Illness',
+            'Multiple Disabilities' => 'Multiple Disabilities',
+            'Other' => 'Other',
         ]],
         ['key' => 'is_solo_parent', 'label' => 'Solo Parent', 'group' => 'Origin and Equity', 'type' => 'boolean', 'read' => ['student.is_solo_parent'], 'write' => ['student.is_solo_parent']],
         ['key' => 'is_senior_citizen', 'label' => 'Senior Citizen', 'group' => 'Origin and Equity', 'type' => 'boolean', 'read' => ['student.is_senior_citizen'], 'write' => ['student.is_senior_citizen']],
@@ -151,16 +151,16 @@ final class RegistrarStudentProfileWorkbook
         ['key' => 'emergency_contact_phone', 'label' => 'Emergency Contact Phone', 'group' => 'Emergency Contact', 'type' => 'string', 'max' => 30, 'read' => ['contact.emergency_contact_phone', 'contacts.emergency_contact_phone'], 'write' => ['contact.emergency_contact_phone', 'contacts.emergency_contact_phone']],
         ['key' => 'emergency_contact_address', 'label' => 'Emergency Contact Address', 'group' => 'Emergency Contact', 'type' => 'string', 'max' => 500, 'read' => ['contact.emergency_contact_address', 'contacts.emergency_contact_address'], 'write' => ['contact.emergency_contact_address', 'contacts.emergency_contact_address']],
         ['key' => 'emergency_contact_relationship', 'label' => 'Emergency Contact Relationship', 'group' => 'Emergency Contact', 'type' => 'choice', 'max' => 100, 'read' => ['contact.emergency_contact_relationship', 'contacts.emergency_contact_relationship'], 'write' => ['contact.emergency_contact_relationship', 'contacts.emergency_contact_relationship'], 'options' => [
-            'mother' => 'Mother',
-            'father' => 'Father',
-            'sibling' => 'Sibling',
-            'spouse' => 'Spouse',
-            'grandparent' => 'Grandparent',
-            'aunt' => 'Aunt',
-            'uncle' => 'Uncle',
-            'cousin' => 'Cousin',
-            'legal_guardian' => 'Legal Guardian',
-            'other' => 'Other',
+            'Mother' => 'Mother',
+            'Father' => 'Father',
+            'Sibling' => 'Sibling',
+            'Spouse' => 'Spouse',
+            'Grandparent' => 'Grandparent',
+            'Aunt' => 'Aunt',
+            'Uncle' => 'Uncle',
+            'Cousin' => 'Cousin',
+            'Legal Guardian' => 'Legal Guardian',
+            'Other' => 'Other',
         ]],
         ['key' => 'facebook_contact', 'label' => 'Facebook', 'group' => 'Contact', 'type' => 'string', 'max' => 255, 'read' => ['contact.facebook_contact', 'contact.facebook', 'contacts.facebook'], 'write' => ['contact.facebook_contact', 'contact.facebook', 'contacts.facebook']],
         ['key' => 'twitter', 'label' => 'X / Twitter', 'group' => 'Contact', 'type' => 'string', 'max' => 255, 'read' => ['contact.twitter', 'contacts.twitter'], 'write' => ['contact.twitter', 'contacts.twitter']],
@@ -176,16 +176,16 @@ final class RegistrarStudentProfileWorkbook
         ['key' => 'mother_email', 'label' => "Mother's Email", 'group' => 'Parent and Guardian', 'type' => 'email', 'max' => 255, 'read' => ['parent.mother_email', 'contacts.parents.mother_email'], 'write' => ['parent.mother_email', 'contacts.parents.mother_email']],
         ['key' => 'guardian_name', 'label' => 'Guardian Name', 'group' => 'Parent and Guardian', 'type' => 'string', 'max' => 100, 'read' => ['parent.guardian_name', 'contacts.parents.guardian_name'], 'write' => ['parent.guardian_name', 'contacts.parents.guardian_name']],
         ['key' => 'guardian_relationship', 'label' => 'Guardian Relationship', 'group' => 'Parent and Guardian', 'type' => 'choice', 'max' => 100, 'read' => ['parent.guardian_relationship', 'contacts.parents.guardian_relationship'], 'write' => ['parent.guardian_relationship', 'contacts.parents.guardian_relationship'], 'options' => [
-            'mother' => 'Mother',
-            'father' => 'Father',
-            'sibling' => 'Sibling',
-            'spouse' => 'Spouse',
-            'grandparent' => 'Grandparent',
-            'aunt' => 'Aunt',
-            'uncle' => 'Uncle',
-            'cousin' => 'Cousin',
-            'legal_guardian' => 'Legal Guardian',
-            'other' => 'Other',
+            'Mother' => 'Mother',
+            'Father' => 'Father',
+            'Sibling' => 'Sibling',
+            'Spouse' => 'Spouse',
+            'Grandparent' => 'Grandparent',
+            'Aunt' => 'Aunt',
+            'Uncle' => 'Uncle',
+            'Cousin' => 'Cousin',
+            'Legal Guardian' => 'Legal Guardian',
+            'Other' => 'Other',
         ]],
         ['key' => 'guardian_contact', 'label' => 'Guardian Contact', 'group' => 'Parent and Guardian', 'type' => 'string', 'max' => 30, 'read' => ['parent.guardian_contact', 'contacts.parents.guardian_contact'], 'write' => ['parent.guardian_contact', 'contacts.parents.guardian_contact']],
         ['key' => 'guardian_email', 'label' => 'Guardian Email', 'group' => 'Parent and Guardian', 'type' => 'email', 'max' => 255, 'read' => ['parent.guardian_email', 'contacts.parents.guardian_email'], 'write' => ['parent.guardian_email', 'contacts.parents.guardian_email']],
@@ -309,8 +309,17 @@ final class RegistrarStudentProfileWorkbook
             return filter_var($value, FILTER_VALIDATE_BOOL) ? 'Yes' : 'No';
         }
 
-        if (isset($field['options'][(string) $value])) {
-            return $field['options'][(string) $value];
+        if (isset($field['options'])) {
+            foreach ($field['options'] as $optionKey => $label) {
+                if (strcasecmp((string) $optionKey, (string) $value) === 0 || strcasecmp((string) $label, (string) $value) === 0) {
+                    return $label;
+                }
+            }
+
+            $alias = $this->choiceAlias($key, (string) $value);
+            if ($alias !== null) {
+                return $alias;
+            }
         }
 
         return (string) $value;
@@ -378,9 +387,14 @@ final class RegistrarStudentProfileWorkbook
         if ($field['type'] === 'choice') {
             $normalized = mb_strtolower($text);
             foreach ($field['options'] ?? [] as $optionValue => $label) {
-                if ($normalized === mb_strtolower($optionValue) || $normalized === mb_strtolower($label)) {
-                    return [$optionValue, null];
+                if ($normalized === mb_strtolower((string) $optionValue) || $normalized === mb_strtolower((string) $label)) {
+                    return [(string) $optionValue, null];
                 }
+            }
+
+            $alias = $this->choiceAlias($key, $text);
+            if ($alias !== null) {
+                return [$alias, null];
             }
 
             return [null, $field['label'].' contains an unsupported value.'];
@@ -391,6 +405,76 @@ final class RegistrarStudentProfileWorkbook
         }
 
         return [$text, null];
+    }
+
+    private function choiceAlias(string $key, string $text): ?string
+    {
+        $normalized = mb_strtolower(mb_trim($text));
+
+        return match ($key) {
+            'region_of_origin' => match (true) {
+                str_contains($normalized, 'national capital region') => 'NCR',
+                str_contains($normalized, 'cordillera administrative region') => 'CAR',
+                str_contains($normalized, 'ilocos') => 'Region I',
+                str_contains($normalized, 'cagayan valley') => 'Region II',
+                str_contains($normalized, 'central luzon') => 'Region III',
+                str_contains($normalized, 'calabarzon') => 'Region IV-A',
+                str_contains($normalized, 'mimaropa') => 'Region IV-B',
+                str_contains($normalized, 'bicol') => 'Region V',
+                str_contains($normalized, 'western visayas') => 'Region VI',
+                str_contains($normalized, 'central visayas') => 'Region VII',
+                str_contains($normalized, 'eastern visayas') => 'Region VIII',
+                str_contains($normalized, 'zamboanga peninsula') => 'Region IX',
+                str_contains($normalized, 'northern mindanao') => 'Region X',
+                str_contains($normalized, 'davao') => 'Region XI',
+                str_contains($normalized, 'soccsksargen') => 'Region XII',
+                str_contains($normalized, 'caraga') => 'Region XIII',
+                str_contains($normalized, 'bangsamoro') => 'BARMM',
+                default => null,
+            },
+            'pwd_type' => match ($normalized) {
+                'visual' => 'Visual Disability',
+                'hearing' => 'Hearing Disability',
+                'speech', 'speech_and_language' => 'Speech and Language Impairment',
+                'physical', 'physical_orthopedic', 'orthopedic' => 'Physical / Orthopedic Disability',
+                'intellectual' => 'Intellectual Disability',
+                'learning' => 'Learning Disability',
+                'psychosocial', 'psychosocial_mental' => 'Psychosocial / Mental Health Disability',
+                'chronic', 'chronic_illness' => 'Disability Due to Chronic Illness',
+                'multiple' => 'Multiple Disabilities',
+                'other' => 'Other',
+                default => null,
+            },
+            'religion' => match ($normalized) {
+                'roman_catholic' => 'Roman Catholic',
+                'islam' => 'Islam',
+                'iglesia_ni_cristo' => 'Iglesia ni Cristo',
+                'born_again_christian' => 'Born Again Christian',
+                'seventh_day_adventist' => 'Seventh-day Adventist',
+                'protestant' => 'Protestant',
+                'evangelical_christian' => 'Evangelical Christian',
+                'buddhist' => 'Buddhist',
+                'hindu' => 'Hindu',
+                'none' => 'None',
+                'prefer_not_to_say' => 'Prefer not to say',
+                'other' => 'Other',
+                default => null,
+            },
+            'emergency_contact_relationship', 'guardian_relationship' => match ($normalized) {
+                'mother' => 'Mother',
+                'father' => 'Father',
+                'sibling' => 'Sibling',
+                'spouse' => 'Spouse',
+                'grandparent' => 'Grandparent',
+                'aunt' => 'Aunt',
+                'uncle' => 'Uncle',
+                'cousin' => 'Cousin',
+                'legal_guardian', 'guardian' => 'Legal Guardian',
+                'other' => 'Other',
+                default => null,
+            },
+            default => null,
+        };
     }
 
     /** @return array{0: string|null, 1: string|null} */

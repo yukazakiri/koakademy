@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "491f9803de044606037722fa1745dbdd",
+    "content-hash": "cd503f6bea2d3253784dca330c4a68ea",
     "packages": [
         {
             "name": "achyutn/filament-log-viewer",
@@ -5504,16 +5504,16 @@
         },
         {
             "name": "koakademy/forms",
-            "version": "v1.7.0",
+            "version": "v1.8.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/yukazakiri/koakademy-module-forms.git",
-                "reference": "56046511fa742ed8d4029be02462b4f12e126594"
+                "reference": "c458bdeb983e2889ecdfc95339a7e16e0efcd824"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/yukazakiri/koakademy-module-forms/zipball/56046511fa742ed8d4029be02462b4f12e126594",
-                "reference": "56046511fa742ed8d4029be02462b4f12e126594",
+                "url": "https://api.github.com/repos/yukazakiri/koakademy-module-forms/zipball/c458bdeb983e2889ecdfc95339a7e16e0efcd824",
+                "reference": "c458bdeb983e2889ecdfc95339a7e16e0efcd824",
                 "shasum": ""
             },
             "require": {
@@ -5557,9 +5557,9 @@
             "description": "Configurable online forms, surveys, evaluations, and record-linked submissions for KoAkademy.",
             "support": {
                 "issues": "https://github.com/yukazakiri/koakademy-module-forms/issues",
-                "source": "https://github.com/yukazakiri/koakademy-module-forms/tree/v1.7.0"
+                "source": "https://github.com/yukazakiri/koakademy-module-forms/tree/v1.8.0"
             },
-            "time": "2026-09-12T11:44:32+00:00"
+            "time": "2026-09-12T18:27:27+00:00"
         },
         {
             "name": "laminas/laminas-diactoros",

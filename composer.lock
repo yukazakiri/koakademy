@@ -477,7 +477,7 @@
         },
         {
             "name": "backstage/laravel-mails",
-            "version": "v5.2.5",
+            "version": "v5.2.6",
             "source": {
                 "type": "git",
                 "url": "https://github.com/backstagephp/laravel-mails.git",
@@ -556,7 +556,7 @@
             ],
             "support": {
                 "issues": "https://github.com/backstagephp/laravel-mails/issues",
-                "source": "https://github.com/backstagephp/laravel-mails/tree/v5.2.5"
+                "source": "https://github.com/backstagephp/laravel-mails/tree/v5.2.6"
             },
             "funding": [
                 {
@@ -568,16 +568,16 @@
         },
         {
             "name": "backstage/mails",
-            "version": "v5.2.5",
+            "version": "v5.2.6",
             "source": {
                 "type": "git",
                 "url": "https://github.com/backstagephp/mails.git",
-                "reference": "7798c4f67c3b74ba7a443c1668ef5d2c57f00e99"
+                "reference": "ddd51dda77ac4c21fd6af4ce8e7dd202690ef255"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/backstagephp/mails/zipball/7798c4f67c3b74ba7a443c1668ef5d2c57f00e99",
-                "reference": "7798c4f67c3b74ba7a443c1668ef5d2c57f00e99",
+                "url": "https://api.github.com/repos/backstagephp/mails/zipball/ddd51dda77ac4c21fd6af4ce8e7dd202690ef255",
+                "reference": "ddd51dda77ac4c21fd6af4ce8e7dd202690ef255",
                 "shasum": ""
             },
             "require": {
@@ -646,7 +646,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-08-25T06:53:39+00:00"
+            "time": "2026-09-08T09:52:12+00:00"
         },
         {
             "name": "bacon/bacon-qr-code",

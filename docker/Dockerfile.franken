@@ -181,9 +181,10 @@ COPY --link docker/supervisord.nightwatch.conf /etc/supervisor/conf.d/
 COPY --link docker/start-container /usr/local/bin/start-container
 COPY --link docker/healthcheck /usr/local/bin/healthcheck
 COPY --link docker/pulse-process /usr/local/bin/pulse-process
+COPY --link docker/nightwatch-process /usr/local/bin/nightwatch-process
 COPY --link docker/run-scripts.sh /usr/local/bin/run-scripts.sh
 COPY --link docker/docker-scripts /var/www/html/docker-scripts
-RUN chmod +x /usr/local/bin/start-container /usr/local/bin/healthcheck /usr/local/bin/pulse-process /usr/local/bin/run-scripts.sh && \
+RUN chmod +x /usr/local/bin/start-container /usr/local/bin/healthcheck /usr/local/bin/pulse-process /usr/local/bin/nightwatch-process /usr/local/bin/run-scripts.sh && \
     chmod +x /var/www/html/docker-scripts/*.sh 2>/dev/null || true
 
 # Create user and directories

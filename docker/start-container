@@ -28,6 +28,9 @@ normalize_environment_value() {
 normalize_environment_value APP_ENV "${APP_ENV:-production}"
 normalize_environment_value APP_DEBUG "${APP_DEBUG:-false}"
 
+export OCTANE_WORKERS="$(strip_optional_quotes "${OCTANE_WORKERS:-2}")"
+export OCTANE_MAX_REQUESTS="$(strip_optional_quotes "${OCTANE_MAX_REQUESTS:-500}")"
+
 if [ -n "${DEBUGBAR_ENABLED+x}" ]; then
     normalize_environment_value DEBUGBAR_ENABLED "${DEBUGBAR_ENABLED}"
 fi
@@ -36,9 +39,9 @@ for variable_name in DB_CONNECTION DB_HOST DB_PORT DB_DATABASE DB_USERNAME DB_PA
     CACHE_STORE SESSION_DRIVER \
     QUEUE_CONNECTION HORIZON_ENABLED REDIS_HOST REDIS_PORT REDIS_PASSWORD \
     RUN_DOCKER_SCRIPTS RUN_SCOUT_SETTINGS RUN_OPTIMIZE FORCE_OPTIMIZE_CLEAR \
-    SCOUT_AUTO_DETECT RUN_SCOUT_INDEX PULSE_ENABLED PULSE_STORAGE_DRIVER \
+    SCOUT_AUTO_DETECT RUN_SCOUT_INDEX PULSE_ENABLED PULSE_INGEST_DRIVER PULSE_STORAGE_DRIVER \
     PULSE_RUN_MIGRATIONS PULSE_AUTO_CREATE_DATABASE PULSE_PURGE_ON_START \
-    TELESCOPE_ENABLED NIGHTWATCH_ENABLED LOG_LEVEL \
+    TELESCOPE_ENABLED NIGHTWATCH_ENABLED HORIZON_IN_HTTP_CONTAINER LOG_LEVEL \
     INERTIA_SSR_ENABLED INERTIA_SSR_RUNTIME INERTIA_SSR_URL \
     INERTIA_SSR_ENSURE_RUNTIME_EXISTS INERTIA_SSR_ENSURE_BUNDLE_EXISTS \
     INERTIA_SSR_THROW_ON_ERROR; do
@@ -68,13 +71,13 @@ app_env=$(printf '%s' "${APP_ENV:-production}" | tr '[:upper:]' '[:lower:]')
 database_connection=$(printf '%s' "${DB_CONNECTION:-}" | tr '[:upper:]' '[:lower:]')
 
 horizon_enabled=true
-export ASSESSMENT_EXPORT_PROCESSES="${ASSESSMENT_EXPORT_PROCESSES:-2}"
-export ASSESSMENT_EXPORT_EVENT_PROCESSES="${ASSESSMENT_EXPORT_EVENT_PROCESSES:-1}"
+export ASSESSMENT_EXPORT_PROCESSES="$(strip_optional_quotes "${ASSESSMENT_EXPORT_PROCESSES:-2}")"
+export ASSESSMENT_EXPORT_EVENT_PROCESSES="$(strip_optional_quotes "${ASSESSMENT_EXPORT_EVENT_PROCESSES:-1}")"
 export ASSESSMENT_EXPORT_CONNECTION="${ASSESSMENT_EXPORT_CONNECTION:-assessment-pdf}"
 export ASSESSMENT_EXPORT_QUEUE="${ASSESSMENT_EXPORT_QUEUE:-assessment-pdf}"
 export ASSESSMENT_EXPORT_EVENT_QUEUE="${ASSESSMENT_EXPORT_EVENT_QUEUE:-assessment-events}"
-export ASSESSMENT_EXPORT_WORKER_TIMEOUT="${ASSESSMENT_EXPORT_WORKER_TIMEOUT:-1900}"
-export ASSESSMENT_EXPORT_WORKER_MEMORY="${ASSESSMENT_EXPORT_WORKER_MEMORY:-2048}"
+export ASSESSMENT_EXPORT_WORKER_TIMEOUT="$(strip_optional_quotes "${ASSESSMENT_EXPORT_WORKER_TIMEOUT:-1900}")"
+export ASSESSMENT_EXPORT_WORKER_MEMORY="$(strip_optional_quotes "${ASSESSMENT_EXPORT_WORKER_MEMORY:-2048}")"
 
 # Schedule Scout settings sync after services are already running under
 # supervisord. Full Scout imports are intentionally never run from container
@@ -164,10 +167,6 @@ sync_module_statuses() {
         --no-interaction
 }
 
-is_primary_container() {
-    [ "${container_mode}" = "http" ]
-}
-
 is_truthy() {
     case "${1:-}" in
         true|1|yes|on)
@@ -208,6 +207,14 @@ resolve_horizon_enabled() {
     fi
 
     horizon_enabled=false
+}
+
+run_horizon_in_http_container() {
+    is_truthy "${HORIZON_IN_HTTP_CONTAINER:-true}"
+}
+
+is_http_container() {
+    [ "${container_mode}" = "http" ]
 }
 
 is_redis_required() {
@@ -845,7 +852,7 @@ bootstrap_container() {
     check_connections
     configure_scout_driver
 
-    if is_primary_container; then
+    if is_http_container; then
         run_primary_startup_tasks
     fi
 }
@@ -858,7 +865,7 @@ start_http_container() {
         # writable by the web server process before it starts.
         fix_storage_permissions
 
-        if [ "${horizon_enabled}" = "true" ]; then
+        if [ "${horizon_enabled}" = "true" ] && run_horizon_in_http_container; then
             exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.frankenphp.conf
         fi
 
@@ -871,7 +878,7 @@ start_http_container() {
     # writable by the web server process before it starts.
     fix_storage_permissions
 
-    if [ "${horizon_enabled}" = "true" ]; then
+    if [ "${horizon_enabled}" = "true" ] && run_horizon_in_http_container; then
         exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.web.conf
     fi
 
@@ -911,7 +918,7 @@ fi
 
 bootstrap_container
 
-if is_primary_container; then
+if is_http_container; then
     start_http_container
 fi
 

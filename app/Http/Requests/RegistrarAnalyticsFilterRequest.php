@@ -27,7 +27,7 @@ final class RegistrarAnalyticsFilterRequest extends FormRequest
             'department_id' => ['nullable', 'integer'],
             'course_id' => ['nullable', 'integer'],
             'academic_year' => ['nullable', 'integer', 'between:1,'.app(RegistrarReportingSettingsService::class)->maximumYearLevel()],
-            'gender' => ['nullable', 'string', Rule::in(['male', 'female', 'unspecified'])],
+            'gender' => ['nullable', 'string', Rule::in(['male', 'female', 'other', 'prefer_not_to_say', 'unspecified'])],
             'student_type' => ['nullable', Rule::enum(StudentType::class)],
             'intake_category' => ['nullable', Rule::in(['new_freshman', 'continuing_first_year', 'unclassified'])],
             'status' => ['nullable', 'string', 'max:100'],

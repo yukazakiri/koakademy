@@ -13,6 +13,7 @@ enum Gender: string implements HasColor, HasLabel
     case Male = 'male';
     case Female = 'female';
     case Other = 'other';
+    case PreferNotToSay = 'prefer_not_to_say';
 
     public static function random(): self
     {
@@ -25,6 +26,7 @@ enum Gender: string implements HasColor, HasLabel
             self::Male => 'Male',
             self::Female => 'Female',
             self::Other => 'Other',
+            self::PreferNotToSay => 'Prefer not to say',
         };
     }
 
@@ -33,7 +35,7 @@ enum Gender: string implements HasColor, HasLabel
         return match ($this) {
             self::Male => Color::Blue,
             self::Female => Color::Pink,
-            self::Other => Color::Gray,
+            self::Other, self::PreferNotToSay => Color::Gray,
         };
     }
 }

@@ -222,7 +222,7 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
             $sheetName = $this->resolveSheetName($course);
             $cId = (int) $course->id;
             $enr = $enrollmentCounts->get($cId, []);
-            $grad = $graduatesCounts->get($cId, ['male' => 0, 'female' => 0, 'total' => 0]);
+            $grad = $graduatesCounts->get($cId, ['male' => 0, 'female' => 0, 'other' => 0, 'prefer_not_to_say' => 0, 'total' => 0]);
 
             $subtotalMale = (int) ($enr['freshman_male'] ?? 0)
                 + (int) ($enr['continuing_first_year_male'] ?? 0)
@@ -357,13 +357,19 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
             'student_enrollment.course_id',
             "SUM(CASE WHEN student_enrollment.academic_year = 1 AND student_enrollment.intake_category = 'new_freshman' AND {$genderLower} = 'male' THEN 1 ELSE 0 END) as freshman_male",
             "SUM(CASE WHEN student_enrollment.academic_year = 1 AND student_enrollment.intake_category = 'new_freshman' AND {$genderLower} = 'female' THEN 1 ELSE 0 END) as freshman_female",
+            "SUM(CASE WHEN student_enrollment.academic_year = 1 AND student_enrollment.intake_category = 'new_freshman' AND {$genderLower} = 'other' THEN 1 ELSE 0 END) as freshman_other",
+            "SUM(CASE WHEN student_enrollment.academic_year = 1 AND student_enrollment.intake_category = 'new_freshman' AND {$genderLower} = 'prefer_not_to_say' THEN 1 ELSE 0 END) as freshman_prefer_not_to_say",
             "SUM(CASE WHEN student_enrollment.academic_year = 1 AND student_enrollment.intake_category = 'continuing_first_year' AND {$genderLower} = 'male' THEN 1 ELSE 0 END) as continuing_first_year_male",
             "SUM(CASE WHEN student_enrollment.academic_year = 1 AND student_enrollment.intake_category = 'continuing_first_year' AND {$genderLower} = 'female' THEN 1 ELSE 0 END) as continuing_first_year_female",
+            "SUM(CASE WHEN student_enrollment.academic_year = 1 AND student_enrollment.intake_category = 'continuing_first_year' AND {$genderLower} = 'other' THEN 1 ELSE 0 END) as continuing_first_year_other",
+            "SUM(CASE WHEN student_enrollment.academic_year = 1 AND student_enrollment.intake_category = 'continuing_first_year' AND {$genderLower} = 'prefer_not_to_say' THEN 1 ELSE 0 END) as continuing_first_year_prefer_not_to_say",
         ];
 
         foreach (range(2, 7) as $year) {
             $selects[] = "SUM(CASE WHEN student_enrollment.academic_year = {$year} AND {$genderLower} = 'male' THEN 1 ELSE 0 END) as year_{$year}_male";
             $selects[] = "SUM(CASE WHEN student_enrollment.academic_year = {$year} AND {$genderLower} = 'female' THEN 1 ELSE 0 END) as year_{$year}_female";
+            $selects[] = "SUM(CASE WHEN student_enrollment.academic_year = {$year} AND {$genderLower} = 'other' THEN 1 ELSE 0 END) as year_{$year}_other";
+            $selects[] = "SUM(CASE WHEN student_enrollment.academic_year = {$year} AND {$genderLower} = 'prefer_not_to_say' THEN 1 ELSE 0 END) as year_{$year}_prefer_not_to_say";
         }
 
         $results = $query->selectRaw(implode(', ', $selects))
@@ -376,7 +382,7 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
     }
 
     /**
-     * @return Collection<int, array{male: int, female: int, total: int}>
+     * @return Collection<int, array{male: int, female: int, other: int, prefer_not_to_say: int, total: int}>
      */
     private function queryGraduatesMatrix(string $schoolYear, ?int $semester, ?int $schoolId): Collection
     {
@@ -400,6 +406,8 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
             course_id,
             SUM(CASE WHEN {$genderLower} = 'male' THEN 1 ELSE 0 END) as male,
             SUM(CASE WHEN {$genderLower} = 'female' THEN 1 ELSE 0 END) as female,
+            SUM(CASE WHEN {$genderLower} = 'other' THEN 1 ELSE 0 END) as other,
+            SUM(CASE WHEN {$genderLower} = 'prefer_not_to_say' THEN 1 ELSE 0 END) as prefer_not_to_say,
             count(*) as total
         ")
             ->whereNotNull('course_id')
@@ -409,6 +417,8 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
         return $results->keyBy('course_id')->map(fn ($row) => [
             'male' => (int) $row->male,
             'female' => (int) $row->female,
+            'other' => (int) $row->other,
+            'prefer_not_to_say' => (int) $row->prefer_not_to_say,
             'total' => (int) $row->total,
         ]);
     }
@@ -416,7 +426,7 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
     /**
      * @param  Collection<int, Course>  $courses
      * @param  Collection<int, array<string, int>>  $enrollmentCounts
-     * @param  Collection<int, array{male: int, female: int, total: int}>  $graduatesCounts
+     * @param  Collection<int, array{male: int, female: int, other: int, prefer_not_to_say: int, total: int}>  $graduatesCounts
      */
     private function populateCurricularSheets(
         Spreadsheet $spreadsheet,

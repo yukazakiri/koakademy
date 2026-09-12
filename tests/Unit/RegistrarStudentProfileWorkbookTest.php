@@ -51,7 +51,9 @@ it('normalizes choice inputs while preserving display values for raw string prof
         ->and($workbook->normalizeInput('civil_status', 'single'))->toBe(['single', null])
         ->and($workbook->normalizeInput('region_of_origin', 'National Capital Region (NCR)'))->toBe(['NCR', null])
         ->and($workbook->normalizeInput('region_of_origin', 'NCR'))->toBe(['NCR', null])
-        ->and($workbook->normalizeInput('region_of_origin', 'ncr'))->toBe(['NCR', null]);
+        ->and($workbook->normalizeInput('region_of_origin', 'ncr'))->toBe(['NCR', null])
+        ->and($workbook->normalizeInput('gender', 'Prefer not to say'))->toBe(['prefer_not_to_say', null])
+        ->and($workbook->normalizeInput('gender', 'prefer_not_to_say'))->toBe(['prefer_not_to_say', null]);
 });
 
 it('formats display values case-insensitively for choice fields', function (): void {

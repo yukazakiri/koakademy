@@ -36,26 +36,37 @@ final readonly class RegistrarGenderYearLevelSheet implements FromArray, ShouldA
         foreach ($items as $item) {
             $year = (int) ($item['year_level'] ?? 0);
             $gender = mb_strtolower(mb_trim((string) ($item['gender'] ?? '')));
-            $label = $gender === 'male' ? 'Male' : ($gender === 'female' ? 'Female' : 'Unspecified');
+            $label = match ($gender) {
+                'male' => 'Male',
+                'female' => 'Female',
+                'other' => 'Other',
+                'prefer_not_to_say' => 'Prefer not to say',
+                default => 'Unspecified',
+            };
             $pivot[$year][$label] = ($pivot[$year][$label] ?? 0) + (int) ($item['count'] ?? 0);
         }
         ksort($pivot);
 
         $rows = [];
-        $grand = ['Male' => 0, 'Female' => 0, 'Unspecified' => 0, 'Total' => 0];
+        $grand = ['Male' => 0, 'Female' => 0, 'Other' => 0, 'Prefer not to say' => 0, 'Unspecified' => 0, 'Total' => 0];
         foreach ($pivot as $year => $data) {
             $male = (int) ($data['Male'] ?? 0);
             $female = (int) ($data['Female'] ?? 0);
+            $other = (int) ($data['Other'] ?? 0);
+            $preferNotToSay = (int) ($data['Prefer not to say'] ?? 0);
             $unspec = (int) ($data['Unspecified'] ?? 0);
-            $total = $male + $female + $unspec;
+            $total = $male + $female + $other + $preferNotToSay + $unspec;
             $rows[] = [
                 $year > 0 ? 'Year '.$year : 'Unclassified or Other Year Level',
                 $male, $female, $unspec, $total,
                 $total > 0 ? round(($male / $total) * 100, 1).'%' : '0%',
                 $total > 0 ? round(($female / $total) * 100, 1).'%' : '0%',
+                $other, $preferNotToSay,
             ];
             $grand['Male'] += $male;
             $grand['Female'] += $female;
+            $grand['Other'] += $other;
+            $grand['Prefer not to say'] += $preferNotToSay;
             $grand['Unspecified'] += $unspec;
             $grand['Total'] += $total;
         }
@@ -64,6 +75,7 @@ final readonly class RegistrarGenderYearLevelSheet implements FromArray, ShouldA
             $grand['Male'], $grand['Female'], $grand['Unspecified'], $grand['Total'],
             $grand['Total'] > 0 ? round(($grand['Male'] / $grand['Total']) * 100, 1).'%' : '0%',
             $grand['Total'] > 0 ? round(($grand['Female'] / $grand['Total']) * 100, 1).'%' : '0%',
+            $grand['Other'], $grand['Prefer not to say'],
         ];
 
         return $rows;
@@ -71,7 +83,7 @@ final readonly class RegistrarGenderYearLevelSheet implements FromArray, ShouldA
 
     public function headings(): array
     {
-        return ['Year Level', 'Male', 'Female', 'Unspecified', 'Total', 'Male Percentage', 'Female Percentage'];
+        return ['Year Level', 'Male', 'Female', 'Unspecified', 'Total', 'Male Percentage', 'Female Percentage', 'Other', 'Prefer not to say'];
     }
 
     public function styles(Worksheet $sheet): array
@@ -84,16 +96,16 @@ final readonly class RegistrarGenderYearLevelSheet implements FromArray, ShouldA
         return [AfterSheet::class => function (AfterSheet $event): void {
             $sheet = $event->sheet;
             $sheet->insertNewRowBefore(1, 2);
-            $sheet->mergeCells('A1:G1');
+            $sheet->mergeCells('A1:I1');
             $sheet->setCellValue('A1', 'GENDER BREAKDOWN BY YEAR LEVEL');
-            $sheet->mergeCells('A2:G2');
-            $sheet->setCellValue('A2', 'Male, female, and unspecified sex enrollment totals for each year level in the selected reporting population.');
+            $sheet->mergeCells('A2:I2');
+            $sheet->setCellValue('A2', 'Gender enrollment totals for each year level in the selected reporting population.');
             $sheet->getStyle('A1')->getFont()->setSize(14)->setBold(true);
             $sheet->getStyle('A1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
             $sheet->getStyle('A2')->getFont()->setSize(10)->setItalic(true);
             $sheet->getStyle('A2')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
             $lastRow = $sheet->getHighestRow();
-            $sheet->getStyle("A{$lastRow}:G{$lastRow}")->getFont()->setBold(true);
+            $sheet->getStyle("A{$lastRow}:I{$lastRow}")->getFont()->setBold(true);
             $this->applySheetStyle($event, 2, 3);
         }];
     }

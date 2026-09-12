@@ -181,7 +181,9 @@ final class AdministratorPortalData
                 count(case when student_type = 'dhrt' then 1 end) as type_dhrt,
                 count(case when gender = 'male' then 1 end) as gender_male,
                 count(case when gender = 'female' then 1 end) as gender_female,
-                count(case when gender not in ('male', 'female') or gender is null then 1 end) as gender_other,
+                count(case when gender = 'other' then 1 end) as gender_other,
+                count(case when gender = 'prefer_not_to_say' then 1 end) as gender_prefer_not_to_say,
+                count(case when gender not in ('male', 'female', 'other', 'prefer_not_to_say') or gender is null then 1 end) as gender_unspecified,
                 count(case when academic_year = 1 then 1 end) as year_1,
                 count(case when academic_year = 2 then 1 end) as year_2,
                 count(case when academic_year = 3 then 1 end) as year_3,
@@ -260,6 +262,8 @@ final class AdministratorPortalData
             ['gender' => 'Male', 'count' => (int) $stats->gender_male],
             ['gender' => 'Female', 'count' => (int) $stats->gender_female],
             ['gender' => 'Other', 'count' => (int) $stats->gender_other],
+            ['gender' => 'Prefer not to say', 'count' => (int) $stats->gender_prefer_not_to_say],
+            ['gender' => 'Unspecified', 'count' => (int) $stats->gender_unspecified],
         ];
     }
 

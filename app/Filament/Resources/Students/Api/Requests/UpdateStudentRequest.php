@@ -27,7 +27,7 @@ final class UpdateStudentRequest extends FormRequest
             'first_name' => ['sometimes', 'string', 'max:255'],
             'last_name' => ['sometimes', 'string', 'max:255'],
             'middle_name' => ['nullable', 'string', 'max:255'],
-            'gender' => ['sometimes', 'string', 'in:male,female'],
+            'gender' => ['sometimes', 'string', 'in:male,female,other,prefer_not_to_say'],
             'birth_date' => ['sometimes', 'date'],
             'age' => ['sometimes', 'integer', 'min:0'],
             'address' => ['nullable', 'string', 'max:500'],

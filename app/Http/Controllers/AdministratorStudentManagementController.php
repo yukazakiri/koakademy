@@ -848,7 +848,7 @@ final class AdministratorStudentManagementController extends Controller
             'last_name' => ['required', 'string', 'max:100'],
             'middle_name' => ['nullable', 'string', 'max:100'],
             'suffix' => ['nullable', 'string', 'max:20'],
-            'gender' => ['required', 'string', 'in:male,female'],
+            'gender' => ['required', 'string', 'in:male,female,other,prefer_not_to_say'],
             'birth_date' => ['required', 'date', 'before:today'],
             'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:30'],
@@ -1233,7 +1233,7 @@ final class AdministratorStudentManagementController extends Controller
             'last_name' => ['required', 'string', 'max:50'],
             'middle_name' => ['nullable', 'string', 'max:20'],
             'suffix' => ['nullable', 'string', 'max:20'],
-            'gender' => ['required', 'string', 'in:male,female'],
+            'gender' => ['required', 'string', 'in:male,female,other,prefer_not_to_say'],
             'birth_date' => ['required', 'date', 'before:today'],
             'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:30'],
@@ -1385,11 +1385,12 @@ final class AdministratorStudentManagementController extends Controller
             $student->is_magna_carta = $validated['is_magna_carta'] ?? false;
             $student->is_underprivileged = $validated['is_underprivileged'] ?? false;
             $student->is_first_generation = $validated['is_first_generation'] ?? false;
-            $student->income_bracket_mode = $validated['income_bracket_mode'] ?? $student->income_bracket_mode ?? (string) config('income_brackets.default_mode', 'annual');
-            $student->use_same_parent_income = $validated['use_same_parent_income'] ?? true;
-            $student->family_income_bracket = $validated['family_income_bracket'] ?? null;
-            $student->father_income_bracket = $validated['father_income_bracket'] ?? null;
-            $student->mother_income_bracket = $validated['mother_income_bracket'] ?? null;
+            $usesSameParentIncome = $validated['use_same_parent_income'] ?? true;
+            $student->income_bracket_mode = $usesSameParentIncome ? 'annual' : ($validated['income_bracket_mode'] ?? $student->income_bracket_mode ?? (string) config('income_brackets.default_mode', 'annual'));
+            $student->use_same_parent_income = $usesSameParentIncome;
+            $student->family_income_bracket = $usesSameParentIncome ? ($validated['family_income_bracket'] ?? null) : null;
+            $student->father_income_bracket = $usesSameParentIncome ? null : ($validated['father_income_bracket'] ?? null);
+            $student->mother_income_bracket = $usesSameParentIncome ? null : ($validated['mother_income_bracket'] ?? null);
             $student->status = $validated['status'] ?? 'enrolled';
             $student->withdrawal_date = $validated['withdrawal_date'] ?? null;
             $student->withdrawal_reason = $validated['withdrawal_reason'] ?? null;

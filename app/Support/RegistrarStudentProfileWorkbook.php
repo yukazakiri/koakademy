@@ -56,7 +56,7 @@ final class RegistrarStudentProfileWorkbook
         ['key' => 'middle_name', 'label' => 'Middle Name', 'group' => 'Identity', 'type' => 'string', 'max' => 100, 'read' => ['student.middle_name'], 'write' => ['student.middle_name']],
         ['key' => 'last_name', 'label' => 'Last Name', 'group' => 'Identity', 'type' => 'string', 'max' => 100, 'read' => ['student.last_name'], 'write' => ['student.last_name']],
         ['key' => 'suffix', 'label' => 'Suffix', 'group' => 'Identity', 'type' => 'string', 'max' => 20, 'read' => ['student.suffix'], 'write' => ['student.suffix']],
-        ['key' => 'gender', 'label' => 'Gender', 'group' => 'Identity', 'type' => 'choice', 'read' => ['student.gender'], 'write' => ['student.gender'], 'options' => ['male' => 'Male', 'female' => 'Female', 'other' => 'Other']],
+        ['key' => 'gender', 'label' => 'Gender', 'group' => 'Identity', 'type' => 'choice', 'read' => ['student.gender'], 'write' => ['student.gender'], 'options' => ['male' => 'Male', 'female' => 'Female', 'other' => 'Other', 'prefer_not_to_say' => 'Prefer not to say']],
         ['key' => 'birth_date', 'label' => 'Birth Date', 'group' => 'Identity', 'type' => 'date', 'read' => ['student.birth_date'], 'write' => ['student.birth_date']],
         ['key' => 'email', 'label' => 'Email', 'group' => 'Contact', 'type' => 'email', 'max' => 255, 'read' => ['student.email'], 'write' => ['student.email']],
         ['key' => 'phone', 'label' => 'Phone / Personal Contact', 'group' => 'Contact', 'type' => 'string', 'max' => 30, 'read' => ['contact.personal_contact', 'student.phone', 'contacts.personal_contact'], 'write' => ['student.phone', 'contact.personal_contact', 'contacts.personal_contact']],

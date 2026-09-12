@@ -393,6 +393,7 @@ final class EnrollmentRegistrationController extends Controller
                 'documents' => $uploadedDocuments !== [] ? $uploadedDocuments : null,
             ], static fn ($value): bool => $value !== null && $value !== '');
 
+            $usesSameParentIncome = (bool) ($payload['use_same_parent_income'] ?? true);
             $student = Student::query()->create([
                 'school_id' => $this->resolveSiteSchoolId(),
                 'student_id' => $studentId,
@@ -436,11 +437,11 @@ final class EnrollmentRegistrationController extends Controller
                 'is_magna_carta' => $payload['is_magna_carta'] ?? false,
                 'is_underprivileged' => $payload['is_underprivileged'] ?? false,
                 'is_first_generation' => $payload['is_first_generation'] ?? false,
-                'income_bracket_mode' => $payload['income_bracket_mode'] ?? (string) config('income_brackets.default_mode', 'annual'),
-                'use_same_parent_income' => (bool) ($payload['use_same_parent_income'] ?? true),
-                'family_income_bracket' => $payload['family_income_bracket'] ?? null,
-                'father_income_bracket' => $payload['father_income_bracket'] ?? null,
-                'mother_income_bracket' => $payload['mother_income_bracket'] ?? null,
+                'income_bracket_mode' => $usesSameParentIncome ? 'annual' : ($payload['income_bracket_mode'] ?? (string) config('income_brackets.default_mode', 'annual')),
+                'use_same_parent_income' => $usesSameParentIncome,
+                'family_income_bracket' => $usesSameParentIncome ? ($payload['family_income_bracket'] ?? null) : null,
+                'father_income_bracket' => $usesSameParentIncome ? null : ($payload['father_income_bracket'] ?? null),
+                'mother_income_bracket' => $usesSameParentIncome ? null : ($payload['mother_income_bracket'] ?? null),
                 'remarks' => $payload['remarks'] ?? null,
                 'scholarship_type' => null, // Explicitly not a scholar yet
             ]);

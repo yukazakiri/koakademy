@@ -38,7 +38,7 @@ final class FacultyClassShsStudentController extends Controller
             'first_name' => ['required', 'string', 'max:100'],
             'middle_name' => ['nullable', 'string', 'max:100'],
             'birth_date' => ['required', 'date', 'before_or_equal:today'],
-            'gender' => ['required', 'in:male,female'],
+            'gender' => ['required', 'in:male,female,other,prefer_not_to_say'],
             'contact' => ['nullable', 'string', 'max:20'],
             'strand_id' => ['required', 'exists:shs_strands,id'],
             'grade_level' => ['required', 'in:11,12'],

@@ -1126,7 +1126,7 @@ final class FacultyClassController extends Controller
             'first_name' => ['required', 'string', 'max:100'],
             'middle_name' => ['nullable', 'string', 'max:100'],
             'birth_date' => ['required', 'date', 'before_or_equal:today'],
-            'gender' => ['required', 'in:male,female'],
+            'gender' => ['required', 'in:male,female,other,prefer_not_to_say'],
             'contact' => ['nullable', 'string', 'max:20'],
             'strand_id' => ['required', 'exists:shs_strands,id'],
             'grade_level' => ['required', 'in:11,12'],
@@ -1147,7 +1147,7 @@ final class FacultyClassController extends Controller
                 'strand_id' => $validated['strand_id'],
                 'track_id' => $strand->track_id,
                 'grade_level' => $validated['grade_level'],
-                'gender' => 'Unknown', // Default value, can be updated later
+                'gender' => $validated['gender'],
                 'civil_status' => 'Single', // Default value
                 'nationality' => 'Filipino', // Default value
             ]);
@@ -1168,7 +1168,7 @@ final class FacultyClassController extends Controller
                 'shs_track_id' => $strand->track_id,
                 'academic_year' => $validated['grade_level'],
                 'status' => \App\Enums\StudentStatus::Enrolled->value,
-                'gender' => 'Unknown',
+                'gender' => $validated['gender'],
                 'civil_status' => 'Single',
                 'nationality' => 'Filipino',
             ]);

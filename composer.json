@@ -40,7 +40,7 @@
         "inertiajs/inertia-laravel": "^3.0",
         "joaopaulolndev/filament-edit-profile": "^3.0",
         "joaopaulolndev/filament-general-settings": "^3.0",
-        "koakademy/forms": "^1.0",
+        "koakademy/forms": "^1.7",
         "laraowl/client": "^1.0",
         "laravel/framework": "^13.0",
         "laravel/nightwatch": "^1.22",

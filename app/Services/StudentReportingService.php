@@ -75,12 +75,15 @@ final readonly class StudentReportingService
         $csvContent .= 'Total SHS Students,'.$reportData['overview']['total_shs_students']."\n";
         $csvContent .= 'Male Students,'.$reportData['overview']['gender_distribution']['male']."\n";
         $csvContent .= 'Female Students,'.$reportData['overview']['gender_distribution']['female']."\n\n";
+        $csvContent .= 'Other Students,'.$reportData['overview']['gender_distribution']['other']."\n";
+        $csvContent .= 'Prefer not to say,'.$reportData['overview']['gender_distribution']['prefer_not_to_say']."\n";
+        $csvContent .= 'Unspecified Students,'.$reportData['overview']['gender_distribution']['unspecified']."\n\n";
 
         // Courses section
         $csvContent .= "COURSES\n";
-        $csvContent .= "Course Code,Course Title,Total Students,Male,Female,Average Age\n";
+        $csvContent .= "Course Code,Course Title,Total Students,Male,Female,Other,Prefer not to say,Unspecified,Average Age\n";
         foreach ($reportData['courses'] as $course) {
-            $csvContent .= $course['course_code'].','.$course['course_title'].','.$course['total_students'].','.$course['gender_distribution']['male'].','.$course['gender_distribution']['female'].','.number_format($course['average_age'], 1)."\n";
+            $csvContent .= $course['course_code'].','.$course['course_title'].','.$course['total_students'].','.$course['gender_distribution']['male'].','.$course['gender_distribution']['female'].','.$course['gender_distribution']['other'].','.$course['gender_distribution']['prefer_not_to_say'].','.$course['gender_distribution']['unspecified'].','.number_format($course['average_age'], 1)."\n";
         }
 
         $fileName = 'student_analytics_'.date('Y-m-d_H-i-s').'.csv';
@@ -187,8 +190,8 @@ final readonly class StudentReportingService
         // Gender distribution
         $genderStats = Student::query()->whereIn('id', $enrolledStudentIds)
 
-            ->selectRaw('gender, COUNT(*) as count')
-            ->groupBy('gender')
+            ->selectRaw("LOWER(TRIM(COALESCE(gender, ''))) as gender, COUNT(*) as count")
+            ->groupByRaw("LOWER(TRIM(COALESCE(gender, '')))")
             ->pluck('count', 'gender')
             ->toArray();
 
@@ -206,8 +209,11 @@ final readonly class StudentReportingService
             'total_students' => $totalStudents,
             'total_shs_students' => ShsStudent::query()->count(),
             'gender_distribution' => [
-                'male' => $genderStats['Male'] ?? 0,
-                'female' => $genderStats['Female'] ?? 0,
+                'male' => $genderStats['male'] ?? 0,
+                'female' => $genderStats['female'] ?? 0,
+                'other' => $genderStats['other'] ?? 0,
+                'prefer_not_to_say' => $genderStats['prefer_not_to_say'] ?? 0,
+                'unspecified' => $genderStats[''] ?? 0,
                 'total' => array_sum($genderStats),
             ],
             'enrollment_status' => $enrollmentStats,
@@ -245,8 +251,11 @@ final readonly class StudentReportingService
                     'total_students' => $students->count(),
                     'year_levels' => $yearLevelBreakdown,
                     'gender_distribution' => [
-                        'male' => $genderBreakdown['Male'] ?? 0,
-                        'female' => $genderBreakdown['Female'] ?? 0,
+                        'male' => $genderBreakdown['male'] ?? 0,
+                        'female' => $genderBreakdown['female'] ?? 0,
+                        'other' => $genderBreakdown['other'] ?? 0,
+                        'prefer_not_to_say' => $genderBreakdown['prefer_not_to_say'] ?? 0,
+                        'unspecified' => $genderBreakdown[''] ?? 0,
                     ],
                     'average_age' => $students->avg('age') ?? 0,
                 ];
@@ -287,8 +296,11 @@ final readonly class StudentReportingService
                 'total_students' => $students->count(),
                 'programs' => $programBreakdown,
                 'gender_distribution' => [
-                    'male' => $genderBreakdown['Male'] ?? 0,
-                    'female' => $genderBreakdown['Female'] ?? 0,
+                    'male' => $genderBreakdown['male'] ?? 0,
+                    'female' => $genderBreakdown['female'] ?? 0,
+                    'other' => $genderBreakdown['other'] ?? 0,
+                    'prefer_not_to_say' => $genderBreakdown['prefer_not_to_say'] ?? 0,
+                    'unspecified' => $genderBreakdown[''] ?? 0,
                 ],
                 'average_age' => $students->avg('age') ?? 0,
             ];

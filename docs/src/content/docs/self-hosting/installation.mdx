@@ -14,8 +14,9 @@ Choose the self-hosting method that best aligns with your infrastructure:
 | Platform / Method | Recommended Use Case | Reverse Proxy / SSL | Multi-Node / HA | Guide |
 | :--- | :--- | :--- | :--- | :--- |
 | **Linux VPS (1-Line Installer)** | Dedicated VPS / Bare Metal | Built-in Caddy (Auto HTTPS) | Single-node Swarm | [Quickstart](#one-line-production-installation) |
+| **Standalone VPS (Direct / No Docker)** | Native systemd / PHP 8.5 host | External Caddy / Nginx | Single host | [Bare VPS Runbook](#standalone-vps-deployment-without-docker) |
 | **Docker Compose** | Custom proxy / existing Docker host | Caddy / Nginx / Traefik | Single host | [Compose Guide](./docker-compose/) |
-| **Dokploy** | Self-hosted PaaS / Single-pane UI | Traefik (Automated) | Project-based | [Dokploy Guide](./dokploy/) |
+| **Dokploy** | Self-hosted PaaS / Zero-Downtime UI | Traefik (Automated) | Project-based | [Dokploy Guide](./dokploy/) |
 | **Coolify** | Self-hosted PaaS / Multi-server UI | Traefik (Automated) | Multi-server | [Coolify Guide](./coolify/) |
 | **Docker Swarm** | Lightweight container clustering | Caddy / Swarm Ingress | Native Multi-node | [Swarm Guide](./docker-swarm/) |
 | **Kubernetes (K8s / K3s)** | Enterprise / Cloud orchestration | Ingress / cert-manager | Native Multi-node | [K8s Guide](./kubernetes/) |
@@ -195,3 +196,136 @@ docker compose --env-file .env -f compose.production.yaml up -d app
 ```
 
 Configure HTTPS in front of the Compose loopback port and complete `/setup`. Review [Configuration](./configuration/) and [Deployment](./deployment/) before accepting traffic.
+
+---
+
+## Standalone VPS Deployment (Without Docker)
+
+For operators running on dedicated bare metal, standard Linux VPS, or hardened operating environments that do not run container runtimes, KoAkademy can run directly on the host using **PHP 8.5**, **FrankenPHP**, and **systemd**.
+
+### System Prerequisites
+
+- **OS**: Ubuntu 24.04 LTS / Debian 12
+- **PHP**: PHP 8.5 CLI with extensions: `bcmath`, `curl`, `gd`, `intl`, `mbstring`, `pcntl`, `pdo_pgsql`, `redis`, `xml`, `zip`
+- **Node.js**: Node.js 22+ & npm
+- **Database**: PostgreSQL 16+ or 18
+- **Cache/Queue**: Redis 7+ or 8
+- **PDF Engine**: Gotenberg 8 (or external Cloudflare Browser Rendering service)
+- **Web Server**: [FrankenPHP](https://frankenphp.dev/) standalone binary or Caddy/Nginx
+
+### 1. Install System Dependencies
+
+```sh
+# Ubuntu 24.04 / Debian 12
+sudo apt-get update
+sudo apt-get install -y php8.5-cli php8.5-curl php8.5-gd php8.5-mbstring \
+  php8.5-pgsql php8.5-redis php8.5-xml php8.5-bcmath php8.5-intl php8.5-zip \
+  composer nodejs npm postgresql redis-server git rsync unzip
+
+# Install FrankenPHP binary
+curl -fsSL https://github.com/php/frankenphp/releases/latest/download/frankenphp-linux-x86_64-gnu \
+  -o /tmp/frankenphp && sudo install -m 0755 /tmp/frankenphp /usr/local/bin/frankenphp
+```
+
+### 2. Clone & Build Application
+
+```sh
+sudo mkdir -p /var/www/koakademy
+sudo chown -R $USER:$USER /var/www/koakademy
+git clone https://github.com/yukazakiri/koakademy.git /var/www/koakademy
+cd /var/www/koakademy
+
+# Install production dependencies & build frontend assets
+composer install --no-dev --optimize-autoloader
+npm ci
+npm run build
+```
+
+### 3. Environment & Database Configuration
+
+```sh
+cp .env.production.example .env
+chmod 600 .env
+php artisan key:generate
+```
+
+Configure your database and Redis credentials in `.env`:
+
+```ini
+APP_ENV=production
+APP_DEBUG=false
+APP_URL=https://school.example.com
+DB_CONNECTION=pgsql
+DB_HOST=127.0.0.1
+DB_PORT=5432
+DB_DATABASE=koakademy
+DB_USERNAME=koakademy
+DB_PASSWORD=YourSecurePassword
+CACHE_STORE=redis
+QUEUE_CONNECTION=redis
+REDIS_HOST=127.0.0.1
+OCTANE_SERVER=frankenphp
+OCTANE_WORKERS=2
+```
+
+Run database migrations:
+
+```sh
+php artisan migrate --force
+php artisan storage:link
+php artisan optimize
+```
+
+### 4. Create Systemd Services
+
+Create `/etc/systemd/system/koakademy-web.service`:
+
+```ini
+[Unit]
+Description=KoAkademy FrankenPHP Web Server
+After=network.target postgresql.service redis.service
+
+[Service]
+Type=exec
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/koakademy
+ExecStart=/usr/local/bin/frankenphp run -c /var/www/koakademy/vendor/laravel/octane/src/Commands/stubs/Caddyfile
+Restart=always
+RestartSec=3
+Environment=APP_ENV=production
+Environment=PORT=8000
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Create `/etc/systemd/system/koakademy-worker.service`:
+
+```ini
+[Unit]
+Description=KoAkademy Queue Worker & Horizon
+After=network.target redis.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/koakademy
+ExecStart=/usr/bin/php /var/www/koakademy/artisan horizon
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start services:
+
+```sh
+sudo chown -R www-data:www-data /var/www/koakademy/storage /var/www/koakademy/bootstrap/cache
+sudo systemctl daemon-reload
+sudo systemctl enable --now koakademy-web.service koakademy-worker.service
+```
+
+Point your reverse proxy (Caddy or Nginx) to `127.0.0.1:8000`.

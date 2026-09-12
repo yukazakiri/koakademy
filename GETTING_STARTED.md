@@ -271,49 +271,16 @@ php artisan storage:link
 php artisan optimize
 ```
 
-### 4. Create Systemd Services
+### 4. Install Systemd Services
 
-Create `/etc/systemd/system/koakademy-web.service`:
+The repository includes production-oriented unit files in [`deploy/systemd/`](https://github.com/yukazakiri/koakademy/tree/master/deploy/systemd). Install them after cloning the application:
 
-```ini
-[Unit]
-Description=KoAkademy FrankenPHP Web Server
-After=network.target postgresql.service redis.service
-
-[Service]
-Type=exec
-User=www-data
-Group=www-data
-WorkingDirectory=/var/www/koakademy
-ExecStart=/usr/local/bin/frankenphp run -c /var/www/koakademy/vendor/laravel/octane/src/Commands/stubs/Caddyfile
-Restart=always
-RestartSec=3
-Environment=APP_ENV=production
-Environment=PORT=8000
-
-[Install]
-WantedBy=multi-user.target
+```sh
+sudo install -m 0644 deploy/systemd/koakademy-web.service /etc/systemd/system/koakademy-web.service
+sudo install -m 0644 deploy/systemd/koakademy-worker.service /etc/systemd/system/koakademy-worker.service
 ```
 
-Create `/etc/systemd/system/koakademy-worker.service`:
-
-```ini
-[Unit]
-Description=KoAkademy Queue Worker & Horizon
-After=network.target redis.service
-
-[Service]
-Type=simple
-User=www-data
-Group=www-data
-WorkingDirectory=/var/www/koakademy
-ExecStart=/usr/bin/php /var/www/koakademy/artisan horizon
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
+The units expect the application at `/var/www/koakademy`, load `/var/www/koakademy/.env`, run as `www-data`, and protect the rest of the filesystem. The web unit starts Laravel Octane, which renders the FrankenPHP Caddy configuration and applies `OCTANE_WORKERS` and `OCTANE_MAX_REQUESTS` from `.env`. If you use another installation path, update `WorkingDirectory`, `EnvironmentFile`, `ExecStart`, and `ReadWritePaths` in both units before installing them.
 
 Enable and start services:
 

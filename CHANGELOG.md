@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.25.0](https://github.com/yukazakiri/koakademy/compare/v1.24.0...v1.25.0) (2026-09-12)
+
+
+### Features
+
+* align student profile demographics ([#268](https://github.com/yukazakiri/koakademy/issues/268)) ([a5164be](https://github.com/yukazakiri/koakademy/commit/a5164bed52a9986c4c4bd09488427f7a9ea6bad0))
+* **finance:** add versioned assessment revisions, durable payment allocations, and reports access ([#251](https://github.com/yukazakiri/koakademy/issues/251)) ([10e62b4](https://github.com/yukazakiri/koakademy/commit/10e62b4fad376298ec715c36c9ea1a2cb5d5ced5))
+* **forms:** bump forms to 1.5.0 and support profile dropdown options ([#261](https://github.com/yukazakiri/koakademy/issues/261)) ([dbba270](https://github.com/yukazakiri/koakademy/commit/dbba270917df8fb1bb66d2e1bbcc864063e36e24))
+* **registrar:** dynamic per-school authority course-code registry with spreadsheet import ([#259](https://github.com/yukazakiri/koakademy/issues/259)) ([bc19b01](https://github.com/yukazakiri/koakademy/commit/bc19b0173baa323a2db04d4cd1b01c7ba96f71d6))
+* support Philippine profile location controls ([#269](https://github.com/yukazakiri/koakademy/issues/269)) ([ecab544](https://github.com/yukazakiri/koakademy/commit/ecab544bcf74c6c70d8b1ac57b9e0508b4c5b60f))
+
+
+### Bug Fixes
+
+* **docker:** include production node_modules for Inertia SSR ([#264](https://github.com/yukazakiri/koakademy/issues/264)) ([56d5866](https://github.com/yukazakiri/koakademy/commit/56d58666c3ec3e5b7fe9535f168f5d235d800177))
+* **docker:** support zero-downtime workers ([5ee4be2](https://github.com/yukazakiri/koakademy/commit/5ee4be2ee7ba8a7311146d081afe75b957798ade))
+
+
+### Build System
+
+* **modules:** bump koakademy/forms from 1.4.0 to 1.5.0 in the koakademy-modules group ([#262](https://github.com/yukazakiri/koakademy/issues/262)) ([36508cb](https://github.com/yukazakiri/koakademy/commit/36508cb73e3aa6826a55ab3c174f4667df4538a8))
+* **modules:** bump koakademy/forms to 1.6.0 ([#265](https://github.com/yukazakiri/koakademy/issues/265)) ([6d07505](https://github.com/yukazakiri/koakademy/commit/6d075052f704d9b7a10219a57233adad57fc4dd6))
+
+
+### Documentation
+
+* **self-hosting:** document zero-downtime Dokploy and bare VPS runbooks ([ccde293](https://github.com/yukazakiri/koakademy/commit/ccde293bccbb0820b3d4c6df210f1a0d985147f1))
+* **vps:** add systemd deployment units ([21fe26c](https://github.com/yukazakiri/koakademy/commit/21fe26c900c69664306928c91a8459fd2b844f6c))
+
 ## [1.24.0](https://github.com/yukazakiri/koakademy/compare/v1.23.0...v1.24.0) (2026-09-08)
 
 

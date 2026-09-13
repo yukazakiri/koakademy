@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Enums\CurriculumFramework;
 use App\Enums\StudentStatus;
 use App\Enums\UserRole;
+use App\Events\AssessmentExportProgressed;
 use App\Jobs\GenerateRegulatoryReportExportJob;
 use App\Models\AssessmentExport;
 use App\Models\Course;
@@ -405,6 +406,7 @@ test('administrator can preview and download ched form bc report', function (): 
 
 test('queued ched export job stores a completed workbook', function (string $reportKey, array $expectedSheets): void {
     Storage::fake('local');
+    Event::fake([AssessmentExportProgressed::class]);
     config()->set('assessment-exports.disk', 'local');
 
     $school = School::factory()->create(['country_code' => 'PH']);

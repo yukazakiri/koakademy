@@ -5504,16 +5504,16 @@
         },
         {
             "name": "koakademy/forms",
-            "version": "1.10.9",
+            "version": "1.10.10",
             "source": {
                 "type": "git",
                 "url": "https://github.com/yukazakiri/koakademy-module-forms.git",
-                "reference": "v1.10.9"
+                "reference": "v1.10.10"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://github.com/yukazakiri/koakademy-module-forms/archive/refs/tags/v1.10.9.zip",
-                "shasum": "72401ef032e1d282fbc8958c80b8552d29503a8c"
+                "url": "https://github.com/yukazakiri/koakademy-module-forms/archive/refs/tags/v1.10.10.zip",
+                "shasum": "a56d26a4cb9e206f59a4aa0fcdc15fd76954c689"
             },
             "require": {
                 "filament/filament": "^5.0",

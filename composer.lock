@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "cd503f6bea2d3253784dca330c4a68ea",
+    "content-hash": "3212e697a2c13d75e451f835433ed387",
     "packages": [
         {
             "name": "achyutn/filament-log-viewer",
@@ -5504,16 +5504,16 @@
         },
         {
             "name": "koakademy/forms",
-            "version": "1.10.0",
+            "version": "1.10.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/yukazakiri/koakademy-module-forms.git",
-                "reference": "v1.10.0"
+                "reference": "v1.10.1"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://github.com/yukazakiri/koakademy-module-forms/archive/refs/tags/v1.10.0.zip",
-                "shasum": "0e1aab0e5696b0840f204e634385cd06da813fc5"
+                "url": "https://github.com/yukazakiri/koakademy-module-forms/archive/refs/tags/v1.10.1.zip",
+                "shasum": "ae53aec2f2e41af02c4d10b6bbe8ad9d8583b8b1"
             },
             "require": {
                 "filament/filament": "^5.0",

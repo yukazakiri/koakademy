@@ -6856,16 +6856,16 @@
         },
         {
             "name": "laravel/telescope",
-            "version": "v5.23.0",
+            "version": "v5.24.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/laravel/telescope.git",
-                "reference": "82c84e1037540261f05060a5ae435a5ec982af91"
+                "reference": "50cbcf4553ddfd8d4bd456b04f97dfed923007d9"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/laravel/telescope/zipball/82c84e1037540261f05060a5ae435a5ec982af91",
-                "reference": "82c84e1037540261f05060a5ae435a5ec982af91",
+                "url": "https://api.github.com/repos/laravel/telescope/zipball/50cbcf4553ddfd8d4bd456b04f97dfed923007d9",
+                "reference": "50cbcf4553ddfd8d4bd456b04f97dfed923007d9",
                 "shasum": ""
             },
             "require": {
@@ -6918,9 +6918,9 @@
                 "monitoring"
             ],
             "support": {
-                "source": "https://github.com/laravel/telescope/tree/v5.23.0"
+                "source": "https://github.com/laravel/telescope/tree/v5.24.0"
             },
-            "time": "2026-08-27T20:20:50+00:00"
+            "time": "2026-09-08T16:15:16+00:00"
         },
         {
             "name": "laravel/tinker",
@@ -9087,16 +9087,16 @@
         },
         {
             "name": "nesbot/carbon",
-            "version": "3.13.2",
+            "version": "3.14.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/CarbonPHP/carbon.git",
-                "reference": "a1c54919f5fff9800cd03c32bd01defd5a4061cb"
+                "reference": "0023eaa2c9110e47446dd512a263c69c40cd41f2"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/CarbonPHP/carbon/zipball/a1c54919f5fff9800cd03c32bd01defd5a4061cb",
-                "reference": "a1c54919f5fff9800cd03c32bd01defd5a4061cb",
+                "url": "https://api.github.com/repos/CarbonPHP/carbon/zipball/0023eaa2c9110e47446dd512a263c69c40cd41f2",
+                "reference": "0023eaa2c9110e47446dd512a263c69c40cd41f2",
                 "shasum": ""
             },
             "require": {
@@ -9188,7 +9188,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-08-08T11:40:35+00:00"
+            "time": "2026-09-12T20:45:19+00:00"
         },
         {
             "name": "nette/php-generator",
@@ -23140,5 +23140,5 @@
         "php": ">=8.5 <8.6"
     },
     "platform-dev": {},
-    "plugin-api-version": "2.6.0"
+    "plugin-api-version": "2.9.0"
 }

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 return [
     'enabled' => env('NIGHTWATCH_ENABLED', true),
     'token' => env('NIGHTWATCH_TOKEN'),

@@ -98,6 +98,11 @@ return [
 
     'portal_host' => env('PORTAL_HOST', 'localhost'),
 
+    'portal_host_aliases' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', env('PORTAL_HOST_ALIASES', '')),
+    ))),
+
     /*
     |--------------------------------------------------------------------------
     | Admin Host

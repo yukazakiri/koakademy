@@ -187,16 +187,16 @@
         },
         {
             "name": "anourvalar/eloquent-serialize",
-            "version": "1.3.11",
+            "version": "1.3.12",
             "source": {
                 "type": "git",
                 "url": "https://github.com/AnourValar/eloquent-serialize.git",
-                "reference": "abd890c4d1ad8e90dd454d01283fbf342f80f1e5"
+                "reference": "eb46e698efe7e20c311f1f93830111fcdcdabd96"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/AnourValar/eloquent-serialize/zipball/abd890c4d1ad8e90dd454d01283fbf342f80f1e5",
-                "reference": "abd890c4d1ad8e90dd454d01283fbf342f80f1e5",
+                "url": "https://api.github.com/repos/AnourValar/eloquent-serialize/zipball/eb46e698efe7e20c311f1f93830111fcdcdabd96",
+                "reference": "eb46e698efe7e20c311f1f93830111fcdcdabd96",
                 "shasum": ""
             },
             "require": {
@@ -246,9 +246,9 @@
             ],
             "support": {
                 "issues": "https://github.com/AnourValar/eloquent-serialize/issues",
-                "source": "https://github.com/AnourValar/eloquent-serialize/tree/1.3.11"
+                "source": "https://github.com/AnourValar/eloquent-serialize/tree/1.3.12"
             },
-            "time": "2026-08-07T06:14:19+00:00"
+            "time": "2026-09-13T06:25:37+00:00"
         },
         {
             "name": "awcodes/filament-gravatar",
@@ -477,7 +477,7 @@
         },
         {
             "name": "backstage/laravel-mails",
-            "version": "v5.2.5",
+            "version": "v5.2.6",
             "source": {
                 "type": "git",
                 "url": "https://github.com/backstagephp/laravel-mails.git",
@@ -556,7 +556,7 @@
             ],
             "support": {
                 "issues": "https://github.com/backstagephp/laravel-mails/issues",
-                "source": "https://github.com/backstagephp/laravel-mails/tree/v5.2.5"
+                "source": "https://github.com/backstagephp/laravel-mails/tree/v5.2.6"
             },
             "funding": [
                 {
@@ -568,16 +568,16 @@
         },
         {
             "name": "backstage/mails",
-            "version": "v5.2.5",
+            "version": "v5.2.6",
             "source": {
                 "type": "git",
                 "url": "https://github.com/backstagephp/mails.git",
-                "reference": "7798c4f67c3b74ba7a443c1668ef5d2c57f00e99"
+                "reference": "ddd51dda77ac4c21fd6af4ce8e7dd202690ef255"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/backstagephp/mails/zipball/7798c4f67c3b74ba7a443c1668ef5d2c57f00e99",
-                "reference": "7798c4f67c3b74ba7a443c1668ef5d2c57f00e99",
+                "url": "https://api.github.com/repos/backstagephp/mails/zipball/ddd51dda77ac4c21fd6af4ce8e7dd202690ef255",
+                "reference": "ddd51dda77ac4c21fd6af4ce8e7dd202690ef255",
                 "shasum": ""
             },
             "require": {
@@ -646,7 +646,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-08-25T06:53:39+00:00"
+            "time": "2026-09-08T09:52:12+00:00"
         },
         {
             "name": "bacon/bacon-qr-code",
@@ -9087,16 +9087,16 @@
         },
         {
             "name": "nesbot/carbon",
-            "version": "3.13.2",
+            "version": "3.14.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/CarbonPHP/carbon.git",
-                "reference": "a1c54919f5fff9800cd03c32bd01defd5a4061cb"
+                "reference": "0023eaa2c9110e47446dd512a263c69c40cd41f2"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/CarbonPHP/carbon/zipball/a1c54919f5fff9800cd03c32bd01defd5a4061cb",
-                "reference": "a1c54919f5fff9800cd03c32bd01defd5a4061cb",
+                "url": "https://api.github.com/repos/CarbonPHP/carbon/zipball/0023eaa2c9110e47446dd512a263c69c40cd41f2",
+                "reference": "0023eaa2c9110e47446dd512a263c69c40cd41f2",
                 "shasum": ""
             },
             "require": {
@@ -9188,7 +9188,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-08-08T11:40:35+00:00"
+            "time": "2026-09-12T20:45:19+00:00"
         },
         {
             "name": "nette/php-generator",
@@ -23140,5 +23140,5 @@
         "php": ">=8.5 <8.6"
     },
     "platform-dev": {},
-    "plugin-api-version": "2.6.0"
+    "plugin-api-version": "2.9.0"
 }

@@ -78,6 +78,7 @@ final class PasskeyAuthController extends Controller
 
             Auth::login($user);
             $request->session()->regenerate();
+            $request->session()->save();
 
             $defaultRedirect = $this->getRedirectForUser($user);
 

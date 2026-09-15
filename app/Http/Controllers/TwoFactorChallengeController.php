@@ -181,6 +181,7 @@ final class TwoFactorChallengeController extends Controller
             $request->session()->forget('auth.2fa.id');
             $request->session()->forget('auth.2fa.remember');
             $request->session()->regenerate();
+            $request->session()->save();
 
             $defaultRedirect = $this->getRedirectForUser($user);
 

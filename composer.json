@@ -119,13 +119,17 @@
             "Tests\\": "tests/"
         }
     },
-    "repositories": [
-        {
+    "repositories": {
+        "forms": {
+            "type": "vcs",
+            "url": "https://github.com/yukazakiri/koakademy-module-forms.git"
+        },
+        "0": {
             "type": "composer",
             "url": "https://yukazakiri.github.io/koakademy-modules",
             "canonical": false
         }
-    ],
+    },
     "scripts": {
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",

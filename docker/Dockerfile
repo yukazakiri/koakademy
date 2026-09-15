@@ -18,20 +18,12 @@ RUN composer install \
     --no-progress \
     --ignore-platform-reqs
 
-# Forms is maintained in its own repository. Refresh only that package at
-# image-build time so a redeploy picks up the newest compatible 1.x release;
-# every other dependency remains governed by composer.lock.
-ARG FORMS_REFRESH=locked
-RUN printf 'Refreshing Forms dependency (%s)\n' "$FORMS_REFRESH" && composer update koakademy/forms \
-    --with-dependencies \
-    --no-dev \
-    --no-interaction \
-    --no-autoloader \
-    --no-ansi \
-    --no-scripts \
-    --no-progress \
-    --ignore-platform-reqs
-
+# All PHP dependencies, including koakademy/forms, are governed by
+# composer.lock so image builds stay reproducible. The lock file is bumped
+# via a regular PR whenever a new Forms release should be deployed; running
+# `composer update` at build time re-resolves metadata against github.com
+# without authentication and breaks the build once the anonymous API quota
+# is exhausted ("Could not authenticate against github.com").
 COPY . .
 RUN mkdir -p \
     storage/framework/sessions \

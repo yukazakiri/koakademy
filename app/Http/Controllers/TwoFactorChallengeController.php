@@ -182,9 +182,7 @@ final class TwoFactorChallengeController extends Controller
             $request->session()->forget('auth.2fa.remember');
             $request->session()->regenerate();
 
-            $defaultRedirect = $user->isAdministrative()
-                ? '/administrators'
-                : '/dashboard';
+            $defaultRedirect = $this->getRedirectForUser($user);
 
             return response()->json(['url' => $defaultRedirect, 'redirect' => $defaultRedirect]);
         } catch (ValidationException $exception) {
@@ -223,11 +221,22 @@ final class TwoFactorChallengeController extends Controller
         $request->session()->forget('auth.2fa.remember');
         $request->session()->regenerate();
 
-        $defaultRedirect = $user->isAdministrative()
-                ? '/administrators'
-                : '/dashboard';
+        $defaultRedirect = $this->getRedirectForUser($user);
 
         return redirect()->intended($defaultRedirect);
+    }
+
+    private function getRedirectForUser(User $user): string
+    {
+        if ($user->isAdministrative()) {
+            return '/administrators/dashboard';
+        }
+
+        if ($user->role?->isStudent()) {
+            return '/student/dashboard';
+        }
+
+        return '/faculty/dashboard';
     }
 
     private function credentialFromRequest(Request $request): PublicKeyCredential

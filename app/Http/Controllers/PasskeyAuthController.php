@@ -79,9 +79,7 @@ final class PasskeyAuthController extends Controller
             Auth::login($user);
             $request->session()->regenerate();
 
-            $defaultRedirect = $user->isAdministrative()
-                ? '/administrators'
-                : '/dashboard';
+            $defaultRedirect = $this->getRedirectForUser($user);
 
             return response()->json(['url' => $defaultRedirect, 'redirect' => $defaultRedirect]);
         } catch (ValidationException $exception) {
@@ -89,6 +87,19 @@ final class PasskeyAuthController extends Controller
         } catch (Throwable $exception) {
             return response()->json(['error' => 'Passkey verification failed: '.$exception->getMessage()], 400);
         }
+    }
+
+    private function getRedirectForUser(User $user): string
+    {
+        if ($user->isAdministrative()) {
+            return '/administrators/dashboard';
+        }
+
+        if ($user->role?->isStudent()) {
+            return '/student/dashboard';
+        }
+
+        return '/faculty/dashboard';
     }
 
     private function credentialFromRequest(Request $request): PublicKeyCredential

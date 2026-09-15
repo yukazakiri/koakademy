@@ -42,7 +42,9 @@ Route::middleware(['auth', 'administrators.only'])
     ->prefix('administrators')
     ->name('administrators.')
     ->group(function (): void {
-        Route::redirect('/', '/administrators/dashboard')->name('home');
+        Route::get('/', function () {
+            return redirect()->route('administrators.dashboard');
+        })->name('home');
 
         Route::get('/dashboard', function () {
             $user = Auth::user();

@@ -6,6 +6,7 @@ namespace App\Finance;
 
 use App\Enums\PaymentMethod;
 use App\Models\AdminTransaction;
+use App\Models\PaymentAllocation;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\StudentTransaction;
@@ -230,7 +231,7 @@ final readonly class RecordFinancePayment
         $primaryEnrollmentId = count($tuitionAmounts) === 1 && abs($total - array_sum($tuitionAmounts)) < 0.00001
             ? $tuitions->get((int) array_key_first($tuitionAmounts))?->enrollment_id
             : null;
-        StudentTransaction::query()->create([
+        $studentTx = StudentTransaction::query()->create([
             'student_id' => $student->id,
             'student_enrollment_id' => $primaryEnrollmentId,
             'transaction_id' => $transaction->id,
@@ -246,6 +247,62 @@ final readonly class RecordFinancePayment
             'description' => 'Cashier payment',
             'status' => 'paid',
         ]);
+
+        foreach ($items as $item) {
+            $type = (string) ($item['type'] ?? '');
+            if ($type === 'tuition') {
+                $tuitionId = (int) ($item['tuition_id'] ?? 0);
+                $tuition = $tuitions->get($tuitionId);
+                $amount = round((float) ($item['amount'] ?? 0), 2);
+                if ($tuition instanceof StudentTuition && $amount > 0) {
+                    PaymentAllocation::query()->create([
+                        'transaction_id' => $transaction->id,
+                        'student_transaction_id' => $studentTx->id,
+                        'student_id' => $student->id,
+                        'student_enrollment_id' => $tuition->enrollment_id,
+                        'student_tuition_id' => $tuition->id,
+                        'charge_category' => 'tuition',
+                        'target_type' => 'assessment',
+                        'amount' => $amount,
+                        'notes' => "Tuition: {$tuition->school_year} / Semester {$tuition->semester}",
+                    ]);
+                }
+            } elseif ($type === 'fee') {
+                $feeKey = (string) ($item['fee_key'] ?? '');
+                $amount = round((float) ($item['amount'] ?? 0), 2);
+                if ($amount > 0) {
+                    PaymentAllocation::query()->create([
+                        'transaction_id' => $transaction->id,
+                        'student_transaction_id' => $studentTx->id,
+                        'student_id' => $student->id,
+                        'student_enrollment_id' => null,
+                        'student_tuition_id' => null,
+                        'charge_category' => $feeKey,
+                        'target_type' => 'fee',
+                        'amount' => $amount,
+                        'notes' => FinancePaymentChargeCatalog::labelFor($feeKey) ?? 'Fee',
+                    ]);
+                }
+            } elseif ($type === 'item') {
+                $productId = (int) ($item['id'] ?? 0);
+                $product = $products->get($productId);
+                $quantity = (int) ($item['quantity'] ?? 1);
+                $amount = round((float) ($product?->price ?? 0) * $quantity, 2);
+                if ($amount > 0) {
+                    PaymentAllocation::query()->create([
+                        'transaction_id' => $transaction->id,
+                        'student_transaction_id' => $studentTx->id,
+                        'student_id' => $student->id,
+                        'student_enrollment_id' => null,
+                        'student_tuition_id' => null,
+                        'charge_category' => 'item',
+                        'target_type' => 'inventory',
+                        'amount' => $amount,
+                        'notes' => $product?->name ?? 'Inventory Item',
+                    ]);
+                }
+            }
+        }
 
         foreach ($tuitionAmounts as $tuitionId => $amount) {
             $tuition = $tuitions->get($tuitionId);

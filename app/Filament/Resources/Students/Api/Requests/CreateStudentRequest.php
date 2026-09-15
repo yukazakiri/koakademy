@@ -30,7 +30,7 @@ final class CreateStudentRequest extends FormRequest
             'first_name' => 'required',
             'last_name' => 'required',
             'middle_name' => 'required',
-            'gender' => 'required',
+            'gender' => 'required|in:male,female,other,prefer_not_to_say',
             'birth_date' => 'required|date',
             'age' => 'required',
             'address' => 'required',

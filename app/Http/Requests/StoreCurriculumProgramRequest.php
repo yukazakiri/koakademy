@@ -23,6 +23,7 @@ final class StoreCurriculumProgramRequest extends FormRequest
         return [
             'code' => ['required', 'string', 'max:255'],
             'title' => ['required', 'string', 'max:255'],
+            'industry_course_code_id' => ['nullable', 'integer', 'exists:industry_course_codes,id'],
             'description' => ['nullable', 'string'],
             'department_id' => [Rule::requiredIf($kind === 'program'), 'nullable', 'integer', 'exists:departments,id'],
             'course_type_id' => [Rule::requiredIf($kind === 'program'), 'nullable', 'integer', 'exists:course_types,id'],

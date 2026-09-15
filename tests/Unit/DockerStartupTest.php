@@ -133,3 +133,54 @@ it('authenticates before checking a password-protected Redis service', function 
         ->and($pingOffset)->not->toBeFalse()
         ->and($authOffset)->toBeLessThan($pingOffset);
 });
+
+it('passes configurable worker settings to FrankenPHP', function (): void {
+    foreach ([
+        'docker/supervisord.frankenphp.conf',
+        'docker/supervisord.frankenphp.no-horizon.conf',
+    ] as $configPath) {
+        $source = file_get_contents(base_path($configPath));
+
+        expect($source)->not->toBeFalse()
+            ->and($source)->toContain('--workers=%(ENV_OCTANE_WORKERS)s')
+            ->and($source)->toContain('--max-requests=%(ENV_OCTANE_MAX_REQUESTS)s');
+    }
+});
+
+it('keeps Nightwatch idle when it is disabled', function (): void {
+    $supervisorSource = file_get_contents(base_path('docker/supervisord.nightwatch.conf'));
+    $processSource = file_get_contents(base_path('docker/nightwatch-process'));
+
+    expect($supervisorSource)->not->toBeFalse()
+        ->and($supervisorSource)->toContain('command=/usr/local/bin/nightwatch-process')
+        ->and($processSource)->not->toBeFalse()
+        ->and($processSource)->toContain('NIGHTWATCH_ENABLED:-false')
+        ->and($processSource)->toContain('exec php /app/artisan nightwatch:agent')
+        ->and($processSource)->toContain('sleep 3600');
+});
+
+it('normalizes the Pulse ingest driver supplied by Dokploy', function (): void {
+    $source = file_get_contents(base_path('docker/start-container'));
+
+    expect($source)->not->toBeFalse()
+        ->and($source)->toContain('PULSE_ENABLED PULSE_INGEST_DRIVER PULSE_STORAGE_DRIVER');
+});
+
+it('runs standalone supervisor modes without writing a root-owned log in the release directory', function (): void {
+    $source = file_get_contents(base_path('docker/supervisord.conf'));
+
+    expect($source)->not->toBeFalse()
+        ->and($source)->toContain('user = root')
+        ->and($source)->not->toContain('user = %(ENV_USER)s');
+});
+
+it('does not launch Horizon from the web container when dedicated workers are used', function (): void {
+    $source = file_get_contents(base_path('docker/start-container'));
+
+    expect($source)->not->toBeFalse()
+        ->and($source)->toContain('is_http_container()')
+        ->and($source)->toContain('run_horizon_in_http_container()')
+        ->and($source)->toContain('[ "${horizon_enabled}" = "true" ] && run_horizon_in_http_container')
+        ->and($source)->toContain('HORIZON_IN_HTTP_CONTAINER:-true')
+        ->and($source)->toContain('if is_http_container; then');
+});

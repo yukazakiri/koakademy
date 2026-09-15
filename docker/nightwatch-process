@@ -1,0 +1,16 @@
+#!/usr/bin/env sh
+set -e
+
+nightwatch_enabled=$(printf '%s' "${NIGHTWATCH_ENABLED:-false}" | tr '[:upper:]' '[:lower:]')
+
+case "${nightwatch_enabled}" in
+    true|1|yes|on)
+        exec php /app/artisan nightwatch:agent
+        ;;
+esac
+
+echo "Nightwatch is disabled; agent process is idle."
+
+while :; do
+    sleep 3600
+done

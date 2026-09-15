@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Models\PaymentAllocation;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\StudentTransaction;
@@ -54,6 +55,21 @@ final class EnrollmentBillingService
 
     public function verifiedPaid(StudentTuition $tuition): float
     {
+        $hasAllocations = PaymentAllocation::query()
+            ->where('student_tuition_id', $tuition->id)
+            ->where('target_type', 'assessment')
+            ->exists();
+
+        if ($hasAllocations) {
+            $allocatedPaid = PaymentAllocation::query()
+                ->where('student_tuition_id', $tuition->id)
+                ->where('target_type', 'assessment')
+                ->whereHas('transaction', fn ($query) => $query->whereIn('status', ['Paid', 'Completed', 'paid', 'completed']))
+                ->sum('amount');
+
+            return round((float) $allocatedPaid, 2);
+        }
+
         $enrollment = $tuition->relationLoaded('enrollment')
             ? $tuition->enrollment
             : $tuition->enrollment()->first();

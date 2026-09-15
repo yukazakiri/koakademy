@@ -1,0 +1,25 @@
+[Unit]
+Description=KoAkademy Horizon Queue Worker
+Wants=network-online.target
+After=network-online.target postgresql.service redis-server.service
+
+[Service]
+Type=exec
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/koakademy
+EnvironmentFile=/var/www/koakademy/.env
+Environment=APP_ENV=production
+ExecStart=/usr/bin/php /var/www/koakademy/artisan horizon
+Restart=always
+RestartSec=5
+TimeoutStopSec=3600
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/www/koakademy/storage /var/www/koakademy/bootstrap/cache
+
+[Install]
+WantedBy=multi-user.target

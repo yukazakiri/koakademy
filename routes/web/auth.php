@@ -29,7 +29,7 @@ Route::get('/', function () {
         $user = Auth::user();
 
         if ($user && method_exists($user, 'isAdministrative') && $user->isAdministrative()) {
-            return redirect('/administrators');
+            return redirect('/administrators/dashboard');
         }
 
         // Check if user is a student

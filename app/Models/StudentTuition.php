@@ -78,6 +78,9 @@ final class StudentTuition extends Model
         'adjusted_by_user_id',
         'adjusted_at',
         'paid_transaction_baseline',
+        'gross_lecture',
+        'active_revision_id',
+        'needs_finance_review',
     ];
 
     public function student()
@@ -107,6 +110,24 @@ final class StudentTuition extends Model
     public function installments(): HasMany
     {
         return $this->hasMany(StudentTuitionInstallment::class, 'student_tuition_id')->orderBy('sequence');
+    }
+
+    /** @return BelongsTo<AssessmentRevision, $this> */
+    public function activeRevision(): BelongsTo
+    {
+        return $this->belongsTo(AssessmentRevision::class, 'active_revision_id');
+    }
+
+    /** @return HasMany<AssessmentRevision, $this> */
+    public function assessmentRevisions(): HasMany
+    {
+        return $this->hasMany(AssessmentRevision::class, 'student_tuition_id')->orderByDesc('revision_number');
+    }
+
+    /** @return HasMany<PaymentAllocation, $this> */
+    public function paymentAllocations(): HasMany
+    {
+        return $this->hasMany(PaymentAllocation::class, 'student_tuition_id');
     }
 
     /**
@@ -256,6 +277,9 @@ final class StudentTuition extends Model
             'adjusted_by_user_id' => 'integer',
             'adjusted_at' => 'datetime',
             'paid_transaction_baseline' => 'float',
+            'gross_lecture' => 'float',
+            'active_revision_id' => 'integer',
+            'needs_finance_review' => 'boolean',
             'created_at' => 'datetime',
             'updated_at' => 'date',
             'deleted_at' => 'datetime',

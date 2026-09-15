@@ -31,7 +31,13 @@ Route::post('/passkeys/login', [App\Http\Controllers\PasskeyAuthController::clas
 | Portal Domain Routes
 |--------------------------------------------------------------------------
 */
-Route::domain(config('app.portal_host'))->group(function () {
+$portalHosts = array_merge(
+    config('app.portal_host_aliases', []),
+    [config('app.portal_host')],
+);
+
+foreach (array_unique(array_filter($portalHosts)) as $portalHost) {
+    Route::domain($portalHost)->group(function () {
     Route::get('/verify/finance/{token}', FinancialDocumentVerificationController::class)
         ->middleware('throttle:30,1')
         ->name('finance-documents.verify');
@@ -252,6 +258,8 @@ Route::domain(config('app.portal_host'))->group(function () {
     | Administrator Portal Routes
     |--------------------------------------------------------------------------
     */
+    Route::redirect('/finance/reports', '/administrators/finance/reports');
+    Route::redirect('/finance', '/administrators/finance');
     require __DIR__.'/web/administrators.php';
 
     /*
@@ -281,7 +289,8 @@ Route::domain(config('app.portal_host'))->group(function () {
     |--------------------------------------------------------------------------
     */
     require __DIR__.'/web/testing.php';
-});
+    });
+}
 
 /*
 |--------------------------------------------------------------------------

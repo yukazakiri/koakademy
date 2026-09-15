@@ -1,0 +1,26 @@
+[Unit]
+Description=KoAkademy FrankenPHP Web Server
+Wants=network-online.target
+After=network-online.target postgresql.service redis-server.service
+
+[Service]
+Type=exec
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/koakademy
+EnvironmentFile=/var/www/koakademy/.env
+Environment=APP_ENV=production
+Environment=PORT=8000
+ExecStart=/usr/bin/php /var/www/koakademy/artisan octane:start --server=frankenphp --host=127.0.0.1 --port=8000 --admin-port=2019
+Restart=always
+RestartSec=3
+TimeoutStopSec=30
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/www/koakademy/storage /var/www/koakademy/bootstrap/cache
+
+[Install]
+WantedBy=multi-user.target

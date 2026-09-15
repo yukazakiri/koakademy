@@ -40,6 +40,8 @@ interface ComboboxProps {
   createLabel?: string
 }
 
+const CREATE_ITEM_VALUE = "__cmdk_create_item_option__"
+
 export function Combobox({
   options,
   value,
@@ -73,6 +75,10 @@ export function Combobox({
 
   // Custom filter function for cmdk
   const filterFunction = React.useCallback((value: string, search: string) => {
+    if (value === CREATE_ITEM_VALUE) {
+      return 1
+    }
+
     const option = options.find((opt) => opt.value === value)
     if (!option) return 0
 
@@ -105,7 +111,7 @@ export function Combobox({
             disabled={disabled}
           >
             <span className="truncate">
-              {selectedOption ? selectedOption.label : placeholder}
+              {selectedOption ? selectedOption.label : value || placeholder}
             </span>
             <IconChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
           </Button>
@@ -122,7 +128,7 @@ export function Combobox({
               <CommandGroup className="max-h-64 overflow-auto">
                 {canCreate && (
                   <CommandItem
-                    value={`create-${normalizedSearch}`}
+                    value={CREATE_ITEM_VALUE}
                     onSelect={() => handleSelect(normalizedSearch)}
                     className="flex items-center gap-2"
                   >

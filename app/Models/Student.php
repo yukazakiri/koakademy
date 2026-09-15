@@ -201,6 +201,7 @@ final class Student extends Model
         'is_first_generation',
         'income_bracket_mode',
         'use_same_parent_income',
+        'family_income_bracket',
         'father_income_bracket',
         'mother_income_bracket',
         'withdrawal_date',

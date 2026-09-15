@@ -261,6 +261,21 @@ it('can update student profile information', function (): void {
     expect($this->user->email)->toBe('updated_student@example.com');
 });
 
+it('accepts the prefer not to say gender choice', function (): void {
+    $this
+        ->actingAs($this->user)
+        ->put(route('student.profile.student.update'), [
+            'first_name' => $this->student->first_name,
+            'last_name' => $this->student->last_name,
+            'email' => $this->student->email,
+            'birth_date' => $this->student->birth_date?->format('Y-m-d'),
+            'gender' => 'prefer_not_to_say',
+        ])
+        ->assertRedirect();
+
+    expect($this->student->refresh()->gender)->toBe('prefer_not_to_say');
+});
+
 it('can save contact information when the existing student gender is capitalized', function (): void {
     $this->student->update([
         'gender' => 'Male',

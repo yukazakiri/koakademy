@@ -8,12 +8,23 @@ description: Deploy and operate KoAkademy using Dokploy's open-source PaaS on yo
 ## Deployment Strategies
 
 You can deploy KoAkademy in Dokploy using either:
-1. **Docker Compose Stack (Recommended)**: Deploys the application, PostgreSQL, Redis, and Gotenberg together inside an isolated Dokploy project network.
-2. **Individual Services**: Deploys Dokploy managed databases (PostgreSQL & Redis) alongside a standalone Docker image service for the application and Gotenberg.
+1. **Zero-Downtime Docker Compose Stack (Recommended)**: Deploys decoupled services (`app` for HTTP, `horizon` for background queues, `scheduler` for cron) with health-gated `start-first` updates, automated rollbacks, and tuned resource caps.
+2. **Individual Services**: Deploys Dokploy managed databases (PostgreSQL & Redis) alongside standalone Application services.
 
 ---
 
-## Method 1: Compose Stack Deployment (Recommended)
+## Method 1: Zero-Downtime Compose Stack Deployment (Recommended)
+
+### How Zero-Downtime Deployments Work in Dokploy
+
+By default, Docker Swarm and Compose stop the existing container before starting the new one (`order: stop-first`), resulting in a brief `502 Bad Gateway` error while the new container boots.
+
+To achieve seamless, zero-downtime updates:
+- **`order: start-first`**: Docker starts the new container replica alongside the current running container.
+- **Container Healthcheck**: The internal `healthcheck` script probes `/health` (and supervisor processes).
+- **VIP Routing Gate**: Dokploy and Traefik keep routing user traffic to the old container until the new container reports `healthy` over the configured monitoring period.
+- **Automated Rollback**: If the new container fails its health checks during the monitor period, the update rolls back immediately without dropping traffic.
+- **Decoupled Workers**: The web container runs with `HORIZON_IN_HTTP_CONTAINER="false"`, while Horizon and the scheduler run as dedicated services so queuing is not duplicated during start-first web container rollovers.
 
 ### Step 1: Create a Project in Dokploy
 
@@ -31,106 +42,235 @@ version: "3.8"
 services:
   app:
     image: ghcr.io/yukazakiri/koakademy:latest
-    restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      APP_NAME: "KoAkademy"
-      APP_ENV: "production"
-      APP_DEBUG: "false"
-      APP_URL: "https://school.example.com"
-      APP_KEY: "${APP_KEY}"
-      APP_PORT: 8000
-      OCTANE_SERVER: "frankenphp"
-      AUTO_MIGRATE: "true"
-      RUN_OPTIMIZE: "foreground"
-      
-      # Database
-      DB_CONNECTION: "pgsql"
-      DB_HOST: "postgres"
-      DB_PORT: 5432
-      DB_DATABASE: "koakademy"
-      DB_USERNAME: "koakademy"
-      DB_PASSWORD: "${DB_PASSWORD}"
-      
-      # Redis
-      CACHE_STORE: "redis"
-      SESSION_DRIVER: "redis"
-      QUEUE_CONNECTION: "redis"
-      REDIS_HOST: "redis"
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: "${REDIS_PASSWORD}"
-      
-      # PDF Service
-      GOTENBERG_URL: "http://gotenberg:3000"
-      
-      # Storage
-      FILESYSTEM_DISK: "public"
+      HEALTHCHECK_PATH: /health
+      HORIZON_IN_HTTP_CONTAINER: "false"
     volumes:
-      - app_storage:/app/storage
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      gotenberg:
-        condition: service_healthy
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.koakademy-app.rule=Host(`school.example.com`)"
-      - "traefik.http.routers.koakademy-app.entrypoints=websecure"
-      - "traefik.http.routers.koakademy-app.tls.certresolver=letsencrypt"
-      - "traefik.http.services.koakademy-app.loadbalancer.server.port=8000"
-
-  postgres:
-    image: postgres:18-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: "koakademy"
-      POSTGRES_USER: "koakademy"
-      POSTGRES_PASSWORD: "${DB_PASSWORD}"
-    volumes:
-      - pg_data:/var/lib/postgresql/data
+      - app-storage:/app/storage
+    networks:
+      - koakademy
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          memory: 3G
+        reservations:
+          memory: 1536M
+      placement:
+        constraints:
+          - node.role == manager
+        max_replicas_per_node: 2
+      update_config:
+        parallelism: 1
+        delay: 0s
+        order: start-first
+        monitor: 120s
+        failure_action: rollback
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+      restart_policy:
+        condition: any
+      endpoint_mode: vip
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U koakademy -d koakademy"]
-      interval: 10s
-      timeout: 5s
+      test: ["CMD", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
       retries: 5
+    stop_grace_period: 30s
+
+  horizon:
+    image: ghcr.io/yukazakiri/koakademy:latest
+    env_file:
+      - .env
+    environment:
+      CONTAINER_MODE: horizon
+      AUTO_MIGRATE: "false"
+      RUN_OPTIMIZE: "false"
+      RUN_SCOUT_SETTINGS: "false"
+    volumes:
+      - app-storage:/app/storage
+    networks:
+      - koakademy
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 384M
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: any
+    healthcheck:
+      test: ["CMD", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 5
+    stop_grace_period: 30m
+
+  scheduler:
+    image: ghcr.io/yukazakiri/koakademy:latest
+    env_file:
+      - .env
+    environment:
+      CONTAINER_MODE: scheduler
+      AUTO_MIGRATE: "false"
+      RUN_OPTIMIZE: "false"
+      RUN_SCOUT_SETTINGS: "false"
+    volumes:
+      - app-storage:/app/storage
+    networks:
+      - koakademy
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          memory: 384M
+        reservations:
+          memory: 128M
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: any
+    healthcheck:
+      test: ["CMD", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 5
+    stop_grace_period: 30s
+
+  pgsql:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: koakademy
+      POSTGRES_USER: koakademy
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+    volumes:
+      - pgsql-data:/var/lib/postgresql
+    networks:
+      - koakademy
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+      placement:
+        constraints:
+          - node.role == manager
 
   redis:
-    image: redis:8-alpine
-    restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    image: redis:7-alpine
+    command:
+      - redis-server
+      - --maxmemory
+      - 384mb
+      - --maxmemory-policy
+      - noeviction
     volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a \"${REDIS_PASSWORD}\" ping | grep PONG"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - redis-data:/data
+    networks:
+      - koakademy
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          memory: 448M
+        reservations:
+          memory: 128M
+      placement:
+        constraints:
+          - node.role == manager
 
   gotenberg:
     image: gotenberg/gotenberg:8
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:3000/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
+    networks:
+      - koakademy
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
 
 volumes:
-  app_storage:
-  pg_data:
-  redis_data:
+  app-storage:
+  pgsql-data:
+  redis-data:
+
+networks:
+  koakademy:
+    driver: overlay
+    attachable: true
 ```
 
 ### Step 3: Configure Environment Variables
 
-Under the **Environment** tab in Dokploy, add the secret variables:
+Under the **Environment** tab in Dokploy, add your application configuration:
 
-| Variable | Description | Example |
-| :--- | :--- | :--- |
-| `APP_KEY` | Laravel 32-byte encryption key | `base64:...` |
-| `DB_PASSWORD` | Strong PostgreSQL user password | `SecretDBPass123!` |
-| `REDIS_PASSWORD` | Strong Redis authentication password | `SecretRedisPass123!` |
+```ini
+APP_NAME="KoAkademy"
+APP_ENV="production"
+APP_DEBUG="false"
+APP_URL="https://school.example.com"
+APP_KEY="base64:..." # Generate with: php artisan key:generate --show
+
+# Database
+DB_CONNECTION="pgsql"
+DB_HOST="pgsql"
+DB_PORT="5432"
+DB_DATABASE="koakademy"
+DB_USERNAME="koakademy"
+DB_PASSWORD="StrongDatabasePasswordHere"
+
+# Redis Cache & Queues
+CACHE_STORE="redis"
+SESSION_DRIVER="redis"
+QUEUE_CONNECTION="redis"
+REDIS_HOST="redis"
+REDIS_PORT="6379"
+REDIS_PASSWORD=""
+REDIS_DB="0"
+REDIS_CACHE_DB="1"
+REDIS_QUEUE_DB="2"
+REDIS_PDF_QUEUE_DB="3"
+
+# Concurrency & Performance
+OCTANE_SERVER="frankenphp"
+OCTANE_WORKERS="2"
+OCTANE_MAX_REQUESTS="500"
+HORIZON_ENABLED="true"
+HORIZON_PROCESSES="1"
+HORIZON_PDF_PROCESSES="1"
+HORIZON_MEMORY="256"
+HORIZON_PDF_MEMORY="512"
+ASSESSMENT_EXPORT_PROCESSES="1"
+ASSESSMENT_EXPORT_EVENT_PROCESSES="1"
+ASSESSMENT_EXPORT_WORKER_MEMORY="512"
+
+# Production Hardening
+TELESCOPE_ENABLED="false"
+PULSE_ENABLED="false"
+NIGHTWATCH_ENABLED="false"
+LOG_LEVEL="info"
+
+# PDF Engine & Storage
+GOTENBERG_URL="http://gotenberg:3000"
+LARAVEL_PDF_DRIVER="gotenberg"
+LARAVEL_PDF_PRODUCTION_DRIVER="gotenberg"
+FILESYSTEM_DISK="public"
+```
 
 :::tip[Handling Quotes in Dokploy]
 Dokploy's environment editor sometimes persists strings with surrounding quotation marks (e.g. `"false"`). KoAkademy's container entrypoint automatically strips surrounding quotes at boot to ensure flags like `APP_DEBUG=false` or `AUTO_MIGRATE=true` parse as strict booleans.
@@ -139,9 +279,27 @@ Dokploy's environment editor sometimes persists strings with surrounding quotati
 ### Step 4: Domain & SSL Routing
 
 1. In Dokploy's **Domains** section, add your domain: `school.example.com`.
-2. Select container port: `8000`.
-3. Enable **HTTPS / SSL Certificate** via Let's Encrypt.
+2. Select service: `app`, container port: `8000`.
+3. Enable **HTTPS / SSL Certificate** via Let's Encrypt or Cloudflare.
 4. Click **Deploy**.
+
+---
+
+## Zero-Downtime Redeployment & Upgrade Runbook
+
+When pushing new code or pulling a new release image (such as `yukazaki/koakademy:edge-frankenphp` or a tagged release `ghcr.io/yukazakiri/koakademy:v1.24.0`):
+
+1. **Trigger Redeploy in Dokploy**: Click **Redeploy** in the Dokploy Compose service.
+2. **Start-First Rollout**:
+   - Docker Swarm starts the new `app` replica first.
+   - The new replica runs database migrations (`AUTO_MIGRATE=true`), warms caches, boots FrankenPHP and Inertia SSR.
+   - Swarm waits up to 60 seconds (`start_period`) for the health check endpoint `/health` to return HTTP `200`.
+3. **Route Traffic**:
+   - Once healthy, Traefik routes incoming connections to the new container.
+   - The previous container is stopped gracefully (`stop_grace_period: 30s`).
+4. **Independent Worker Updates**:
+   - The `horizon` and `scheduler` services update in parallel without causing web request downtime.
+   - Horizon workers finish active jobs before terminating (`stop_grace_period: 30m`).
 
 ---
 

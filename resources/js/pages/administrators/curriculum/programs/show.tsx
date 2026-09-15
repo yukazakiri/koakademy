@@ -1,4 +1,5 @@
 import AdminLayout from "@/components/administrators/admin-layout";
+import { AuthorityCodePicker, type AuthorityCodeOption } from "@/components/administrators/authority-code-picker";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -80,6 +81,9 @@ type ProgramPayload = {
     ched_program_credit_units: number | null;
     ched_tuition_per_unit: string | number | null;
     ched_program_fee: string | number | null;
+    industry_course_code_id: number | null;
+    industry_course_code_label: string | null;
+    industry_course_code_authority: string | null;
 };
 type SubjectPayload = {
     id: number;
@@ -128,6 +132,10 @@ interface Props {
         authority_categories: ChedOption[];
         delivery_modes: ChedOption[];
     };
+    authority_codes: {
+        is_ched_accredited: boolean;
+        authorities: { id: number; key: string; name: string; codes_count: number }[];
+    };
 }
 
 const yearOptions = [
@@ -154,6 +162,7 @@ export default function CurriculumProgramShow({
     departments,
     course_types,
     ched_options,
+    authority_codes,
 }: Props) {
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [editSubject, setEditSubject] = useState<SubjectPayload | null>(null);
@@ -202,6 +211,8 @@ export default function CurriculumProgramShow({
         ched_program_credit_units: fmt(program.ched_program_credit_units),
         ched_tuition_per_unit: fmt(program.ched_tuition_per_unit),
         ched_program_fee: fmt(program.ched_program_fee),
+        industry_course_code_id: program.industry_course_code_id ? String(program.industry_course_code_id) : "",
+        industry_course_code_label: program.industry_course_code_label ?? "",
     });
 
     const defaultSubject: SubjectFormData = {
@@ -853,6 +864,33 @@ export default function CurriculumProgramShow({
                                                 Leave unknown fields empty; they will remain in the reporting-quality queue.
                                             </p>
                                         </div>
+                                        {authority_codes.authorities.length > 0 && (
+                                            <div className="grid gap-2 lg:col-span-2">
+                                                <Label htmlFor="program-authority-code">
+                                                    Official authority code{" "}
+                                                    <span className="text-muted-foreground font-normal">
+                                                        (optional{authority_codes.is_ched_accredited ? " · CHED-accredited" : ""})
+                                                    </span>
+                                                </Label>
+                                                <AuthorityCodePicker
+                                                    id="program-authority-code"
+                                                    value={programForm.data.industry_course_code_id}
+                                                    initialLabel={programForm.data.industry_course_code_label}
+                                                    onSelect={(option: AuthorityCodeOption | null) => {
+                                                        programForm.setData("industry_course_code_id", option ? String(option.id) : "");
+                                                        programForm.setData("industry_course_code_label", option ? option.label : "");
+                                                    }}
+                                                    error={programForm.errors.industry_course_code_id}
+                                                />
+                                                {program.industry_course_code_authority && (
+                                                    <p className="text-muted-foreground text-xs">
+                                                        Currently linked: {program.industry_course_code_label} ·{" "}
+                                                        {program.industry_course_code_authority}
+                                                    </p>
+                                                )}
+                                                <FieldError message={programForm.errors.industry_course_code_id} />
+                                            </div>
+                                        )}
                                         <div className="grid gap-2">
                                             <Label htmlFor="ched-reporting-level">CHED worksheet / education level</Label>
                                             <Select

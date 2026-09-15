@@ -25,11 +25,15 @@ import axios from "axios";
 import {
     AlertTriangle,
     ArrowRight,
+    Calculator,
     Check,
     CheckCircle2,
     ClipboardPaste,
     Columns3,
+    Download,
+    Eye,
     FileSpreadsheet,
+    History,
     LayoutList,
     Loader2,
     Mail,
@@ -91,6 +95,17 @@ type Props = {
     school_years: Record<string, string> | string[];
     semesters: Record<string, string>;
     courses: Array<{ id: number; code: string; title: string }>;
+    fee_schedules?: Array<{
+        id: number;
+        course_id?: number | null;
+        school_year: string;
+        semester: number;
+        version: number;
+        lecture_rate_per_unit: number;
+        laboratory_rate_per_unit: number;
+        miscellaneous_fee: number;
+        course?: { id: number; code: string; title: string } | null;
+    }>;
     student_types: Array<{ value: string; label: string }>;
     schedule_settings: { profiles: Record<string, ScheduleProfile> };
     workspace_layout: "inspector" | "staged";
@@ -101,6 +116,7 @@ const money = (value: number) => new Intl.NumberFormat("en-PH", { style: "curren
 const centsEqual = (left: number, right: number) => Math.abs(Number(left) - Number(right)) < 0.009;
 const termAmount = (row: DraftRow, term: Installment["term"]) => Number(row.installments.find((item) => item.term === term)?.amount ?? 0);
 const searchableText = (value: unknown) => String(value ?? "").toLowerCase();
+const toRelativePath = (url: string) => url.replace(/^(?:https?:)?\/\/[^\/]+/, "");
 
 function toDraft(row: TuitionRow): DraftRow {
     return { ...row, clientRowId: crypto.randomUUID(), original: structuredClone(row), status: "unchanged" };
@@ -149,6 +165,15 @@ export default function TuitionAdjustmentsPage(props: Props) {
     const [pasteText, setPasteText] = useState("");
     const [resolving, setResolving] = useState(false);
     const [applying, setApplying] = useState(false);
+    const [correctionMethod, setCorrectionMethod] = useState<"reconciled_assessment" | "fee_rates">("reconciled_assessment");
+    const [selectedFeeScheduleId, setSelectedFeeScheduleId] = useState<string>("default");
+    const [previewOpen, setPreviewOpen] = useState(false);
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const [previewRows, setPreviewRows] = useState<any[]>([]);
+    const [historyOpen, setHistoryOpen] = useState(false);
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const [historyTuition, setHistoryTuition] = useState<TuitionRow | null>(null);
+    const [historyRevisions, setHistoryRevisions] = useState<any[]>([]);
     const spreadsheetInput = useRef<HTMLInputElement>(null);
     const spreadsheetImport = useForm<{ file: File | null; school_year: string; semester: number }>({
         file: null,
@@ -167,7 +192,7 @@ export default function TuitionAdjustmentsPage(props: Props) {
         setDrafts([]);
         setSelectedId(null);
         axios
-            .get<{ rows: TuitionRow[] }>(tuitionRows.url({ query: period }), { signal: controller.signal })
+            .get<{ rows: TuitionRow[] }>(toRelativePath(tuitionRows.url({ query: period })), { signal: controller.signal })
             .then(({ data }) => {
                 const loaded = data.rows.map(toDraft);
                 setDrafts(loaded);
@@ -240,7 +265,7 @@ export default function TuitionAdjustmentsPage(props: Props) {
     function changePeriod(field: "school_year" | "semester", value: string) {
         const next = { ...period, [field]: field === "semester" ? Number(value) : value };
         setPeriod(next);
-        const url = new URL(index.url({ query: next }));
+        const url = new URL(toRelativePath(index.url({ query: next })), window.location.origin);
         window.history.replaceState(window.history.state, "", `${window.location.pathname}${url.search}`);
     }
 
@@ -265,7 +290,7 @@ export default function TuitionAdjustmentsPage(props: Props) {
 
         setResolving(true);
         try {
-            const response = await axios.post(resolve.url(), {
+            const response = await axios.post(toRelativePath(resolve.url()), {
                 school_year: period.school_year,
                 semester: period.semester,
                 rows: parsed,
@@ -294,12 +319,65 @@ export default function TuitionAdjustmentsPage(props: Props) {
         }
     }
 
+    async function openHistory(row: TuitionRow) {
+        setHistoryTuition(row);
+        setHistoryOpen(true);
+        setHistoryLoading(true);
+        try {
+            const response = await axios.get(`/administrators/finance/tuition-adjustments/revisions/${row.tuition_id}`);
+            setHistoryRevisions(response.data.revisions || []);
+        } catch {
+            toast.error("Could not load revision history.");
+            setHistoryRevisions([]);
+        } finally {
+            setHistoryLoading(false);
+        }
+    }
+
+    async function openPreview() {
+        if (ready.length === 0) return toast.error("No ready rows to preview.");
+        setPreviewOpen(true);
+        setPreviewLoading(true);
+        try {
+            const payload = {
+                rows: ready.map((row) => ({
+                    client_row_id: row.clientRowId,
+                    enrollment_id: row.enrollment_id,
+                    tuition_id: row.tuition_id,
+                    state_hash: row.state_hash,
+                    total_fees: row.total_fees,
+                    opening_paid: row.paid,
+                    balance: row.signed_balance,
+                    lecture: row.lecture,
+                    laboratory: row.laboratory,
+                    miscellaneous: row.miscellaneous,
+                    discount: row.discount,
+                    required_downpayment: row.required_downpayment,
+                    installments: {
+                        prelim: termAmount(row, "prelim"),
+                        midterm: termAmount(row, "midterm"),
+                        finals: termAmount(row, "finals"),
+                    },
+                })),
+                calculation_method: correctionMethod,
+                fee_schedule_version_id: selectedFeeScheduleId && selectedFeeScheduleId !== "default" ? Number(selectedFeeScheduleId) : undefined,
+            };
+            const response = await axios.post("/administrators/finance/tuition-adjustments/preview", payload);
+            setPreviewRows(response.data.rows || []);
+        } catch {
+            toast.error("Could not generate difference preview.");
+            setPreviewRows([]);
+        } finally {
+            setPreviewLoading(false);
+        }
+    }
+
     async function applyRows() {
         if (!reason.trim()) return toast.error("Enter an adjustment reason before applying rows.");
         if (ready.length === 0) return toast.error("No reconciled changed rows are ready to apply.");
         setApplying(true);
         try {
-            const response = await axios.post(storeBatch.url(), {
+            const response = await axios.post(toRelativePath(storeBatch.url()), {
                 batch_key: crypto.randomUUID(),
                 source: "workspace",
                 reason,
@@ -316,6 +394,8 @@ export default function TuitionAdjustmentsPage(props: Props) {
                     miscellaneous: row.miscellaneous,
                     discount: row.discount,
                     required_downpayment: row.required_downpayment,
+                    calculation_method: correctionMethod,
+                    fee_schedule_version_id: selectedFeeScheduleId && selectedFeeScheduleId !== "default" ? Number(selectedFeeScheduleId) : undefined,
                     installments: {
                         prelim: termAmount(row, "prelim"),
                         midterm: termAmount(row, "midterm"),
@@ -355,7 +435,7 @@ export default function TuitionAdjustmentsPage(props: Props) {
     function uploadSpreadsheet(file: File | null) {
         if (!file) return;
         spreadsheetImport.setData({ file, school_year: period.school_year, semester: period.semester });
-        spreadsheetImport.post(storeSpreadsheetImport.url(), { forceFormData: true });
+        spreadsheetImport.post(toRelativePath(storeSpreadsheetImport.url()), { forceFormData: true });
     }
 
     return (
@@ -408,13 +488,40 @@ export default function TuitionAdjustmentsPage(props: Props) {
                                 ))}
                             </SelectContent>
                         </Select>
+                        <Select
+                            value={correctionMethod}
+                            onValueChange={(value) => setCorrectionMethod(value as "reconciled_assessment" | "fee_rates")}
+                        >
+                            <SelectTrigger className="w-52">
+                                <SelectValue placeholder="Correction Method" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="reconciled_assessment">Reconcile approved totals</SelectItem>
+                                <SelectItem value="fee_rates">Recalculate from fee rates</SelectItem>
+                            </SelectContent>
+                        </Select>
+                        {correctionMethod === "fee_rates" && props.fee_schedules && props.fee_schedules.length > 0 && (
+                            <Select value={selectedFeeScheduleId} onValueChange={setSelectedFeeScheduleId}>
+                                <SelectTrigger className="w-48">
+                                    <SelectValue placeholder="Fee Schedule" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="default">Default course rates</SelectItem>
+                                    {props.fee_schedules.map((schedule) => (
+                                        <SelectItem key={schedule.id} value={String(schedule.id)}>
+                                            {schedule.course ? `${schedule.course.code} (v${schedule.version})` : `General (v${schedule.version})`}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        )}
                         <Button variant="outline" onClick={() => setPasteOpen(true)}>
                             <ClipboardPaste className="size-4" /> Paste from Excel
                         </Button>
                     </div>
                     <div className="flex flex-wrap gap-2">
                         <Button variant="outline" asChild>
-                            <a href={downloadTemplate.url()}>
+                            <a href={toRelativePath(downloadTemplate.url())}>
                                 <FileSpreadsheet className="size-4" /> Download template
                             </a>
                         </Button>
@@ -538,6 +645,7 @@ export default function TuitionAdjustmentsPage(props: Props) {
                                 profile={props.schedule_settings.profiles[selected.student_type]}
                                 updateRow={updateRow}
                                 updateInstallment={updateInstallment}
+                                onOpenHistory={() => openHistory(selected)}
                             />
                         )}
                     </div>
@@ -551,9 +659,15 @@ export default function TuitionAdjustmentsPage(props: Props) {
                             <Summary label="Changed" value={changed.length} />
                             <Summary label="Total rows" value={drafts.length} />
                         </div>
-                        <Button onClick={() => setStep(3)} disabled={ready.length === 0 || !props.can_manage}>
-                            Review notifications ({ready.length}) <ArrowRight className="size-4" />
-                        </Button>
+                        <div className="flex flex-wrap gap-2">
+                            <Button variant="outline" onClick={openPreview} disabled={ready.length === 0 || previewLoading}>
+                                {previewLoading ? <Loader2 className="size-4 animate-spin" /> : <Eye className="size-4" />}
+                                Preview differences ({ready.length})
+                            </Button>
+                            <Button onClick={() => setStep(3)} disabled={ready.length === 0 || !props.can_manage}>
+                                Review notifications ({ready.length}) <ArrowRight className="size-4" />
+                            </Button>
+                        </div>
                     </div>
                 )}
             </div>
@@ -579,6 +693,143 @@ export default function TuitionAdjustmentsPage(props: Props) {
                         </Button>
                         <Button onClick={resolvePaste} disabled={resolving}>
                             {resolving ? <Loader2 className="size-4 animate-spin" /> : <FileSpreadsheet className="size-4" />} Resolve rows
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+                <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <Eye className="size-5" /> Review assessment differences
+                        </DialogTitle>
+                        <DialogDescription>
+                            Review calculated changes, components, installments, and fee revisions before confirming.
+                        </DialogDescription>
+                    </DialogHeader>
+                    {previewLoading ? (
+                        <div className="flex items-center justify-center p-8">
+                            <Loader2 className="size-6 animate-spin" />
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            {previewRows.map((preview: any) => (
+                                <div key={preview.client_row_id} className="space-y-3 rounded-lg border p-4">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <p className="font-semibold">{preview.student_name}</p>
+                                            <p className="text-muted-foreground text-xs">{preview.student_number}</p>
+                                        </div>
+                                        <Badge variant={preview.differences?.total_fees_delta !== 0 ? "secondary" : "outline"}>
+                                            {preview.explanation}
+                                        </Badge>
+                                    </div>
+                                    <div className="bg-muted/30 grid grid-cols-2 gap-2 rounded p-2 text-xs md:grid-cols-4">
+                                        <div>
+                                            <span className="text-muted-foreground">Total Fees: </span>
+                                            <strong>{money(preview.proposed?.total_fees ?? 0)}</strong>
+                                            {preview.differences?.total_fees_delta !== 0 && (
+                                                <span className="text-muted-foreground ml-1 text-xs">
+                                                    ({preview.differences?.total_fees_delta > 0 ? "+" : ""}
+                                                    {money(preview.differences?.total_fees_delta ?? 0)})
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <span className="text-muted-foreground">Balance: </span>
+                                            <strong>{money(preview.proposed?.balance_due ?? 0)}</strong>
+                                        </div>
+                                        <div>
+                                            <span className="text-muted-foreground">Discount: </span>
+                                            <strong>{preview.proposed?.discount ?? 0}%</strong>
+                                        </div>
+                                        <div>
+                                            <span className="text-muted-foreground">Adjustment: </span>
+                                            <strong>{money(preview.proposed?.assessment_adjustment ?? 0)}</strong>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setPreviewOpen(false)}>
+                            Close
+                        </Button>
+                        <Button
+                            onClick={() => {
+                                setPreviewOpen(false);
+                                setStep(3);
+                            }}
+                        >
+                            Proceed to reason & apply <ArrowRight className="size-4" />
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+                <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <History className="size-5" /> Assessment revision history
+                        </DialogTitle>
+                        <DialogDescription>Immutable audit trail of past assessments for {historyTuition?.student_name ?? "selected student"}.</DialogDescription>
+                    </DialogHeader>
+                    {historyLoading ? (
+                        <div className="flex items-center justify-center p-8">
+                            <Loader2 className="size-6 animate-spin" />
+                        </div>
+                    ) : historyRevisions.length === 0 ? (
+                        <div className="text-muted-foreground py-8 text-center text-sm">No previous revisions recorded for this account.</div>
+                    ) : (
+                        <div className="space-y-3">
+                            {historyRevisions.map((rev: any) => (
+                                <div key={rev.id} className="space-y-2 rounded-lg border p-4 text-sm">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <Badge variant="secondary">Revision #{rev.revision_number}</Badge>
+                                            <span className="text-muted-foreground text-xs">{rev.created_at}</span>
+                                        </div>
+                                        <Badge variant="outline" className="capitalize">
+                                            {rev.source} · {rev.calculation_method}
+                                        </Badge>
+                                    </div>
+                                    <p className="text-muted-foreground text-xs">
+                                        Approved by: <span className="text-foreground font-medium">{rev.actor_name}</span>
+                                    </p>
+                                    {rev.reason && <p className="bg-muted/20 rounded p-2 text-xs italic">Reason: {rev.reason}</p>}
+                                    <div className="bg-muted/40 grid grid-cols-2 gap-2 rounded p-2 text-xs md:grid-cols-4">
+                                        <div>
+                                            Total: <strong>{money(rev.overall_tuition)}</strong>
+                                        </div>
+                                        <div>
+                                            Paid: <strong>{money(rev.total_paid)}</strong>
+                                        </div>
+                                        <div>
+                                            Balance: <strong>{money(rev.balance_due)}</strong>
+                                        </div>
+                                        <div>
+                                            Credit: <strong>{money(rev.credit)}</strong>
+                                        </div>
+                                    </div>
+                                    {rev.pdf_url && (
+                                        <div className="flex justify-end pt-2">
+                                            <Button size="sm" variant="outline" asChild>
+                                                <a href={rev.pdf_url} target="_blank" rel="noopener noreferrer">
+                                                    <Download className="size-3.5" /> Download PDF
+                                                </a>
+                                            </Button>
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setHistoryOpen(false)}>
+                            Close
                         </Button>
                     </DialogFooter>
                 </DialogContent>
@@ -806,29 +1057,36 @@ function EnrollmentInspector({
     profile,
     updateRow,
     updateInstallment,
+    onOpenHistory,
 }: {
     row: DraftRow;
     profile: ScheduleProfile;
     updateRow: (id: number, changes: Partial<DraftRow>, regenerate?: boolean) => void;
     updateInstallment: (id: number, term: Installment["term"], amount: number) => void;
+    onOpenHistory: (row: DraftRow) => void;
 }) {
     return (
         <Card className="h-fit overflow-hidden 2xl:sticky 2xl:top-4">
             <CardHeader className="border-b">
-                <div className="flex items-start gap-3">
-                    <div className="bg-primary text-primary-foreground flex size-10 items-center justify-center rounded-full font-semibold">
-                        {row.student_name
-                            .split(/\s+/)
-                            .slice(0, 2)
-                            .map((part) => part[0])
-                            .join("")}
+                <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                        <div className="bg-primary text-primary-foreground flex size-10 items-center justify-center rounded-full font-semibold">
+                            {row.student_name
+                                .split(/\s+/)
+                                .slice(0, 2)
+                                .map((part) => part[0])
+                                .join("")}
+                        </div>
+                        <div>
+                            <CardTitle className="text-base">{row.student_name}</CardTitle>
+                            <CardDescription>
+                                {row.student_number} · {row.course} · Year {row.academic_year}
+                            </CardDescription>
+                        </div>
                     </div>
-                    <div>
-                        <CardTitle className="text-base">{row.student_name}</CardTitle>
-                        <CardDescription>
-                            {row.student_number} · {row.course} · Year {row.academic_year}
-                        </CardDescription>
-                    </div>
+                    <Button size="sm" variant="outline" onClick={() => onOpenHistory(row)}>
+                        <History className="size-3.5" /> History
+                    </Button>
                 </div>
             </CardHeader>
             <CardContent className="space-y-5 p-4">
@@ -917,8 +1175,7 @@ function EnrollmentInspector({
                         <span className="font-medium tabular-nums">
                             {money(
                                 row.total_fees -
-                                    (row.lecture + row.laboratory + row.modular_or_other + row.miscellaneous + row.additional_fees) *
-                                        (1 - row.discount / 100),
+                                    (row.lecture + row.laboratory + row.modular_or_other + row.miscellaneous + row.additional_fees),
                             )}
                         </span>
                     </div>

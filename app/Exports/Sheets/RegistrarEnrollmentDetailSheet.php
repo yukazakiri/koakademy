@@ -137,15 +137,17 @@ final readonly class RegistrarEnrollmentDetailSheet implements FromArray, Should
                 ->setFillType(Fill::FILL_SOLID)
                 ->getStartColor()->setARGB('FFFFF4CC');
 
-            $booleanColumns = [];
-            $genderColumn = null;
+            $choiceColumns = [];
             foreach ($this->workbook->fields() as $offset => $field) {
                 $column = Coordinate::stringFromColumnIndex(11 + $offset);
                 if ($field['type'] === 'boolean') {
-                    $booleanColumns[] = $column;
-                }
-                if ($field['key'] === 'gender') {
-                    $genderColumn = $column;
+                    $choiceColumns[$column] = 'Yes,No';
+                } elseif ($field['type'] === 'choice' && is_array($field['options'] ?? null) && $field['options'] !== []) {
+                    $labels = array_values($field['options']);
+                    $optionsList = implode(',', $labels);
+                    if (mb_strlen($optionsList) <= 255) {
+                        $choiceColumns[$column] = $optionsList;
+                    }
                 }
             }
 
@@ -156,11 +158,8 @@ final readonly class RegistrarEnrollmentDetailSheet implements FromArray, Should
                     $this->listValidation($delegate, "H{$row}", 'New freshman,Continuing first-year');
                 }
 
-                foreach ($booleanColumns as $column) {
-                    $this->listValidation($delegate, "{$column}{$row}", 'Yes,No');
-                }
-                if ($genderColumn !== null) {
-                    $this->listValidation($delegate, "{$genderColumn}{$row}", 'Male,Female,Other');
+                foreach ($choiceColumns as $column => $optionsList) {
+                    $this->listValidation($delegate, "{$column}{$row}", $optionsList);
                 }
             }
 

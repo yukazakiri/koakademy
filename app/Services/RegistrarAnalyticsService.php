@@ -75,7 +75,7 @@ final class RegistrarAnalyticsService
 
         return [
             'analytics' => $analytics,
-            'quality' => $this->quality($reporting),
+            'quality' => $this->quality($reporting, $filters),
             'report' => $report,
             'generatedAt' => now()->toIso8601String(),
         ];
@@ -119,7 +119,7 @@ final class RegistrarAnalyticsService
             'departments' => Department::query()->orderBy('code')->get(['id', 'code', 'name'])->map(fn (Department $department): array => ['value' => $department->id, 'label' => mb_trim($department->code.' — '.$department->name)])->values()->all(),
             'programs' => Course::query()->orderBy('code')->get(['id', 'department_id', 'code', 'title'])->map(fn (Course $course): array => ['value' => $course->id, 'department_id' => $course->department_id, 'label' => mb_trim($course->code.' — '.$course->title)])->values()->all(),
             'year_levels' => collect(range(1, $maximumYearLevel))->map(fn (int $year): array => ['value' => $year, 'label' => "Year {$year}"])->values()->all(),
-            'genders' => [['value' => 'male', 'label' => 'Male'], ['value' => 'female', 'label' => 'Female'], ['value' => 'unspecified', 'label' => 'Unspecified']],
+            'genders' => [['value' => 'male', 'label' => 'Male'], ['value' => 'female', 'label' => 'Female'], ['value' => 'other', 'label' => 'Other'], ['value' => 'prefer_not_to_say', 'label' => 'Prefer not to say'], ['value' => 'unspecified', 'label' => 'Unspecified']],
             'student_types' => collect(StudentType::cases())->map(fn (StudentType $type): array => ['value' => $type->value, 'label' => $type->getLabel()])->values()->all(),
             'intake_categories' => [['value' => 'new_freshman', 'label' => 'New freshman'], ['value' => 'continuing_first_year', 'label' => 'Continuing first-year'], ['value' => 'unclassified', 'label' => 'Unclassified']],
             'statuses' => collect($this->enrollmentPipelineService->getSteps())->map(fn (array $step): array => ['value' => $step['status'], 'label' => $step['label']])->values()->all(),
@@ -365,14 +365,14 @@ final class RegistrarAnalyticsService
         $selects = ["COALESCE(NULLIF(TRIM(courses.code), ''), 'Unassigned') as program_code", 'courses.title as program_title', "COALESCE(NULLIF(TRIM(departments.code), ''), 'Unassigned') as department"];
         $reportedConditions = [];
         foreach (['new_freshman' => "student_enrollment.academic_year = 1 AND student_enrollment.intake_category = 'new_freshman'", 'continuing_first_year' => "student_enrollment.academic_year = 1 AND student_enrollment.intake_category = 'continuing_first_year'"] as $key => $condition) {
-            foreach (['male', 'female'] as $gender) {
+            foreach (['male', 'female', 'other', 'prefer_not_to_say'] as $gender) {
                 $reportedCondition = "{$condition} AND LOWER(TRIM(COALESCE(students.gender, ''))) = '{$gender}'";
                 $selects[] = "SUM(CASE WHEN {$reportedCondition} THEN 1 ELSE 0 END) as {$key}_{$gender}";
                 $reportedConditions[] = $reportedCondition;
             }
         }
         foreach (range(2, $maximumYearLevel) as $year) {
-            foreach (['male', 'female'] as $gender) {
+            foreach (['male', 'female', 'other', 'prefer_not_to_say'] as $gender) {
                 $reportedCondition = "student_enrollment.academic_year = {$year} AND LOWER(TRIM(COALESCE(students.gender, ''))) = '{$gender}'";
                 $selects[] = "SUM(CASE WHEN {$reportedCondition} THEN 1 ELSE 0 END) as year_{$year}_{$gender}";
                 $reportedConditions[] = $reportedCondition;
@@ -430,11 +430,28 @@ final class RegistrarAnalyticsService
         });
     }
 
-    private function quality(Builder $query): array
+    /** @param array<string, int|string|null> $filters */
+    private function quality(Builder $query, array $filters = []): array
     {
         $graduateMissing = (clone $query)->where('students.status', StudentStatus::Graduated->value)->where(function (Builder $query): void {
             $query->whereNull('students.graduation_school_year')->orWhereNull('students.graduation_semester');
         })->count();
+
+        $coursesQuery = Course::query()->where('is_active', true);
+        if (! empty($filters['department_id']) && $filters['department_id'] !== 'all') {
+            $coursesQuery->where('department_id', $filters['department_id']);
+        }
+        if (! empty($filters['course_id']) && $filters['course_id'] !== 'all') {
+            $coursesQuery->where('id', $filters['course_id']);
+        }
+
+        $missingAuthorityCodeCount = $coursesQuery
+            ->whereNull('industry_course_code_id')
+            ->where(function (Builder $q): void {
+                $q->whereNull('ched_program_code')
+                    ->orWhereRaw("TRIM(COALESCE(ched_program_code, '')) = ''");
+            })
+            ->count();
 
         return [
             'missing_department_count' => (clone $query)->whereNull('departments.id')->count(),
@@ -447,6 +464,7 @@ final class RegistrarAnalyticsService
             'missing_program_metadata_count' => (clone $query)->where(function (Builder $query): void {
                 $query->whereNull('courses.ched_program_status')->orWhereNull('courses.ched_authority_category')->orWhereNull('courses.ched_delivery_mode')->orWhereNull('courses.ched_normal_length_years')->orWhereNull('courses.ched_program_credit_units');
             })->count(),
+            'missing_authority_code_count' => $missingAuthorityCodeCount,
             'reporting_confirmation_missing_count' => (clone $query)->whereNull('students.profile_reporting_confirmed_at')->count(),
             'missing_graduation_period_count' => $graduateMissing,
         ];

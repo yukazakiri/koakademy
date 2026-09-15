@@ -34,7 +34,7 @@ final class StoreEnrollmentRegistrationRequest extends FormRequest
             'suffix' => ['nullable', 'string', 'max:20'],
 
             'birth_date' => ['required', 'date', 'before:today'],
-            'gender' => ['required', 'in:male,female'],
+            'gender' => ['required', 'in:male,female,other,prefer_not_to_say'],
             'civil_status' => ['nullable', 'string', 'max:50'],
             'nationality' => ['required', 'string', 'max:100'],
             'religion' => ['nullable', 'string', 'max:100'],

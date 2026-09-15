@@ -19,7 +19,7 @@ final class CoursesTable
     public static function configure(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with(['school', 'department', 'courseType'])->withCount('subjects'))
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with(['school', 'department', 'courseType', 'industryCourseCode.authority'])->withCount('subjects'))
             ->defaultSort('code')
             ->striped()
             ->columns([
@@ -81,6 +81,15 @@ final class CoursesTable
                     ->searchable()
                     ->sortable()
                     ->placeholder('—')
+                    ->toggleable(),
+                TextColumn::make('industryCourseCode.code')
+                    ->label('Authority code')
+                    ->badge()
+                    ->color('warning')
+                    ->searchable()
+                    ->sortable()
+                    ->placeholder('—')
+                    ->description(fn ($record): ?string => $record->industryCourseCode?->authority?->name)
                     ->toggleable(),
                 TextColumn::make('miscelaneous')
                     ->label('Misc. fee')

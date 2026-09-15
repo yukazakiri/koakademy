@@ -31,12 +31,12 @@ final readonly class RegistrarGenderSheet implements FromArray, ShouldAutoSize, 
     {
         $items = $this->normalize($this->analytics['by_gender'] ?? []);
 
-        // Merge case variants (Male / male), then sort by count desc.
+        // Merge case variants, then sort by count desc.
         $merged = [];
         foreach ($items as $item) {
             $key = mb_strtolower(mb_trim((string) ($item['gender'] ?? '')));
             $label = match ($key) {
-                'male' => 'Male', 'female' => 'Female',
+                'male' => 'Male', 'female' => 'Female', 'prefer_not_to_say' => 'Prefer not to say',
                 '' => 'Unspecified', default => ucfirst($key ?: 'Unknown'),
             };
             $merged[$label] = ($merged[$label] ?? 0) + (int) ($item['count'] ?? 0);

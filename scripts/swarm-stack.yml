@@ -113,7 +113,7 @@ services:
       TRUSTED_PROXIES: "*"
       OCTANE_SERVER: frankenphp
       OCTANE_HTTPS: "false"
-      OCTANE_WORKERS: auto
+      OCTANE_WORKERS: ${OCTANE_WORKERS:-2}
       OCTANE_MAX_REQUESTS: "500"
       DB_CONNECTION: pgsql
       DB_HOST: postgres

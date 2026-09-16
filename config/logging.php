@@ -12,8 +12,8 @@ $stackChannels = array_values(array_unique(array_filter(
     static fn (string $channel): bool => $channel !== '' && $channel !== 'stack',
 )));
 
-if ($stackChannels === []) {
-    $stackChannels = ['single'];
+if ($stackChannels === [] || (! in_array('single', $stackChannels, true) && ! in_array('stderr', $stackChannels, true) && ! in_array('daily', $stackChannels, true))) {
+    array_unshift($stackChannels, 'single');
 }
 
 return [

@@ -21,7 +21,6 @@ use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
-use Rupadana\ApiService\ApiServicePlugin;
 use Spatie\LaravelSettings\Settings;
 
 final class PortalPanelProvider extends PanelProvider
@@ -58,9 +57,6 @@ final class PortalPanelProvider extends PanelProvider
             ->widgets([
                 AccountWidget::class,
                 FilamentInfoWidget::class,
-            ])
-            ->plugins([
-                ApiServicePlugin::make(),
             ])
             ->middleware([
                 EncryptCookies::class,

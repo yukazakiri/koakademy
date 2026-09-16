@@ -31,7 +31,11 @@ final class AuthServiceProvider extends ServiceProvider
     {
         $this->registerPolicies();
 
-        Gate::before(function (User $user): ?bool {
+        Gate::before(function (mixed $user): ?bool {
+            if (! $user instanceof User) {
+                return null;
+            }
+
             if (in_array($user->role, [UserRole::SuperAdmin, UserRole::Developer], true)) {
                 return true;
             }

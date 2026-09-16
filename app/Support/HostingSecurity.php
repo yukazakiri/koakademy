@@ -17,11 +17,15 @@ final class HostingSecurity
         ?string $portalHost = null,
         ?string $additionalHosts = null,
     ): array {
+        $rawAdditional = $additionalHosts ?? self::environment('TRUSTED_HOSTS', '');
+        $rawAdditional = mb_trim($rawAdditional, "\"\' \t\n\r\0\x0B");
+        $additional = array_filter(array_map('trim', explode(',', $rawAdditional)));
+
         $hosts = [
             self::hostFromUrl($appUrl ?? self::environment('APP_URL', 'http://localhost')),
             $adminHost ?? self::environment('ADMIN_HOST', 'localhost'),
             $portalHost ?? self::environment('PORTAL_HOST', 'localhost'),
-            ...explode(',', $additionalHosts ?? self::environment('TRUSTED_HOSTS', '')),
+            ...$additional,
             'localhost',
             '127.0.0.1',
         ];
@@ -71,6 +75,7 @@ final class HostingSecurity
     private static function normalizeHost(string $host): ?string
     {
         $host = mb_strtolower(mb_trim($host));
+        $host = mb_trim($host, "\"\'[] \t\n\r\0\x0B");
 
         if ($host === '') {
             return null;
@@ -80,7 +85,7 @@ final class HostingSecurity
             $host = self::hostFromUrl($host);
         }
 
-        $host = mb_trim($host, "[] \t\n\r\0\x0B");
+        $host = mb_trim($host, "\"\'[] \t\n\r\0\x0B");
         $host = preg_replace('/:\d+$/', '', $host) ?? $host;
 
         if ($host === '' || (! filter_var($host, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) && ! filter_var($host, FILTER_VALIDATE_IP))) {

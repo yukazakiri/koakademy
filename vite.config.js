@@ -98,4 +98,7 @@ export default defineConfig({
         cssCodeSplit: true,
         chunkSizeWarningLimit: 1000,
     },
+    ssr: {
+        noExternal: [/@visx\/.*/],
+    },
 });

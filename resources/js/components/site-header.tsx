@@ -26,8 +26,9 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { User } from "@/types/user";
 import { Link, router, usePage } from "@inertiajs/react";
 import { IconSearch } from "@tabler/icons-react";
-import { ChevronDown, LogOut, UserRound } from "lucide-react";
+import { ChevronDown, LogOut, Sparkles, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
+import { AiChatSheet } from "@/components/ai";
 
 interface SiteHeaderProps {
     user?: User;
@@ -80,6 +81,12 @@ export function SiteHeader({ user }: SiteHeaderProps) {
         return "Dashboard";
     })();
 
+    const defaultAgent = isStudent
+        ? "student_advisor"
+        : isFaculty
+          ? "faculty_copilot"
+          : "campus_support";
+
     return (
         <header className="border-border/60 bg-background/80 sticky top-0 z-30 flex h-(--header-height) shrink-0 items-center gap-2 border-b backdrop-blur-xl transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
             <div className="flex w-full items-center gap-1 px-3 py-2 lg:gap-2 lg:px-6">
@@ -98,6 +105,19 @@ export function SiteHeader({ user }: SiteHeaderProps) {
                 </button>
 
                 <div className="ml-auto flex min-w-0 items-center gap-2">
+                    <AiChatSheet
+                        defaultAgent={defaultAgent}
+                        trigger={
+                            <button
+                                type="button"
+                                className="border-border/60 bg-card/70 hover:bg-accent hover:text-accent-foreground text-foreground inline-flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium shadow-xs transition-colors"
+                                title="Open AI Assistant"
+                            >
+                                <Sparkles className="size-3.5 text-indigo-500" />
+                                <span className="hidden sm:inline">AI Copilot</span>
+                            </button>
+                        }
+                    />
                     <AnimatedThemeToggler className="text-primary hover:bg-accent hover:text-accent-foreground focus-visible:ring-ring inline-flex h-9 w-9 items-center justify-center gap-2 rounded-md px-0 text-sm font-medium whitespace-nowrap transition-all duration-200 focus-visible:ring-1 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0" />
 
                     {/* Desktop Text Info */}

@@ -18,7 +18,74 @@ export type SystemManagementSectionKey =
     | "identifiers"
     | "faculty_fields"
     | "pulse"
-    | "observability";
+    | "observability"
+    | "ai";
+
+export type AiProviderKey =
+    | "anthropic"
+    | "openai"
+    | "gemini"
+    | "groq"
+    | "deepseek"
+    | "mistral"
+    | "openrouter"
+    | "ollama"
+    | "openai-compatible";
+
+export interface AiDiscoveredModel {
+    id: string;
+    name: string;
+    context_window?: number | null;
+}
+
+export interface AiProviderAdminConfig {
+    key: AiProviderKey;
+    label: string;
+    driver: string;
+    enabled: boolean;
+    configured: boolean;
+    api_key_masked: string;
+    base_url: string;
+    default_chat_model: string;
+    default_fast_model: string;
+    default_embeddings_model: string;
+    custom_models: string[];
+    discovered_models: AiDiscoveredModel[];
+    last_fetched_at: string | null;
+    requires_key: boolean;
+    supports_model_fetch: boolean;
+    is_custom?: boolean;
+}
+
+export interface CustomAiProviderAdminConfig {
+    key: string;
+    label: string;
+    driver: "openai-compatible";
+    enabled: boolean;
+    configured: boolean;
+    api_key_masked: string;
+    base_url: string;
+    headers?: Record<string, string>;
+    default_chat_model: string;
+    default_fast_model: string;
+    default_embeddings_model: string;
+    custom_models: string[];
+    discovered_models: AiDiscoveredModel[];
+    last_fetched_at: string | null;
+    requires_key: boolean;
+    supports_model_fetch: boolean;
+    is_custom: true;
+}
+
+export interface AiConfigPayload {
+    enabled: boolean;
+    primary_provider: string;
+    fallback_provider: string;
+    failover_enabled: boolean;
+    request_timeout_seconds: number;
+    providers: Record<AiProviderKey, AiProviderAdminConfig>;
+    custom_providers?: Record<string, CustomAiProviderAdminConfig>;
+}
 
 export interface GradingConfigPayload {
     scale: "point" | "percent" | "auto";
@@ -453,6 +520,7 @@ export interface SystemManagementPageProps {
     socialite_config: SocialiteConfig;
     mail_config: MailConfig;
     newsletter_config: NewsletterConfig;
+    ai_config?: AiConfigPayload;
     analytics: AnalyticsConfig;
     sentry: SentryConfig;
     error_reporting: ErrorReportingConfig;

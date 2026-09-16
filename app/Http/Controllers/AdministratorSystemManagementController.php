@@ -12,7 +12,10 @@ use App\Enums\PaymentMethod;
 use App\Enums\SchoolLevel;
 use App\Enums\StudentType;
 use App\Features\DynamicEnrollmentPolicies;
+use App\Http\Requests\Administrators\FetchAiModelsRequest;
 use App\Http\Requests\Administrators\StoreSchoolRequest;
+use App\Http\Requests\Administrators\TestAiConnectionRequest;
+use App\Http\Requests\Administrators\UpdateAiSettingsRequest;
 use App\Http\Requests\Administrators\UpdateApiManagementRequest;
 use App\Http\Requests\Administrators\UpdateEnrollmentPipelineRequest;
 use App\Http\Requests\Administrators\UpdateFinanceDocumentSettingsRequest;
@@ -30,6 +33,8 @@ use App\Models\GeneralSetting;
 use App\Models\School;
 use App\Models\SchoolCurriculumCapability;
 use App\Models\User;
+use App\Services\Ai\AiModelFetchService;
+use App\Services\Ai\AiSettingsService;
 use App\Services\AnalyticsSettingsService;
 use App\Services\CurriculumCapabilityResolver;
 use App\Services\EnrollmentPipelineService;
@@ -266,6 +271,80 @@ final class AdministratorSystemManagementController extends Controller
         $errorReporting->save($request->validated());
 
         return Redirect::back()->with('success', 'Error reporting settings updated successfully.');
+    }
+
+    public function ai(AiSettingsService $aiSettings): Response
+    {
+        return $this->renderSystemManagementPage(
+            'administrators/system-management/ai',
+            'ai',
+            'viewAi',
+            ['ai_config' => $aiSettings->forAdministration()],
+        );
+    }
+
+    public function updateAi(
+        UpdateAiSettingsRequest $request,
+        AiSettingsService $aiSettings,
+    ): RedirectResponse {
+        $aiSettings->merge($request->validated());
+        $aiSettings->applyRuntimeConfig();
+
+        return Redirect::back()->with('success', 'AI provider settings updated successfully.');
+    }
+
+    public function fetchAiModels(
+        FetchAiModelsRequest $request,
+        AiModelFetchService $fetchService,
+    ): JsonResponse {
+        $validated = $request->validated();
+        $result = $fetchService->fetchModels(
+            provider: $validated['provider'],
+            apiKey: $validated['api_key'] ?? null,
+            baseUrl: $validated['base_url'] ?? null,
+            headers: $validated['headers'] ?? [],
+        );
+
+        if (! $result['success']) {
+            return response()->json([
+                'success' => false,
+                'message' => $result['error'] ?? 'Failed to fetch models.',
+                'models' => [],
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'models' => $result['models'],
+            'count' => $result['count'],
+            'message' => "Successfully fetched {$result['count']} models.",
+        ]);
+    }
+
+    public function testAiConnection(
+        TestAiConnectionRequest $request,
+        AiModelFetchService $fetchService,
+    ): JsonResponse {
+        $validated = $request->validated();
+        $result = $fetchService->testConnection(
+            provider: $validated['provider'],
+            apiKey: $validated['api_key'] ?? null,
+            baseUrl: $validated['base_url'] ?? null,
+            headers: $validated['headers'] ?? [],
+        );
+
+        if (! $result['success']) {
+            return response()->json([
+                'success' => false,
+                'message' => $result['message'],
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => $result['message'],
+            'latency_ms' => $result['latency_ms'],
+        ]);
     }
 
     public function testObservability(
@@ -1280,6 +1359,7 @@ final class AdministratorSystemManagementController extends Controller
                 'identifiers' => 'updateIdentifiers',
                 'faculty_fields' => 'updateFacultyFields',
                 'observability' => 'updateObservability',
+                'ai' => 'updateAi',
                 default => 'viewAny',
             }, GeneralSetting::class);
 
@@ -1301,6 +1381,7 @@ final class AdministratorSystemManagementController extends Controller
                 'faculty_fields' => 'viewFacultyFields',
                 'pulse' => 'viewPulse',
                 'observability' => 'viewObservability',
+                'ai' => 'viewAi',
             }, GeneralSetting::class);
 
             $access[$section] = [

@@ -80,6 +80,10 @@ final class SystemManagementPermissions
                 'view' => 'View:SystemManagementObservability',
                 'update' => 'Update:SystemManagementObservability',
             ],
+            'ai' => [
+                'view' => 'View:SystemManagementAi',
+                'update' => 'Update:SystemManagementAi',
+            ],
         ];
     }
 

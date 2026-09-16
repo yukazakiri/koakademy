@@ -31,265 +31,271 @@ Route::post('/passkeys/login', [App\Http\Controllers\PasskeyAuthController::clas
 | Portal Domain Routes
 |--------------------------------------------------------------------------
 */
-$portalHosts = array_merge(
+$portalHosts = array_values(array_unique(array_filter(array_merge(
     config('app.portal_host_aliases', []),
     [config('app.portal_host')],
-);
+))));
 
-foreach (array_unique(array_filter($portalHosts)) as $portalHost) {
-    Route::domain($portalHost)->group(function () {
-        Route::get('/verify/finance/{token}', FinancialDocumentVerificationController::class)
-            ->middleware('throttle:30,1')
-            ->name('finance-documents.verify');
+$registerPortalRoutes = function (): void {
+    Route::get('/verify/finance/{token}', FinancialDocumentVerificationController::class)
+        ->middleware('throttle:30,1')
+        ->name('finance-documents.verify');
 
-        Route::get('/verify/soa/{token}', StatementOfAccountVerificationController::class)
-            ->middleware('throttle:30,1')
-            ->name('soa.verify');
+    Route::get('/verify/soa/{token}', StatementOfAccountVerificationController::class)
+        ->middleware('throttle:30,1')
+        ->name('soa.verify');
 
-        // Helper function for building faculty portal data (legacy support)
-        if (! function_exists('build_faculty_portal_data')) {
-            /**
-             * @return array{
-             *     stats: array,
-             *     upcoming_classes: array,
-             *     recent_activity: array,
-             *     announcements: array,
-             *     weekly_schedule: array,
-             *     today_schedule: array{day: string, entries: array}
-             * }
-             */
-            function build_faculty_portal_data($user): array
-            {
-                $currentDayName = Carbon::now()
-                    ->timezone(config('app.timezone'))
-                    ->format('l');
+    // Helper function for building faculty portal data (legacy support)
+    if (! function_exists('build_faculty_portal_data')) {
+        /**
+         * @return array{
+         *     stats: array,
+         *     upcoming_classes: array,
+         *     recent_activity: array,
+         *     announcements: array,
+         *     weekly_schedule: array,
+         *     today_schedule: array{day: string, entries: array}
+         * }
+         */
+        function build_faculty_portal_data($user): array
+        {
+            $currentDayName = Carbon::now()
+                ->timezone(config('app.timezone'))
+                ->format('l');
 
-                $defaults = [
-                    'stats' => [],
-                    'upcoming_classes' => [],
-                    'recent_activity' => [],
-                    'announcements' => [],
-                    'weekly_schedule' => [],
-                    'today_schedule' => [
-                        'day' => $currentDayName,
-                        'entries' => [],
-                    ],
-                ];
+            $defaults = [
+                'stats' => [],
+                'upcoming_classes' => [],
+                'recent_activity' => [],
+                'announcements' => [],
+                'weekly_schedule' => [],
+                'today_schedule' => [
+                    'day' => $currentDayName,
+                    'entries' => [],
+                ],
+            ];
 
-                if (! $user || ! method_exists($user, 'isFaculty') || ! $user->isFaculty()) {
-                    return $defaults;
-                }
+            if (! $user || ! method_exists($user, 'isFaculty') || ! $user->isFaculty()) {
+                return $defaults;
+            }
 
-                $faculty = Faculty::where('email', $user->email)->first();
+            $faculty = Faculty::where('email', $user->email)->first();
 
-                if (! $faculty) {
-                    return $defaults;
-                }
+            if (! $faculty) {
+                return $defaults;
+            }
 
-                $activeClassesCount = $faculty->classes()->currentAcademicPeriod()->count();
+            $activeClassesCount = $faculty->classes()->currentAcademicPeriod()->count();
 
-                $totalStudentsCount = App\Models\ClassEnrollment::whereIn(
-                    'class_id',
-                    $faculty->classes()->currentAcademicPeriod()->pluck('id')
-                )
-                    ->distinct('student_id')
-                    ->count();
+            $totalStudentsCount = App\Models\ClassEnrollment::whereIn(
+                'class_id',
+                $faculty->classes()->currentAcademicPeriod()->pluck('id')
+            )
+                ->distinct('student_id')
+                ->count();
 
-                $classesQuery = $faculty->classes()
-                    ->currentAcademicPeriod()
-                    ->with([
-                        'subject',
-                        'SubjectByCodeFallback',
-                        'ShsSubject',
-                        'Room',
-                        'schedules.room',
-                    ]);
+            $classesQuery = $faculty->classes()
+                ->currentAcademicPeriod()
+                ->with([
+                    'subject',
+                    'SubjectByCodeFallback',
+                    'ShsSubject',
+                    'Room',
+                    'schedules.room',
+                ]);
 
-                $upcomingClasses = $classesQuery
-                    ->clone()
-                    ->limit(5)
-                    ->get()
-                    ->map(function ($class) {
-                        $firstSubject = $class->subjects->first();
+            $upcomingClasses = $classesQuery
+                ->clone()
+                ->limit(5)
+                ->get()
+                ->map(function ($class) {
+                    $firstSubject = $class->subjects->first();
 
-                        if (! $firstSubject) {
-                            $firstSubject = $class->isShs() ? $class->ShsSubject : ($class->subject ?: $class->SubjectByCodeFallback);
-                        }
+                    if (! $firstSubject) {
+                        $firstSubject = $class->isShs() ? $class->ShsSubject : ($class->subject ?: $class->SubjectByCodeFallback);
+                    }
+
+                    return [
+                        'id' => $class->id,
+                        'subject_code' => $firstSubject?->code ?? $class->subject_code ?? 'N/A',
+                        'subject_title' => $firstSubject?->title ?? 'N/A',
+                        'section' => $class->section ?? 'N/A',
+                        'school_year' => $class->school_year ?? 'N/A',
+                        'semester' => $class->semester ?? 'N/A',
+                        'room' => $class->Room?->name ?? 'TBA',
+                        'students_count' => $class->class_enrollments_count ?? 0,
+                    ];
+                })
+                ->values()
+                ->all();
+
+            $weeklyEntriesByDay = $classesQuery
+                ->clone()
+                ->get()
+                ->flatMap(function ($class) {
+                    $firstSubject = $class->subjects->first();
+
+                    if (! $firstSubject) {
+                        $firstSubject = $class->isShs() ? $class->ShsSubject : ($class->subject ?: $class->SubjectByCodeFallback);
+                    }
+
+                    return $class->schedules->map(function ($schedule) use ($class, $firstSubject) {
+                        $day = ucfirst(mb_strtolower((string) $schedule->day_of_week ?? ''));
 
                         return [
-                            'id' => $class->id,
+                            'id' => $schedule->id,
+                            'day' => $day,
+                            'start_time' => $schedule->formatted_start_time,
+                            'end_time' => $schedule->formatted_end_time,
+                            'start_time_24h' => $schedule->start_time?->format('H:i'),
+                            'end_time_24h' => $schedule->end_time?->format('H:i'),
                             'subject_code' => $firstSubject?->code ?? $class->subject_code ?? 'N/A',
                             'subject_title' => $firstSubject?->title ?? 'N/A',
                             'section' => $class->section ?? 'N/A',
-                            'school_year' => $class->school_year ?? 'N/A',
-                            'semester' => $class->semester ?? 'N/A',
-                            'room' => $class->Room?->name ?? 'TBA',
-                            'students_count' => $class->class_enrollments_count ?? 0,
+                            'room' => $schedule->room?->name ?? $class->Room?->name ?? 'TBA',
+                            'course_codes' => $class->formatted_course_codes ?? 'N/A',
+                            'classification' => $class->classification ?? 'college',
                         ];
-                    })
-                    ->values()
-                    ->all();
-
-                $weeklyEntriesByDay = $classesQuery
-                    ->clone()
-                    ->get()
-                    ->flatMap(function ($class) {
-                        $firstSubject = $class->subjects->first();
-
-                        if (! $firstSubject) {
-                            $firstSubject = $class->isShs() ? $class->ShsSubject : ($class->subject ?: $class->SubjectByCodeFallback);
-                        }
-
-                        return $class->schedules->map(function ($schedule) use ($class, $firstSubject) {
-                            $day = ucfirst(mb_strtolower((string) $schedule->day_of_week ?? ''));
-
-                            return [
-                                'id' => $schedule->id,
-                                'day' => $day,
-                                'start_time' => $schedule->formatted_start_time,
-                                'end_time' => $schedule->formatted_end_time,
-                                'start_time_24h' => $schedule->start_time?->format('H:i'),
-                                'end_time_24h' => $schedule->end_time?->format('H:i'),
-                                'subject_code' => $firstSubject?->code ?? $class->subject_code ?? 'N/A',
-                                'subject_title' => $firstSubject?->title ?? 'N/A',
-                                'section' => $class->section ?? 'N/A',
-                                'room' => $schedule->room?->name ?? $class->Room?->name ?? 'TBA',
-                                'course_codes' => $class->formatted_course_codes ?? 'N/A',
-                                'classification' => $class->classification ?? 'college',
-                            ];
-                        });
-                    })
-                    ->filter(fn ($entry) => in_array($entry['day'], ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'], true))
-                    ->groupBy('day')
-                    ->map(function ($entries) {
-                        return $entries
-                            ->sortBy('start_time_24h')
-                            ->values();
                     });
+                })
+                ->filter(fn ($entry) => in_array($entry['day'], ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'], true))
+                ->groupBy('day')
+                ->map(function ($entries) {
+                    return $entries
+                        ->sortBy('start_time_24h')
+                        ->values();
+                });
 
-                $dayOrder = collect(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']);
+            $dayOrder = collect(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']);
 
-                $weeklySchedule = $dayOrder
-                    ->map(function ($day) use ($weeklyEntriesByDay) {
-                        return [
-                            'day' => $day,
-                            'entries' => $weeklyEntriesByDay->get($day, collect())->values()->all(),
-                        ];
-                    })
-                    ->values()
-                    ->all();
+            $weeklySchedule = $dayOrder
+                ->map(function ($day) use ($weeklyEntriesByDay) {
+                    return [
+                        'day' => $day,
+                        'entries' => $weeklyEntriesByDay->get($day, collect())->values()->all(),
+                    ];
+                })
+                ->values()
+                ->all();
 
-                $todaySchedule = [
-                    'day' => $currentDayName,
-                    'entries' => $weeklyEntriesByDay->get($currentDayName, collect())->values()->all(),
-                ];
+            $todaySchedule = [
+                'day' => $currentDayName,
+                'entries' => $weeklyEntriesByDay->get($currentDayName, collect())->values()->all(),
+            ];
 
-                $stats = [
-                    [
-                        'label' => 'Active Classes',
-                        'value' => $activeClassesCount,
-                        'icon' => 'book',
-                        'trend' => '+2',
-                        'trendDirection' => 'up',
-                    ],
-                    [
-                        'label' => 'Total Students',
-                        'value' => $totalStudentsCount,
-                        'icon' => 'users',
-                        'trend' => '+5%',
-                        'trendDirection' => 'up',
-                    ],
-                    [
-                        'label' => 'Total Hours',
-                        'value' => '24',
-                        'icon' => 'clock',
-                        'trend' => '0%',
-                        'trendDirection' => 'neutral',
-                    ],
-                    [
-                        'label' => 'Performance',
-                        'value' => '98%',
-                        'icon' => 'activity',
-                        'trend' => '+1%',
-                        'trendDirection' => 'up',
-                    ],
-                ];
+            $stats = [
+                [
+                    'label' => 'Active Classes',
+                    'value' => $activeClassesCount,
+                    'icon' => 'book',
+                    'trend' => '+2',
+                    'trendDirection' => 'up',
+                ],
+                [
+                    'label' => 'Total Students',
+                    'value' => $totalStudentsCount,
+                    'icon' => 'users',
+                    'trend' => '+5%',
+                    'trendDirection' => 'up',
+                ],
+                [
+                    'label' => 'Total Hours',
+                    'value' => '24',
+                    'icon' => 'clock',
+                    'trend' => '0%',
+                    'trendDirection' => 'neutral',
+                ],
+                [
+                    'label' => 'Performance',
+                    'value' => '98%',
+                    'icon' => 'activity',
+                    'trend' => '+1%',
+                    'trendDirection' => 'up',
+                ],
+            ];
 
-                $recentActivity = [
-                    ['action' => 'Posted announcement', 'target' => 'Midterm Exam Schedule', 'time' => '2 hours ago'],
-                    ['action' => 'Updated grades', 'target' => 'CS101 - Intro to CS', 'time' => '5 hours ago'],
-                    ['action' => 'Added resource', 'target' => 'Lecture 5 Slides', 'time' => '1 day ago'],
-                    ['action' => 'Attendance taken', 'target' => 'CS102 - Data Structures', 'time' => '1 day ago'],
-                ];
+            $recentActivity = [
+                ['action' => 'Posted announcement', 'target' => 'Midterm Exam Schedule', 'time' => '2 hours ago'],
+                ['action' => 'Updated grades', 'target' => 'CS101 - Intro to CS', 'time' => '5 hours ago'],
+                ['action' => 'Added resource', 'target' => 'Lecture 5 Slides', 'time' => '1 day ago'],
+                ['action' => 'Attendance taken', 'target' => 'CS102 - Data Structures', 'time' => '1 day ago'],
+            ];
 
-                $announcements = [
-                    ['title' => 'System Maintenance', 'content' => 'Scheduled maintenance on Saturday.', 'date' => 'Dec 10', 'type' => 'warning'],
-                    ['title' => 'Faculty Meeting', 'content' => 'Monthly meeting at 2 PM.', 'date' => 'Dec 12', 'type' => 'info'],
-                    ['title' => 'Grade Submission Deadline', 'content' => 'Final grades due by Dec 20.', 'date' => 'Dec 15', 'type' => 'important'],
-                ];
+            $announcements = [
+                ['title' => 'System Maintenance', 'content' => 'Scheduled maintenance on Saturday.', 'date' => 'Dec 10', 'type' => 'warning'],
+                ['title' => 'Faculty Meeting', 'content' => 'Monthly meeting at 2 PM.', 'date' => 'Dec 12', 'type' => 'info'],
+                ['title' => 'Grade Submission Deadline', 'content' => 'Final grades due by Dec 20.', 'date' => 'Dec 15', 'type' => 'important'],
+            ];
 
-                return [
-                    'stats' => $stats,
-                    'upcoming_classes' => $upcomingClasses,
-                    'recent_activity' => $recentActivity,
-                    'announcements' => $announcements,
-                    'weekly_schedule' => $weeklySchedule,
-                    'today_schedule' => $todaySchedule,
-                ];
-            }
+            return [
+                'stats' => $stats,
+                'upcoming_classes' => $upcomingClasses,
+                'recent_activity' => $recentActivity,
+                'announcements' => $announcements,
+                'weekly_schedule' => $weeklySchedule,
+                'today_schedule' => $todaySchedule,
+            ];
         }
+    }
 
-        /*
-        |--------------------------------------------------------------------------
-        | Authentication Routes
-        |--------------------------------------------------------------------------
-        */
-        require __DIR__.'/web/auth.php';
+    /*
+    |--------------------------------------------------------------------------
+    | Authentication Routes
+    |--------------------------------------------------------------------------
+    */
+    require __DIR__.'/web/auth.php';
 
-        /*
-        |--------------------------------------------------------------------------
-        | Public Enrollment Routes
-        |--------------------------------------------------------------------------
-        */
-        require __DIR__.'/web/enrollment.php';
+    /*
+    |--------------------------------------------------------------------------
+    | Public Enrollment Routes
+    |--------------------------------------------------------------------------
+    */
+    require __DIR__.'/web/enrollment.php';
 
-        /*
-        |--------------------------------------------------------------------------
-        | Administrator Portal Routes
-        |--------------------------------------------------------------------------
-        */
-        Route::redirect('/finance/reports', '/administrators/finance/reports');
-        Route::redirect('/finance', '/administrators/finance');
-        require __DIR__.'/web/administrators.php';
+    /*
+    |--------------------------------------------------------------------------
+    | Administrator Portal Routes
+    |--------------------------------------------------------------------------
+    */
+    Route::redirect('/finance/reports', '/administrators/finance/reports');
+    Route::redirect('/finance', '/administrators/finance');
+    require __DIR__.'/web/administrators.php';
 
-        /*
-        |--------------------------------------------------------------------------
-        | Faculty Portal Routes
-        |--------------------------------------------------------------------------
-        */
-        require __DIR__.'/web/faculty-portal.php';
+    /*
+    |--------------------------------------------------------------------------
+    | Faculty Portal Routes
+    |--------------------------------------------------------------------------
+    */
+    require __DIR__.'/web/faculty-portal.php';
 
-        /*
-        |--------------------------------------------------------------------------
-        | Student Portal Routes
-        |--------------------------------------------------------------------------
-        */
-        require __DIR__.'/web/student.php';
+    /*
+    |--------------------------------------------------------------------------
+    | Student Portal Routes
+    |--------------------------------------------------------------------------
+    */
+    require __DIR__.'/web/student.php';
 
-        /*
-        |--------------------------------------------------------------------------
-        | Download Routes
-        |--------------------------------------------------------------------------
-        */
-        require __DIR__.'/web/downloads.php';
+    /*
+    |--------------------------------------------------------------------------
+    | Download Routes
+    |--------------------------------------------------------------------------
+    */
+    require __DIR__.'/web/downloads.php';
 
-        /*
-        |--------------------------------------------------------------------------
-        | Testing Routes
-        |--------------------------------------------------------------------------
-        */
-        require __DIR__.'/web/testing.php';
-    });
+    /*
+    |--------------------------------------------------------------------------
+    | Testing Routes
+    |--------------------------------------------------------------------------
+    */
+    require __DIR__.'/web/testing.php';
+};
+
+if (empty($portalHosts)) {
+    Route::group([], $registerPortalRoutes);
+} else {
+    foreach ($portalHosts as $portalHost) {
+        Route::domain($portalHost)->group($registerPortalRoutes);
+    }
 }
 
 /*

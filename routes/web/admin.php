@@ -16,7 +16,9 @@ use Illuminate\Support\Facades\Storage;
 |
 */
 
-Route::domain(config('app.admin_host'))->group(function () {
+$adminHost = config('app.admin_host');
+
+$registerAdminRoutes = function (): void {
     Route::get('/', function () {
         return redirect('/admin');
     });
@@ -68,4 +70,10 @@ Route::domain(config('app.admin_host'))->group(function () {
             abort(500, 'Error accessing the file');
         }
     })->name('assessment.download');
-});
+};
+
+if (filled($adminHost)) {
+    Route::domain($adminHost)->group($registerAdminRoutes);
+} else {
+    Route::group([], $registerAdminRoutes);
+}

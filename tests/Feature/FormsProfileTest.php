@@ -6,7 +6,6 @@ use App\Models\Student;
 use App\Models\User;
 use Modules\Forms\Enums\FormAccessMode;
 use Modules\Forms\Enums\FormResponseStatus;
-use Modules\Forms\Models\Form;
 use Modules\Forms\Models\FormInvitation;
 use Modules\Forms\Models\FormResponse;
 use Modules\Forms\Services\FormLifecycleService;
@@ -72,7 +71,7 @@ it('tests profile completion invitation submission and redirects to thanks', fun
             'height' => 170,
             'emergency_contact_phone' => '+63 912 345 6789',
             'emergency_contact_address' => '456 Safe St, City',
-            'emergency_contact_relationship' => 'father',
+            'emergency_contact_relationship' => 'Father',
         ],
     ]);
 
@@ -120,7 +119,7 @@ it('tests profile completion guest verification and submission', function (): vo
             'height' => 165,
             'emergency_contact_phone' => '+63 912 345 6789',
             'emergency_contact_address' => '789 Safe St, City',
-            'emergency_contact_relationship' => 'mother',
+            'emergency_contact_relationship' => 'Mother',
         ],
     ]);
 

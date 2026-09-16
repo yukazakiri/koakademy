@@ -6,6 +6,11 @@ namespace App\Providers;
 
 use App\Contracts\AssessmentFormPdfRenderer;
 use App\Features\Toggles\AdminDeveloperMode;
+use App\Features\Toggles\AiFacultyAssistant;
+use App\Features\Toggles\AiFinanceAssistant;
+use App\Features\Toggles\AiHelpDeskAssistant;
+use App\Features\Toggles\AiRegistrarAuditor;
+use App\Features\Toggles\AiStudentAdvisor;
 use App\Features\Toggles\FacultyActionCenter;
 use App\Features\Toggles\FacultyAnnouncements;
 use App\Features\Toggles\FacultyAssessments;
@@ -60,6 +65,7 @@ use App\Services\VersionService;
 use App\Support\HostingSecurity;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -104,6 +110,8 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->scoped(GeneralSettingsService::class);
         $this->app->scoped(NewsletterSettingsService::class);
         $this->app->scoped(NewsletterSubscriptionService::class);
+        $this->app->scoped(\App\Services\Ai\AiSettingsService::class);
+        $this->app->scoped(\App\Services\Ai\AiModelFetchService::class);
         $this->app->scoped(\App\Services\SentrySettingsService::class);
         $this->app->scoped(\App\Services\ErrorReportingService::class);
         $this->app->scoped(\App\Services\TenantContext::class);
@@ -129,6 +137,17 @@ final class AppServiceProvider extends ServiceProvider
             return Limit::perMinute((int) config('api.otp_rate_limit', 5))
                 ->by((string) $request->input('challenge_id', $request->ip()));
         });
+
+        RateLimiter::for('ai-chat', function (Request $request): Limit {
+            return Limit::perMinute((int) config('api.ai_rate_limit', 30))
+                ->by($request->user()?->getAuthIdentifier() ?? $request->ip());
+        });
+
+        Relation::morphMap([
+            'user' => User::class,
+            'student' => \App\Models\Student::class,
+            'faculty' => \App\Models\Faculty::class,
+        ]);
 
         Model::unguard();
         StudentTransaction::observe(StudentTransactionObserver::class);
@@ -157,6 +176,7 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->booted(function (): void {
             $this->removeMissingViewFinderPaths();
             $this->applySentrySettings();
+            $this->applyAiSettings();
         });
     }
 
@@ -197,6 +217,11 @@ final class AppServiceProvider extends ServiceProvider
         Feature::define(StudentAvatarUpload::class);
         Feature::define(OnlineCollegeEnrollment::class);
         Feature::define(OnlineTesdaEnrollment::class);
+        Feature::define(AiStudentAdvisor::class);
+        Feature::define(AiFacultyAssistant::class);
+        Feature::define(AiRegistrarAuditor::class);
+        Feature::define(AiFinanceAssistant::class);
+        Feature::define(AiHelpDeskAssistant::class);
     }
 
     /**
@@ -246,6 +271,18 @@ final class AppServiceProvider extends ServiceProvider
             app(\App\Services\ErrorReportingService::class)->applyToConfig();
         } catch (Throwable $e) {
             Log::debug('Skipping error reporting settings sync', ['error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Apply admin-configured AI provider settings over the env-based defaults.
+     */
+    private function applyAiSettings(): void
+    {
+        try {
+            app(\App\Services\Ai\AiSettingsService::class)->applyRuntimeConfig();
+        } catch (Throwable $e) {
+            Log::debug('Skipping AI settings sync', ['error' => $e->getMessage()]);
         }
     }
 

@@ -459,6 +459,7 @@ Route::middleware(['auth', 'administrators.only'])
         Route::get('/system-management/mail', [App\Http\Controllers\AdministratorSystemManagementController::class, 'mail'])->name('system-management.mail.index');
         Route::get('/system-management/newsletter', [App\Http\Controllers\AdministratorSystemManagementController::class, 'newsletter'])->name('system-management.newsletter.index');
         Route::get('/system-management/api', [App\Http\Controllers\AdministratorSystemManagementController::class, 'api'])->name('system-management.api.index');
+        Route::get('/system-management/ai', [App\Http\Controllers\AdministratorSystemManagementController::class, 'ai'])->name('system-management.ai.index');
         Route::get('/system-management/pulse', [App\Http\Controllers\AdministratorSystemManagementController::class, 'pulse'])->name('system-management.pulse.index');
         Route::get('/system-management/observability', [App\Http\Controllers\AdministratorSystemManagementController::class, 'observability'])->name('system-management.observability.index');
         Route::get('/system-management/identifiers', [App\Http\Controllers\AdministratorSystemManagementController::class, 'identifiers'])->name('system-management.identifiers.index');
@@ -481,6 +482,9 @@ Route::middleware(['auth', 'administrators.only'])
         Route::put('/system-management/socialite', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateSocialite'])->name('system-management.socialite.update');
         Route::put('/system-management/newsletter', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateNewsletter'])->name('system-management.newsletter.update');
         Route::put('/system-management/api', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateApiManagement'])->name('system-management.api.update');
+        Route::put('/system-management/ai', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateAi'])->name('system-management.ai.update');
+        Route::post('/system-management/ai/fetch-models', [App\Http\Controllers\AdministratorSystemManagementController::class, 'fetchAiModels'])->name('system-management.ai.fetch-models');
+        Route::post('/system-management/ai/test-connection', [App\Http\Controllers\AdministratorSystemManagementController::class, 'testAiConnection'])->name('system-management.ai.test-connection');
         Route::put('/system-management/enrollment-pipeline', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateEnrollmentPipeline'])->name('system-management.enrollment-pipeline.update');
         Route::post('/system-management/enrollment-policies', [AdministratorEnrollmentPolicyController::class, 'store'])->name('system-management.enrollment-policies.store');
         Route::get('/system-management/enrollment-policies/compatibility', [AdministratorEnrollmentPolicyController::class, 'compatibility'])->name('system-management.enrollment-policies.compatibility');

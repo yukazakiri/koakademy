@@ -29,6 +29,7 @@ import {
     Settings2,
     Share2,
     Siren,
+    Sparkles,
     Webhook,
     X,
 } from "lucide-react";
@@ -286,6 +287,15 @@ export const systemSettingsItems: SystemSettingsItem[] = [
         href: "/administrators/system-management/api",
         keywords: ["api", "integrations", "public settings", "webhook", "developer"],
         icon: Webhook,
+    },
+    {
+        key: "ai",
+        group: "integrations",
+        label: "AI Providers & Models",
+        description: "Configure multi-provider AI credentials, live model discovery from /models, and global failovers.",
+        href: "/administrators/system-management/ai",
+        keywords: ["ai", "llm", "claude", "openai", "gemini", "anthropic", "models", "agents", "groq", "ollama"],
+        icon: Sparkles,
     },
     {
         key: "pulse",

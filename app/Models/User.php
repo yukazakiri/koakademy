@@ -27,6 +27,7 @@ use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Laravel\Ai\Concerns\HasConversations;
 use Laravel\Passkeys\Contracts\PasskeyUser;
 use Laravel\Passkeys\PasskeyAuthenticatable;
 use Laravel\Sanctum\HasApiTokens;
@@ -90,6 +91,7 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
 {
     use BroadcastsEvents;
     use HasApiTokens;
+    use HasConversations;
     use HasFactory;
     use HasRoles;
     use Notifiable;

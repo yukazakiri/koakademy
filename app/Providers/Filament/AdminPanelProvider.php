@@ -264,6 +264,10 @@ final class AdminPanelProvider extends PanelProvider
                     ->label('General Settings')
                     ->url(fn (): string => GeneralSettings::getUrl())
                     ->icon(Heroicon::OutlinedCog),
+                'AI Settings' => Action::make('ai-settings')
+                    ->label('AI Providers & Models')
+                    ->url(fn (): string => '/administrators/system-management/ai')
+                    ->icon(Heroicon::OutlinedSparkles),
             ])
             ->defaultAvatarProvider(GravatarProvider::class)
             ->maxContentWidth(Width::Full)

@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import type { PendingToolApproval } from "./approval-card";
 
 export type AgentRoleKey =
+    | "admin_executive"
     | "student_advisor"
     | "faculty_copilot"
     | "registrar_auditor"

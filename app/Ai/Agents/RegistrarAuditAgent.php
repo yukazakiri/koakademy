@@ -14,6 +14,7 @@ use App\Ai\Tools\SimulatePolicyImpactTool;
 use Laravel\Ai\Attributes\RepairToolCalls;
 use Laravel\Ai\Concerns\RemembersConversations;
 use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Contracts\CanActAsTool;
 use Laravel\Ai\Contracts\Conversational;
 use Laravel\Ai\Contracts\HasMiddleware;
 use Laravel\Ai\Contracts\HasTools;
@@ -21,10 +22,20 @@ use Laravel\Ai\Promptable;
 use Stringable;
 
 #[RepairToolCalls]
-final class RegistrarAuditAgent implements Agent, Conversational, HasMiddleware, HasTools
+final class RegistrarAuditAgent implements Agent, CanActAsTool, Conversational, HasMiddleware, HasTools
 {
     use Promptable;
     use RemembersConversations;
+
+    public function name(): string
+    {
+        return 'registrar_auditor';
+    }
+
+    public function description(): Stringable|string
+    {
+        return 'Audit student profiles, check graduation clearance holds, simulate enrollment policies, and inspect transcripts.';
+    }
 
     /**
      * Get the instructions that the agent should follow.

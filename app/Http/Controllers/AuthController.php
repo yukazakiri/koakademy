@@ -355,7 +355,7 @@ final class AuthController extends Controller
     private function getRedirectForUser(User $user): string
     {
         if ($user->isAdministrative()) {
-            return '/administrators/dashboard';
+            return '/administrators';
         }
 
         if ($user->role?->isStudent()) {

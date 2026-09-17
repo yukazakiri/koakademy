@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Ai\Agents\AdminExecutiveAgent;
 use App\Ai\Agents\BursarFinanceAgent;
 use App\Ai\Agents\CampusSupportAgent;
 use App\Ai\Agents\FacultyCopilotAgent;
@@ -39,6 +40,7 @@ final class AiChatController extends Controller
 
         $validated = $request->validate([
             'agent' => ['required', 'string', Rule::in([
+                'admin_executive',
                 'student_advisor',
                 'faculty_copilot',
                 'registrar_auditor',
@@ -58,6 +60,7 @@ final class AiChatController extends Controller
         }
 
         $featureClass = match ($validated['agent']) {
+            'admin_executive' => AiRegistrarAuditor::class,
             'student_advisor' => AiStudentAdvisor::class,
             'faculty_copilot' => AiFacultyAssistant::class,
             'registrar_auditor' => AiRegistrarAuditor::class,
@@ -137,6 +140,7 @@ final class AiChatController extends Controller
     private function resolveAgent(string $key): Agent
     {
         return match ($key) {
+            'admin_executive' => new AdminExecutiveAgent,
             'student_advisor' => new StudentAdvisorAgent,
             'faculty_copilot' => new FacultyCopilotAgent,
             'registrar_auditor' => new RegistrarAuditAgent,

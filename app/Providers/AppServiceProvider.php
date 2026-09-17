@@ -65,7 +65,6 @@ use App\Services\VersionService;
 use App\Support\HostingSecurity;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -142,12 +141,6 @@ final class AppServiceProvider extends ServiceProvider
             return Limit::perMinute((int) config('api.ai_rate_limit', 30))
                 ->by($request->user()?->getAuthIdentifier() ?? $request->ip());
         });
-
-        Relation::morphMap([
-            'user' => User::class,
-            'student' => \App\Models\Student::class,
-            'faculty' => \App\Models\Faculty::class,
-        ]);
 
         Model::unguard();
         StudentTransaction::observe(StudentTransactionObserver::class);

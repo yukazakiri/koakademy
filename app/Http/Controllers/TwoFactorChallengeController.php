@@ -229,15 +229,9 @@ final class TwoFactorChallengeController extends Controller
 
     private function getRedirectForUser(User $user): string
     {
-        if ($user->isAdministrative()) {
-            return '/administrators/dashboard';
-        }
-
-        if ($user->role?->isStudent()) {
-            return '/student/dashboard';
-        }
-
-        return '/faculty/dashboard';
+        return $user->isAdministrative()
+            ? '/administrators'
+            : '/dashboard';
     }
 
     private function credentialFromRequest(Request $request): PublicKeyCredential

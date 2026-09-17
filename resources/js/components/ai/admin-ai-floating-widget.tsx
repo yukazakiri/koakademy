@@ -1,17 +1,28 @@
+import { ChatEmptyState, ErrorState, ModelOption, ModelSelector } from "@/components/spectrumui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import {
+    InputGroup,
+    InputGroupAddon,
+    InputGroupButton,
+    InputGroupTextarea,
+} from "@/components/ui/input-group";
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { User } from "@/types/user";
 import {
-    BarChart3,
     Bot,
     Calculator,
     Check,
+    ChevronDown,
+    Cpu,
     FileSpreadsheet,
     FileText,
     FileType,
-    GraduationCap,
     HelpCircle,
     Image as ImageIcon,
     Loader2,
@@ -78,6 +89,11 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
     const [isExpanded, setIsExpanded] = React.useState(false);
     const [selectedAgent, setSelectedAgent] = React.useState<AgentRoleKey>("admin_executive");
 
+    // Dynamic model options from configured providers
+    const [availableModels, setAvailableModels] = React.useState<ModelOption[]>([]);
+    const [selectedModel, setSelectedModel] = React.useState<string>("");
+    const [modelPopoverOpen, setModelPopoverOpen] = React.useState(false);
+
     // File staging state
     const [selectedFiles, setSelectedFiles] = React.useState<File[]>([]);
     const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -98,6 +114,9 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
         input,
         setInput,
         isLoading,
+        lastError,
+        lastPrompt,
+        clearError,
         sendPrompt,
         submitDecision,
         clearChat,
@@ -111,9 +130,9 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
         if (scrollAreaRef.current) {
             scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
         }
-    }, [messages, isLoading]);
+    }, [messages, isLoading, lastError]);
 
-    // Fetch quick KPIs once when opened
+    // Fetch quick KPIs and available models once when opened
     React.useEffect(() => {
         if (isOpen && kpis.length === 0) {
             fetch("/administrators/ai/analytics-summary", {
@@ -123,12 +142,24 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                 .then((data) => {
                     if (data.kpis) setKpis(data.kpis);
                     if (data.quick_prompts) setQuickPrompts(data.quick_prompts);
+                    if (Array.isArray(data.models) && data.models.length > 0) {
+                        const mapped: ModelOption[] = data.models.map((m: any) => ({
+                            id: m.id,
+                            name: m.name || m.id,
+                            badge: m.badge,
+                            description: m.description,
+                        }));
+                        setAvailableModels(mapped);
+                        if (!selectedModel) {
+                            setSelectedModel(mapped[0].id);
+                        }
+                    }
                 })
                 .catch(() => {
-                    // Silently keep default quick prompts on network error
+                    // Silently keep defaults on network error
                 });
         }
-    }, [isOpen, kpis.length]);
+    }, [isOpen, kpis.length, selectedModel]);
 
     const activeMeta = ADMIN_AGENTS.find((a) => a.key === selectedAgent) || ADMIN_AGENTS[0];
     const ActiveIcon = activeMeta.icon;
@@ -154,7 +185,9 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
 
     const handleSend = () => {
         if ((!input.trim() && selectedFiles.length === 0) || isLoading) return;
-        sendPrompt(input, selectedFiles);
+        sendPrompt(input, selectedFiles, {
+            model: selectedModel || undefined,
+        });
         setSelectedFiles([]);
     };
 
@@ -178,6 +211,11 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
         }
         return <FileType className="size-3 text-sky-500" />;
     };
+
+    const activeModelName = React.useMemo(() => {
+        const found = availableModels.find((m) => m.id === selectedModel);
+        return found?.name || selectedModel || "Default Model";
+    }, [availableModels, selectedModel]);
 
     return (
         <div className="fixed bottom-6 right-6 z-50 select-none">
@@ -205,8 +243,8 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                     className={cn(
                         "rounded-2xl border border-border/80 bg-background/95 backdrop-blur-xl shadow-2xl flex flex-col overflow-hidden transition-all duration-200 animate-in fade-in slide-in-from-bottom-5",
                         isExpanded
-                            ? "w-[95vw] sm:w-[680px] h-[85vh]"
-                            : "w-[92vw] sm:w-[460px] md:w-[500px] h-[640px] max-h-[85vh]"
+                            ? "w-[95vw] sm:w-[700px] h-[86vh]"
+                            : "w-[92vw] sm:w-[480px] md:w-[520px] h-[660px] max-h-[86vh]"
                     )}
                 >
                     {/* Header */}
@@ -224,7 +262,7 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                                         </Badge>
                                     </h3>
                                     <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">
-                                        Analytics, charts, file inspection & document generation
+                                        Analytics, interactive charts, Excel/doc inspection & reports
                                     </p>
                                 </div>
                             </div>
@@ -265,7 +303,7 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                             </div>
                         </div>
 
-                        {/* Specialist Agent Pills */}
+                        {/* Specialist Agent Selector Pills */}
                         <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
                             {ADMIN_AGENTS.map((agent) => {
                                 const isSelected = selectedAgent === agent.key;
@@ -294,16 +332,19 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                     <div ref={scrollAreaRef} className="flex-1 overflow-y-auto p-4 space-y-4">
                         {messages.length === 0 ? (
                             <div className="h-full flex flex-col justify-between py-2 space-y-4">
-                                <div className="text-center space-y-2 p-2">
-                                    <div className="inline-flex p-2.5 rounded-2xl bg-primary/10 border border-primary/20 text-primary mb-1">
-                                        <ActiveIcon className="size-7" />
-                                    </div>
-                                    <h4 className="text-sm font-semibold text-foreground">
-                                        {activeMeta.label}
-                                    </h4>
-                                    <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                                        {activeMeta.description} Upload spreadsheets or documents to analyze, plot interactive charts, or download formal reports.
-                                    </p>
+                                {/* Spectrum UI ChatEmptyState Component */}
+                                <div className="flex justify-center pt-2">
+                                    <ChatEmptyState
+                                        title={activeMeta.label}
+                                        subtitle={`${activeMeta.description} Upload spreadsheets to analyze, plot interactive charts, or download formal reports.`}
+                                        prompts={quickPrompts.map((p, idx) => ({
+                                            id: `p_${idx}`,
+                                            label: p,
+                                            prompt: p,
+                                        }))}
+                                        onSelectPrompt={(p) => sendPrompt(p.prompt || p.label)}
+                                        variant="Centered"
+                                    />
                                 </div>
 
                                 {/* Live KPI Summary Cards */}
@@ -320,26 +361,6 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                                         ))}
                                     </div>
                                 )}
-
-                                {/* Quick Action Prompts */}
-                                <div className="space-y-1.5">
-                                    <span className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wider block px-1">
-                                        Suggested Administrative Actions
-                                    </span>
-                                    <div className="grid grid-cols-1 gap-1.5">
-                                        {quickPrompts.map((prompt, i) => (
-                                            <button
-                                                key={i}
-                                                type="button"
-                                                onClick={() => sendPrompt(prompt)}
-                                                disabled={isLoading}
-                                                className="text-left text-xs p-2 rounded-lg border border-border/70 bg-card hover:bg-accent hover:text-accent-foreground transition-colors line-clamp-1"
-                                            >
-                                                {prompt}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
                             </div>
                         ) : (
                             messages.map((msg) => {
@@ -363,7 +384,7 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                                                     : "bg-muted/40 border border-border/70 rounded-tl-sm text-foreground"
                                             )}
                                         >
-                                            {/* Render attached files for user messages */}
+                                            {/* Render user attachments */}
                                             {msg.attachments && msg.attachments.length > 0 && (
                                                 <div className="flex flex-wrap gap-1.5 pb-1">
                                                     {msg.attachments.map((att, i) => (
@@ -406,6 +427,24 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                             })
                         )}
 
+                        {/* Spectrum UI ErrorState with 1-Click Retry */}
+                        {lastError && (
+                            <div className="pt-2 flex justify-start">
+                                <ErrorState
+                                    title={lastError.title}
+                                    message={lastError.message}
+                                    retryLabel="Retry Request"
+                                    onRetry={() => {
+                                        clearError();
+                                        if (lastPrompt) {
+                                            sendPrompt(lastPrompt, selectedFiles, { model: selectedModel });
+                                        }
+                                    }}
+                                    variant="Card"
+                                />
+                            </div>
+                        )}
+
                         {isLoading && (
                             <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1 px-1">
                                 <Loader2 className="size-3.5 animate-spin text-primary" />
@@ -436,54 +475,123 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                         </div>
                     )}
 
-                    {/* Input Footer */}
+                    {/* Revamped Composer with InputGroup & Model Selector on the input field */}
                     <div className="p-3 border-t bg-background/95 backdrop-blur space-y-2">
-                        <div className="relative flex items-end gap-2">
-                            <input
-                                ref={fileInputRef}
-                                type="file"
-                                multiple
-                                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.json"
-                                onChange={handleFileChange}
-                                className="hidden"
+                        <InputGroup className="min-h-[92px] rounded-xl border border-input focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 transition-all bg-background">
+                            {/* Top Addon: Model Selector & Info */}
+                            <InputGroupAddon align="block-start" className="justify-between border-b border-border/40 pb-1.5 pt-1 px-2.5">
+                                <div className="flex items-center gap-1.5">
+                                    {/* Model Selector Popover */}
+                                    <Popover open={modelPopoverOpen} onOpenChange={setModelPopoverOpen}>
+                                        <PopoverTrigger asChild>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-6 px-2 text-[11px] font-mono text-muted-foreground hover:text-foreground gap-1 bg-muted/30 hover:bg-muted/60 rounded-md"
+                                                title="Select AI Model"
+                                            >
+                                                <Cpu className="size-3 text-indigo-500" />
+                                                <span className="truncate max-w-[170px]">{activeModelName}</span>
+                                                <ChevronDown className="size-3 opacity-60" />
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-80 p-3 shadow-xl rounded-xl" align="start">
+                                            <div className="space-y-2">
+                                                <div className="flex items-center justify-between border-b pb-1.5">
+                                                    <span className="text-xs font-semibold text-foreground">Select AI Model</span>
+                                                    <span className="text-[10px] text-muted-foreground font-mono">
+                                                        {availableModels.length} available
+                                                    </span>
+                                                </div>
+
+                                                {availableModels.length > 0 ? (
+                                                    <ModelSelector
+                                                        models={availableModels}
+                                                        value={selectedModel}
+                                                        onChange={(id) => {
+                                                            setSelectedModel(id);
+                                                            setModelPopoverOpen(false);
+                                                            toast.success(`Active model: ${id}`);
+                                                        }}
+                                                        variant="List"
+                                                    />
+                                                ) : (
+                                                    <div className="space-y-1.5 py-2">
+                                                        <span className="text-xs text-muted-foreground block">
+                                                            No custom models discovered. Enter a model ID:
+                                                        </span>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="e.g. gpt-4o or mistral-7b"
+                                                            value={selectedModel}
+                                                            onChange={(e) => setSelectedModel(e.target.value)}
+                                                            className="w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border bg-background"
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </PopoverContent>
+                                    </Popover>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                                    <span className="hidden sm:inline">Press Enter to send</span>
+                                </div>
+                            </InputGroupAddon>
+
+                            {/* Center: Textarea Input */}
+                            <InputGroupTextarea
+                                placeholder={`Ask ${activeMeta.label} or attach spreadsheet/document...`}
+                                value={input}
+                                onChange={(e) => setInput(e.target.value)}
+                                onKeyDown={handleKeyDown}
+                                disabled={isLoading}
+                                rows={2}
+                                className="text-xs py-2 px-3 leading-relaxed placeholder:text-muted-foreground/70"
                             />
 
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="icon"
-                                onClick={() => fileInputRef.current?.click()}
-                                disabled={isLoading}
-                                className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
-                                title="Attach documents, spreadsheets (.xlsx, .csv), or images"
-                            >
-                                <Paperclip className="size-4" />
-                            </Button>
+                            {/* Bottom Addon: Actions */}
+                            <InputGroupAddon align="block-end" className="justify-between pt-1 pb-1.5 px-2">
+                                <div className="flex items-center gap-1">
+                                    <input
+                                        ref={fileInputRef}
+                                        type="file"
+                                        multiple
+                                        accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.json"
+                                        onChange={handleFileChange}
+                                        className="hidden"
+                                    />
 
-                            <div className="relative flex-1">
-                                <Textarea
-                                    placeholder={`Ask ${activeMeta.label} or attach spreadsheet/document...`}
-                                    value={input}
-                                    onChange={(e) => setInput(e.target.value)}
-                                    onKeyDown={handleKeyDown}
-                                    disabled={isLoading}
-                                    rows={2}
-                                    className="text-xs resize-none pr-10 font-normal"
-                                />
-                                <Button
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => fileInputRef.current?.click()}
+                                        disabled={isLoading}
+                                        className="size-7 text-muted-foreground hover:text-foreground"
+                                        title="Attach Excel (.xlsx, .csv), PDF, documents or images"
+                                    >
+                                        <Paperclip className="size-3.5" />
+                                    </Button>
+                                </div>
+
+                                <InputGroupButton
                                     type="button"
-                                    size="icon"
+                                    size="xs"
+                                    variant="default"
                                     onClick={handleSend}
                                     disabled={(!input.trim() && selectedFiles.length === 0) || isLoading}
-                                    className="absolute right-2 bottom-2 size-7"
+                                    className="h-7 px-3 text-xs gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg shadow-xs"
                                 >
-                                    {isLoading ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
-                                </Button>
-                            </div>
-                        </div>
+                                    {isLoading ? <Loader2 className="size-3 animate-spin" /> : <Send className="size-3" />}
+                                    <span>Send</span>
+                                </InputGroupButton>
+                            </InputGroupAddon>
+                        </InputGroup>
 
                         <div className="flex items-center justify-between text-[10px] text-muted-foreground px-1">
-                            <span>Supports Excel (.xlsx), CSV, PDF, Docs & Images</span>
+                            <span>Uploads parsed into structured markdown tables for any LLM</span>
                             <span>Shift + Enter for new line</span>
                         </div>
                     </div>

@@ -12,11 +12,13 @@ use App\Models\GeneralSetting;
 use App\Models\Student;
 use App\Models\StudentClearance;
 use App\Models\User;
+use App\Services\Ai\AiAttachmentProcessor;
 use App\Services\Ai\AiSettingsService;
 use FPDF;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\Rule;
@@ -54,6 +56,8 @@ final class AdministratorAiController extends Controller
             'decisions' => ['nullable', 'array', 'required_without:message', 'prohibits:message'],
             'decisions.*.action' => ['required_with:decisions', Rule::in(['approve', 'reject'])],
             'decisions.*.result' => ['nullable', 'string'],
+            'attachments' => ['nullable'],
+            'attachments.*' => ['file', 'max:20480'],
         ]);
 
         $agentKey = $validated['agent'] ?? 'admin_executive';
@@ -66,7 +70,20 @@ final class AdministratorAiController extends Controller
                     'reject' => Decision::reject($d['result'] ?? null),
                 }
             )->all())
-            : $validated['message'];
+            : (string) ($validated['message'] ?? '');
+
+        $aiAttachments = [];
+        $rawFiles = $request->file('attachments', []);
+        if ($rawFiles instanceof UploadedFile) {
+            $rawFiles = [$rawFiles];
+        }
+
+        if (is_string($prompt) && ! empty($rawFiles)) {
+            $processor = app(AiAttachmentProcessor::class);
+            $processed = $processor->process($rawFiles, $prompt);
+            $prompt = $processed['enrichedPrompt'];
+            $aiAttachments = $processed['attachments'];
+        }
 
         $conversationId = $validated['conversation_id'] ?? null;
 
@@ -82,7 +99,7 @@ final class AdministratorAiController extends Controller
         }
 
         return $agentInstance
-            ->stream($prompt)
+            ->stream($prompt, attachments: $aiAttachments)
             ->usingVercelDataProtocol();
     }
 

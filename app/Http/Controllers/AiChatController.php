@@ -16,9 +16,11 @@ use App\Features\Toggles\AiHelpDeskAssistant;
 use App\Features\Toggles\AiRegistrarAuditor;
 use App\Features\Toggles\AiStudentAdvisor;
 use App\Models\User;
+use App\Services\Ai\AiAttachmentProcessor;
 use App\Services\Ai\AiSettingsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 use InvalidArgumentException;
@@ -52,6 +54,8 @@ final class AiChatController extends Controller
             'decisions' => ['nullable', 'array', 'required_without:message', 'prohibits:message'],
             'decisions.*.action' => ['required_with:decisions', Rule::in(['approve', 'reject'])],
             'decisions.*.result' => ['nullable', 'string'],
+            'attachments' => ['nullable'],
+            'attachments.*' => ['file', 'max:20480'],
         ]);
 
         $aiSettings = app(AiSettingsService::class)->get();
@@ -81,7 +85,20 @@ final class AiChatController extends Controller
                     'reject' => Decision::reject($d['result'] ?? null),
                 }
             )->all())
-            : $validated['message'];
+            : (string) ($validated['message'] ?? '');
+
+        $aiAttachments = [];
+        $rawFiles = $request->file('attachments', []);
+        if ($rawFiles instanceof UploadedFile) {
+            $rawFiles = [$rawFiles];
+        }
+
+        if (is_string($prompt) && ! empty($rawFiles)) {
+            $processor = app(AiAttachmentProcessor::class);
+            $processed = $processor->process($rawFiles, $prompt);
+            $prompt = $processed['enrichedPrompt'];
+            $aiAttachments = $processed['attachments'];
+        }
 
         $conversationId = $validated['conversation_id'] ?? null;
 
@@ -98,7 +115,7 @@ final class AiChatController extends Controller
 
         // Stream using Vercel AI SDK protocol for seamless Inertia/React consumption
         return $agentInstance
-            ->stream($prompt)
+            ->stream($prompt, attachments: $aiAttachments)
             ->usingVercelDataProtocol();
     }
 

@@ -22,7 +22,20 @@ export const FACULTY_PORTAL_ROLES = ["professor", "associate_professor", "assist
 export const STUDENT_PORTAL_ROLES = ["student", "graduate_student", "shs_student"] as const;
 
 export function normalizePortalRole(role?: unknown): string {
-    return String(role ?? "").toLowerCase();
+    if (!role) {
+        return "";
+    }
+
+    if (typeof role === "object") {
+        if ("value" in role && typeof (role as { value?: unknown }).value === "string") {
+            return (role as { value: string }).value.toLowerCase();
+        }
+        if ("name" in role && typeof (role as { name?: unknown }).name === "string") {
+            return (role as { name: string }).name.toLowerCase();
+        }
+    }
+
+    return String(role).toLowerCase();
 }
 
 export function isAdministratorPortalRole(role?: string | null): boolean {

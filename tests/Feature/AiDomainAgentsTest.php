@@ -478,3 +478,39 @@ it('allows admin to stream chat, fetch KPI summaries, and download documents via
     $exportRes->assertOk();
     expect($exportRes->headers->get('content-type'))->toContain('text/markdown');
 });
+
+it('processes uploaded images, spreadsheets, and documents for AI consumption', function (): void {
+    $processor = app(App\Services\Ai\AiAttachmentProcessor::class);
+
+    // 1. Uploaded CSV spreadsheet
+    $csvFile = Illuminate\Http\UploadedFile::fake()->createWithContent('grades.csv', "Student,Score\nJuan,95\nMaria,98");
+    $resultCsv = $processor->process([$csvFile], 'Analyze this grade list');
+
+    expect($resultCsv['enrichedPrompt'])->toContain('Juan')
+        ->and($resultCsv['enrichedPrompt'])->toContain('Score')
+        ->and($resultCsv['attachments'])->toHaveCount(1);
+
+    // 2. Uploaded image
+    $imageFile = Illuminate\Http\UploadedFile::fake()->image('campus_map.png', 400, 300);
+    $resultImg = $processor->process([$imageFile], 'What is in this image?');
+
+    expect($resultImg['attachments'])->toHaveCount(1)
+        ->and($resultImg['attachments'][0])->toBeInstanceOf(Laravel\Ai\Files\Image::class);
+});
+
+it('accepts file attachments on the administrative ai chat endpoint', function (): void {
+    App\Ai\Agents\AdminExecutiveAgent::fake([
+        'I have parsed the attached spreadsheet and generated your report.',
+    ]);
+
+    $admin = User::factory()->create(['role' => App\Enums\UserRole::SuperAdmin]);
+    $sheetFile = Illuminate\Http\UploadedFile::fake()->createWithContent('enrollment.csv', "Department,Count\nCCS,400\nCBA,300");
+
+    $response = $this->actingAs($admin)->post('/administrators/ai/chat', [
+        'agent' => 'admin_executive',
+        'message' => 'Analyze the attached enrollment numbers',
+        'attachments' => [$sheetFile],
+    ]);
+
+    $response->assertOk();
+});

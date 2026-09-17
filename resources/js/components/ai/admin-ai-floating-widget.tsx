@@ -1,6 +1,5 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { User } from "@/types/user";
@@ -9,12 +8,16 @@ import {
     Bot,
     Calculator,
     Check,
+    FileSpreadsheet,
     FileText,
+    FileType,
     GraduationCap,
     HelpCircle,
+    Image as ImageIcon,
     Loader2,
     Maximize2,
     Minimize2,
+    Paperclip,
     RotateCcw,
     Send,
     ShieldCheck,
@@ -75,6 +78,10 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
     const [isExpanded, setIsExpanded] = React.useState(false);
     const [selectedAgent, setSelectedAgent] = React.useState<AgentRoleKey>("admin_executive");
 
+    // File staging state
+    const [selectedFiles, setSelectedFiles] = React.useState<File[]>([]);
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
+
     // KPI quick summary for administrator empty state
     const [kpis, setKpis] = React.useState<{ label: string; value: string | number; change: string }[]>([]);
     const [quickPrompts, setQuickPrompts] = React.useState<string[]>([
@@ -96,6 +103,7 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
         clearChat,
     } = useAiChat({
         agent: selectedAgent,
+        endpoint: "/administrators/ai/chat",
     });
 
     // Auto-scroll on new message chunks
@@ -125,13 +133,50 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
     const activeMeta = ADMIN_AGENTS.find((a) => a.key === selectedAgent) || ADMIN_AGENTS[0];
     const ActiveIcon = activeMeta.icon;
 
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files) return;
+        const newFiles = Array.from(e.target.files);
+
+        // Check 20MB limit
+        const oversized = newFiles.filter((f) => f.size > 20 * 1024 * 1024);
+        if (oversized.length > 0) {
+            toast.error("Files larger than 20MB cannot be uploaded.");
+            return;
+        }
+
+        setSelectedFiles((prev) => [...prev, ...newFiles]);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+    };
+
+    const removeFile = (index: number) => {
+        setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+    };
+
+    const handleSend = () => {
+        if ((!input.trim() && selectedFiles.length === 0) || isLoading) return;
+        sendPrompt(input, selectedFiles);
+        setSelectedFiles([]);
+    };
+
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
-            if (input.trim() && !isLoading) {
-                sendPrompt(input);
-            }
+            handleSend();
         }
+    };
+
+    const getFileIcon = (file: File) => {
+        const ext = file.name.split(".").pop()?.toLowerCase();
+        if (["xlsx", "xls", "csv"].includes(ext || "")) {
+            return <FileSpreadsheet className="size-3 text-emerald-500" />;
+        }
+        if (["png", "jpg", "jpeg", "webp", "gif"].includes(ext || "") || file.type.startsWith("image/")) {
+            return <ImageIcon className="size-3 text-indigo-500" />;
+        }
+        if (["pdf"].includes(ext || "")) {
+            return <FileText className="size-3 text-rose-500" />;
+        }
+        return <FileType className="size-3 text-sky-500" />;
     };
 
     return (
@@ -179,7 +224,7 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                                         </Badge>
                                     </h3>
                                     <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">
-                                        Analytics, charts, and downloadable document generation
+                                        Analytics, charts, file inspection & document generation
                                     </p>
                                 </div>
                             </div>
@@ -257,7 +302,7 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                                         {activeMeta.label}
                                     </h4>
                                     <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                                        {activeMeta.description} Ask for data summaries, interactive charts, or official PDF/CSV downloads.
+                                        {activeMeta.description} Upload spreadsheets or documents to analyze, plot interactive charts, or download formal reports.
                                     </p>
                                 </div>
 
@@ -318,6 +363,22 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                                                     : "bg-muted/40 border border-border/70 rounded-tl-sm text-foreground"
                                             )}
                                         >
+                                            {/* Render attached files for user messages */}
+                                            {msg.attachments && msg.attachments.length > 0 && (
+                                                <div className="flex flex-wrap gap-1.5 pb-1">
+                                                    {msg.attachments.map((att, i) => (
+                                                        <div
+                                                            key={i}
+                                                            className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary-foreground/15 text-[11px] font-mono"
+                                                        >
+                                                            <Paperclip className="size-3" />
+                                                            <span className="truncate max-w-[150px]">{att.name}</span>
+                                                            <span className="opacity-70">({Math.round(att.size / 1024)} KB)</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+
                                             {isUser ? (
                                                 <p className="whitespace-pre-wrap">{msg.content}</p>
                                             ) : (
@@ -348,36 +409,81 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                         {isLoading && (
                             <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1 px-1">
                                 <Loader2 className="size-3.5 animate-spin text-primary" />
-                                <span>{activeMeta.label} is evaluating analytics & preparing response...</span>
+                                <span>{activeMeta.label} is analyzing data & formulating response...</span>
                             </div>
                         )}
                     </div>
 
+                    {/* Staged File Upload Chips */}
+                    {selectedFiles.length > 0 && (
+                        <div className="px-3 py-1.5 border-t bg-muted/20 flex flex-wrap gap-1.5">
+                            {selectedFiles.map((file, i) => (
+                                <div
+                                    key={i}
+                                    className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-background border text-[11px] font-mono shadow-xs"
+                                >
+                                    {getFileIcon(file)}
+                                    <span className="max-w-[140px] truncate">{file.name}</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => removeFile(i)}
+                                        className="text-muted-foreground hover:text-destructive"
+                                    >
+                                        <X className="size-3" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
                     {/* Input Footer */}
                     <div className="p-3 border-t bg-background/95 backdrop-blur space-y-2">
-                        <div className="relative">
-                            <Textarea
-                                placeholder={`Ask ${activeMeta.label}... (Enter to send, Shift+Enter for newline)`}
-                                value={input}
-                                onChange={(e) => setInput(e.target.value)}
-                                onKeyDown={handleKeyDown}
-                                disabled={isLoading}
-                                rows={2}
-                                className="text-xs resize-none pr-10 font-normal"
+                        <div className="relative flex items-end gap-2">
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                multiple
+                                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.json"
+                                onChange={handleFileChange}
+                                className="hidden"
                             />
+
                             <Button
                                 type="button"
+                                variant="outline"
                                 size="icon"
-                                onClick={() => sendPrompt(input)}
-                                disabled={!input.trim() || isLoading}
-                                className="absolute right-2 bottom-2 size-7"
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={isLoading}
+                                className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
+                                title="Attach documents, spreadsheets (.xlsx, .csv), or images"
                             >
-                                {isLoading ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
+                                <Paperclip className="size-4" />
                             </Button>
+
+                            <div className="relative flex-1">
+                                <Textarea
+                                    placeholder={`Ask ${activeMeta.label} or attach spreadsheet/document...`}
+                                    value={input}
+                                    onChange={(e) => setInput(e.target.value)}
+                                    onKeyDown={handleKeyDown}
+                                    disabled={isLoading}
+                                    rows={2}
+                                    className="text-xs resize-none pr-10 font-normal"
+                                />
+                                <Button
+                                    type="button"
+                                    size="icon"
+                                    onClick={handleSend}
+                                    disabled={(!input.trim() && selectedFiles.length === 0) || isLoading}
+                                    className="absolute right-2 bottom-2 size-7"
+                                >
+                                    {isLoading ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
+                                </Button>
+                            </div>
                         </div>
 
                         <div className="flex items-center justify-between text-[10px] text-muted-foreground px-1">
-                            <span>Supports interactive charts, tables & PDF downloads</span>
+                            <span>Supports Excel (.xlsx), CSV, PDF, Docs & Images</span>
                             <span>Shift + Enter for new line</span>
                         </div>
                     </div>

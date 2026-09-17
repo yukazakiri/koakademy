@@ -22,6 +22,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use InvalidArgumentException;
 use Laravel\Ai\Approvals\Decision;
@@ -29,6 +30,7 @@ use Laravel\Ai\Approvals\Decisions;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Models\Conversation;
 use Laravel\Pennant\Feature;
+use Throwable;
 
 final class AiChatController extends Controller
 {
@@ -40,6 +42,14 @@ final class AiChatController extends Controller
         $user = Auth::user();
         abort_unless($user instanceof User, 401);
 
+        $aiSettingsService = app(AiSettingsService::class);
+        $aiSettingsService->applyRuntimeConfig();
+
+        $aiSettings = $aiSettingsService->get();
+        if (! ($aiSettings['enabled'] ?? true)) {
+            abort(503, 'AI Assistant services are currently disabled by the administration.');
+        }
+
         $validated = $request->validate([
             'agent' => ['required', 'string', Rule::in([
                 'admin_executive',
@@ -49,6 +59,8 @@ final class AiChatController extends Controller
                 'bursar_finance',
                 'campus_support',
             ])],
+            'provider' => ['nullable', 'string', 'max:64'],
+            'model' => ['nullable', 'string', 'max:255'],
             'conversation_id' => ['nullable', 'string', 'max:36'],
             'message' => ['nullable', 'string', 'required_without:decisions', 'prohibits:decisions'],
             'decisions' => ['nullable', 'array', 'required_without:message', 'prohibits:message'],
@@ -57,11 +69,6 @@ final class AiChatController extends Controller
             'attachments' => ['nullable'],
             'attachments.*' => ['file', 'max:20480'],
         ]);
-
-        $aiSettings = app(AiSettingsService::class)->get();
-        if (! ($aiSettings['enabled'] ?? true)) {
-            abort(503, 'AI Assistant services are currently disabled by the administration.');
-        }
 
         $featureClass = match ($validated['agent']) {
             'admin_executive' => AiRegistrarAuditor::class,
@@ -113,10 +120,79 @@ final class AiChatController extends Controller
             $agentInstance = $agent->forUser($user);
         }
 
-        // Stream using Vercel AI SDK protocol for seamless Inertia/React consumption
-        return $agentInstance
-            ->stream($prompt, attachments: $aiAttachments)
-            ->usingVercelDataProtocol();
+        $selectedProvider = $validated['provider'] ?? null;
+        $selectedModel = $validated['model'] ?? null;
+
+        if (is_string($selectedModel) && str_contains($selectedModel, ':') && blank($selectedProvider)) {
+            [$p, $m] = explode(':', $selectedModel, 2);
+            $selectedProvider = $p;
+            $selectedModel = $m;
+        }
+
+        $agentKey = $validated['agent'];
+
+        return response()->stream(function () use ($agentInstance, $prompt, $aiAttachments, $selectedProvider, $selectedModel, $agentKey) {
+            try {
+                $stream = $agentInstance->stream(
+                    $prompt,
+                    attachments: $aiAttachments,
+                    provider: filled($selectedProvider) ? $selectedProvider : null,
+                    model: filled($selectedModel) ? $selectedModel : null,
+                );
+
+                foreach ($stream as $event) {
+                    if ($event instanceof \Laravel\Ai\Streaming\Events\TextDelta) {
+                        yield 'data: '.json_encode([
+                            'type' => 'text-delta',
+                            'delta' => $event->delta,
+                            'id' => $event->messageId,
+                        ])."\n\n";
+                    } elseif ($event instanceof \Laravel\Ai\Streaming\Events\ToolApprovalRequest) {
+                        foreach ($event->pendingApprovals as $pendingApproval) {
+                            yield 'data: '.json_encode([
+                                'type' => 'tool-approval-request',
+                                'toolCallId' => $pendingApproval->id,
+                                'approvalId' => $pendingApproval->id,
+                                'tool' => $pendingApproval->tool,
+                                'reason' => $pendingApproval->reason,
+                                'arguments' => $pendingApproval->arguments,
+                            ])."\n\n";
+                        }
+                    } elseif ($event instanceof \Laravel\Ai\Streaming\Events\Error) {
+                        yield 'data: '.json_encode([
+                            'type' => 'error',
+                            'errorText' => (string) $event,
+                        ])."\n\n";
+                    }
+                }
+
+                yield "data: [DONE]\n\n";
+            } catch (Throwable $e) {
+                Log::error('AI Streaming Exception', [
+                    'agent' => $agentKey,
+                    'provider' => $selectedProvider ?? config('ai.default'),
+                    'model' => $selectedModel,
+                    'message' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                ]);
+
+                $providerName = (string) ($selectedProvider ?? config('ai.default', 'anthropic'));
+                $modelName = (string) ($selectedModel ?? 'default');
+                $errorMessage = "Error from [{$providerName}]: {$e->getMessage()}";
+
+                yield 'data: '.json_encode([
+                    'type' => 'error',
+                    'errorText' => $errorMessage,
+                    'provider' => $providerName,
+                    'model' => $modelName,
+                ])."\n\n";
+                yield "data: [DONE]\n\n";
+            }
+        }, 200, [
+            'Cache-Control' => 'no-cache, no-transform',
+            'Content-Type' => 'text/event-stream',
+            'X-Accel-Buffering' => 'no',
+        ]);
     }
 
     /**

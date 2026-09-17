@@ -514,3 +514,45 @@ it('accepts file attachments on the administrative ai chat endpoint', function (
 
     $response->assertOk();
 });
+
+it('accepts custom model selection and streams response with diagnostics', function (): void {
+    App\Ai\Agents\AdminExecutiveAgent::fake([
+        'Responding with custom model.',
+    ]);
+
+    $admin = User::factory()->create(['role' => App\Enums\UserRole::SuperAdmin]);
+
+    $response = $this->actingAs($admin)->post('/administrators/ai/chat', [
+        'agent' => 'admin_executive',
+        'message' => 'Hello from custom model',
+        'model' => 'vllm-cluster:meta-llama/Llama-3.3-70B-Instruct',
+    ]);
+
+    $response->assertOk();
+    expect($response->headers->get('content-type'))->toContain('text/event-stream');
+});
+
+it('surfaces error diagnostics with provider context when AI streaming fails', function (): void {
+    $admin = User::factory()->create(['role' => App\Enums\UserRole::SuperAdmin]);
+
+    // Force an unconfigured/invalid provider to test error reporting
+    config(['ai.default' => 'unreachable_custom_provider']);
+    config(['ai.providers.unreachable_custom_provider' => [
+        'driver' => 'openai-compatible',
+        'url' => 'http://127.0.0.1:9999/v1',
+        'key' => 'bad-key',
+        'models' => ['text' => ['default' => 'invalid-model']],
+    ]]);
+
+    $response = $this->actingAs($admin)->post('/administrators/ai/chat', [
+        'agent' => 'admin_executive',
+        'message' => 'Test error handling',
+        'provider' => 'unreachable_custom_provider',
+    ]);
+
+    $response->assertOk();
+    $content = $response->streamedContent();
+
+    expect($content)->toContain('"type":"error"')
+        ->and($content)->toContain('unreachable_custom_provider');
+});

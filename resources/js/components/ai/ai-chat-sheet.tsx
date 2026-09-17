@@ -1,4 +1,4 @@
-import { ErrorState } from "@/components/spectrumui";
+import { ErrorState, ModelOption, ModelSelector } from "@/components/spectrumui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -7,6 +7,11 @@ import {
     InputGroupButton,
     InputGroupTextarea,
 } from "@/components/ui/input-group";
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover";
 import {
     Sheet,
     SheetContent,
@@ -21,6 +26,8 @@ import {
     Bot,
     Calculator,
     CheckCircle2,
+    ChevronDown,
+    Cpu,
     FileSpreadsheet,
     FileText,
     FileType,
@@ -111,6 +118,9 @@ export function AiChatSheet({
     onOpenChange,
 }: AiChatSheetProps) {
     const [selectedAgent, setSelectedAgent] = React.useState<AgentRoleKey>(defaultAgent);
+    const [availableModels, setAvailableModels] = React.useState<ModelOption[]>([]);
+    const [selectedModel, setSelectedModel] = React.useState<string>("");
+    const [modelPopoverOpen, setModelPopoverOpen] = React.useState(false);
     const [selectedFiles, setSelectedFiles] = React.useState<File[]>([]);
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     const scrollAreaRef = React.useRef<HTMLDivElement>(null);
@@ -138,7 +148,37 @@ export function AiChatSheet({
         if (scrollAreaRef.current) {
             scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
         }
-    }, [messages, isLoading]);
+    }, [messages, isLoading, lastError]);
+
+    // Fetch available model options when sheet is opened
+    React.useEffect(() => {
+        if (open && availableModels.length === 0) {
+            fetch("/administrators/ai/analytics-summary", {
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+            })
+                .then((res) => res.json())
+                .then((data) => {
+                    if (Array.isArray(data.models) && data.models.length > 0) {
+                        const mapped: ModelOption[] = data.models.map((m: any) => ({
+                            id: m.id,
+                            name: m.name || m.id,
+                            badge: m.badge,
+                            description: m.description,
+                        }));
+                        setAvailableModels(mapped);
+                        if (!selectedModel) {
+                            setSelectedModel(mapped[0].id);
+                        }
+                    }
+                })
+                .catch(() => {});
+        }
+    }, [open, availableModels.length, selectedModel]);
+
+    const activeModelName = React.useMemo(() => {
+        const found = availableModels.find((m) => m.id === selectedModel);
+        return found?.name || selectedModel || "Default Model";
+    }, [availableModels, selectedModel]);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files) return;
@@ -161,7 +201,9 @@ export function AiChatSheet({
 
     const handleSend = () => {
         if ((!input.trim() && selectedFiles.length === 0) || isLoading) return;
-        sendPrompt(input, selectedFiles);
+        sendPrompt(input, selectedFiles, {
+            model: selectedModel || undefined,
+        });
         setSelectedFiles([]);
     };
 
@@ -382,7 +424,67 @@ export function AiChatSheet({
 
                     {/* Input Area with InputGroup */}
                     <div className="p-3 border-t bg-background/95 backdrop-blur space-y-2">
-                        <InputGroup className="min-h-[80px] rounded-xl border border-input focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 transition-all bg-background">
+                        <InputGroup className="min-h-[92px] rounded-xl border border-input focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 transition-all bg-background">
+                            {/* Top Addon: Model Selector */}
+                            <InputGroupAddon align="block-start" className="justify-between border-b border-border/40 pb-1.5 pt-1 px-2.5">
+                                <div className="flex items-center gap-1.5">
+                                    <Popover open={modelPopoverOpen} onOpenChange={setModelPopoverOpen}>
+                                        <PopoverTrigger asChild>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-6 px-2 text-[11px] font-mono text-muted-foreground hover:text-foreground gap-1 bg-muted/30 hover:bg-muted/60 rounded-md"
+                                                title="Select AI Model"
+                                            >
+                                                <Cpu className="size-3 text-indigo-500" />
+                                                <span className="truncate max-w-[160px]">{activeModelName}</span>
+                                                <ChevronDown className="size-3 opacity-60" />
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-80 p-3 shadow-xl rounded-xl" align="start">
+                                            <div className="space-y-2">
+                                                <div className="flex items-center justify-between border-b pb-1.5">
+                                                    <span className="text-xs font-semibold text-foreground">Select AI Model</span>
+                                                    <span className="text-[10px] text-muted-foreground font-mono">
+                                                        {availableModels.length} available
+                                                    </span>
+                                                </div>
+
+                                                {availableModels.length > 0 ? (
+                                                    <ModelSelector
+                                                        models={availableModels}
+                                                        value={selectedModel}
+                                                        onChange={(id) => {
+                                                            setSelectedModel(id);
+                                                            setModelPopoverOpen(false);
+                                                            toast.success(`Active model: ${id}`);
+                                                        }}
+                                                        variant="List"
+                                                    />
+                                                ) : (
+                                                    <div className="space-y-1.5 py-2">
+                                                        <span className="text-xs text-muted-foreground block">
+                                                            Enter model identifier:
+                                                        </span>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="e.g. gpt-4o or mistral-7b"
+                                                            value={selectedModel}
+                                                            onChange={(e) => setSelectedModel(e.target.value)}
+                                                            className="w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border bg-background"
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </PopoverContent>
+                                    </Popover>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                                    <span className="hidden sm:inline">Press Enter to send</span>
+                                </div>
+                            </InputGroupAddon>
                             <InputGroupTextarea
                                 placeholder={`Ask ${activeMeta.name} or attach files... (Enter to send)`}
                                 value={input}

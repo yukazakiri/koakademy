@@ -134,32 +134,68 @@ final class AdministratorAiController extends Controller
             $agentInstance = $agent->forUser($user);
         }
 
-        try {
-            return $agentInstance
-                ->stream(
+        return response()->stream(function () use ($agentInstance, $prompt, $aiAttachments, $selectedProvider, $selectedModel, $agentKey) {
+            try {
+                $stream = $agentInstance->stream(
                     $prompt,
                     attachments: $aiAttachments,
                     provider: filled($selectedProvider) ? $selectedProvider : null,
                     model: filled($selectedModel) ? $selectedModel : null,
-                )
-                ->usingVercelDataProtocol();
-        } catch (Throwable $e) {
-            Log::error('Administrative AI Chat Generation Failed', [
-                'error' => $e->getMessage(),
-                'agent' => $agentKey,
-                'provider' => $selectedProvider ?? config('ai.default'),
-                'model' => $selectedModel,
-                'trace' => $e->getTraceAsString(),
-            ]);
+                );
 
-            return response()->json([
-                'error' => true,
-                'message' => 'AI Generation Failed: '.$e->getMessage(),
-                'provider' => $selectedProvider ?? config('ai.default'),
-                'model' => $selectedModel,
-                'details' => config('app.debug') ? $e->getMessage() : null,
-            ], 422);
-        }
+                foreach ($stream as $event) {
+                    if ($event instanceof \Laravel\Ai\Streaming\Events\TextDelta) {
+                        yield 'data: '.json_encode([
+                            'type' => 'text-delta',
+                            'delta' => $event->delta,
+                            'id' => $event->messageId,
+                        ])."\n\n";
+                    } elseif ($event instanceof \Laravel\Ai\Streaming\Events\ToolApprovalRequest) {
+                        foreach ($event->pendingApprovals as $pendingApproval) {
+                            yield 'data: '.json_encode([
+                                'type' => 'tool-approval-request',
+                                'toolCallId' => $pendingApproval->id,
+                                'approvalId' => $pendingApproval->id,
+                                'tool' => $pendingApproval->tool,
+                                'reason' => $pendingApproval->reason,
+                                'arguments' => $pendingApproval->arguments,
+                            ])."\n\n";
+                        }
+                    } elseif ($event instanceof \Laravel\Ai\Streaming\Events\Error) {
+                        yield 'data: '.json_encode([
+                            'type' => 'error',
+                            'errorText' => (string) $event,
+                        ])."\n\n";
+                    }
+                }
+
+                yield "data: [DONE]\n\n";
+            } catch (Throwable $e) {
+                Log::error('Administrative AI Streaming Exception', [
+                    'agent' => $agentKey,
+                    'provider' => $selectedProvider ?? config('ai.default'),
+                    'model' => $selectedModel,
+                    'message' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                ]);
+
+                $providerName = (string) ($selectedProvider ?? config('ai.default', 'anthropic'));
+                $modelName = (string) ($selectedModel ?? 'default');
+                $errorMessage = "Error from [{$providerName}]: {$e->getMessage()}";
+
+                yield 'data: '.json_encode([
+                    'type' => 'error',
+                    'errorText' => $errorMessage,
+                    'provider' => $providerName,
+                    'model' => $modelName,
+                ])."\n\n";
+                yield "data: [DONE]\n\n";
+            }
+        }, 200, [
+            'Cache-Control' => 'no-cache, no-transform',
+            'Content-Type' => 'text/event-stream',
+            'X-Accel-Buffering' => 'no',
+        ]);
     }
 
     /**

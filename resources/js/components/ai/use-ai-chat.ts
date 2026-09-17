@@ -188,17 +188,41 @@ export function useAiChat({ agent, endpoint, initialConversationId, onFinish, on
                         const trimmed = line.trim();
                         if (!trimmed) continue;
 
-                        // Vercel AI SDK text part: 0:"text content"
-                        if (trimmed.startsWith("0:")) {
+                        if (trimmed.startsWith("data: ")) {
+                            const dataPayload = trimmed.slice(6).trim();
+                            if (dataPayload === "[DONE]") continue;
+
                             try {
-                                const textPart = JSON.parse(trimmed.slice(2));
-                                accumulatedText += textPart;
+                                const parsed = JSON.parse(dataPayload);
+                                if (parsed.type === "text-delta" || parsed.type === "text_delta") {
+                                    accumulatedText += (parsed.delta ?? parsed.text ?? "");
+                                } else if (parsed.type === "error") {
+                                    const errMsg = parsed.errorText || parsed.message || "An error occurred with the AI provider.";
+                                    setLastError({
+                                        title: "AI Generation Error",
+                                        message: errMsg,
+                                        retryPrompt: content,
+                                    });
+                                    accumulatedText += `\n\n⚠️ **Inference Error**: ${errMsg}`;
+                                } else if (parsed.type === "tool-approval-request" || parsed.type === "tool_approval_request") {
+                                    pendingApprovals.push({
+                                        id: parsed.approvalId || parsed.toolCallId || parsed.id,
+                                        tool: parsed.tool || "Tool Execution",
+                                        reason: parsed.reason,
+                                        arguments: parsed.arguments,
+                                    });
+                                }
+                            } catch {
+                                // Plain text fallback
+                                accumulatedText += dataPayload;
+                            }
+                        } else if (trimmed.startsWith("0:")) {
+                            try {
+                                accumulatedText += JSON.parse(trimmed.slice(2));
                             } catch {
                                 accumulatedText += trimmed.slice(2);
                             }
-                        }
-                        // Tool approval request event in protocol
-                        else if (trimmed.startsWith("a:") || trimmed.includes("tool_approval")) {
+                        } else if (trimmed.startsWith("a:") || trimmed.includes("tool_approval")) {
                             try {
                                 const raw = trimmed.startsWith("a:") ? trimmed.slice(2) : trimmed;
                                 const parsed = JSON.parse(raw);
@@ -208,12 +232,6 @@ export function useAiChat({ agent, endpoint, initialConversationId, onFinish, on
                             } catch {
                                 // Silent fallback on non-json stream parts
                             }
-                        }
-                        // Plain SSE data: or raw text chunk fallback
-                        else if (trimmed.startsWith("data: ")) {
-                            accumulatedText += trimmed.slice(6);
-                        } else if (!trimmed.startsWith("d:") && !trimmed.startsWith("e:")) {
-                            accumulatedText += trimmed;
                         }
 
                         // Update current assistant message in real time

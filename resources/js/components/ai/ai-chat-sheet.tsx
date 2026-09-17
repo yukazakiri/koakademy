@@ -27,6 +27,7 @@ import {
 import * as React from "react";
 
 import { ApprovalCard } from "./approval-card";
+import { ChatMessageFormatter } from "./chat-message-formatter";
 import { AgentRoleKey, useAiChat } from "./use-ai-chat";
 
 interface AiChatSheetProps {
@@ -46,6 +47,13 @@ const AGENT_METAS: Record<
         accent: string;
     }
 > = {
+    admin_executive: {
+        name: "Admin Executive",
+        badge: "Executive",
+        description: "Campus analytics, visual charts, and official document formulation.",
+        icon: Sparkles,
+        accent: "text-purple-500",
+    },
     student_advisor: {
         name: "Academic Advisor",
         badge: "Students",
@@ -226,7 +234,11 @@ export function AiChatSheet({
                                                 : "bg-muted/40 border border-border/60 rounded-tl-sm text-foreground"
                                         )}
                                     >
-                                        <p className="whitespace-pre-wrap">{msg.content}</p>
+                                        {isUser ? (
+                                            <p className="whitespace-pre-wrap">{msg.content}</p>
+                                        ) : (
+                                            <ChatMessageFormatter content={msg.content} />
+                                        )}
 
                                         {/* Pending Approvals within Assistant Message */}
                                         {msg.pendingApprovals?.map((approval) => (

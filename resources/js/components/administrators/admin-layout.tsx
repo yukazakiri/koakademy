@@ -1,6 +1,7 @@
 import { AdminHeader } from "@/components/administrators/admin-header";
 import { AdministratorSidebar } from "@/components/administrators/admin-sidebar";
 import { InstitutionOnboarding, InstitutionSchoolLevelOnboarding } from "@/components/administrators/institution-school-level-onboarding";
+import { AdminAiFloatingWidget } from "@/components/ai";
 import { AnalyticsScripts } from "@/components/analytics-scripts";
 import { AnnouncementBanner } from "@/components/announcement-banner";
 import { GlobalCommandPalette } from "@/components/global-command-palette";
@@ -53,6 +54,7 @@ export default function AdminLayout({ user, title, children }: AdminLayoutProps)
                 </SidebarInset>
                 <GlobalCommandPalette user={resolvedUser} />
                 <InstitutionSchoolLevelOnboarding onboarding={institutionOnboarding ?? null} />
+                <AdminAiFloatingWidget user={resolvedUser} />
             </SidebarProvider>
         </ThemeProvider>
     );

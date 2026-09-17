@@ -13,6 +13,7 @@ use App\Ai\Tools\LookupTicketStatusTool;
 use Laravel\Ai\Attributes\RepairToolCalls;
 use Laravel\Ai\Concerns\RemembersConversations;
 use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Contracts\CanActAsTool;
 use Laravel\Ai\Contracts\Conversational;
 use Laravel\Ai\Contracts\HasMiddleware;
 use Laravel\Ai\Contracts\HasTools;
@@ -20,10 +21,20 @@ use Laravel\Ai\Promptable;
 use Stringable;
 
 #[RepairToolCalls]
-final class CampusSupportAgent implements Agent, Conversational, HasMiddleware, HasTools
+final class CampusSupportAgent implements Agent, CanActAsTool, Conversational, HasMiddleware, HasTools
 {
     use Promptable;
     use RemembersConversations;
+
+    public function name(): string
+    {
+        return 'campus_support';
+    }
+
+    public function description(): Stringable|string
+    {
+        return 'Search campus handbooks and policies, check ticket status, and create or escalate support tickets.';
+    }
 
     /**
      * Get the instructions that the agent should follow.

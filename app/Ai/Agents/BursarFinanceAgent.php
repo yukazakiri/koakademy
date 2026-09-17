@@ -13,6 +13,7 @@ use App\Ai\Tools\ValidateAdjustmentSpreadsheetTool;
 use Laravel\Ai\Attributes\RepairToolCalls;
 use Laravel\Ai\Concerns\RemembersConversations;
 use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Contracts\CanActAsTool;
 use Laravel\Ai\Contracts\Conversational;
 use Laravel\Ai\Contracts\HasMiddleware;
 use Laravel\Ai\Contracts\HasTools;
@@ -20,10 +21,20 @@ use Laravel\Ai\Promptable;
 use Stringable;
 
 #[RepairToolCalls]
-final class BursarFinanceAgent implements Agent, Conversational, HasMiddleware, HasTools
+final class BursarFinanceAgent implements Agent, CanActAsTool, Conversational, HasMiddleware, HasTools
 {
     use Promptable;
     use RemembersConversations;
+
+    public function name(): string
+    {
+        return 'bursar_finance';
+    }
+
+    public function description(): Stringable|string
+    {
+        return 'Explain Statement of Account items, validate adjustment spreadsheets, simulate scholarship discounts, and commit ledger modifications.';
+    }
 
     /**
      * Get the instructions that the agent should follow.

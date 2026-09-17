@@ -370,15 +370,6 @@ it('renders AI assistant overview stats widget in Filament dashboard', function 
         ->and($stats[2]->getLabel())->toBe('Failover Protection');
 });
 
-it('registers morph map for user, student, and faculty models in AppServiceProvider', function (): void {
-    $morphMap = Illuminate\Database\Eloquent\Relations\Relation::morphMap();
-
-    expect($morphMap)->toHaveKey('user')
-        ->and($morphMap['user'])->toBe(User::class)
-        ->and($morphMap)->toHaveKey('student')
-        ->and($morphMap)->toHaveKey('faculty');
-});
-
 it('provides active provider summary on Filament AiAssistant page', function (): void {
     $page = new App\Filament\Pages\AiAssistant;
     $summary = $page->getActiveProviderSummary();

@@ -387,3 +387,103 @@ it('provides active provider summary on Filament AiAssistant page', function ():
         ->and($summary)->toHaveKey('chat_model')
         ->and($summary)->toHaveKey('failover');
 });
+
+it('queries institutional analytics metrics across categories', function (): void {
+    $tool = new App\Ai\Tools\QueryCampusAnalyticsTool;
+
+    $overview = $tool->handle(new Request(['category' => 'overview']));
+    $overviewData = json_decode((string) $overview, true);
+
+    expect($overviewData)->toHaveKey('headline_metrics')
+        ->and($overviewData['headline_metrics'])->toHaveKey('total_student_population');
+
+    $finance = $tool->handle(new Request(['category' => 'finance']));
+    $financeData = json_decode((string) $finance, true);
+
+    expect($financeData)->toHaveKey('collection_efficiency_percent')
+        ->and($financeData)->toHaveKey('gross_assessed_tuition');
+});
+
+it('formats interactive visual analytics chart artifacts', function (): void {
+    $tool = new App\Ai\Tools\GenerateAnalyticsChartTool;
+    $result = $tool->handle(new Request([
+        'chart_type' => 'bar',
+        'title' => 'Enrollment by Department',
+        'description' => 'Student distribution across academic colleges',
+        'data' => [
+            ['label' => 'Computer Studies', 'value' => 320],
+            ['label' => 'Business', 'value' => 210],
+        ],
+        'metric_unit' => 'students',
+    ]));
+
+    $data = json_decode((string) $result, true);
+
+    expect($data['_type'])->toBe('chart_artifact')
+        ->and($data['chart_type'])->toBe('bar')
+        ->and($data['data'])->toHaveCount(2)
+        ->and($data['data'][0]['value'])->toBe(320);
+});
+
+it('generates downloadable administrative documents and stores them in cache', function (): void {
+    $tool = new App\Ai\Tools\GenerateAdministrativeDocumentTool;
+    $result = $tool->handle(new Request([
+        'title' => 'Semester End Clearance Memo',
+        'format' => 'pdf',
+        'document_category' => 'clearance_memo',
+        'content_markdown' => "# Official Circular\nAll students must complete clearance before enrollment.",
+        'summary' => 'Directives on library and accounting hold settlements.',
+    ]));
+
+    $data = json_decode((string) $result, true);
+
+    expect($data['_type'])->toBe('document_artifact')
+        ->and($data['format'])->toBe('pdf')
+        ->and($data)->toHaveKey('document_id')
+        ->and($data['download_url'])->toContain('/administrators/ai/download-document/');
+
+    // Assert it is stored in cache
+    expect(Illuminate\Support\Facades\Cache::has("ai:doc:{$data['document_id']}"))->toBeTrue();
+});
+
+it('allows admin to stream chat, fetch KPI summaries, and download documents via AdministratorAiController', function (): void {
+    App\Ai\Agents\AdminExecutiveAgent::fake([
+        'Here is the executive report on campus operations.',
+    ]);
+
+    $admin = User::factory()->create(['role' => App\Enums\UserRole::SuperAdmin]);
+
+    // 1. Chat endpoint
+    $chatRes = $this->actingAs($admin)->postJson('/administrators/ai/chat', [
+        'agent' => 'admin_executive',
+        'message' => 'Summarize campus operations',
+    ]);
+    $chatRes->assertOk();
+
+    // 2. Analytics KPI summary
+    $summaryRes = $this->actingAs($admin)->getJson('/administrators/ai/analytics-summary');
+    $summaryRes->assertOk()
+        ->assertJsonStructure(['academic_period', 'kpis', 'quick_prompts']);
+
+    // 3. Document download endpoint
+    $tool = new App\Ai\Tools\GenerateAdministrativeDocumentTool;
+    $docJson = json_decode((string) $tool->handle(new Request([
+        'title' => 'Executive Summary',
+        'format' => 'csv',
+        'document_category' => 'enrollment_report',
+        'content_markdown' => "Metric,Count\nEnrolled,450\nRetention,95%",
+    ])), true);
+
+    $downloadRes = $this->actingAs($admin)->get("/administrators/ai/download-document/{$docJson['document_id']}");
+    $downloadRes->assertOk();
+    expect($downloadRes->headers->get('content-type'))->toContain('text/csv');
+
+    // 4. On-the-fly export endpoint
+    $exportRes = $this->actingAs($admin)->post('/administrators/ai/export-document', [
+        'title' => 'Live Memo',
+        'format' => 'markdown',
+        'content' => '# Official Memo',
+    ]);
+    $exportRes->assertOk();
+    expect($exportRes->headers->get('content-type'))->toContain('text/markdown');
+});

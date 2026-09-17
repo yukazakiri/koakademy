@@ -524,4 +524,17 @@ Route::middleware(['auth', 'administrators.only'])
         Route::post('/notifications/{id}/read', [App\Http\Controllers\NotificationController::class, 'markAsRead'])->name('notifications.read');
         Route::post('/notifications/mark-all-read', [App\Http\Controllers\NotificationController::class, 'markAllAsRead'])->name('notifications.read-all');
         Route::delete('/notifications/{id}', [App\Http\Controllers\NotificationController::class, 'destroy'])->name('notifications.destroy');
+
+        // Administrative AI Assistant & Document Workflows
+        Route::prefix('ai')->name('ai.')->group(function () {
+            Route::post('/chat', [App\Http\Controllers\AdministratorAiController::class, 'chat'])
+                ->middleware('throttle:ai-chat')
+                ->name('chat');
+            Route::get('/download-document/{documentId}', [App\Http\Controllers\AdministratorAiController::class, 'downloadDocument'])
+                ->name('download-document');
+            Route::post('/export-document', [App\Http\Controllers\AdministratorAiController::class, 'exportDocument'])
+                ->name('export-document');
+            Route::get('/analytics-summary', [App\Http\Controllers\AdministratorAiController::class, 'analyticsSummary'])
+                ->name('analytics-summary');
+        });
     });

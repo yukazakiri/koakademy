@@ -15,16 +15,23 @@ import {
     Bot,
     Calculator,
     CheckCircle2,
+    FileSpreadsheet,
+    FileText,
+    FileType,
     GraduationCap,
     HelpCircle,
+    Image as ImageIcon,
     Loader2,
+    Paperclip,
     RotateCcw,
     Send,
     ShieldCheck,
     Sparkles,
     User,
+    X,
 } from "lucide-react";
 import * as React from "react";
+import { toast } from "sonner";
 
 import { ApprovalCard } from "./approval-card";
 import { ChatMessageFormatter } from "./chat-message-formatter";
@@ -98,6 +105,8 @@ export function AiChatSheet({
     onOpenChange,
 }: AiChatSheetProps) {
     const [selectedAgent, setSelectedAgent] = React.useState<AgentRoleKey>(defaultAgent);
+    const [selectedFiles, setSelectedFiles] = React.useState<File[]>([]);
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
     const scrollAreaRef = React.useRef<HTMLDivElement>(null);
 
     const {
@@ -122,13 +131,50 @@ export function AiChatSheet({
         }
     }, [messages, isLoading]);
 
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files) return;
+        const newFiles = Array.from(e.target.files);
+
+        // Check 20MB limit
+        const oversized = newFiles.filter((f) => f.size > 20 * 1024 * 1024);
+        if (oversized.length > 0) {
+            toast.error("Files larger than 20MB cannot be uploaded.");
+            return;
+        }
+
+        setSelectedFiles((prev) => [...prev, ...newFiles]);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+    };
+
+    const removeFile = (index: number) => {
+        setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+    };
+
+    const handleSend = () => {
+        if ((!input.trim() && selectedFiles.length === 0) || isLoading) return;
+        sendPrompt(input, selectedFiles);
+        setSelectedFiles([]);
+    };
+
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
-            if (input.trim() && !isLoading) {
-                sendPrompt(input);
-            }
+            handleSend();
         }
+    };
+
+    const getFileIcon = (file: File) => {
+        const ext = file.name.split(".").pop()?.toLowerCase();
+        if (["xlsx", "xls", "csv"].includes(ext || "")) {
+            return <FileSpreadsheet className="size-3 text-emerald-500" />;
+        }
+        if (["png", "jpg", "jpeg", "webp", "gif"].includes(ext || "") || file.type.startsWith("image/")) {
+            return <ImageIcon className="size-3 text-indigo-500" />;
+        }
+        if (["pdf"].includes(ext || "")) {
+            return <FileText className="size-3 text-rose-500" />;
+        }
+        return <FileType className="size-3 text-sky-500" />;
     };
 
     return (
@@ -208,7 +254,7 @@ export function AiChatSheet({
                                     How can the {activeMeta.name} help?
                                 </h4>
                                 <p className="text-xs max-w-sm">
-                                    {activeMeta.description} Powered by multi-provider intelligence with strict human approval gates.
+                                    {activeMeta.description} Upload documents or spreadsheets to analyze, formulate rubrics, or query institutional data.
                                 </p>
                             </div>
                         </div>
@@ -234,6 +280,22 @@ export function AiChatSheet({
                                                 : "bg-muted/40 border border-border/60 rounded-tl-sm text-foreground"
                                         )}
                                     >
+                                        {/* Render user attachments */}
+                                        {msg.attachments && msg.attachments.length > 0 && (
+                                            <div className="flex flex-wrap gap-1.5 pb-1">
+                                                {msg.attachments.map((att, i) => (
+                                                    <div
+                                                        key={i}
+                                                        className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary-foreground/15 text-[11px] font-mono"
+                                                    >
+                                                        <Paperclip className="size-3" />
+                                                        <span className="truncate max-w-[150px]">{att.name}</span>
+                                                        <span className="opacity-70">({Math.round(att.size / 1024)} KB)</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
                                         {isUser ? (
                                             <p className="whitespace-pre-wrap">{msg.content}</p>
                                         ) : (
@@ -269,31 +331,76 @@ export function AiChatSheet({
                     )}
                 </div>
 
+                {/* Staged File Upload Chips */}
+                {selectedFiles.length > 0 && (
+                    <div className="px-4 py-2 border-t bg-muted/20 flex flex-wrap gap-1.5">
+                        {selectedFiles.map((file, i) => (
+                            <div
+                                key={i}
+                                className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-background border text-[11px] font-mono shadow-xs"
+                            >
+                                {getFileIcon(file)}
+                                <span className="max-w-[140px] truncate">{file.name}</span>
+                                <button
+                                    type="button"
+                                    onClick={() => removeFile(i)}
+                                    className="text-muted-foreground hover:text-destructive"
+                                >
+                                    <X className="size-3" />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
                 {/* Input Area */}
                 <div className="p-3 border-t bg-background/95 backdrop-blur space-y-2">
-                    <div className="relative">
-                        <Textarea
-                            placeholder={`Ask ${activeMeta.name}... (Enter to send, Shift+Enter for newline)`}
-                            value={input}
-                            onChange={(e) => setInput(e.target.value)}
-                            onKeyDown={handleKeyDown}
-                            disabled={isLoading}
-                            rows={2}
-                            className="text-xs resize-none pr-12 font-normal"
+                    <div className="relative flex items-end gap-2">
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            multiple
+                            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.json"
+                            onChange={handleFileChange}
+                            className="hidden"
                         />
+
                         <Button
                             type="button"
+                            variant="outline"
                             size="icon"
-                            onClick={() => sendPrompt(input)}
-                            disabled={!input.trim() || isLoading}
-                            className="absolute right-2 bottom-2 size-7"
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={isLoading}
+                            className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
+                            title="Attach documents, spreadsheets (.xlsx, .csv), or images"
                         >
-                            {isLoading ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
+                            <Paperclip className="size-4" />
                         </Button>
+
+                        <div className="relative flex-1">
+                            <Textarea
+                                placeholder={`Ask ${activeMeta.name} or attach files... (Enter to send, Shift+Enter for newline)`}
+                                value={input}
+                                onChange={(e) => setInput(e.target.value)}
+                                onKeyDown={handleKeyDown}
+                                disabled={isLoading}
+                                rows={2}
+                                className="text-xs resize-none pr-12 font-normal"
+                            />
+                            <Button
+                                type="button"
+                                size="icon"
+                                onClick={handleSend}
+                                disabled={(!input.trim() && selectedFiles.length === 0) || isLoading}
+                                className="absolute right-2 bottom-2 size-7"
+                            >
+                                {isLoading ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
+                            </Button>
+                        </div>
                     </div>
 
                     <div className="flex items-center justify-between text-[11px] text-muted-foreground px-1">
-                        <span>Protected by institutional governance</span>
+                        <span>Supports Excel (.xlsx, .csv), PDF, Docs & Images</span>
                         <span>Shift + Enter for new line</span>
                     </div>
                 </div>

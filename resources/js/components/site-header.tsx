@@ -23,6 +23,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { normalizePortalRole } from "@/lib/portal-role";
 import { User } from "@/types/user";
 import { Link, router, usePage } from "@inertiajs/react";
 import { IconSearch } from "@tabler/icons-react";
@@ -50,7 +51,7 @@ export function SiteHeader({ user }: SiteHeaderProps) {
         setShortcutHint(isMac ? "⌘ K" : "Ctrl K");
     }, []);
 
-    const role = user?.role.toLowerCase() || "";
+    const role = normalizePortalRole(user?.role);
     const isFaculty = ["professor", "associate_professor", "assistant_professor", "instructor", "part_time_faculty"].includes(role);
     const isStudent = ["student", "graduate_student", "shs_student"].includes(role);
 

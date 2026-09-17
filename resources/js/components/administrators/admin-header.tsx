@@ -26,6 +26,7 @@ import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { AdminLink } from "@/lib/admin-navigation";
+import { isAdministratorPortalRole } from "@/lib/portal-role";
 import { User } from "@/types/user";
 import { router, usePage } from "@inertiajs/react";
 import { IconSearch } from "@tabler/icons-react";
@@ -93,24 +94,7 @@ export function AdminHeader({ title, user }: AdminHeaderProps) {
     }, []);
 
     // Determine profile link based on user role
-    const isAdmin = [
-        "admin",
-        "super_admin",
-        "developer",
-        "president",
-        "vice_president",
-        "dean",
-        "associate_dean",
-        "department_head",
-        "program_chair",
-        "registrar",
-        "assistant_registrar",
-        "cashier",
-        "hr_manager",
-        "student_affairs_officer",
-        "guidance_counselor",
-        "librarian",
-    ].includes(user.role);
+    const isAdmin = isAdministratorPortalRole(user?.role);
     const profileLink = isAdmin ? "/administrators/settings" : "/profile";
     const hours = currentTime.getHours();
     const minutes = currentTime.getMinutes();

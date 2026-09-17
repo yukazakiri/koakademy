@@ -11,28 +11,39 @@ export type AgentRoleKey =
     | "bursar_finance"
     | "campus_support";
 
+export interface ChatAttachment {
+    name: string;
+    size: number;
+    type: string;
+    previewUrl?: string;
+}
+
 export interface ChatMessage {
     id: string;
     role: "user" | "assistant" | "system";
     content: string;
+    attachments?: ChatAttachment[];
     pendingApprovals?: PendingToolApproval[];
     createdAt?: Date;
 }
 
 export interface UseAiChatOptions {
     agent: AgentRoleKey;
+    endpoint?: string;
     initialConversationId?: string;
     onFinish?: (message: ChatMessage) => void;
     onError?: (error: Error) => void;
 }
 
-export function useAiChat({ agent, initialConversationId, onFinish, onError }: UseAiChatOptions) {
+export function useAiChat({ agent, endpoint, initialConversationId, onFinish, onError }: UseAiChatOptions) {
     const [messages, setMessages] = React.useState<ChatMessage[]>([]);
     const [input, setInput] = React.useState("");
     const [isLoading, setIsLoading] = React.useState(false);
     const [conversationId, setConversationId] = React.useState<string | undefined>(initialConversationId);
 
     const abortControllerRef = React.useRef<AbortController | null>(null);
+
+    const targetUrl = endpoint || chat.url();
 
     const appendMessage = React.useCallback((msg: Omit<ChatMessage, "id">) => {
         const id = "msg_" + Math.random().toString(36).substring(2, 9);
@@ -42,12 +53,20 @@ export function useAiChat({ agent, initialConversationId, onFinish, onError }: U
     }, []);
 
     const sendPrompt = React.useCallback(
-        async (content: string) => {
-            if (!content.trim() || isLoading) return;
+        async (content: string, files?: File[]) => {
+            if ((!content.trim() && (!files || files.length === 0)) || isLoading) return;
 
-            const userMessage = appendMessage({
+            const chatAttachments: ChatAttachment[] = (files || []).map((file) => ({
+                name: file.name,
+                size: file.size,
+                type: file.type,
+                previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined,
+            }));
+
+            appendMessage({
                 role: "user",
-                content: content.trim(),
+                content: content.trim() || (files && files.length > 0 ? "Please analyze the attached file(s)." : ""),
+                attachments: chatAttachments.length > 0 ? chatAttachments : undefined,
             });
 
             setInput("");
@@ -67,23 +86,51 @@ export function useAiChat({ agent, initialConversationId, onFinish, onError }: U
             const controller = new AbortController();
             abortControllerRef.current = controller;
 
+            const csrfToken = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || "";
+
             try {
-                const response = await fetch(chat.url(), {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        Accept: "text/event-stream, text/plain",
-                        "X-Requested-With": "XMLHttpRequest",
-                        "X-CSRF-TOKEN":
-                            (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || "",
-                    },
-                    body: JSON.stringify({
-                        agent,
-                        message: content.trim(),
-                        conversation_id: conversationId,
-                    }),
-                    signal: controller.signal,
-                });
+                let requestOptions: RequestInit;
+
+                if (files && files.length > 0) {
+                    const formData = new FormData();
+                    formData.append("agent", agent);
+                    formData.append("message", content.trim() || "Please inspect and analyze the attached file(s).");
+                    if (conversationId) {
+                        formData.append("conversation_id", conversationId);
+                    }
+                    files.forEach((file) => {
+                        formData.append("attachments[]", file);
+                    });
+
+                    requestOptions = {
+                        method: "POST",
+                        headers: {
+                            Accept: "text/event-stream, text/plain",
+                            "X-Requested-With": "XMLHttpRequest",
+                            "X-CSRF-TOKEN": csrfToken,
+                        },
+                        body: formData,
+                        signal: controller.signal,
+                    };
+                } else {
+                    requestOptions = {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            Accept: "text/event-stream, text/plain",
+                            "X-Requested-With": "XMLHttpRequest",
+                            "X-CSRF-TOKEN": csrfToken,
+                        },
+                        body: JSON.stringify({
+                            agent,
+                            message: content.trim(),
+                            conversation_id: conversationId,
+                        }),
+                        signal: controller.signal,
+                    };
+                }
+
+                const response = await fetch(targetUrl, requestOptions);
 
                 if (!response.ok) {
                     const errJson = await response.json().catch(() => ({}));
@@ -97,7 +144,7 @@ export function useAiChat({ agent, initialConversationId, onFinish, onError }: U
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
                 let accumulatedText = "";
-                let pendingApprovals: PendingToolApproval[] = [];
+                const pendingApprovals: PendingToolApproval[] = [];
 
                 while (true) {
                     const { value, done } = await reader.read();
@@ -183,7 +230,7 @@ export function useAiChat({ agent, initialConversationId, onFinish, onError }: U
                 abortControllerRef.current = null;
             }
         },
-        [agent, conversationId, isLoading, appendMessage, onFinish, onError]
+        [agent, targetUrl, conversationId, isLoading, appendMessage, onFinish, onError]
     );
 
     const submitDecision = React.useCallback(
@@ -198,7 +245,7 @@ export function useAiChat({ agent, initialConversationId, onFinish, onError }: U
                     },
                 };
 
-                const response = await fetch(chat.url(), {
+                const response = await fetch(targetUrl, {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
@@ -233,7 +280,7 @@ export function useAiChat({ agent, initialConversationId, onFinish, onError }: U
                 setIsLoading(false);
             }
         },
-        [agent, conversationId]
+        [agent, targetUrl, conversationId]
     );
 
     const stop = React.useCallback(() => {

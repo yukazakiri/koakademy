@@ -35,11 +35,18 @@ export interface UseAiChatOptions {
     onError?: (error: Error) => void;
 }
 
+export interface PromptOptions {
+    model?: string;
+    provider?: string;
+}
+
 export function useAiChat({ agent, endpoint, initialConversationId, onFinish, onError }: UseAiChatOptions) {
     const [messages, setMessages] = React.useState<ChatMessage[]>([]);
     const [input, setInput] = React.useState("");
     const [isLoading, setIsLoading] = React.useState(false);
     const [conversationId, setConversationId] = React.useState<string | undefined>(initialConversationId);
+    const [lastError, setLastError] = React.useState<{ title: string; message: string; retryPrompt?: string } | null>(null);
+    const [lastPrompt, setLastPrompt] = React.useState<string>("");
 
     const abortControllerRef = React.useRef<AbortController | null>(null);
 
@@ -53,8 +60,11 @@ export function useAiChat({ agent, endpoint, initialConversationId, onFinish, on
     }, []);
 
     const sendPrompt = React.useCallback(
-        async (content: string, files?: File[]) => {
+        async (content: string, files?: File[], options?: PromptOptions) => {
             if ((!content.trim() && (!files || files.length === 0)) || isLoading) return;
+
+            setLastError(null);
+            setLastPrompt(content);
 
             const chatAttachments: ChatAttachment[] = (files || []).map((file) => ({
                 name: file.name,
@@ -98,6 +108,12 @@ export function useAiChat({ agent, endpoint, initialConversationId, onFinish, on
                     if (conversationId) {
                         formData.append("conversation_id", conversationId);
                     }
+                    if (options?.model) {
+                        formData.append("model", options.model);
+                    }
+                    if (options?.provider) {
+                        formData.append("provider", options.provider);
+                    }
                     files.forEach((file) => {
                         formData.append("attachments[]", file);
                     });
@@ -113,6 +129,18 @@ export function useAiChat({ agent, endpoint, initialConversationId, onFinish, on
                         signal: controller.signal,
                     };
                 } else {
+                    const bodyPayload: Record<string, unknown> = {
+                        agent,
+                        message: content.trim(),
+                        conversation_id: conversationId,
+                    };
+                    if (options?.model) {
+                        bodyPayload.model = options.model;
+                    }
+                    if (options?.provider) {
+                        bodyPayload.provider = options.provider;
+                    }
+
                     requestOptions = {
                         method: "POST",
                         headers: {
@@ -121,11 +149,7 @@ export function useAiChat({ agent, endpoint, initialConversationId, onFinish, on
                             "X-Requested-With": "XMLHttpRequest",
                             "X-CSRF-TOKEN": csrfToken,
                         },
-                        body: JSON.stringify({
-                            agent,
-                            message: content.trim(),
-                            conversation_id: conversationId,
-                        }),
+                        body: JSON.stringify(bodyPayload),
                         signal: controller.signal,
                     };
                 }
@@ -134,7 +158,14 @@ export function useAiChat({ agent, endpoint, initialConversationId, onFinish, on
 
                 if (!response.ok) {
                     const errJson = await response.json().catch(() => ({}));
-                    throw new Error(errJson.message || `Server responded with ${response.status}`);
+                    const errorMsg = errJson.message || `Server error (${response.status})`;
+                    const errorObj = {
+                        title: `AI Error (${response.status})`,
+                        message: errorMsg,
+                        retryPrompt: content,
+                    };
+                    setLastError(errorObj);
+                    throw new Error(errorMsg);
                 }
 
                 if (!response.body) {
@@ -220,7 +251,7 @@ export function useAiChat({ agent, endpoint, initialConversationId, onFinish, on
                         m.id === assistantId
                             ? {
                                   ...m,
-                                  content: "⚠️ An error occurred while generating a response. Please try again.",
+                                  content: `⚠️ Generation failed: ${err.message || "Please check endpoint credentials or connection."}`,
                               }
                             : m
                     )
@@ -294,6 +325,11 @@ export function useAiChat({ agent, endpoint, initialConversationId, onFinish, on
     const clearChat = React.useCallback(() => {
         setMessages([]);
         setConversationId(undefined);
+        setLastError(null);
+    }, []);
+
+    const clearError = React.useCallback(() => {
+        setLastError(null);
     }, []);
 
     return {
@@ -302,6 +338,9 @@ export function useAiChat({ agent, endpoint, initialConversationId, onFinish, on
         setInput,
         isLoading,
         conversationId,
+        lastError,
+        lastPrompt,
+        clearError,
         sendPrompt,
         submitDecision,
         stop,

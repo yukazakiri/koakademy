@@ -1,5 +1,12 @@
+import { ErrorState } from "@/components/spectrumui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+    InputGroup,
+    InputGroupAddon,
+    InputGroupButton,
+    InputGroupTextarea,
+} from "@/components/ui/input-group";
 import {
     Sheet,
     SheetContent,
@@ -8,7 +15,6 @@ import {
     SheetTitle,
     SheetTrigger,
 } from "@/components/ui/sheet";
-import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
     AlertCircle,
@@ -114,6 +120,9 @@ export function AiChatSheet({
         input,
         setInput,
         isLoading,
+        lastError,
+        lastPrompt,
+        clearError,
         sendPrompt,
         submitDecision,
         clearChat,
@@ -323,87 +332,110 @@ export function AiChatSheet({
                         })
                     )}
 
-                    {isLoading && (
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
-                            <Loader2 className="size-3.5 animate-spin text-primary" />
-                            <span>{activeMeta.name} is thinking & evaluating tools...</span>
+                        {/* Spectrum UI ErrorState with 1-Click Retry */}
+                        {lastError && (
+                            <div className="pt-2 flex justify-start">
+                                <ErrorState
+                                    title={lastError.title}
+                                    message={lastError.message}
+                                    retryLabel="Retry Request"
+                                    onRetry={() => {
+                                        clearError();
+                                        if (lastPrompt) {
+                                            sendPrompt(lastPrompt, selectedFiles);
+                                        }
+                                    }}
+                                    variant="Card"
+                                />
+                            </div>
+                        )}
+
+                        {isLoading && (
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
+                                <Loader2 className="size-3.5 animate-spin text-primary" />
+                                <span>{activeMeta.name} is thinking & evaluating tools...</span>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Staged File Upload Chips */}
+                    {selectedFiles.length > 0 && (
+                        <div className="px-4 py-2 border-t bg-muted/20 flex flex-wrap gap-1.5">
+                            {selectedFiles.map((file, i) => (
+                                <div
+                                    key={i}
+                                    className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-background border text-[11px] font-mono shadow-xs"
+                                >
+                                    {getFileIcon(file)}
+                                    <span className="max-w-[140px] truncate">{file.name}</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => removeFile(i)}
+                                        className="text-muted-foreground hover:text-destructive"
+                                    >
+                                        <X className="size-3" />
+                                    </button>
+                                </div>
+                            ))}
                         </div>
                     )}
-                </div>
 
-                {/* Staged File Upload Chips */}
-                {selectedFiles.length > 0 && (
-                    <div className="px-4 py-2 border-t bg-muted/20 flex flex-wrap gap-1.5">
-                        {selectedFiles.map((file, i) => (
-                            <div
-                                key={i}
-                                className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-background border text-[11px] font-mono shadow-xs"
-                            >
-                                {getFileIcon(file)}
-                                <span className="max-w-[140px] truncate">{file.name}</span>
-                                <button
-                                    type="button"
-                                    onClick={() => removeFile(i)}
-                                    className="text-muted-foreground hover:text-destructive"
-                                >
-                                    <X className="size-3" />
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-                {/* Input Area */}
-                <div className="p-3 border-t bg-background/95 backdrop-blur space-y-2">
-                    <div className="relative flex items-end gap-2">
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            multiple
-                            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.json"
-                            onChange={handleFileChange}
-                            className="hidden"
-                        />
-
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="icon"
-                            onClick={() => fileInputRef.current?.click()}
-                            disabled={isLoading}
-                            className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
-                            title="Attach documents, spreadsheets (.xlsx, .csv), or images"
-                        >
-                            <Paperclip className="size-4" />
-                        </Button>
-
-                        <div className="relative flex-1">
-                            <Textarea
-                                placeholder={`Ask ${activeMeta.name} or attach files... (Enter to send, Shift+Enter for newline)`}
+                    {/* Input Area with InputGroup */}
+                    <div className="p-3 border-t bg-background/95 backdrop-blur space-y-2">
+                        <InputGroup className="min-h-[80px] rounded-xl border border-input focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 transition-all bg-background">
+                            <InputGroupTextarea
+                                placeholder={`Ask ${activeMeta.name} or attach files... (Enter to send)`}
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                                 onKeyDown={handleKeyDown}
                                 disabled={isLoading}
                                 rows={2}
-                                className="text-xs resize-none pr-12 font-normal"
+                                className="text-xs py-2 px-3 leading-relaxed placeholder:text-muted-foreground/70"
                             />
-                            <Button
-                                type="button"
-                                size="icon"
-                                onClick={handleSend}
-                                disabled={(!input.trim() && selectedFiles.length === 0) || isLoading}
-                                className="absolute right-2 bottom-2 size-7"
-                            >
-                                {isLoading ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
-                            </Button>
+
+                            <InputGroupAddon align="block-end" className="justify-between pt-1 pb-1.5 px-2 border-t border-border/40">
+                                <div className="flex items-center gap-1">
+                                    <input
+                                        ref={fileInputRef}
+                                        type="file"
+                                        multiple
+                                        accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.json"
+                                        onChange={handleFileChange}
+                                        className="hidden"
+                                    />
+
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => fileInputRef.current?.click()}
+                                        disabled={isLoading}
+                                        className="size-7 text-muted-foreground hover:text-foreground"
+                                        title="Attach Excel, PDF, documents or images"
+                                    >
+                                        <Paperclip className="size-3.5" />
+                                    </Button>
+                                </div>
+
+                                <InputGroupButton
+                                    type="button"
+                                    size="xs"
+                                    variant="default"
+                                    onClick={handleSend}
+                                    disabled={(!input.trim() && selectedFiles.length === 0) || isLoading}
+                                    className="h-7 px-3 text-xs gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg shadow-xs"
+                                >
+                                    {isLoading ? <Loader2 className="size-3 animate-spin" /> : <Send className="size-3" />}
+                                    <span>Send</span>
+                                </InputGroupButton>
+                            </InputGroupAddon>
+                        </InputGroup>
+
+                        <div className="flex items-center justify-between text-[11px] text-muted-foreground px-1">
+                            <span>Supports Excel (.xlsx, .csv), PDF, Docs & Images</span>
+                            <span>Shift + Enter for new line</span>
                         </div>
                     </div>
-
-                    <div className="flex items-center justify-between text-[11px] text-muted-foreground px-1">
-                        <span>Supports Excel (.xlsx, .csv), PDF, Docs & Images</span>
-                        <span>Shift + Enter for new line</span>
-                    </div>
-                </div>
             </SheetContent>
         </Sheet>
     );

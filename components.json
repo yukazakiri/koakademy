@@ -25,6 +25,7 @@
     "@reui": "https://reui.io/r/{style}/{name}.json",
     "@coss": "https://coss.com/ui/r/{name}.json",
     "@bklit": "https://ui.bklit.com/r/{name}.json",
-    "@smoothui": "https://smoothui.dev/r/{name}.json"
+    "@smoothui": "https://smoothui.dev/r/{name}.json",
+    "@spectrumui": "https://ui.spectrumhq.in/r/{name}.json"
   }
 }

@@ -1,5 +1,17 @@
+import { ErrorState, ModelOption, ModelSelector } from "@/components/spectrumui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+    InputGroup,
+    InputGroupAddon,
+    InputGroupButton,
+    InputGroupTextarea,
+} from "@/components/ui/input-group";
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover";
 import {
     Sheet,
     SheetContent,
@@ -8,13 +20,14 @@ import {
     SheetTitle,
     SheetTrigger,
 } from "@/components/ui/sheet";
-import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
     AlertCircle,
     Bot,
     Calculator,
     CheckCircle2,
+    ChevronDown,
+    Cpu,
     FileSpreadsheet,
     FileText,
     FileType,
@@ -105,6 +118,9 @@ export function AiChatSheet({
     onOpenChange,
 }: AiChatSheetProps) {
     const [selectedAgent, setSelectedAgent] = React.useState<AgentRoleKey>(defaultAgent);
+    const [availableModels, setAvailableModels] = React.useState<ModelOption[]>([]);
+    const [selectedModel, setSelectedModel] = React.useState<string>("");
+    const [modelPopoverOpen, setModelPopoverOpen] = React.useState(false);
     const [selectedFiles, setSelectedFiles] = React.useState<File[]>([]);
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     const scrollAreaRef = React.useRef<HTMLDivElement>(null);
@@ -114,6 +130,9 @@ export function AiChatSheet({
         input,
         setInput,
         isLoading,
+        lastError,
+        lastPrompt,
+        clearError,
         sendPrompt,
         submitDecision,
         clearChat,
@@ -129,7 +148,37 @@ export function AiChatSheet({
         if (scrollAreaRef.current) {
             scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
         }
-    }, [messages, isLoading]);
+    }, [messages, isLoading, lastError]);
+
+    // Fetch available model options when sheet is opened
+    React.useEffect(() => {
+        if (open && availableModels.length === 0) {
+            fetch("/administrators/ai/analytics-summary", {
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+            })
+                .then((res) => res.json())
+                .then((data) => {
+                    if (Array.isArray(data.models) && data.models.length > 0) {
+                        const mapped: ModelOption[] = data.models.map((m: any) => ({
+                            id: m.id,
+                            name: m.name || m.id,
+                            badge: m.badge,
+                            description: m.description,
+                        }));
+                        setAvailableModels(mapped);
+                        if (!selectedModel) {
+                            setSelectedModel(mapped[0].id);
+                        }
+                    }
+                })
+                .catch(() => {});
+        }
+    }, [open, availableModels.length, selectedModel]);
+
+    const activeModelName = React.useMemo(() => {
+        const found = availableModels.find((m) => m.id === selectedModel);
+        return found?.name || selectedModel || "Default Model";
+    }, [availableModels, selectedModel]);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files) return;
@@ -152,7 +201,9 @@ export function AiChatSheet({
 
     const handleSend = () => {
         if ((!input.trim() && selectedFiles.length === 0) || isLoading) return;
-        sendPrompt(input, selectedFiles);
+        sendPrompt(input, selectedFiles, {
+            model: selectedModel || undefined,
+        });
         setSelectedFiles([]);
     };
 
@@ -323,87 +374,170 @@ export function AiChatSheet({
                         })
                     )}
 
-                    {isLoading && (
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
-                            <Loader2 className="size-3.5 animate-spin text-primary" />
-                            <span>{activeMeta.name} is thinking & evaluating tools...</span>
+                        {/* Spectrum UI ErrorState with 1-Click Retry */}
+                        {lastError && (
+                            <div className="pt-2 flex justify-start">
+                                <ErrorState
+                                    title={lastError.title}
+                                    message={lastError.message}
+                                    retryLabel="Retry Request"
+                                    onRetry={() => {
+                                        clearError();
+                                        if (lastPrompt) {
+                                            sendPrompt(lastPrompt, selectedFiles);
+                                        }
+                                    }}
+                                    variant="Card"
+                                />
+                            </div>
+                        )}
+
+                        {isLoading && (
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
+                                <Loader2 className="size-3.5 animate-spin text-primary" />
+                                <span>{activeMeta.name} is thinking & evaluating tools...</span>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Staged File Upload Chips */}
+                    {selectedFiles.length > 0 && (
+                        <div className="px-4 py-2 border-t bg-muted/20 flex flex-wrap gap-1.5">
+                            {selectedFiles.map((file, i) => (
+                                <div
+                                    key={i}
+                                    className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-background border text-[11px] font-mono shadow-xs"
+                                >
+                                    {getFileIcon(file)}
+                                    <span className="max-w-[140px] truncate">{file.name}</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => removeFile(i)}
+                                        className="text-muted-foreground hover:text-destructive"
+                                    >
+                                        <X className="size-3" />
+                                    </button>
+                                </div>
+                            ))}
                         </div>
                     )}
-                </div>
 
-                {/* Staged File Upload Chips */}
-                {selectedFiles.length > 0 && (
-                    <div className="px-4 py-2 border-t bg-muted/20 flex flex-wrap gap-1.5">
-                        {selectedFiles.map((file, i) => (
-                            <div
-                                key={i}
-                                className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-background border text-[11px] font-mono shadow-xs"
-                            >
-                                {getFileIcon(file)}
-                                <span className="max-w-[140px] truncate">{file.name}</span>
-                                <button
-                                    type="button"
-                                    onClick={() => removeFile(i)}
-                                    className="text-muted-foreground hover:text-destructive"
-                                >
-                                    <X className="size-3" />
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                )}
+                    {/* Input Area with InputGroup */}
+                    <div className="p-3 border-t bg-background/95 backdrop-blur space-y-2">
+                        <InputGroup className="min-h-[92px] rounded-xl border border-input focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 transition-all bg-background">
+                            {/* Top Addon: Model Selector */}
+                            <InputGroupAddon align="block-start" className="justify-between border-b border-border/40 pb-1.5 pt-1 px-2.5">
+                                <div className="flex items-center gap-1.5">
+                                    <Popover open={modelPopoverOpen} onOpenChange={setModelPopoverOpen}>
+                                        <PopoverTrigger asChild>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-6 px-2 text-[11px] font-mono text-muted-foreground hover:text-foreground gap-1 bg-muted/30 hover:bg-muted/60 rounded-md"
+                                                title="Select AI Model"
+                                            >
+                                                <Cpu className="size-3 text-indigo-500" />
+                                                <span className="truncate max-w-[160px]">{activeModelName}</span>
+                                                <ChevronDown className="size-3 opacity-60" />
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-80 p-3 shadow-xl rounded-xl" align="start">
+                                            <div className="space-y-2">
+                                                <div className="flex items-center justify-between border-b pb-1.5">
+                                                    <span className="text-xs font-semibold text-foreground">Select AI Model</span>
+                                                    <span className="text-[10px] text-muted-foreground font-mono">
+                                                        {availableModels.length} available
+                                                    </span>
+                                                </div>
 
-                {/* Input Area */}
-                <div className="p-3 border-t bg-background/95 backdrop-blur space-y-2">
-                    <div className="relative flex items-end gap-2">
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            multiple
-                            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.json"
-                            onChange={handleFileChange}
-                            className="hidden"
-                        />
+                                                {availableModels.length > 0 ? (
+                                                    <ModelSelector
+                                                        models={availableModels}
+                                                        value={selectedModel}
+                                                        onChange={(id) => {
+                                                            setSelectedModel(id);
+                                                            setModelPopoverOpen(false);
+                                                            toast.success(`Active model: ${id}`);
+                                                        }}
+                                                        variant="List"
+                                                    />
+                                                ) : (
+                                                    <div className="space-y-1.5 py-2">
+                                                        <span className="text-xs text-muted-foreground block">
+                                                            Enter model identifier:
+                                                        </span>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="e.g. gpt-4o or mistral-7b"
+                                                            value={selectedModel}
+                                                            onChange={(e) => setSelectedModel(e.target.value)}
+                                                            className="w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border bg-background"
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </PopoverContent>
+                                    </Popover>
+                                </div>
 
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="icon"
-                            onClick={() => fileInputRef.current?.click()}
-                            disabled={isLoading}
-                            className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
-                            title="Attach documents, spreadsheets (.xlsx, .csv), or images"
-                        >
-                            <Paperclip className="size-4" />
-                        </Button>
-
-                        <div className="relative flex-1">
-                            <Textarea
-                                placeholder={`Ask ${activeMeta.name} or attach files... (Enter to send, Shift+Enter for newline)`}
+                                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                                    <span className="hidden sm:inline">Press Enter to send</span>
+                                </div>
+                            </InputGroupAddon>
+                            <InputGroupTextarea
+                                placeholder={`Ask ${activeMeta.name} or attach files... (Enter to send)`}
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                                 onKeyDown={handleKeyDown}
                                 disabled={isLoading}
                                 rows={2}
-                                className="text-xs resize-none pr-12 font-normal"
+                                className="text-xs py-2 px-3 leading-relaxed placeholder:text-muted-foreground/70"
                             />
-                            <Button
-                                type="button"
-                                size="icon"
-                                onClick={handleSend}
-                                disabled={(!input.trim() && selectedFiles.length === 0) || isLoading}
-                                className="absolute right-2 bottom-2 size-7"
-                            >
-                                {isLoading ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
-                            </Button>
+
+                            <InputGroupAddon align="block-end" className="justify-between pt-1 pb-1.5 px-2 border-t border-border/40">
+                                <div className="flex items-center gap-1">
+                                    <input
+                                        ref={fileInputRef}
+                                        type="file"
+                                        multiple
+                                        accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.json"
+                                        onChange={handleFileChange}
+                                        className="hidden"
+                                    />
+
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => fileInputRef.current?.click()}
+                                        disabled={isLoading}
+                                        className="size-7 text-muted-foreground hover:text-foreground"
+                                        title="Attach Excel, PDF, documents or images"
+                                    >
+                                        <Paperclip className="size-3.5" />
+                                    </Button>
+                                </div>
+
+                                <InputGroupButton
+                                    type="button"
+                                    size="xs"
+                                    variant="default"
+                                    onClick={handleSend}
+                                    disabled={(!input.trim() && selectedFiles.length === 0) || isLoading}
+                                    className="h-7 px-3 text-xs gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg shadow-xs"
+                                >
+                                    {isLoading ? <Loader2 className="size-3 animate-spin" /> : <Send className="size-3" />}
+                                    <span>Send</span>
+                                </InputGroupButton>
+                            </InputGroupAddon>
+                        </InputGroup>
+
+                        <div className="flex items-center justify-between text-[11px] text-muted-foreground px-1">
+                            <span>Supports Excel (.xlsx, .csv), PDF, Docs & Images</span>
+                            <span>Shift + Enter for new line</span>
                         </div>
                     </div>
-
-                    <div className="flex items-center justify-between text-[11px] text-muted-foreground px-1">
-                        <span>Supports Excel (.xlsx, .csv), PDF, Docs & Images</span>
-                        <span>Shift + Enter for new line</span>
-                    </div>
-                </div>
             </SheetContent>
         </Sheet>
     );

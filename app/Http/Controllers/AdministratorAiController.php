@@ -21,6 +21,7 @@ use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use InvalidArgumentException;
 use Laravel\Ai\Approvals\Decision;
@@ -32,14 +33,17 @@ use Throwable;
 final class AdministratorAiController extends Controller
 {
     /**
-     * Handle streaming AI assistant chat for administrators.
+     * Handle streaming AI assistant chat for administrators with full multi-provider and custom model support.
      */
     public function chat(Request $request): mixed
     {
         $user = Auth::user();
         abort_unless($user instanceof User && $user->canAccessAdminPortal(), 403);
 
-        $aiSettings = app(AiSettingsService::class)->get();
+        $aiSettingsService = app(AiSettingsService::class);
+        $aiSettingsService->applyRuntimeConfig();
+
+        $aiSettings = $aiSettingsService->get();
         if (! ($aiSettings['enabled'] ?? true)) {
             abort(503, 'Administrative AI Assistant services are disabled in system settings.');
         }
@@ -51,6 +55,8 @@ final class AdministratorAiController extends Controller
                 'bursar_finance',
                 'campus_support',
             ])],
+            'provider' => ['nullable', 'string', 'max:64'],
+            'model' => ['nullable', 'string', 'max:255'],
             'conversation_id' => ['nullable', 'string', 'max:36'],
             'message' => ['nullable', 'string', 'required_without:decisions', 'prohibits:decisions'],
             'decisions' => ['nullable', 'array', 'required_without:message', 'prohibits:message'],
@@ -62,6 +68,36 @@ final class AdministratorAiController extends Controller
 
         $agentKey = $validated['agent'] ?? 'admin_executive';
         $agent = $this->resolveAgent($agentKey);
+
+        $selectedProvider = $validated['provider'] ?? null;
+        $selectedModel = $validated['model'] ?? null;
+
+        // Support composite "{provider}:{model}" selection format from model-selector
+        if (is_string($selectedModel) && str_contains($selectedModel, ':') && blank($selectedProvider)) {
+            [$p, $m] = explode(':', $selectedModel, 2);
+            $selectedProvider = $p;
+            $selectedModel = $m;
+        }
+
+        // If custom provider selected, ensure its runtime configuration is present
+        if (filled($selectedProvider) && isset($aiSettings['custom_providers'][$selectedProvider])) {
+            $custom = $aiSettings['custom_providers'][$selectedProvider];
+            $chatModel = filled($selectedModel) ? $selectedModel : ($custom['default_chat_model'] ?: 'default');
+
+            config([
+                "ai.providers.{$selectedProvider}" => [
+                    'driver' => 'openai-compatible',
+                    'url' => (string) $custom['base_url'],
+                    'key' => (string) ($custom['api_key'] ?? ''),
+                    'headers' => is_array($custom['headers'] ?? null) ? $custom['headers'] : [],
+                    'models' => [
+                        'text' => [
+                            'default' => $chatModel,
+                        ],
+                    ],
+                ],
+            ]);
+        }
 
         $prompt = isset($validated['decisions'])
             ? Decisions::from(collect($validated['decisions'])->map(
@@ -98,9 +134,68 @@ final class AdministratorAiController extends Controller
             $agentInstance = $agent->forUser($user);
         }
 
-        return $agentInstance
-            ->stream($prompt, attachments: $aiAttachments)
-            ->usingVercelDataProtocol();
+        return response()->stream(function () use ($agentInstance, $prompt, $aiAttachments, $selectedProvider, $selectedModel, $agentKey) {
+            try {
+                $stream = $agentInstance->stream(
+                    $prompt,
+                    attachments: $aiAttachments,
+                    provider: filled($selectedProvider) ? $selectedProvider : null,
+                    model: filled($selectedModel) ? $selectedModel : null,
+                );
+
+                foreach ($stream as $event) {
+                    if ($event instanceof \Laravel\Ai\Streaming\Events\TextDelta) {
+                        yield 'data: '.json_encode([
+                            'type' => 'text-delta',
+                            'delta' => $event->delta,
+                            'id' => $event->messageId,
+                        ])."\n\n";
+                    } elseif ($event instanceof \Laravel\Ai\Streaming\Events\ToolApprovalRequest) {
+                        foreach ($event->pendingApprovals as $pendingApproval) {
+                            yield 'data: '.json_encode([
+                                'type' => 'tool-approval-request',
+                                'toolCallId' => $pendingApproval->id,
+                                'approvalId' => $pendingApproval->id,
+                                'tool' => $pendingApproval->tool,
+                                'reason' => $pendingApproval->reason,
+                                'arguments' => $pendingApproval->arguments,
+                            ])."\n\n";
+                        }
+                    } elseif ($event instanceof \Laravel\Ai\Streaming\Events\Error) {
+                        yield 'data: '.json_encode([
+                            'type' => 'error',
+                            'errorText' => (string) $event,
+                        ])."\n\n";
+                    }
+                }
+
+                yield "data: [DONE]\n\n";
+            } catch (Throwable $e) {
+                Log::error('Administrative AI Streaming Exception', [
+                    'agent' => $agentKey,
+                    'provider' => $selectedProvider ?? config('ai.default'),
+                    'model' => $selectedModel,
+                    'message' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                ]);
+
+                $providerName = (string) ($selectedProvider ?? config('ai.default', 'anthropic'));
+                $modelName = (string) ($selectedModel ?? 'default');
+                $errorMessage = "Error from [{$providerName}]: {$e->getMessage()}";
+
+                yield 'data: '.json_encode([
+                    'type' => 'error',
+                    'errorText' => $errorMessage,
+                    'provider' => $providerName,
+                    'model' => $modelName,
+                ])."\n\n";
+                yield "data: [DONE]\n\n";
+            }
+        }, 200, [
+            'Cache-Control' => 'no-cache, no-transform',
+            'Content-Type' => 'text/event-stream',
+            'X-Accel-Buffering' => 'no',
+        ]);
     }
 
     /**
@@ -170,7 +265,7 @@ final class AdministratorAiController extends Controller
     }
 
     /**
-     * Provide rapid institutional KPI summary for administrative chat.
+     * Provide rapid institutional KPI summary, quick prompts, and available model options.
      */
     public function analyticsSummary(): JsonResponse
     {
@@ -185,6 +280,81 @@ final class AdministratorAiController extends Controller
         $enrolledStudents = Student::query()->where('status', 'enrolled')->count();
         $pendingClearances = StudentClearance::query()->where('is_cleared', false)->count();
 
+        // Retrieve model options from configured providers
+        $aiSettings = app(AiSettingsService::class)->get();
+        $primaryKey = (string) ($aiSettings['primary_provider'] ?? config('ai.default', 'anthropic'));
+        $primaryConfig = $aiSettings['providers'][$primaryKey] ?? $aiSettings['custom_providers'][$primaryKey] ?? [];
+
+        $modelOptions = [];
+
+        // 1. Primary provider default model
+        if (filled($primaryConfig['default_chat_model'] ?? null)) {
+            $defId = (string) $primaryConfig['default_chat_model'];
+            $modelOptions[] = [
+                'id' => $defId,
+                'name' => $defId,
+                'provider' => $primaryKey,
+                'badge' => 'Default',
+                'description' => "Primary provider ({$primaryKey}) active model",
+            ];
+        }
+
+        // 2. Discovered models for primary provider
+        foreach ($primaryConfig['discovered_models'] ?? [] as $dm) {
+            $dmId = (string) ($dm['id'] ?? '');
+            if (filled($dmId) && ! in_array($dmId, array_column($modelOptions, 'id'), true)) {
+                $modelOptions[] = [
+                    'id' => $dmId,
+                    'name' => (string) ($dm['name'] ?? $dmId),
+                    'provider' => $primaryKey,
+                    'badge' => 'Live',
+                ];
+            }
+        }
+
+        // 3. Custom models configured for primary provider
+        foreach ($primaryConfig['custom_models'] ?? [] as $cm) {
+            $cmId = (string) $cm;
+            if (filled($cmId) && ! in_array($cmId, array_column($modelOptions, 'id'), true)) {
+                $modelOptions[] = [
+                    'id' => $cmId,
+                    'name' => $cmId,
+                    'provider' => $primaryKey,
+                    'badge' => 'Custom',
+                ];
+            }
+        }
+
+        // 4. Custom OpenAI-compatible endpoints
+        foreach ($aiSettings['custom_providers'] ?? [] as $customKey => $custom) {
+            if ($customKey === $primaryKey) {
+                continue;
+            }
+
+            $customLabel = (string) ($custom['label'] ?? $customKey);
+            $cChatModel = (string) ($custom['default_chat_model'] ?: 'default');
+
+            $modelOptions[] = [
+                'id' => "{$customKey}:{$cChatModel}",
+                'name' => "{$customLabel} ({$cChatModel})",
+                'provider' => $customKey,
+                'badge' => 'Custom API',
+                'description' => (string) ($custom['base_url'] ?? ''),
+            ];
+
+            foreach ($custom['discovered_models'] ?? [] as $cdm) {
+                $cdmId = (string) ($cdm['id'] ?? '');
+                if (filled($cdmId) && $cdmId !== $cChatModel) {
+                    $modelOptions[] = [
+                        'id' => "{$customKey}:{$cdmId}",
+                        'name' => "{$customLabel} ({$cdmId})",
+                        'provider' => $customKey,
+                        'badge' => 'Custom API',
+                    ];
+                }
+            }
+        }
+
         return response()->json([
             'academic_period' => "{$schoolYear} - {$semester}",
             'kpis' => [
@@ -197,8 +367,10 @@ final class AdministratorAiController extends Controller
                 'Analyze enrollment demographics and plot a bar chart',
                 'Audit student clearance holds across campus departments',
                 'Generate an executive tuition revenue and billing brief',
-                'Formulate a faculty academic intervention circular',
+                'Formulate a faculty academic intervention circular in PDF',
             ],
+            'models' => $modelOptions,
+            'primary_provider' => $primaryKey,
         ]);
     }
 

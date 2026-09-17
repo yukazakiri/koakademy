@@ -430,8 +430,9 @@ final class AiSettingsService
                     config(["ai.providers.{$providerKey}.url" => $url]);
                 }
 
-                if (filled($chatModel)) {
-                    config(["ai.providers.{$providerKey}.models.text.default" => $chatModel]);
+                if ($providerKey === 'openai-compatible' || filled($chatModel)) {
+                    $resolvedChatModel = filled($chatModel) ? $chatModel : 'default';
+                    config(["ai.providers.{$providerKey}.models.text.default" => $resolvedChatModel]);
                 }
 
                 if (filled($embeddingsModel)) {
@@ -445,18 +446,33 @@ final class AiSettingsService
                     continue;
                 }
 
-                $modelsConfig = [];
-                if (filled($custom['default_chat_model'] ?? null)) {
-                    $modelsConfig['text']['default'] = (string) $custom['default_chat_model'];
-                }
+                $chatModel = filled($custom['default_chat_model'] ?? null)
+                    ? (string) $custom['default_chat_model']
+                    : (filled($custom['custom_models'][0] ?? null)
+                        ? (string) $custom['custom_models'][0]
+                        : (filled($custom['discovered_models'][0]['id'] ?? null)
+                            ? (string) $custom['discovered_models'][0]['id']
+                            : 'default'));
+
+                $modelsConfig = [
+                    'text' => [
+                        'default' => $chatModel,
+                    ],
+                ];
+
                 if (filled($custom['default_embeddings_model'] ?? null)) {
                     $modelsConfig['embeddings']['default'] = (string) $custom['default_embeddings_model'];
+                }
+
+                $rawUrl = mb_trim((string) $custom['base_url']);
+                if (! str_starts_with($rawUrl, 'http://') && ! str_starts_with($rawUrl, 'https://')) {
+                    $rawUrl = 'http://'.$rawUrl;
                 }
 
                 config([
                     "ai.providers.{$customKey}" => [
                         'driver' => 'openai-compatible',
-                        'url' => (string) $custom['base_url'],
+                        'url' => mb_rtrim($rawUrl, '/'),
                         'key' => (string) ($custom['api_key'] ?? ''),
                         'headers' => is_array($custom['headers'] ?? null) ? $custom['headers'] : [],
                         'models' => $modelsConfig,

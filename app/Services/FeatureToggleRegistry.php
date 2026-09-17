@@ -6,6 +6,11 @@ namespace App\Services;
 
 use App\Features\Contracts\FeatureToggle;
 use App\Features\Toggles\AdminDeveloperMode;
+use App\Features\Toggles\AiFacultyAssistant;
+use App\Features\Toggles\AiFinanceAssistant;
+use App\Features\Toggles\AiHelpDeskAssistant;
+use App\Features\Toggles\AiRegistrarAuditor;
+use App\Features\Toggles\AiStudentAdvisor;
 use App\Features\Toggles\FacultyActionCenter;
 use App\Features\Toggles\FacultyAnnouncements;
 use App\Features\Toggles\FacultyAssessments;
@@ -95,6 +100,13 @@ final class FeatureToggleRegistry
         'student-avatar-upload' => StudentAvatarUpload::class,
         'online-college-enrollment' => OnlineCollegeEnrollment::class,
         'online-tesda-enrollment' => OnlineTesdaEnrollment::class,
+
+        // AI features
+        'ai-student-advisor' => AiStudentAdvisor::class,
+        'ai-faculty-assistant' => AiFacultyAssistant::class,
+        'ai-registrar-auditor' => AiRegistrarAuditor::class,
+        'ai-finance-assistant' => AiFinanceAssistant::class,
+        'ai-help-desk-assistant' => AiHelpDeskAssistant::class,
     ];
 
     /**

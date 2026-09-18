@@ -1,3 +1,4 @@
+import { Brain } from "lucide-react";
 import * as React from "react";
 import { AnalyticsChartRenderer, ChartArtifact } from "./analytics-chart-renderer";
 import { DocumentArtifact, DocumentDownloadCard } from "./document-download-card";
@@ -5,9 +6,10 @@ import { InteractiveTable } from "./interactive-table";
 
 interface ChatMessageFormatterProps {
     content: string;
+    reasoning?: string;
 }
 
-export function ChatMessageFormatter({ content }: ChatMessageFormatterProps) {
+export function ChatMessageFormatter({ content, reasoning }: ChatMessageFormatterProps) {
     // 1. Detect if entire content or parts contain JSON artifacts
     const parsedBlocks = React.useMemo(() => {
         const blocks: React.ReactNode[] = [];
@@ -90,7 +92,23 @@ export function ChatMessageFormatter({ content }: ChatMessageFormatterProps) {
         return blocks.length > 0 ? blocks : [renderTextChunk(content, "root")];
     }, [content]);
 
-    return <div className="space-y-2">{parsedBlocks}</div>;
+    return (
+        <div className="space-y-2">
+            {reasoning && (
+                <details className="rounded-xl border border-border/60 bg-muted/20 px-3 py-2 text-xs group">
+                    <summary className="cursor-pointer font-medium text-muted-foreground hover:text-foreground flex items-center gap-1.5 select-none transition-colors">
+                        <Brain className="size-3.5 text-indigo-500 shrink-0" />
+                        <span>Reasoning & Thought Process</span>
+                        <span className="text-[10px] opacity-60 ml-auto group-open:hidden">Click to expand</span>
+                    </summary>
+                    <div className="mt-2 text-[11px] leading-relaxed text-muted-foreground/90 whitespace-pre-wrap font-mono border-t border-border/40 pt-2 max-h-48 overflow-y-auto">
+                        {reasoning}
+                    </div>
+                </details>
+            )}
+            {parsedBlocks}
+        </div>
+    );
 }
 
 function renderTextChunk(text: string, keyPrefix: string): React.ReactNode {

@@ -605,3 +605,37 @@ it('filters out unconfigured providers from model options in analyticsSummary', 
         ->and($modelIds)->toContain('campus_vllm:llama-3.3-70b')
         ->and($models[0])->toHaveKey('provider_name');
 });
+
+it('automatically falls back to configured custom provider on general ai chat endpoint', function (): void {
+    StudentAdvisorAgent::fake([
+        'Responding from custom provider fallback.',
+    ]);
+
+    $service = app(App\Services\Ai\AiSettingsService::class);
+    $service->merge([
+        'enabled' => true,
+        'primary_provider' => 'anthropic',
+        'providers' => [
+            'anthropic' => ['enabled' => true, 'api_key' => ''],
+        ],
+        'custom_providers' => [
+            'local_vllm' => [
+                'key' => 'local_vllm',
+                'label' => 'Local vLLM',
+                'enabled' => true,
+                'base_url' => 'http://localhost:8000/v1',
+                'default_chat_model' => 'qwen-2.5',
+            ],
+        ],
+    ]);
+
+    $student = User::factory()->create(['role' => App\Enums\UserRole::Student]);
+
+    $response = $this->actingAs($student)->post('/ai/chat', [
+        'agent' => 'student_advisor',
+        'message' => 'Hello advisor',
+    ]);
+
+    $response->assertOk();
+    expect($response->headers->get('content-type'))->toContain('text/event-stream');
+});

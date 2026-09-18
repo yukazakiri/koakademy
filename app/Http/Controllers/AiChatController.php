@@ -129,6 +129,69 @@ final class AiChatController extends Controller
             $selectedModel = $m;
         }
 
+        // If no provider or model selected, use primary provider or fallback to first configured provider
+        if (blank($selectedProvider)) {
+            $primaryKey = (string) ($aiSettings['primary_provider'] ?? config('ai.default', 'anthropic'));
+            $primaryConfig = $aiSettings['providers'][$primaryKey] ?? $aiSettings['custom_providers'][$primaryKey] ?? [];
+            $supported = AiSettingsService::supportedProviders();
+            $requiresKey = $supported[$primaryKey]['requires_key'] ?? false;
+            $hasKey = filled($primaryConfig['api_key'] ?? '') || filled(config("ai.providers.{$primaryKey}.key"));
+
+            if ($requiresKey && ! $hasKey) {
+                // Primary has no API key - find first configured provider or custom provider
+                foreach ($aiSettings['custom_providers'] ?? [] as $ck => $custom) {
+                    if ((bool) ($custom['enabled'] ?? true) && filled($custom['base_url'] ?? '')) {
+                        $selectedProvider = $ck;
+                        $selectedModel = $custom['default_chat_model'] ?: null;
+                        break;
+                    }
+                }
+
+                if (blank($selectedProvider)) {
+                    foreach ($supported as $sk => $smeta) {
+                        $scfg = $aiSettings['providers'][$sk] ?? [];
+                        if ((bool) ($scfg['enabled'] ?? false) && (! $smeta['requires_key'] || filled($scfg['api_key'] ?? ''))) {
+                            $selectedProvider = $sk;
+                            $selectedModel = $scfg['default_chat_model'] ?: null;
+                            break;
+                        }
+                    }
+                }
+            } else {
+                $selectedProvider = $primaryKey;
+                $selectedModel = $primaryConfig['default_chat_model'] ?? null;
+            }
+        }
+
+        // If custom provider selected, ensure its runtime configuration is present
+        if (filled($selectedProvider) && isset($aiSettings['custom_providers'][$selectedProvider])) {
+            $custom = $aiSettings['custom_providers'][$selectedProvider];
+            $chatModel = filled($selectedModel) ? $selectedModel : ($custom['default_chat_model'] ?: 'default');
+
+            $rawUrl = mb_trim((string) $custom['base_url']);
+            if (! str_starts_with($rawUrl, 'http://') && ! str_starts_with($rawUrl, 'https://')) {
+                $rawUrl = 'http://'.$rawUrl;
+            }
+            $cleanUrl = mb_rtrim($rawUrl, '/');
+            if (! str_ends_with($cleanUrl, '/v1')) {
+                $cleanUrl .= '/v1';
+            }
+
+            config([
+                "ai.providers.{$selectedProvider}" => [
+                    'driver' => 'openai-compatible',
+                    'url' => $cleanUrl,
+                    'key' => (string) ($custom['api_key'] ?? ''),
+                    'headers' => is_array($custom['headers'] ?? null) ? $custom['headers'] : [],
+                    'models' => [
+                        'text' => [
+                            'default' => $chatModel,
+                        ],
+                    ],
+                ],
+            ]);
+        }
+
         $agentKey = $validated['agent'];
 
         return response()->stream(function () use ($agentInstance, $prompt, $aiAttachments, $selectedProvider, $selectedModel, $agentKey) {

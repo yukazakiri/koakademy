@@ -79,15 +79,58 @@ final class AdministratorAiController extends Controller
             $selectedModel = $m;
         }
 
+        // If no provider or model selected, use primary provider or fallback to first configured provider
+        if (blank($selectedProvider)) {
+            $primaryKey = (string) ($aiSettings['primary_provider'] ?? config('ai.default', 'anthropic'));
+            $primaryConfig = $aiSettings['providers'][$primaryKey] ?? $aiSettings['custom_providers'][$primaryKey] ?? [];
+            $supported = AiSettingsService::supportedProviders();
+            $requiresKey = $supported[$primaryKey]['requires_key'] ?? false;
+            $hasKey = filled($primaryConfig['api_key'] ?? '') || filled(config("ai.providers.{$primaryKey}.key"));
+
+            if ($requiresKey && ! $hasKey) {
+                // Primary has no API key - find first configured provider or custom provider
+                foreach ($aiSettings['custom_providers'] ?? [] as $ck => $custom) {
+                    if ((bool) ($custom['enabled'] ?? true) && filled($custom['base_url'] ?? '')) {
+                        $selectedProvider = $ck;
+                        $selectedModel = $custom['default_chat_model'] ?: null;
+                        break;
+                    }
+                }
+
+                if (blank($selectedProvider)) {
+                    foreach ($supported as $sk => $smeta) {
+                        $scfg = $aiSettings['providers'][$sk] ?? [];
+                        if ((bool) ($scfg['enabled'] ?? false) && (! $smeta['requires_key'] || filled($scfg['api_key'] ?? ''))) {
+                            $selectedProvider = $sk;
+                            $selectedModel = $scfg['default_chat_model'] ?: null;
+                            break;
+                        }
+                    }
+                }
+            } else {
+                $selectedProvider = $primaryKey;
+                $selectedModel = $primaryConfig['default_chat_model'] ?? null;
+            }
+        }
+
         // If custom provider selected, ensure its runtime configuration is present
         if (filled($selectedProvider) && isset($aiSettings['custom_providers'][$selectedProvider])) {
             $custom = $aiSettings['custom_providers'][$selectedProvider];
             $chatModel = filled($selectedModel) ? $selectedModel : ($custom['default_chat_model'] ?: 'default');
 
+            $rawUrl = mb_trim((string) $custom['base_url']);
+            if (! str_starts_with($rawUrl, 'http://') && ! str_starts_with($rawUrl, 'https://')) {
+                $rawUrl = 'http://'.$rawUrl;
+            }
+            $cleanUrl = mb_rtrim($rawUrl, '/');
+            if (! str_ends_with($cleanUrl, '/v1')) {
+                $cleanUrl .= '/v1';
+            }
+
             config([
                 "ai.providers.{$selectedProvider}" => [
                     'driver' => 'openai-compatible',
-                    'url' => (string) $custom['base_url'],
+                    'url' => $cleanUrl,
                     'key' => (string) ($custom['api_key'] ?? ''),
                     'headers' => is_array($custom['headers'] ?? null) ? $custom['headers'] : [],
                     'models' => [
@@ -299,76 +342,136 @@ final class AdministratorAiController extends Controller
         $enrolledStudents = Student::query()->where('status', 'enrolled')->count();
         $pendingClearances = StudentClearance::query()->where('is_cleared', false)->count();
 
-        // Retrieve model options from configured providers
+        // Retrieve model options from configured providers ONLY
         $aiSettings = app(AiSettingsService::class)->get();
         $primaryKey = (string) ($aiSettings['primary_provider'] ?? config('ai.default', 'anthropic'));
-        $primaryConfig = $aiSettings['providers'][$primaryKey] ?? $aiSettings['custom_providers'][$primaryKey] ?? [];
+        $supported = AiSettingsService::supportedProviders();
 
         $modelOptions = [];
 
-        // 1. Primary provider default model
-        if (filled($primaryConfig['default_chat_model'] ?? null)) {
-            $defId = (string) $primaryConfig['default_chat_model'];
-            $modelOptions[] = [
-                'id' => $defId,
-                'name' => $defId,
-                'provider' => $primaryKey,
-                'badge' => 'Default',
-                'description' => "Primary provider ({$primaryKey}) active model",
-            ];
-        }
+        // 1. Process Built-in Providers (only include if enabled AND key configured)
+        foreach ($supported as $key => $meta) {
+            $cfg = $aiSettings['providers'][$key] ?? [];
+            $enabled = (bool) ($cfg['enabled'] ?? false);
+            $hasKey = filled($cfg['api_key'] ?? '') || filled(config("ai.providers.{$key}.key"));
 
-        // 2. Discovered models for primary provider
-        foreach ($primaryConfig['discovered_models'] ?? [] as $dm) {
-            $dmId = (string) ($dm['id'] ?? '');
-            if (filled($dmId) && ! in_array($dmId, array_column($modelOptions, 'id'), true)) {
-                $modelOptions[] = [
-                    'id' => $dmId,
-                    'name' => (string) ($dm['name'] ?? $dmId),
-                    'provider' => $primaryKey,
-                    'badge' => 'Live',
-                ];
-            }
-        }
-
-        // 3. Custom models configured for primary provider
-        foreach ($primaryConfig['custom_models'] ?? [] as $cm) {
-            $cmId = (string) $cm;
-            if (filled($cmId) && ! in_array($cmId, array_column($modelOptions, 'id'), true)) {
-                $modelOptions[] = [
-                    'id' => $cmId,
-                    'name' => $cmId,
-                    'provider' => $primaryKey,
-                    'badge' => 'Custom',
-                ];
-            }
-        }
-
-        // 4. Custom OpenAI-compatible endpoints
-        foreach ($aiSettings['custom_providers'] ?? [] as $customKey => $custom) {
-            if ($customKey === $primaryKey) {
+            if (! $enabled || ($meta['requires_key'] && ! $hasKey)) {
                 continue;
             }
 
-            $customLabel = (string) ($custom['label'] ?? $customKey);
+            $providerName = $meta['label'];
+            $isPrimary = $key === $primaryKey;
+
+            // Default model
+            if (filled($cfg['default_chat_model'] ?? null)) {
+                $mId = (string) $cfg['default_chat_model'];
+                $fullId = "{$key}:{$mId}";
+                $modelOptions[] = [
+                    'id' => $fullId,
+                    'name' => $mId,
+                    'provider' => $key,
+                    'provider_name' => $providerName,
+                    'badge' => $isPrimary ? 'Default' : 'Built-in',
+                    'description' => "{$providerName} default chat model",
+                ];
+            }
+
+            // Fast model
+            if (filled($cfg['default_fast_model'] ?? null) && $cfg['default_fast_model'] !== ($cfg['default_chat_model'] ?? null)) {
+                $mId = (string) $cfg['default_fast_model'];
+                $fullId = "{$key}:{$mId}";
+                $modelOptions[] = [
+                    'id' => $fullId,
+                    'name' => $mId,
+                    'provider' => $key,
+                    'provider_name' => $providerName,
+                    'badge' => 'Fast',
+                    'description' => "{$providerName} fast model",
+                ];
+            }
+
+            // Discovered models from /models
+            foreach ($cfg['discovered_models'] ?? [] as $dm) {
+                $dmId = (string) ($dm['id'] ?? '');
+                $fullId = "{$key}:{$dmId}";
+                if (filled($dmId) && ! in_array($fullId, array_column($modelOptions, 'id'), true)) {
+                    $modelOptions[] = [
+                        'id' => $fullId,
+                        'name' => (string) ($dm['name'] ?? $dmId),
+                        'provider' => $key,
+                        'provider_name' => $providerName,
+                        'badge' => 'Live',
+                    ];
+                }
+            }
+
+            // Custom models configured for this provider
+            foreach ($cfg['custom_models'] ?? [] as $cm) {
+                $cmId = (string) $cm;
+                $fullId = "{$key}:{$cmId}";
+                if (filled($cmId) && ! in_array($fullId, array_column($modelOptions, 'id'), true)) {
+                    $modelOptions[] = [
+                        'id' => $fullId,
+                        'name' => $cmId,
+                        'provider' => $key,
+                        'provider_name' => $providerName,
+                        'badge' => 'Custom',
+                    ];
+                }
+            }
+        }
+
+        // 2. Process Custom OpenAI-Compatible Providers (only include if enabled, has base_url and key)
+        foreach ($aiSettings['custom_providers'] ?? [] as $customKey => $custom) {
+            $enabled = (bool) ($custom['enabled'] ?? true);
+            $hasUrl = filled($custom['base_url'] ?? '');
+            $requiresKey = (bool) ($custom['requires_key'] ?? false);
+            $hasKey = filled($custom['api_key'] ?? '');
+
+            if (! $enabled || ! $hasUrl || ($requiresKey && ! $hasKey)) {
+                continue;
+            }
+
+            $providerName = (string) ($custom['label'] ?? $customKey);
+            $isPrimary = $customKey === $primaryKey;
             $cChatModel = (string) ($custom['default_chat_model'] ?: 'default');
+            $fullId = "{$customKey}:{$cChatModel}";
 
             $modelOptions[] = [
-                'id' => "{$customKey}:{$cChatModel}",
-                'name' => "{$customLabel} ({$cChatModel})",
+                'id' => $fullId,
+                'name' => $cChatModel,
                 'provider' => $customKey,
-                'badge' => 'Custom API',
+                'provider_name' => $providerName,
+                'badge' => $isPrimary ? 'Default' : 'Custom API',
                 'description' => (string) ($custom['base_url'] ?? ''),
             ];
 
+            // Discovered models for custom provider
             foreach ($custom['discovered_models'] ?? [] as $cdm) {
                 $cdmId = (string) ($cdm['id'] ?? '');
-                if (filled($cdmId) && $cdmId !== $cChatModel) {
+                $cFullId = "{$customKey}:{$cdmId}";
+                if (filled($cdmId) && ! in_array($cFullId, array_column($modelOptions, 'id'), true)) {
                     $modelOptions[] = [
-                        'id' => "{$customKey}:{$cdmId}",
-                        'name' => "{$customLabel} ({$cdmId})",
+                        'id' => $cFullId,
+                        'name' => (string) ($cdm['name'] ?? $cdmId),
                         'provider' => $customKey,
-                        'badge' => 'Custom API',
+                        'provider_name' => $providerName,
+                        'badge' => 'Live',
+                    ];
+                }
+            }
+
+            // Custom models for custom provider
+            foreach ($custom['custom_models'] ?? [] as $ccm) {
+                $ccmId = (string) $ccm;
+                $cFullId = "{$customKey}:{$ccmId}";
+                if (filled($ccmId) && ! in_array($cFullId, array_column($modelOptions, 'id'), true)) {
+                    $modelOptions[] = [
+                        'id' => $cFullId,
+                        'name' => $ccmId,
+                        'provider' => $customKey,
+                        'provider_name' => $providerName,
+                        'badge' => 'Custom',
                     ];
                 }
             }

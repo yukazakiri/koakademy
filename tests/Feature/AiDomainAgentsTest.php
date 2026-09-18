@@ -556,3 +556,52 @@ it('surfaces error diagnostics with provider context when AI streaming fails', f
     expect($content)->toContain('"type":"error"')
         ->and($content)->toContain('unreachable_custom_provider');
 });
+
+it('filters out unconfigured providers from model options in analyticsSummary', function (): void {
+    $service = app(App\Services\Ai\AiSettingsService::class);
+
+    // Save with OpenAI configured (has key), and custom vllm configured, but Anthropic has no key
+    $service->merge([
+        'enabled' => true,
+        'primary_provider' => 'anthropic',
+        'providers' => [
+            'anthropic' => ['enabled' => true, 'api_key' => ''],
+            'openai' => ['enabled' => true, 'api_key' => 'sk-valid-key', 'default_chat_model' => 'gpt-4o'],
+        ],
+        'custom_providers' => [
+            'campus_vllm' => [
+                'key' => 'campus_vllm',
+                'label' => 'Campus GPU Cluster',
+                'enabled' => true,
+                'base_url' => 'http://192.168.1.50:8000/v1',
+                'default_chat_model' => 'llama-3.3-70b',
+            ],
+            'disabled_custom' => [
+                'key' => 'disabled_custom',
+                'label' => 'Disabled Cluster',
+                'enabled' => false,
+                'base_url' => 'http://192.168.1.60:8000/v1',
+                'default_chat_model' => 'llama-old',
+            ],
+        ],
+    ]);
+
+    $admin = User::factory()->create(['role' => App\Enums\UserRole::SuperAdmin]);
+    $response = $this->actingAs($admin)->getJson('/administrators/ai/analytics-summary');
+
+    $response->assertOk();
+    $data = $response->json();
+
+    $models = $data['models'];
+    $modelIds = array_column($models, 'id');
+    $providers = array_unique(array_column($models, 'provider'));
+
+    // Anthropic should NOT be in models because it has no key!
+    expect($providers)->not->toContain('anthropic')
+        // Disabled custom provider should NOT be in models!
+        ->and($providers)->not->toContain('disabled_custom')
+        // Configured providers should be present and grouped!
+        ->and($modelIds)->toContain('openai:gpt-4o')
+        ->and($modelIds)->toContain('campus_vllm:llama-3.3-70b')
+        ->and($models[0])->toHaveKey('provider_name');
+});

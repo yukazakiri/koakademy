@@ -422,36 +422,34 @@ export function AiChatSheet({
                         </div>
                     )}
 
-                    {/* Input Area with InputGroup */}
+                    {/* Input Area with Model Selector & Clean Readable Input */}
                     <div className="p-3 border-t bg-background/95 backdrop-blur space-y-2">
-                        <InputGroup className="min-h-[92px] rounded-xl border border-input focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 transition-all bg-background">
-                            {/* Top Addon: Model Selector */}
-                            <InputGroupAddon align="block-start" className="justify-between border-b border-border/40 pb-1.5 pt-1 px-2.5">
+                        <div className="rounded-2xl border border-border/80 bg-card dark:bg-[#121215] shadow-xs focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all overflow-hidden">
+                            {/* Top Toolbar: Searchable Model Selector */}
+                            <div className="flex items-center justify-between px-3 pt-2.5 pb-1.5 text-xs border-b border-border/40 bg-muted/20">
                                 <div className="flex items-center gap-1.5">
-                                    <Popover open={modelPopoverOpen} onOpenChange={setModelPopoverOpen}>
-                                        <PopoverTrigger asChild>
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="sm"
-                                                className="h-6 px-2 text-[11px] font-mono text-muted-foreground hover:text-foreground gap-1 bg-muted/30 hover:bg-muted/60 rounded-md"
-                                                title="Select AI Model"
-                                            >
-                                                <Cpu className="size-3 text-indigo-500" />
-                                                <span className="truncate max-w-[160px]">{activeModelName}</span>
-                                                <ChevronDown className="size-3 opacity-60" />
-                                            </Button>
-                                        </PopoverTrigger>
-                                        <PopoverContent className="w-80 p-3 shadow-xl rounded-xl" align="start">
-                                            <div className="space-y-2">
-                                                <div className="flex items-center justify-between border-b pb-1.5">
-                                                    <span className="text-xs font-semibold text-foreground">Select AI Model</span>
-                                                    <span className="text-[10px] text-muted-foreground font-mono">
-                                                        {availableModels.length} available
-                                                    </span>
-                                                </div>
+                                    {availableModels.length > 0 ? (
+                                        <Popover open={modelPopoverOpen} onOpenChange={setModelPopoverOpen}>
+                                            <PopoverTrigger asChild>
+                                                <button
+                                                    type="button"
+                                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border/70 bg-background hover:bg-muted text-foreground text-[11.5px] font-medium transition-colors shadow-2xs"
+                                                    title="Select AI Model"
+                                                >
+                                                    <Cpu className="size-3.5 text-indigo-500" />
+                                                    <span className="truncate max-w-[200px] font-mono">{activeModelName}</span>
+                                                    <ChevronDown className="size-3 text-muted-foreground" />
+                                                </button>
+                                            </PopoverTrigger>
+                                            <PopoverContent className="w-[360px] p-3 shadow-2xl rounded-2xl border border-border/80 bg-background" align="start">
+                                                <div className="space-y-2">
+                                                    <div className="flex items-center justify-between pb-1.5 border-b">
+                                                        <span className="text-xs font-semibold text-foreground">Configured AI Models</span>
+                                                        <span className="text-[10.5px] text-muted-foreground font-mono">
+                                                            {availableModels.length} available
+                                                        </span>
+                                                    </div>
 
-                                                {availableModels.length > 0 ? (
                                                     <ModelSelector
                                                         models={availableModels}
                                                         value={selectedModel}
@@ -461,41 +459,40 @@ export function AiChatSheet({
                                                             toast.success(`Active model: ${id}`);
                                                         }}
                                                         variant="List"
+                                                        searchable={true}
                                                     />
-                                                ) : (
-                                                    <div className="space-y-1.5 py-2">
-                                                        <span className="text-xs text-muted-foreground block">
-                                                            Enter model identifier:
-                                                        </span>
-                                                        <input
-                                                            type="text"
-                                                            placeholder="e.g. gpt-4o or mistral-7b"
-                                                            value={selectedModel}
-                                                            onChange={(e) => setSelectedModel(e.target.value)}
-                                                            className="w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border bg-background"
-                                                        />
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </PopoverContent>
-                                    </Popover>
+                                                </div>
+                                            </PopoverContent>
+                                        </Popover>
+                                    ) : (
+                                        <a
+                                            href="/administrators/system-management/ai"
+                                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[11px] font-medium hover:bg-amber-500/15 transition-colors"
+                                        >
+                                            <Cpu className="size-3 text-amber-500" />
+                                            <span>Configure API Key &rarr;</span>
+                                        </a>
+                                    )}
                                 </div>
 
-                                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                                    <span className="hidden sm:inline">Press Enter to send</span>
-                                </div>
-                            </InputGroupAddon>
-                            <InputGroupTextarea
+                                <span className="text-[11px] text-muted-foreground font-mono opacity-80">
+                                    {activeMeta.badge}
+                                </span>
+                            </div>
+
+                            {/* Readable Textarea */}
+                            <textarea
                                 placeholder={`Ask ${activeMeta.name} or attach files... (Enter to send)`}
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                                 onKeyDown={handleKeyDown}
                                 disabled={isLoading}
                                 rows={2}
-                                className="text-xs py-2 px-3 leading-relaxed placeholder:text-muted-foreground/70"
+                                className="w-full px-3.5 py-2.5 text-sm leading-relaxed text-foreground dark:text-neutral-100 bg-transparent border-0 resize-none outline-none placeholder:text-muted-foreground/60 dark:placeholder:text-neutral-500 min-h-[64px] max-h-[160px] font-sans"
                             />
 
-                            <InputGroupAddon align="block-end" className="justify-between pt-1 pb-1.5 px-2 border-t border-border/40">
+                            {/* Bottom Actions Toolbar */}
+                            <div className="flex items-center justify-between px-3 pb-2.5 pt-1">
                                 <div className="flex items-center gap-1">
                                     <input
                                         ref={fileInputRef}
@@ -509,31 +506,37 @@ export function AiChatSheet({
                                     <Button
                                         type="button"
                                         variant="ghost"
-                                        size="icon"
+                                        size="sm"
                                         onClick={() => fileInputRef.current?.click()}
                                         disabled={isLoading}
-                                        className="size-7 text-muted-foreground hover:text-foreground"
-                                        title="Attach Excel, PDF, documents or images"
+                                        className="h-8 px-2 text-xs gap-1.5 text-muted-foreground hover:text-foreground rounded-lg"
+                                        title="Attach Excel (.xlsx, .csv), PDF, Word, or Images"
                                     >
                                         <Paperclip className="size-3.5" />
+                                        <span className="hidden sm:inline text-[11.5px]">Attach</span>
                                     </Button>
                                 </div>
 
-                                <InputGroupButton
-                                    type="button"
-                                    size="xs"
-                                    variant="default"
-                                    onClick={handleSend}
-                                    disabled={(!input.trim() && selectedFiles.length === 0) || isLoading}
-                                    className="h-7 px-3 text-xs gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg shadow-xs"
-                                >
-                                    {isLoading ? <Loader2 className="size-3 animate-spin" /> : <Send className="size-3" />}
-                                    <span>Send</span>
-                                </InputGroupButton>
-                            </InputGroupAddon>
-                        </InputGroup>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10.5px] text-muted-foreground/70 hidden sm:inline">
+                                        Enter ↵ to send
+                                    </span>
 
-                        <div className="flex items-center justify-between text-[11px] text-muted-foreground px-1">
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        onClick={handleSend}
+                                        disabled={(!input.trim() && selectedFiles.length === 0) || isLoading}
+                                        className="h-8 px-3.5 text-xs font-semibold gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl shadow-xs transition-transform active:scale-95"
+                                    >
+                                        {isLoading ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
+                                        <span>Send</span>
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[10px] text-muted-foreground px-1">
                             <span>Supports Excel (.xlsx, .csv), PDF, Docs & Images</span>
                             <span>Shift + Enter for new line</span>
                         </div>

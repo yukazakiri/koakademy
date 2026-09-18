@@ -83,6 +83,7 @@ export interface ModelOption {
   icon?: React.ReactNode;
   disabled?: boolean;
   provider?: string;
+  provider_name?: string;
 }
 
 export interface ErrorState {

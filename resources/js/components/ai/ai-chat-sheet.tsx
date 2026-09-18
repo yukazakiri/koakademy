@@ -350,7 +350,7 @@ export function AiChatSheet({
                                         {isUser ? (
                                             <p className="whitespace-pre-wrap">{msg.content}</p>
                                         ) : (
-                                            <ChatMessageFormatter content={msg.content} />
+                                            <ChatMessageFormatter content={msg.content} reasoning={msg.reasoning} />
                                         )}
 
                                         {/* Pending Approvals within Assistant Message */}

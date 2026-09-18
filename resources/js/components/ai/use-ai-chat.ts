@@ -22,6 +22,7 @@ export interface ChatMessage {
     id: string;
     role: "user" | "assistant" | "system";
     content: string;
+    reasoning?: string;
     attachments?: ChatAttachment[];
     pendingApprovals?: PendingToolApproval[];
     createdAt?: Date;
@@ -175,14 +176,17 @@ export function useAiChat({ agent, endpoint, initialConversationId, onFinish, on
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
                 let accumulatedText = "";
+                let accumulatedReasoning = "";
+                let lineBuffer = "";
                 const pendingApprovals: PendingToolApproval[] = [];
 
                 while (true) {
                     const { value, done } = await reader.read();
                     if (done) break;
 
-                    const chunk = decoder.decode(value, { stream: true });
-                    const lines = chunk.split("\n");
+                    lineBuffer += decoder.decode(value, { stream: true });
+                    const lines = lineBuffer.split("\n");
+                    lineBuffer = lines.pop() ?? "";
 
                     for (const line of lines) {
                         const trimmed = line.trim();
@@ -196,6 +200,8 @@ export function useAiChat({ agent, endpoint, initialConversationId, onFinish, on
                                 const parsed = JSON.parse(dataPayload);
                                 if (parsed.type === "text-delta" || parsed.type === "text_delta") {
                                     accumulatedText += (parsed.delta ?? parsed.text ?? "");
+                                } else if (parsed.type === "reasoning-delta" || parsed.type === "reasoning_delta") {
+                                    accumulatedReasoning += (parsed.delta ?? parsed.text ?? "");
                                 } else if (parsed.type === "error") {
                                     const errMsg = parsed.errorText || parsed.message || "An error occurred with the AI provider.";
                                     setLastError({
@@ -241,6 +247,7 @@ export function useAiChat({ agent, endpoint, initialConversationId, onFinish, on
                                     ? {
                                           ...m,
                                           content: accumulatedText,
+                                          reasoning: accumulatedReasoning || undefined,
                                           pendingApprovals:
                                               pendingApprovals.length > 0 ? [...pendingApprovals] : undefined,
                                       }
@@ -254,6 +261,7 @@ export function useAiChat({ agent, endpoint, initialConversationId, onFinish, on
                     id: assistantId,
                     role: "assistant",
                     content: accumulatedText,
+                    reasoning: accumulatedReasoning || undefined,
                     pendingApprovals: pendingApprovals.length > 0 ? pendingApprovals : undefined,
                 };
 

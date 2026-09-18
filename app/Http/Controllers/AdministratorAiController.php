@@ -145,14 +145,19 @@ final class AdministratorAiController extends Controller
 
                 foreach ($stream as $event) {
                     if ($event instanceof \Laravel\Ai\Streaming\Events\TextDelta) {
-                        yield 'data: '.json_encode([
+                        echo 'data: '.json_encode([
                             'type' => 'text-delta',
                             'delta' => $event->delta,
                             'id' => $event->messageId,
                         ])."\n\n";
+                    } elseif ($event instanceof \Laravel\Ai\Streaming\Events\ReasoningDelta) {
+                        echo 'data: '.json_encode([
+                            'type' => 'reasoning-delta',
+                            'delta' => $event->delta,
+                        ])."\n\n";
                     } elseif ($event instanceof \Laravel\Ai\Streaming\Events\ToolApprovalRequest) {
                         foreach ($event->pendingApprovals as $pendingApproval) {
-                            yield 'data: '.json_encode([
+                            echo 'data: '.json_encode([
                                 'type' => 'tool-approval-request',
                                 'toolCallId' => $pendingApproval->id,
                                 'approvalId' => $pendingApproval->id,
@@ -162,14 +167,23 @@ final class AdministratorAiController extends Controller
                             ])."\n\n";
                         }
                     } elseif ($event instanceof \Laravel\Ai\Streaming\Events\Error) {
-                        yield 'data: '.json_encode([
+                        echo 'data: '.json_encode([
                             'type' => 'error',
                             'errorText' => (string) $event,
                         ])."\n\n";
                     }
+
+                    if (ob_get_level() > 0) {
+                        ob_flush();
+                    }
+                    flush();
                 }
 
-                yield "data: [DONE]\n\n";
+                echo "data: [DONE]\n\n";
+                if (ob_get_level() > 0) {
+                    ob_flush();
+                }
+                flush();
             } catch (Throwable $e) {
                 Log::error('Administrative AI Streaming Exception', [
                     'agent' => $agentKey,
@@ -183,13 +197,18 @@ final class AdministratorAiController extends Controller
                 $modelName = (string) ($selectedModel ?? 'default');
                 $errorMessage = "Error from [{$providerName}]: {$e->getMessage()}";
 
-                yield 'data: '.json_encode([
+                echo 'data: '.json_encode([
                     'type' => 'error',
                     'errorText' => $errorMessage,
                     'provider' => $providerName,
                     'model' => $modelName,
                 ])."\n\n";
-                yield "data: [DONE]\n\n";
+                echo "data: [DONE]\n\n";
+
+                if (ob_get_level() > 0) {
+                    ob_flush();
+                }
+                flush();
             }
         }, 200, [
             'Cache-Control' => 'no-cache, no-transform',

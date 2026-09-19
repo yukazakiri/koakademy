@@ -1,13 +1,18 @@
 import {
+    Loader,
+    Markdown,
     Reasoning,
     ReasoningContent,
     ReasoningTrigger,
     Source,
     SourceContent,
     SourceTrigger,
+    Steps,
+    StepsContent,
+    StepsItem,
+    StepsTrigger,
     Tool,
 } from "@/components/prompt-kit";
-import { Response } from "@/components/ui/response";
 import * as React from "react";
 import { AnalyticsChartRenderer, ChartArtifact } from "./analytics-chart-renderer";
 import { DocumentArtifact, DocumentDownloadCard } from "./document-download-card";
@@ -22,13 +27,13 @@ interface ChatMessageFormatterProps {
 
 /**
  * Enhanced Chat Message Formatter using:
- * - ElevenLabs UI Response component for streaming markdown typography
+ * - Prompt-Kit Markdown component for rich typography and code highlighting
+ * - Prompt-Kit Steps component for tool invocations
  * - Prompt-Kit Reasoning component for thought processes
  * - Prompt-Kit Tool component for tool execution inspection
  * - Prompt-Kit Source component for verifiable citations
  * - Interactive Recharts visualizations & Downloadable Document cards
  *
- * @see https://ui.elevenlabs.io/docs/components/response
  * @see https://www.prompt-kit.com/docs/
  */
 export function ChatMessageFormatter({
@@ -52,14 +57,14 @@ export function ChatMessageFormatter({
             const blockStart = match.index;
             const blockEnd = codeBlockRegex.lastIndex;
 
-            // Render preceding text chunk via ElevenLabs UI Response component
+            // Render preceding text chunk via Prompt-Kit Markdown component
             if (blockStart > lastIndex) {
                 const textChunk = content.substring(lastIndex, blockStart).trim();
                 if (textChunk) {
                     blocks.push(
-                        <Response key={`text_${lastIndex}`} className="leading-relaxed">
+                        <Markdown key={`text_${lastIndex}`} className="leading-relaxed text-sm">
                             {textChunk}
-                        </Response>
+                        </Markdown>
                     );
                 }
             }
@@ -94,11 +99,10 @@ export function ChatMessageFormatter({
             }
 
             if (!handled) {
-                // Render standard code block via Response component
                 blocks.push(
-                    <Response key={`code_${blockStart}`} className="leading-relaxed">
+                    <Markdown key={`code_${blockStart}`} className="leading-relaxed text-sm">
                         {match[0]}
-                    </Response>
+                    </Markdown>
                 );
             }
 
@@ -127,9 +131,9 @@ export function ChatMessageFormatter({
                 }
 
                 blocks.push(
-                    <Response key={`tail_${lastIndex}`} className="leading-relaxed">
+                    <Markdown key={`tail_${lastIndex}`} className="leading-relaxed text-sm">
                         {tail}
-                    </Response>
+                    </Markdown>
                 );
             }
         }
@@ -152,9 +156,9 @@ export function ChatMessageFormatter({
         return blocks.length > 0
             ? blocks
             : [
-                  <Response key="root_content" className="leading-relaxed">
+                  <Markdown key="root_content" className="leading-relaxed text-sm">
                       {content}
-                  </Response>,
+                  </Markdown>,
               ];
     }, [content]);
 
@@ -172,23 +176,32 @@ export function ChatMessageFormatter({
                 </Reasoning>
             )}
 
-            {/* Prompt-Kit Tool Invocations */}
+            {/* Prompt-Kit Steps for Tool Invocations */}
             {toolCalls && toolCalls.length > 0 && (
-                <div className="space-y-1.5">
-                    {toolCalls.map((tool) => (
-                        <Tool
-                            key={tool.id}
-                            toolPart={{
-                                type: tool.toolName,
-                                state: tool.state,
-                                input: tool.input,
-                                output: typeof tool.output === "object" ? tool.output : tool.output ? { result: tool.output } : undefined,
-                                toolCallId: tool.id,
-                                errorText: tool.errorText,
-                            }}
-                        />
-                    ))}
-                </div>
+                <Steps defaultOpen={false} className="border border-border/60 bg-muted/20 rounded-xl overflow-hidden p-2.5">
+                    <StepsTrigger
+                        leftIcon={<Loader variant="dots" size="sm" className="text-primary" />}
+                        className="text-xs font-medium text-muted-foreground hover:text-foreground"
+                    >
+                        <span>Executed {toolCalls.length} {toolCalls.length === 1 ? "tool step" : "tool steps"}</span>
+                    </StepsTrigger>
+                    <StepsContent className="mt-2 space-y-1.5 border-t border-border/40 pt-2">
+                        {toolCalls.map((tool) => (
+                            <StepsItem key={tool.id}>
+                                <Tool
+                                    toolPart={{
+                                        type: tool.toolName,
+                                        state: tool.state,
+                                        input: tool.input,
+                                        output: typeof tool.output === "object" ? tool.output : tool.output ? { result: tool.output } : undefined,
+                                        toolCallId: tool.id,
+                                        errorText: tool.errorText,
+                                    }}
+                                />
+                            </StepsItem>
+                        ))}
+                    </StepsContent>
+                </Steps>
             )}
 
             {/* Formatted Markdown and Visual Artifacts */}

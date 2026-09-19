@@ -1,13 +1,24 @@
-import { ThinkingBar } from "@/components/prompt-kit";
+import {
+    ChainOfThought,
+    ChainOfThoughtContent,
+    ChainOfThoughtItem,
+    ChainOfThoughtStep,
+    ChainOfThoughtTrigger,
+    FileUpload,
+    FileUploadContent,
+    FileUploadTrigger,
+    Loader,
+    Message,
+    MessageAvatar,
+    MessageContent,
+    PromptInput,
+    PromptInputAction,
+    PromptInputActions,
+    PromptInputTextarea,
+} from "@/components/prompt-kit";
 import { ChatEmptyState, ErrorState, ModelOption, ModelSelector } from "@/components/spectrumui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-    InputGroup,
-    InputGroupAddon,
-    InputGroupButton,
-    InputGroupTextarea,
-} from "@/components/ui/input-group";
 import {
     Popover,
     PopoverContent,
@@ -18,7 +29,6 @@ import { User } from "@/types/user";
 import {
     Bot,
     Calculator,
-    Check,
     ChevronDown,
     Cpu,
     FileSpreadsheet,
@@ -26,7 +36,6 @@ import {
     FileType,
     HelpCircle,
     Image as ImageIcon,
-    Loader2,
     Maximize2,
     Minimize2,
     Paperclip,
@@ -34,6 +43,7 @@ import {
     Send,
     ShieldCheck,
     Sparkles,
+    UploadCloud,
     User as UserIcon,
     X,
 } from "lucide-react";
@@ -97,14 +107,13 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
 
     // File staging state
     const [selectedFiles, setSelectedFiles] = React.useState<File[]>([]);
-    const fileInputRef = React.useRef<HTMLInputElement>(null);
 
     // KPI quick summary for administrator empty state
     const [kpis, setKpis] = React.useState<{ label: string; value: string | number; change: string }[]>([]);
     const [quickPrompts, setQuickPrompts] = React.useState<string[]>([
+        "Show me the list of students enrolled in CS101",
         "Generate a visual bar chart of student enrollment by department",
         "Audit student graduation clearance and identify pending holds",
-        "Summarize tuition fee collections and outstanding receivables",
         "Draft an official institutional memo regarding enrollment guidelines in PDF format",
     ]);
 
@@ -121,6 +130,7 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
         sendPrompt,
         submitDecision,
         clearChat,
+        stop,
     } = useAiChat({
         agent: selectedAgent,
         endpoint: "/administrators/ai/chat",
@@ -149,6 +159,8 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                             name: m.name || m.id,
                             badge: m.badge,
                             description: m.description,
+                            provider: m.provider,
+                            provider_name: m.provider_name,
                         }));
                         setAvailableModels(mapped);
                         if (!selectedModel) {
@@ -165,11 +177,7 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
     const activeMeta = ADMIN_AGENTS.find((a) => a.key === selectedAgent) || ADMIN_AGENTS[0];
     const ActiveIcon = activeMeta.icon;
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!e.target.files) return;
-        const newFiles = Array.from(e.target.files);
-
-        // Check 20MB limit
+    const handleFilesAdded = (newFiles: File[]) => {
         const oversized = newFiles.filter((f) => f.size > 20 * 1024 * 1024);
         if (oversized.length > 0) {
             toast.error("Files larger than 20MB cannot be uploaded.");
@@ -177,7 +185,7 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
         }
 
         setSelectedFiles((prev) => [...prev, ...newFiles]);
-        if (fileInputRef.current) fileInputRef.current.value = "";
+        toast.success(`Attached ${newFiles.length} ${newFiles.length === 1 ? "file" : "files"}.`);
     };
 
     const removeFile = (index: number) => {
@@ -190,13 +198,6 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
             model: selectedModel || undefined,
         });
         setSelectedFiles([]);
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            handleSend();
-        }
     };
 
     const getFileIcon = (file: File) => {
@@ -367,68 +368,68 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                             messages.map((msg) => {
                                 const isUser = msg.role === "user";
                                 return (
-                                    <div
+                                    <Message
                                         key={msg.id}
-                                        className={cn("flex gap-2.5 text-xs leading-relaxed", isUser ? "justify-end" : "justify-start")}
+                                        className={cn("gap-2.5 text-xs", isUser ? "justify-end flex-row-reverse" : "justify-start")}
                                     >
-                                        {!isUser && (
-                                            <div className="size-6.5 rounded-full border bg-primary/10 border-primary/20 text-primary flex items-center justify-center shrink-0 mt-0.5">
-                                                <Bot className="size-3.5" />
+                                        {!isUser ? (
+                                            <div className="size-7 rounded-full border bg-primary/10 border-primary/20 text-primary flex items-center justify-center shrink-0 mt-0.5">
+                                                <Bot className="size-4" />
+                                            </div>
+                                        ) : (
+                                            <div className="size-7 rounded-full bg-primary/15 border border-primary/25 text-primary flex items-center justify-center shrink-0 mt-0.5">
+                                                <UserIcon className="size-4" />
                                             </div>
                                         )}
 
-                                        <div
-                                            className={cn(
-                                                "max-w-[88%] rounded-2xl px-3.5 py-2.5 space-y-2",
-                                                isUser
-                                                    ? "bg-primary text-primary-foreground rounded-tr-sm"
-                                                    : "bg-muted/40 border border-border/70 rounded-tl-sm text-foreground"
-                                            )}
-                                        >
-                                            {/* Render user attachments */}
-                                            {msg.attachments && msg.attachments.length > 0 && (
-                                                <div className="flex flex-wrap gap-1.5 pb-1">
-                                                    {msg.attachments.map((att, i) => (
-                                                        <div
-                                                            key={i}
-                                                            className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary-foreground/15 text-[11px] font-mono"
-                                                        >
-                                                            <Paperclip className="size-3" />
-                                                            <span className="truncate max-w-[150px]">{att.name}</span>
-                                                            <span className="opacity-70">({Math.round(att.size / 1024)} KB)</span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
+                                        <div className="flex flex-col gap-1 max-w-[88%]">
+                                            <MessageContent
+                                                className={cn(
+                                                    "rounded-2xl px-3.5 py-2.5 space-y-2 prose-none",
+                                                    isUser
+                                                        ? "bg-primary text-primary-foreground rounded-tr-sm"
+                                                        : "bg-card border border-border/70 rounded-tl-sm text-foreground"
+                                                )}
+                                            >
+                                                {/* Render user attachments */}
+                                                {msg.attachments && msg.attachments.length > 0 && (
+                                                    <div className="flex flex-wrap gap-1.5 pb-1">
+                                                        {msg.attachments.map((att, i) => (
+                                                            <div
+                                                                key={i}
+                                                                className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary-foreground/15 text-[11px] font-mono"
+                                                            >
+                                                                <Paperclip className="size-3" />
+                                                                <span className="truncate max-w-[150px]">{att.name}</span>
+                                                                <span className="opacity-70">({Math.round(att.size / 1024)} KB)</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
 
-                                            {isUser ? (
-                                                <p className="whitespace-pre-wrap">{msg.content}</p>
-                                            ) : (
-                                                <ChatMessageFormatter
-                                                    content={msg.content}
-                                                    reasoning={msg.reasoning}
-                                                    toolCalls={msg.toolCalls}
-                                                    sources={msg.sources}
-                                                />
-                                            )}
+                                                {isUser ? (
+                                                    <p className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</p>
+                                                ) : (
+                                                    <ChatMessageFormatter
+                                                        content={msg.content}
+                                                        reasoning={msg.reasoning}
+                                                        toolCalls={msg.toolCalls}
+                                                        sources={msg.sources}
+                                                    />
+                                                )}
 
-                                            {/* Approvals */}
-                                            {msg.pendingApprovals?.map((approval) => (
-                                                <ApprovalCard
-                                                    key={approval.id}
-                                                    approval={approval}
-                                                    onDecision={submitDecision}
-                                                    disabled={isLoading}
-                                                />
-                                            ))}
+                                                {/* Approvals */}
+                                                {msg.pendingApprovals?.map((approval) => (
+                                                    <ApprovalCard
+                                                        key={approval.id}
+                                                        approval={approval}
+                                                        onDecision={submitDecision}
+                                                        disabled={isLoading}
+                                                    />
+                                                ))}
+                                            </MessageContent>
                                         </div>
-
-                                        {isUser && (
-                                            <div className="size-6.5 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 mt-0.5">
-                                                <UserIcon className="size-3.5 text-primary" />
-                                            </div>
-                                        )}
-                                    </div>
+                                    </Message>
                                 );
                             })
                         )}
@@ -451,14 +452,24 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                             </div>
                         )}
 
+                        {/* Prompt-Kit ChainOfThought and Loader (non-sliding, stable progress) */}
                         {isLoading && (
                             <div className="pt-1 px-1">
-                                <ThinkingBar
-                                    text={`${activeMeta.label} is analyzing data & formulating response...`}
-                                    onStop={stop}
-                                    stopLabel="Stop"
-                                    className="p-2.5 rounded-xl border border-primary/20 bg-primary/5 text-xs"
-                                />
+                                <ChainOfThought className="p-2.5 border border-border/70 bg-muted/20 rounded-xl space-y-1">
+                                    <ChainOfThoughtStep defaultOpen={true}>
+                                        <ChainOfThoughtTrigger
+                                            leftIcon={<Loader variant="dots" size="sm" className="text-primary" />}
+                                            className="text-xs font-medium text-foreground hover:text-primary"
+                                        >
+                                            <span>{activeMeta.label} is analyzing data & formulating response...</span>
+                                        </ChainOfThoughtTrigger>
+                                        <ChainOfThoughtContent className="text-xs text-muted-foreground pt-1">
+                                            <ChainOfThoughtItem>
+                                                Evaluating institutional models, analyzing query context, and executing tools.
+                                            </ChainOfThoughtItem>
+                                        </ChainOfThoughtContent>
+                                    </ChainOfThoughtStep>
+                                </ChainOfThought>
                             </div>
                         )}
                     </div>
@@ -485,125 +496,136 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                         </div>
                     )}
 
-                    {/* Revamped Composer with Model Selector & Clean Readable Input */}
-                    <div className="p-3 border-t bg-background/95 backdrop-blur space-y-2">
-                        <div className="rounded-2xl border border-border/80 bg-card dark:bg-[#121215] shadow-xs focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all overflow-hidden">
-                            {/* Top Toolbar: Searchable Model Selector */}
-                            <div className="flex items-center justify-between px-3 pt-2.5 pb-1.5 text-xs border-b border-border/40 bg-muted/20">
-                                <div className="flex items-center gap-1.5">
-                                    {availableModels.length > 0 ? (
-                                        <Popover open={modelPopoverOpen} onOpenChange={setModelPopoverOpen}>
-                                            <PopoverTrigger asChild>
-                                                <button
-                                                    type="button"
-                                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border/70 bg-background hover:bg-muted text-foreground text-[11.5px] font-medium transition-colors shadow-2xs"
-                                                    title="Select AI Model"
-                                                >
-                                                    <Cpu className="size-3.5 text-indigo-500" />
-                                                    <span className="truncate max-w-[210px] font-mono">{activeModelName}</span>
-                                                    <ChevronDown className="size-3 text-muted-foreground" />
-                                                </button>
-                                            </PopoverTrigger>
-                                            <PopoverContent className="w-[360px] p-3 shadow-2xl rounded-2xl border border-border/80 bg-background" align="start">
-                                                <div className="space-y-2">
-                                                    <div className="flex items-center justify-between pb-1.5 border-b">
-                                                        <span className="text-xs font-semibold text-foreground">Configured AI Models</span>
-                                                        <span className="text-[10.5px] text-muted-foreground font-mono">
-                                                            {availableModels.length} available
-                                                        </span>
-                                                    </div>
-
-                                                    <ModelSelector
-                                                        models={availableModels}
-                                                        value={selectedModel}
-                                                        onChange={(id) => {
-                                                            setSelectedModel(id);
-                                                            setModelPopoverOpen(false);
-                                                            toast.success(`Active model: ${id}`);
-                                                        }}
-                                                        variant="List"
-                                                        searchable={true}
-                                                    />
-                                                </div>
-                                            </PopoverContent>
-                                        </Popover>
-                                    ) : (
-                                        <a
-                                            href="/administrators/system-management/ai"
-                                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[11px] font-medium hover:bg-amber-500/15 transition-colors"
-                                        >
-                                            <Cpu className="size-3 text-amber-500" />
-                                            <span>Configure API Key &rarr;</span>
-                                        </a>
-                                    )}
-                                </div>
-
-                                <span className="text-[11px] text-muted-foreground font-mono opacity-80">
-                                    {activeMeta.badge}
-                                </span>
+                    {/* Prompt-Kit Input with Drop-In File Upload */}
+                    <FileUpload
+                        onFilesAdded={handleFilesAdded}
+                        multiple={true}
+                        accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.json"
+                        disabled={isLoading}
+                    >
+                        <FileUploadContent>
+                            <div className="flex flex-col items-center gap-2 p-6 rounded-2xl border-2 border-dashed border-primary bg-background/95 shadow-2xl text-center">
+                                <UploadCloud className="size-10 text-primary animate-bounce" />
+                                <p className="text-sm font-semibold">Drop files here to attach</p>
+                                <p className="text-xs text-muted-foreground">Excel, CSV, PDF, Word, Images supported</p>
                             </div>
+                        </FileUploadContent>
 
-                            {/* Readable Textarea */}
-                            <textarea
-                                placeholder={`Ask ${activeMeta.label} or attach files to analyze...`}
+                        <div className="p-3 border-t bg-background/95 backdrop-blur space-y-2">
+                            <PromptInput
                                 value={input}
-                                onChange={(e) => setInput(e.target.value)}
-                                onKeyDown={handleKeyDown}
+                                onValueChange={setInput}
+                                onSubmit={handleSend}
+                                isLoading={isLoading}
                                 disabled={isLoading}
-                                rows={2}
-                                className="w-full px-3.5 py-2.5 text-sm leading-relaxed text-foreground dark:text-neutral-100 bg-transparent border-0 resize-none outline-none placeholder:text-muted-foreground/60 dark:placeholder:text-neutral-500 min-h-[64px] max-h-[160px] font-sans"
-                            />
+                                className="rounded-2xl border border-border/80 bg-card dark:bg-[#121215] shadow-xs focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all p-0 overflow-hidden"
+                            >
+                                {/* Top Toolbar: Searchable Model Selector */}
+                                <div className="flex items-center justify-between px-3 pt-2.5 pb-1.5 text-xs border-b border-border/40 bg-muted/20">
+                                    <div className="flex items-center gap-1.5">
+                                        {availableModels.length > 0 ? (
+                                            <Popover open={modelPopoverOpen} onOpenChange={setModelPopoverOpen}>
+                                                <PopoverTrigger asChild>
+                                                    <button
+                                                        type="button"
+                                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border/70 bg-background hover:bg-muted text-foreground text-[11.5px] font-medium transition-colors shadow-2xs"
+                                                        title="Select AI Model"
+                                                    >
+                                                        <Cpu className="size-3.5 text-indigo-500" />
+                                                        <span className="truncate max-w-[210px] font-mono">{activeModelName}</span>
+                                                        <ChevronDown className="size-3 text-muted-foreground" />
+                                                    </button>
+                                                </PopoverTrigger>
+                                                <PopoverContent className="w-[360px] p-3 shadow-2xl rounded-2xl border border-border/80 bg-background" align="start">
+                                                    <div className="space-y-2">
+                                                        <div className="flex items-center justify-between pb-1.5 border-b">
+                                                            <span className="text-xs font-semibold text-foreground">Configured AI Models</span>
+                                                            <span className="text-[10.5px] text-muted-foreground font-mono">
+                                                                {availableModels.length} available
+                                                            </span>
+                                                        </div>
 
-                            {/* Bottom Actions Toolbar */}
-                            <div className="flex items-center justify-between px-3 pb-2.5 pt-1">
-                                <div className="flex items-center gap-1">
-                                    <input
-                                        ref={fileInputRef}
-                                        type="file"
-                                        multiple
-                                        accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.json"
-                                        onChange={handleFileChange}
-                                        className="hidden"
-                                    />
+                                                        <ModelSelector
+                                                            models={availableModels}
+                                                            value={selectedModel}
+                                                            onChange={(id) => {
+                                                                setSelectedModel(id);
+                                                                setModelPopoverOpen(false);
+                                                                toast.success(`Active model: ${id}`);
+                                                            }}
+                                                            variant="List"
+                                                            searchable={true}
+                                                        />
+                                                    </div>
+                                                </PopoverContent>
+                                            </Popover>
+                                        ) : (
+                                            <a
+                                                href="/administrators/system-management/ai"
+                                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[11px] font-medium hover:bg-amber-500/15 transition-colors"
+                                            >
+                                                <Cpu className="size-3 text-amber-500" />
+                                                <span>Configure API Key &rarr;</span>
+                                            </a>
+                                        )}
+                                    </div>
 
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => fileInputRef.current?.click()}
-                                        disabled={isLoading}
-                                        className="h-8 px-2 text-xs gap-1.5 text-muted-foreground hover:text-foreground rounded-lg"
-                                        title="Attach Excel (.xlsx, .csv), PDF, Word, or Images"
-                                    >
-                                        <Paperclip className="size-3.5" />
-                                        <span className="hidden sm:inline text-[11.5px]">Attach</span>
-                                    </Button>
-                                </div>
-
-                                <div className="flex items-center gap-2">
-                                    <span className="text-[10.5px] text-muted-foreground/70 hidden sm:inline">
-                                        Enter ↵ to send
+                                    <span className="text-[11px] text-muted-foreground font-mono opacity-80">
+                                        {activeMeta.badge}
                                     </span>
-
-                                    <Button
-                                        type="button"
-                                        size="sm"
-                                        onClick={handleSend}
-                                        disabled={(!input.trim() && selectedFiles.length === 0) || isLoading}
-                                        className="h-8 px-3.5 text-xs font-semibold gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl shadow-xs transition-transform active:scale-95"
-                                    >
-                                        {isLoading ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
-                                        <span>Send</span>
-                                    </Button>
                                 </div>
+
+                                {/* PromptInput Textarea */}
+                                <PromptInputTextarea
+                                    placeholder={`Ask ${activeMeta.label} or drop files here...`}
+                                    className="w-full px-3.5 py-2.5 text-sm leading-relaxed text-foreground dark:text-neutral-100 bg-transparent border-0 resize-none outline-none placeholder:text-muted-foreground/60 dark:placeholder:text-neutral-500 min-h-[64px] max-h-[160px] font-sans"
+                                />
+
+                                {/* PromptInput Actions Toolbar */}
+                                <PromptInputActions className="flex items-center justify-between px-3 pb-2.5 pt-1">
+                                    <div className="flex items-center gap-1">
+                                        <FileUploadTrigger asChild>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                disabled={isLoading}
+                                                className="h-8 px-2 text-xs gap-1.5 text-muted-foreground hover:text-foreground rounded-lg"
+                                                title="Attach Excel (.xlsx, .csv), PDF, Word, or Images"
+                                            >
+                                                <Paperclip className="size-3.5" />
+                                                <span className="hidden sm:inline text-[11.5px]">Attach</span>
+                                            </Button>
+                                        </FileUploadTrigger>
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10.5px] text-muted-foreground/70 hidden sm:inline">
+                                            Enter ↵ to send
+                                        </span>
+
+                                        <PromptInputAction tooltip={isLoading ? "Generating..." : "Send prompt"}>
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                onClick={handleSend}
+                                                disabled={(!input.trim() && selectedFiles.length === 0) || isLoading}
+                                                className="h-8 px-3.5 text-xs font-semibold gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl shadow-xs transition-transform active:scale-95"
+                                            >
+                                                {isLoading ? <Loader variant="circular" size="sm" /> : <Send className="size-3.5" />}
+                                                <span>Send</span>
+                                            </Button>
+                                        </PromptInputAction>
+                                    </div>
+                                </PromptInputActions>
+                            </PromptInput>
+
+                            <div className="flex items-center justify-between text-[10px] text-muted-foreground px-1">
+                                <span>Drop files anywhere to upload &bull; Markdown & charts supported</span>
+                                <span>Shift + Enter for new line</span>
                             </div>
                         </div>
-
-                        <div className="flex items-center justify-between text-[10px] text-muted-foreground px-1">
-                            <span>Uploads parsed into structured markdown tables for any LLM</span>
-                            <span>Shift + Enter for new line</span>
-                        </div>
-                    </div>
+                    </FileUpload>
                 </div>
             )}
         </div>

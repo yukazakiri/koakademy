@@ -1,13 +1,24 @@
-import { ThinkingBar } from "@/components/prompt-kit";
+import {
+    ChainOfThought,
+    ChainOfThoughtContent,
+    ChainOfThoughtItem,
+    ChainOfThoughtStep,
+    ChainOfThoughtTrigger,
+    FileUpload,
+    FileUploadContent,
+    FileUploadTrigger,
+    Loader,
+    Message,
+    MessageAvatar,
+    MessageContent,
+    PromptInput,
+    PromptInputAction,
+    PromptInputActions,
+    PromptInputTextarea,
+} from "@/components/prompt-kit";
 import { ErrorState, ModelOption, ModelSelector } from "@/components/spectrumui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-    InputGroup,
-    InputGroupAddon,
-    InputGroupButton,
-    InputGroupTextarea,
-} from "@/components/ui/input-group";
 import {
     Popover,
     PopoverContent,
@@ -23,10 +34,8 @@ import {
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import {
-    AlertCircle,
     Bot,
     Calculator,
-    CheckCircle2,
     ChevronDown,
     Cpu,
     FileSpreadsheet,
@@ -35,12 +44,12 @@ import {
     GraduationCap,
     HelpCircle,
     Image as ImageIcon,
-    Loader2,
     Paperclip,
     RotateCcw,
     Send,
     ShieldCheck,
     Sparkles,
+    UploadCloud,
     User,
     X,
 } from "lucide-react";
@@ -123,7 +132,6 @@ export function AiChatSheet({
     const [selectedModel, setSelectedModel] = React.useState<string>("");
     const [modelPopoverOpen, setModelPopoverOpen] = React.useState(false);
     const [selectedFiles, setSelectedFiles] = React.useState<File[]>([]);
-    const fileInputRef = React.useRef<HTMLInputElement>(null);
     const scrollAreaRef = React.useRef<HTMLDivElement>(null);
 
     const {
@@ -137,6 +145,7 @@ export function AiChatSheet({
         sendPrompt,
         submitDecision,
         clearChat,
+        stop,
     } = useAiChat({
         agent: selectedAgent,
     });
@@ -165,6 +174,8 @@ export function AiChatSheet({
                             name: m.name || m.id,
                             badge: m.badge,
                             description: m.description,
+                            provider: m.provider,
+                            provider_name: m.provider_name,
                         }));
                         setAvailableModels(mapped);
                         if (!selectedModel) {
@@ -181,11 +192,7 @@ export function AiChatSheet({
         return found?.name || selectedModel || "Default Model";
     }, [availableModels, selectedModel]);
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!e.target.files) return;
-        const newFiles = Array.from(e.target.files);
-
-        // Check 20MB limit
+    const handleFilesAdded = (newFiles: File[]) => {
         const oversized = newFiles.filter((f) => f.size > 20 * 1024 * 1024);
         if (oversized.length > 0) {
             toast.error("Files larger than 20MB cannot be uploaded.");
@@ -193,7 +200,7 @@ export function AiChatSheet({
         }
 
         setSelectedFiles((prev) => [...prev, ...newFiles]);
-        if (fileInputRef.current) fileInputRef.current.value = "";
+        toast.success(`Attached ${newFiles.length} ${newFiles.length === 1 ? "file" : "files"}.`);
     };
 
     const removeFile = (index: number) => {
@@ -206,13 +213,6 @@ export function AiChatSheet({
             model: selectedModel || undefined,
         });
         setSelectedFiles([]);
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            handleSend();
-        }
     };
 
     const getFileIcon = (file: File) => {
@@ -314,127 +314,158 @@ export function AiChatSheet({
                         messages.map((msg) => {
                             const isUser = msg.role === "user";
                             return (
-                                <div
+                                <Message
                                     key={msg.id}
-                                    className={cn("flex gap-3 text-xs leading-relaxed", isUser ? "justify-end" : "justify-start")}
+                                    className={cn("gap-2.5 text-xs", isUser ? "justify-end flex-row-reverse" : "justify-start")}
                                 >
-                                    {!isUser && (
+                                    {!isUser ? (
                                         <div className="size-7 rounded-full border bg-muted flex items-center justify-center shrink-0 mt-0.5">
                                             <Bot className="size-3.5 text-primary" />
                                         </div>
-                                    )}
-
-                                    <div
-                                        className={cn(
-                                            "max-w-[85%] rounded-2xl px-3.5 py-2.5 space-y-2",
-                                            isUser
-                                                ? "bg-primary text-primary-foreground rounded-tr-sm"
-                                                : "bg-muted/40 border border-border/60 rounded-tl-sm text-foreground"
-                                        )}
-                                    >
-                                        {/* Render user attachments */}
-                                        {msg.attachments && msg.attachments.length > 0 && (
-                                            <div className="flex flex-wrap gap-1.5 pb-1">
-                                                {msg.attachments.map((att, i) => (
-                                                    <div
-                                                        key={i}
-                                                        className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary-foreground/15 text-[11px] font-mono"
-                                                    >
-                                                        <Paperclip className="size-3" />
-                                                        <span className="truncate max-w-[150px]">{att.name}</span>
-                                                        <span className="opacity-70">({Math.round(att.size / 1024)} KB)</span>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-
-                                        {isUser ? (
-                                            <p className="whitespace-pre-wrap">{msg.content}</p>
-                                        ) : (
-                                            <ChatMessageFormatter
-                                                content={msg.content}
-                                                reasoning={msg.reasoning}
-                                                toolCalls={msg.toolCalls}
-                                                sources={msg.sources}
-                                            />
-                                        )}
-
-                                        {/* Pending Approvals within Assistant Message */}
-                                        {msg.pendingApprovals?.map((approval) => (
-                                            <ApprovalCard
-                                                key={approval.id}
-                                                approval={approval}
-                                                onDecision={submitDecision}
-                                                disabled={isLoading}
-                                            />
-                                        ))}
-                                    </div>
-
-                                    {isUser && (
+                                    ) : (
                                         <div className="size-7 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 mt-0.5">
                                             <User className="size-3.5 text-primary" />
                                         </div>
                                     )}
-                                </div>
+
+                                    <div className="flex flex-col gap-1 max-w-[85%]">
+                                        <MessageContent
+                                            className={cn(
+                                                "rounded-2xl px-3.5 py-2.5 space-y-2 prose-none",
+                                                isUser
+                                                    ? "bg-primary text-primary-foreground rounded-tr-sm"
+                                                    : "bg-muted/40 border border-border/60 rounded-tl-sm text-foreground"
+                                            )}
+                                        >
+                                            {/* Render user attachments */}
+                                            {msg.attachments && msg.attachments.length > 0 && (
+                                                <div className="flex flex-wrap gap-1.5 pb-1">
+                                                    {msg.attachments.map((att, i) => (
+                                                        <div
+                                                            key={i}
+                                                            className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary-foreground/15 text-[11px] font-mono"
+                                                        >
+                                                            <Paperclip className="size-3" />
+                                                            <span className="truncate max-w-[150px]">{att.name}</span>
+                                                            <span className="opacity-70">({Math.round(att.size / 1024)} KB)</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            {isUser ? (
+                                                <p className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</p>
+                                            ) : (
+                                                <ChatMessageFormatter
+                                                    content={msg.content}
+                                                    reasoning={msg.reasoning}
+                                                    toolCalls={msg.toolCalls}
+                                                    sources={msg.sources}
+                                                />
+                                            )}
+
+                                            {/* Pending Approvals within Assistant Message */}
+                                            {msg.pendingApprovals?.map((approval) => (
+                                                <ApprovalCard
+                                                    key={approval.id}
+                                                    approval={approval}
+                                                    onDecision={submitDecision}
+                                                    disabled={isLoading}
+                                                />
+                                            ))}
+                                        </MessageContent>
+                                    </div>
+                                </Message>
                             );
                         })
                     )}
 
-                        {/* Spectrum UI ErrorState with 1-Click Retry */}
-                        {lastError && (
-                            <div className="pt-2 flex justify-start">
-                                <ErrorState
-                                    title={lastError.title}
-                                    message={lastError.message}
-                                    retryLabel="Retry Request"
-                                    onRetry={() => {
-                                        clearError();
-                                        if (lastPrompt) {
-                                            sendPrompt(lastPrompt, selectedFiles);
-                                        }
-                                    }}
-                                    variant="Card"
-                                />
-                            </div>
-                        )}
-
-                    {isLoading && (
-                        <div className="pt-1 px-1">
-                            <ThinkingBar
-                                text={`${activeMeta.name} is thinking & evaluating tools...`}
-                                onStop={stop}
-                                stopLabel="Stop"
-                                className="p-2.5 rounded-xl border border-primary/20 bg-primary/5 text-xs"
+                    {/* Spectrum UI ErrorState with 1-Click Retry */}
+                    {lastError && (
+                        <div className="pt-2 flex justify-start">
+                            <ErrorState
+                                title={lastError.title}
+                                message={lastError.message}
+                                retryLabel="Retry Request"
+                                onRetry={() => {
+                                    clearError();
+                                    if (lastPrompt) {
+                                        sendPrompt(lastPrompt, selectedFiles);
+                                    }
+                                }}
+                                variant="Card"
                             />
                         </div>
                     )}
-                    </div>
 
-                    {/* Staged File Upload Chips */}
-                    {selectedFiles.length > 0 && (
-                        <div className="px-4 py-2 border-t bg-muted/20 flex flex-wrap gap-1.5">
-                            {selectedFiles.map((file, i) => (
-                                <div
-                                    key={i}
-                                    className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-background border text-[11px] font-mono shadow-xs"
-                                >
-                                    {getFileIcon(file)}
-                                    <span className="max-w-[140px] truncate">{file.name}</span>
-                                    <button
-                                        type="button"
-                                        onClick={() => removeFile(i)}
-                                        className="text-muted-foreground hover:text-destructive"
+                    {/* Prompt-Kit ChainOfThought and Loader (non-sliding, stable progress) */}
+                    {isLoading && (
+                        <div className="pt-1 px-1">
+                            <ChainOfThought className="p-2.5 border border-border/70 bg-muted/20 rounded-xl space-y-1">
+                                <ChainOfThoughtStep defaultOpen={true}>
+                                    <ChainOfThoughtTrigger
+                                        leftIcon={<Loader variant="dots" size="sm" className="text-primary" />}
+                                        className="text-xs font-medium text-foreground hover:text-primary"
                                     >
-                                        <X className="size-3" />
-                                    </button>
-                                </div>
-                            ))}
+                                        <span>{activeMeta.name} is thinking & evaluating tools...</span>
+                                    </ChainOfThoughtTrigger>
+                                    <ChainOfThoughtContent className="text-xs text-muted-foreground pt-1">
+                                        <ChainOfThoughtItem>
+                                            Evaluating institutional tools, analyzing context, and streaming response.
+                                        </ChainOfThoughtItem>
+                                    </ChainOfThoughtContent>
+                                </ChainOfThoughtStep>
+                            </ChainOfThought>
                         </div>
                     )}
+                </div>
 
-                    {/* Input Area with Model Selector & Clean Readable Input */}
+                {/* Staged File Upload Chips */}
+                {selectedFiles.length > 0 && (
+                    <div className="px-4 py-2 border-t bg-muted/20 flex flex-wrap gap-1.5">
+                        {selectedFiles.map((file, i) => (
+                            <div
+                                key={i}
+                                className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-background border text-[11px] font-mono shadow-xs"
+                            >
+                                {getFileIcon(file)}
+                                <span className="max-w-[140px] truncate">{file.name}</span>
+                                <button
+                                    type="button"
+                                    onClick={() => removeFile(i)}
+                                    className="text-muted-foreground hover:text-destructive"
+                                >
+                                    <X className="size-3" />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {/* Prompt-Kit Input with Drop-In File Upload */}
+                <FileUpload
+                    onFilesAdded={handleFilesAdded}
+                    multiple={true}
+                    accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.json"
+                    disabled={isLoading}
+                >
+                    <FileUploadContent>
+                        <div className="flex flex-col items-center gap-2 p-6 rounded-2xl border-2 border-dashed border-primary bg-background/95 shadow-2xl text-center">
+                            <UploadCloud className="size-10 text-primary animate-bounce" />
+                            <p className="text-sm font-semibold">Drop files here to attach</p>
+                            <p className="text-xs text-muted-foreground">Excel, CSV, PDF, Word, Images supported</p>
+                        </div>
+                    </FileUploadContent>
+
                     <div className="p-3 border-t bg-background/95 backdrop-blur space-y-2">
-                        <div className="rounded-2xl border border-border/80 bg-card dark:bg-[#121215] shadow-xs focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all overflow-hidden">
+                        <PromptInput
+                            value={input}
+                            onValueChange={setInput}
+                            onSubmit={handleSend}
+                            isLoading={isLoading}
+                            disabled={isLoading}
+                            className="rounded-2xl border border-border/80 bg-card dark:bg-[#121215] shadow-xs focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all p-0 overflow-hidden"
+                        >
                             {/* Top Toolbar: Searchable Model Selector */}
                             <div className="flex items-center justify-between px-3 pt-2.5 pb-1.5 text-xs border-b border-border/40 bg-muted/20">
                                 <div className="flex items-center gap-1.5">
@@ -490,41 +521,28 @@ export function AiChatSheet({
                                 </span>
                             </div>
 
-                            {/* Readable Textarea */}
-                            <textarea
-                                placeholder={`Ask ${activeMeta.name} or attach files... (Enter to send)`}
-                                value={input}
-                                onChange={(e) => setInput(e.target.value)}
-                                onKeyDown={handleKeyDown}
-                                disabled={isLoading}
-                                rows={2}
+                            {/* PromptInput Textarea */}
+                            <PromptInputTextarea
+                                placeholder={`Ask ${activeMeta.name} or drop files here...`}
                                 className="w-full px-3.5 py-2.5 text-sm leading-relaxed text-foreground dark:text-neutral-100 bg-transparent border-0 resize-none outline-none placeholder:text-muted-foreground/60 dark:placeholder:text-neutral-500 min-h-[64px] max-h-[160px] font-sans"
                             />
 
-                            {/* Bottom Actions Toolbar */}
-                            <div className="flex items-center justify-between px-3 pb-2.5 pt-1">
+                            {/* PromptInput Actions Toolbar */}
+                            <PromptInputActions className="flex items-center justify-between px-3 pb-2.5 pt-1">
                                 <div className="flex items-center gap-1">
-                                    <input
-                                        ref={fileInputRef}
-                                        type="file"
-                                        multiple
-                                        accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.json"
-                                        onChange={handleFileChange}
-                                        className="hidden"
-                                    />
-
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => fileInputRef.current?.click()}
-                                        disabled={isLoading}
-                                        className="h-8 px-2 text-xs gap-1.5 text-muted-foreground hover:text-foreground rounded-lg"
-                                        title="Attach Excel (.xlsx, .csv), PDF, Word, or Images"
-                                    >
-                                        <Paperclip className="size-3.5" />
-                                        <span className="hidden sm:inline text-[11.5px]">Attach</span>
-                                    </Button>
+                                    <FileUploadTrigger asChild>
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            disabled={isLoading}
+                                            className="h-8 px-2 text-xs gap-1.5 text-muted-foreground hover:text-foreground rounded-lg"
+                                            title="Attach Excel (.xlsx, .csv), PDF, Word, or Images"
+                                        >
+                                            <Paperclip className="size-3.5" />
+                                            <span className="hidden sm:inline text-[11.5px]">Attach</span>
+                                        </Button>
+                                    </FileUploadTrigger>
                                 </div>
 
                                 <div className="flex items-center gap-2">
@@ -532,25 +550,28 @@ export function AiChatSheet({
                                         Enter ↵ to send
                                     </span>
 
-                                    <Button
-                                        type="button"
-                                        size="sm"
-                                        onClick={handleSend}
-                                        disabled={(!input.trim() && selectedFiles.length === 0) || isLoading}
-                                        className="h-8 px-3.5 text-xs font-semibold gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl shadow-xs transition-transform active:scale-95"
-                                    >
-                                        {isLoading ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
-                                        <span>Send</span>
-                                    </Button>
+                                    <PromptInputAction tooltip={isLoading ? "Generating..." : "Send prompt"}>
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            onClick={handleSend}
+                                            disabled={(!input.trim() && selectedFiles.length === 0) || isLoading}
+                                            className="h-8 px-3.5 text-xs font-semibold gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl shadow-xs transition-transform active:scale-95"
+                                        >
+                                            {isLoading ? <Loader variant="circular" size="sm" /> : <Send className="size-3.5" />}
+                                            <span>Send</span>
+                                        </Button>
+                                    </PromptInputAction>
                                 </div>
-                            </div>
-                        </div>
+                            </PromptInputActions>
+                        </PromptInput>
 
                         <div className="flex items-center justify-between text-[10px] text-muted-foreground px-1">
-                            <span>Supports Excel (.xlsx, .csv), PDF, Docs & Images</span>
+                            <span>Drop files anywhere to upload &bull; Markdown & charts supported</span>
                             <span>Shift + Enter for new line</span>
                         </div>
                     </div>
+                </FileUpload>
             </SheetContent>
         </Sheet>
     );

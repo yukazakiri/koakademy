@@ -643,3 +643,67 @@ it('automatically falls back to configured custom provider on general ai chat en
     $response->assertOk();
     expect($response->headers->get('content-type'))->toContain('text/event-stream');
 });
+
+it('retrieves enrolled students in a class via GetClassEnrollmentsTool', function (): void {
+    $class = Classes::factory()->create([
+        'subject_code' => 'CS101',
+        'section' => '1A',
+        'school_year' => '2026-2027',
+        'semester' => 1,
+    ]);
+
+    $student = Student::factory()->create([
+        'first_name' => 'Maria',
+        'last_name' => 'Clara',
+        'student_id' => 2026123,
+    ]);
+
+    App\Models\ClassEnrollment::create([
+        'class_id' => $class->id,
+        'student_id' => $student->id,
+        'status' => 'enrolled',
+        'school_id' => $class->school_id,
+    ]);
+
+    $tool = new App\Ai\Tools\GetClassEnrollmentsTool;
+    $result = $tool->handle(new Request(['subject_code' => 'CS101', 'section' => '1A']));
+    $data = json_decode((string) $result, true);
+
+    expect($data)->toHaveKey('students')
+        ->and($data['students'])->toHaveCount(1)
+        ->and($data['students'][0]['name'])->toBe('Maria Clara')
+        ->and((int) $data['students'][0]['student_number'])->toBe(2026123)
+        ->and($data['enrolled_count'])->toBe(1);
+});
+
+it('searches class schedules via LookupClassSchedulesTool', function (): void {
+    Classes::factory()->create([
+        'subject_code' => 'MATH101',
+        'section' => 'SEC-M',
+    ]);
+
+    $tool = new App\Ai\Tools\LookupClassSchedulesTool;
+    $result = $tool->handle(new Request(['subject_code' => 'MATH101']));
+    $data = json_decode((string) $result, true);
+
+    expect($data)->toHaveKey('classes')
+        ->and($data['count'])->toBeGreaterThanOrEqual(1)
+        ->and($data['classes'][0]['subject_code'])->toContain('MATH101');
+});
+
+it('searches student directory via SearchStudentsTool', function (): void {
+    $student = Student::factory()->create([
+        'first_name' => 'Crisostomo',
+        'last_name' => 'Ibarra',
+        'student_id' => 2026999,
+    ]);
+
+    $tool = new App\Ai\Tools\SearchStudentsTool;
+    $result = $tool->handle(new Request(['query' => 'Crisostomo']));
+    $data = json_decode((string) $result, true);
+
+    expect($data)->toHaveKey('students')
+        ->and($data['count'])->toBeGreaterThanOrEqual(1)
+        ->and($data['students'][0]['name'])->toBe('Crisostomo Ibarra')
+        ->and((int) $data['students'][0]['student_id'])->toBe(2026999);
+});

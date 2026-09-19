@@ -1,3 +1,4 @@
+import { ThinkingBar } from "@/components/prompt-kit";
 import { ErrorState, ModelOption, ModelSelector } from "@/components/spectrumui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -350,7 +351,12 @@ export function AiChatSheet({
                                         {isUser ? (
                                             <p className="whitespace-pre-wrap">{msg.content}</p>
                                         ) : (
-                                            <ChatMessageFormatter content={msg.content} reasoning={msg.reasoning} />
+                                            <ChatMessageFormatter
+                                                content={msg.content}
+                                                reasoning={msg.reasoning}
+                                                toolCalls={msg.toolCalls}
+                                                sources={msg.sources}
+                                            />
                                         )}
 
                                         {/* Pending Approvals within Assistant Message */}
@@ -392,12 +398,16 @@ export function AiChatSheet({
                             </div>
                         )}
 
-                        {isLoading && (
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
-                                <Loader2 className="size-3.5 animate-spin text-primary" />
-                                <span>{activeMeta.name} is thinking & evaluating tools...</span>
-                            </div>
-                        )}
+                    {isLoading && (
+                        <div className="pt-1 px-1">
+                            <ThinkingBar
+                                text={`${activeMeta.name} is thinking & evaluating tools...`}
+                                onStop={stop}
+                                stopLabel="Stop"
+                                className="p-2.5 rounded-xl border border-primary/20 bg-primary/5 text-xs"
+                            />
+                        </div>
+                    )}
                     </div>
 
                     {/* Staged File Upload Chips */}

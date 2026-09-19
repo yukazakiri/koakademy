@@ -1,22 +1,42 @@
+import {
+    Reasoning,
+    ReasoningContent,
+    ReasoningTrigger,
+    Source,
+    SourceContent,
+    SourceTrigger,
+    Tool,
+} from "@/components/prompt-kit";
 import { Response } from "@/components/ui/response";
-import { Brain } from "lucide-react";
 import * as React from "react";
 import { AnalyticsChartRenderer, ChartArtifact } from "./analytics-chart-renderer";
 import { DocumentArtifact, DocumentDownloadCard } from "./document-download-card";
+import type { CitationSource, ToolInvocation } from "./use-ai-chat";
 
 interface ChatMessageFormatterProps {
     content: string;
     reasoning?: string;
+    toolCalls?: ToolInvocation[];
+    sources?: CitationSource[];
 }
 
 /**
- * Enhanced Chat Message Formatter using ElevenLabs UI Response component
- * for reliable streaming markdown rendering, while seamlessly extracting and
- * rendering interactive Recharts artifacts and downloadable documents.
+ * Enhanced Chat Message Formatter using:
+ * - ElevenLabs UI Response component for streaming markdown typography
+ * - Prompt-Kit Reasoning component for thought processes
+ * - Prompt-Kit Tool component for tool execution inspection
+ * - Prompt-Kit Source component for verifiable citations
+ * - Interactive Recharts visualizations & Downloadable Document cards
  *
  * @see https://ui.elevenlabs.io/docs/components/response
+ * @see https://www.prompt-kit.com/docs/
  */
-export function ChatMessageFormatter({ content, reasoning }: ChatMessageFormatterProps) {
+export function ChatMessageFormatter({
+    content,
+    reasoning,
+    toolCalls,
+    sources,
+}: ChatMessageFormatterProps) {
     const parsedBlocks = React.useMemo(() => {
         if (!content || !content.trim()) {
             return [];
@@ -139,21 +159,62 @@ export function ChatMessageFormatter({ content, reasoning }: ChatMessageFormatte
     }, [content]);
 
     return (
-        <div className="space-y-2 text-sm text-foreground">
+        <div className="space-y-3 text-sm text-foreground">
+            {/* Prompt-Kit Reasoning Thought Process */}
             {reasoning && (
-                <details className="rounded-xl border border-border/60 bg-muted/20 px-3 py-2 text-xs group">
-                    <summary className="cursor-pointer font-medium text-muted-foreground hover:text-foreground flex items-center gap-1.5 select-none transition-colors">
-                        <Brain className="size-3.5 text-indigo-500 shrink-0" />
-                        <span>Reasoning & Thought Process</span>
-                        <span className="text-[10px] opacity-60 ml-auto group-open:hidden">Click to expand</span>
-                    </summary>
-                    <div className="mt-2 text-[11px] leading-relaxed text-muted-foreground/90 whitespace-pre-wrap font-mono border-t border-border/40 pt-2 max-h-48 overflow-y-auto">
+                <Reasoning className="border border-border/60 bg-muted/20 rounded-xl overflow-hidden p-2.5">
+                    <ReasoningTrigger className="text-xs font-medium text-muted-foreground hover:text-foreground">
+                        Thought Process & Reasoning
+                    </ReasoningTrigger>
+                    <ReasoningContent className="mt-2 text-xs font-mono text-muted-foreground/90 whitespace-pre-wrap border-t border-border/40 pt-2 max-h-48 overflow-y-auto">
                         {reasoning}
-                    </div>
-                </details>
+                    </ReasoningContent>
+                </Reasoning>
             )}
 
+            {/* Prompt-Kit Tool Invocations */}
+            {toolCalls && toolCalls.length > 0 && (
+                <div className="space-y-1.5">
+                    {toolCalls.map((tool) => (
+                        <Tool
+                            key={tool.id}
+                            toolPart={{
+                                type: tool.toolName,
+                                state: tool.state,
+                                input: tool.input,
+                                output: typeof tool.output === "object" ? tool.output : tool.output ? { result: tool.output } : undefined,
+                                toolCallId: tool.id,
+                                errorText: tool.errorText,
+                            }}
+                        />
+                    ))}
+                </div>
+            )}
+
+            {/* Formatted Markdown and Visual Artifacts */}
             {parsedBlocks}
+
+            {/* Prompt-Kit Verified Sources & Citations */}
+            {sources && sources.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-border/40">
+                    <span className="text-[10.5px] font-semibold text-muted-foreground uppercase tracking-wider mr-1">
+                        Sources:
+                    </span>
+                    {sources.map((s, i) => (
+                        <Source key={i} href={s.url}>
+                            <SourceTrigger
+                                label={s.title}
+                                showFavicon={true}
+                                className="text-xs h-6 px-2.5 bg-muted/40 hover:bg-muted font-sans"
+                            />
+                            <SourceContent
+                                title={s.title}
+                                description={s.url}
+                            />
+                        </Source>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }

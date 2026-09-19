@@ -8,7 +8,10 @@ use App\Ai\Middleware\AuditAiUsageMiddleware;
 use App\Ai\Middleware\SanitizePromptMiddleware;
 use App\Ai\Tools\GenerateAdministrativeDocumentTool;
 use App\Ai\Tools\GenerateAnalyticsChartTool;
+use App\Ai\Tools\GetClassEnrollmentsTool;
+use App\Ai\Tools\LookupClassSchedulesTool;
 use App\Ai\Tools\QueryCampusAnalyticsTool;
+use App\Ai\Tools\SearchStudentsTool;
 use Laravel\Ai\Attributes\RepairToolCalls;
 use Laravel\Ai\Concerns\RemembersConversations;
 use Laravel\Ai\Contracts\Agent;
@@ -49,7 +52,12 @@ Core Capabilities:
    - When requested to draft an official circular, policy memo, enrollment summary report, or financial brief, invoke GenerateAdministrativeDocumentTool with the specified format ('pdf', 'csv', 'markdown').
    - In your response, output the returned document artifact in a ```json:document ... ``` code block so the user can download it with a single click.
 
-4. Specialist Delegation:
+4. Class Rosters & Student Directory:
+   - When asked to list enrolled students in a specific class, section, or subject, use GetClassEnrollmentsTool. Present the roster clearly with student ID, name, year level, and status in a markdown table.
+   - When asked to lookup class schedules, teaching faculty, sections, or classroom allocations, use LookupClassSchedulesTool.
+   - When asked to search or find specific student records, use SearchStudentsTool.
+
+5. Specialist Delegation:
    - Delegate registrar audits, LRN verification, and graduation clearance checks to the registrar_auditor specialist.
    - Delegate ledger adjustments, Statement of Account breakdowns, and scholarship discounts to the bursar_finance specialist.
    - Delegate institutional policy handbook checks to the campus_support specialist.
@@ -69,6 +77,9 @@ INSTRUCTIONS;
             new QueryCampusAnalyticsTool,
             new GenerateAnalyticsChartTool,
             new GenerateAdministrativeDocumentTool,
+            new GetClassEnrollmentsTool,
+            new LookupClassSchedulesTool,
+            new SearchStudentsTool,
             new RegistrarAuditAgent,
             new BursarFinanceAgent,
             new CampusSupportAgent,

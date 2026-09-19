@@ -1,80 +1,120 @@
+import { Response } from "@/components/ui/response";
 import { Brain } from "lucide-react";
 import * as React from "react";
 import { AnalyticsChartRenderer, ChartArtifact } from "./analytics-chart-renderer";
 import { DocumentArtifact, DocumentDownloadCard } from "./document-download-card";
-import { InteractiveTable } from "./interactive-table";
 
 interface ChatMessageFormatterProps {
     content: string;
     reasoning?: string;
 }
 
+/**
+ * Enhanced Chat Message Formatter using ElevenLabs UI Response component
+ * for reliable streaming markdown rendering, while seamlessly extracting and
+ * rendering interactive Recharts artifacts and downloadable documents.
+ *
+ * @see https://ui.elevenlabs.io/docs/components/response
+ */
 export function ChatMessageFormatter({ content, reasoning }: ChatMessageFormatterProps) {
-    // 1. Detect if entire content or parts contain JSON artifacts
     const parsedBlocks = React.useMemo(() => {
-        const blocks: React.ReactNode[] = [];
-        let remaining = content;
+        if (!content || !content.trim()) {
+            return [];
+        }
 
-        // Extract JSON codeblocks: ```json:chart ... ``` or ```json:document ... ```
-        const jsonBlockRegex = /```(?:json:(chart|document)|json)\s*([\s\S]*?)```/g;
+        const blocks: React.ReactNode[] = [];
+        // Regex matches ```json:chart, ```chart, ```json:document, ```document, ```json, or generic ``` codeblocks
+        const codeBlockRegex = /```(?:json:(chart|document)|(chart|document)|json)?\s*([\s\S]*?)```/g;
         let lastIndex = 0;
         let match: RegExpExecArray | null;
 
-        while ((match = jsonBlockRegex.exec(content)) !== null) {
+        while ((match = codeBlockRegex.exec(content)) !== null) {
             const blockStart = match.index;
-            const blockEnd = jsonBlockRegex.lastIndex;
+            const blockEnd = codeBlockRegex.lastIndex;
 
-            // Render text before codeblock
+            // Render preceding text chunk via ElevenLabs UI Response component
             if (blockStart > lastIndex) {
-                const textChunk = content.substring(lastIndex, blockStart);
-                blocks.push(renderTextChunk(textChunk, `text_${lastIndex}`));
+                const textChunk = content.substring(lastIndex, blockStart).trim();
+                if (textChunk) {
+                    blocks.push(
+                        <Response key={`text_${lastIndex}`} className="leading-relaxed">
+                            {textChunk}
+                        </Response>
+                    );
+                }
             }
 
-            const formatType = match[1];
-            const jsonText = match[2].trim();
+            const explicitType = match[1] || match[2];
+            const body = match[3].trim();
+
+            let handled = false;
 
             try {
-                const parsed = JSON.parse(jsonText);
+                const parsed = JSON.parse(body);
 
-                if (formatType === "chart" || parsed._type === "chart_artifact" || parsed.chart_type) {
+                if (explicitType === "chart" || parsed._type === "chart_artifact" || parsed.chart_type) {
                     blocks.push(
                         <AnalyticsChartRenderer
                             key={`chart_${blockStart}`}
                             chart={parsed as ChartArtifact}
                         />
                     );
-                } else if (formatType === "document" || parsed._type === "document_artifact" || parsed.document_id) {
+                    handled = true;
+                } else if (explicitType === "document" || parsed._type === "document_artifact" || parsed.document_id) {
                     blocks.push(
                         <DocumentDownloadCard
                             key={`doc_${blockStart}`}
                             document={parsed as DocumentArtifact}
                         />
                     );
-                } else {
-                    blocks.push(
-                        <pre key={`code_${blockStart}`} className="p-3 my-2 rounded-lg bg-muted text-[11px] font-mono overflow-x-auto">
-                            <code>{jsonText}</code>
-                        </pre>
-                    );
+                    handled = true;
                 }
             } catch {
+                // Not valid JSON, keep as standard code block
+            }
+
+            if (!handled) {
+                // Render standard code block via Response component
                 blocks.push(
-                    <pre key={`code_${blockStart}`} className="p-3 my-2 rounded-lg bg-muted text-[11px] font-mono overflow-x-auto">
-                        <code>{jsonText}</code>
-                    </pre>
+                    <Response key={`code_${blockStart}`} className="leading-relaxed">
+                        {match[0]}
+                    </Response>
                 );
             }
 
             lastIndex = blockEnd;
         }
 
-        // Render remaining text after last code block
+        // Render trailing text chunk
         if (lastIndex < content.length) {
-            const tail = content.substring(lastIndex);
-            blocks.push(renderTextChunk(tail, `tail_${lastIndex}`));
+            const tail = content.substring(lastIndex).trim();
+            if (tail) {
+                // Check if raw tail is a JSON artifact directly
+                if (tail.startsWith("{") && tail.endsWith("}")) {
+                    try {
+                        const parsed = JSON.parse(tail);
+                        if (parsed._type === "chart_artifact" || parsed.chart_type) {
+                            blocks.push(<AnalyticsChartRenderer key={`chart_tail_${lastIndex}`} chart={parsed} />);
+                            return blocks;
+                        }
+                        if (parsed._type === "document_artifact" || parsed.document_id) {
+                            blocks.push(<DocumentDownloadCard key={`doc_tail_${lastIndex}`} document={parsed} />);
+                            return blocks;
+                        }
+                    } catch {
+                        // Fallback to text
+                    }
+                }
+
+                blocks.push(
+                    <Response key={`tail_${lastIndex}`} className="leading-relaxed">
+                        {tail}
+                    </Response>
+                );
+            }
         }
 
-        // Check if raw text is entirely a JSON artifact
+        // Check if raw full content is an unbracketed or standalone JSON artifact
         if (blocks.length === 0 && content.trim().startsWith("{") && content.trim().endsWith("}")) {
             try {
                 const parsed = JSON.parse(content.trim());
@@ -85,15 +125,21 @@ export function ChatMessageFormatter({ content, reasoning }: ChatMessageFormatte
                     return [<DocumentDownloadCard key="single_doc" document={parsed} />];
                 }
             } catch {
-                // Ignore and fall back to regular text
+                // Fallback to text
             }
         }
 
-        return blocks.length > 0 ? blocks : [renderTextChunk(content, "root")];
+        return blocks.length > 0
+            ? blocks
+            : [
+                  <Response key="root_content" className="leading-relaxed">
+                      {content}
+                  </Response>,
+              ];
     }, [content]);
 
     return (
-        <div className="space-y-2">
+        <div className="space-y-2 text-sm text-foreground">
             {reasoning && (
                 <details className="rounded-xl border border-border/60 bg-muted/20 px-3 py-2 text-xs group">
                     <summary className="cursor-pointer font-medium text-muted-foreground hover:text-foreground flex items-center gap-1.5 select-none transition-colors">
@@ -106,98 +152,10 @@ export function ChatMessageFormatter({ content, reasoning }: ChatMessageFormatte
                     </div>
                 </details>
             )}
+
             {parsedBlocks}
         </div>
     );
 }
 
-function renderTextChunk(text: string, keyPrefix: string): React.ReactNode {
-    if (!text.trim()) return null;
-
-    // Check for Markdown table: consecutive lines with pipe '|'
-    const lines = text.split("\n");
-    const elements: React.ReactNode[] = [];
-    let currentParagraph: string[] = [];
-    let currentTableLines: string[] = [];
-
-    const flushParagraph = (idx: number) => {
-        if (currentParagraph.length > 0) {
-            const pText = currentParagraph.join("\n").trim();
-            if (pText) {
-                elements.push(
-                    <p key={`${keyPrefix}_p_${idx}`} className="whitespace-pre-wrap leading-relaxed">
-                        {renderInlineFormatting(pText)}
-                    </p>
-                );
-            }
-            currentParagraph = [];
-        }
-    };
-
-    const flushTable = (idx: number) => {
-        if (currentTableLines.length >= 2) {
-            const [headerLine, separatorLine, ...rowLines] = currentTableLines;
-            const headers = headerLine
-                .split("|")
-                .map((h) => h.trim())
-                .filter(Boolean);
-
-            const rows = rowLines
-                .filter((l) => l.includes("|"))
-                .map((l) =>
-                    l
-                        .split("|")
-                        .map((c) => c.trim())
-                        .filter((c, i, arr) => !(i === 0 && c === "") && !(i === arr.length - 1 && c === ""))
-                );
-
-            if (headers.length > 0 && rows.length > 0) {
-                elements.push(
-                    <InteractiveTable
-                        key={`${keyPrefix}_tbl_${idx}`}
-                        headers={headers}
-                        rows={rows}
-                    />
-                );
-            }
-            currentTableLines = [];
-        } else if (currentTableLines.length > 0) {
-            currentParagraph.push(...currentTableLines);
-            currentTableLines = [];
-        }
-    };
-
-    lines.forEach((line, index) => {
-        const trimmed = line.trim();
-        if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
-            flushParagraph(index);
-            currentTableLines.push(trimmed);
-        } else {
-            if (currentTableLines.length > 0) {
-                flushTable(index);
-            }
-            currentParagraph.push(line);
-        }
-    });
-
-    flushParagraph(lines.length);
-    flushTable(lines.length);
-
-    return <React.Fragment key={keyPrefix}>{elements}</React.Fragment>;
-}
-
-function renderInlineFormatting(text: string): React.ReactNode {
-    // Bold: **text**
-    const parts = text.split(/(\*\*.*?\*\*)/g);
-
-    return parts.map((part, i) => {
-        if (part.startsWith("**") && part.endsWith("**")) {
-            return (
-                <strong key={i} className="font-semibold text-foreground">
-                    {part.slice(2, -2)}
-                </strong>
-            );
-        }
-        return part;
-    });
-}
+export default ChatMessageFormatter;

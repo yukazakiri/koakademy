@@ -122,14 +122,14 @@
         }
     },
     "repositories": {
-        "forms": {
-            "type": "vcs",
-            "url": "https://github.com/yukazakiri/koakademy-module-forms.git"
-        },
         "0": {
             "type": "composer",
             "url": "https://yukazakiri.github.io/koakademy-modules",
             "canonical": false
+        },
+        "forms": {
+            "type": "vcs",
+            "url": "https://github.com/yukazakiri/koakademy-module-forms.git"
         }
     },
     "scripts": {

@@ -13,14 +13,13 @@ use App\Models\Student;
 use App\Models\StudentClearance;
 use App\Models\User;
 use App\Services\Ai\AiAttachmentProcessor;
+use App\Services\Ai\AiDocumentGeneratorService;
 use App\Services\Ai\AiSettingsService;
-use FPDF;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use InvalidArgumentException;
@@ -198,6 +197,28 @@ final class AdministratorAiController extends Controller
                             'type' => 'reasoning-delta',
                             'delta' => $event->delta,
                         ])."\n\n";
+                    } elseif ($event instanceof \Laravel\Ai\Streaming\Events\ToolCall) {
+                        echo 'data: '.json_encode([
+                            'type' => 'tool-call',
+                            'toolCallId' => $event->toolCall->id,
+                            'toolName' => $event->toolCall->name,
+                            'input' => $event->toolCall->arguments,
+                        ])."\n\n";
+                    } elseif ($event instanceof \Laravel\Ai\Streaming\Events\ToolResult) {
+                        echo 'data: '.json_encode([
+                            'type' => 'tool-result',
+                            'toolCallId' => $event->toolResult->id,
+                            'toolName' => $event->toolResult->name,
+                            'output' => $event->toolResult->result,
+                            'successful' => $event->successful,
+                            'error' => $event->error,
+                        ])."\n\n";
+                    } elseif ($event instanceof \Laravel\Ai\Streaming\Events\Citation) {
+                        echo 'data: '.json_encode([
+                            'type' => 'citation',
+                            'title' => $event->citation->title,
+                            'url' => $event->citation->url,
+                        ])."\n\n";
                     } elseif ($event instanceof \Laravel\Ai\Streaming\Events\ToolApprovalRequest) {
                         foreach ($event->pendingApprovals as $pendingApproval) {
                             echo 'data: '.json_encode([
@@ -263,39 +284,18 @@ final class AdministratorAiController extends Controller
     /**
      * Download a generated administrative document by ID.
      */
-    public function downloadDocument(string $documentId): HttpResponse
+    public function downloadDocument(string $documentId, AiDocumentGeneratorService $docService): HttpResponse
     {
         $user = Auth::user();
         abort_unless($user instanceof User && $user->canAccessAdminPortal(), 403);
 
-        $doc = Cache::get("ai:doc:{$documentId}");
-
-        if (! is_array($doc)) {
-            abort(404, 'The requested document has expired or was not found.');
-        }
-
-        $title = (string) ($doc['title'] ?? 'Institutional_Report');
-        $format = (string) ($doc['format'] ?? 'pdf');
-        $content = (string) ($doc['content'] ?? '');
-        $filename = (string) ($doc['filename'] ?? "{$title}.{$format}");
-
-        return match ($format) {
-            'pdf' => $this->generatePdfDownload($title, $content, $filename),
-            'csv' => response($content, 200, [
-                'Content-Type' => 'text/csv',
-                'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-            ]),
-            default => response($content, 200, [
-                'Content-Type' => 'text/markdown; charset=UTF-8',
-                'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-            ]),
-        };
+        return $docService->downloadDocument($documentId);
     }
 
     /**
      * Instant client-requested document export.
      */
-    public function exportDocument(Request $request): HttpResponse
+    public function exportDocument(Request $request, AiDocumentGeneratorService $docService): HttpResponse
     {
         $user = Auth::user();
         abort_unless($user instanceof User && $user->canAccessAdminPortal(), 403);
@@ -306,24 +306,7 @@ final class AdministratorAiController extends Controller
             'content' => 'required|string',
         ]);
 
-        $title = $validated['title'];
-        $format = $validated['format'];
-        $content = $validated['content'];
-        $extension = $format === 'markdown' ? 'md' : $format;
-        $cleanTitle = str_replace(' ', '_', preg_replace('/[^\w\-]/', '_', $title) ?? 'document');
-        $filename = "{$cleanTitle}.{$extension}";
-
-        return match ($format) {
-            'pdf' => $this->generatePdfDownload($title, $content, $filename),
-            'csv' => response($content, 200, [
-                'Content-Type' => 'text/csv',
-                'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-            ]),
-            default => response($content, 200, [
-                'Content-Type' => 'text/markdown; charset=UTF-8',
-                'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-            ]),
-        };
+        return $docService->exportDocument($validated['title'], $validated['format'], $validated['content']);
     }
 
     /**
@@ -494,86 +477,6 @@ final class AdministratorAiController extends Controller
             'models' => $modelOptions,
             'primary_provider' => $primaryKey,
         ]);
-    }
-
-    private function generatePdfDownload(string $title, string $content, string $filename): HttpResponse
-    {
-        try {
-            $pdf = new FPDF('P', 'mm', 'A4');
-            $pdf->AddPage();
-            $pdf->SetMargins(18, 18, 18);
-
-            // Institution Branding Header
-            $setting = GeneralSetting::query()->first();
-            $appName = $setting?->site_name ?? 'KoAkademy Education';
-
-            $pdf->SetFont('Helvetica', 'B', 16);
-            $pdf->SetTextColor(30, 41, 59);
-            $pdf->Cell(0, 8, utf8_decode($appName), 0, 1, 'L');
-
-            $pdf->SetFont('Helvetica', '', 9);
-            $pdf->SetTextColor(100, 116, 139);
-            $pdf->Cell(0, 5, utf8_decode('Official Administrative AI Report | Generated on '.now()->toFormattedDateString()), 0, 1, 'L');
-
-            $pdf->Ln(4);
-            $pdf->SetDrawColor(226, 232, 240);
-            $pdf->Line(18, $pdf->GetY(), 192, $pdf->GetY());
-            $pdf->Ln(6);
-
-            // Document Title
-            $pdf->SetFont('Helvetica', 'B', 13);
-            $pdf->SetTextColor(15, 23, 42);
-            $pdf->Cell(0, 7, utf8_decode($title), 0, 1, 'L');
-            $pdf->Ln(3);
-
-            // Document Body Content
-            $pdf->SetFont('Helvetica', '', 10);
-            $pdf->SetTextColor(51, 65, 85);
-
-            $cleanText = str_replace(["\r\n", "\r"], "\n", $content);
-            $lines = explode("\n", $cleanText);
-
-            foreach ($lines as $line) {
-                $trimmed = mb_trim($line);
-
-                if (str_starts_with($trimmed, '# ')) {
-                    $pdf->Ln(3);
-                    $pdf->SetFont('Helvetica', 'B', 12);
-                    $pdf->MultiCell(0, 6, utf8_decode(mb_substr($trimmed, 2)));
-                    $pdf->SetFont('Helvetica', '', 10);
-                } elseif (str_starts_with($trimmed, '## ')) {
-                    $pdf->Ln(2);
-                    $pdf->SetFont('Helvetica', 'B', 11);
-                    $pdf->MultiCell(0, 5, utf8_decode(mb_substr($trimmed, 3)));
-                    $pdf->SetFont('Helvetica', '', 10);
-                } elseif (str_starts_with($trimmed, '### ')) {
-                    $pdf->SetFont('Helvetica', 'B', 10);
-                    $pdf->MultiCell(0, 5, utf8_decode(mb_substr($trimmed, 4)));
-                    $pdf->SetFont('Helvetica', '', 10);
-                } else {
-                    $pdf->MultiCell(0, 5, utf8_decode($line));
-                }
-            }
-
-            // Footer note
-            $pdf->SetY(-20);
-            $pdf->SetFont('Helvetica', 'I', 8);
-            $pdf->SetTextColor(148, 163, 184);
-            $pdf->Cell(0, 6, utf8_decode('Generated electronically by KoAkademy Administrative Intelligence. Internal institutional copy.'), 0, 0, 'C');
-
-            $pdfOutput = $pdf->Output('S');
-
-            return response($pdfOutput, 200, [
-                'Content-Type' => 'application/pdf',
-                'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-            ]);
-        } catch (Throwable) {
-            // Fallback to text format if PDF encoding encounters unsupported characters
-            return response($content, 200, [
-                'Content-Type' => 'text/plain; charset=UTF-8',
-                'Content-Disposition' => "attachment; filename=\"{$filename}.txt\"",
-            ]);
-        }
     }
 
     private function resolveAgent(string $key): Agent

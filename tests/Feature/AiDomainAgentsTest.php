@@ -431,7 +431,7 @@ it('generates downloadable administrative documents and stores them in cache', f
     expect($data['_type'])->toBe('document_artifact')
         ->and($data['format'])->toBe('pdf')
         ->and($data)->toHaveKey('document_id')
-        ->and($data['download_url'])->toContain('/administrators/ai/download-document/');
+        ->and($data['download_url'])->toContain('/ai/download-document/');
 
     // Assert it is stored in cache
     expect(Illuminate\Support\Facades\Cache::has("ai:doc:{$data['document_id']}"))->toBeTrue();
@@ -468,6 +468,10 @@ it('allows admin to stream chat, fetch KPI summaries, and download documents via
     $downloadRes = $this->actingAs($admin)->get("/administrators/ai/download-document/{$docJson['document_id']}");
     $downloadRes->assertOk();
     expect($downloadRes->headers->get('content-type'))->toContain('text/csv');
+
+    $generalDownloadRes = $this->actingAs($admin)->get("/ai/download-document/{$docJson['document_id']}");
+    $generalDownloadRes->assertOk();
+    expect($generalDownloadRes->headers->get('content-type'))->toContain('text/csv');
 
     // 4. On-the-fly export endpoint
     $exportRes = $this->actingAs($admin)->post('/administrators/ai/export-document', [

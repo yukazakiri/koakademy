@@ -381,5 +381,7 @@ Route::middleware(['auth'])->group(function () {
             ->name('chat');
         Route::get('/conversations', [App\Http\Controllers\AiChatController::class, 'conversations'])->name('conversations.index');
         Route::get('/conversations/{conversation}/messages', [App\Http\Controllers\AiChatController::class, 'messages'])->name('conversations.messages');
+        Route::get('/download-document/{documentId}', [App\Http\Controllers\AiChatController::class, 'downloadDocument'])->name('download-document');
+        Route::post('/export-document', [App\Http\Controllers\AiChatController::class, 'exportDocument'])->name('export-document');
     });
 });

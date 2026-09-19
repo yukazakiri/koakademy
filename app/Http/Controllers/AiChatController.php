@@ -17,9 +17,11 @@ use App\Features\Toggles\AiRegistrarAuditor;
 use App\Features\Toggles\AiStudentAdvisor;
 use App\Models\User;
 use App\Services\Ai\AiAttachmentProcessor;
+use App\Services\Ai\AiDocumentGeneratorService;
 use App\Services\Ai\AiSettingsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -215,6 +217,28 @@ final class AiChatController extends Controller
                             'type' => 'reasoning-delta',
                             'delta' => $event->delta,
                         ])."\n\n";
+                    } elseif ($event instanceof \Laravel\Ai\Streaming\Events\ToolCall) {
+                        echo 'data: '.json_encode([
+                            'type' => 'tool-call',
+                            'toolCallId' => $event->toolCall->id,
+                            'toolName' => $event->toolCall->name,
+                            'input' => $event->toolCall->arguments,
+                        ])."\n\n";
+                    } elseif ($event instanceof \Laravel\Ai\Streaming\Events\ToolResult) {
+                        echo 'data: '.json_encode([
+                            'type' => 'tool-result',
+                            'toolCallId' => $event->toolResult->id,
+                            'toolName' => $event->toolResult->name,
+                            'output' => $event->toolResult->result,
+                            'successful' => $event->successful,
+                            'error' => $event->error,
+                        ])."\n\n";
+                    } elseif ($event instanceof \Laravel\Ai\Streaming\Events\Citation) {
+                        echo 'data: '.json_encode([
+                            'type' => 'citation',
+                            'title' => $event->citation->title,
+                            'url' => $event->citation->url,
+                        ])."\n\n";
                     } elseif ($event instanceof \Laravel\Ai\Streaming\Events\ToolApprovalRequest) {
                         foreach ($event->pendingApprovals as $pendingApproval) {
                             echo 'data: '.json_encode([
@@ -310,6 +334,34 @@ final class AiChatController extends Controller
             'conversation' => $conversation,
             'messages' => $conversation->messages,
         ]);
+    }
+
+    /**
+     * Download a generated document by ID.
+     */
+    public function downloadDocument(string $documentId, AiDocumentGeneratorService $docService): HttpResponse
+    {
+        $user = Auth::user();
+        abort_unless($user instanceof User, 401);
+
+        return $docService->downloadDocument($documentId);
+    }
+
+    /**
+     * Instant client-requested document export.
+     */
+    public function exportDocument(Request $request, AiDocumentGeneratorService $docService): HttpResponse
+    {
+        $user = Auth::user();
+        abort_unless($user instanceof User, 401);
+
+        $validated = $request->validate([
+            'title' => 'required|string|max:255',
+            'format' => 'required|string|in:pdf,csv,markdown',
+            'content' => 'required|string',
+        ]);
+
+        return $docService->exportDocument($validated['title'], $validated['format'], $validated['content']);
     }
 
     private function resolveAgent(string $key): Agent

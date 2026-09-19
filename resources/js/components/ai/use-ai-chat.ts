@@ -18,11 +18,27 @@ export interface ChatAttachment {
     previewUrl?: string;
 }
 
+export interface ToolInvocation {
+    id: string;
+    toolName: string;
+    state: "input-streaming" | "input-available" | "output-available" | "output-error";
+    input?: Record<string, unknown>;
+    output?: Record<string, unknown> | string;
+    errorText?: string;
+}
+
+export interface CitationSource {
+    title: string;
+    url: string;
+}
+
 export interface ChatMessage {
     id: string;
     role: "user" | "assistant" | "system";
     content: string;
     reasoning?: string;
+    toolCalls?: ToolInvocation[];
+    sources?: CitationSource[];
     attachments?: ChatAttachment[];
     pendingApprovals?: PendingToolApproval[];
     createdAt?: Date;
@@ -179,6 +195,8 @@ export function useAiChat({ agent, endpoint, initialConversationId, onFinish, on
                 let accumulatedReasoning = "";
                 let lineBuffer = "";
                 const pendingApprovals: PendingToolApproval[] = [];
+                const toolInvocations: Map<string, ToolInvocation> = new Map();
+                const citations: CitationSource[] = [];
 
                 while (true) {
                     const { value, done } = await reader.read();
@@ -202,6 +220,41 @@ export function useAiChat({ agent, endpoint, initialConversationId, onFinish, on
                                     accumulatedText += (parsed.delta ?? parsed.text ?? "");
                                 } else if (parsed.type === "reasoning-delta" || parsed.type === "reasoning_delta") {
                                     accumulatedReasoning += (parsed.delta ?? parsed.text ?? "");
+                                } else if (parsed.type === "tool-call" || parsed.type === "tool_call") {
+                                    const callId = parsed.toolCallId || parsed.id;
+                                    if (callId) {
+                                        toolInvocations.set(callId, {
+                                            id: callId,
+                                            toolName: parsed.toolName || parsed.name || "Tool",
+                                            state: "input-available",
+                                            input: parsed.input || parsed.arguments,
+                                        });
+                                    }
+                                } else if (parsed.type === "tool-result" || parsed.type === "tool_result") {
+                                    const callId = parsed.toolCallId || parsed.id;
+                                    if (callId) {
+                                        const existing = toolInvocations.get(callId);
+                                        if (existing) {
+                                            existing.state = parsed.successful ? "output-available" : "output-error";
+                                            existing.output = parsed.output;
+                                            existing.errorText = parsed.error;
+                                        } else {
+                                            toolInvocations.set(callId, {
+                                                id: callId,
+                                                toolName: parsed.toolName || "Tool",
+                                                state: parsed.successful ? "output-available" : "output-error",
+                                                output: parsed.output,
+                                                errorText: parsed.error,
+                                            });
+                                        }
+                                    }
+                                } else if (parsed.type === "citation") {
+                                    if (parsed.url && !citations.some((c) => c.url === parsed.url)) {
+                                        citations.push({
+                                            title: parsed.title || parsed.url,
+                                            url: parsed.url,
+                                        });
+                                    }
                                 } else if (parsed.type === "error") {
                                     const errMsg = parsed.errorText || parsed.message || "An error occurred with the AI provider.";
                                     setLastError({
@@ -248,6 +301,8 @@ export function useAiChat({ agent, endpoint, initialConversationId, onFinish, on
                                           ...m,
                                           content: accumulatedText,
                                           reasoning: accumulatedReasoning || undefined,
+                                          toolCalls: toolInvocations.size > 0 ? Array.from(toolInvocations.values()) : undefined,
+                                          sources: citations.length > 0 ? [...citations] : undefined,
                                           pendingApprovals:
                                               pendingApprovals.length > 0 ? [...pendingApprovals] : undefined,
                                       }
@@ -262,6 +317,8 @@ export function useAiChat({ agent, endpoint, initialConversationId, onFinish, on
                     role: "assistant",
                     content: accumulatedText,
                     reasoning: accumulatedReasoning || undefined,
+                    toolCalls: toolInvocations.size > 0 ? Array.from(toolInvocations.values()) : undefined,
+                    sources: citations.length > 0 ? [...citations] : undefined,
                     pendingApprovals: pendingApprovals.length > 0 ? pendingApprovals : undefined,
                 };
 

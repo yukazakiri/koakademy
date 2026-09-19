@@ -61,7 +61,7 @@ final class GenerateAdministrativeDocumentTool implements Tool
             'filename' => $fileName,
             'format' => $validated['format'],
             'category' => $validated['document_category'],
-            'download_url' => "/administrators/ai/download-document/{$docId}",
+            'download_url' => "/ai/download-document/{$docId}",
             'summary' => $validated['summary'] ?? 'Official document prepared and ready for download.',
             'file_size' => "{$approxSizeKb} KB",
             'content' => $validated['content_markdown'],

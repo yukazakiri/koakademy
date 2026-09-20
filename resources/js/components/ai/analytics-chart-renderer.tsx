@@ -237,7 +237,6 @@ export function AnalyticsChartRenderer({ chart }: AnalyticsChartRendererProps) {
                         <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                                 <Pie
-                                    activeIndex={activeIndex !== null ? activeIndex : undefined}
                                     activeShape={renderActiveShape}
                                     data={formattedData}
                                     cx="50%"

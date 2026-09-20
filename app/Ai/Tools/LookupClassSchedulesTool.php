@@ -32,18 +32,22 @@ final class LookupClassSchedulesTool implements Tool
             ->limit($limit);
 
         if (filled($validated['subject_code'] ?? null)) {
-            $classesQuery->where('subject_code', 'like', "%{$validated['subject_code']}%");
+            $code = $validated['subject_code'];
+            $classesQuery->whereRaw('LOWER(subject_code) LIKE LOWER(?)', ["%{$code}%"]);
         }
 
         if (filled($validated['query'] ?? null)) {
-            $searchTerm = $validated['query'];
-            $classesQuery->where(function ($q) use ($searchTerm) {
-                $q->where('subject_code', 'like', "%{$searchTerm}%")
-                    ->orWhere('section', 'like', "%{$searchTerm}%")
-                    ->orWhereHas('faculty', function ($fq) use ($searchTerm) {
-                        $fq->where('first_name', 'like', "%{$searchTerm}%")
-                            ->orWhere('last_name', 'like', "%{$searchTerm}%")
-                            ->orWhere('email', 'like', "%{$searchTerm}%");
+            $searchTerm = mb_trim((string) $validated['query']);
+            $param = "%{$searchTerm}%";
+
+            $classesQuery->where(function ($q) use ($param) {
+                $q->whereRaw('LOWER(subject_code) LIKE LOWER(?)', [$param])
+                    ->orWhereRaw('LOWER(section) LIKE LOWER(?)', [$param])
+                    ->orWhereHas('faculty', function ($fq) use ($param) {
+                        $fq->whereRaw('LOWER(first_name) LIKE LOWER(?)', [$param])
+                            ->orWhereRaw('LOWER(last_name) LIKE LOWER(?)', [$param])
+                            ->orWhereRaw('LOWER(email) LIKE LOWER(?)', [$param])
+                            ->orWhereRaw("LOWER(first_name || ' ' || last_name) LIKE LOWER(?)", [$param]);
                     });
             });
         }

@@ -739,12 +739,21 @@ it('searches class schedules by faculty name via LookupClassSchedulesTool', func
     ]);
 
     $tool = new App\Ai\Tools\LookupClassSchedulesTool;
-    $result = $tool->handle(new Request(['query' => 'Severino']));
-    $data = json_decode((string) $result, true);
 
-    expect($data)->toHaveKey('classes')
-        ->and($data['count'])->toBeGreaterThanOrEqual(1)
-        ->and($data['classes'][0]['faculty'])->toContain('Severino');
+    // Case-insensitive query (lowercase)
+    $resultLower = $tool->handle(new Request(['query' => 'severino']));
+    $dataLower = json_decode((string) $resultLower, true);
+
+    // Full name query
+    $resultFull = $tool->handle(new Request(['query' => 'severino reyes']));
+    $dataFull = json_decode((string) $resultFull, true);
+
+    expect($dataLower)->toHaveKey('classes')
+        ->and($dataLower['count'])->toBeGreaterThanOrEqual(1)
+        ->and($dataLower['classes'][0]['faculty'])->toContain('Severino')
+        ->and($dataFull)->toHaveKey('classes')
+        ->and($dataFull['count'])->toBeGreaterThanOrEqual(1)
+        ->and($dataFull['classes'][0]['faculty'])->toContain('Severino');
 });
 
 it('searches student directory via SearchStudentsTool', function (): void {

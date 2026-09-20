@@ -34,11 +34,14 @@ final class GetFacultyAssignedClassesTool implements Tool
         if (filled($validated['faculty_id'] ?? null)) {
             $faculty = $facultyQuery->find($validated['faculty_id']);
         } elseif (filled($validated['faculty_name'] ?? null)) {
-            $name = $validated['faculty_name'];
-            $faculty = $facultyQuery->where(function ($q) use ($name) {
-                $q->where('first_name', 'like', "%{$name}%")
-                    ->orWhere('last_name', 'like', "%{$name}%")
-                    ->orWhere('email', 'like', "%{$name}%");
+            $name = mb_trim((string) $validated['faculty_name']);
+            $param = "%{$name}%";
+
+            $faculty = $facultyQuery->where(function ($q) use ($param) {
+                $q->whereRaw('LOWER(first_name) LIKE LOWER(?)', [$param])
+                    ->orWhereRaw('LOWER(last_name) LIKE LOWER(?)', [$param])
+                    ->orWhereRaw('LOWER(email) LIKE LOWER(?)', [$param])
+                    ->orWhereRaw("LOWER(first_name || ' ' || last_name) LIKE LOWER(?)", [$param]);
             })->first();
         } else {
             return 'Please specify either a faculty_id or faculty_name to query teaching assignments.';
@@ -72,7 +75,7 @@ final class GetFacultyAssignedClassesTool implements Tool
             'faculty_id' => $faculty->id,
             'faculty_name' => $faculty->name,
             'email' => $faculty->email,
-            'department' => $faculty->department?->name ?? 'Unassigned',
+            'department' => is_string($faculty->department) ? $faculty->department : ($faculty->departmentBelongsTo?->name ?? 'Unassigned'),
             'total_classes' => count($classes),
             'total_students_taught' => $totalStudents,
             'assigned_classes' => $classes,

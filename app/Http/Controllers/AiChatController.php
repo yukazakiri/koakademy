@@ -196,7 +196,7 @@ final class AiChatController extends Controller
 
         $agentKey = $validated['agent'];
 
-        return response()->stream(function () use ($agentInstance, $prompt, $aiAttachments, $selectedProvider, $selectedModel, $agentKey) {
+        return response()->stream(function () use ($agentInstance, $prompt, $aiAttachments, $selectedProvider, $selectedModel, $agentKey, $aiSettings) {
             try {
                 $stream = null;
                 $iterator = null;
@@ -211,21 +211,29 @@ final class AiChatController extends Controller
                     $iterator = $stream->getIterator();
                     $iterator->rewind();
                 } catch (Throwable $streamInitEx) {
-                    $fallbackModel = 'auto/best-free';
-                    if (filled($selectedModel) && $selectedModel !== $fallbackModel) {
-                        Log::warning("General AI model [{$selectedModel}] failed on init. Falling back to [{$fallbackModel}].", [
+                    if (! $this->shouldRetryWithFallback($streamInitEx)) {
+                        throw $streamInitEx;
+                    }
+
+                    [$fallbackProvider, $fallbackModel] = $this->resolveFallbackTarget($aiSettings, $selectedProvider, $selectedModel);
+
+                    if (filled($fallbackModel) && ($fallbackModel !== $selectedModel || $fallbackProvider !== $selectedProvider)) {
+                        Log::warning("General AI model [{$selectedModel}] on provider [{$selectedProvider}] failed on init. Falling back to [{$fallbackModel}] on provider [{$fallbackProvider}].", [
                             'agent' => $agentKey,
-                            'provider' => $selectedProvider,
+                            'failed_provider' => $selectedProvider,
                             'failed_model' => $selectedModel,
+                            'fallback_provider' => $fallbackProvider,
+                            'fallback_model' => $fallbackModel,
                             'error' => $streamInitEx->getMessage(),
                         ]);
 
+                        $selectedProvider = $fallbackProvider;
                         $selectedModel = $fallbackModel;
                         $stream = $agentInstance->stream(
                             $prompt,
                             attachments: $aiAttachments,
-                            provider: filled($selectedProvider) ? $selectedProvider : null,
-                            model: $fallbackModel,
+                            provider: filled($fallbackProvider) ? $fallbackProvider : null,
+                            model: filled($fallbackModel) ? $fallbackModel : null,
                         );
                         $iterator = $stream->getIterator();
                         $iterator->rewind();
@@ -421,6 +429,68 @@ final class AiChatController extends Controller
         }
 
         return $e->getMessage();
+    }
+
+    private function shouldRetryWithFallback(Throwable $e): bool
+    {
+        $error = mb_strtolower($this->extractErrorMessage($e));
+
+        return str_contains($error, 'model') && (
+            str_contains($error, 'not available')
+            || str_contains($error, 'not found')
+            || str_contains($error, 'unsupported')
+            || str_contains($error, 'does not exist')
+            || str_contains($error, 'invalid model')
+        );
+    }
+
+    /**
+     * Resolve a configured provider/model fallback without sending an OmniRoute
+     * model identifier to a provider that cannot understand it.
+     *
+     * @param  array<string, mixed>  $aiSettings
+     * @return array{0: string|null, 1: string|null}
+     */
+    private function resolveFallbackTarget(array $aiSettings, ?string $currentProvider, ?string $failedModel): array
+    {
+        $primaryKey = (string) ($aiSettings['primary_provider'] ?? config('ai.default', 'anthropic'));
+        $providerKey = filled($currentProvider) ? $currentProvider : $primaryKey;
+
+        // Try another configured default for the current provider first.
+        $providerConfig = $aiSettings['custom_providers'][$providerKey] ?? $aiSettings['providers'][$providerKey] ?? [];
+        $providerDefaultModel = (string) ($providerConfig['default_chat_model'] ?? '');
+
+        if (filled($providerDefaultModel) && $providerDefaultModel !== $failedModel) {
+            return [$providerKey, $providerDefaultModel];
+        }
+
+        // Then use the explicitly configured failover provider when enabled.
+        $fallbackKey = (string) ($aiSettings['fallback_provider'] ?? '');
+        $failoverEnabled = (bool) ($aiSettings['failover_enabled'] ?? false);
+
+        if ($failoverEnabled && filled($fallbackKey) && $fallbackKey !== $providerKey) {
+            $fallbackConfig = $aiSettings['custom_providers'][$fallbackKey] ?? $aiSettings['providers'][$fallbackKey] ?? [];
+            $fallbackModel = (string) ($fallbackConfig['default_chat_model'] ?? '');
+            if (filled($fallbackModel)) {
+                return [$fallbackKey, $fallbackModel];
+            }
+        }
+
+        // A distinct primary provider is the final configured fallback.
+        if ($providerKey !== $primaryKey) {
+            $primaryConfig = $aiSettings['custom_providers'][$primaryKey] ?? $aiSettings['providers'][$primaryKey] ?? [];
+            $primaryModel = (string) ($primaryConfig['default_chat_model'] ?? '');
+            if (filled($primaryModel)) {
+                return [$primaryKey, $primaryModel];
+            }
+        }
+
+        // OmniRoute-style custom providers support this stable route alias.
+        if (isset($aiSettings['custom_providers'][$providerKey])) {
+            return [$providerKey, 'auto/best-free'];
+        }
+
+        return [$providerKey, null];
     }
 
     private function resolveAgent(string $key): Agent

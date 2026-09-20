@@ -561,6 +561,42 @@ it('surfaces error diagnostics with provider context when AI streaming fails', f
         ->and($content)->toContain('unreachable_custom_provider');
 });
 
+it('uses a provider-specific default before attempting a configured AI fallback provider', function (): void {
+    $controller = new App\Http\Controllers\AiChatController;
+    $method = new ReflectionMethod($controller, 'resolveFallbackTarget');
+
+    $result = $method->invoke($controller, [
+        'primary_provider' => 'anthropic',
+        'fallback_provider' => 'openai',
+        'failover_enabled' => true,
+        'providers' => [
+            'anthropic' => ['default_chat_model' => 'claude-3-7-sonnet'],
+            'openai' => ['default_chat_model' => 'gpt-4o-mini'],
+        ],
+        'custom_providers' => [],
+    ], 'anthropic', 'claude-opus-unavailable');
+
+    expect($result)->toBe(['anthropic', 'claude-3-7-sonnet']);
+});
+
+it('uses the configured failover provider when the current provider default also failed', function (): void {
+    $controller = new App\Http\Controllers\AdministratorAiController;
+    $method = new ReflectionMethod($controller, 'resolveFallbackTarget');
+
+    $result = $method->invoke($controller, [
+        'primary_provider' => 'anthropic',
+        'fallback_provider' => 'openai',
+        'failover_enabled' => true,
+        'providers' => [
+            'anthropic' => ['default_chat_model' => 'claude-3-7-sonnet'],
+            'openai' => ['default_chat_model' => 'gpt-4o-mini'],
+        ],
+        'custom_providers' => [],
+    ], 'anthropic', 'claude-3-7-sonnet');
+
+    expect($result)->toBe(['openai', 'gpt-4o-mini']);
+});
+
 it('filters out unconfigured providers from model options in analyticsSummary', function (): void {
     $service = app(App\Services\Ai\AiSettingsService::class);
 

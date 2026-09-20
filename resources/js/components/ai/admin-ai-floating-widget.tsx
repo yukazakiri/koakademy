@@ -472,6 +472,7 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                                                             reasoning={msg.reasoning}
                                                             toolCalls={msg.toolCalls}
                                                             sources={msg.sources}
+                                                            isStreaming={isLoading && msg.id === messages.at(-1)?.id}
                                                         />
                                                     )}
 

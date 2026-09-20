@@ -23,6 +23,7 @@ interface ChatMessageFormatterProps {
     reasoning?: string;
     toolCalls?: ToolInvocation[];
     sources?: CitationSource[];
+    isStreaming?: boolean;
 }
 
 /**
@@ -40,6 +41,7 @@ export function ChatMessageFormatter({
     reasoning,
     toolCalls,
     sources,
+    isStreaming = false,
 }: ChatMessageFormatterProps) {
     const trimmedContent = (content || "").trim();
 
@@ -212,7 +214,7 @@ export function ChatMessageFormatter({
             {/* Formatted Markdown and Visual Artifacts */}
             {hasContent ? (
                 parsedBlocks
-            ) : !hasReasoning && !hasTools ? (
+            ) : isStreaming && !hasReasoning && !hasTools ? (
                 /* Inline thinking indicator when message is loading before first token */
                 <div className="flex items-center gap-2 py-0.5 text-muted-foreground">
                     <Loader variant="dots" size="sm" className="text-primary" />

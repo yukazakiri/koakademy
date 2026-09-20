@@ -86,7 +86,7 @@ export interface ModelOption {
   provider_name?: string;
 }
 
-export interface ErrorState {
+export interface ErrorStateData {
   code?: string;
   message: string;
   retryable?: boolean;

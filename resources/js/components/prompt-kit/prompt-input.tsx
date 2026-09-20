@@ -198,7 +198,7 @@ export type PromptInputActionProps = {
   tooltip: React.ReactNode
   children: React.ReactNode
   side?: "top" | "bottom" | "left" | "right"
-} & React.ComponentProps<typeof Tooltip>
+} & Omit<React.ComponentProps<typeof Tooltip>, "children" | "className">
 
 function PromptInputAction({
   tooltip,
@@ -212,7 +212,6 @@ function PromptInputAction({
   return (
     <Tooltip {...props}>
       <TooltipTrigger
-        asChild
         disabled={disabled}
         onClick={(event) => event.stopPropagation()}
       >

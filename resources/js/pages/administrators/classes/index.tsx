@@ -612,11 +612,6 @@ export default function AdministratorClassesIndex({
 
     const visibleClasses = filteredClasses;
 
-    // Debounced server sync for full pagination and ID-based filters
-    React.useEffect(() => {
-        refreshClasses(search, activeFilters);
-    }, [search, activeFilters]);
-
     const parseSortOption = (value: string): { sort: string; direction: "asc" | "desc" } => {
         const [sort = "created_at", direction = "desc"] = value.split(":");
 
@@ -652,22 +647,27 @@ export default function AdministratorClassesIndex({
         return appliedFilters;
     };
 
-    const refreshClasses = useDebouncedCallback((searchTerm: string, filterValues: FilterType[], selectedSortOption: string = sortOption) => {
-        router.get(route("administrators.classes.index"), buildFilterParams(searchTerm, filterValues, selectedSortOption), {
-            only: ["classes", "filters"],
-            preserveScroll: true,
-            preserveState: true,
-            replace: true,
-        });
-    }, 350);
+    const refreshClasses = useDebouncedCallback(
+        (searchTerm: string, filterValues: FilterType[], selectedSortOption: string = sortOption) => {
+            router.get(route("administrators.classes.index"), buildFilterParams(searchTerm, filterValues, selectedSortOption), {
+                only: ["classes", "filters"],
+                preserveScroll: true,
+                preserveState: true,
+                replace: true,
+            });
+        },
+        350,
+    );
 
     const handleFiltersChange = (newFilters: FilterType[]) => {
         setActiveFilters(newFilters);
+        refreshClasses(search, newFilters);
     };
 
     const clearFilters = () => {
         setSearch("");
         setActiveFilters([]);
+        refreshClasses("", []);
     };
 
     const handleSortChange = (value: string) => {
@@ -1282,7 +1282,10 @@ export default function AdministratorClassesIndex({
                                 className="bg-background pl-8"
                                 value={search}
                                 onChange={(event) => {
-                                    setSearch(event.target.value);
+                                    const nextSearch = event.target.value;
+
+                                    setSearch(nextSearch);
+                                    refreshClasses(nextSearch, activeFilters);
                                 }}
                             />
                         </div>

@@ -198,14 +198,45 @@ final class AiChatController extends Controller
 
         return response()->stream(function () use ($agentInstance, $prompt, $aiAttachments, $selectedProvider, $selectedModel, $agentKey) {
             try {
-                $stream = $agentInstance->stream(
-                    $prompt,
-                    attachments: $aiAttachments,
-                    provider: filled($selectedProvider) ? $selectedProvider : null,
-                    model: filled($selectedModel) ? $selectedModel : null,
-                );
+                $stream = null;
+                $iterator = null;
 
-                foreach ($stream as $event) {
+                try {
+                    $stream = $agentInstance->stream(
+                        $prompt,
+                        attachments: $aiAttachments,
+                        provider: filled($selectedProvider) ? $selectedProvider : null,
+                        model: filled($selectedModel) ? $selectedModel : null,
+                    );
+                    $iterator = $stream->getIterator();
+                    $iterator->rewind();
+                } catch (Throwable $streamInitEx) {
+                    $fallbackModel = 'auto/best-free';
+                    if (filled($selectedModel) && $selectedModel !== $fallbackModel) {
+                        Log::warning("General AI model [{$selectedModel}] failed on init. Falling back to [{$fallbackModel}].", [
+                            'agent' => $agentKey,
+                            'provider' => $selectedProvider,
+                            'failed_model' => $selectedModel,
+                            'error' => $streamInitEx->getMessage(),
+                        ]);
+
+                        $selectedModel = $fallbackModel;
+                        $stream = $agentInstance->stream(
+                            $prompt,
+                            attachments: $aiAttachments,
+                            provider: filled($selectedProvider) ? $selectedProvider : null,
+                            model: $fallbackModel,
+                        );
+                        $iterator = $stream->getIterator();
+                        $iterator->rewind();
+                    } else {
+                        throw $streamInitEx;
+                    }
+                }
+
+                while ($iterator->valid()) {
+                    $event = $iterator->current();
+
                     if ($event instanceof \Laravel\Ai\Streaming\Events\TextDelta) {
                         echo 'data: '.json_encode([
                             'type' => 'text-delta',
@@ -261,6 +292,8 @@ final class AiChatController extends Controller
                         ob_flush();
                     }
                     flush();
+
+                    $iterator->next();
                 }
 
                 echo "data: [DONE]\n\n";

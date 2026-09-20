@@ -262,7 +262,9 @@ export function useAiChat({ agent, endpoint, initialConversationId, onFinish, on
                                         message: errMsg,
                                         retryPrompt: content,
                                     });
-                                    accumulatedText += `\n\n⚠️ **Inference Error**: ${errMsg}`;
+                                    if (!accumulatedText.trim()) {
+                                        accumulatedText = `⚠️ ${errMsg}`;
+                                    }
                                 } else if (parsed.type === "tool-approval-request" || parsed.type === "tool_approval_request") {
                                     pendingApprovals.push({
                                         id: parsed.approvalId || parsed.toolCallId || parsed.id,
@@ -334,7 +336,7 @@ export function useAiChat({ agent, endpoint, initialConversationId, onFinish, on
                         m.id === assistantId
                             ? {
                                   ...m,
-                                  content: `⚠️ Generation failed: ${err.message || "Please check endpoint credentials or connection."}`,
+                                  content: m.content || `⚠️ Generation failed: ${err.message || "Please check endpoint credentials or connection."}`,
                               }
                             : m
                     )

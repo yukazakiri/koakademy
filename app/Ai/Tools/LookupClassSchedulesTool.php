@@ -40,7 +40,11 @@ final class LookupClassSchedulesTool implements Tool
             $classesQuery->where(function ($q) use ($searchTerm) {
                 $q->where('subject_code', 'like', "%{$searchTerm}%")
                     ->orWhere('section', 'like', "%{$searchTerm}%")
-                    ->orWhereHas('faculty', fn ($fq) => $fq->where('name', 'like', "%{$searchTerm}%"));
+                    ->orWhereHas('faculty', function ($fq) use ($searchTerm) {
+                        $fq->where('first_name', 'like', "%{$searchTerm}%")
+                            ->orWhere('last_name', 'like', "%{$searchTerm}%")
+                            ->orWhere('email', 'like', "%{$searchTerm}%");
+                    });
             });
         }
 

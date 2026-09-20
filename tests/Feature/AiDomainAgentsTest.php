@@ -727,6 +727,26 @@ it('searches class schedules via LookupClassSchedulesTool', function (): void {
         ->and($data['classes'][0]['subject_code'])->toContain('MATH101');
 });
 
+it('searches class schedules by faculty name via LookupClassSchedulesTool', function (): void {
+    $faculty = App\Models\Faculty::factory()->create([
+        'first_name' => 'Severino',
+        'last_name' => 'Reyes',
+    ]);
+    $class = Classes::factory()->create([
+        'faculty_id' => $faculty->id,
+        'subject_code' => 'LIT101',
+        'section' => 'SEC-L',
+    ]);
+
+    $tool = new App\Ai\Tools\LookupClassSchedulesTool;
+    $result = $tool->handle(new Request(['query' => 'Severino']));
+    $data = json_decode((string) $result, true);
+
+    expect($data)->toHaveKey('classes')
+        ->and($data['count'])->toBeGreaterThanOrEqual(1)
+        ->and($data['classes'][0]['faculty'])->toContain('Severino');
+});
+
 it('searches student directory via SearchStudentsTool', function (): void {
     $student = Student::factory()->create([
         'first_name' => 'Crisostomo',

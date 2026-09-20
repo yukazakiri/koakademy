@@ -269,17 +269,20 @@ final class AiChatController extends Controller
                 }
                 flush();
             } catch (Throwable $e) {
+                $rawError = $this->extractErrorMessage($e);
+
                 Log::error('AI Streaming Exception', [
                     'agent' => $agentKey,
                     'provider' => $selectedProvider ?? config('ai.default'),
                     'model' => $selectedModel,
-                    'message' => $e->getMessage(),
+                    'message' => $rawError,
+                    'original_message' => $e->getMessage(),
                     'trace' => $e->getTraceAsString(),
                 ]);
 
                 $providerName = (string) ($selectedProvider ?? config('ai.default', 'anthropic'));
                 $modelName = (string) ($selectedModel ?? 'default');
-                $errorMessage = "Error from [{$providerName}]: {$e->getMessage()}";
+                $errorMessage = "Error from [{$providerName}]: {$rawError}";
 
                 echo 'data: '.json_encode([
                     'type' => 'error',
@@ -362,6 +365,29 @@ final class AiChatController extends Controller
         ]);
 
         return $docService->exportDocument($validated['title'], $validated['format'], $validated['content']);
+    }
+
+    private function extractErrorMessage(Throwable $e): string
+    {
+        $current = $e;
+        while ($current !== null) {
+            if ($current instanceof \Illuminate\Http\Client\RequestException && $current->response !== null) {
+                $json = $current->response->json();
+                if (is_array($json)) {
+                    $msg = $json['error']['message'] ?? $json['error'] ?? $json['message'] ?? null;
+                    if (is_string($msg) && filled($msg)) {
+                        return $msg;
+                    }
+                }
+                $body = mb_trim($current->response->body());
+                if (filled($body) && ! str_starts_with($body, '<!DOCTYPE') && ! str_starts_with($body, '<html')) {
+                    return mb_strimwidth($body, 0, 300, '...');
+                }
+            }
+            $current = $current->getPrevious();
+        }
+
+        return $e->getMessage();
     }
 
     private function resolveAgent(string $key): Agent

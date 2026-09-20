@@ -72,7 +72,7 @@ final class GetFacultyAssignedClassesTool implements Tool
             'faculty_id' => $faculty->id,
             'faculty_name' => $faculty->name,
             'email' => $faculty->email,
-            'department' => $faculty->department?->name ?? 'Unassigned',
+            'department' => is_string($faculty->department) ? $faculty->department : ($faculty->departmentBelongsTo?->name ?? 'Unassigned'),
             'total_classes' => count($classes),
             'total_students_taught' => $totalStudents,
             'assigned_classes' => $classes,

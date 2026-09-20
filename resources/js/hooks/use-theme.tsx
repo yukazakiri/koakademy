@@ -43,8 +43,12 @@ export function ThemeProvider({
     colorStorageKey = "ui-color-theme",
     ...props
 }: ThemeProviderProps) {
-    const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem(storageKey) as Theme) || defaultTheme);
-    const [colorTheme, setColorTheme] = useState<ColorTheme>(() => (localStorage.getItem(colorStorageKey) as ColorTheme) || defaultColorTheme);
+    const [theme, setTheme] = useState<Theme>(
+        () => (typeof window !== "undefined" ? (localStorage.getItem(storageKey) as Theme) : null) || defaultTheme
+    );
+    const [colorTheme, setColorTheme] = useState<ColorTheme>(
+        () => (typeof window !== "undefined" ? (localStorage.getItem(colorStorageKey) as ColorTheme) : null) || defaultColorTheme
+    );
 
     const [actualTheme, setActualTheme] = useState<"dark" | "light">("light");
 
@@ -144,7 +148,9 @@ export function ThemeProvider({
     };
 
     const setThemeState = (theme: Theme) => {
-        localStorage.setItem(storageKey, theme);
+        if (typeof window !== "undefined") {
+            localStorage.setItem(storageKey, theme);
+        }
         setTheme(theme);
     };
 
@@ -154,7 +160,9 @@ export function ThemeProvider({
         setThemeWithViewTransition,
         colorTheme,
         setColorTheme: (theme: ColorTheme) => {
-            localStorage.setItem(colorStorageKey, theme);
+            if (typeof window !== "undefined") {
+                localStorage.setItem(colorStorageKey, theme);
+            }
             setColorTheme(theme);
         },
         actualTheme,

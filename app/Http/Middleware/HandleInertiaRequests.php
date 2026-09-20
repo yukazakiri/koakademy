@@ -89,6 +89,10 @@ final class HandleInertiaRequests extends Middleware
                 'settings' => $settingsService->getSettings(),
                 'socialAuthProviders' => $socialiteProviderService->enabledProviders(...),
                 'version' => config('app.version'),
+                'ziggy' => fn (): array => [
+                    ...(new \Tighten\Ziggy\Ziggy)->toArray(),
+                    'location' => $request->url(),
+                ],
                 'onboarding' => $isAdministratorPortal
                     ? Inertia::defer(fn (): array => [
                         'forceOnLogin' => (bool) config('onboarding.force_on_login'),

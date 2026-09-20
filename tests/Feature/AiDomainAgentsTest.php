@@ -707,3 +707,116 @@ it('searches student directory via SearchStudentsTool', function (): void {
         ->and($data['students'][0]['name'])->toBe('Crisostomo Ibarra')
         ->and((int) $data['students'][0]['student_id'])->toBe(2026999);
 });
+
+it('retrieves class grades sheet via GetClassGradesTool', function (): void {
+    $class = Classes::factory()->create([
+        'subject_code' => 'CS102',
+        'section' => '1B',
+    ]);
+
+    $student = Student::factory()->create([
+        'first_name' => 'Basilio',
+        'last_name' => 'Alvarez',
+        'student_id' => 2026456,
+    ]);
+
+    App\Models\ClassEnrollment::create([
+        'class_id' => $class->id,
+        'student_id' => $student->id,
+        'status' => 'enrolled',
+        'prelim_grade' => 1.5,
+        'midterm_grade' => 1.75,
+        'finals_grade' => 1.25,
+        'remarks' => 'Passed',
+        'school_id' => $class->school_id,
+    ]);
+
+    $tool = new App\Ai\Tools\GetClassGradesTool;
+    $result = $tool->handle(new Request(['subject_code' => 'CS102', 'section' => '1B']));
+    $data = json_decode((string) $result, true);
+
+    expect($data)->toHaveKey('grade_sheet')
+        ->and($data['total_students'])->toBe(1)
+        ->and($data['passed_count'])->toBe(1)
+        ->and($data['grade_sheet'][0]['name'])->toBe('Basilio Alvarez')
+        ->and($data['grade_sheet'][0]['finals'])->toBe(1.25);
+});
+
+it('retrieves class attendance breakdown via GetClassAttendanceSummaryTool', function (): void {
+    $class = Classes::factory()->create([
+        'subject_code' => 'ENG101',
+        'section' => 'SEC-A',
+    ]);
+
+    $student = Student::factory()->create([
+        'first_name' => 'Isagani',
+        'last_name' => 'Valenzuela',
+        'student_id' => 2026789,
+    ]);
+
+    $enrollment = App\Models\ClassEnrollment::create([
+        'class_id' => $class->id,
+        'student_id' => $student->id,
+        'status' => 'enrolled',
+        'school_id' => $class->school_id,
+    ]);
+
+    $session = App\Models\ClassAttendanceSession::create([
+        'class_id' => $class->id,
+        'session_date' => now()->toDateString(),
+        'is_no_meeting' => false,
+    ]);
+
+    App\Models\ClassAttendanceRecord::create([
+        'class_attendance_session_id' => $session->id,
+        'class_enrollment_id' => $enrollment->id,
+        'class_id' => $class->id,
+        'student_id' => $student->id,
+        'status' => App\Enums\AttendanceStatus::Present,
+    ]);
+
+    $tool = new App\Ai\Tools\GetClassAttendanceSummaryTool;
+    $result = $tool->handle(new Request(['subject_code' => 'ENG101', 'section' => 'SEC-A']));
+    $data = json_decode((string) $result, true);
+
+    expect($data)->toHaveKey('students')
+        ->and($data['total_sessions_conducted'])->toBe(1)
+        ->and($data['students'][0]['present'])->toBe(1)
+        ->and($data['students'][0]['name'])->toBe('Isagani Valenzuela');
+});
+
+it('retrieves faculty teaching load via GetFacultyAssignedClassesTool', function (): void {
+    $faculty = App\Models\Faculty::factory()->create([
+        'first_name' => 'Juan',
+        'last_name' => 'Luna',
+    ]);
+
+    Classes::factory()->create([
+        'faculty_id' => $faculty->id,
+        'subject_code' => 'ART101',
+        'section' => '1C',
+    ]);
+
+    $tool = new App\Ai\Tools\GetFacultyAssignedClassesTool;
+    $result = $tool->handle(new Request(['faculty_name' => 'Luna']));
+    $data = json_decode((string) $result, true);
+
+    expect($data)->toHaveKey('assigned_classes')
+        ->and($data['total_classes'])->toBe(1)
+        ->and($data['faculty_name'])->toContain('Luna')
+        ->and($data['assigned_classes'][0]['subject_code'])->toBe('ART101');
+});
+
+it('checks classroom availability via LookupRoomAvailabilityTool', function (): void {
+    $room = App\Models\Room::factory()->create([
+        'name' => 'Room 302',
+    ]);
+
+    $tool = new App\Ai\Tools\LookupRoomAvailabilityTool;
+    $result = $tool->handle(new Request(['room_name' => 'Room 302']));
+    $data = json_decode((string) $result, true);
+
+    expect($data)->toHaveKey('rooms')
+        ->and($data['count'])->toBeGreaterThanOrEqual(1)
+        ->and($data['rooms'][0]['name'])->toBe('Room 302');
+});

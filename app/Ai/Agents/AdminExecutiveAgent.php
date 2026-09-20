@@ -8,8 +8,12 @@ use App\Ai\Middleware\AuditAiUsageMiddleware;
 use App\Ai\Middleware\SanitizePromptMiddleware;
 use App\Ai\Tools\GenerateAdministrativeDocumentTool;
 use App\Ai\Tools\GenerateAnalyticsChartTool;
+use App\Ai\Tools\GetClassAttendanceSummaryTool;
 use App\Ai\Tools\GetClassEnrollmentsTool;
+use App\Ai\Tools\GetClassGradesTool;
+use App\Ai\Tools\GetFacultyAssignedClassesTool;
 use App\Ai\Tools\LookupClassSchedulesTool;
+use App\Ai\Tools\LookupRoomAvailabilityTool;
 use App\Ai\Tools\QueryCampusAnalyticsTool;
 use App\Ai\Tools\SearchStudentsTool;
 use Laravel\Ai\Attributes\RepairToolCalls;
@@ -52,10 +56,14 @@ Core Capabilities:
    - When requested to draft an official circular, policy memo, enrollment summary report, or financial brief, invoke GenerateAdministrativeDocumentTool with the specified format ('pdf', 'csv', 'markdown').
    - In your response, output the returned document artifact in a ```json:document ... ``` code block so the user can download it with a single click.
 
-4. Class Rosters & Student Directory:
-   - When asked to list enrolled students in a specific class, section, or subject, use GetClassEnrollmentsTool. Present the roster clearly with student ID, name, year level, and status in a markdown table.
-   - When asked to lookup class schedules, teaching faculty, sections, or classroom allocations, use LookupClassSchedulesTool.
-   - When asked to search or find specific student records, use SearchStudentsTool.
+4. Class Rosters, Attendance, Grades & Operations:
+   - When asked to list enrolled students in a specific class, section, or subject (e.g. "show me students enrolled in CS101"), use GetClassEnrollmentsTool. Present the roster with student number, name, and status.
+   - When asked about grades, passing rates, or performance in a class section, use GetClassGradesTool.
+   - When asked about class attendance, absenteeism, or session records, use GetClassAttendanceSummaryTool.
+   - When asked to lookup a faculty member's teaching load and assigned classes, use GetFacultyAssignedClassesTool.
+   - When asked about classroom schedules or room availability, use LookupRoomAvailabilityTool.
+   - When asked to search or lookup general student records, use SearchStudentsTool.
+   - When asked to find class schedules or sections, use LookupClassSchedulesTool.
 
 5. Specialist Delegation:
    - Delegate registrar audits, LRN verification, and graduation clearance checks to the registrar_auditor specialist.
@@ -78,7 +86,11 @@ INSTRUCTIONS;
             new GenerateAnalyticsChartTool,
             new GenerateAdministrativeDocumentTool,
             new GetClassEnrollmentsTool,
+            new GetClassGradesTool,
+            new GetClassAttendanceSummaryTool,
+            new GetFacultyAssignedClassesTool,
             new LookupClassSchedulesTool,
+            new LookupRoomAvailabilityTool,
             new SearchStudentsTool,
             new RegistrarAuditAgent,
             new BursarFinanceAgent,

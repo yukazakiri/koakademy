@@ -10,7 +10,10 @@ use App\Ai\Tools\CommitSubmissionGradeTool;
 use App\Ai\Tools\DraftInterventionNoticeTool;
 use App\Ai\Tools\EvaluateSubmissionDraftTool;
 use App\Ai\Tools\GenerateRubricTool;
+use App\Ai\Tools\GetClassAttendanceSummaryTool;
 use App\Ai\Tools\GetClassEnrollmentsTool;
+use App\Ai\Tools\GetClassGradesTool;
+use App\Ai\Tools\GetFacultyAssignedClassesTool;
 use App\Ai\Tools\LookupClassSchedulesTool;
 use Laravel\Ai\Attributes\RepairToolCalls;
 use Laravel\Ai\Concerns\RemembersConversations;
@@ -57,6 +60,9 @@ INSTRUCTIONS;
             new CommitSubmissionGradeTool,
             new DraftInterventionNoticeTool,
             new GetClassEnrollmentsTool,
+            new GetClassGradesTool,
+            new GetClassAttendanceSummaryTool,
+            new GetFacultyAssignedClassesTool,
             new LookupClassSchedulesTool,
             new AtRiskInterventionAgent,
             new AssessmentGeneratorAgent,

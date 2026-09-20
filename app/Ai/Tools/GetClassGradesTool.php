@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Ai\Tools;
 
 use App\Models\Classes;
+use App\Services\GeneralSettingsService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
@@ -23,6 +24,8 @@ final class GetClassGradesTool implements Tool
             'class_id' => 'nullable|integer',
             'subject_code' => 'nullable|string',
             'section' => 'nullable|string',
+            'school_year' => 'nullable|string',
+            'semester' => 'nullable|integer',
         ]);
 
         $query = Classes::query()->with([
@@ -33,17 +36,47 @@ final class GetClassGradesTool implements Tool
         if (filled($validated['class_id'] ?? null)) {
             $class = $query->find($validated['class_id']);
         } elseif (filled($validated['subject_code'] ?? null)) {
-            $q = $query->where('subject_code', $validated['subject_code']);
+            $code = mb_trim((string) $validated['subject_code']);
+            $codeClean = mb_strtolower(str_replace(['-', ' '], '', $code));
+
+            $classesQuery = $query->where(function ($q) use ($code, $codeClean) {
+                $q->whereRaw("LOWER(REPLACE(REPLACE(subject_code, '-', ''), ' ', '')) = ?", [$codeClean])
+                    ->orWhereRaw('LOWER(subject_code) = LOWER(?)', [$code]);
+            });
+
             if (filled($validated['section'] ?? null)) {
-                $q->where('section', $validated['section']);
+                $section = mb_trim((string) $validated['section']);
+                $classesQuery->whereRaw('LOWER(section) = LOWER(?)', [$section]);
             }
-            $class = $q->first();
+
+            if (filled($validated['school_year'] ?? null) && filled($validated['semester'] ?? null)) {
+                $classesQuery->forAcademicPeriod((string) $validated['school_year'], (int) $validated['semester']);
+            } elseif (filled($validated['school_year'] ?? null)) {
+                $sy = (string) $validated['school_year'];
+                $normalized = GeneralSettingsService::normalizeSchoolYear($sy);
+                $compact = str_replace(' ', '', $normalized);
+                $classesQuery->whereIn('school_year', array_unique([$normalized, $compact]));
+            } elseif (filled($validated['semester'] ?? null)) {
+                $classesQuery->where('semester', (int) $validated['semester']);
+            } else {
+                $currentPeriodQuery = (clone $classesQuery)->currentAcademicPeriod();
+                if ($currentPeriodQuery->exists()) {
+                    $classesQuery = $currentPeriodQuery;
+                } else {
+                    $latest = (clone $classesQuery)->orderByDesc('school_year')->orderByDesc('semester')->orderByDesc('id')->first();
+                    if ($latest) {
+                        $classesQuery->forAcademicPeriod((string) $latest->school_year, (int) $latest->semester);
+                    }
+                }
+            }
+
+            $class = $classesQuery->orderBy('section')->orderByDesc('id')->first();
         } else {
             return 'Please specify either a class_id or a subject_code to retrieve grades.';
         }
 
         if (! $class instanceof Classes) {
-            $target = $validated['class_id'] ?? ($validated['subject_code'].($validated['section'] ? " ({$validated['section']})" : ''));
+            $target = $validated['class_id'] ?? ($validated['subject_code'].(filled($validated['section'] ?? null) ? " ({$validated['section']})" : ''));
 
             return "Class '{$target}' was not found in records.";
         }
@@ -108,6 +141,8 @@ final class GetClassGradesTool implements Tool
             'class_id' => $schema->integer()->description('Class ID number'),
             'subject_code' => $schema->string()->description('Subject code to inspect grades for (e.g. CS101)'),
             'section' => $schema->string()->description('Optional section filter (e.g. 1A)'),
+            'school_year' => $schema->string()->description('Optional school year (e.g. 2026-2027)'),
+            'semester' => $schema->integer()->description('Optional semester (1, 2, or summer)'),
         ];
     }
 }

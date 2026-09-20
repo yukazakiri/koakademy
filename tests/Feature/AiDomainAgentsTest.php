@@ -712,6 +712,76 @@ it('retrieves enrolled students in a class via GetClassEnrollmentsTool', functio
         ->and($data['enrolled_count'])->toBe(1);
 });
 
+it('retrieves enrolled students across sections prioritizing active academic period via GetClassEnrollmentsTool', function (): void {
+    // Old inactive class with 0 enrollments
+    Classes::factory()->create([
+        'subject_code' => 'GE-1',
+        'section' => 'A',
+        'school_year' => '2024-2025',
+        'semester' => 1,
+    ]);
+
+    // Active current academic period classes
+    $classA = Classes::factory()->create([
+        'subject_code' => 'GE-1',
+        'section' => 'A',
+        'school_year' => '2026-2027',
+        'semester' => 1,
+    ]);
+    $classB = Classes::factory()->create([
+        'subject_code' => 'GE-1',
+        'section' => 'B',
+        'school_year' => '2026-2027',
+        'semester' => 1,
+    ]);
+
+    $studentA = Student::factory()->create([
+        'first_name' => 'Juan',
+        'last_name' => 'Luna',
+        'student_id' => 2026001,
+    ]);
+    $studentB = Student::factory()->create([
+        'first_name' => 'Andres',
+        'last_name' => 'Bonifacio',
+        'student_id' => 2026002,
+    ]);
+
+    App\Models\ClassEnrollment::create([
+        'class_id' => $classA->id,
+        'student_id' => $studentA->id,
+        'status' => 'enrolled',
+        'school_id' => $classA->school_id,
+    ]);
+    App\Models\ClassEnrollment::create([
+        'class_id' => $classB->id,
+        'student_id' => $studentB->id,
+        'status' => 'enrolled',
+        'school_id' => $classB->school_id,
+    ]);
+
+    $tool = new App\Ai\Tools\GetClassEnrollmentsTool;
+
+    // 1. Querying only subject code (lowercase 'ge-1') finds current period classes and aggregates both sections
+    $resAll = $tool->handle(new Request(['subject_code' => 'ge-1']));
+    $dataAll = json_decode((string) $resAll, true);
+
+    expect($dataAll)->toHaveKey('students')
+        ->and($dataAll['enrolled_count'])->toBe(2)
+        ->and($dataAll['total_sections'])->toBe(2)
+        ->and($dataAll['students'])->toHaveCount(2)
+        ->and($dataAll['students'][0]['section'])->toBe('A')
+        ->and($dataAll['students'][1]['section'])->toBe('B');
+
+    // 2. Querying with space ('GE 1') and specific section 'a' (case-insensitive)
+    $resSection = $tool->handle(new Request(['subject_code' => 'GE 1', 'section' => 'a']));
+    $dataSection = json_decode((string) $resSection, true);
+
+    expect($dataSection)->toHaveKey('students')
+        ->and($dataSection['enrolled_count'])->toBe(1)
+        ->and($dataSection['section'])->toBe('A')
+        ->and($dataSection['students'][0]['name'])->toBe('Juan Luna');
+});
+
 it('searches class schedules via LookupClassSchedulesTool', function (): void {
     Classes::factory()->create([
         'subject_code' => 'MATH101',

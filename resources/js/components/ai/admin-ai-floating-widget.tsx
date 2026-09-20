@@ -1,9 +1,4 @@
 import {
-    ChainOfThought,
-    ChainOfThoughtContent,
-    ChainOfThoughtItem,
-    ChainOfThoughtStep,
-    ChainOfThoughtTrigger,
     FileUpload,
     FileUploadContent,
     FileUploadTrigger,
@@ -477,6 +472,7 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                                                             reasoning={msg.reasoning}
                                                             toolCalls={msg.toolCalls}
                                                             sources={msg.sources}
+                                                            isStreaming={isLoading && msg.id === messages.at(-1)?.id}
                                                         />
                                                     )}
 
@@ -531,27 +527,6 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                                             <span>Switch to Auto Best-Free & Retry</span>
                                         </Button>
                                     </div>
-                                </div>
-                            )}
-
-                            {/* Prompt-Kit ChainOfThought and Loader */}
-                            {isLoading && (
-                                <div className="pt-1 px-1">
-                                    <ChainOfThought className="p-3 border border-border/70 bg-muted/20 rounded-2xl space-y-1">
-                                        <ChainOfThoughtStep defaultOpen={true}>
-                                            <ChainOfThoughtTrigger
-                                                leftIcon={<Loader variant="dots" size="sm" className="text-primary" />}
-                                                className="text-xs font-medium text-foreground hover:text-primary"
-                                            >
-                                                <span>{activeMeta.label} is analyzing data & formulating response...</span>
-                                            </ChainOfThoughtTrigger>
-                                            <ChainOfThoughtContent className="text-xs text-muted-foreground pt-1 font-mono">
-                                                <ChainOfThoughtItem>
-                                                    Evaluating institutional models, analyzing query context, and executing tools.
-                                                </ChainOfThoughtItem>
-                                            </ChainOfThoughtContent>
-                                        </ChainOfThoughtStep>
-                                    </ChainOfThought>
                                 </div>
                             )}
                         </div>

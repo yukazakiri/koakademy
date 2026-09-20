@@ -1,9 +1,4 @@
 import {
-    ChainOfThought,
-    ChainOfThoughtContent,
-    ChainOfThoughtItem,
-    ChainOfThoughtStep,
-    ChainOfThoughtTrigger,
     FileUpload,
     FileUploadContent,
     FileUploadTrigger,
@@ -390,6 +385,7 @@ export function AiChatSheet({
                                                     reasoning={msg.reasoning}
                                                     toolCalls={msg.toolCalls}
                                                     sources={msg.sources}
+                                                    isStreaming={isLoading && msg.id === messages.at(-1)?.id}
                                                 />
                                             )}
 
@@ -430,27 +426,6 @@ export function AiChatSheet({
                                 }}
                                 variant="Card"
                             />
-                        </div>
-                    )}
-
-                    {/* Prompt-Kit ChainOfThought and Loader (non-sliding, stable progress) */}
-                    {isLoading && (
-                        <div className="pt-1 px-1">
-                            <ChainOfThought className="p-2.5 border border-border/70 bg-muted/20 rounded-xl space-y-1">
-                                <ChainOfThoughtStep defaultOpen={true}>
-                                    <ChainOfThoughtTrigger
-                                        leftIcon={<Loader variant="dots" size="sm" className="text-primary" />}
-                                        className="text-xs font-medium text-foreground hover:text-primary"
-                                    >
-                                        <span>{activeMeta.name} is thinking & evaluating tools...</span>
-                                    </ChainOfThoughtTrigger>
-                                    <ChainOfThoughtContent className="text-xs text-muted-foreground pt-1">
-                                        <ChainOfThoughtItem>
-                                            Evaluating institutional tools, analyzing context, and streaming response.
-                                        </ChainOfThoughtItem>
-                                    </ChainOfThoughtContent>
-                                </ChainOfThoughtStep>
-                            </ChainOfThought>
                         </div>
                     )}
                 </div>

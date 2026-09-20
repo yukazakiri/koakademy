@@ -1,6 +1,5 @@
 import {
     Loader,
-    Markdown,
     Reasoning,
     ReasoningContent,
     ReasoningTrigger,
@@ -13,6 +12,7 @@ import {
     StepsTrigger,
     Tool,
 } from "@/components/prompt-kit";
+import { Response } from "@/components/ui/response";
 import * as React from "react";
 import { AnalyticsChartRenderer, ChartArtifact } from "./analytics-chart-renderer";
 import { DocumentArtifact, DocumentDownloadCard } from "./document-download-card";
@@ -23,27 +23,30 @@ interface ChatMessageFormatterProps {
     reasoning?: string;
     toolCalls?: ToolInvocation[];
     sources?: CitationSource[];
+    isStreaming?: boolean;
 }
 
 /**
  * Enhanced Chat Message Formatter using:
- * - Prompt-Kit Markdown component for rich typography and code highlighting
- * - Prompt-Kit Steps component for tool invocations
- * - Prompt-Kit Reasoning component for thought processes
- * - Prompt-Kit Tool component for tool execution inspection
+ * - ElevenLabs UI Response component (streamdown) for reliable streaming markdown rendering
+ * - Prompt-Kit Steps & Tool components for tool executions
+ * - Prompt-Kit Reasoning component for model thought processes
  * - Prompt-Kit Source component for verifiable citations
  * - Interactive Recharts visualizations & Downloadable Document cards
  *
- * @see https://www.prompt-kit.com/docs/
+ * @see https://ui.elevenlabs.io/docs/components/response
  */
 export function ChatMessageFormatter({
     content,
     reasoning,
     toolCalls,
     sources,
+    isStreaming = false,
 }: ChatMessageFormatterProps) {
+    const trimmedContent = (content || "").trim();
+
     const parsedBlocks = React.useMemo(() => {
-        if (!content || !content.trim()) {
+        if (!trimmedContent) {
             return [];
         }
 
@@ -57,14 +60,14 @@ export function ChatMessageFormatter({
             const blockStart = match.index;
             const blockEnd = codeBlockRegex.lastIndex;
 
-            // Render preceding text chunk via Prompt-Kit Markdown component
+            // Render preceding text chunk via Response component
             if (blockStart > lastIndex) {
                 const textChunk = content.substring(lastIndex, blockStart).trim();
                 if (textChunk) {
                     blocks.push(
-                        <Markdown key={`text_${lastIndex}`} className="leading-relaxed text-sm">
+                        <Response key={`text_${lastIndex}`} className="leading-relaxed text-sm">
                             {textChunk}
-                        </Markdown>
+                        </Response>
                     );
                 }
             }
@@ -100,9 +103,9 @@ export function ChatMessageFormatter({
 
             if (!handled) {
                 blocks.push(
-                    <Markdown key={`code_${blockStart}`} className="leading-relaxed text-sm">
+                    <Response key={`code_${blockStart}`} className="leading-relaxed text-sm">
                         {match[0]}
-                    </Markdown>
+                    </Response>
                 );
             }
 
@@ -131,17 +134,17 @@ export function ChatMessageFormatter({
                 }
 
                 blocks.push(
-                    <Markdown key={`tail_${lastIndex}`} className="leading-relaxed text-sm">
+                    <Response key={`tail_${lastIndex}`} className="leading-relaxed text-sm">
                         {tail}
-                    </Markdown>
+                    </Response>
                 );
             }
         }
 
         // Check if raw full content is an unbracketed or standalone JSON artifact
-        if (blocks.length === 0 && content.trim().startsWith("{") && content.trim().endsWith("}")) {
+        if (blocks.length === 0 && trimmedContent.startsWith("{") && trimmedContent.endsWith("}")) {
             try {
-                const parsed = JSON.parse(content.trim());
+                const parsed = JSON.parse(trimmedContent);
                 if (parsed._type === "chart_artifact" || parsed.chart_type) {
                     return [<AnalyticsChartRenderer key="single_chart" chart={parsed} />];
                 }
@@ -156,16 +159,20 @@ export function ChatMessageFormatter({
         return blocks.length > 0
             ? blocks
             : [
-                  <Markdown key="root_content" className="leading-relaxed text-sm">
+                  <Response key="root_content" className="leading-relaxed text-sm">
                       {content}
-                  </Markdown>,
+                  </Response>,
               ];
-    }, [content]);
+    }, [content, trimmedContent]);
+
+    const hasContent = parsedBlocks.length > 0;
+    const hasReasoning = Boolean(reasoning && reasoning.trim());
+    const hasTools = Boolean(toolCalls && toolCalls.length > 0);
 
     return (
         <div className="space-y-3 text-sm text-foreground">
             {/* Prompt-Kit Reasoning Thought Process */}
-            {reasoning && (
+            {hasReasoning && (
                 <Reasoning className="border border-border/60 bg-muted/20 rounded-xl overflow-hidden p-2.5">
                     <ReasoningTrigger className="text-xs font-medium text-muted-foreground hover:text-foreground">
                         Thought Process & Reasoning
@@ -177,16 +184,16 @@ export function ChatMessageFormatter({
             )}
 
             {/* Prompt-Kit Steps for Tool Invocations */}
-            {toolCalls && toolCalls.length > 0 && (
+            {hasTools && (
                 <Steps defaultOpen={false} className="border border-border/60 bg-muted/20 rounded-xl overflow-hidden p-2.5">
                     <StepsTrigger
                         leftIcon={<Loader variant="dots" size="sm" className="text-primary" />}
                         className="text-xs font-medium text-muted-foreground hover:text-foreground"
                     >
-                        <span>Executed {toolCalls.length} {toolCalls.length === 1 ? "tool step" : "tool steps"}</span>
+                        <span>Executed {toolCalls!.length} {toolCalls!.length === 1 ? "tool step" : "tool steps"}</span>
                     </StepsTrigger>
                     <StepsContent className="mt-2 space-y-1.5 border-t border-border/40 pt-2">
-                        {toolCalls.map((tool) => (
+                        {toolCalls!.map((tool) => (
                             <StepsItem key={tool.id}>
                                 <Tool
                                     toolPart={{
@@ -205,7 +212,15 @@ export function ChatMessageFormatter({
             )}
 
             {/* Formatted Markdown and Visual Artifacts */}
-            {parsedBlocks}
+            {hasContent ? (
+                parsedBlocks
+            ) : isStreaming && !hasReasoning && !hasTools ? (
+                /* Inline thinking indicator when message is loading before first token */
+                <div className="flex items-center gap-2 py-0.5 text-muted-foreground">
+                    <Loader variant="dots" size="sm" className="text-primary" />
+                    <span className="text-xs font-medium text-muted-foreground/80 animate-pulse">Thinking...</span>
+                </div>
+            ) : null}
 
             {/* Prompt-Kit Verified Sources & Citations */}
             {sources && sources.length > 0 && (

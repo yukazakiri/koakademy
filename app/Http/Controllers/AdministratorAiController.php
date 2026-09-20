@@ -176,16 +176,55 @@ final class AdministratorAiController extends Controller
             $agentInstance = $agent->forUser($user);
         }
 
-        return response()->stream(function () use ($agentInstance, $prompt, $aiAttachments, $selectedProvider, $selectedModel, $agentKey) {
+        return response()->stream(function () use ($agentInstance, $prompt, $aiAttachments, $selectedProvider, $selectedModel, $agentKey, $aiSettings) {
             try {
-                $stream = $agentInstance->stream(
-                    $prompt,
-                    attachments: $aiAttachments,
-                    provider: filled($selectedProvider) ? $selectedProvider : null,
-                    model: filled($selectedModel) ? $selectedModel : null,
-                );
+                $stream = null;
+                $iterator = null;
 
-                foreach ($stream as $event) {
+                try {
+                    $stream = $agentInstance->stream(
+                        $prompt,
+                        attachments: $aiAttachments,
+                        provider: filled($selectedProvider) ? $selectedProvider : null,
+                        model: filled($selectedModel) ? $selectedModel : null,
+                    );
+                    $iterator = $stream->getIterator();
+                    $iterator->rewind();
+                } catch (Throwable $streamInitEx) {
+                    if (! $this->shouldRetryWithFallback($streamInitEx)) {
+                        throw $streamInitEx;
+                    }
+
+                    [$fallbackProvider, $fallbackModel] = $this->resolveFallbackTarget($aiSettings, $selectedProvider, $selectedModel);
+
+                    if (filled($fallbackModel) && ($fallbackModel !== $selectedModel || $fallbackProvider !== $selectedProvider)) {
+                        Log::warning("AI model [{$selectedModel}] on provider [{$selectedProvider}] failed on init. Falling back to [{$fallbackModel}] on provider [{$fallbackProvider}].", [
+                            'agent' => $agentKey,
+                            'failed_provider' => $selectedProvider,
+                            'failed_model' => $selectedModel,
+                            'fallback_provider' => $fallbackProvider,
+                            'fallback_model' => $fallbackModel,
+                            'error' => $streamInitEx->getMessage(),
+                        ]);
+
+                        $selectedProvider = $fallbackProvider;
+                        $selectedModel = $fallbackModel;
+                        $stream = $agentInstance->stream(
+                            $prompt,
+                            attachments: $aiAttachments,
+                            provider: filled($fallbackProvider) ? $fallbackProvider : null,
+                            model: filled($fallbackModel) ? $fallbackModel : null,
+                        );
+                        $iterator = $stream->getIterator();
+                        $iterator->rewind();
+                    } else {
+                        throw $streamInitEx;
+                    }
+                }
+
+                while ($iterator->valid()) {
+                    $event = $iterator->current();
+
                     if ($event instanceof \Laravel\Ai\Streaming\Events\TextDelta) {
                         echo 'data: '.json_encode([
                             'type' => 'text-delta',
@@ -241,6 +280,8 @@ final class AdministratorAiController extends Controller
                         ob_flush();
                     }
                     flush();
+
+                    $iterator->next();
                 }
 
                 echo "data: [DONE]\n\n";
@@ -528,6 +569,67 @@ final class AdministratorAiController extends Controller
         }
 
         return $e->getMessage();
+    }
+
+    private function shouldRetryWithFallback(Throwable $e): bool
+    {
+        $error = mb_strtolower($this->extractErrorMessage($e));
+
+        return str_contains($error, 'model') && (
+            str_contains($error, 'not available')
+            || str_contains($error, 'not found')
+            || str_contains($error, 'unsupported')
+            || str_contains($error, 'does not exist')
+            || str_contains($error, 'invalid model')
+        );
+    }
+
+    /**
+     * Resolve fallback provider and model when a selected provider/model stream fails.
+     *
+     * @param  array<string, mixed>  $aiSettings
+     * @return array{0: string|null, 1: string|null}
+     */
+    private function resolveFallbackTarget(array $aiSettings, ?string $currentProvider, ?string $failedModel): array
+    {
+        $primaryKey = (string) ($aiSettings['primary_provider'] ?? config('ai.default', 'anthropic'));
+        $providerKey = filled($currentProvider) ? $currentProvider : $primaryKey;
+
+        // 1. Try current provider's configured default chat model if different from failed model
+        $providerConfig = $aiSettings['custom_providers'][$providerKey] ?? $aiSettings['providers'][$providerKey] ?? [];
+        $providerDefaultModel = (string) ($providerConfig['default_chat_model'] ?? '');
+
+        if (filled($providerDefaultModel) && $providerDefaultModel !== $failedModel) {
+            return [$providerKey, $providerDefaultModel];
+        }
+
+        // 2. Try configured fallback_provider if failover is enabled and distinct
+        $fallbackKey = (string) ($aiSettings['fallback_provider'] ?? '');
+        $failoverEnabled = (bool) ($aiSettings['failover_enabled'] ?? false);
+
+        if ($failoverEnabled && filled($fallbackKey) && $fallbackKey !== $providerKey) {
+            $fallbackConfig = $aiSettings['custom_providers'][$fallbackKey] ?? $aiSettings['providers'][$fallbackKey] ?? [];
+            $fallbackModel = (string) ($fallbackConfig['default_chat_model'] ?? '');
+            if (filled($fallbackModel)) {
+                return [$fallbackKey, $fallbackModel];
+            }
+        }
+
+        // 3. Try primary provider if different from current
+        if ($providerKey !== $primaryKey) {
+            $primaryConfig = $aiSettings['custom_providers'][$primaryKey] ?? $aiSettings['providers'][$primaryKey] ?? [];
+            $primaryModel = (string) ($primaryConfig['default_chat_model'] ?? '');
+            if (filled($primaryModel)) {
+                return [$primaryKey, $primaryModel];
+            }
+        }
+
+        // 4. Safe fallback for custom / OpenAI-compatible provider
+        if (isset($aiSettings['custom_providers'][$providerKey])) {
+            return [$providerKey, 'auto/best-free'];
+        }
+
+        return [$providerKey, null];
     }
 
     private function resolveAgent(string $key): Agent

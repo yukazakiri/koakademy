@@ -121,6 +121,8 @@ const AGENT_METAS: Record<
     },
 };
 
+const PREFERRED_MODEL_KEY = "koakademy_ai_preferred_model";
+
 export function AiChatSheet({
     defaultAgent = "campus_support",
     trigger,
@@ -153,6 +155,19 @@ export function AiChatSheet({
     const activeMeta = AGENT_METAS[selectedAgent];
     const ActiveIcon = activeMeta.icon;
 
+    const handleModelChange = React.useCallback((id: string) => {
+        setSelectedModel(id);
+        if (typeof window !== "undefined") {
+            try {
+                localStorage.setItem(PREFERRED_MODEL_KEY, id);
+            } catch {
+                // Ignore storage error
+            }
+        }
+        setModelPopoverOpen(false);
+        toast.success(`Active model: ${id}`);
+    }, []);
+
     // Auto-scroll on new message chunks
     React.useEffect(() => {
         if (scrollAreaRef.current) {
@@ -178,8 +193,18 @@ export function AiChatSheet({
                             provider_name: m.provider_name,
                         }));
                         setAvailableModels(mapped);
-                        if (!selectedModel) {
-                            setSelectedModel(mapped[0].id);
+
+                        const saved = typeof window !== "undefined" ? localStorage.getItem(PREFERRED_MODEL_KEY) : null;
+                        if (saved && mapped.some((m) => m.id === saved)) {
+                            setSelectedModel(saved);
+                        } else if (!selectedModel) {
+                            const recommended =
+                                mapped.find(
+                                    (m) =>
+                                        (m.badge?.includes("Default") || m.badge?.includes("Recommended") || m.id.includes("best-free") || m.id.includes("best-chat")) &&
+                                        !m.id.includes("claude-opus-4-6-thinking-high")
+                                ) || mapped[0];
+                            setSelectedModel(recommended.id);
                         }
                     }
                 })
@@ -314,45 +339,49 @@ export function AiChatSheet({
                         messages.map((msg) => {
                             const isUser = msg.role === "user";
                             return (
-                                <Message
+                                <div
                                     key={msg.id}
-                                    className={cn("gap-2.5 text-xs", isUser ? "justify-end flex-row-reverse" : "justify-start")}
+                                    className={cn(
+                                        "flex items-start gap-2.5 w-full text-xs animate-in fade-in-50 duration-150",
+                                        isUser ? "justify-end" : "justify-start"
+                                    )}
                                 >
-                                    {!isUser ? (
-                                        <div className="size-7 rounded-full border bg-muted flex items-center justify-center shrink-0 mt-0.5">
-                                            <Bot className="size-3.5 text-primary" />
-                                        </div>
-                                    ) : (
-                                        <div className="size-7 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 mt-0.5">
-                                            <User className="size-3.5 text-primary" />
+                                    {!isUser && (
+                                        <div className="size-7 rounded-xl border bg-primary/10 border-primary/20 text-primary flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                                            <Bot className="size-3.5" />
                                         </div>
                                     )}
 
-                                    <div className="flex flex-col gap-1 max-w-[85%]">
-                                        <MessageContent
+                                    <div
+                                        className={cn(
+                                            "flex flex-col gap-1 max-w-[85%]",
+                                            isUser ? "items-end" : "items-start"
+                                        )}
+                                    >
+                                        {/* Render user attachments */}
+                                        {msg.attachments && msg.attachments.length > 0 && (
+                                            <div className={cn("flex flex-wrap gap-1.5 pb-1", isUser ? "justify-end" : "justify-start")}>
+                                                {msg.attachments.map((att, i) => (
+                                                    <div
+                                                        key={i}
+                                                        className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted border border-border/60 text-[11px] font-mono shadow-2xs"
+                                                    >
+                                                        <Paperclip className="size-3 text-muted-foreground" />
+                                                        <span className="truncate max-w-[150px] text-foreground">{att.name}</span>
+                                                        <span className="text-[10px] text-muted-foreground">({Math.round(att.size / 1024)} KB)</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        <div
                                             className={cn(
-                                                "rounded-2xl px-3.5 py-2.5 space-y-2 prose-none",
+                                                "px-4 py-2.5 rounded-2xl text-sm leading-relaxed transition-all",
                                                 isUser
-                                                    ? "bg-primary text-primary-foreground rounded-tr-sm"
-                                                    : "bg-muted/40 border border-border/60 rounded-tl-sm text-foreground"
+                                                    ? "bg-primary text-primary-foreground rounded-tr-xs shadow-xs font-sans text-left"
+                                                    : "bg-muted/50 border border-border/70 rounded-tl-xs text-foreground shadow-2xs space-y-2"
                                             )}
                                         >
-                                            {/* Render user attachments */}
-                                            {msg.attachments && msg.attachments.length > 0 && (
-                                                <div className="flex flex-wrap gap-1.5 pb-1">
-                                                    {msg.attachments.map((att, i) => (
-                                                        <div
-                                                            key={i}
-                                                            className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary-foreground/15 text-[11px] font-mono"
-                                                        >
-                                                            <Paperclip className="size-3" />
-                                                            <span className="truncate max-w-[150px]">{att.name}</span>
-                                                            <span className="opacity-70">({Math.round(att.size / 1024)} KB)</span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-
                                             {isUser ? (
                                                 <p className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</p>
                                             ) : (
@@ -373,9 +402,15 @@ export function AiChatSheet({
                                                     disabled={isLoading}
                                                 />
                                             ))}
-                                        </MessageContent>
+                                        </div>
                                     </div>
-                                </Message>
+
+                                    {isUser && (
+                                        <div className="size-7 rounded-xl bg-primary/15 border border-primary/25 text-primary flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                                            <User className="size-3.5" />
+                                        </div>
+                                    )}
+                                </div>
                             );
                         })
                     )}
@@ -482,23 +517,19 @@ export function AiChatSheet({
                                                     <ChevronDown className="size-3 text-muted-foreground" />
                                                 </button>
                                             </PopoverTrigger>
-                                            <PopoverContent className="w-[360px] p-3 shadow-2xl rounded-2xl border border-border/80 bg-background" align="start">
+                                            <PopoverContent className="w-[380px] sm:w-[420px] p-3.5 shadow-2xl rounded-2xl border border-border/80 bg-background" align="start">
                                                 <div className="space-y-2">
                                                     <div className="flex items-center justify-between pb-1.5 border-b">
                                                         <span className="text-xs font-semibold text-foreground">Configured AI Models</span>
                                                         <span className="text-[10.5px] text-muted-foreground font-mono">
-                                                            {availableModels.length} available
+                                                            {availableModels.length} models
                                                         </span>
                                                     </div>
 
                                                     <ModelSelector
                                                         models={availableModels}
                                                         value={selectedModel}
-                                                        onChange={(id) => {
-                                                            setSelectedModel(id);
-                                                            setModelPopoverOpen(false);
-                                                            toast.success(`Active model: ${id}`);
-                                                        }}
+                                                        onChange={handleModelChange}
                                                         variant="List"
                                                         searchable={true}
                                                     />

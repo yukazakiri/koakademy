@@ -249,17 +249,20 @@ final class AdministratorAiController extends Controller
                 }
                 flush();
             } catch (Throwable $e) {
+                $rawError = $this->extractErrorMessage($e);
+
                 Log::error('Administrative AI Streaming Exception', [
                     'agent' => $agentKey,
                     'provider' => $selectedProvider ?? config('ai.default'),
                     'model' => $selectedModel,
-                    'message' => $e->getMessage(),
+                    'message' => $rawError,
+                    'original_message' => $e->getMessage(),
                     'trace' => $e->getTraceAsString(),
                 ]);
 
                 $providerName = (string) ($selectedProvider ?? config('ai.default', 'anthropic'));
                 $modelName = (string) ($selectedModel ?? 'default');
-                $errorMessage = "Error from [{$providerName}]: {$e->getMessage()}";
+                $errorMessage = "Error from [{$providerName}]: {$rawError}";
 
                 echo 'data: '.json_encode([
                     'type' => 'error',
@@ -460,6 +463,31 @@ final class AdministratorAiController extends Controller
             }
         }
 
+        // Sort models: primary provider first, default/recommended at the top, then auto-routing models
+        usort($modelOptions, function (array $a, array $b) use ($primaryKey): int {
+            $aIsPrimary = ($a['provider'] ?? '') === $primaryKey;
+            $bIsPrimary = ($b['provider'] ?? '') === $primaryKey;
+            if ($aIsPrimary !== $bIsPrimary) {
+                return $aIsPrimary ? -1 : 1;
+            }
+
+            $aBadge = (string) ($a['badge'] ?? '');
+            $bBadge = (string) ($b['badge'] ?? '');
+            $aPriority = str_contains($aBadge, 'Default') ? 0 : (str_contains($aBadge, 'Recommended') ? 1 : 2);
+            $bPriority = str_contains($bBadge, 'Default') ? 0 : (str_contains($bBadge, 'Recommended') ? 1 : 2);
+            if ($aPriority !== $bPriority) {
+                return $aPriority <=> $bPriority;
+            }
+
+            $aIsAuto = str_contains((string) ($a['name'] ?? ''), 'auto/');
+            $bIsAuto = str_contains((string) ($b['name'] ?? ''), 'auto/');
+            if ($aIsAuto !== $bIsAuto) {
+                return $aIsAuto ? -1 : 1;
+            }
+
+            return strnatcasecmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
+        });
+
         return response()->json([
             'academic_period' => "{$schoolYear} - {$semester}",
             'kpis' => [
@@ -477,6 +505,29 @@ final class AdministratorAiController extends Controller
             'models' => $modelOptions,
             'primary_provider' => $primaryKey,
         ]);
+    }
+
+    private function extractErrorMessage(Throwable $e): string
+    {
+        $current = $e;
+        while ($current !== null) {
+            if ($current instanceof \Illuminate\Http\Client\RequestException && $current->response !== null) {
+                $json = $current->response->json();
+                if (is_array($json)) {
+                    $msg = $json['error']['message'] ?? $json['error'] ?? $json['message'] ?? null;
+                    if (is_string($msg) && filled($msg)) {
+                        return $msg;
+                    }
+                }
+                $body = mb_trim($current->response->body());
+                if (filled($body) && ! str_starts_with($body, '<!DOCTYPE') && ! str_starts_with($body, '<html')) {
+                    return mb_strimwidth($body, 0, 300, '...');
+                }
+            }
+            $current = $current->getPrevious();
+        }
+
+        return $e->getMessage();
     }
 
     private function resolveAgent(string $key): Agent

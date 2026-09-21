@@ -76,19 +76,53 @@ export function DocumentDownloadCard({
 
                 toast.success(`Downloaded "${document.filename || document.title}"`);
             } else if (document.content) {
-                // Client-side fallback if cache expired but content is in payload
-                const mimeType = document.format === "csv" ? "text/csv;charset=utf-8;" : "text/markdown;charset=utf-8;";
-                const blob = new Blob([document.content], { type: mimeType });
-                const blobUrl = URL.createObjectURL(blob);
-                const a = window.document.createElement("a");
-                a.href = blobUrl;
-                a.download = document.filename;
-                window.document.body.appendChild(a);
-                a.click();
-                window.document.body.removeChild(a);
-                URL.revokeObjectURL(blobUrl);
+                // If direct cache expired, fallback to instant export endpoint
+                const exportUrl = downloadEndpoint.includes("/administrators")
+                    ? "/administrators/ai/export-document"
+                    : "/ai/export-document";
 
-                toast.success(`Exported "${document.filename}"`);
+                const exportResponse = await fetch(exportUrl, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-Requested-With": "XMLHttpRequest",
+                        "X-CSRF-TOKEN":
+                            (window.document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || "",
+                    },
+                    body: JSON.stringify({
+                        title: document.title || "Administrative_Report",
+                        format: document.format || "pdf",
+                        content: document.content,
+                    }),
+                });
+
+                if (exportResponse.ok) {
+                    const blob = await exportResponse.blob();
+                    const blobUrl = window.URL.createObjectURL(blob);
+                    const a = window.document.createElement("a");
+                    a.href = blobUrl;
+                    a.download = document.filename || `${document.title}.${document.format || "pdf"}`;
+                    window.document.body.appendChild(a);
+                    a.click();
+                    window.document.body.removeChild(a);
+                    window.URL.revokeObjectURL(blobUrl);
+
+                    toast.success(`Downloaded "${document.filename || document.title}"`);
+                } else {
+                    // Fallback to text file for csv/markdown if server export fails
+                    const mimeType = document.format === "csv" ? "text/csv;charset=utf-8;" : "text/markdown;charset=utf-8;";
+                    const blob = new Blob([document.content], { type: mimeType });
+                    const blobUrl = URL.createObjectURL(blob);
+                    const a = window.document.createElement("a");
+                    a.href = blobUrl;
+                    a.download = document.filename || `${document.title}.txt`;
+                    window.document.body.appendChild(a);
+                    a.click();
+                    window.document.body.removeChild(a);
+                    URL.revokeObjectURL(blobUrl);
+
+                    toast.success(`Exported "${document.filename || document.title}"`);
+                }
             } else {
                 throw new Error("Unable to download document.");
             }

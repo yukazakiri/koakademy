@@ -105,6 +105,7 @@ export default defineConfig({
                     collapsed: true,
                     items: [
                         { slug: "api/api-overview", label: "Overview" },
+                        { slug: "api/mcp", label: "Model Context Protocol (MCP)" },
                         { slug: "api/developer-api", label: "Settings API" },
                         { slug: "api/student-verification-api", label: "Verification API" },
                     ],

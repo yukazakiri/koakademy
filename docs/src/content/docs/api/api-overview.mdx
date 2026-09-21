@@ -12,6 +12,7 @@ KoAkademy's API is beta. Only the routes listed here are a documented integratio
 | Optional feature, public | `GET /api/v1/public/settings` | Selected public website settings |
 | Laravel Sanctum | `GET /api/settings` and settings routes | Read and manage general settings |
 | Laravel Sanctum | `POST /api/students/verify` | Match a student ID and email |
+| Laravel Sanctum (`mcp:*`) | `POST /mcp/koakademy` | Model Context Protocol (MCP) server for AI agents |
 
 Routes that exist in the application but are not listed here are internal and may change without a public compatibility guarantee. In particular, KoAkademy does not publish a student CRUD API contract.
 
@@ -42,4 +43,4 @@ Requests and responses use JSON and normal HTTP status codes. Callers must handl
 
 Field-level compatibility is limited to examples covered by endpoint tests. Pin the latest stable KoAkademy version and verify integrations in staging before upgrades.
 
-Continue with [Authenticated settings](./developer-api/) or [Student verification](./student-verification-api/).
+Continue with [Model Context Protocol (MCP)](./mcp/), [Authenticated settings](./developer-api/), or [Student verification](./student-verification-api/).

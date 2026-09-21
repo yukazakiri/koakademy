@@ -612,7 +612,9 @@ final class GeneralSettingsService
      * @return array{
      *     public_api_enabled: bool,
      *     public_settings_enabled: bool,
-     *     public_settings_fields: list<string>
+     *     public_settings_fields: list<string>,
+     *     mcp_enabled: bool,
+     *     mcp_write_enabled: bool
      * }
      */
     public function getApiManagementConfig(): array
@@ -627,11 +629,15 @@ final class GeneralSettingsService
             'public_api_enabled' => true,
             'public_settings_enabled' => true,
             'public_settings_fields' => self::DEFAULT_PUBLIC_API_FIELDS,
+            'mcp_enabled' => (bool) config('api.mcp.enabled', true),
+            'mcp_write_enabled' => true,
         ], is_array($savedConfig) ? $savedConfig : []);
 
         $config['public_api_enabled'] = (bool) ($config['public_api_enabled'] ?? true);
         $config['public_settings_enabled'] = (bool) ($config['public_settings_enabled'] ?? true);
         $config['public_settings_fields'] = $this->sanitizePublicApiFields($config['public_settings_fields'] ?? []);
+        $config['mcp_enabled'] = (bool) ($config['mcp_enabled'] ?? config('api.mcp.enabled', true));
+        $config['mcp_write_enabled'] = (bool) ($config['mcp_write_enabled'] ?? true);
 
         return $config;
     }
@@ -641,7 +647,9 @@ final class GeneralSettingsService
      * @return array{
      *     public_api_enabled: bool,
      *     public_settings_enabled: bool,
-     *     public_settings_fields: list<string>
+     *     public_settings_fields: list<string>,
+     *     mcp_enabled: bool,
+     *     mcp_write_enabled: bool
      * }
      */
     public function updateApiManagementConfig(array $attributes): array
@@ -656,10 +664,18 @@ final class GeneralSettingsService
             $this->generalSetting = $settings;
         }
 
+        $existing = $this->getApiManagementConfig();
+
         $config = [
             'public_api_enabled' => (bool) ($attributes['public_api_enabled'] ?? true),
             'public_settings_enabled' => (bool) ($attributes['public_settings_enabled'] ?? true),
             'public_settings_fields' => $this->sanitizePublicApiFields($attributes['public_settings_fields'] ?? []),
+            'mcp_enabled' => array_key_exists('mcp_enabled', $attributes)
+                ? (bool) $attributes['mcp_enabled']
+                : (bool) ($existing['mcp_enabled'] ?? true),
+            'mcp_write_enabled' => array_key_exists('mcp_write_enabled', $attributes)
+                ? (bool) $attributes['mcp_write_enabled']
+                : (bool) ($existing['mcp_write_enabled'] ?? true),
         ];
 
         $moreConfigs = is_array($settings->more_configs) ? $settings->more_configs : [];
@@ -672,6 +688,24 @@ final class GeneralSettingsService
         $this->generalSetting = $settings->fresh();
 
         return $this->getApiManagementConfig();
+    }
+
+    public function isMcpEnabled(): bool
+    {
+        if (! config('api.mcp.enabled', true)) {
+            return false;
+        }
+
+        return (bool) ($this->getApiManagementConfig()['mcp_enabled'] ?? true);
+    }
+
+    public function isMcpWriteEnabled(): bool
+    {
+        if (! $this->isMcpEnabled()) {
+            return false;
+        }
+
+        return (bool) ($this->getApiManagementConfig()['mcp_write_enabled'] ?? true);
     }
 
     /**

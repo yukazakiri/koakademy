@@ -1,0 +1,291 @@
+---
+title: Model Context Protocol (MCP) Server
+description: Expose authorized KoAkademy student, academic, enrollment, and administrative tools to internal AI agents using the standard Model Context Protocol.
+---
+
+# Model Context Protocol (MCP) Server
+
+KoAkademy provides an authenticated **Model Context Protocol (MCP)** HTTP server that enables AI agents (such as OpenCode, Claude Desktop, Cursor, or custom assistants) to query and modify school administration data safely.
+
+Every tool invocation runs under the authenticated user's account, enforces tenant school scoping, and honors fine-grained application permissions.
+
+## Endpoint & Transport
+
+KoAkademy implements the MCP specification (`2025-11-25`) over HTTP transport using JSON-RPC 2.0.
+
+```text
+POST /mcp/koakademy
+```
+
+### Request Headers
+
+| Header | Description | Required |
+| --- | --- | --- |
+| `Authorization` | `Bearer <sanctum_personal_access_token>` | **Yes** |
+| `Content-Type` | `application/json` | **Yes** |
+| `Accept` | `application/json` | **Yes** |
+| `X-KoAkademy-School` | ID of the school to scope operations to | Optional (defaults to caller's primary school) |
+
+### Rate Limiting
+
+The MCP endpoint is rate-limited by default to **30 requests per minute** per user or IP address (`throttle:mcp`). This can be customized via the `MCP_RATE_LIMIT` environment variable in `config/api.php`.
+
+---
+
+## Authentication & Token Abilities
+
+MCP requests require personal access tokens issued via Laravel Sanctum from the user's **Profile / Accounts & Security** settings under **Developer API & MCP Keys**.
+
+### Dedicated MCP Abilities
+
+| Token Ability | Scope | Capabilities |
+| --- | --- | --- |
+| `mcp:read` | Read-only | Allows AI agents to execute read-only tools (`get_my_context`, `search_students`, `get_student_schedule`, `get_enrollment_status`, etc.). |
+| `mcp:write` | Mutating | Allows AI agents to execute write operations (`verify_enrollment_requirement`, `advance_enrollment_step`, `update_enrollment_remarks`). Requires `mcp:read`. |
+
+A token with `mcp:write` alone without `mcp:read` is automatically rejected.
+
+### Administrative Gating
+
+1. **User Role Gating:** Only staff and administrative accounts (e.g. instructors, professors, department heads, registrars, cashiers, and administrators) with Developer Mode enabled can issue MCP keys. Students are restricted to standard API tokens.
+2. **Global MCP Switch:** Administrators can disable the MCP server entirely via **Settings -> API & Integrations -> Model Context Protocol (MCP)** or via `MCP_ENABLED=false` in `.env`.
+3. **Global Mutation Switch:** Administrators can allow or disallow mutating tools globally (`mcp_write_enabled`). When disabled, write tools return an actionable error without executing changes.
+4. **Tool-Level RBAC:** Even with an `mcp:write` token, an agent cannot perform actions that the issuing staff account does not have permission to execute (e.g., verifying requirements requires `Update:StudentEnrollment`; viewing billing requires `View:Cashier` or `view_tuition_fees`).
+
+---
+
+## Tool Catalog
+
+KoAkademy registers 14 core tools across five domain categories.
+
+### 1. Context & School Overview
+
+#### `get_my_context`
+* **Access:** Read-only (`mcp:read`)
+* **Description:** Returns the authenticated caller's identity, active school, current academic period, and available curriculum capabilities. Agents should invoke this tool first.
+* **Arguments:** None
+* **Sample Response:**
+  ```json
+  {
+    "user": { "id": 14, "name": "Maria Santos", "role": "registrar" },
+    "school": { "id": 1, "name": "School of Computer Studies", "code": "SCS" },
+    "academic_period": { "school_year": "2026 - 2027", "semester": 1 },
+    "mcp": { "token_name": "OpenCode Assistant", "can_write": true }
+  }
+  ```
+
+#### `get_school_details`
+* **Access:** Read-only (`mcp:read`)
+* **Description:** Retrieves organization metadata for the active school, including contact info, dean details, curriculum frameworks, and active departments.
+* **Arguments:** None
+
+#### `get_school_metrics`
+* **Access:** Read-only (`mcp:read`) · **Restricted to Administrators**
+* **Description:** Returns operational KPI statistics for the current academic period (total students, enrolled count, applicants, graduated students, active classes, and total faculty).
+* **Arguments:** None
+* **Sample Response:**
+  ```json
+  {
+    "metrics": {
+      "total_students": 1420,
+      "enrolled_students": 1180,
+      "applicants": 185,
+      "graduated_students": 55,
+      "enrolled_this_period": 1120,
+      "pending_enrollments": 48,
+      "active_classes": 164,
+      "total_faculty": 62
+    }
+  }
+  ```
+
+---
+
+### 2. Student & Faculty Directory
+
+#### `search_students`
+* **Access:** Read-only (`mcp:read`) · **Requires `ViewAny:Student`**
+* **Description:** Searches students in the active school by name, student number, or email. Results are bounded and omit sensitive personal data.
+* **Arguments:**
+  * `query` (string, required, 2-100 chars): Search term.
+  * `limit` (integer, optional, 1-25, default: 10): Maximum results.
+
+#### `get_student_schedule`
+* **Access:** Read-only (`mcp:read`) · **Requires `View:Student`**
+* **Description:** Retrieves a student's active class enrollments, meeting days, room assignments, instructor names, and any detected schedule time overlaps.
+* **Arguments:**
+  * `student_id` (integer, required): Internal ID returned by `search_students`.
+
+#### `search_faculty`
+* **Access:** Read-only (`mcp:read`) · **Requires `ViewAny:Faculty`**
+* **Description:** Searches faculty members in the active school by name, department, or faculty ID number.
+* **Arguments:**
+  * `query` (string, required, 2-100 chars): Search term.
+  * `limit` (integer, optional, 1-25, default: 10): Maximum results.
+
+---
+
+### 3. Academic Offerings
+
+#### `list_academic_offerings`
+* **Access:** Read-only (`mcp:read`) · **Requires `ViewAny:Course` and `ViewAny:Classes`**
+* **Description:** Lists active academic programs and scheduled classes with section codes, faculty assignments, rooms, and enrolled capacity for the specified academic period.
+* **Arguments:**
+  * `school_year` (string, optional): e.g. `"2026 - 2027"`. Defaults to current period.
+  * `semester` (integer, optional, `1` or `2`): Defaults to current period.
+  * `limit` (integer, optional, 1-50, default: 25): Result cap per collection.
+
+---
+
+### 4. Enrollment Management & Audit
+
+#### `get_enrollment_status`
+* **Access:** Read-only (`mcp:read`) · **Requires `View:StudentEnrollment`**
+* **Description:** Retrieves detailed workflow state, academic period, program, and all checklist requirements (pending, verified, or waived) for an enrollment record.
+* **Arguments:**
+  * `enrollment_id` (integer, required): Enrollment record ID.
+
+#### `list_pending_enrollments`
+* **Access:** Read-only (`mcp:read`) · **Restricted to Administrators · Requires `ViewAny:StudentEnrollment`**
+* **Description:** Lists enrollments currently awaiting administrative review, departmental verification, or cashier approval.
+* **Arguments:**
+  * `status` (string, optional): Filter by status (e.g. `"submitted"`, `"department_verification"`). Omit to list all incomplete enrollments.
+  * `course_id` (integer, optional): Filter by program.
+  * `limit` (integer, optional, 1-50, default: 20): Result cap.
+
+#### `get_enrollment_audit_trail`
+* **Access:** Read-only (`mcp:read`) · **Requires `View:StudentEnrollment`**
+* **Description:** Returns the complete historical timeline of workflow events, state transitions, requirement verifications, and waivers with actor details and audit reasons.
+* **Arguments:**
+  * `enrollment_id` (integer, required): Enrollment record ID.
+  * `limit` (integer, optional, 1-50, default: 25): Event count.
+
+#### `advance_enrollment_step`
+* **Access:** Mutation (`mcp:write`) · **Restricted to Administrators · Requires `Update:StudentEnrollment`**
+* **Description:** Advances an enrollment to its next workflow step or executes an explicit policy transition.
+* **Arguments:**
+  * `enrollment_id` (integer, required): Enrollment record ID.
+  * `transition_key` (string, optional): Target transition identifier for policy-based workflows.
+  * `reason` (string, optional, max 1000 chars): Audit reason for the transition.
+  * `idempotency_key` (string, required, 1-96 chars): Client-supplied unique token to guarantee safe retries.
+
+#### `verify_enrollment_requirement`
+* **Access:** Mutation (`mcp:write`) · **Requires `Update:StudentEnrollment`**
+* **Description:** Marks a pending document or enrollment requirement as verified. Waived requirements cannot be verified.
+* **Arguments:**
+  * `requirement_id` (integer, required): Enrollment requirement ID from `get_enrollment_status`.
+  * `idempotency_key` (string, required, 1-96 chars): Client-supplied unique token to guarantee safe retries.
+
+#### `update_enrollment_remarks`
+* **Access:** Mutation (`mcp:write`) · **Requires `Update:StudentEnrollment`**
+* **Description:** Updates administrative notes or registrar remarks on an enrollment record.
+* **Arguments:**
+  * `enrollment_id` (integer, required): Enrollment record ID.
+  * `remarks` (string, required, max 2000 chars): Updated remarks text.
+
+---
+
+### 5. Billing & Finance
+
+#### `get_statement_of_account`
+* **Access:** Read-only (`mcp:read`) · **Requires `View:Cashier` or `view_tuition_fees`**
+* **Description:** Calculates the verified statement of account for an enrollment, including base tuition, laboratory fees, miscellaneous fees, applied discounts, verified payments, and remaining balance due.
+* **Arguments:**
+  * `enrollment_id` (integer, required): Enrollment record ID.
+
+---
+
+## Client Configuration Guides
+
+### 1. OpenCode
+
+Add the server to your OpenCode configuration (e.g. `opencode.json` or `.opencode/settings.json`):
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "koakademy": {
+        "url": "https://your-school.edu/mcp/koakademy",
+        "headers": {
+          "Authorization": "Bearer 3|xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "X-KoAkademy-School": "1"
+        }
+      }
+    }
+  }
+}
+```
+
+### 2. Claude Desktop
+
+In `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "koakademy": {
+      "url": "https://your-school.edu/mcp/koakademy",
+      "headers": {
+        "Authorization": "Bearer YOUR_SANCTUM_TOKEN",
+        "X-KoAkademy-School": "1"
+      }
+    }
+  }
+}
+```
+
+### 3. Cursor
+
+In `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "koakademy": {
+      "url": "https://your-school.edu/mcp/koakademy",
+      "headers": {
+        "Authorization": "Bearer YOUR_SANCTUM_TOKEN"
+      }
+    }
+  }
+}
+```
+
+### 4. Direct HTTP / cURL Example
+
+To list available tools:
+
+```bash
+curl -X POST https://your-school.edu/mcp/koakademy \
+  -H "Authorization: Bearer YOUR_SANCTUM_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -H "X-KoAkademy-School: 1" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/list",
+    "params": {}
+  }'
+```
+
+To call a tool:
+
+```bash
+curl -X POST https://your-school.edu/mcp/koakademy \
+  -H "Authorization: Bearer YOUR_SANCTUM_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "tools/call",
+    "params": {
+      "name": "search_students",
+      "arguments": {
+        "query": "Maria"
+      }
+    }
+  }'
+```

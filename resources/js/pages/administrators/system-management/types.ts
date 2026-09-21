@@ -451,6 +451,8 @@ export interface ApiManagementConfig {
     public_api_enabled: boolean;
     public_settings_enabled: boolean;
     public_settings_fields: string[];
+    mcp_enabled?: boolean;
+    mcp_write_enabled?: boolean;
 }
 
 export interface IdSequenceConfig {
@@ -536,6 +538,7 @@ export interface SystemManagementPageProps {
     courses_with_subjects: CourseWithSubjects[];
     available_enrollment_courses?: EnrollmentCourseOption[];
     public_api_url: string;
+    mcp_server_url?: string;
     public_api_fields: Record<string, PublicApiFieldDefinition>;
     available_roles: string[];
     notification_channels: NotificationChannelConfig;

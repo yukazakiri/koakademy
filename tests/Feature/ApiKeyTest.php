@@ -246,4 +246,61 @@ describe('API Keys - Admin Portal', function (): void {
         $response->assertSuccessful();
         expect($this->user->tokens)->toHaveCount(0);
     });
+
+    it('can create mcp read and write api keys with developer mode enabled', function (): void {
+        config(['onboarding.experimental_feature_keys' => ['onboarding-admin-developer-mode']]);
+        config(['onboarding.experimental_features_roles' => ['onboarding-admin-developer-mode' => ['admin']]]);
+
+        Feature::for($this->user)->activate(AdminDeveloperMode::class);
+
+        $response = $this
+            ->actingAs($this->user)
+            ->postJson(route('administrators.settings.api-keys.store'), [
+                'name' => 'MCP Admin Key',
+                'abilities' => ['mcp:read', 'mcp:write'],
+            ]);
+
+        $response->assertStatus(201);
+        expect($this->user->tokens)->toHaveCount(1);
+        expect($this->user->tokens->first()->abilities)->toBe(['mcp:read', 'mcp:write']);
+    });
+
+    it('rejects mcp:write without mcp:read', function (): void {
+        config(['onboarding.experimental_feature_keys' => ['onboarding-admin-developer-mode']]);
+        config(['onboarding.experimental_features_roles' => ['onboarding-admin-developer-mode' => ['admin']]]);
+
+        Feature::for($this->user)->activate(AdminDeveloperMode::class);
+
+        $response = $this
+            ->actingAs($this->user)
+            ->postJson(route('administrators.settings.api-keys.store'), [
+                'name' => 'Invalid MCP Key',
+                'abilities' => ['mcp:write'],
+            ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['abilities']);
+    });
+
+    it('prevents students from creating mcp keys', function (): void {
+        $student = User::factory()->create([
+            'role' => UserRole::Student,
+            'email' => 'student-mcp@example.com',
+        ]);
+
+        config(['onboarding.experimental_feature_keys' => ['onboarding-student-developer-mode']]);
+        config(['onboarding.experimental_features_roles' => ['onboarding-student-developer-mode' => ['student']]]);
+
+        Feature::for($student)->activate(StudentDeveloperMode::class);
+
+        $response = $this
+            ->actingAs($student)
+            ->postJson(route('student.api-keys.store'), [
+                'name' => 'Student MCP Key Attempt',
+                'abilities' => ['mcp:read'],
+            ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['abilities']);
+    });
 });

@@ -29,6 +29,8 @@ final class UpdateApiManagementRequest extends FormRequest
                 'string',
                 Rule::in(array_keys(GeneralSettingsService::publicApiFieldDefinitions())),
             ],
+            'mcp_enabled' => ['sometimes', 'boolean'],
+            'mcp_write_enabled' => ['sometimes', 'boolean'],
             'site_name' => ['nullable', 'string', 'max:255'],
             'site_description' => ['nullable', 'string'],
             'theme_color' => ['nullable', 'string', 'max:50'],

@@ -16,4 +16,12 @@ return [
         'read' => 'mobile:read',
         'write' => 'mobile:write',
     ],
+    'mcp' => [
+        'enabled' => (bool) env('MCP_ENABLED', true),
+        'rate_limit' => (int) env('MCP_RATE_LIMIT', 30),
+        'abilities' => [
+            'read' => 'mcp:read',
+            'write' => 'mcp:write',
+        ],
+    ],
 ];

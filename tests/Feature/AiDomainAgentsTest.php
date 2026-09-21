@@ -435,6 +435,20 @@ it('generates downloadable administrative documents and stores them in cache', f
 
     // Assert it is stored in cache
     expect(Illuminate\Support\Facades\Cache::has("ai:doc:{$data['document_id']}"))->toBeTrue();
+
+    // Tolerates uppercase format, custom category, and content alias
+    $flexibleResult = $tool->handle(new Request([
+        'title' => 'Formal PDF Memo',
+        'format' => 'PDF',
+        'document_category' => 'formal_pdf_memo',
+        'content' => "# Policy Directives\nAcademic period alignment complete.",
+    ]));
+    $flexibleData = json_decode((string) $flexibleResult, true);
+
+    expect($flexibleData['_type'])->toBe('document_artifact')
+        ->and($flexibleData['format'])->toBe('pdf')
+        ->and($flexibleData['filename'])->toBe('Formal_PDF_Memo.pdf')
+        ->and($flexibleData)->toHaveKey('document_id');
 });
 
 it('allows admin to stream chat, fetch KPI summaries, and download documents via AdministratorAiController', function (): void {

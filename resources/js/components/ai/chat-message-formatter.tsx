@@ -12,8 +12,11 @@ import {
     StepsTrigger,
     Tool,
 } from "@/components/prompt-kit";
+import { Button } from "@/components/ui/button";
 import { Response } from "@/components/ui/response";
+import { Download, FileText, Loader2 } from "lucide-react";
 import * as React from "react";
+import { toast } from "sonner";
 import { AnalyticsChartRenderer, ChartArtifact } from "./analytics-chart-renderer";
 import { DocumentArtifact, DocumentDownloadCard } from "./document-download-card";
 import type { CitationSource, ToolInvocation } from "./use-ai-chat";
@@ -44,10 +47,14 @@ export function ChatMessageFormatter({
     isStreaming = false,
 }: ChatMessageFormatterProps) {
     const trimmedContent = (content || "").trim();
+    const [exportingPdf, setExportingPdf] = React.useState(false);
 
-    const parsedBlocks = React.useMemo(() => {
+    const { blocks: parsedBlocks, renderedDocIds, renderedChartKeys } = React.useMemo(() => {
+        const docIds = new Set<string>();
+        const chartKeys = new Set<string>();
+
         if (!trimmedContent) {
-            return [];
+            return { blocks: [], renderedDocIds: docIds, renderedChartKeys: chartKeys };
         }
 
         const blocks: React.ReactNode[] = [];
@@ -81,6 +88,8 @@ export function ChatMessageFormatter({
                 const parsed = JSON.parse(body);
 
                 if (explicitType === "chart" || parsed._type === "chart_artifact" || parsed.chart_type) {
+                    const key = parsed.title || parsed.chart_type || `chart_${blockStart}`;
+                    chartKeys.add(key);
                     blocks.push(
                         <AnalyticsChartRenderer
                             key={`chart_${blockStart}`}
@@ -89,6 +98,9 @@ export function ChatMessageFormatter({
                     );
                     handled = true;
                 } else if (explicitType === "document" || parsed._type === "document_artifact" || parsed.document_id) {
+                    if (parsed.document_id) {
+                        docIds.add(parsed.document_id);
+                    }
                     blocks.push(
                         <DocumentDownloadCard
                             key={`doc_${blockStart}`}
@@ -121,12 +133,17 @@ export function ChatMessageFormatter({
                     try {
                         const parsed = JSON.parse(tail);
                         if (parsed._type === "chart_artifact" || parsed.chart_type) {
+                            const key = parsed.title || parsed.chart_type || `chart_tail_${lastIndex}`;
+                            chartKeys.add(key);
                             blocks.push(<AnalyticsChartRenderer key={`chart_tail_${lastIndex}`} chart={parsed} />);
-                            return blocks;
+                            return { blocks, renderedDocIds: docIds, renderedChartKeys: chartKeys };
                         }
                         if (parsed._type === "document_artifact" || parsed.document_id) {
+                            if (parsed.document_id) {
+                                docIds.add(parsed.document_id);
+                            }
                             blocks.push(<DocumentDownloadCard key={`doc_tail_${lastIndex}`} document={parsed} />);
-                            return blocks;
+                            return { blocks, renderedDocIds: docIds, renderedChartKeys: chartKeys };
                         }
                     } catch {
                         // Fallback to text
@@ -146,24 +163,160 @@ export function ChatMessageFormatter({
             try {
                 const parsed = JSON.parse(trimmedContent);
                 if (parsed._type === "chart_artifact" || parsed.chart_type) {
-                    return [<AnalyticsChartRenderer key="single_chart" chart={parsed} />];
+                    const key = parsed.title || parsed.chart_type || "single_chart";
+                    chartKeys.add(key);
+                    return {
+                        blocks: [<AnalyticsChartRenderer key="single_chart" chart={parsed} />],
+                        renderedDocIds: docIds,
+                        renderedChartKeys: chartKeys,
+                    };
                 }
                 if (parsed._type === "document_artifact" || parsed.document_id) {
-                    return [<DocumentDownloadCard key="single_doc" document={parsed} />];
+                    if (parsed.document_id) {
+                        docIds.add(parsed.document_id);
+                    }
+                    return {
+                        blocks: [<DocumentDownloadCard key="single_doc" document={parsed} />],
+                        renderedDocIds: docIds,
+                        renderedChartKeys: chartKeys,
+                    };
                 }
             } catch {
                 // Fallback to text
             }
         }
 
-        return blocks.length > 0
+        const finalBlocks = blocks.length > 0
             ? blocks
             : [
                   <Response key="root_content" className="leading-relaxed text-sm">
                       {content}
                   </Response>,
               ];
+
+        return { blocks: finalBlocks, renderedDocIds: docIds, renderedChartKeys: chartKeys };
     }, [content, trimmedContent]);
+
+    // Extract any document or chart artifacts produced by toolCalls that were not explicitly echoed in the text content
+    const toolArtifacts = React.useMemo(() => {
+        if (!toolCalls || toolCalls.length === 0) {
+            return [];
+        }
+
+        const items: React.ReactNode[] = [];
+
+        for (const tool of toolCalls) {
+            if (tool.state !== "output-available" || !tool.output) {
+                continue;
+            }
+
+            let outputObj = tool.output;
+            if (typeof outputObj === "string") {
+                try {
+                    outputObj = JSON.parse(outputObj);
+                } catch {
+                    continue;
+                }
+            }
+
+            if (!outputObj || typeof outputObj !== "object") {
+                continue;
+            }
+
+            // Document artifact check
+            if (
+                outputObj._type === "document_artifact" ||
+                outputObj.document_id ||
+                tool.toolName === "GenerateAdministrativeDocumentTool"
+            ) {
+                const docId = outputObj.document_id;
+                if (!docId || !renderedDocIds.has(docId)) {
+                    if (docId) renderedDocIds.add(docId);
+                    items.push(
+                        <DocumentDownloadCard
+                            key={`tool_doc_${tool.id}_${docId || "doc"}`}
+                            document={outputObj as DocumentArtifact}
+                        />
+                    );
+                }
+            }
+            // Chart artifact check
+            else if (
+                outputObj._type === "chart_artifact" ||
+                outputObj.chart_type ||
+                tool.toolName === "GenerateAnalyticsChartTool"
+            ) {
+                const key = outputObj.title || tool.id;
+                if (!renderedChartKeys.has(key)) {
+                    renderedChartKeys.add(key);
+                    items.push(
+                        <AnalyticsChartRenderer
+                            key={`tool_chart_${tool.id}`}
+                            chart={outputObj as ChartArtifact}
+                        />
+                    );
+                }
+            }
+        }
+
+        return items;
+    }, [toolCalls, renderedDocIds, renderedChartKeys]);
+
+    // Show on-demand export when content contains structured report/memo text and no document card is rendered yet
+    const canExportPdf = React.useMemo(() => {
+        if (isStreaming || !content || content.length < 40) return false;
+        if (renderedDocIds.size > 0 || toolArtifacts.length > 0) return false;
+
+        const hasHeaders = /^#{1,4}\s+/m.test(content);
+        const hasReportKeywords = /(?:memo|report|circular|summary|curriculum|clearance|policy|assessment|transcript)/i.test(content);
+
+        return hasHeaders || hasReportKeywords;
+    }, [isStreaming, content, renderedDocIds.size, toolArtifacts.length]);
+
+    const handleExportMessageAsPdf = async () => {
+        if (!content || exportingPdf) return;
+        setExportingPdf(true);
+
+        try {
+            const headingMatch = content.match(/^#+\s*(.+)$/m);
+            const title = headingMatch ? headingMatch[1].trim() : "Administrative_Report";
+
+            const res = await fetch("/administrators/ai/export-document", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-Requested-With": "XMLHttpRequest",
+                    "X-CSRF-TOKEN":
+                        (window.document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || "",
+                },
+                body: JSON.stringify({
+                    title,
+                    format: "pdf",
+                    content,
+                }),
+            });
+
+            if (res.ok) {
+                const blob = await res.blob();
+                const blobUrl = window.URL.createObjectURL(blob);
+                const a = window.document.createElement("a");
+                a.href = blobUrl;
+                a.download = `${title.replace(/[^\w\-]/g, "_")}.pdf`;
+                window.document.body.appendChild(a);
+                a.click();
+                window.document.body.removeChild(a);
+                window.URL.revokeObjectURL(blobUrl);
+
+                toast.success(`Downloaded "${title}.pdf"`);
+            } else {
+                throw new Error("Failed to export PDF.");
+            }
+        } catch {
+            toast.error("Failed to export PDF. Please try again.");
+        } finally {
+            setExportingPdf(false);
+        }
+    };
 
     const hasContent = parsedBlocks.length > 0;
     const hasReasoning = Boolean(reasoning && reasoning.trim());
@@ -221,6 +374,35 @@ export function ChatMessageFormatter({
                     <span className="text-xs font-medium text-muted-foreground/80 animate-pulse">Thinking...</span>
                 </div>
             ) : null}
+
+            {/* Visual Artifacts extracted from Tool Invocations (Documents or Charts) */}
+            {toolArtifacts.length > 0 && (
+                <div className="space-y-2 pt-1">
+                    {toolArtifacts}
+                </div>
+            )}
+
+            {/* 1-Click Action to Download Report as PDF */}
+            {canExportPdf && (
+                <div className="pt-2 flex items-center gap-2">
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={handleExportMessageAsPdf}
+                        disabled={exportingPdf}
+                        className="h-8 text-xs font-medium gap-1.5 border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 rounded-xl"
+                    >
+                        {exportingPdf ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                            <FileText className="size-3.5 text-rose-500" />
+                        )}
+                        <span>{exportingPdf ? "Generating PDF..." : "Download as PDF"}</span>
+                        <Download className="size-3 opacity-60 ml-0.5" />
+                    </Button>
+                </div>
+            )}
 
             {/* Prompt-Kit Verified Sources & Citations */}
             {sources && sources.length > 0 && (

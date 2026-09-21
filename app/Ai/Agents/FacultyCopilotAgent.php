@@ -9,6 +9,7 @@ use App\Ai\Middleware\SanitizePromptMiddleware;
 use App\Ai\Tools\CommitSubmissionGradeTool;
 use App\Ai\Tools\DraftInterventionNoticeTool;
 use App\Ai\Tools\EvaluateSubmissionDraftTool;
+use App\Ai\Tools\GenerateAdministrativeDocumentTool;
 use App\Ai\Tools\GenerateRubricTool;
 use App\Ai\Tools\GetClassAttendanceSummaryTool;
 use App\Ai\Tools\GetClassEnrollmentsTool;
@@ -59,6 +60,7 @@ INSTRUCTIONS;
             new EvaluateSubmissionDraftTool,
             new CommitSubmissionGradeTool,
             new DraftInterventionNoticeTool,
+            new GenerateAdministrativeDocumentTool,
             new GetClassEnrollmentsTool,
             new GetClassGradesTool,
             new GetClassAttendanceSummaryTool,

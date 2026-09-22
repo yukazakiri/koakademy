@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\TenantContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
+use InvalidArgumentException;
 use Laravel\Mcp\Request;
 
 trait AuthorizesMcpRequests
@@ -95,6 +96,50 @@ trait AuthorizesMcpRequests
         if (! $user->can($permission)) {
             throw new AuthorizationException($message);
         }
+    }
+
+    protected function resolveStudentForCaller(User $user, ?int $studentId = null): \App\Models\Student
+    {
+        $school = $this->school();
+
+        if ($user->isStudentRole()) {
+            $student = app(\App\Services\ApiIdentityService::class)->studentFor($user);
+
+            if (! $student instanceof \App\Models\Student) {
+                throw new AuthorizationException('No student profile is associated with your account.');
+            }
+
+            if ($studentId !== null && (int) $student->id !== $studentId && (int) $student->student_id !== $studentId) {
+                throw new AuthorizationException('Students can only access their own student records.');
+            }
+
+            if (! $student->belongsToSchool($school) && (int) $student->institution_id !== (int) $school->id) {
+                throw new AuthorizationException('Your student profile belongs to a different school.');
+            }
+
+            return $student;
+        }
+
+        if ($studentId === null) {
+            throw new InvalidArgumentException('A student_id is required.');
+        }
+
+        $student = \App\Models\Student::query()
+            ->where(function ($query) use ($studentId): void {
+                $query->where('id', $studentId)
+                    ->orWhere('student_id', $studentId);
+            })
+            ->first();
+
+        if (! $student instanceof \App\Models\Student) {
+            throw new \Illuminate\Database\Eloquent\ModelNotFoundException('Student record not found.');
+        }
+
+        if (! $student->belongsToSchool($school) && (int) $student->institution_id !== (int) $school->id) {
+            throw new AuthorizationException('The student does not belong to the selected school.');
+        }
+
+        return $student;
     }
 
     protected function tokenHasExplicitAbility(User $user, string $ability): bool

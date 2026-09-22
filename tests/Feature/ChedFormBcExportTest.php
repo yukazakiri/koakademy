@@ -27,6 +27,7 @@ use PhpOffice\PhpSpreadsheet\Cell\DataType;
 
 test('separate ched reports export only their selected layout and preview the same counts', function (): void {
     $school = School::factory()->create();
+    app(App\Services\TenantContext::class)->setCurrentSchool($school);
     $college = CourseType::firstOrCreate(['name' => 'College Undergraduate']);
     $masters = CourseType::firstOrCreate(['name' => 'Masters']);
     $course = Course::factory()->create(['school_id' => $school->id, 'course_type_id' => $college->id, 'code' => 'AAA', 'is_active' => true]);

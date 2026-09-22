@@ -29,15 +29,14 @@ final class SubjectEnrollmentFactory extends Factory
     public function definition(): array
     {
         return [
-            'student_id' => $this->faker->numberBetween(100000, 999999),
-            'subject_id' => $this->faker->numberBetween(1, 100),
-            'enrollment_id' => $this->faker->numberBetween(1, 1000),
-            'semester' => $this->faker->randomElement(['1st Semester', '2nd Semester', 'Summer']),
-            'academic_year' => $this->faker->numberBetween(2020, 2024),
-            'enrollment_date' => $this->faker->dateTimeBetween('-6 months', 'now'),
-            'status' => $this->faker->randomElement(['enrolled', 'dropped', 'completed']),
-            'units' => $this->faker->numberBetween(1, 5),
-            'grade' => $this->faker->optional(0.6)->randomFloat(1, 1.0, 5.0),
+            'student_id' => \App\Models\Student::factory(),
+            'subject_id' => \App\Models\Subject::factory(),
+            'enrollment_id' => \App\Models\StudentEnrollment::factory(),
+            'semester' => $this->faker->randomElement([1, 2]),
+            'academic_year' => $this->faker->numberBetween(1, 4),
+            'school_year' => '2026 - 2027',
+            'classification' => 'internal',
+            'grade' => $this->faker->optional(0.6)->randomFloat(2, 1.0, 5.0),
             'remarks' => $this->faker->optional(0.3)->sentence(),
         ];
     }

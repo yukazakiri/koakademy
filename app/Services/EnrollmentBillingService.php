@@ -170,6 +170,75 @@ final class EnrollmentBillingService
         return $tuition->refresh();
     }
 
+    public function recalculateEnrollmentTuition(StudentEnrollment $enrollment): ?StudentTuition
+    {
+        $existingTuition = StudentTuition::query()
+            ->where('enrollment_id', $enrollment->id)
+            ->first();
+
+        if (! $existingTuition instanceof StudentTuition) {
+            return null;
+        }
+
+        $enrollment->loadMissing(['subjectsEnrolled.subject.course', 'additionalFees', 'course']);
+        $course = $enrollment->course;
+        $lectureRate = (float) ($course->lec_per_unit ?? 0);
+        $laboratoryRate = (float) ($course->lab_per_unit ?? 0);
+
+        $totalLecture = 0.0;
+        $totalLaboratory = 0.0;
+        $totalModularFee = 0.0;
+
+        foreach ($enrollment->subjectsEnrolled as $subjectEnrollment) {
+            if ($subjectEnrollment->exclude_from_tuition) {
+                continue;
+            }
+
+            $subject = $subjectEnrollment->subject;
+            if (! $subject) {
+                continue;
+            }
+
+            $subjectCourse = $subject->course ?? $course;
+            $subLecRate = (float) ($subjectCourse?->lec_per_unit ?? $lectureRate);
+            $subLabRate = (float) ($subjectCourse?->lab_per_unit ?? $laboratoryRate);
+
+            $isNSTP = str_contains(mb_strtoupper((string) $subject->code), 'NSTP');
+            $totalUnits = ((int) $subject->lecture) + ((int) $subject->laboratory);
+            $lectureFee = $subject->lecture ? $totalUnits * $subLecRate : 0.0;
+
+            if ($isNSTP) {
+                $lectureFee *= 0.5;
+            }
+
+            $laboratoryFee = $subject->laboratory ? 1.0 * $subLabRate : 0.0;
+
+            if ($subjectEnrollment->is_modular) {
+                $laboratoryFee /= 2;
+                $totalModularFee += 2400.0;
+            }
+
+            $totalLecture += (float) $lectureFee;
+            $totalLaboratory += (float) $laboratoryFee;
+        }
+
+        $discount = (int) $existingTuition->discount;
+        $discountedLecture = $totalLecture * (1 - $discount / 100);
+        $totalTuition = $discountedLecture + $totalLaboratory + $totalModularFee;
+        $miscellaneous = (float) $existingTuition->total_miscelaneous_fees;
+        $additionalFeesTotal = (float) $enrollment->additionalFees->sum('amount');
+        $overallTotal = $totalTuition + $miscellaneous + $additionalFeesTotal;
+
+        $existingTuition->forceFill([
+            'total_tuition' => $totalTuition,
+            'total_lectures' => $discountedLecture,
+            'total_laboratory' => $totalLaboratory,
+            'overall_tuition' => $overallTotal,
+        ])->save();
+
+        return $this->syncTuitionBalance($existingTuition, (float) $existingTuition->downpayment);
+    }
+
     private function tuitionPaymentFromSettlements(Transaction $transaction): float
     {
         $settlements = $transaction->settlements;

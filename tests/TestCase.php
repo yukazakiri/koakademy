@@ -22,4 +22,13 @@ abstract class TestCase extends BaseTestCase
             return \Faker\Factory::create('en_US');
         });
     }
+
+    protected function tearDown(): void
+    {
+        if ($this->app && $this->app->bound(\App\Services\TenantContext::class)) {
+            $this->app->make(\App\Services\TenantContext::class)->reset();
+        }
+
+        parent::tearDown();
+    }
 }

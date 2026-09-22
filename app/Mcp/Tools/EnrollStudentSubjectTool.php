@@ -15,7 +15,7 @@ use BackedEnum;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Illuminate\Support\Facades\DB;
-use InvalidArgumentException;
+use Illuminate\Validation\ValidationException;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\ResponseFactory;
@@ -97,7 +97,9 @@ final class EnrollStudentSubjectTool extends Tool
                 ->exists();
 
             if (! $classMatchesPeriod) {
-                throw new InvalidArgumentException("Class section [{$class->section}] is not scheduled for school year [{$enrollment->school_year}], semester [{$enrollment->semester}].");
+                throw ValidationException::withMessages([
+                    'class_id' => "Class section [{$class->section}] is not scheduled for school year [{$enrollment->school_year}], semester [{$enrollment->semester}].",
+                ]);
             }
 
             $classCode = mb_trim((string) $class->subject_code);
@@ -107,7 +109,9 @@ final class EnrollStudentSubjectTool extends Tool
                 || in_array((int) $subject->id, array_map(intval(...), $class->subject_ids ?? []), true);
 
             if (! $subjectMatches) {
-                throw new InvalidArgumentException("Class section [{$class->section}] ({$class->subject_code}) does not match subject [{$subject->code}].");
+                throw ValidationException::withMessages([
+                    'class_id' => "Class section [{$class->section}] ({$class->subject_code}) does not match subject [{$subject->code}].",
+                ]);
             }
 
             $enrolledCount = $class->class_enrollments()->where('status', true)->count();
@@ -117,7 +121,9 @@ final class EnrollStudentSubjectTool extends Tool
                 ->exists();
 
             if (! $alreadyEnrolledInClass && (int) $class->maximum_slots > 0 && $enrolledCount >= (int) $class->maximum_slots) {
-                throw new InvalidArgumentException("Class section [{$class->section}] has no available seats ({$enrolledCount}/{$class->maximum_slots}).");
+                throw ValidationException::withMessages([
+                    'class_id' => "Class section [{$class->section}] has no available seats ({$enrolledCount}/{$class->maximum_slots}).",
+                ]);
             }
 
             $classSection ??= $class->section;

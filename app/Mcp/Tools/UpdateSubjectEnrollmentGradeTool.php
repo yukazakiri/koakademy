@@ -11,7 +11,7 @@ use App\Models\SubjectEnrollment;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Illuminate\Support\Facades\DB;
-use InvalidArgumentException;
+use Illuminate\Validation\ValidationException;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\ResponseFactory;
@@ -53,7 +53,9 @@ final class UpdateSubjectEnrollmentGradeTool extends Tool
         $hasTermGrades = isset($validated['prelim_grade']) || isset($validated['midterm_grade']) || isset($validated['finals_grade']);
 
         if ($hasTermGrades && ! $subjectEnrollment->class_id) {
-            throw new InvalidArgumentException('Term-grade components (prelim, midterm, finals) require a linked scheduled class enrollment.');
+            throw ValidationException::withMessages([
+                'class_id' => 'Term-grade components (prelim, midterm, finals) require a linked scheduled class enrollment.',
+            ]);
         }
 
         $scopedKey = hash('sha256', "mcp:update-grade:{$subjectEnrollment->id}:{$validated['idempotency_key']}");

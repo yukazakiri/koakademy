@@ -810,59 +810,59 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                                                 </div>
                                             </label>
 
-                                            {!isStudent && (
-                                                <>
-                                                    <div className="pt-2">
-                                                        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                                            Model Context Protocol (MCP) for AI Agents
-                                                        </span>
+                                            <div className="pt-2">
+                                                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                                    Model Context Protocol (MCP) for AI Agents
+                                                </span>
+                                            </div>
+                                            <label className="flex items-start gap-2 rounded-lg border border-blue-500/20 bg-blue-500/5 p-2.5">
+                                                <input
+                                                    type="radio"
+                                                    name="abilities"
+                                                    checked={
+                                                        apiKeyForm.abilities.includes("mcp:read") &&
+                                                        !apiKeyForm.abilities.includes("mcp:write")
+                                                    }
+                                                    onChange={() => setApiKeyForm({ ...apiKeyForm, abilities: ["mcp:read"] })}
+                                                    className="mt-1"
+                                                />
+                                                <div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-sm font-medium">MCP — Read Only</span>
+                                                        <Badge variant="outline" className="border-blue-500/30 text-blue-600 text-[10px]">
+                                                            Agent Read
+                                                        </Badge>
                                                     </div>
-                                                    <label className="flex items-start gap-2 rounded-lg border border-blue-500/20 bg-blue-500/5 p-2.5">
-                                                        <input
-                                                            type="radio"
-                                                            name="abilities"
-                                                            checked={
-                                                                apiKeyForm.abilities.includes("mcp:read") &&
-                                                                !apiKeyForm.abilities.includes("mcp:write")
-                                                            }
-                                                            onChange={() => setApiKeyForm({ ...apiKeyForm, abilities: ["mcp:read"] })}
-                                                            className="mt-1"
-                                                        />
-                                                        <div>
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="text-sm font-medium">MCP — Read Only</span>
-                                                                <Badge variant="outline" className="border-blue-500/30 text-blue-600 text-[10px]">
-                                                                    Agent Read
-                                                                </Badge>
-                                                            </div>
-                                                            <p className="text-muted-foreground text-xs mt-0.5">
-                                                                Allows connected AI agents (OpenCode, Claude, etc.) to query student directory, schedules, enrollment status, and academic offerings using your account permissions.
-                                                            </p>
+                                                    <p className="text-muted-foreground text-xs mt-0.5">
+                                                        {isStudent
+                                                            ? "Allows connected AI agents (OpenCode, Claude, etc.) to query your student profile, enrollments, enrolled subjects, grades, and schedule."
+                                                            : "Allows connected AI agents (OpenCode, Claude, etc.) to query student directory, schedules, enrollment status, and academic offerings using your account permissions."}
+                                                    </p>
+                                                </div>
+                                            </label>
+                                            {!isStudent && (
+                                                <label className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 p-2.5">
+                                                    <input
+                                                        type="radio"
+                                                        name="abilities"
+                                                        checked={
+                                                            apiKeyForm.abilities.includes("mcp:write")
+                                                        }
+                                                        onChange={() => setApiKeyForm({ ...apiKeyForm, abilities: ["mcp:read", "mcp:write"] })}
+                                                        className="mt-1"
+                                                    />
+                                                    <div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-sm font-medium">MCP — Read & Write</span>
+                                                            <Badge variant="outline" className="border-amber-500/30 text-amber-600 text-[10px]">
+                                                                Agent Mutation
+                                                            </Badge>
                                                         </div>
-                                                    </label>
-                                                    <label className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 p-2.5">
-                                                        <input
-                                                            type="radio"
-                                                            name="abilities"
-                                                            checked={
-                                                                apiKeyForm.abilities.includes("mcp:write")
-                                                            }
-                                                            onChange={() => setApiKeyForm({ ...apiKeyForm, abilities: ["mcp:read", "mcp:write"] })}
-                                                            className="mt-1"
-                                                        />
-                                                        <div>
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="text-sm font-medium">MCP — Read & Write</span>
-                                                                <Badge variant="outline" className="border-amber-500/30 text-amber-600 text-[10px]">
-                                                                    Agent Mutation
-                                                                </Badge>
-                                                            </div>
-                                                            <p className="text-muted-foreground text-xs mt-0.5">
-                                                                Allows read tools plus permitted data modifications (such as verifying enrollment requirements). Requires explicit idempotency keys and your domain permissions.
-                                                            </p>
-                                                        </div>
-                                                    </label>
-                                                </>
+                                                        <p className="text-muted-foreground text-xs mt-0.5">
+                                                            Allows read tools plus permitted data modifications (such as subject enrollments, grading, and verifying enrollment requirements). Requires explicit idempotency keys and your domain permissions.
+                                                        </p>
+                                                    </div>
+                                                </label>
                                             )}
                                         </div>
                                         <p className="text-muted-foreground text-xs italic">

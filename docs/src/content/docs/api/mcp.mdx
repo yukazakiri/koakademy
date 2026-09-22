@@ -40,23 +40,23 @@ MCP requests require personal access tokens issued via Laravel Sanctum from the 
 
 | Token Ability | Scope | Capabilities |
 | --- | --- | --- |
-| `mcp:read` | Read-only | Allows AI agents to execute read-only tools (`get_my_context`, `search_students`, `get_student_schedule`, `get_enrollment_status`, etc.). |
-| `mcp:write` | Mutating | Allows AI agents to execute write operations (`verify_enrollment_requirement`, `advance_enrollment_step`, `update_enrollment_remarks`). Requires `mcp:read`. |
+| `mcp:read` | Read-only | Allows AI agents to execute read-only queries (`get_my_context`, `get_student_profile`, `search_students`, `get_student_schedule`, `get_enrollment_status`, `list_student_enrollments`, `get_student_subject_enrollments`, `get_course_curriculum`, `get_available_subjects`, etc.). Students can query their own data; staff can query school records. |
+| `mcp:write` | Mutating | Allows AI agents to execute write operations (`verify_enrollment_requirement`, `advance_enrollment_step`, `update_enrollment_remarks`, `enroll_student_subject`, `update_subject_enrollment_grade`, `drop_student_subject_enrollment`). Restricted to staff/admin accounts and requires `mcp:read`. |
 
-A token with `mcp:write` alone without `mcp:read` is automatically rejected.
+A token with `mcp:write` alone without `mcp:read` is automatically rejected. Wildcard `*` tokens are strictly prohibited for MCP endpoints.
 
-### Administrative Gating
+### Administrative & Role Gating
 
-1. **User Role Gating:** Only staff and administrative accounts (e.g. instructors, professors, department heads, registrars, cashiers, and administrators) with Developer Mode enabled can issue MCP keys. Students are restricted to standard API tokens.
+1. **User Role Gating:** Staff, faculty, and administrative accounts with Developer Mode enabled can issue both `mcp:read` and `mcp:write` keys. Students in Developer Mode can issue `mcp:read` tokens to query their personal academic records; student accounts are prevented from issuing `mcp:write` keys.
 2. **Global MCP Switch:** Administrators can disable the MCP server entirely via **Settings -> API & Integrations -> Model Context Protocol (MCP)** or via `MCP_ENABLED=false` in `.env`.
-3. **Global Mutation Switch:** Administrators can allow or disallow mutating tools globally (`mcp_write_enabled`). When disabled, write tools return an actionable error without executing changes.
-4. **Tool-Level RBAC:** Even with an `mcp:write` token, an agent cannot perform actions that the issuing staff account does not have permission to execute (e.g., verifying requirements requires `Update:StudentEnrollment`; viewing billing requires `View:Cashier` or `view_tuition_fees`).
+3. **Global Mutation Switch:** Administrators can allow or disallow mutating tools globally (`mcp_write_enabled`). When disabled, write tools return an actionable error without executing changes, and `get_my_context` reports `mcp.can_write: false`.
+4. **Tool-Level RBAC:** Even with an `mcp:write` token, an agent cannot perform actions that the issuing staff account does not have permission to execute (e.g., verifying requirements or enrolling subjects requires `Update:StudentEnrollment`; viewing billing requires `View:Cashier` or `view_tuition_fees`).
 
 ---
 
 ## Tool Catalog
 
-KoAkademy registers 14 core tools across five domain categories.
+KoAkademy registers 22 core tools across five domain categories.
 
 ### 1. Context & School Overview
 
@@ -103,6 +103,25 @@ KoAkademy registers 14 core tools across five domain categories.
 
 ### 2. Student & Faculty Directory
 
+#### `get_student_profile`
+* **Access:** Read-only (`mcp:read`) · **Requires `View:Student` for staff; students can query their own record**
+* **Description:** Retrieves the detailed academic profile of a student, including student number, LRN, degree program, academic year level, contact details, clearance status, and enrollment status.
+* **Arguments:**
+  * `student_id` (integer, optional): The database ID or school student number. Optional for student callers (defaults to their own profile).
+* **Sample Response:**
+  ```json
+  {
+    "id": 42,
+    "student_number": "202611",
+    "name": "Eduardo Reyes",
+    "email": "eduardo.reyes@student.koakademy.edu",
+    "status": "enrolled",
+    "clearance_status": "cleared",
+    "academic_year": 2,
+    "course": { "id": 3, "code": "BSCS", "title": "Computer Science" }
+  }
+  ```
+
 #### `search_students`
 * **Access:** Read-only (`mcp:read`) · **Requires `ViewAny:Student`**
 * **Description:** Searches students in the active school by name, student number, or email. Results are bounded and omit sensitive personal data.
@@ -111,7 +130,7 @@ KoAkademy registers 14 core tools across five domain categories.
   * `limit` (integer, optional, 1-25, default: 10): Maximum results.
 
 #### `get_student_schedule`
-* **Access:** Read-only (`mcp:read`) · **Requires `View:Student`**
+* **Access:** Read-only (`mcp:read`) · **Requires `View:Student` for staff; students can query their own schedule**
 * **Description:** Retrieves a student's active class enrollments, meeting days, room assignments, instructor names, and any detected schedule time overlaps.
 * **Arguments:**
   * `student_id` (integer, required): Internal ID returned by `search_students`.
@@ -125,7 +144,23 @@ KoAkademy registers 14 core tools across five domain categories.
 
 ---
 
-### 3. Academic Offerings
+### 3. Academic Curriculum & Subjects
+
+#### `get_course_curriculum`
+* **Access:** Read-only (`mcp:read`) · **Requires `View:Course` for staff; open to enrolled students**
+* **Description:** Returns the complete curriculum of an academic program or course broken down by year level and semester with lecture/lab units, prerequisite codes, and credit types.
+* **Arguments:**
+  * `course_id` (integer, required): Course / program ID.
+  * `year_level` (integer, optional, 1-6): Filter by academic year.
+  * `semester` (integer, optional, 1 or 2): Filter by semester.
+
+#### `get_available_subjects`
+* **Access:** Read-only (`mcp:read`) · **Requires `View:Student` for staff; students can query their own eligibility**
+* **Description:** Inspects curriculum requirements for a student's program and determines which subjects they are eligible to take, distinguishing between completed, currently enrolled, and available subjects.
+* **Arguments:**
+  * `student_id` (integer, optional): Student ID. Defaults to caller if student.
+  * `year_level` (integer, optional): Year level to evaluate. Defaults to student's current year.
+  * `semester` (integer, optional, 1 or 2): Defaults to current semester.
 
 #### `list_academic_offerings`
 * **Access:** Read-only (`mcp:read`) · **Requires `ViewAny:Course` and `ViewAny:Classes`**
@@ -137,13 +172,60 @@ KoAkademy registers 14 core tools across five domain categories.
 
 ---
 
-### 4. Enrollment Management & Audit
+### 4. Enrollments & Subject Enrollments
+
+#### `list_student_enrollments`
+* **Access:** Read-only (`mcp:read`) · **Requires `View:StudentEnrollment` for staff; students can query their own records**
+* **Description:** Lists all semester enrollment records for a student across their academic history with term, status, runtime, downpayment, and submission channel.
+* **Arguments:**
+  * `student_id` (integer, optional): Student database ID or student number. Defaults to caller if student.
+  * `limit` (integer, optional, 1-50, default: 20): Maximum records.
 
 #### `get_enrollment_status`
 * **Access:** Read-only (`mcp:read`) · **Requires `View:StudentEnrollment`**
 * **Description:** Retrieves detailed workflow state, academic period, program, and all checklist requirements (pending, verified, or waived) for an enrollment record.
 * **Arguments:**
   * `enrollment_id` (integer, required): Enrollment record ID.
+
+#### `get_student_subject_enrollments`
+* **Access:** Read-only (`mcp:read`) · **Requires `View:StudentEnrollment` for staff; students can query their own subjects**
+* **Description:** Retrieves the subjects a student is enrolled in for a specific enrollment record or academic term, returning subject code, title, units, class section, instructor, grades, and remarks.
+* **Arguments:**
+  * `enrollment_id` (integer, optional): Target enrollment record ID.
+  * `student_id` (integer, optional): Target student ID.
+  * `school_year` (string, optional): e.g. `"2026 - 2027"`. Defaults to current term.
+  * `semester` (integer, optional, 1 or 2): Defaults to current semester.
+
+#### `enroll_student_subject`
+* **Access:** Mutation (`mcp:write`) · **Requires `Update:StudentEnrollment`**
+* **Description:** Enrolls a student in an academic subject under an enrollment record, optionally assigning a scheduled class section. Automatically synchronizes class enrollments.
+* **Arguments:**
+  * `enrollment_id` (integer, required): ID of the student enrollment.
+  * `subject_id` (integer, required): ID of the curriculum subject to add.
+  * `class_id` (integer, optional): Scheduled class ID to assign a specific schedule and section.
+  * `section` (string, optional): Section name override if class_id is omitted.
+  * `is_modular` (boolean, optional): Modular learning flag.
+  * `idempotency_key` (string, required, 1-96 chars): Unique key to guarantee safe replay.
+
+#### `update_subject_enrollment_grade`
+* **Access:** Mutation (`mcp:write`) · **Requires `Update:StudentEnrollment`**
+* **Description:** Records or updates official grades (prelim, midterm, finals, or overall grade) and evaluation remarks on an enrolled subject.
+* **Arguments:**
+  * `subject_enrollment_id` (integer, required): ID of the `subject_enrollment` record.
+  * `grade` (number, optional): Final/overall grade score.
+  * `prelim_grade` (number, optional): Prelim exam/term grade score.
+  * `midterm_grade` (number, optional): Midterm exam/term grade score.
+  * `finals_grade` (number, optional): Final exam/term grade score.
+  * `remarks` (string, optional): e.g. `"Passed"`, `"Failed"`, `"Incomplete"`.
+  * `idempotency_key` (string, required, 1-96 chars): Unique key to guarantee safe replay.
+
+#### `drop_student_subject_enrollment`
+* **Access:** Mutation (`mcp:write`) · **Requires `Update:StudentEnrollment`**
+* **Description:** Drops or removes an enrolled subject from a student's enrollment record and automatically releases any linked class seat.
+* **Arguments:**
+  * `subject_enrollment_id` (integer, required): ID of the `subject_enrollment` record to drop.
+  * `reason` (string, required, max 1000 chars): Documented reason for dropping the subject.
+  * `idempotency_key` (string, required, 1-96 chars): Unique key to guarantee safe replay.
 
 #### `list_pending_enrollments`
 * **Access:** Read-only (`mcp:read`) · **Restricted to Administrators · Requires `ViewAny:StudentEnrollment`**
@@ -162,7 +244,7 @@ KoAkademy registers 14 core tools across five domain categories.
 
 #### `advance_enrollment_step`
 * **Access:** Mutation (`mcp:write`) · **Restricted to Administrators · Requires `Update:StudentEnrollment`**
-* **Description:** Advances an enrollment to its next workflow step or executes an explicit policy transition.
+* **Description:** Advances an enrollment to its next workflow step or executes an explicit policy transition with guaranteed idempotency.
 * **Arguments:**
   * `enrollment_id` (integer, required): Enrollment record ID.
   * `transition_key` (string, optional): Target transition identifier for policy-based workflows.

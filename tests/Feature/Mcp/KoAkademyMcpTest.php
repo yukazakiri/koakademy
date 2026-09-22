@@ -5,18 +5,26 @@ declare(strict_types=1);
 use App\Enums\UserRole;
 use App\Mcp\Servers\KoAkademyServer;
 use App\Mcp\Tools\AdvanceEnrollmentStepTool;
+use App\Mcp\Tools\DropStudentSubjectEnrollmentTool;
+use App\Mcp\Tools\EnrollStudentSubjectTool;
+use App\Mcp\Tools\GetAvailableSubjectsTool;
+use App\Mcp\Tools\GetCourseCurriculumTool;
 use App\Mcp\Tools\GetEnrollmentAuditTrailTool;
 use App\Mcp\Tools\GetEnrollmentStatusTool;
 use App\Mcp\Tools\GetMyContextTool;
 use App\Mcp\Tools\GetSchoolDetailsTool;
 use App\Mcp\Tools\GetSchoolMetricsTool;
 use App\Mcp\Tools\GetStatementOfAccountTool;
+use App\Mcp\Tools\GetStudentProfileTool;
 use App\Mcp\Tools\GetStudentScheduleTool;
+use App\Mcp\Tools\GetStudentSubjectEnrollmentsTool;
 use App\Mcp\Tools\ListAcademicOfferingsTool;
 use App\Mcp\Tools\ListPendingEnrollmentsTool;
+use App\Mcp\Tools\ListStudentEnrollmentsTool;
 use App\Mcp\Tools\SearchFacultyTool;
 use App\Mcp\Tools\SearchStudentsTool;
 use App\Mcp\Tools\UpdateEnrollmentRemarksTool;
+use App\Mcp\Tools\UpdateSubjectEnrollmentGradeTool;
 use App\Mcp\Tools\VerifyEnrollmentRequirementTool;
 use App\Models\Course;
 use App\Models\Department;
@@ -27,6 +35,8 @@ use App\Models\School;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\StudentTuition;
+use App\Models\Subject;
+use App\Models\SubjectEnrollment;
 use App\Models\User;
 use App\Services\GeneralSettingsService;
 use App\Services\TenantContext;
@@ -80,23 +90,31 @@ beforeEach(function (): void {
     Spatie\Permission\Models\Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
 });
 
-it('registers all fourteen core mcp tools on the server', function (): void {
+it('registers all twenty-two core mcp tools on the server', function (): void {
     KoAkademyServer::tools()
         ->assertRegistered([
             GetMyContextTool::class,
             GetSchoolDetailsTool::class,
             GetSchoolMetricsTool::class,
             SearchStudentsTool::class,
+            GetStudentProfileTool::class,
             GetStudentScheduleTool::class,
             SearchFacultyTool::class,
+            ListStudentEnrollmentsTool::class,
             GetEnrollmentStatusTool::class,
             ListPendingEnrollmentsTool::class,
             GetEnrollmentAuditTrailTool::class,
+            GetCourseCurriculumTool::class,
+            GetAvailableSubjectsTool::class,
+            GetStudentSubjectEnrollmentsTool::class,
             ListAcademicOfferingsTool::class,
             GetStatementOfAccountTool::class,
             AdvanceEnrollmentStepTool::class,
             VerifyEnrollmentRequirementTool::class,
             UpdateEnrollmentRemarksTool::class,
+            EnrollStudentSubjectTool::class,
+            UpdateSubjectEnrollmentGradeTool::class,
+            DropStudentSubjectEnrollmentTool::class,
         ]);
 });
 
@@ -697,6 +715,416 @@ it('retrieves enrollment audit trail of workflow events', function (): void {
                 ->where('events.0.event_type', 'step_transition')
                 ->where('events.0.reason', 'Form 138 validated')
                 ->where('events.0.actor.id', $this->staff->id)
+                ->etc();
+        });
+});
+
+it('retrieves detailed student profile for authorized staff', function (): void {
+    $this->staff->createToken('Staff Agent', ['mcp:read']);
+    $this->staff->givePermissionTo('View:Student');
+
+    $course = Course::factory()->create(['school_id' => $this->school->id, 'code' => 'BSCS', 'title' => 'Computer Science']);
+    $student = Student::factory()->create([
+        'school_id' => $this->school->id,
+        'institution_id' => $this->school->id,
+        'first_name' => 'Eduardo',
+        'last_name' => 'Reyes',
+        'student_id' => 202611,
+        'course_id' => $course->id,
+        'status' => 'enrolled',
+    ]);
+
+    $response = KoAkademyServer::actingAs($this->staff)
+        ->tool(GetStudentProfileTool::class, ['student_id' => $student->id]);
+
+    $response->assertOk()
+        ->assertStructuredContent(function ($json) use ($student): void {
+            $json->where('id', $student->id)
+                ->where('student_number', '202611')
+                ->where('first_name', 'Eduardo')
+                ->where('last_name', 'Reyes')
+                ->where('course.code', 'BSCS')
+                ->where('status', 'enrolled')
+                ->etc();
+        });
+});
+
+it('allows student to retrieve their own profile without student_id argument', function (): void {
+    $studentUser = User::factory()->create([
+        'role' => UserRole::Student,
+        'school_id' => $this->school->id,
+    ]);
+    $studentRecord = Student::factory()->create([
+        'user_id' => $studentUser->id,
+        'school_id' => $this->school->id,
+        'institution_id' => $this->school->id,
+        'first_name' => 'Ana',
+        'last_name' => 'Cruz',
+        'student_id' => 202612,
+    ]);
+
+    $studentUser->createToken('Student Agent', ['mcp:read']);
+
+    $response = KoAkademyServer::actingAs($studentUser)
+        ->tool(GetStudentProfileTool::class, []);
+
+    $response->assertOk()
+        ->assertStructuredContent(function ($json) use ($studentRecord): void {
+            $json->where('id', $studentRecord->id)
+                ->where('student_number', '202612')
+                ->where('first_name', 'Ana')
+                ->where('last_name', 'Cruz')
+                ->etc();
+        });
+});
+
+it('lists all student enrollments across academic history', function (): void {
+    $this->staff->createToken('Staff Agent', ['mcp:read']);
+    $this->staff->givePermissionTo('View:StudentEnrollment');
+
+    $student = Student::factory()->create(['school_id' => $this->school->id]);
+    $course = Course::factory()->create(['school_id' => $this->school->id]);
+
+    $enrollment1 = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'school_id' => $this->school->id,
+        'school_year' => '2025 - 2026',
+        'semester' => 1,
+        'status' => 'completed',
+    ]);
+
+    $enrollment2 = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'school_id' => $this->school->id,
+        'school_year' => '2025 - 2026',
+        'semester' => 2,
+        'status' => 'enrolled',
+    ]);
+
+    $response = KoAkademyServer::actingAs($this->staff)
+        ->tool(ListStudentEnrollmentsTool::class, ['student_id' => $student->id]);
+
+    $response->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('count', 2)
+                ->has('enrollments')
+                ->etc();
+        });
+});
+
+it('retrieves complete course curriculum broken down by term', function (): void {
+    $this->staff->createToken('Staff Agent', ['mcp:read']);
+    $this->staff->givePermissionTo('View:Course');
+
+    $course = Course::factory()->create(['school_id' => $this->school->id, 'code' => 'BSIT', 'title' => 'Information Technology']);
+
+    $subject1 = Subject::factory()->create([
+        'course_id' => $course->id,
+        'code' => 'IT111',
+        'title' => 'Intro to IT',
+        'units' => 3,
+        'academic_year' => 1,
+        'semester' => 1,
+    ]);
+
+    $subject2 = Subject::factory()->create([
+        'course_id' => $course->id,
+        'code' => 'IT121',
+        'title' => 'Computer Programming 1',
+        'units' => 3,
+        'academic_year' => 1,
+        'semester' => 2,
+        'pre_riquisite' => ['IT111'],
+    ]);
+
+    $response = KoAkademyServer::actingAs($this->staff)
+        ->tool(GetCourseCurriculumTool::class, [
+            'course_id' => $course->id,
+            'year_level' => 1,
+        ]);
+
+    $response->assertOk()
+        ->assertStructuredContent(function ($json) use ($course): void {
+            $json->where('course.id', $course->id)
+                ->where('course.code', 'BSIT')
+                ->where('subjects_count', 2)
+                ->where('subjects.0.code', 'IT111')
+                ->where('subjects.1.code', 'IT121')
+                ->where('subjects.1.prerequisites.0', 'IT111')
+                ->etc();
+        });
+});
+
+it('identifies available subjects for a student term based on course curriculum', function (): void {
+    $this->staff->createToken('Staff Agent', ['mcp:read']);
+    $this->staff->givePermissionTo('View:Student');
+
+    $course = Course::factory()->create(['school_id' => $this->school->id]);
+    $student = Student::factory()->create([
+        'school_id' => $this->school->id,
+        'course_id' => $course->id,
+        'academic_year' => 1,
+    ]);
+
+    $subject1 = Subject::factory()->create([
+        'course_id' => $course->id,
+        'code' => 'ENG101',
+        'title' => 'Communication Skills',
+        'units' => 3,
+        'academic_year' => 1,
+        'semester' => 1,
+    ]);
+
+    $subject2 = Subject::factory()->create([
+        'course_id' => $course->id,
+        'code' => 'MATH101',
+        'title' => 'College Algebra',
+        'units' => 3,
+        'academic_year' => 1,
+        'semester' => 1,
+    ]);
+
+    // Student has already completed ENG101 with grade 1.75
+    $priorEnrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'school_id' => $this->school->id,
+    ]);
+
+    SubjectEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'subject_id' => $subject1->id,
+        'enrollment_id' => $priorEnrollment->id,
+        'grade' => 1.75,
+        'remarks' => 'Passed',
+        'school_id' => $this->school->id,
+    ]);
+
+    $response = KoAkademyServer::actingAs($this->staff)
+        ->tool(GetAvailableSubjectsTool::class, [
+            'student_id' => $student->id,
+            'year_level' => 1,
+            'semester' => 1,
+        ]);
+
+    $response->assertOk()
+        ->assertStructuredContent(function ($json) use ($subject1, $subject2): void {
+            $json->where('subjects_count', 2)
+                ->where('available_count', 1)
+                ->where('subjects.0.id', $subject1->id)
+                ->where('subjects.0.status', 'completed')
+                ->where('subjects.0.last_grade', 1.75)
+                ->where('subjects.1.id', $subject2->id)
+                ->where('subjects.1.status', 'available')
+                ->etc();
+        });
+});
+
+it('retrieves student subject enrollments with grades and instructor details', function (): void {
+    $this->staff->createToken('Staff Agent', ['mcp:read']);
+    $this->staff->givePermissionTo('View:StudentEnrollment');
+
+    $student = Student::factory()->create(['school_id' => $this->school->id]);
+    $enrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'school_id' => $this->school->id,
+        'school_year' => '2026 - 2027',
+        'semester' => 1,
+    ]);
+
+    $subject = Subject::factory()->create(['code' => 'PHY101', 'title' => 'General Physics', 'units' => 3]);
+
+    SubjectEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'subject_id' => $subject->id,
+        'enrollment_id' => $enrollment->id,
+        'school_id' => $this->school->id,
+        'section' => 'A',
+        'grade' => 1.5,
+        'remarks' => 'Passed',
+        'instructor' => 'Prof. Mendoza',
+    ]);
+
+    $response = KoAkademyServer::actingAs($this->staff)
+        ->tool(GetStudentSubjectEnrollmentsTool::class, ['enrollment_id' => $enrollment->id]);
+
+    $response->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('subjects_count', 1)
+                ->where('total_units', 3)
+                ->where('subjects.0.subject_code', 'PHY101')
+                ->where('subjects.0.grade', 1.5)
+                ->where('subjects.0.remarks', 'Passed')
+                ->where('subjects.0.instructor', 'Prof. Mendoza')
+                ->etc();
+        });
+});
+
+it('enrolls a student in a subject under an enrollment with idempotency', function (): void {
+    $writeToken = $this->staff->createToken('Staff Write', ['mcp:read', 'mcp:write']);
+    $this->staff->withAccessToken($writeToken->accessToken);
+    $this->staff->givePermissionTo('Update:StudentEnrollment');
+
+    $student = Student::factory()->create(['school_id' => $this->school->id]);
+    $enrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'school_id' => $this->school->id,
+    ]);
+
+    $subject = Subject::factory()->create([
+        'code' => 'HIST101',
+        'title' => 'Philippine History',
+        'units' => 3,
+        'lecture' => 3,
+        'laboratory' => 0,
+    ]);
+
+    $response = KoAkademyServer::actingAs($this->staff)
+        ->tool(EnrollStudentSubjectTool::class, [
+            'enrollment_id' => $enrollment->id,
+            'subject_id' => $subject->id,
+            'section' => 'Section-B',
+            'idempotency_key' => 'enroll-subj-1',
+        ]);
+
+    $response->assertOk()
+        ->assertStructuredContent(function ($json) use ($enrollment): void {
+            $json->where('enrollment_id', $enrollment->id)
+                ->where('subject.code', 'HIST101')
+                ->where('section', 'Section-B')
+                ->where('replayed', false)
+                ->etc();
+        });
+
+    expect(SubjectEnrollment::query()->where('enrollment_id', $enrollment->id)->where('subject_id', $subject->id)->count())->toBe(1);
+
+    // Replay with identical idempotency key is safe
+    $replayed = KoAkademyServer::actingAs($this->staff)
+        ->tool(EnrollStudentSubjectTool::class, [
+            'enrollment_id' => $enrollment->id,
+            'subject_id' => $subject->id,
+            'section' => 'Section-B',
+            'idempotency_key' => 'enroll-subj-1',
+        ]);
+
+    $replayed->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('replayed', true)->etc();
+        });
+
+    expect(SubjectEnrollment::query()->where('enrollment_id', $enrollment->id)->where('subject_id', $subject->id)->count())->toBe(1);
+});
+
+it('updates grades and remarks on a subject enrollment with idempotency', function (): void {
+    $writeToken = $this->staff->createToken('Staff Write', ['mcp:read', 'mcp:write']);
+    $this->staff->withAccessToken($writeToken->accessToken);
+    $this->staff->givePermissionTo('Update:StudentEnrollment');
+
+    $student = Student::factory()->create(['school_id' => $this->school->id]);
+    $enrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'school_id' => $this->school->id,
+    ]);
+    $subject = Subject::factory()->create(['code' => 'CS201', 'units' => 3]);
+
+    $subjectEnrollment = SubjectEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'subject_id' => $subject->id,
+        'enrollment_id' => $enrollment->id,
+        'school_id' => $this->school->id,
+        'grade' => null,
+        'remarks' => null,
+    ]);
+
+    $response = KoAkademyServer::actingAs($this->staff)
+        ->tool(UpdateSubjectEnrollmentGradeTool::class, [
+            'subject_enrollment_id' => $subjectEnrollment->id,
+            'grade' => 92.5,
+            'remarks' => 'Passed with honors',
+            'idempotency_key' => 'grade-update-1',
+        ]);
+
+    $response->assertOk()
+        ->assertStructuredContent(function ($json) use ($subjectEnrollment): void {
+            $json->where('id', $subjectEnrollment->id)
+                ->where('grade', 92.5)
+                ->where('remarks', 'Passed with honors')
+                ->where('replayed', false)
+                ->etc();
+        });
+
+    expect($subjectEnrollment->refresh()->grade)->toBe(92.5)
+        ->and($subjectEnrollment->remarks)->toBe('Passed with honors');
+
+    // Replaying returns cached successful response
+    $replayed = KoAkademyServer::actingAs($this->staff)
+        ->tool(UpdateSubjectEnrollmentGradeTool::class, [
+            'subject_enrollment_id' => $subjectEnrollment->id,
+            'grade' => 92.5,
+            'remarks' => 'Passed with honors',
+            'idempotency_key' => 'grade-update-1',
+        ]);
+
+    $replayed->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('replayed', true)->etc();
+        });
+});
+
+it('drops an enrolled subject releasing the record with idempotency', function (): void {
+    $writeToken = $this->staff->createToken('Staff Write', ['mcp:read', 'mcp:write']);
+    $this->staff->withAccessToken($writeToken->accessToken);
+    $this->staff->givePermissionTo('Update:StudentEnrollment');
+
+    $student = Student::factory()->create(['school_id' => $this->school->id]);
+    $enrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'school_id' => $this->school->id,
+    ]);
+    $subject = Subject::factory()->create(['code' => 'CHEM101', 'title' => 'General Chemistry']);
+
+    $subjectEnrollment = SubjectEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'subject_id' => $subject->id,
+        'enrollment_id' => $enrollment->id,
+        'school_id' => $this->school->id,
+    ]);
+
+    $id = $subjectEnrollment->id;
+
+    $response = KoAkademyServer::actingAs($this->staff)
+        ->tool(DropStudentSubjectEnrollmentTool::class, [
+            'subject_enrollment_id' => $id,
+            'reason' => 'Schedule conflict with job training',
+            'idempotency_key' => 'drop-chem-1',
+        ]);
+
+    $response->assertOk()
+        ->assertStructuredContent(function ($json) use ($id): void {
+            $json->where('subject_enrollment_id', $id)
+                ->where('dropped', true)
+                ->where('subject.code', 'CHEM101')
+                ->where('replayed', false)
+                ->etc();
+        });
+
+    expect(SubjectEnrollment::query()->find($id))->toBeNull();
+
+    // Replaying drop with same idempotency key is safely idempotent
+    $replayed = KoAkademyServer::actingAs($this->staff)
+        ->tool(DropStudentSubjectEnrollmentTool::class, [
+            'subject_enrollment_id' => $id,
+            'reason' => 'Schedule conflict with job training',
+            'idempotency_key' => 'drop-chem-1',
+        ]);
+
+    $replayed->assertOk()
+        ->assertStructuredContent(function ($json) use ($id): void {
+            $json->where('subject_enrollment_id', $id)
+                ->where('dropped', true)
+                ->where('replayed', true)
                 ->etc();
         });
 });

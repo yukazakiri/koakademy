@@ -74,10 +74,16 @@ function gradePasses(grade: number | string | null, config: GradingConfig): bool
 
 function checklistStatus(subject: ChecklistSubject, config: GradingConfig): string {
     if (subject.grade_outcome) {
-        return subject.grade_outcome === "pass" ? "Passed" : subject.grade_outcome === "fail" ? "Failed" : subject.grade_outcome;
+        if (subject.grade_outcome === "pass") return "Passed";
+        if (subject.grade_outcome === "withdrawn" || subject.grade_outcome === "dropped") return "Dropped";
+        if (subject.grade_outcome === "fail") return "Failed";
+        return subject.grade_outcome;
     }
 
-    if (parseNumericGrade(subject.grade) === null) {
+    const numeric = parseNumericGrade(subject.grade);
+    if (numeric !== null && numeric === 0) return "Dropped";
+
+    if (numeric === null) {
         return subject.status === "Completed" ? "Passed" : subject.status;
     }
 
@@ -251,7 +257,7 @@ export function StudentChecklistSection({
                                                                                 variant={
                                                                                     isPassed
                                                                                         ? "default"
-                                                                                        : status === "Failed"
+                                                                                        : status === "Failed" || status === "Dropped"
                                                                                           ? "destructive"
                                                                                           : status === "In Progress"
                                                                                             ? "secondary"
@@ -291,9 +297,15 @@ export function StudentChecklistSection({
                                                                                 return null;
                                                                             }
 
-                                                                            const isPassed = history.grade_outcome
-                                                                                ? history.grade_outcome === "pass"
-                                                                                : gradePasses(history.grade, gradingConfig);
+                                                                            const isDropped =
+                                                                                history.grade_outcome === "withdrawn" ||
+                                                                                history.grade_outcome === "dropped" ||
+                                                                                parseNumericGrade(history.grade) === 0;
+                                                                            const isPassed =
+                                                                                !isDropped &&
+                                                                                (history.grade_outcome
+                                                                                    ? history.grade_outcome === "pass"
+                                                                                    : gradePasses(history.grade, gradingConfig));
 
                                                                             return (
                                                                                 <TableRow

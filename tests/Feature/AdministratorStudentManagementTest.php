@@ -143,6 +143,46 @@ it('marks failing checklist grades as failed instead of passed', function (): vo
             }));
 });
 
+it('marks subjects with a grade of zero as dropped in the checklist', function (): void {
+    config(['activitylog.enabled' => false, 'inertia.testing.ensure_pages_exist' => false]);
+    withoutVite();
+
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $student = Student::factory()->create();
+    $studentEnrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'semester' => 1,
+    ]);
+    $droppedSubject = Subject::factory()->create([
+        'course_id' => $student->course_id,
+        'academic_year' => 1,
+        'semester' => 1,
+    ]);
+
+    SubjectEnrollment::create([
+        'student_id' => $student->id,
+        'enrollment_id' => $studentEnrollment->id,
+        'subject_id' => $droppedSubject->id,
+        'grade' => 0,
+        'grade_outcome' => 'withdrawn',
+        'academic_year' => 1,
+        'school_year' => '2024 - 2025',
+        'semester' => 1,
+        'classification' => SubjectEnrolledEnum::INTERNAL->value,
+    ]);
+
+    actingAs($user)
+        ->get(route('administrators.students.show', $student->id))
+        ->assertSuccessful()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->component('administrators/students/show', false)
+            ->where('student.checklist.0.semesters.0.subjects', function ($subjects) use ($droppedSubject): bool {
+                $byId = collect($subjects)->keyBy('id');
+
+                return $byId->get($droppedSubject->id)['status'] === 'Dropped';
+            }));
+});
+
 it('creates a new historical subject enrollment if is_new_record is true', function (): void {
     $user = User::factory()->create(['role' => UserRole::Admin]);
     $student = Student::factory()->create();

@@ -1,5 +1,103 @@
 # Changelog
 
+## [1.25.0](https://github.com/yukazakiri/koakademy/compare/v1.24.0...v1.25.0) (2026-09-22)
+
+
+### Features
+
+* **ai:** add admin executive agent, analytics charts, document downloads, and floating widget ([#301](https://github.com/yukazakiri/koakademy/issues/301)) ([e94e0ed](https://github.com/yukazakiri/koakademy/commit/e94e0edf3148d09f116b437062d6577170477684))
+* **ai:** add class grades, attendance, faculty load, and room availability tools ([#310](https://github.com/yukazakiri/koakademy/issues/310)) ([8a72609](https://github.com/yukazakiri/koakademy/commit/8a726095bce0d8b2f4b819b973656404bc6b468d))
+* **ai:** add model selector on input groups, custom API fixes, and rich error handling ([#303](https://github.com/yukazakiri/koakademy/issues/303)) ([e86b26a](https://github.com/yukazakiri/koakademy/commit/e86b26a07b90f8e2531a12b2ea59e2db1fdcf27a))
+* **ai:** add SSE chunk line buffering, reasoning stream display, and general chat custom provider fallback ([#306](https://github.com/yukazakiri/koakademy/issues/306)) ([d050fa4](https://github.com/yukazakiri/koakademy/commit/d050fa4183cc494a72fc79b651fb89d23ca69cf1))
+* **ai:** group models by provider, filter unconfigured models, and revamp chat input readability ([#305](https://github.com/yukazakiri/koakademy/issues/305)) ([5721929](https://github.com/yukazakiri/koakademy/commit/5721929bac0b6d238af19a0a41e640cf7d2e6f07))
+* **ai:** implement Model Context Protocol (MCP) server with staff and administrator tools ([#321](https://github.com/yukazakiri/koakademy/issues/321)) ([45dd102](https://github.com/yukazakiri/koakademy/commit/45dd102d27f6fdbc249942f772717336ad01f6f8))
+* **ai:** integrate ElevenLabs UI Response component and interactive Recharts visualizations ([#307](https://github.com/yukazakiri/koakademy/issues/307)) ([3a213ba](https://github.com/yukazakiri/koakademy/commit/3a213ba1a3f3145b3ea80eff2be706cac0934823))
+* **ai:** integrate Laravel AI SDK with multi-provider settings and domain agents ([#300](https://github.com/yukazakiri/koakademy/issues/300)) ([03ec4bf](https://github.com/yukazakiri/koakademy/commit/03ec4bfea75f498041dd657bbc5a5afdb433d3e4))
+* **ai:** integrate prompt-kit components, drop-in file upload, and academic roster tools ([#309](https://github.com/yukazakiri/koakademy/issues/309)) ([3154f80](https://github.com/yukazakiri/koakademy/commit/3154f807107dfd820905d5d6d5023aafc66c30c9))
+* **ai:** integrate prompt-kit components, fix PDF table generation, and stream tool/source events ([#308](https://github.com/yukazakiri/koakademy/issues/308)) ([2f62d63](https://github.com/yukazakiri/koakademy/commit/2f62d63f347cb2797a33b86dc9f0dca82d1bb4f8))
+* align student profile demographics ([#268](https://github.com/yukazakiri/koakademy/issues/268)) ([a5164be](https://github.com/yukazakiri/koakademy/commit/a5164bed52a9986c4c4bd09488427f7a9ea6bad0))
+* **finance:** add versioned assessment revisions, durable payment allocations, and reports access ([#251](https://github.com/yukazakiri/koakademy/issues/251)) ([10e62b4](https://github.com/yukazakiri/koakademy/commit/10e62b4fad376298ec715c36c9ea1a2cb5d5ced5))
+* **forms:** bump forms to 1.5.0 and support profile dropdown options ([#261](https://github.com/yukazakiri/koakademy/issues/261)) ([dbba270](https://github.com/yukazakiri/koakademy/commit/dbba270917df8fb1bb66d2e1bbcc864063e36e24))
+* **modules:** install Forms 1.10.8 ([#288](https://github.com/yukazakiri/koakademy/issues/288)) ([be68b7a](https://github.com/yukazakiri/koakademy/commit/be68b7aa8ccc41215fa08bf74b9f5d7340068400))
+* **modules:** update Forms to 1.10.10 ([#294](https://github.com/yukazakiri/koakademy/issues/294)) ([168e63b](https://github.com/yukazakiri/koakademy/commit/168e63baa5d76774a9f5beac611d1f931ff4afdc))
+* **modules:** update Forms to 1.10.11 ([#295](https://github.com/yukazakiri/koakademy/issues/295)) ([d7bb585](https://github.com/yukazakiri/koakademy/commit/d7bb585aeb727721db4006f0980016f5bf5ac625))
+* **modules:** update Forms to 1.10.3 ([#280](https://github.com/yukazakiri/koakademy/issues/280)) ([62b6a4f](https://github.com/yukazakiri/koakademy/commit/62b6a4f6bfec1ec4edfe72215ba2cd5f07e19a00))
+* **modules:** update Forms to 1.10.9 ([#293](https://github.com/yukazakiri/koakademy/issues/293)) ([b62c835](https://github.com/yukazakiri/koakademy/commit/b62c8352e87d80c0011c68d7508e73063c8ee132))
+* **observability:** configure Laravel Nightwatch ([7552e58](https://github.com/yukazakiri/koakademy/commit/7552e58f1ea47aee1769d2f6e529503d15afe7a9))
+* **registrar:** dynamic per-school authority course-code registry with spreadsheet import ([#259](https://github.com/yukazakiri/koakademy/issues/259)) ([bc19b01](https://github.com/yukazakiri/koakademy/commit/bc19b0173baa323a2db04d4cd1b01c7ba96f71d6))
+* **settings:** add configurable international grading policies ([#322](https://github.com/yukazakiri/koakademy/issues/322)) ([cd993c7](https://github.com/yukazakiri/koakademy/commit/cd993c72ea113523508a264c5166457eaeef3c9c))
+* support Philippine profile location controls ([#269](https://github.com/yukazakiri/koakademy/issues/269)) ([ecab544](https://github.com/yukazakiri/koakademy/commit/ecab544bcf74c6c70d8b1ac57b9e0508b4c5b60f))
+* support portal host aliases ([f923e52](https://github.com/yukazakiri/koakademy/commit/f923e52973a47c415a7bcd691575c5299fc61c67))
+
+
+### Bug Fixes
+
+* **ai:** add multi-format file upload support and fix portal-role undefined error ([#302](https://github.com/yukazakiri/koakademy/issues/302)) ([781491d](https://github.com/yukazakiri/koakademy/commit/781491dc5cafa9adbb54e57c11f9dcecd0f02f9a))
+* **ai:** ensure formal pdf documents and download actions render reliably ([#320](https://github.com/yukazakiri/koakademy/issues/320)) ([7f95633](https://github.com/yukazakiri/koakademy/commit/7f95633d3f3eb310e8211b08e88cdfdeea058b61))
+* **ai:** query faculty by first and last name instead of nonexistent name column ([#315](https://github.com/yukazakiri/koakademy/issues/315)) ([593d2ee](https://github.com/yukazakiri/koakademy/commit/593d2eefb8eb312f808e981457fc4f472b147485))
+* **ai:** resolve streaming error unwrapping, model picker UX, and chat message alignment ([#312](https://github.com/yukazakiri/koakademy/issues/312)) ([544a9fe](https://github.com/yukazakiri/koakademy/commit/544a9fe4352c484a808e68bf51820b9184c7bf09))
+* **ai:** restore streamdown streaming response, inline thinking indicator, and model fallback ([#314](https://github.com/yukazakiri/koakademy/issues/314)) ([de0d6e9](https://github.com/yukazakiri/koakademy/commit/de0d6e9430259c69f5d5910282117b1d8d5d611f))
+* **ai:** scope class enrollments, schedules, grades, and attendance tools to active academic period ([#317](https://github.com/yukazakiri/koakademy/issues/317)) ([0131b3c](https://github.com/yukazakiri/koakademy/commit/0131b3cadbf0bd8a293b1e80ac60a80a38c103a8))
+* **ai:** stabilize prompt-kit deployment build and chart types ([#311](https://github.com/yukazakiri/koakademy/issues/311)) ([995f524](https://github.com/yukazakiri/koakademy/commit/995f5242f352877a098d86250638d55e282bcd83))
+* **ai:** stream chunks via explicit echo and flush for Octane and FrankenPHP ([#304](https://github.com/yukazakiri/koakademy/issues/304)) ([33f90dc](https://github.com/yukazakiri/koakademy/commit/33f90dc89f92ab84369440f82d3e82eb8a556519))
+* **auth:** eagerly save session after passkey login to prevent race condition ([caa433a](https://github.com/yukazakiri/koakademy/commit/caa433aa87877a770629269a241a78bca00baffd))
+* **auth:** redirect passkey authentication directly to user dashboard ([0ef5174](https://github.com/yukazakiri/koakademy/commit/0ef5174fc809aad070dca3e30786564029bc9055))
+* **auth:** support Account authenticatable in gate and fix portal login 500 errors ([36ac285](https://github.com/yukazakiri/koakademy/commit/36ac28550adba0c23cccbbb9560739abf0922359))
+* **ched:** recalculate enrollment summary total ([#273](https://github.com/yukazakiri/koakademy/issues/273)) ([f537cf9](https://github.com/yukazakiri/koakademy/commit/f537cf935951fbeea9a84d074c6c1ceef11f0e66))
+* **classes:** prevent index page reload loop ([#316](https://github.com/yukazakiri/koakademy/issues/316)) ([0784be0](https://github.com/yukazakiri/koakademy/commit/0784be063bc8795ac1192a89cf076d0cabb1a86d))
+* **curriculum:** preserve subject form focus ([8f7af77](https://github.com/yukazakiri/koakademy/commit/8f7af7721175d3f3641cb222504bb98877aa72a7))
+* **docker:** drop build-time Forms refresh that fails GitHub auth ([#299](https://github.com/yukazakiri/koakademy/issues/299)) ([9c42347](https://github.com/yukazakiri/koakademy/commit/9c423476e36b16e7d7bedbcd83a61f81be8ee040))
+* **docker:** include production node_modules for Inertia SSR ([#264](https://github.com/yukazakiri/koakademy/issues/264)) ([56d5866](https://github.com/yukazakiri/koakademy/commit/56d58666c3ec3e5b7fe9535f168f5d235d800177))
+* **docker:** support zero-downtime workers ([5ee4be2](https://github.com/yukazakiri/koakademy/commit/5ee4be2ee7ba8a7311146d081afe75b957798ade))
+* **modules:** install Forms 1.10.1 ([#275](https://github.com/yukazakiri/koakademy/issues/275)) ([b58173b](https://github.com/yukazakiri/koakademy/commit/b58173b843ce54defd63f435d581ec0cd39d945b))
+* **modules:** install Forms 1.10.2 ([#277](https://github.com/yukazakiri/koakademy/issues/277)) ([c3ba92a](https://github.com/yukazakiri/koakademy/commit/c3ba92aa8d04a5f5053d21dd63e676e887713620))
+* **modules:** require Forms 1.10.0 ([#274](https://github.com/yukazakiri/koakademy/issues/274)) ([0204963](https://github.com/yukazakiri/koakademy/commit/0204963551d9191e9ad4dd0bf4adf729fa28a0a5))
+* **modules:** update Forms to 1.10.12 ([01d8fc9](https://github.com/yukazakiri/koakademy/commit/01d8fc94ef7511c169c473912c30887cc6a75576))
+* **modules:** update Forms to 1.10.4 ([#282](https://github.com/yukazakiri/koakademy/issues/282)) ([b56829d](https://github.com/yukazakiri/koakademy/commit/b56829dbfafec75a5c1654c96c0c6e9b695d08f7))
+* **modules:** update Forms to 1.10.5 ([#283](https://github.com/yukazakiri/koakademy/issues/283)) ([ba0e80d](https://github.com/yukazakiri/koakademy/commit/ba0e80d20f139c1a650ebf17f31f5a0aedd9e377))
+* **modules:** update Forms to 1.10.6 ([#286](https://github.com/yukazakiri/koakademy/issues/286)) ([0603b9e](https://github.com/yukazakiri/koakademy/commit/0603b9efb0dc75bf9bc2d2c4b04e20cf3bd2f684))
+* **modules:** update Forms to 1.10.7 ([#287](https://github.com/yukazakiri/koakademy/issues/287)) ([cf01f2d](https://github.com/yukazakiri/koakademy/commit/cf01f2d19dbf9096db2eaa05c0a7137c47376be4))
+* **routes:** register unconstrained routes when portal or admin host is empty ([3731285](https://github.com/yukazakiri/koakademy/commit/3731285224fb56e9b0eec4c1ee79f6d9eacdebea))
+* **ssr:** supply ziggy route configuration and localstorage polyfill for inertia ssr ([#313](https://github.com/yukazakiri/koakademy/issues/313)) ([7dffc9f](https://github.com/yukazakiri/koakademy/commit/7dffc9fcefe17832b6a003964ff3c476b744ce2e))
+* **students:** align checklist status with grades ([661bbba](https://github.com/yukazakiri/koakademy/commit/661bbbae47314291db523782006ddfd52f37c29a))
+
+
+### Build System
+
+* **deps:** bump node from `367679c` to `cd9f682` in /docker in the docker-base-images group ([#290](https://github.com/yukazakiri/koakademy/issues/290)) ([e252390](https://github.com/yukazakiri/koakademy/commit/e2523906622d655ebc727e820261795680026f48))
+* **deps:** bump resend/resend-laravel from 1.4.0 to 1.5.0 in the composer-minor group ([#319](https://github.com/yukazakiri/koakademy/issues/319)) ([0391ef4](https://github.com/yukazakiri/koakademy/commit/0391ef4e7afda15f796cdbfc5dd670b695d44b95))
+* **deps:** bump the composer-patch group across 1 directory with 7 updates ([#318](https://github.com/yukazakiri/koakademy/issues/318)) ([6d1233b](https://github.com/yukazakiri/koakademy/commit/6d1233bf5e1a7b52d0c89ebca361a06bc1b735a6))
+* **deps:** include horizon in lockfile and drop unauthenticated runtime require ([0980122](https://github.com/yukazakiri/koakademy/commit/09801228768aa2e8396c1bb57f07225dba9a058f))
+* **deps:** revamp dependabot grouping and scheduling ([f6ca4d7](https://github.com/yukazakiri/koakademy/commit/f6ca4d734376e01c570baa078f69844a29f7d89a))
+* **modules:** bump koakademy/forms from 1.10.12 to 1.10.13 ([#298](https://github.com/yukazakiri/koakademy/issues/298)) ([3f73568](https://github.com/yukazakiri/koakademy/commit/3f735681c4cf2676b7ac68f094750d9679ce674b))
+* **modules:** bump koakademy/forms from 1.4.0 to 1.5.0 in the koakademy-modules group ([#262](https://github.com/yukazakiri/koakademy/issues/262)) ([36508cb](https://github.com/yukazakiri/koakademy/commit/36508cb73e3aa6826a55ab3c174f4667df4538a8))
+* **modules:** bump koakademy/forms to 1.6.0 ([#265](https://github.com/yukazakiri/koakademy/issues/265)) ([6d07505](https://github.com/yukazakiri/koakademy/commit/6d075052f704d9b7a10219a57233adad57fc4dd6))
+* **modules:** bump marcelweidum/filament-passkeys from 4.0.6 to 4.0.7 ([#245](https://github.com/yukazakiri/koakademy/issues/245)) ([214a17f](https://github.com/yukazakiri/koakademy/commit/214a17fcf0e5d560aad13a11371b71a211e7f294))
+
+
+### Documentation
+
+* **self-hosting:** document zero-downtime Dokploy and bare VPS runbooks ([ccde293](https://github.com/yukazakiri/koakademy/commit/ccde293bccbb0820b3d4c6df210f1a0d985147f1))
+* **vps:** add systemd deployment units ([21fe26c](https://github.com/yukazakiri/koakademy/commit/21fe26c900c69664306928c91a8459fd2b844f6c))
+
+
+### Tests
+
+* **ched:** isolate queued export progress events ([#272](https://github.com/yukazakiri/koakademy/issues/272)) ([b222767](https://github.com/yukazakiri/koakademy/commit/b22276747ad20df341f0503682177fd6623fd695))
+* **forms:** fix relationship option casing and Pint formatting ([5c0989c](https://github.com/yukazakiri/koakademy/commit/5c0989c33f5b491c4820896ee1526bd332c4df73))
+
+
+### Styles
+
+* fix Pint formatting in Nightwatch config ([b2c5b8f](https://github.com/yukazakiri/koakademy/commit/b2c5b8fd8c5d5f87270bef81146619d6268e5206))
+
+
+### Maintenance
+
+* **deps:** update dependencies and refresh lockfiles ([a3b96fa](https://github.com/yukazakiri/koakademy/commit/a3b96fa783b01ea1773a184e4c4adb3ceff194ac))
+* update Forms to 1.10.0 ([#271](https://github.com/yukazakiri/koakademy/issues/271)) ([d216dd4](https://github.com/yukazakiri/koakademy/commit/d216dd404c5dd55bdbd26a79427f58a1b6990cde))
+* update Forms to 1.9.0 ([#270](https://github.com/yukazakiri/koakademy/issues/270)) ([9249c04](https://github.com/yukazakiri/koakademy/commit/9249c0412cb1e59c33530186770700b798d5be04))
+
 ## [1.24.0](https://github.com/yukazakiri/koakademy/compare/v1.23.0...v1.24.0) (2026-09-08)
 
 

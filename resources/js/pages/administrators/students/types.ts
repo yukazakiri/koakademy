@@ -39,6 +39,9 @@ export interface ChecklistHistoryRecord {
     id: number;
     enrollment_id?: number | null;
     grade: number | string | null;
+    grade_symbol?: string | null;
+    grade_outcome?: string | null;
+    grade_quality_points?: number | null;
     remarks: string | null;
     classification: string | null;
     school_name: string | null;
@@ -61,6 +64,9 @@ export interface ChecklistSubject {
     classification: string | null;
     status: string;
     grade: number | string | null;
+    grade_symbol?: string | null;
+    grade_outcome?: string | null;
+    grade_quality_points?: number | null;
     remarks: string | null;
     history: ChecklistHistoryRecord[];
     isStandaloneNonCredited?: boolean;

@@ -14,7 +14,8 @@ final readonly class SettingsShareService
     public function __construct(
         private SiteSettings $siteSettings,
         private SocialMediaSettings $socialMediaSettings,
-        private GeneralSettingsService $generalSettingsService
+        private GeneralSettingsService $generalSettingsService,
+        private GradingSystemService $gradingSystemService,
     ) {}
 
     /**
@@ -81,7 +82,7 @@ final readonly class SettingsShareService
      */
     public function getGrading(): array
     {
-        return app(GradingSystemService::class)->getConfig();
+        return $this->gradingSystemService->getConfig();
     }
 
     /**

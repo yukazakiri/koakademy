@@ -21,16 +21,7 @@ export type SystemManagementSectionKey =
     | "observability"
     | "ai";
 
-export type AiProviderKey =
-    | "anthropic"
-    | "openai"
-    | "gemini"
-    | "groq"
-    | "deepseek"
-    | "mistral"
-    | "openrouter"
-    | "ollama"
-    | "openai-compatible";
+export type AiProviderKey = "anthropic" | "openai" | "gemini" | "groq" | "deepseek" | "mistral" | "openrouter" | "ollama" | "openai-compatible";
 
 export interface AiDiscoveredModel {
     id: string;
@@ -88,14 +79,40 @@ export interface AiConfigPayload {
 }
 
 export interface GradingConfigPayload {
-    scale: "point" | "percent" | "auto";
-    point_passing_grade: number;
-    percent_passing_grade: number;
-    point_decimal_places: number;
-    percent_decimal_places: number;
+    name: string;
+    input_type: "numeric" | "symbol";
+    numeric_min: number;
+    numeric_max: number;
+    direction: "higher_is_better" | "lower_is_better";
+    decimal_places: number;
     include_failed_in_gwa: boolean;
     excluded_keywords: string[];
     excluded_subject_ids: number[];
+    bands: GradingBandPayload[];
+    components: GradingComponentPayload[];
+    policy_version_id?: number;
+    policy_version?: number;
+}
+
+export interface GradingBandPayload {
+    id: string;
+    symbol: string | null;
+    label: string;
+    min: number | null;
+    max: number | null;
+    outcome: "pass" | "fail" | "incomplete" | "withdrawn" | "non_credit";
+    quality_points: number | null;
+    color: string;
+    sort_order: number;
+}
+
+export interface GradingComponentPayload {
+    id: string;
+    key: string;
+    label: string;
+    weight: number;
+    required: boolean;
+    sort_order: number;
 }
 
 export interface CourseSubjectSummary {

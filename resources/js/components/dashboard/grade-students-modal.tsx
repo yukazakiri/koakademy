@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { GradingConfigPayload } from "@/pages/administrators/system-management/types";
 import axios from "axios";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -27,6 +28,13 @@ interface StudentRow {
     };
 }
 
+interface QuickActionStudent {
+    id: number;
+    name: string;
+    student_id: string;
+    grades?: StudentRow["grades"];
+}
+
 interface GradeStudentsModalProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -39,6 +47,7 @@ export function GradeStudentsModal({ open, onOpenChange, classes }: GradeStudent
     const [autoAverage, setAutoAverage] = useState(true);
     const [isLoading, setIsLoading] = useState(false);
     const [selectedClass, setSelectedClass] = useState<ClassOption | null>(null);
+    const [gradingPolicy, setGradingPolicy] = useState<GradingConfigPayload | null>(null);
 
     const handleClassChange = async (classId: string) => {
         setSelectedClassId(classId);
@@ -53,7 +62,7 @@ export function GradeStudentsModal({ open, onOpenChange, classes }: GradeStudent
             const data = response.data;
 
             // Transform students data for GradeSheet
-            const transformedStudents: StudentRow[] = (data.students || []).map((student: any) => ({
+            const transformedStudents: StudentRow[] = (data.students || []).map((student: QuickActionStudent) => ({
                 id: student.id,
                 name: student.name,
                 student_id: student.student_id,
@@ -62,11 +71,13 @@ export function GradeStudentsModal({ open, onOpenChange, classes }: GradeStudent
                     midterm: student.grades?.midterm ?? null,
                     final: student.grades?.final ?? null,
                     average: student.grades?.average ?? null,
+                    components: student.grades?.components ?? {},
                 },
             }));
 
             setStudents(transformedStudents);
             setAutoAverage(data.auto_average ?? true);
+            setGradingPolicy(data.grading_policy ?? null);
         } catch (error) {
             console.error("Failed to fetch class data:", error);
             toast.error("Failed to load class data");
@@ -79,6 +90,7 @@ export function GradeStudentsModal({ open, onOpenChange, classes }: GradeStudent
         setSelectedClassId("");
         setStudents([]);
         setSelectedClass(null);
+        setGradingPolicy(null);
         onOpenChange(false);
     };
 
@@ -141,6 +153,7 @@ export function GradeStudentsModal({ open, onOpenChange, classes }: GradeStudent
                                 grades: s.grades,
                             }))}
                             autoAverageDefault={autoAverage}
+                            gradingPolicy={gradingPolicy ?? undefined}
                         />
                     )}
 

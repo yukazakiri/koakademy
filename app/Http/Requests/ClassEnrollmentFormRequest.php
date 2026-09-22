@@ -46,24 +46,9 @@ final class ClassEnrollmentFormRequest extends FormRequest
                 'nullable',
                 'string',
             ],
-            'prelim_grade' => [
-                'nullable',
-                'numeric',
-                'min:0',
-                'max:100',
-            ],
-            'midterm_grade' => [
-                'nullable',
-                'numeric',
-                'min:0',
-                'max:100',
-            ],
-            'finals_grade' => [
-                'nullable',
-                'numeric',
-                'min:0',
-                'max:100',
-            ],
+            'prelim_grade' => ['nullable', 'numeric'],
+            'midterm_grade' => ['nullable', 'numeric'],
+            'finals_grade' => ['nullable', 'numeric'],
             'total_average' => [
                 'nullable',
                 'numeric',

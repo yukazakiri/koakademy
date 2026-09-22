@@ -18,10 +18,10 @@ final class UpdateClassGradesRequest extends FormRequest
         return [
             'grades' => ['required', 'array', 'min:1'],
             'grades.*.enrollment_id' => ['required', 'integer', 'exists:class_enrollments,id'],
-            'grades.*.prelim' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'grades.*.midterm' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'grades.*.final' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'grades.*.average' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'grades.*.prelim' => ['nullable', 'numeric'],
+            'grades.*.midterm' => ['nullable', 'numeric'],
+            'grades.*.final' => ['nullable', 'numeric'],
+            'grades.*.average' => ['nullable', 'numeric'],
         ];
     }
 }

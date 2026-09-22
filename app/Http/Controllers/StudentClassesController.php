@@ -8,6 +8,7 @@ use App\Models\Student;
 use App\Models\Subject;
 use App\Models\SubjectEnrollment;
 use App\Models\User;
+use App\Services\GradingSystemService;
 use App\Services\SchoolBrandingService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -15,7 +16,10 @@ use Inertia\Response;
 
 final class StudentClassesController extends Controller
 {
-    public function __construct(private readonly SchoolBrandingService $schoolBranding) {}
+    public function __construct(
+        private readonly SchoolBrandingService $schoolBranding,
+        private readonly GradingSystemService $gradingSystem,
+    ) {}
 
     public function __invoke(Request $request): Response
     {
@@ -89,16 +93,12 @@ final class StudentClassesController extends Controller
             $grade = $enrollment->grade;
             $status = 'ongoing'; // Default if enrolled in current sem
 
-            if ($enrollment->is_credited) {
+            if ($enrollment->is_credited || $enrollment->grade_outcome === 'pass') {
                 $status = 'completed';
             } elseif ($grade !== null) {
-                // Adjust passing logic based on your grading system (assuming 3.0 or 75 is passing)
-                // If numeric 1.0-5.0: <= 3.0 is pass. If 0-100: >= 75 is pass.
-                // Assuming standard PH system: 1.0 (High) - 3.0 (Pass) - 5.0 (Fail)
-                // Also check for 0 which might mean no grade yet or withdrawn
-                if (($grade <= 3.0 && $grade >= 1.0) || ($grade >= 75)) {
+                if ($this->gradingSystem->isPassingGrade($grade)) {
                     $status = 'completed';
-                } elseif ($grade === 5.0 || ($grade < 75 && $grade > 0)) {
+                } else {
                     $status = 'failed';
                 }
             }

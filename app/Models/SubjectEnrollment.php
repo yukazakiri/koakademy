@@ -53,6 +53,10 @@ final class SubjectEnrollment extends Model
         'subject_id',
         'class_id',
         'grade',
+        'grading_policy_version_id',
+        'grade_symbol',
+        'grade_outcome',
+        'grade_quality_points',
         'instructor',
         'student_id',
         'academic_year',
@@ -135,6 +139,12 @@ final class SubjectEnrollment extends Model
         return $this->belongsTo(StudentEnrollment::class, 'enrollment_id');
     }
 
+    /** @return BelongsTo<GradingPolicyVersion, $this> */
+    public function gradingPolicyVersion(): BelongsTo
+    {
+        return $this->belongsTo(GradingPolicyVersion::class);
+    }
+
     protected static function boot(): void
     {
         parent::boot();
@@ -171,6 +181,8 @@ final class SubjectEnrollment extends Model
             'subject_id' => 'int',
             'class_id' => 'int',
             'grade' => 'float',
+            'grading_policy_version_id' => 'int',
+            'grade_quality_points' => 'float',
             'student_id' => 'int',
             'semester' => 'int',
             'enrollment_id' => 'int',

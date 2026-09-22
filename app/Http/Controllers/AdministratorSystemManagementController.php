@@ -19,6 +19,7 @@ use App\Http\Requests\Administrators\UpdateAiSettingsRequest;
 use App\Http\Requests\Administrators\UpdateApiManagementRequest;
 use App\Http\Requests\Administrators\UpdateEnrollmentPipelineRequest;
 use App\Http\Requests\Administrators\UpdateFinanceDocumentSettingsRequest;
+use App\Http\Requests\Administrators\UpdateGradingPolicyRequest;
 use App\Http\Requests\Administrators\UpdateNewsletterSettingsRequest;
 use App\Http\Requests\Administrators\UpdateSchoolCurriculumCapabilitiesRequest;
 use App\Http\Requests\Administrators\UpdateSchoolLevelRequest;
@@ -380,6 +381,8 @@ final class AdministratorSystemManagementController extends Controller
 
     public function grading(): Response
     {
+        $this->authorize('viewGrading', GeneralSetting::class);
+
         return $this->renderSystemManagementPage('administrators/system-management/grading', 'grading', 'viewGrading');
     }
 
@@ -440,26 +443,11 @@ final class AdministratorSystemManagementController extends Controller
         return Redirect::back()->with('success', 'Identifier sequences updated successfully.');
     }
 
-    public function updateGrading(Request $request): RedirectResponse
+    public function updateGrading(UpdateGradingPolicyRequest $request, GradingSystemService $gradingSystem): RedirectResponse
     {
-        $this->authorize('updateGrading', GeneralSetting::class);
+        $gradingSystem->update($request->validated(), author: $request->user());
 
-        $validated = $request->validate([
-            'scale' => 'required|in:point,percent,auto',
-            'point_passing_grade' => 'required|numeric|min:1|max:5',
-            'percent_passing_grade' => 'required|numeric|min:0|max:100',
-            'point_decimal_places' => 'required|integer|min:0|max:6',
-            'percent_decimal_places' => 'required|integer|min:0|max:6',
-            'include_failed_in_gwa' => 'required|boolean',
-            'excluded_keywords' => 'array',
-            'excluded_keywords.*' => 'string|max:64',
-            'excluded_subject_ids' => 'array',
-            'excluded_subject_ids.*' => 'integer|min:1',
-        ]);
-
-        app(GradingSystemService::class)->update($validated);
-
-        return Redirect::back()->with('success', 'Grading system updated successfully.');
+        return Redirect::back()->with('success', 'A new grading policy version has been published successfully.');
     }
 
     public function notifications(): Response
@@ -1267,7 +1255,9 @@ final class AdministratorSystemManagementController extends Controller
             'enrollment_pipeline' => $this->enrollmentPipelineService->getConfiguration(),
             'enrollment_stats' => $this->enrollmentPipelineService->getStatsConfiguration(),
             'api_management' => $generalSettingsService->getApiManagementConfig(),
-            'grading_config' => app(GradingSystemService::class)->getConfig(),
+            'grading_config' => $activeSchool instanceof School
+                ? app(GradingSystemService::class)->activeConfigurationForSchool($activeSchool, createWhenMissing: false)
+                : app(GradingSystemService::class)->getConfig(),
             'id_sequences' => app(IdentifierGenerator::class)->configuration(),
             'courses_with_subjects' => app(GradingSystemService::class)->getCoursesWithSubjects(),
             'available_enrollment_courses' => Course::query()

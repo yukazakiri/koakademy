@@ -36,6 +36,7 @@ use App\Models\User;
 use App\Notifications\StatementOfAccountAdjustedNotification;
 use App\Services\CurriculumCapabilityResolver;
 use App\Services\GeneralSettingsService;
+use App\Services\GradeEvaluationService;
 use App\Services\GradingSystemService;
 use App\Services\IdentifierGenerator;
 use App\Services\StudentIdUpdateService;
@@ -424,18 +425,18 @@ final class AdministratorStudentManagementController extends Controller
                 foreach ($subjects as $subject) {
                     $enrollments = $subjectEnrolled->get($subject->id, collect());
 
-                    // Determine primary enrollment. Priority: "Completed" (has a grade), or the latest one.
-                    $enrolledSubject = $enrollments->firstWhere(fn ($e): bool => $e->grade !== null) ?? $enrollments->last();
+                    // Prefer a finalized/evaluated record, then fall back to the latest attempt.
+                    $enrolledSubject = $enrollments->firstWhere(fn ($e): bool => $e->grade !== null || $e->grade_symbol !== null) ?? $enrollments->last();
 
                     $status = 'Not Completed';
                     $grade = '-';
 
                     if ($enrolledSubject) {
-                        if ($enrolledSubject->grade !== null) {
-                            $status = $gradingSystem->isPassingGrade((float) $enrolledSubject->grade, $gradingConfig)
+                        if ($enrolledSubject->grade !== null || $enrolledSubject->grade_symbol !== null) {
+                            $status = ($enrolledSubject->grade_outcome ?? null) === 'pass' || $gradingSystem->isPassingGrade($enrolledSubject->grade, $gradingConfig)
                                 ? 'Completed'
                                 : 'Failed';
-                            $grade = number_format((float) $enrolledSubject->grade, 2);
+                            $grade = $enrolledSubject->grade_symbol ?? number_format((float) $enrolledSubject->grade, (int) $gradingConfig['decimal_places']);
                         } else {
                             $status = 'In Progress';
                         }
@@ -445,6 +446,9 @@ final class AdministratorStudentManagementController extends Controller
                         'id' => $e->id,
                         'enrollment_id' => $e->enrollment_id,
                         'grade' => $e->grade,
+                        'grade_symbol' => $e->grade_symbol,
+                        'grade_outcome' => $e->grade_outcome,
+                        'grade_quality_points' => $e->grade_quality_points,
                         'remarks' => $e->remarks,
                         'classification' => $e->classification,
                         'school_name' => $e->school_name,
@@ -465,7 +469,10 @@ final class AdministratorStudentManagementController extends Controller
                         'title' => $subject->title,
                         'units' => $subject->units,
                         'status' => $status,
-                        'grade' => $enrolledSubject ? $enrolledSubject->grade : null,
+                        'grade' => $enrolledSubject ? ($enrolledSubject->grade_symbol ?? $enrolledSubject->grade) : null,
+                        'grade_symbol' => $enrolledSubject?->grade_symbol,
+                        'grade_outcome' => $enrolledSubject?->grade_outcome,
+                        'grade_quality_points' => $enrolledSubject?->grade_quality_points,
                         'remarks' => $enrolledSubject ? $enrolledSubject->remarks : null,
                         'classification' => $enrolledSubject ? $enrolledSubject->classification : 'internal',
                         'school_name' => $enrolledSubject ? $enrolledSubject->school_name : null,
@@ -1487,12 +1494,12 @@ final class AdministratorStudentManagementController extends Controller
         return back()->with('success', 'Subject added successfully.');
     }
 
-    public function updateSubjectGrade(Request $request, Student $student, Subject $subject): RedirectResponse
+    public function updateSubjectGrade(Request $request, Student $student, Subject $subject, GradingSystemService $gradingSystem): RedirectResponse
     {
         $validated = $request->validate([
             'enrollment_record_id' => ['nullable', 'integer'],
             'is_new_record' => ['nullable', 'boolean'],
-            'grade' => ['nullable', 'numeric', 'min:1', 'max:100'],
+            'grade' => ['nullable'],
             'remarks' => ['nullable', 'string'],
             'classification' => ['required', 'string', 'in:'.implode(',', array_column(SubjectEnrolledEnum::cases(), 'value'))],
             'school_name' => ['nullable', 'string', 'required_if:classification,credited,non_credited'],
@@ -1512,7 +1519,6 @@ final class AdministratorStudentManagementController extends Controller
 
         if ($enrollmentRecordId && ! $isNewRecord) {
             $subjectEnrollment = SubjectEnrollment::where('student_id', $student->id)
-                ->where('subject_id', $subject->id)
                 ->where('id', $enrollmentRecordId)
                 ->first();
         } elseif (! $isNewRecord) {
@@ -1525,8 +1531,15 @@ final class AdministratorStudentManagementController extends Controller
             $subjectEnrollment = null;
         }
 
+        $gradingConfig = $gradingSystem->getConfig();
+        $evaluation = app(GradeEvaluationService::class)->evaluate($validated['grade'], $gradingConfig);
+
         $data = [
-            'grade' => $validated['grade'],
+            'grade' => $evaluation['numeric_grade'] ?? (is_numeric($validated['grade'] ?? null) ? (float) $validated['grade'] : null),
+            'grade_symbol' => $evaluation['symbol'] ?? (is_string($validated['grade'] ?? null) ? $validated['grade'] : null),
+            'grade_outcome' => $evaluation['outcome'],
+            'grade_quality_points' => $evaluation['quality_points'],
+            'grading_policy_version_id' => $gradingConfig['policy_version_id'] ?? null,
             'remarks' => $validated['remarks'],
             'classification' => $validated['classification'],
             'academic_year' => $validated['academic_year'],

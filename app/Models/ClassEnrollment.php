@@ -13,6 +13,7 @@ use App\Models\Concerns\HasAcademicPeriodScope;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Laravel\Scout\Searchable;
 use Override;
@@ -58,6 +59,11 @@ final class ClassEnrollment extends Model
         'midterm_grade',
         'finals_grade',
         'total_average',
+        'grading_policy_version_id',
+        'grading_components',
+        'grade_symbol',
+        'grade_outcome',
+        'grade_quality_points',
         'is_grades_finalized',
         'is_grades_verified',
         'verified_by',
@@ -147,6 +153,12 @@ final class ClassEnrollment extends Model
         return $this->belongsTo(Student::class, 'student_id', 'id');
     }
 
+    /** @return BelongsTo<GradingPolicyVersion, $this> */
+    public function gradingPolicyVersion(): BelongsTo
+    {
+        return $this->belongsTo(GradingPolicyVersion::class);
+    }
+
     protected function casts(): array
     {
         return [
@@ -158,6 +170,9 @@ final class ClassEnrollment extends Model
             'midterm_grade' => 'float',
             'finals_grade' => 'float',
             'total_average' => 'float',
+            'grading_policy_version_id' => 'integer',
+            'grading_components' => 'array',
+            'grade_quality_points' => 'float',
             'is_grades_finalized' => 'boolean',
             'is_grades_verified' => 'boolean',
             'verified_by' => 'integer',

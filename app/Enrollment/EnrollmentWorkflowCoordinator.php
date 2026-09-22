@@ -16,6 +16,7 @@ use Closure;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Throwable;
 
 final readonly class EnrollmentWorkflowCoordinator
 {
@@ -97,28 +98,82 @@ final readonly class EnrollmentWorkflowCoordinator
             return $this->engine->transition($enrollment, $actor, $transitionKey, $payload, $idempotencyKey ?? (string) Str::uuid());
         }
 
-        $nextStep = $this->legacyPipeline->getNextStep($enrollment->status);
-        if ($nextStep === null) {
-            throw new EnrollmentTransitionException('No next legacy enrollment step is available.');
-        }
-        if (! $this->legacyPipeline->canUserPerformStep($actor, $nextStep)) {
-            throw new EnrollmentTransitionException('You are not allowed to complete this enrollment step.');
-        }
+        $requestKey = $idempotencyKey ?? (string) Str::uuid();
+        $scopedIdempotencyKey = hash('sha256', "legacy-transition:{$enrollment->id}:{$requestKey}");
 
-        $from = $enrollment->status;
-        $successful = match ($nextStep['action_type'] ?? 'standard') {
-            'department_verification' => $this->legacyEnrollmentService->verifyByHeadDept($enrollment),
-            'cashier_verification' => ($payload['without_receipt'] ?? false)
-                ? $this->legacyEnrollmentService->verifyByCashierWithoutReceipt($enrollment, $payload)
-                : $this->legacyEnrollmentService->verifyByCashier($enrollment, $payload),
-            default => $enrollment->forceFill(['status' => $nextStep['status']])->save(),
-        };
+        $existing = EnrollmentWorkflowEvent::query()
+            ->where('idempotency_key', $scopedIdempotencyKey)
+            ->first();
 
-        if (! $successful) {
-            throw new EnrollmentTransitionException('The legacy enrollment step could not be completed.');
+        if ($existing instanceof EnrollmentWorkflowEvent) {
+            return $this->transitionResultFromEvent($existing);
         }
 
-        return new TransitionResult(true, $from, (string) $nextStep['key'], null, message: 'Enrollment advanced.');
+        try {
+            return DB::transaction(function () use ($enrollment, $actor, $transitionKey, $payload, $scopedIdempotencyKey): TransitionResult {
+                $locked = StudentEnrollment::query()->lockForUpdate()->findOrFail($enrollment->id);
+                $existing = EnrollmentWorkflowEvent::query()
+                    ->where('idempotency_key', $scopedIdempotencyKey)
+                    ->first();
+
+                if ($existing instanceof EnrollmentWorkflowEvent) {
+                    return $this->transitionResultFromEvent($existing);
+                }
+
+                $nextStep = $this->legacyPipeline->getNextStep($locked->status);
+                if ($nextStep === null) {
+                    throw new EnrollmentTransitionException('No next legacy enrollment step is available.');
+                }
+                if (! $this->legacyPipeline->canUserPerformStep($actor, $nextStep)) {
+                    throw new EnrollmentTransitionException('You are not allowed to complete this enrollment step.');
+                }
+
+                $from = $locked->status;
+                $successful = match ($nextStep['action_type'] ?? 'standard') {
+                    'department_verification' => $this->legacyEnrollmentService->verifyByHeadDept($locked),
+                    'cashier_verification' => ($payload['without_receipt'] ?? false)
+                        ? $this->legacyEnrollmentService->verifyByCashierWithoutReceipt($locked, $payload)
+                        : $this->legacyEnrollmentService->verifyByCashier($locked, $payload),
+                    default => $locked->forceFill(['status' => $nextStep['status']])->save(),
+                };
+
+                if (! $successful) {
+                    throw new EnrollmentTransitionException('The legacy enrollment step could not be completed.');
+                }
+
+                $updated = $locked->refresh();
+                EnrollmentWorkflowEvent::query()->create([
+                    'student_enrollment_id' => $updated->id,
+                    'actor_id' => $actor->id,
+                    'event_type' => 'transition_succeeded',
+                    'from_step_key' => $from,
+                    'to_step_key' => (string) $nextStep['key'],
+                    'status' => $updated->status,
+                    'idempotency_key' => $scopedIdempotencyKey,
+                    'reason' => isset($payload['reason']) ? (string) $payload['reason'] : null,
+                    'result' => [
+                        'transition_key' => $transitionKey,
+                        'actions' => [],
+                    ],
+                ]);
+
+                return new TransitionResult(true, $from, (string) $nextStep['key'], null, message: 'Enrollment advanced.');
+            }, 3);
+        } catch (Throwable $exception) {
+            EnrollmentWorkflowEvent::query()->firstOrCreate(
+                ['idempotency_key' => $scopedIdempotencyKey],
+                [
+                    'student_enrollment_id' => $enrollment->id,
+                    'actor_id' => $actor->id,
+                    'event_type' => 'transition_failed',
+                    'from_step_key' => $enrollment->status,
+                    'reason' => $exception->getMessage(),
+                    'result' => ['exception' => $exception::class],
+                ],
+            );
+
+            throw $exception;
+        }
     }
 
     public function verifyAcademic(StudentEnrollment $enrollment, User $actor, ?string $idempotencyKey = null): TransitionResult
@@ -200,6 +255,18 @@ final readonly class EnrollmentWorkflowCoordinator
             $idempotencyKey ?? (string) Str::uuid(),
             fn (EnrollmentRequirement $locked): EnrollmentRequirement => $this->requirements->waive($locked, $actor, $reason),
             $reason,
+        );
+    }
+
+    private function transitionResultFromEvent(EnrollmentWorkflowEvent $event): TransitionResult
+    {
+        return new TransitionResult(
+            successful: $event->event_type === 'transition_succeeded',
+            fromStepKey: $event->from_step_key,
+            toStepKey: $event->to_step_key,
+            terminalOutcome: $event->terminal_outcome,
+            actions: $event->result['actions'] ?? [],
+            message: 'This transition attempt was already processed.',
         );
     }
 

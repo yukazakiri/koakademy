@@ -54,7 +54,8 @@ final class GetMyContextTool extends Tool
             'mcp' => [
                 'token_name' => $token?->name,
                 'abilities' => $token?->abilities ?? [],
-                'can_write' => $token?->can((string) config('api.mcp.abilities.write', 'mcp:write')) ?? false,
+                'can_write' => $this->settings->isMcpWriteEnabled()
+                    && $this->tokenHasExplicitAbility($user, (string) config('api.mcp.abilities.write', 'mcp:write')),
             ],
             'curriculum_capabilities' => $this->curriculumCapabilities->forSchool($school)->values()->all(),
         ]);

@@ -21,7 +21,10 @@ trait AuthorizesMcpRequests
             throw new AuthenticationException('Authentication is required.');
         }
 
-        if ($user->currentAccessToken() === null) {
+        // MCP HTTP requests always arrive with a Sanctum token. The testing
+        // harness authenticates the user directly, so only tests may resolve
+        // the latest fixture token as a convenience.
+        if (app()->environment('testing') && $user->currentAccessToken() === null) {
             $token = $user->tokens()->latest('id')->first();
 
             if ($token !== null) {
@@ -94,11 +97,19 @@ trait AuthorizesMcpRequests
         }
     }
 
-    private function requireTokenAbility(User $user, string $ability): void
+    protected function tokenHasExplicitAbility(User $user, string $ability): bool
     {
         $token = $user->currentAccessToken();
+        $abilities = $token?->abilities;
 
-        if ($token === null || ! $token->can($ability)) {
+        return is_array($abilities)
+            && ! in_array('*', $abilities, true)
+            && in_array($ability, $abilities, true);
+    }
+
+    private function requireTokenAbility(User $user, string $ability): void
+    {
+        if (! $this->tokenHasExplicitAbility($user, $ability)) {
             throw new AuthorizationException('The API key does not have '.$ability.' access.');
         }
     }

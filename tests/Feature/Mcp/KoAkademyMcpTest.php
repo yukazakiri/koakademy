@@ -127,6 +127,15 @@ it('rejects an mcp call when the token lacks mcp:read ability', function (): voi
     $response->assertHasErrors(['The API key does not have mcp:read access.']);
 });
 
+it('rejects wildcard tokens for mcp calls', function (): void {
+    $this->staff->createToken('Wildcard API Key', ['*']);
+
+    $response = KoAkademyServer::actingAs($this->staff)
+        ->tool(GetMyContextTool::class, []);
+
+    $response->assertHasErrors(['The API key does not have mcp:read access.']);
+});
+
 it('searches students within the authorized school and enforces permissions', function (): void {
     $this->staff->createToken('Staff Agent', ['mcp:read']);
 
@@ -385,6 +394,25 @@ it('blocks mcp mutations when mcp_write_enabled is toggled off in settings', fun
     $response->assertHasErrors(['MCP data modifications are disabled in system settings.']);
 });
 
+it('reports effective write capability when the global write switch is disabled', function (): void {
+    $this->staff->createToken('Write Agent', ['mcp:read', 'mcp:write']);
+
+    app(GeneralSettingsService::class)->updateApiManagementConfig([
+        'public_api_enabled' => true,
+        'public_settings_enabled' => true,
+        'public_settings_fields' => ['site_name'],
+        'mcp_enabled' => true,
+        'mcp_write_enabled' => false,
+    ]);
+
+    KoAkademyServer::actingAs($this->staff)
+        ->tool(GetMyContextTool::class, [])
+        ->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('mcp.can_write', false)->etc();
+        });
+});
+
 it('serves http mcp requests with bearer authentication and tenant headers', function (): void {
     $token = $this->staff->createToken('Staff Bearer', ['mcp:read'])->plainTextToken;
 
@@ -591,6 +619,21 @@ it('advances enrollment workflow step for administrators with mcp:write', functi
             $json->where('enrollment_id', $enrollment->id)
                 ->where('successful', true)
                 ->where('idempotency_key', 'adv-step-1')
+                ->etc();
+        });
+
+    $replayed = KoAkademyServer::actingAs($this->admin)
+        ->tool(AdvanceEnrollmentStepTool::class, [
+            'enrollment_id' => $enrollment->id,
+            'reason' => 'Documents verified by administrator',
+            'idempotency_key' => 'adv-step-1',
+        ]);
+
+    $replayed->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('successful', true)
+                ->where('idempotency_key', 'adv-step-1')
+                ->where('message', 'This transition attempt was already processed.')
                 ->etc();
         });
 });

@@ -55,10 +55,10 @@ final class ApiKeyRequest extends FormRequest
 
             $user = $this->user();
             $isStaffOrAdmin = $user && ($user->isFaculty() || $user->role?->canAccessAdminPortal());
-            $hasMcpAbility = in_array('mcp:read', $abilities, true) || in_array('mcp:write', $abilities, true);
+            $hasMcpWriteAbility = in_array('mcp:write', $abilities, true);
 
-            if ($hasMcpAbility && ! $isStaffOrAdmin) {
-                $validator->errors()->add('abilities', 'MCP key abilities are currently available for staff and administrative accounts only.');
+            if ($hasMcpWriteAbility && ! $isStaffOrAdmin) {
+                $validator->errors()->add('abilities', 'The "mcp:write" ability is available for staff and administrative accounts only.');
             }
         });
     }

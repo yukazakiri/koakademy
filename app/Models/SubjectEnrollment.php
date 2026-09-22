@@ -135,6 +135,11 @@ final class SubjectEnrollment extends Model
         return $this->belongsTo(StudentEnrollment::class, 'enrollment_id');
     }
 
+    public function enrollment(): BelongsTo
+    {
+        return $this->belongsTo(StudentEnrollment::class, 'enrollment_id');
+    }
+
     protected static function boot(): void
     {
         parent::boot();

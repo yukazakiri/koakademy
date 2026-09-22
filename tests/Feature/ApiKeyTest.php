@@ -282,7 +282,7 @@ describe('API Keys - Admin Portal', function (): void {
         $response->assertJsonValidationErrors(['abilities']);
     });
 
-    it('prevents students from creating mcp keys', function (): void {
+    it('allows students to create mcp:read keys but prevents mcp:write', function (): void {
         $student = User::factory()->create([
             'role' => UserRole::Student,
             'email' => 'student-mcp@example.com',
@@ -293,14 +293,25 @@ describe('API Keys - Admin Portal', function (): void {
 
         Feature::for($student)->activate(StudentDeveloperMode::class);
 
-        $response = $this
+        $allowedResponse = $this
             ->actingAs($student)
             ->postJson(route('student.api-keys.store'), [
-                'name' => 'Student MCP Key Attempt',
+                'name' => 'Student MCP Read Key',
                 'abilities' => ['mcp:read'],
             ]);
 
-        $response->assertStatus(422);
-        $response->assertJsonValidationErrors(['abilities']);
+        $allowedResponse->assertStatus(201);
+        expect($student->tokens)->toHaveCount(1);
+        expect($student->tokens->first()->abilities)->toBe(['mcp:read']);
+
+        $deniedResponse = $this
+            ->actingAs($student)
+            ->postJson(route('student.api-keys.store'), [
+                'name' => 'Student MCP Write Attempt',
+                'abilities' => ['mcp:read', 'mcp:write'],
+            ]);
+
+        $deniedResponse->assertStatus(422);
+        $deniedResponse->assertJsonValidationErrors(['abilities']);
     });
 });

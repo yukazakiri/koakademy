@@ -23,7 +23,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import type { User } from "@/types/user";
-import { Head, Link, router, useForm } from "@inertiajs/react";
+import { Head, Link, router, useForm, type InertiaForm } from "@inertiajs/react";
 import {
     ColumnDef,
     ColumnFiltersState,
@@ -151,6 +151,131 @@ const semesterOptions = [
 ];
 const fmt = (v: string | number | null): string => (v === null || v === undefined ? "" : String(v));
 const FieldError = ({ message }: { message?: string }) => (message ? <p className="text-destructive mt-1 text-xs font-medium">{message}</p> : null);
+
+function SubjectFields({
+    form,
+    subjectOptions,
+    classificationOptions,
+    currentSubjectId,
+}: {
+    form: InertiaForm<SubjectFormData>;
+    subjectOptions: SubjectOption[];
+    classificationOptions: ClassificationOption[];
+    currentSubjectId?: number;
+}) {
+    const prereqOptions = subjectOptions
+        .filter((o) => o.id !== currentSubjectId)
+        .map((o) => ({ label: `${o.code} - ${o.title}`, value: String(o.id) }));
+
+    return (
+        <div className="grid gap-5">
+            <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-2">
+                    <Label className="text-foreground/80 font-semibold">Subject Code</Label>
+                    <Input placeholder="e.g. CS101" value={form.data.code} onChange={(e) => form.setData("code", e.target.value)} />
+                    <FieldError message={form.errors.code} />
+                </div>
+                <div className="grid gap-2">
+                    <Label className="text-foreground/80 font-semibold">Subject Title</Label>
+                    <Input placeholder="e.g. Intro to CS" value={form.data.title} onChange={(e) => form.setData("title", e.target.value)} />
+                    <FieldError message={form.errors.title} />
+                </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-2">
+                    <Label className="text-foreground/80 font-semibold">Classification</Label>
+                    <Select value={form.data.classification} onValueChange={(v) => form.setData("classification", v)}>
+                        <SelectTrigger>
+                            <SelectValue placeholder="Select" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {classificationOptions.map((o) => (
+                                <SelectItem key={o.value} value={o.value}>
+                                    {o.label}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                    <FieldError message={form.errors.classification} />
+                </div>
+                <div className="grid gap-2">
+                    <Label className="text-foreground/80 font-semibold">Group</Label>
+                    <Input placeholder="e.g. Core" value={form.data.group} onChange={(e) => form.setData("group", e.target.value)} />
+                    <FieldError message={form.errors.group} />
+                </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-2">
+                    <Label className="text-foreground/80 font-semibold">Units</Label>
+                    <Input type="number" min="0" value={form.data.units} onChange={(e) => form.setData("units", e.target.value)} />
+                    <FieldError message={form.errors.units} />
+                </div>
+                <div className="grid gap-2">
+                    <Label className="text-foreground/80 font-semibold">Lecture Hours</Label>
+                    <Input type="number" min="0" value={form.data.lecture} onChange={(e) => form.setData("lecture", e.target.value)} />
+                    <FieldError message={form.errors.lecture} />
+                </div>
+                <div className="grid gap-2">
+                    <Label className="text-foreground/80 font-semibold">Lab Hours</Label>
+                    <Input type="number" min="0" value={form.data.laboratory} onChange={(e) => form.setData("laboratory", e.target.value)} />
+                    <FieldError message={form.errors.laboratory} />
+                </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-2">
+                    <Label className="text-foreground/80 font-semibold">Academic Year</Label>
+                    <Select value={form.data.academic_year} onValueChange={(v) => form.setData("academic_year", v)}>
+                        <SelectTrigger>
+                            <SelectValue placeholder="Select year" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {yearOptions.map((o) => (
+                                <SelectItem key={o.value} value={o.value}>
+                                    {o.label}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                    <FieldError message={form.errors.academic_year} />
+                </div>
+                <div className="grid gap-2">
+                    <Label className="text-foreground/80 font-semibold">Semester</Label>
+                    <Select value={form.data.semester} onValueChange={(v) => form.setData("semester", v)}>
+                        <SelectTrigger>
+                            <SelectValue placeholder="Select semester" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {semesterOptions.map((o) => (
+                                <SelectItem key={o.value} value={o.value}>
+                                    {o.label}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                    <FieldError message={form.errors.semester} />
+                </div>
+            </div>
+            <div className="grid gap-2">
+                <Label className="text-foreground/80 font-semibold">Prerequisites</Label>
+                <MultiSelect
+                    options={prereqOptions}
+                    selected={form.data.pre_riquisite.map(String)}
+                    onChange={(sel: string[]) => form.setData("pre_riquisite", sel.map(Number))}
+                    placeholder="Select prerequisites..."
+                    searchPlaceholder="Search subjects..."
+                    className="bg-background w-full"
+                />
+                <FieldError message={form.errors.pre_riquisite as string | undefined} />
+            </div>
+            <div className="bg-muted/30 border-border/50 flex items-center gap-2 rounded-lg border p-3">
+                <Checkbox id="is-credited" checked={form.data.is_credited} onCheckedChange={(c) => form.setData("is_credited", Boolean(c))} />
+                <Label htmlFor="is-credited" className="text-foreground/80 cursor-pointer font-semibold select-none">
+                    Mark as credited subject
+                </Label>
+            </div>
+        </div>
+    );
+}
 
 export default function CurriculumProgramShow({
     user,
@@ -399,120 +524,6 @@ export default function CurriculumProgramShow({
         state: { sorting, columnFilters, globalFilter },
         initialState: { pagination: { pageSize: 10 } },
     });
-
-    const SubjectFields = ({ form, currentSubjectId }: { form: typeof createForm; currentSubjectId?: number }) => {
-        const prereqOptions = subject_options
-            .filter((o) => o.id !== currentSubjectId)
-            .map((o) => ({ label: `${o.code} - ${o.title}`, value: String(o.id) }));
-        return (
-            <div className="grid gap-5">
-                <div className="grid gap-4 md:grid-cols-2">
-                    <div className="grid gap-2">
-                        <Label className="text-foreground/80 font-semibold">Subject Code</Label>
-                        <Input placeholder="e.g. CS101" value={form.data.code} onChange={(e) => form.setData("code", e.target.value)} />
-                        <FieldError message={form.errors.code} />
-                    </div>
-                    <div className="grid gap-2">
-                        <Label className="text-foreground/80 font-semibold">Subject Title</Label>
-                        <Input placeholder="e.g. Intro to CS" value={form.data.title} onChange={(e) => form.setData("title", e.target.value)} />
-                        <FieldError message={form.errors.title} />
-                    </div>
-                </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                    <div className="grid gap-2">
-                        <Label className="text-foreground/80 font-semibold">Classification</Label>
-                        <Select value={form.data.classification} onValueChange={(v) => form.setData("classification", v)}>
-                            <SelectTrigger>
-                                <SelectValue placeholder="Select" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {classification_options.map((o) => (
-                                    <SelectItem key={o.value} value={o.value}>
-                                        {o.label}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        <FieldError message={form.errors.classification} />
-                    </div>
-                    <div className="grid gap-2">
-                        <Label className="text-foreground/80 font-semibold">Group</Label>
-                        <Input placeholder="e.g. Core" value={form.data.group} onChange={(e) => form.setData("group", e.target.value)} />
-                        <FieldError message={form.errors.group} />
-                    </div>
-                </div>
-                <div className="grid gap-4 md:grid-cols-3">
-                    <div className="grid gap-2">
-                        <Label className="text-foreground/80 font-semibold">Units</Label>
-                        <Input type="number" min="0" value={form.data.units} onChange={(e) => form.setData("units", e.target.value)} />
-                        <FieldError message={form.errors.units} />
-                    </div>
-                    <div className="grid gap-2">
-                        <Label className="text-foreground/80 font-semibold">Lecture Hours</Label>
-                        <Input type="number" min="0" value={form.data.lecture} onChange={(e) => form.setData("lecture", e.target.value)} />
-                        <FieldError message={form.errors.lecture} />
-                    </div>
-                    <div className="grid gap-2">
-                        <Label className="text-foreground/80 font-semibold">Lab Hours</Label>
-                        <Input type="number" min="0" value={form.data.laboratory} onChange={(e) => form.setData("laboratory", e.target.value)} />
-                        <FieldError message={form.errors.laboratory} />
-                    </div>
-                </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                    <div className="grid gap-2">
-                        <Label className="text-foreground/80 font-semibold">Academic Year</Label>
-                        <Select value={form.data.academic_year} onValueChange={(v) => form.setData("academic_year", v)}>
-                            <SelectTrigger>
-                                <SelectValue placeholder="Select year" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {yearOptions.map((o) => (
-                                    <SelectItem key={o.value} value={o.value}>
-                                        {o.label}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        <FieldError message={form.errors.academic_year} />
-                    </div>
-                    <div className="grid gap-2">
-                        <Label className="text-foreground/80 font-semibold">Semester</Label>
-                        <Select value={form.data.semester} onValueChange={(v) => form.setData("semester", v)}>
-                            <SelectTrigger>
-                                <SelectValue placeholder="Select semester" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {semesterOptions.map((o) => (
-                                    <SelectItem key={o.value} value={o.value}>
-                                        {o.label}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        <FieldError message={form.errors.semester} />
-                    </div>
-                </div>
-                <div className="grid gap-2">
-                    <Label className="text-foreground/80 font-semibold">Prerequisites</Label>
-                    <MultiSelect
-                        options={prereqOptions}
-                        selected={form.data.pre_riquisite.map(String)}
-                        onChange={(sel: string[]) => form.setData("pre_riquisite", sel.map(Number))}
-                        placeholder="Select prerequisites..."
-                        searchPlaceholder="Search subjects..."
-                        className="bg-background w-full"
-                    />
-                    <FieldError message={form.errors.pre_riquisite as string | undefined} />
-                </div>
-                <div className="bg-muted/30 border-border/50 flex items-center gap-2 rounded-lg border p-3">
-                    <Checkbox id="is-credited" checked={form.data.is_credited} onCheckedChange={(c) => form.setData("is_credited", Boolean(c))} />
-                    <Label htmlFor="is-credited" className="text-foreground/80 cursor-pointer font-semibold select-none">
-                        Mark as credited subject
-                    </Label>
-                </div>
-            </div>
-        );
-    };
 
     return (
         <AdminLayout user={user} title={`Program: ${program.code}`}>
@@ -1129,7 +1140,7 @@ export default function CurriculumProgramShow({
                         <DialogDescription>Add a new subject under {program.code}.</DialogDescription>
                     </DialogHeader>
                     <form className="grid gap-6" onSubmit={handleCreateSubject}>
-                        <SubjectFields form={createForm} />
+                        <SubjectFields form={createForm} subjectOptions={subject_options} classificationOptions={classification_options} />
                         <DialogFooter className="mt-2 border-t pt-4">
                             <Button type="button" variant="ghost" onClick={() => setIsCreateOpen(false)}>
                                 Cancel
@@ -1159,7 +1170,12 @@ export default function CurriculumProgramShow({
                         <DialogDescription>Update {editSubject?.code} details.</DialogDescription>
                     </DialogHeader>
                     <form className="grid gap-6" onSubmit={handleEditSubject}>
-                        <SubjectFields form={editForm} currentSubjectId={editSubject?.id} />
+                        <SubjectFields
+                            form={editForm}
+                            subjectOptions={subject_options}
+                            classificationOptions={classification_options}
+                            currentSubjectId={editSubject?.id}
+                        />
                         <DialogFooter className="mt-2 border-t pt-4">
                             <Button type="button" variant="ghost" onClick={() => setEditSubject(null)}>
                                 Cancel

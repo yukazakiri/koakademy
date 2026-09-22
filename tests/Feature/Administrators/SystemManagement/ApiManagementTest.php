@@ -38,6 +38,8 @@ it('saves api management configuration to more_configs', function (): void {
             'public_api_enabled' => true,
             'public_settings_enabled' => true,
             'public_settings_fields' => ['site_name', 'theme_color', 'school_portal_url'],
+            'mcp_enabled' => true,
+            'mcp_write_enabled' => false,
             'site_name' => 'Updated Public Site',
             'site_description' => 'Public description',
             'theme_color' => '#225588',
@@ -57,6 +59,8 @@ it('saves api management configuration to more_configs', function (): void {
 
     expect(data_get($settings->more_configs, 'api_management.public_api_enabled'))->toBeTrue()
         ->and(data_get($settings->more_configs, 'api_management.public_settings_enabled'))->toBeTrue()
+        ->and(data_get($settings->more_configs, 'api_management.mcp_enabled'))->toBeTrue()
+        ->and(data_get($settings->more_configs, 'api_management.mcp_write_enabled'))->toBeFalse()
         ->and(data_get($settings->more_configs, 'api_management.public_settings_fields'))->toBe([
             'site_name',
             'theme_color',

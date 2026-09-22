@@ -142,6 +142,11 @@ final class AppServiceProvider extends ServiceProvider
                 ->by($request->user()?->getAuthIdentifier() ?? $request->ip());
         });
 
+        RateLimiter::for('mcp', function (Request $request): Limit {
+            return Limit::perMinute((int) config('api.mcp.rate_limit', 30))
+                ->by($request->user()?->getAuthIdentifier() ?? $request->ip());
+        });
+
         Model::unguard();
         StudentTransaction::observe(StudentTransactionObserver::class);
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Middleware\EnsureAdministrativePortalAccess;
 use App\Http\Middleware\EnsureApiEnabled;
+use App\Http\Middleware\EnsureMcpEnabled;
 use App\Http\Middleware\EnsureMobileApiAbility;
 use App\Http\Middleware\FacultyIdValidationMiddleware;
 use App\Http\Middleware\HandleInertiaRequests;
@@ -47,6 +48,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'api.ability' => EnsureMobileApiAbility::class,
             'api.tenant' => SetApiTenantContext::class,
             'api.enabled' => EnsureApiEnabled::class,
+            'mcp.enabled' => EnsureMcpEnabled::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

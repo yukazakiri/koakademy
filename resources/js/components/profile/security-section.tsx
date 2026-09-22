@@ -699,12 +699,28 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                                                         {token.expires_at && <span>• Expires {new Date(token.expires_at).toLocaleDateString()}</span>}
                                                     </div>
                                                     {token.abilities && token.abilities.length > 0 && token.abilities[0] !== "*" && (
-                                                        <div className="mt-1 flex gap-1">
-                                                            {token.abilities.map((ability: string) => (
-                                                                <Badge key={ability} variant="secondary" className="text-[10px]">
-                                                                    {ability}
-                                                                </Badge>
-                                                            ))}
+                                                        <div className="mt-1 flex flex-wrap gap-1">
+                                                            {token.abilities.map((ability: string) => {
+                                                                if (ability === "mcp:read") {
+                                                                    return (
+                                                                        <Badge key={ability} variant="outline" className="border-blue-500/30 text-blue-600 dark:text-blue-400 text-[10px]">
+                                                                            MCP Read
+                                                                        </Badge>
+                                                                    );
+                                                                }
+                                                                if (ability === "mcp:write") {
+                                                                    return (
+                                                                        <Badge key={ability} variant="outline" className="border-amber-500/30 text-amber-600 dark:text-amber-400 text-[10px]">
+                                                                            MCP Write
+                                                                        </Badge>
+                                                                    );
+                                                                }
+                                                                return (
+                                                                    <Badge key={ability} variant="secondary" className="text-[10px]">
+                                                                        {ability}
+                                                                    </Badge>
+                                                                );
+                                                            })}
                                                         </div>
                                                     )}
                                                 </div>
@@ -741,8 +757,8 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                                             autoFocus
                                         />
                                     </div>
-                                    <div className="space-y-2">
-                                        <Label>Abilities</Label>
+                                    <div className="space-y-3">
+                                        <Label>Key Type & Abilities</Label>
                                         <div className="space-y-2">
                                             <label className="flex items-start gap-2">
                                                 <input
@@ -751,13 +767,14 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                                                     checked={
                                                         apiKeyForm.abilities.includes("read") &&
                                                         !apiKeyForm.abilities.includes("write") &&
+                                                        !apiKeyForm.abilities.includes("mcp:read") &&
                                                         !apiKeyForm.abilities.includes("*")
                                                     }
                                                     onChange={() => setApiKeyForm({ ...apiKeyForm, abilities: ["read"] })}
                                                     className="mt-1"
                                                 />
                                                 <div>
-                                                    <span className="text-sm font-medium">Read Only</span>
+                                                    <span className="text-sm font-medium">Standard API — Read Only</span>
                                                     <p className="text-muted-foreground text-xs">
                                                         View your{" "}
                                                         {isStudent
@@ -772,12 +789,16 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                                                 <input
                                                     type="radio"
                                                     name="abilities"
-                                                    checked={apiKeyForm.abilities.includes("write") && !apiKeyForm.abilities.includes("*")}
+                                                    checked={
+                                                        apiKeyForm.abilities.includes("write") &&
+                                                        !apiKeyForm.abilities.includes("mcp:write") &&
+                                                        !apiKeyForm.abilities.includes("*")
+                                                    }
                                                     onChange={() => setApiKeyForm({ ...apiKeyForm, abilities: ["read", "write"] })}
                                                     className="mt-1"
                                                 />
                                                 <div>
-                                                    <span className="text-sm font-medium">Read & Write</span>
+                                                    <span className="text-sm font-medium">Standard API — Read & Write</span>
                                                     <p className="text-muted-foreground text-xs">
                                                         Read and update your{" "}
                                                         {isStudent
@@ -788,9 +809,64 @@ export function SecuritySection({ isFaculty, isStudent, user, paths, developerMo
                                                     </p>
                                                 </div>
                                             </label>
+
+                                            {!isStudent && (
+                                                <>
+                                                    <div className="pt-2">
+                                                        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                                            Model Context Protocol (MCP) for AI Agents
+                                                        </span>
+                                                    </div>
+                                                    <label className="flex items-start gap-2 rounded-lg border border-blue-500/20 bg-blue-500/5 p-2.5">
+                                                        <input
+                                                            type="radio"
+                                                            name="abilities"
+                                                            checked={
+                                                                apiKeyForm.abilities.includes("mcp:read") &&
+                                                                !apiKeyForm.abilities.includes("mcp:write")
+                                                            }
+                                                            onChange={() => setApiKeyForm({ ...apiKeyForm, abilities: ["mcp:read"] })}
+                                                            className="mt-1"
+                                                        />
+                                                        <div>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-sm font-medium">MCP — Read Only</span>
+                                                                <Badge variant="outline" className="border-blue-500/30 text-blue-600 text-[10px]">
+                                                                    Agent Read
+                                                                </Badge>
+                                                            </div>
+                                                            <p className="text-muted-foreground text-xs mt-0.5">
+                                                                Allows connected AI agents (OpenCode, Claude, etc.) to query student directory, schedules, enrollment status, and academic offerings using your account permissions.
+                                                            </p>
+                                                        </div>
+                                                    </label>
+                                                    <label className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 p-2.5">
+                                                        <input
+                                                            type="radio"
+                                                            name="abilities"
+                                                            checked={
+                                                                apiKeyForm.abilities.includes("mcp:write")
+                                                            }
+                                                            onChange={() => setApiKeyForm({ ...apiKeyForm, abilities: ["mcp:read", "mcp:write"] })}
+                                                            className="mt-1"
+                                                        />
+                                                        <div>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-sm font-medium">MCP — Read & Write</span>
+                                                                <Badge variant="outline" className="border-amber-500/30 text-amber-600 text-[10px]">
+                                                                    Agent Mutation
+                                                                </Badge>
+                                                            </div>
+                                                            <p className="text-muted-foreground text-xs mt-0.5">
+                                                                Allows read tools plus permitted data modifications (such as verifying enrollment requirements). Requires explicit idempotency keys and your domain permissions.
+                                                            </p>
+                                                        </div>
+                                                    </label>
+                                                </>
+                                            )}
                                         </div>
                                         <p className="text-muted-foreground text-xs italic">
-                                            These permissions are limited to your own account only. You cannot access other users&apos; data.
+                                            All keys operate within the authorized school context and are strictly bounded by your account permissions.
                                         </p>
                                     </div>
                                     <div className="space-y-2">

@@ -32,6 +32,8 @@ interface ApiManagementFormData {
     public_api_enabled: boolean;
     public_settings_enabled: boolean;
     public_settings_fields: string[];
+    mcp_enabled: boolean;
+    mcp_write_enabled: boolean;
     site_name: string;
     site_description: string;
     theme_color: string;
@@ -201,6 +203,7 @@ export default function SystemManagementApiPage({
     api_management,
     public_api_fields,
     public_api_url,
+    mcp_server_url,
     general_settings,
     access,
 }: SystemManagementPageProps) {
@@ -208,6 +211,8 @@ export default function SystemManagementApiPage({
         public_api_enabled: api_management?.public_api_enabled ?? true,
         public_settings_enabled: api_management?.public_settings_enabled ?? true,
         public_settings_fields: api_management?.public_settings_fields ?? [],
+        mcp_enabled: api_management?.mcp_enabled ?? true,
+        mcp_write_enabled: api_management?.mcp_write_enabled ?? true,
         site_name: general_settings.site_name ?? "",
         site_description: general_settings.site_description ?? "",
         theme_color: general_settings.theme_color ?? "#0f172a",
@@ -304,6 +309,9 @@ export default function SystemManagementApiPage({
                     <TabsTrigger value="exposure" className="justify-center rounded-lg px-3 py-2 sm:justify-start">
                         Exposure Rules
                     </TabsTrigger>
+                    <TabsTrigger value="mcp" className="justify-center rounded-lg px-3 py-2 sm:justify-start">
+                        Model Context Protocol (MCP)
+                    </TabsTrigger>
                     <TabsTrigger value="values" className="justify-center rounded-lg px-3 py-2 sm:justify-start">
                         Website Values
                     </TabsTrigger>
@@ -390,6 +398,93 @@ export default function SystemManagementApiPage({
                                     </AccordionItem>
                                 ))}
                             </Accordion>
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
+                <TabsContent value="mcp" className="min-w-0">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Model Context Protocol (MCP)</CardTitle>
+                            <CardDescription>Configure AI agent connectivity to your KoAkademy application data.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-6">
+                            <div className="bg-muted/50 rounded-2xl border p-4">
+                                <p className="text-sm font-medium">Server Endpoint URL</p>
+                                <p className="text-muted-foreground mt-1 text-xs">
+                                    AI clients connect to this URL using HTTP POST and provide an authorized Bearer token.
+                                </p>
+                                <code className="bg-background mt-2 block rounded-lg border p-2 font-mono text-xs break-all">
+                                    {mcp_server_url || `${window.location.origin}/mcp/koakademy`}
+                                </code>
+                            </div>
+
+                            <div className="grid gap-4 md:grid-cols-2">
+                                <div className="rounded-2xl border p-5">
+                                    <div className="flex items-center justify-between gap-4">
+                                        <div>
+                                            <Label className="font-medium">Enable MCP Server</Label>
+                                            <p className="text-muted-foreground mt-1 text-sm">
+                                                Allows authorized AI agents to discover tools and query your application.
+                                            </p>
+                                        </div>
+                                        <Switch
+                                            checked={form.data.mcp_enabled}
+                                            onCheckedChange={(checked) => form.setData("mcp_enabled", checked)}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="rounded-2xl border p-5">
+                                    <div className="flex items-center justify-between gap-4">
+                                        <div>
+                                            <Label className="font-medium">Allow Data Modifications</Label>
+                                            <p className="text-muted-foreground mt-1 text-sm">
+                                                Permits mutation tools when the agent token has `mcp:write` and domain permissions.
+                                            </p>
+                                        </div>
+                                        <Switch
+                                            checked={form.data.mcp_write_enabled}
+                                            disabled={!form.data.mcp_enabled}
+                                            onCheckedChange={(checked) => form.setData("mcp_write_enabled", checked)}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="rounded-2xl border p-5 space-y-3">
+                                <div className="font-medium text-sm">Supported Tools & Access Rules</div>
+                                <div className="grid gap-2 sm:grid-cols-2 text-xs text-muted-foreground">
+                                    <div className="rounded-lg border p-2.5">
+                                        <div className="font-semibold text-foreground">get_my_context</div>
+                                        <div>Identifies caller, active school, academic period, and capabilities.</div>
+                                    </div>
+                                    <div className="rounded-lg border p-2.5">
+                                        <div className="font-semibold text-foreground">search_students</div>
+                                        <div>School-scoped student directory lookup (requires ViewAny:Student).</div>
+                                    </div>
+                                    <div className="rounded-lg border p-2.5">
+                                        <div className="font-semibold text-foreground">get_student_schedule</div>
+                                        <div>Retrieves student course schedules and conflict warnings (requires View:Student).</div>
+                                    </div>
+                                    <div className="rounded-lg border p-2.5">
+                                        <div className="font-semibold text-foreground">get_enrollment_status</div>
+                                        <div>Reads enrollment workflow state and requirements (requires View:StudentEnrollment).</div>
+                                    </div>
+                                    <div className="rounded-lg border p-2.5">
+                                        <div className="font-semibold text-foreground">list_academic_offerings</div>
+                                        <div>Lists active courses and classes for current period (requires ViewAny:Course, ViewAny:Classes).</div>
+                                    </div>
+                                    <div className="rounded-lg border p-2.5">
+                                        <div className="font-semibold text-foreground">get_statement_of_account</div>
+                                        <div>Calculated tuition and billing breakdown (requires finance/cashier permissions).</div>
+                                    </div>
+                                    <div className="rounded-lg border p-2.5 sm:col-span-2">
+                                        <div className="font-semibold text-foreground">verify_enrollment_requirement (Mutation)</div>
+                                        <div>Requires `mcp:write` token ability, Update:StudentEnrollment permission, and an idempotency key.</div>
+                                    </div>
+                                </div>
+                            </div>
                         </CardContent>
                     </Card>
                 </TabsContent>

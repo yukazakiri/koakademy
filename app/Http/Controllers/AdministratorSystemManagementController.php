@@ -1290,6 +1290,7 @@ final class AdministratorSystemManagementController extends Controller
             'available_school_years' => $generalSettingsService->getAvailableSchoolYears(),
             'registrar_reporting' => app(RegistrarReportingSettingsService::class)->get(),
             'public_api_url' => url('/api/v1/public/settings'),
+            'mcp_server_url' => url('/mcp/koakademy'),
             'public_api_fields' => GeneralSettingsService::publicApiFieldDefinitions(),
             'available_roles' => Role::query()->orderBy('name')->pluck('name')->values(),
             // Branding settings from Spatie Settings

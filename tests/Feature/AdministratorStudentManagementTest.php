@@ -99,6 +99,50 @@ it('updates an existing historical subject enrollment', function (): void {
         ->and($currentEnrollment->refresh()->grade)->toBeNull();
 });
 
+it('marks failing checklist grades as failed instead of passed', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $student = Student::factory()->create();
+    $studentEnrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'semester' => 1,
+    ]);
+    $failedSubject = Subject::factory()->create([
+        'course_id' => $student->course_id,
+        'academic_year' => 1,
+        'semester' => 1,
+    ]);
+    $passingSubject = Subject::factory()->create([
+        'course_id' => $student->course_id,
+        'academic_year' => 1,
+        'semester' => 1,
+    ]);
+
+    foreach ([[$failedSubject, 70], [$passingSubject, 75]] as [$subject, $grade]) {
+        SubjectEnrollment::create([
+            'student_id' => $student->id,
+            'enrollment_id' => $studentEnrollment->id,
+            'subject_id' => $subject->id,
+            'grade' => $grade,
+            'academic_year' => 1,
+            'school_year' => '2024 - 2025',
+            'semester' => 1,
+            'classification' => SubjectEnrolledEnum::INTERNAL->value,
+        ]);
+    }
+
+    actingAs($user)
+        ->get(route('administrators.students.show', $student->id))
+        ->assertSuccessful()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->component('administrators/students/show', false)
+            ->where('student.checklist.0.semesters.0.subjects', function ($subjects) use ($failedSubject, $passingSubject): bool {
+                $byId = collect($subjects)->keyBy('id');
+
+                return $byId->get($failedSubject->id)['status'] === 'Failed'
+                    && $byId->get($passingSubject->id)['status'] === 'Completed';
+            }));
+});
+
 it('creates a new historical subject enrollment if is_new_record is true', function (): void {
     $user = User::factory()->create(['role' => UserRole::Admin]);
     $student = Student::factory()->create();

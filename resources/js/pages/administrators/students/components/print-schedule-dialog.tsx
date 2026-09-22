@@ -3,10 +3,12 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { useGradingConfig } from "@/hooks/use-grading-config";
+import { detectGradeScale, isPassingGrade, parseNumericGrade } from "@/lib/gwa";
 import { cn } from "@/lib/utils";
 import { usePage } from "@inertiajs/react";
 import { AlertCircle, BookOpen, CalendarIcon, CheckCircle, FileText, ListIcon, Printer } from "lucide-react";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { Branding, PrintOption, StudentDetail } from "../types";
 
@@ -23,7 +25,14 @@ export function PrintScheduleDialog({
 }) {
     const { props } = usePage<{ branding?: Branding }>();
     const orgName = props.branding?.organizationName || "KoAkademy";
+    const gradingConfig = useGradingConfig();
     const [printOption, setPrintOption] = useState<PrintOption>(initialOption);
+
+    const gradePasses = (grade: number | string | null): boolean => {
+        const numericGrade = parseNumericGrade(grade);
+
+        return numericGrade !== null && isPassingGrade(numericGrade, detectGradeScale(numericGrade), gradingConfig);
+    };
 
     useEffect(() => {
         if (open) {
@@ -75,6 +84,7 @@ tfoot td{background:#f0f0f0;font-weight:700}
 .pending{color:#888}
 .badge{display:inline-block;padding:1px 6px;border-radius:2px;font-size:6pt;font-weight:600;text-transform:uppercase}
 .badge-passed{background:#dcfce7;color:#166534;border:1px solid #86efac}
+.badge-failed{background:#fee2e2;color:#991b1b;border:1px solid #fca5a5}
 .badge-progress{background:#fef3c7;color:#92400e;border:1px solid #fcd34d}
 .badge-pending{background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db}
 .summary{display:flex;gap:20px;padding:10px 12px;background:#f8f8f8;border:1px solid #ddd;margin-bottom:12px;font-size:8pt}
@@ -286,12 +296,7 @@ tfoot td{background:#f0f0f0;font-weight:700}
                     entries
                         .map((entry) => {
                             const gradeValue = entry.grade ?? "—";
-                            const gradeClass =
-                                entry.grade !== null && entry.grade !== ""
-                                    ? Number(entry.grade) <= 3.0 || Number(entry.grade) >= 75
-                                        ? "passed"
-                                        : "failed"
-                                    : "";
+                            const gradeClass = entry.grade !== null && entry.grade !== "" ? (gradePasses(entry.grade) ? "passed" : "failed") : "";
 
                             return `
         <tr>
@@ -721,15 +726,16 @@ tfoot td{background:#f0f0f0;font-weight:700}
       <tbody>`;
 
                         subjects.forEach((sub: any) => {
-                            const gradeClass =
-                                sub.grade && sub.grade !== "-" ? (Number(sub.grade) <= 3.0 || Number(sub.grade) >= 75 ? "passed" : "failed") : "";
+                            const gradeClass = sub.grade && sub.grade !== "-" ? (gradePasses(sub.grade) ? "passed" : "failed") : "";
 
                             const statusBadge =
                                 sub.status === "Completed"
                                     ? '<span class="badge badge-passed">Passed</span>'
-                                    : sub.status === "In Progress"
-                                      ? '<span class="badge badge-progress">In Progress</span>'
-                                      : '<span class="badge badge-pending">Pending</span>';
+                                    : sub.status === "Failed"
+                                      ? '<span class="badge badge-failed">Failed</span>'
+                                      : sub.status === "In Progress"
+                                        ? '<span class="badge badge-progress">In Progress</span>'
+                                        : '<span class="badge badge-pending">Pending</span>';
 
                             const classification =
                                 sub.classification && sub.classification !== "internal" ? sub.classification.replace("_", " ") : "";
@@ -749,15 +755,13 @@ tfoot td{background:#f0f0f0;font-weight:700}
                                     // Skip the record if it matches the primary record shown above
                                     if (hist.id === sub.enrollment_id) return;
 
-                                    const hGradeClass =
+                                    const hGradeClass = hist.grade && hist.grade !== "-" ? (gradePasses(hist.grade) ? "passed" : "failed") : "";
+                                    const hStatusBadge =
                                         hist.grade && hist.grade !== "-"
-                                            ? Number(hist.grade) <= 3.0 || Number(hist.grade) >= 75
-                                                ? "passed"
-                                                : "failed"
-                                            : "";
-                                    const hStatusBadge = hist.grade
-                                        ? '<span class="badge badge-passed">Passed</span>'
-                                        : '<span class="badge badge-progress">In Progress</span>';
+                                            ? gradePasses(hist.grade)
+                                                ? '<span class="badge badge-passed">Passed</span>'
+                                                : '<span class="badge badge-failed">Failed</span>'
+                                            : '<span class="badge badge-progress">In Progress</span>';
                                     const hClassification =
                                         hist.classification && hist.classification !== "internal" ? hist.classification.replace("_", " ") : "";
                                     const hRemarks =

@@ -77,11 +77,42 @@ export function UpdateStatusDialog({ open, onOpenChange, student, options }: Dia
                         </Select>
                         {errors.status && <span className="text-destructive text-xs">{errors.status}</span>}
                     </div>
-                    {data.status === "graduated" && <div className="grid grid-cols-2 gap-3 rounded-md border p-3">
-                        <div className="space-y-2"><Label htmlFor="graduation-school-year">Graduation academic year</Label><Input id="graduation-school-year" value={data.graduation_school_year} placeholder="2026 - 2027" onChange={(event) => setData("graduation_school_year", event.target.value)} />{errors.graduation_school_year && <span className="text-destructive text-xs">{errors.graduation_school_year}</span>}</div>
-                        <div className="space-y-2"><Label htmlFor="graduation-semester">Graduation term</Label><Select value={data.graduation_semester || undefined} onValueChange={(value) => setData("graduation_semester", value === "__unverified" ? "" : value)}><SelectTrigger id="graduation-semester"><SelectValue placeholder="Select term" /></SelectTrigger><SelectContent><SelectItem value="__unverified">Unverified / not recorded</SelectItem><SelectItem value="1">1st Term</SelectItem><SelectItem value="2">2nd Term</SelectItem><SelectItem value="3">Summer Term</SelectItem></SelectContent></Select>{errors.graduation_semester && <span className="text-destructive text-xs">{errors.graduation_semester}</span>}</div>
-                        <p className="col-span-full text-muted-foreground text-xs">Leave unverified values blank. The Form B/C quality queue will flag the graduate for review rather than infer a period.</p>
-                    </div>}
+                    {data.status === "graduated" && (
+                        <div className="grid grid-cols-2 gap-3 rounded-md border p-3">
+                            <div className="space-y-2">
+                                <Label htmlFor="graduation-school-year">Graduation academic year</Label>
+                                <Input
+                                    id="graduation-school-year"
+                                    value={data.graduation_school_year}
+                                    placeholder="2026 - 2027"
+                                    onChange={(event) => setData("graduation_school_year", event.target.value)}
+                                />
+                                {errors.graduation_school_year && <span className="text-destructive text-xs">{errors.graduation_school_year}</span>}
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="graduation-semester">Graduation term</Label>
+                                <Select
+                                    value={data.graduation_semester || undefined}
+                                    onValueChange={(value) => setData("graduation_semester", value === "__unverified" ? "" : value)}
+                                >
+                                    <SelectTrigger id="graduation-semester">
+                                        <SelectValue placeholder="Select term" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="__unverified">Unverified / not recorded</SelectItem>
+                                        <SelectItem value="1">1st Term</SelectItem>
+                                        <SelectItem value="2">2nd Term</SelectItem>
+                                        <SelectItem value="3">Summer Term</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                {errors.graduation_semester && <span className="text-destructive text-xs">{errors.graduation_semester}</span>}
+                            </div>
+                            <p className="text-muted-foreground col-span-full text-xs">
+                                Leave unverified values blank. The Form B/C quality queue will flag the graduate for review rather than infer a
+                                period.
+                            </p>
+                        </div>
+                    )}
                     <DialogFooter>
                         <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                             Cancel
@@ -243,7 +274,7 @@ export function ChangeCourseDialog({ open, onOpenChange, student, options }: Dia
         student.checklist.forEach((year: any) => {
             year.semesters.forEach((semester: any) => {
                 semester.subjects.forEach((subject: any) => {
-                    if ((subject.grade && subject.grade !== "-" && subject.grade !== null) || subject.status === "Completed") {
+                    if (subject.status === "Completed") {
                         subjects.push(subject);
                     }
                 });
@@ -726,8 +757,7 @@ export function UpdateTuitionDialog({ open, onOpenChange, student }: DialogProps
     const overallTuition = (totalTuition + miscellaneous) * (1 - discount / 100);
     const balanceDue = Math.max(0, overallTuition - downpayment);
 
-    const formatAmount = (value: number) =>
-        `${symbol} ${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const formatAmount = (value: number) => `${symbol} ${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
     const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -749,9 +779,7 @@ export function UpdateTuitionDialog({ open, onOpenChange, student }: DialogProps
             <DialogContent className="sm:max-w-[500px]">
                 <DialogHeader>
                     <DialogTitle>Adjust Tuition</DialogTitle>
-                    <DialogDescription>
-                        Update the fees for the current semester. The student will be notified in-app and by email.
-                    </DialogDescription>
+                    <DialogDescription>Update the fees for the current semester. The student will be notified in-app and by email.</DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">

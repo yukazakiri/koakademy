@@ -36,6 +36,7 @@ use App\Models\User;
 use App\Notifications\StatementOfAccountAdjustedNotification;
 use App\Services\CurriculumCapabilityResolver;
 use App\Services\GeneralSettingsService;
+use App\Services\GradingSystemService;
 use App\Services\IdentifierGenerator;
 use App\Services\StudentIdUpdateService;
 use App\Services\StudentSchoolOptionService;
@@ -384,6 +385,8 @@ final class AdministratorStudentManagementController extends Controller
 
         // Construct checklist data
         $checklist = [];
+        $gradingSystem = app(GradingSystemService::class);
+        $gradingConfig = $gradingSystem->getConfig();
         $groupedSubjects = $student->subjects()->orderBy('academic_year')->orderBy('semester')->get()->groupBy('academic_year');
         $subjectEnrolled = $student->subjectEnrolled
             ->filter(fn (SubjectEnrollment $enrollment): bool => $enrollment->classification !== SubjectEnrolledEnum::NON_CREDITED->value)
@@ -428,8 +431,10 @@ final class AdministratorStudentManagementController extends Controller
                     $grade = '-';
 
                     if ($enrolledSubject) {
-                        if ($enrolledSubject->grade) {
-                            $status = 'Completed';
+                        if ($enrolledSubject->grade !== null) {
+                            $status = $gradingSystem->isPassingGrade((float) $enrolledSubject->grade, $gradingConfig)
+                                ? 'Completed'
+                                : 'Failed';
                             $grade = number_format((float) $enrolledSubject->grade, 2);
                         } else {
                             $status = 'In Progress';

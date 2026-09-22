@@ -57,6 +57,24 @@ final class GradingSystemService
     }
 
     /**
+     * Determine whether a numeric grade meets the configured passing threshold.
+     *
+     * @param  array<string, mixed>|null  $config
+     */
+    public function isPassingGrade(float $grade, ?array $config = null): bool
+    {
+        $config = $config === null
+            ? $this->getConfig()
+            : $this->normalize(array_merge(self::defaults(), $config));
+
+        if ($grade <= 5) {
+            return $grade <= (float) $config['point_passing_grade'];
+        }
+
+        return $grade >= (float) $config['percent_passing_grade'];
+    }
+
+    /**
      * Persist grading configuration.
      *
      * @param  array<string, mixed>  $input

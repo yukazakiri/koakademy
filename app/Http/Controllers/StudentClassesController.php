@@ -95,6 +95,8 @@ final class StudentClassesController extends Controller
 
             if ($enrollment->is_credited || $enrollment->grade_outcome === 'pass') {
                 $status = 'completed';
+            } elseif (in_array($enrollment->grade_outcome, ['withdrawn', 'dropped'], true) || ($grade !== null && (float) $grade === 0.0)) {
+                $status = 'dropped';
             } elseif ($grade !== null) {
                 if ($this->gradingSystem->isPassingGrade($grade)) {
                     $status = 'completed';

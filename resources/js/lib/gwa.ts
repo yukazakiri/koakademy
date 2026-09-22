@@ -193,6 +193,12 @@ export function computeGwa(items: GwaItemLike[], options: ComputeGwaOptions = {}
             continue;
         }
 
+        const isDropped =
+            item.grade_outcome === "withdrawn" || item.grade_outcome === "dropped" || (item.grade_outcome == null && numericGrade === 0);
+        if (isDropped) {
+            continue;
+        }
+
         const isPassing = item.grade_outcome ? item.grade_outcome === "pass" : isPassingGrade(numericGrade, config);
         if (!config.include_failed_in_gwa && !isPassing) {
             continue;

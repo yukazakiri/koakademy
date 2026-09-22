@@ -59,3 +59,40 @@ it('evaluates symbolic grades without a country-specific numeric threshold', fun
     ])
         ->and($service->evaluate('R', $policy)['outcome'])->toBe('fail');
 });
+
+it('treats a numeric grade of zero as dropped', function (): void {
+    $policy = GradingSystemService::defaults();
+    $service = app(GradeEvaluationService::class);
+
+    $result = $service->evaluate(0, $policy);
+    expect($result['outcome'])->toBe('withdrawn')
+        ->and($result['numeric_grade'])->toBe(0.0)
+        ->and($result['symbol'])->toBe('DROPPED');
+});
+
+it('treats a numeric grade of zero point zero as dropped', function (): void {
+    $policy = GradingSystemService::defaults();
+    $service = app(GradeEvaluationService::class);
+
+    $result = $service->evaluate(0.0, $policy);
+    expect($result['outcome'])->toBe('withdrawn')
+        ->and($result['numeric_grade'])->toBe(0.0);
+});
+
+it('treats string DRP and DROPPED as dropped', function (): void {
+    $policy = GradingSystemService::defaults();
+    $service = app(GradeEvaluationService::class);
+
+    expect($service->evaluate('DRP', $policy)['outcome'])->toBe('withdrawn')
+        ->and($service->evaluate('DRP', $policy)['symbol'])->toBe('DROPPED')
+        ->and($service->evaluate('DROPPED', $policy)['outcome'])->toBe('withdrawn')
+        ->and($service->evaluate('DROP', $policy)['outcome'])->toBe('withdrawn');
+});
+
+it('treats string W and WITHDRAWN as withdrawn', function (): void {
+    $policy = GradingSystemService::defaults();
+    $service = app(GradeEvaluationService::class);
+
+    expect($service->evaluate('W', $policy)['outcome'])->toBe('withdrawn')
+        ->and($service->evaluate('WITHDRAWN', $policy)['outcome'])->toBe('withdrawn');
+});

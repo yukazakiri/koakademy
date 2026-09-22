@@ -433,9 +433,17 @@ final class AdministratorStudentManagementController extends Controller
 
                     if ($enrolledSubject) {
                         if ($enrolledSubject->grade !== null || $enrolledSubject->grade_symbol !== null) {
-                            $status = ($enrolledSubject->grade_outcome ?? null) === 'pass' || $gradingSystem->isPassingGrade($enrolledSubject->grade, $gradingConfig)
-                                ? 'Completed'
-                                : 'Failed';
+                            $outcome = $enrolledSubject->grade_outcome ?? null;
+                            $isDropped = in_array($outcome, ['withdrawn', 'dropped'], true)
+                                || (float) $enrolledSubject->grade === 0.0;
+
+                            if ($isDropped) {
+                                $status = 'Dropped';
+                            } elseif ($outcome === 'pass' || $gradingSystem->isPassingGrade($enrolledSubject->grade, $gradingConfig)) {
+                                $status = 'Completed';
+                            } else {
+                                $status = 'Failed';
+                            }
                             $grade = $enrolledSubject->grade_symbol ?? number_format((float) $enrolledSubject->grade, (int) $gradingConfig['decimal_places']);
                         } else {
                             $status = 'In Progress';

@@ -26,6 +26,8 @@ use App\Mcp\Tools\SearchStudentsTool;
 use App\Mcp\Tools\UpdateEnrollmentRemarksTool;
 use App\Mcp\Tools\UpdateSubjectEnrollmentGradeTool;
 use App\Mcp\Tools\VerifyEnrollmentRequirementTool;
+use App\Models\ClassEnrollment;
+use App\Models\Classes;
 use App\Models\Course;
 use App\Models\Department;
 use App\Models\EnrollmentRequirement;
@@ -886,6 +888,16 @@ it('identifies available subjects for a student term based on course curriculum'
         'semester' => 1,
     ]);
 
+    $subject3 = Subject::factory()->create([
+        'course_id' => $course->id,
+        'code' => 'MATH102',
+        'title' => 'Advanced Algebra',
+        'units' => 3,
+        'academic_year' => 1,
+        'semester' => 1,
+        'pre_riquisite' => ['MATH101'],
+    ]);
+
     // Student has already completed ENG101 with grade 1.75
     $priorEnrollment = StudentEnrollment::factory()->create([
         'student_id' => $student->id,
@@ -910,14 +922,18 @@ it('identifies available subjects for a student term based on course curriculum'
         ]);
 
     $response->assertOk()
-        ->assertStructuredContent(function ($json) use ($subject1, $subject2): void {
-            $json->where('subjects_count', 2)
+        ->assertStructuredContent(function ($json) use ($subject1, $subject2, $subject3): void {
+            $json->where('subjects_count', 3)
                 ->where('available_count', 1)
+                ->where('prerequisites_unfulfilled_count', 1)
                 ->where('subjects.0.id', $subject1->id)
                 ->where('subjects.0.status', 'completed')
                 ->where('subjects.0.last_grade', 1.75)
                 ->where('subjects.1.id', $subject2->id)
                 ->where('subjects.1.status', 'available')
+                ->where('subjects.2.id', $subject3->id)
+                ->where('subjects.2.status', 'prerequisites_unfulfilled')
+                ->where('subjects.2.unmet_prerequisites.0', 'MATH101')
                 ->etc();
         });
 });
@@ -962,23 +978,90 @@ it('retrieves student subject enrollments with grades and instructor details', f
         });
 });
 
-it('enrolls a student in a subject under an enrollment with idempotency', function (): void {
+it('enrolls a student in a subject under an enrollment with idempotency and validates curriculum and classes', function (): void {
     $writeToken = $this->staff->createToken('Staff Write', ['mcp:read', 'mcp:write']);
     $this->staff->withAccessToken($writeToken->accessToken);
     $this->staff->givePermissionTo('Update:StudentEnrollment');
 
     $student = Student::factory()->create(['school_id' => $this->school->id]);
+    $course = Course::factory()->create([
+        'school_id' => $this->school->id,
+        'lec_per_unit' => 500,
+        'lab_per_unit' => 1000,
+    ]);
+
     $enrollment = StudentEnrollment::factory()->create([
         'student_id' => $student->id,
+        'course_id' => $course->id,
         'school_id' => $this->school->id,
+        'school_year' => '2026 - 2027',
+        'semester' => 1,
     ]);
 
     $subject = Subject::factory()->create([
+        'course_id' => $course->id,
         'code' => 'HIST101',
         'title' => 'Philippine History',
         'units' => 3,
         'lecture' => 3,
         'laboratory' => 0,
+    ]);
+
+    // Reject subjects outside enrollment program
+    $otherCourse = Course::factory()->create(['school_id' => $this->school->id]);
+    $unrelatedSubject = Subject::factory()->create([
+        'course_id' => $otherCourse->id,
+        'code' => 'NURS101',
+    ]);
+
+    $deniedProgram = KoAkademyServer::actingAs($this->staff)
+        ->tool(EnrollStudentSubjectTool::class, [
+            'enrollment_id' => $enrollment->id,
+            'subject_id' => $unrelatedSubject->id,
+            'idempotency_key' => 'enroll-unrelated-1',
+        ]);
+
+    $deniedProgram->assertHasErrors(['does not belong to the enrollment program']);
+
+    // Reject class with full capacity
+    $fullClass = Classes::factory()->create([
+        'school_id' => $this->school->id,
+        'subject_id' => $subject->id,
+        'subject_code' => $subject->code,
+        'school_year' => $enrollment->school_year,
+        'semester' => $enrollment->semester,
+        'maximum_slots' => 1,
+    ]);
+    ClassEnrollment::factory()->create([
+        'class_id' => $fullClass->id,
+        'status' => true,
+    ]);
+
+    $deniedFull = KoAkademyServer::actingAs($this->staff)
+        ->tool(EnrollStudentSubjectTool::class, [
+            'enrollment_id' => $enrollment->id,
+            'subject_id' => $subject->id,
+            'class_id' => $fullClass->id,
+            'idempotency_key' => 'enroll-full-1',
+        ]);
+
+    $deniedFull->assertHasErrors(['has no available seats']);
+
+    // Setup tuition to verify recalculation
+    $tuition = StudentTuition::query()->create([
+        'student_id' => $student->id,
+        'enrollment_id' => $enrollment->id,
+        'academic_year' => 1,
+        'total_tuition' => 0.00,
+        'total_balance' => 500.00,
+        'total_lectures' => 0.00,
+        'total_laboratory' => 0.00,
+        'total_miscelaneous_fees' => 500.00,
+        'overall_tuition' => 500.00,
+        'paid' => 0.00,
+        'status' => 'Pending',
+        'school_year' => $enrollment->school_year,
+        'semester' => $enrollment->semester,
     ]);
 
     $response = KoAkademyServer::actingAs($this->staff)
@@ -999,6 +1082,7 @@ it('enrolls a student in a subject under an enrollment with idempotency', functi
         });
 
     expect(SubjectEnrollment::query()->where('enrollment_id', $enrollment->id)->where('subject_id', $subject->id)->count())->toBe(1);
+    expect($tuition->refresh()->total_tuition)->toBeGreaterThan(0.00);
 
     // Replay with identical idempotency key is safe
     $replayed = KoAkademyServer::actingAs($this->staff)
@@ -1017,7 +1101,7 @@ it('enrolls a student in a subject under an enrollment with idempotency', functi
     expect(SubjectEnrollment::query()->where('enrollment_id', $enrollment->id)->where('subject_id', $subject->id)->count())->toBe(1);
 });
 
-it('updates grades and remarks on a subject enrollment with idempotency', function (): void {
+it('updates grades and remarks on a subject enrollment with idempotency and evaluates policy outcomes', function (): void {
     $writeToken = $this->staff->createToken('Staff Write', ['mcp:read', 'mcp:write']);
     $this->staff->withAccessToken($writeToken->accessToken);
     $this->staff->givePermissionTo('Update:StudentEnrollment');
@@ -1033,10 +1117,21 @@ it('updates grades and remarks on a subject enrollment with idempotency', functi
         'student_id' => $student->id,
         'subject_id' => $subject->id,
         'enrollment_id' => $enrollment->id,
+        'class_id' => null,
         'school_id' => $this->school->id,
         'grade' => null,
         'remarks' => null,
     ]);
+
+    // Reject term-grade update when no class_id is linked
+    $deniedTerm = KoAkademyServer::actingAs($this->staff)
+        ->tool(UpdateSubjectEnrollmentGradeTool::class, [
+            'subject_enrollment_id' => $subjectEnrollment->id,
+            'prelim_grade' => 85.0,
+            'idempotency_key' => 'grade-term-denied-1',
+        ]);
+
+    $deniedTerm->assertHasErrors(['Term-grade components (prelim, midterm, finals) require a linked scheduled class enrollment.']);
 
     $response = KoAkademyServer::actingAs($this->staff)
         ->tool(UpdateSubjectEnrollmentGradeTool::class, [
@@ -1052,11 +1147,13 @@ it('updates grades and remarks on a subject enrollment with idempotency', functi
                 ->where('grade', 92.5)
                 ->where('remarks', 'Passed with honors')
                 ->where('replayed', false)
+                ->has('grade_outcome')
                 ->etc();
         });
 
     expect($subjectEnrollment->refresh()->grade)->toBe(92.5)
-        ->and($subjectEnrollment->remarks)->toBe('Passed with honors');
+        ->and($subjectEnrollment->remarks)->toBe('Passed with honors')
+        ->and($subjectEnrollment->grade_outcome)->not->toBeNull();
 
     // Replaying returns cached successful response
     $replayed = KoAkademyServer::actingAs($this->staff)
@@ -1073,23 +1170,41 @@ it('updates grades and remarks on a subject enrollment with idempotency', functi
         });
 });
 
-it('drops an enrolled subject releasing the record with idempotency', function (): void {
+it('drops an enrolled subject releasing the record and recalculating tuition with idempotency', function (): void {
     $writeToken = $this->staff->createToken('Staff Write', ['mcp:read', 'mcp:write']);
     $this->staff->withAccessToken($writeToken->accessToken);
     $this->staff->givePermissionTo('Update:StudentEnrollment');
 
     $student = Student::factory()->create(['school_id' => $this->school->id]);
+    $course = Course::factory()->create(['school_id' => $this->school->id, 'lec_per_unit' => 300]);
     $enrollment = StudentEnrollment::factory()->create([
         'student_id' => $student->id,
+        'course_id' => $course->id,
         'school_id' => $this->school->id,
     ]);
-    $subject = Subject::factory()->create(['code' => 'CHEM101', 'title' => 'General Chemistry']);
+    $subject = Subject::factory()->create(['course_id' => $course->id, 'code' => 'CHEM101', 'title' => 'General Chemistry', 'lecture' => 3]);
 
     $subjectEnrollment = SubjectEnrollment::factory()->create([
         'student_id' => $student->id,
         'subject_id' => $subject->id,
         'enrollment_id' => $enrollment->id,
         'school_id' => $this->school->id,
+    ]);
+
+    $tuition = StudentTuition::query()->create([
+        'student_id' => $student->id,
+        'enrollment_id' => $enrollment->id,
+        'academic_year' => 1,
+        'total_tuition' => 900.00,
+        'total_balance' => 900.00,
+        'total_lectures' => 900.00,
+        'total_laboratory' => 0.00,
+        'total_miscelaneous_fees' => 0.00,
+        'overall_tuition' => 900.00,
+        'paid' => 0.00,
+        'status' => 'Pending',
+        'school_year' => $enrollment->school_year,
+        'semester' => $enrollment->semester,
     ]);
 
     $id = $subjectEnrollment->id;
@@ -1111,6 +1226,7 @@ it('drops an enrolled subject releasing the record with idempotency', function (
         });
 
     expect(SubjectEnrollment::query()->find($id))->toBeNull();
+    expect($tuition->refresh()->total_tuition)->toBe(0.00);
 
     // Replaying drop with same idempotency key is safely idempotent
     $replayed = KoAkademyServer::actingAs($this->staff)

@@ -69,8 +69,14 @@ final class DropStudentSubjectEnrollmentTool extends Tool
             'subject_title' => $subjectEnrollment->subject?->title ?? $subjectEnrollment->external_subject_title ?? 'N/A',
         ];
 
-        DB::transaction(function () use ($subjectEnrollment, $meta, $validated, $scopedKey, $user): void {
+        $enrollment = $subjectEnrollment->enrollment;
+
+        DB::transaction(function () use ($subjectEnrollment, $enrollment, $meta, $validated, $scopedKey, $user): void {
             $subjectEnrollment->delete();
+
+            if ($enrollment instanceof \App\Models\StudentEnrollment && $enrollment->studentTuition()->exists()) {
+                app(\App\Services\EnrollmentBillingService::class)->recalculateEnrollmentTuition($enrollment);
+            }
 
             EnrollmentWorkflowEvent::query()->create([
                 'student_enrollment_id' => $meta['enrollment_id'] ?? 0,

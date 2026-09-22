@@ -15,6 +15,7 @@ use BackedEnum;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\ResponseFactory;
@@ -56,6 +57,11 @@ final class EnrollStudentSubjectTool extends Tool
         }
 
         $subject = Subject::query()->findOrFail($validated['subject_id']);
+
+        if ($enrollment->course_id !== null && (int) $subject->course_id !== (int) $enrollment->course_id) {
+            throw new \Illuminate\Auth\Access\AuthorizationException("Subject [{$subject->code}] does not belong to the enrollment program.");
+        }
+
         $scopedKey = hash('sha256', "mcp:enroll-subject:{$enrollment->id}:{$subject->id}:{$validated['idempotency_key']}");
 
         $existingEvent = EnrollmentWorkflowEvent::query()->where('idempotency_key', $scopedKey)->first();
@@ -80,10 +86,40 @@ final class EnrollStudentSubjectTool extends Tool
         $classSection = $validated['section'] ?? null;
 
         if ($classId !== null) {
-            $class = Classes::query()->findOrFail($classId);
+            $class = Classes::query()->lockForUpdate()->findOrFail($classId);
+
             if (! $class->belongsToCurrentSchool()) {
                 throw new \Illuminate\Auth\Access\AuthorizationException('The specified class does not belong to the selected school.');
             }
+
+            $classMatchesPeriod = Classes::query()->whereKey($class->id)
+                ->forAcademicPeriod((string) $enrollment->school_year, (int) $enrollment->semester)
+                ->exists();
+
+            if (! $classMatchesPeriod) {
+                throw new InvalidArgumentException("Class section [{$class->section}] is not scheduled for school year [{$enrollment->school_year}], semester [{$enrollment->semester}].");
+            }
+
+            $classCode = mb_trim((string) $class->subject_code);
+            $subjectCode = mb_trim((string) $subject->code);
+            $subjectMatches = (int) $class->subject_id === (int) $subject->id
+                || ($classCode !== '' && $subjectCode !== '' && $classCode === $subjectCode)
+                || in_array((int) $subject->id, array_map(intval(...), $class->subject_ids ?? []), true);
+
+            if (! $subjectMatches) {
+                throw new InvalidArgumentException("Class section [{$class->section}] ({$class->subject_code}) does not match subject [{$subject->code}].");
+            }
+
+            $enrolledCount = $class->class_enrollments()->where('status', true)->count();
+            $alreadyEnrolledInClass = \App\Models\ClassEnrollment::query()
+                ->where('class_id', $class->id)
+                ->where('student_id', $enrollment->student_id)
+                ->exists();
+
+            if (! $alreadyEnrolledInClass && (int) $class->maximum_slots > 0 && $enrolledCount >= (int) $class->maximum_slots) {
+                throw new InvalidArgumentException("Class section [{$class->section}] has no available seats ({$enrolledCount}/{$class->maximum_slots}).");
+            }
+
             $classSection ??= $class->section;
         }
 
@@ -109,6 +145,10 @@ final class EnrollStudentSubjectTool extends Tool
                     'status' => true,
                     'school_id' => $enrollment->school_id,
                 ]);
+            }
+
+            if ($enrollment->studentTuition()->exists()) {
+                app(\App\Services\EnrollmentBillingService::class)->recalculateEnrollmentTuition($enrollment);
             }
 
             EnrollmentWorkflowEvent::query()->create([

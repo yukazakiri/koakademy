@@ -12,7 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useGradingConfig } from "@/hooks/use-grading-config";
-import { computeGwa, detectGradeScale, formatGwa, isPassingGrade } from "@/lib/gwa";
+import { computeGwa, formatGwa, isPassingGrade } from "@/lib/gwa";
 import { cn } from "@/lib/utils";
 import { type User } from "@/types/user";
 import { Head, Link, router, usePage } from "@inertiajs/react";
@@ -418,12 +418,7 @@ function CourseCard({ classItem, index }: { classItem: ClassInfo; index: number 
     const accent = classAccents[index % classAccents.length];
     const average = classItem.grades.average;
     const gradingConfig = useGradingConfig();
-    const averageTone =
-        average === null
-            ? "text-muted-foreground"
-            : isPassingGrade(average, detectGradeScale(average), gradingConfig)
-              ? "text-emerald-500"
-              : "text-rose-500";
+    const averageTone = average === null ? "text-muted-foreground" : isPassingGrade(average, gradingConfig) ? "text-emerald-500" : "text-rose-500";
 
     return (
         <Card className={`${dashboardCardClass} group overflow-hidden hover:-translate-y-0.5`}>

@@ -35,19 +35,15 @@ final class ClassEnrollmentResource extends JsonResource
             'verified_at' => $this->verified_at,
             'verification_notes' => $this->verification_notes,
 
-            // Computed Grade Information
-            'letter_grade' => $this->when(
-                $this->total_average !== null,
-                fn (): ?string => $this->getLetterGrade()
-            ),
-            'grade_point' => $this->when(
-                $this->total_average !== null,
-                fn (): ?float => $this->getGradePoint()
-            ),
-            'is_passing' => $this->when(
-                $this->total_average !== null,
-                fn (): bool => $this->total_average >= 75
-            ),
+            // Evaluated from the immutable policy version assigned when grades are saved.
+            'grade_symbol' => $this->grade_symbol,
+            'grade_outcome' => $this->grade_outcome,
+            'grade_quality_points' => $this->grade_quality_points,
+            'grading_components' => $this->grading_components,
+            'grading_policy_version_id' => $this->grading_policy_version_id,
+            'letter_grade' => $this->grade_symbol,
+            'grade_point' => $this->grade_quality_points,
+            'is_passing' => $this->when($this->grade_outcome !== null, fn (): bool => $this->grade_outcome === 'pass'),
             'has_all_grades' => $this->when(
                 $this->prelim_grade !== null || $this->midterm_grade !== null || $this->finals_grade !== null,
                 fn (): bool => $this->prelim_grade !== null && $this->midterm_grade !== null && $this->finals_grade !== null

@@ -9,6 +9,8 @@ use App\Http\Requests\ClassEnrollmentFormRequest;
 use App\Http\Resources\ClassEnrollmentResource;
 use App\Models\ClassEnrollment;
 use App\Models\Classes;
+use App\Services\GradeEvaluationService;
+use App\Services\GradingSystemService;
 use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -163,22 +165,36 @@ final class ClassEnrollmentController extends Controller
      *
      * @throws ValidationException
      */
-    public function update(ClassEnrollmentFormRequest $request, int $id): JsonResponse
+    public function update(ClassEnrollmentFormRequest $request, int $id, GradingSystemService $gradingSystem, GradeEvaluationService $gradeEvaluation): JsonResponse
     {
         try {
             $enrollment = ClassEnrollment::findOrFail($id);
             $validated = $request->validated();
 
-            // Calculate total average if grades are provided
+            $policy = $gradingSystem->ensureConfig();
+            if ($policy['input_type'] !== 'numeric') {
+                return response()->json([
+                    'message' => 'Symbolic grading policies require a final symbol workflow.',
+                ], 422);
+            }
+
+            // Calculate the final grade from the active school's configured components.
             if (isset($validated['prelim_grade']) || isset($validated['midterm_grade']) || isset($validated['finals_grade'])) {
                 $prelim = $validated['prelim_grade'] ?? $enrollment->prelim_grade;
                 $midterm = $validated['midterm_grade'] ?? $enrollment->midterm_grade;
                 $finals = $validated['finals_grade'] ?? $enrollment->finals_grade;
 
-                // Calculate weighted average: Prelim (30%), Midterm (30%), Finals (40%)
-                if ($prelim !== null && $midterm !== null && $finals !== null) {
-                    $validated['total_average'] = ($prelim * 0.3) + ($midterm * 0.3) + ($finals * 0.4);
-                }
+                $evaluation = $gradeEvaluation->calculate([
+                    'prelim' => $prelim,
+                    'midterm' => $midterm,
+                    'final' => $finals,
+                ], $policy);
+                $validated['total_average'] = $evaluation['numeric_grade'];
+                $validated['grading_components'] = $evaluation['components'];
+                $validated['grade_symbol'] = $evaluation['symbol'];
+                $validated['grade_outcome'] = $evaluation['outcome'];
+                $validated['grade_quality_points'] = $evaluation['quality_points'];
+                $validated['grading_policy_version_id'] = $policy['policy_version_id'] ?? null;
             }
 
             $enrollment->update($validated);
@@ -265,7 +281,7 @@ final class ClassEnrollmentController extends Controller
     /**
      * Update grades for a class enrollment.
      */
-    public function updateGrades(ClassEnrollmentFormRequest $request, int $id): JsonResponse
+    public function updateGrades(ClassEnrollmentFormRequest $request, int $id, GradingSystemService $gradingSystem, GradeEvaluationService $gradeEvaluation): JsonResponse
     {
         try {
             $enrollment = ClassEnrollment::findOrFail($id);
@@ -275,6 +291,11 @@ final class ClassEnrollmentController extends Controller
                 'finals_grade',
                 'total_average',
             ]);
+            $policy = $gradingSystem->getConfig();
+
+            if ($policy['input_type'] !== 'numeric') {
+                return response()->json(['message' => 'Symbolic grading policies require a final symbol workflow.'], 422);
+            }
 
             // Calculate total average if all individual grades are provided
             if (isset($validated['prelim_grade']) || isset($validated['midterm_grade']) || isset($validated['finals_grade'])) {
@@ -282,11 +303,13 @@ final class ClassEnrollmentController extends Controller
                 $midterm = $validated['midterm_grade'] ?? $enrollment->midterm_grade;
                 $finals = $validated['finals_grade'] ?? $enrollment->finals_grade;
 
-                // Only calculate if all three grades are available
-                if ($prelim !== null && $midterm !== null && $finals !== null) {
-                    // Calculate weighted average: Prelim (30%), Midterm (30%), Finals (40%)
-                    $validated['total_average'] = round(($prelim * 0.3) + ($midterm * 0.3) + ($finals * 0.4), 2);
-                }
+                $evaluation = $gradeEvaluation->calculate(['prelim' => $prelim, 'midterm' => $midterm, 'final' => $finals], $policy);
+                $validated['total_average'] = $evaluation['numeric_grade'];
+                $validated['grading_components'] = $evaluation['components'];
+                $validated['grade_symbol'] = $evaluation['symbol'];
+                $validated['grade_outcome'] = $evaluation['outcome'];
+                $validated['grade_quality_points'] = $evaluation['quality_points'];
+                $validated['grading_policy_version_id'] = $policy['policy_version_id'] ?? null;
             }
 
             $enrollment->update($validated);

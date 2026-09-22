@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { useGradingConfig } from "@/hooks/use-grading-config";
-import { detectGradeScale, isPassingGrade, parseNumericGrade } from "@/lib/gwa";
+import { isPassingGrade, parseNumericGrade } from "@/lib/gwa";
 import { cn } from "@/lib/utils";
 import { usePage } from "@inertiajs/react";
 import { AlertCircle, BookOpen, CalendarIcon, CheckCircle, FileText, ListIcon, Printer } from "lucide-react";
@@ -28,10 +28,11 @@ export function PrintScheduleDialog({
     const gradingConfig = useGradingConfig();
     const [printOption, setPrintOption] = useState<PrintOption>(initialOption);
 
-    const gradePasses = (grade: number | string | null): boolean => {
+    const gradePasses = (grade: number | string | null, outcome?: string | null): boolean => {
+        if (outcome) return outcome === "pass";
         const numericGrade = parseNumericGrade(grade);
 
-        return numericGrade !== null && isPassingGrade(numericGrade, detectGradeScale(numericGrade), gradingConfig);
+        return numericGrade !== null && isPassingGrade(numericGrade, gradingConfig);
     };
 
     useEffect(() => {
@@ -726,7 +727,8 @@ tfoot td{background:#f0f0f0;font-weight:700}
       <tbody>`;
 
                         subjects.forEach((sub: any) => {
-                            const gradeClass = sub.grade && sub.grade !== "-" ? (gradePasses(sub.grade) ? "passed" : "failed") : "";
+                            const gradeClass =
+                                sub.grade && sub.grade !== "-" ? (gradePasses(sub.grade, sub.grade_outcome) ? "passed" : "failed") : "";
 
                             const statusBadge =
                                 sub.status === "Completed"
@@ -755,10 +757,11 @@ tfoot td{background:#f0f0f0;font-weight:700}
                                     // Skip the record if it matches the primary record shown above
                                     if (hist.id === sub.enrollment_id) return;
 
-                                    const hGradeClass = hist.grade && hist.grade !== "-" ? (gradePasses(hist.grade) ? "passed" : "failed") : "";
+                                    const hGradeClass =
+                                        hist.grade && hist.grade !== "-" ? (gradePasses(hist.grade, hist.grade_outcome) ? "passed" : "failed") : "";
                                     const hStatusBadge =
                                         hist.grade && hist.grade !== "-"
-                                            ? gradePasses(hist.grade)
+                                            ? gradePasses(hist.grade, hist.grade_outcome)
                                                 ? '<span class="badge badge-passed">Passed</span>'
                                                 : '<span class="badge badge-failed">Failed</span>'
                                             : '<span class="badge badge-progress">In Progress</span>';

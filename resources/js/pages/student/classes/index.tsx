@@ -85,7 +85,7 @@ const dashboardPanelClass = "border-border/60 bg-card/75 rounded-lg shadow-sm";
 
 const GwaChip = ({ label, result, size = "md", className }: { label: string; result: GwaResult; size?: "sm" | "md"; className?: string }) => {
     const gradingConfig = useGradingConfig();
-    const scaleLabel = gradeScaleLabel(result.scale);
+    const scaleLabel = gradeScaleLabel(result.scale, gradingConfig);
     const valueSize = size === "sm" ? "text-sm" : "text-base";
     return (
         <div
@@ -769,7 +769,8 @@ export default function StudentClasses({
                                         <p className="text-foreground/45 mt-4 line-clamp-1 text-[10px] font-medium sm:mt-6 sm:text-xs">
                                             {overallGwa.gradedCount}/{overallGwa.itemCount} subjects • {overallGwa.gradedUnits}/
                                             {overallGwa.totalUnits} units
-                                            {gradeScaleLabel(overallGwa.scale) && ` • ${gradeScaleLabel(overallGwa.scale)}`}
+                                            {gradeScaleLabel(overallGwa.scale, gradingConfig) &&
+                                                ` • ${gradeScaleLabel(overallGwa.scale, gradingConfig)}`}
                                         </p>
                                     </CardContent>
                                 </Card>

@@ -23,6 +23,8 @@ use App\Models\Faculty;
 use App\Models\Room;
 use App\Models\User;
 use App\Services\ClassPostPayloadService;
+use App\Services\GradeEvaluationService;
+use App\Services\GradingSystemService;
 use Carbon\Carbon;
 use Exception;
 use Filament\Actions\Action;
@@ -39,7 +41,7 @@ use Inertia\Response;
 
 final class FacultyClassController extends Controller
 {
-    public function show(Classes $class): Response
+    public function show(Classes $class, GradingSystemService $gradingSystem): Response
     {
         $user = Auth::user();
 
@@ -252,14 +254,15 @@ final class FacultyClassController extends Controller
             'teacher' => $teacher,
             'quick_actions' => $quickActions,
             'posts' => $classPosts,
-            'auto_average' => (bool) config('class_grading.auto_calculate_average', true),
+            'auto_average' => true,
+            'grading_policy' => $gradingSystem->getConfig(),
             'attendance' => $attendance,
             'rooms' => $rooms,
             'flash' => session('flash'),
         ]);
     }
 
-    public function getQuickActionData(Classes $class): \Illuminate\Http\JsonResponse
+    public function getQuickActionData(Classes $class, GradingSystemService $gradingSystem): \Illuminate\Http\JsonResponse
     {
         $user = Auth::user();
 
@@ -304,6 +307,7 @@ final class FacultyClassController extends Controller
                         'midterm' => $enrollment->midterm_grade,
                         'final' => $enrollment->finals_grade,
                         'average' => $enrollment->total_average,
+                        'components' => $enrollment->grading_components ?? [],
                     ],
                 ];
             })
@@ -327,6 +331,7 @@ final class FacultyClassController extends Controller
             'attendance' => $attendance,
             'schedule' => $schedule,
             'auto_average' => (bool) config('class_grading.auto_calculate_average', true),
+            'grading_policy' => $gradingSystem->getConfig(),
         ]);
     }
 
@@ -419,27 +424,61 @@ final class FacultyClassController extends Controller
         }
     }
 
-    public function updateGrades(Request $request, Classes $class): RedirectResponse
+    public function updateGrades(Request $request, Classes $class, GradingSystemService $gradingSystem, GradeEvaluationService $gradeEvaluation): RedirectResponse
     {
         $this->assertFacultyOwnsClass($class);
+
+        $policy = $gradingSystem->ensureConfig();
+        $componentKeys = collect($policy['components'])->pluck('key')->all();
+
+        if ($policy['input_type'] !== 'numeric') {
+            throw ValidationException::withMessages([
+                'grades' => 'Symbolic grading policies require a final symbol workflow. Assessment components must use a numeric policy.',
+            ]);
+        }
 
         $validated = $request->validate([
             'grades' => ['required', 'array'],
             'grades.*.enrollment_id' => ['required', 'exists:class_enrollments,id'],
-            'grades.*.prelim' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'grades.*.midterm' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'grades.*.final' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'grades.*.average' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'grades.*.components' => ['nullable', 'array'],
+            'grades.*.components.*' => ['nullable', 'numeric', 'min:'.((float) $policy['numeric_min']), 'max:'.((float) $policy['numeric_max'])],
+            'grades.*.prelim' => ['nullable', 'numeric'],
+            'grades.*.midterm' => ['nullable', 'numeric'],
+            'grades.*.final' => ['nullable', 'numeric'],
+            'grades.*.average' => ['nullable', 'numeric'],
         ]);
 
         foreach ($validated['grades'] as $gradeData) {
             $enrollment = ClassEnrollment::find($gradeData['enrollment_id']);
             if ($enrollment && $enrollment->class_id === $class->id) {
+                $scores = is_array($gradeData['components'] ?? null)
+                    ? collect($gradeData['components'])->only($componentKeys)->all()
+                    : collect($componentKeys)->mapWithKeys(function (string $key) use ($gradeData): array {
+                        $value = $gradeData[$key] ?? null;
+                        if ($value === null && $key === 'final') {
+                            $value = $gradeData['finals'] ?? null;
+                        } elseif ($value === null && $key === 'finals') {
+                            $value = $gradeData['final'] ?? null;
+                        }
+
+                        return [$key => $value];
+                    })->all();
+
+                $evaluation = $gradeEvaluation->calculate($scores, $policy);
+                $finalAverage = array_key_exists('average', $gradeData) && is_numeric($gradeData['average'])
+                    ? (float) $gradeData['average']
+                    : $evaluation['numeric_grade'];
+
                 $enrollment->update([
-                    'prelim_grade' => $gradeData['prelim'],
-                    'midterm_grade' => $gradeData['midterm'],
-                    'finals_grade' => $gradeData['final'],
-                    'total_average' => $gradeData['average'],
+                    'prelim_grade' => $scores['prelim'] ?? $gradeData['prelim'] ?? null,
+                    'midterm_grade' => $scores['midterm'] ?? $gradeData['midterm'] ?? null,
+                    'finals_grade' => $scores['final'] ?? $scores['finals'] ?? $gradeData['final'] ?? null,
+                    'total_average' => $finalAverage,
+                    'grading_components' => $evaluation['components'],
+                    'grade_symbol' => $evaluation['symbol'],
+                    'grade_outcome' => $evaluation['outcome'],
+                    'grade_quality_points' => $evaluation['quality_points'],
+                    'grading_policy_version_id' => $policy['policy_version_id'] ?? null,
                 ]);
             }
         }
@@ -452,6 +491,8 @@ final class FacultyClassController extends Controller
     public function submitGrades(Request $request, Classes $class): RedirectResponse
     {
         $this->assertFacultyOwnsClass($class);
+
+        $class->class_enrollments()->whereNotNull('grading_policy_version_id')->update(['is_grades_finalized' => true]);
 
         $validated = $request->validate([
             'term' => ['required', 'in:prelim,midterm,finals'],

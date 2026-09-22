@@ -10,6 +10,8 @@ use App\Models\ClassEnrollment;
 use App\Models\Classes;
 use App\Models\Faculty;
 use App\Models\User;
+use App\Services\GradeEvaluationService;
+use App\Services\GradingSystemService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -897,7 +899,7 @@ final class FacultyController extends Controller
      *
      * Update grades for a specific student enrollment in a class.
      */
-    public function updateGrades(Request $request, int|string $classId, int|string $enrollmentId): JsonResponse
+    public function updateGrades(Request $request, int|string $classId, int|string $enrollmentId, GradingSystemService $gradingSystem, GradeEvaluationService $gradeEvaluation): JsonResponse
     {
         $faculty = $this->getAuthenticatedFaculty($request);
 
@@ -943,10 +945,19 @@ final class FacultyController extends Controller
             ], 403);
         }
 
+        $policy = $gradingSystem->ensureConfig();
+        if ($policy['input_type'] !== 'numeric') {
+            return response()->json([
+                'error' => true,
+                'message' => 'Symbolic grading policies require a final symbol workflow.',
+                'code' => 'SYMBOLIC_POLICY',
+            ], 422);
+        }
+
         $validator = Validator::make($request->all(), [
-            'prelim_grade' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'midterm_grade' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'finals_grade' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'prelim_grade' => ['nullable', 'numeric', 'min:'.$policy['numeric_min'], 'max:'.$policy['numeric_max']],
+            'midterm_grade' => ['nullable', 'numeric', 'min:'.$policy['numeric_min'], 'max:'.$policy['numeric_max']],
+            'finals_grade' => ['nullable', 'numeric', 'min:'.$policy['numeric_min'], 'max:'.$policy['numeric_max']],
             'remarks' => ['nullable', 'string', 'max:500'],
         ]);
 
@@ -961,16 +972,17 @@ final class FacultyController extends Controller
 
         $data = $validator->validated();
 
-        // Compute total average from grades present
-        $gradeFields = ['prelim_grade', 'midterm_grade', 'finals_grade'];
-        $grades = array_filter(
-            array_map(fn (string $field): ?float => isset($data[$field]) ? (float) $data[$field] : ($enrollment->{$field} ?? null), $gradeFields),
-            fn (?float $g): bool => $g !== null
-        );
-
-        if (count($grades) > 0) {
-            $data['total_average'] = round(array_sum($grades) / count($grades), 2);
-        }
+        $evaluation = $gradeEvaluation->calculate([
+            'prelim' => $data['prelim_grade'] ?? $enrollment->prelim_grade,
+            'midterm' => $data['midterm_grade'] ?? $enrollment->midterm_grade,
+            'final' => $data['finals_grade'] ?? $enrollment->finals_grade,
+        ], $policy);
+        $data['total_average'] = $evaluation['numeric_grade'];
+        $data['grading_components'] = $evaluation['components'];
+        $data['grade_symbol'] = $evaluation['symbol'];
+        $data['grade_outcome'] = $evaluation['outcome'];
+        $data['grade_quality_points'] = $evaluation['quality_points'];
+        $data['grading_policy_version_id'] = $policy['policy_version_id'] ?? null;
 
         $enrollment->fill($data);
         $enrollment->save();

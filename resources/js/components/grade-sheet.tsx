@@ -6,10 +6,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import type { GradingComponentPayload, GradingConfigPayload } from "@/pages/administrators/system-management/types";
 import { router } from "@inertiajs/react";
+import { Calculator, Save, Send } from "lucide-react";
 import { toast } from "sonner";
-
-type GradeTermKey = "prelim" | "midterm" | "final";
 
 type StudentRow = {
     id: number | string;
@@ -20,362 +20,196 @@ type StudentRow = {
         midterm?: number | null;
         final?: number | null;
         average?: number | null;
+        components?: Record<string, number | null>;
     };
 };
 
-type GradeSheetProps = {
-    classId: number;
+type GradeRow = {
+    enrollmentId: number | string;
+    name: string;
+    studentId: string;
+    components: Record<string, string>;
+    average: string;
+};
+
+interface GradeSheetProps {
+    classId: number | string;
     students: StudentRow[];
-    autoAverageDefault: boolean;
-};
+    autoAverageDefault?: boolean;
+    gradingPolicy?: GradingConfigPayload;
+}
 
-const gradeColumns: GradeTermKey[] = ["prelim", "midterm", "final"];
+const fallbackComponents: GradingComponentPayload[] = [
+    { id: "prelim", key: "prelim", label: "Prelim", weight: 30, required: true, sort_order: 0 },
+    { id: "midterm", key: "midterm", label: "Midterm", weight: 30, required: true, sort_order: 1 },
+    { id: "final", key: "final", label: "Final", weight: 40, required: true, sort_order: 2 },
+];
 
-const gradeTone = (value: number | "" | null) => {
-    if (value === "" || value === null || Number.isNaN(Number(value))) {
-        return { text: "text-muted-foreground", bg: "bg-transparent" };
-    }
-
-    const num = Number(value);
-    if (num < 75) return { text: "text-red-600", bg: "bg-red-500/10" };
-    if (num < 80) return { text: "text-amber-600", bg: "bg-amber-500/10" };
-    if (num < 86) return { text: "text-amber-700", bg: "bg-amber-600/10" };
-    if (num < 91) return { text: "text-emerald-600", bg: "bg-emerald-500/10" };
-    if (num < 96) return { text: "text-emerald-700", bg: "bg-emerald-600/10" };
-    return { text: "text-blue-700", bg: "bg-blue-500/10" };
-};
-
-export function GradeSheet({ classId, students, autoAverageDefault }: GradeSheetProps) {
-    const [autoAverageEnabled, setAutoAverageEnabled] = useState<boolean>(autoAverageDefault);
-    const [isSavingGrades, setIsSavingGrades] = useState(false);
-    const [gradeRows, setGradeRows] = useState(() =>
-        students.map((student) => ({
-            enrollmentId: student.id,
-            name: student.name,
-            studentId: student.studentId,
-            prelim: student.grades.prelim ?? "",
-            midterm: student.grades.midterm ?? "",
-            final: student.grades.final ?? "",
-            average: student.grades.average ?? "",
-        })),
-    );
-
-    const computeAverage = (row: (typeof gradeRows)[number]) => {
-        const prelim = row.prelim === "" ? null : Number(row.prelim);
-        const midterm = row.midterm === "" ? null : Number(row.midterm);
-        const final = row.final === "" ? null : Number(row.final);
-
-        if (prelim === null || midterm === null || final === null) {
-            return "";
-        }
-
-        return Math.round((prelim * 0.3 + midterm * 0.3 + final * 0.4) * 100) / 100;
-    };
-
-    const handleGradeChange = (index: number, field: GradeTermKey | "average", value: string) => {
-        setGradeRows((prev) => {
-            const next = [...prev];
-            const sanitized = value === "" ? "" : Math.min(100, Math.max(0, Number(value)));
-            next[index] = { ...next[index], [field]: sanitized };
-
-            if (autoAverageEnabled && (field === "prelim" || field === "midterm" || field === "final")) {
-                next[index].average = computeAverage(next[index]);
-            }
-
-            return next;
-        });
-    };
-
-    const handleCellInput = (event: React.FormEvent<HTMLDivElement>, rowIndex: number, field: GradeTermKey | "average") => {
-        const raw = event.currentTarget.innerText.replace(/[^\d.]/g, "");
-        handleGradeChange(rowIndex, field, raw);
-    };
-
-    const allCompleteByTerm = useMemo(() => {
-        const base = { prelim: true, midterm: true, finals: true };
-
-        for (const row of gradeRows) {
-            if (row.prelim === "") {
-                base.prelim = false;
-            }
-            if (row.midterm === "") {
-                base.midterm = false;
-            }
-            if (row.prelim === "" || row.midterm === "" || row.final === "") {
-                base.finals = false;
-            }
-        }
-
-        return base;
-    }, [gradeRows]);
-
-    const rowCompleteness = useMemo(
+export function GradeSheet({ classId, students, autoAverageDefault = true, gradingPolicy }: GradeSheetProps) {
+    const components = useMemo(
         () =>
-            gradeRows.map((row) => ({
-                prelim: row.prelim !== "",
-                midterm: row.midterm !== "",
-                finals: row.prelim !== "" && row.midterm !== "" && row.final !== "",
-            })),
-        [gradeRows],
+            gradingPolicy?.components?.length
+                ? [...gradingPolicy.components].sort((left, right) => left.sort_order - right.sort_order)
+                : fallbackComponents,
+        [gradingPolicy?.components],
     );
+    const [autoAverageEnabled, setAutoAverageEnabled] = useState(autoAverageDefault);
+    const [isSavingGrades, setIsSavingGrades] = useState(false);
 
-    const handleArrowKeyNav = (event: React.KeyboardEvent<HTMLElement>, rowIndex: number, columnKey: GradeTermKey | "average") => {
-        const directions: Record<string, { rowDelta: number; colDelta: number }> = {
-            ArrowUp: { rowDelta: -1, colDelta: 0 },
-            ArrowDown: { rowDelta: 1, colDelta: 0 },
-            ArrowLeft: { rowDelta: 0, colDelta: -1 },
-            ArrowRight: { rowDelta: 0, colDelta: 1 },
-        };
+    const initialRows = useMemo<GradeRow[]>(
+        () =>
+            students.map((student) => {
+                const legacy: Record<string, number | null | undefined> = {
+                    prelim: student.grades.prelim,
+                    midterm: student.grades.midterm,
+                    final: student.grades.final,
+                };
+                const source = student.grades.components ?? legacy;
+                const gradeComponents = Object.fromEntries(
+                    components.map((component) => [component.key, source[component.key] == null ? "" : String(source[component.key])]),
+                );
 
-        const direction = directions[event.key];
-        if (!direction) return;
+                return {
+                    enrollmentId: student.id,
+                    name: student.name,
+                    studentId: student.studentId,
+                    components: gradeComponents,
+                    average: student.grades.average == null ? "" : String(student.grades.average),
+                };
+            }),
+        [components, students],
+    );
+    const [gradeRows, setGradeRows] = useState(initialRows);
 
-        event.preventDefault();
+    const numericRange =
+        gradingPolicy?.input_type === "numeric" ? { min: gradingPolicy.numeric_min, max: gradingPolicy.numeric_max } : { min: 0, max: 100 };
+    const label = gradingPolicy?.name ?? "Default grading policy";
 
-        const colOrder: Array<GradeTermKey | "average"> = ["prelim", "midterm", "final", "average"];
-        const currentColIndex = colOrder.indexOf(columnKey);
-        const targetColIndex = currentColIndex + direction.colDelta;
-        const targetRowIndex = rowIndex + direction.rowDelta;
-
-        const targetCol = colOrder[targetColIndex];
-        if (targetCol === undefined || targetRowIndex < 0 || targetRowIndex >= gradeRows.length) return;
-
-        const next = document.querySelector<HTMLElement>(`[data-cell="${targetRowIndex}-${targetCol}"]`);
-        next?.focus();
-        if (next instanceof HTMLDivElement) {
-            const range = document.createRange();
-            range.selectNodeContents(next);
-            const sel = window.getSelection();
-            sel?.removeAllRanges();
-            sel?.addRange(range);
+    const calculateAverage = (componentsForStudent: Record<string, string>): string => {
+        let total = 0;
+        for (const component of components) {
+            const raw = componentsForStudent[component.key];
+            if (raw === "" && component.required) return "";
+            if (raw === "") continue;
+            const score = Number(raw);
+            if (!Number.isFinite(score)) return "";
+            total += score * (component.weight / 100);
         }
+
+        return total.toFixed(gradingPolicy?.decimal_places ?? 2);
     };
 
-    const handleSaveGrades = () => {
-        if (isSavingGrades) return;
-        setIsSavingGrades(true);
+    const updateComponent = (enrollmentId: number | string, key: string, value: string) => {
+        setGradeRows((previous) =>
+            previous.map((row) => {
+                if (row.enrollmentId !== enrollmentId) return row;
+                const componentValues = { ...row.components, [key]: value };
+                return { ...row, components: componentValues, average: autoAverageEnabled ? calculateAverage(componentValues) : row.average };
+            }),
+        );
+    };
 
+    const saveGrades = () => {
+        setIsSavingGrades(true);
         router.put(
             `/faculty/classes/${classId}/grades`,
             {
                 grades: gradeRows.map((row) => ({
                     enrollment_id: row.enrollmentId,
-                    prelim: row.prelim === "" ? null : Number(row.prelim),
-                    midterm: row.midterm === "" ? null : Number(row.midterm),
-                    final: row.final === "" ? null : Number(row.final),
-                    average: row.average === "" ? null : Number(row.average),
+                    components: Object.fromEntries(Object.entries(row.components).map(([key, value]) => [key, value === "" ? null : Number(value)])),
                 })),
             },
             {
-                preserveState: true,
-                onSuccess: () => {
-                    toast.success("Grades saved with color-coded indicators");
-                },
-                onError: () => {
-                    toast.error("Unable to save grades");
-                },
+                preserveScroll: true,
+                onSuccess: () => toast.success("Grades saved"),
+                onError: () => toast.error("Unable to save grades"),
                 onFinish: () => setIsSavingGrades(false),
             },
         );
     };
 
-    const handleSubmitTerm = (term: "prelim" | "midterm" | "finals") => {
+    const submitGrades = () => {
         router.post(
             `/faculty/classes/${classId}/grades/submit`,
-            { term },
-            {
-                preserveState: true,
-                onSuccess: () => toast.success(`${term === "finals" ? "Finals" : term.charAt(0).toUpperCase() + term.slice(1)} submitted`),
-                onError: () => toast.error("Unable to submit grades"),
-            },
+            {},
+            { preserveScroll: true, onSuccess: () => toast.success("Grades submitted"), onError: () => toast.error("Unable to submit grades") },
         );
     };
 
     return (
-        <Card className="border-border/70 bg-card/90 rounded-lg shadow-sm">
-            <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <Card>
+            <CardHeader className="bg-muted/20 gap-4 border-b sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                    <CardTitle>Grades</CardTitle>
-                    <CardDescription>Edit grades with quick keyboard workflow</CardDescription>
+                    <CardTitle className="flex items-center gap-2">
+                        <Calculator className="size-5" /> Gradebook
+                    </CardTitle>
+                    <CardDescription>{label}. Weighted from the active school policy, not a fixed 30 / 30 / 40 formula.</CardDescription>
                 </div>
-                <div className="flex items-center gap-3">
-                    <Label className="text-muted-foreground text-xs tracking-[0.3em] uppercase">Auto average</Label>
-                    <Switch
-                        checked={autoAverageEnabled}
-                        onCheckedChange={(checked) => {
-                            setAutoAverageEnabled(checked);
-                            if (checked) {
-                                setGradeRows((prev) =>
-                                    prev.map((row) => ({
-                                        ...row,
-                                        average: computeAverage(row),
-                                    })),
-                                );
-                            }
-                        }}
-                    />
+                <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-2">
+                        <Label htmlFor="auto-average" className="text-sm">
+                            Auto-calculate
+                        </Label>
+                        <Switch id="auto-average" checked={autoAverageEnabled} onCheckedChange={setAutoAverageEnabled} />
+                    </div>
+                    <Button variant="outline" onClick={submitGrades} className="gap-2">
+                        <Send className="size-4" /> Submit
+                    </Button>
+                    <Button onClick={saveGrades} disabled={isSavingGrades} className="gap-2">
+                        <Save className="size-4" /> {isSavingGrades ? "Saving" : "Save grades"}
+                    </Button>
                 </div>
             </CardHeader>
-            <CardContent className="space-y-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="text-muted-foreground flex flex-wrap gap-2 text-xs">
-                        <Badge variant="outline" className="rounded-full">
-                            Prelim complete: {allCompleteByTerm.prelim ? "Yes" : "No"}
+            <CardContent className="pt-6">
+                <div className="mb-4 flex flex-wrap gap-2">
+                    {components.map((component) => (
+                        <Badge key={component.key} variant="outline">
+                            {component.label} {component.weight}%{component.required ? "" : " · optional"}
                         </Badge>
-                        <Badge variant="outline" className="rounded-full">
-                            Midterm complete: {allCompleteByTerm.midterm ? "Yes" : "No"}
-                        </Badge>
-                        <Badge variant="outline" className="rounded-full">
-                            Finals complete: {allCompleteByTerm.finals ? "Yes" : "No"}
-                        </Badge>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-                        <Button variant="outline" size="sm" className="col-span-2 sm:col-span-1" onClick={handleSaveGrades} disabled={isSavingGrades}>
-                            {isSavingGrades ? "Saving..." : "Save grades"}
-                        </Button>
-                        <Button
-                            size="sm"
-                            className=""
-                            variant="secondary"
-                            disabled={!allCompleteByTerm.prelim}
-                            onClick={() => handleSubmitTerm("prelim")}
-                        >
-                            Submit Prelim
-                        </Button>
-                        <Button
-                            size="sm"
-                            className=""
-                            variant="secondary"
-                            disabled={!allCompleteByTerm.midterm}
-                            onClick={() => handleSubmitTerm("midterm")}
-                        >
-                            Submit Midterm
-                        </Button>
-                        <Button size="sm" disabled={!allCompleteByTerm.finals} onClick={() => handleSubmitTerm("finals")}>
-                            Submit Finals
-                        </Button>
-                    </div>
-                </div>
-
-                <div className="space-y-3 md:hidden">
-                    {gradeRows.map((row, index) => (
-                        <div key={row.enrollmentId} className="border-border/70 rounded-lg border p-4">
-                            <div className="min-w-0">
-                                <p className="truncate text-sm font-semibold">{row.name}</p>
-                                <p className="text-muted-foreground truncate font-mono text-xs">{row.studentId}</p>
-                            </div>
-                            <div className="mt-4 grid grid-cols-2 gap-3">
-                                {gradeColumns.map((field) => (
-                                    <div key={field} className="space-y-1.5">
-                                        <Label htmlFor={`mobile-grade-${row.enrollmentId}-${field}`} className="text-xs capitalize">
-                                            {field === "final" ? "Finals" : field}
-                                        </Label>
-                                        <Input
-                                            id={`mobile-grade-${row.enrollmentId}-${field}`}
-                                            type="number"
-                                            inputMode="decimal"
-                                            min={0}
-                                            max={100}
-                                            value={row[field]}
-                                            onChange={(event) => handleGradeChange(index, field, event.target.value)}
-                                            className={`${gradeTone(row[field] === "" ? "" : Number(row[field])).text} text-center font-semibold`}
-                                        />
-                                    </div>
-                                ))}
-                                <div className="space-y-1.5">
-                                    <Label htmlFor={`mobile-grade-${row.enrollmentId}-average`} className="text-xs">
-                                        Average
-                                    </Label>
-                                    <Input
-                                        id={`mobile-grade-${row.enrollmentId}-average`}
-                                        type="number"
-                                        inputMode="decimal"
-                                        min={0}
-                                        max={100}
-                                        value={row.average}
-                                        readOnly={autoAverageEnabled}
-                                        onChange={(event) => handleGradeChange(index, "average", event.target.value)}
-                                        className={`${gradeTone(row.average === "" ? "" : Number(row.average)).text} text-center font-semibold`}
-                                    />
-                                </div>
-                            </div>
-                        </div>
                     ))}
+                    <Badge variant="secondary">
+                        Range {numericRange.min}–{numericRange.max}
+                    </Badge>
                 </div>
-
-                <div className="border-border/60 hidden overflow-x-auto rounded-lg border md:block">
-                    <table className="w-full min-w-[900px] border-separate border-spacing-0 text-sm">
-                        <thead>
-                            <tr className="bg-muted/40 text-muted-foreground text-xs tracking-[0.25em] uppercase">
-                                <th className="px-4 py-2 text-left">Student</th>
-                                <th className="px-4 py-2 text-left">ID</th>
-                                <th className="px-4 py-2 text-center">Prelim</th>
-                                <th className="px-4 py-2 text-center">Midterm</th>
-                                <th className="px-4 py-2 text-center">Finals</th>
-                                <th className="px-4 py-2 text-center">Average</th>
-                                <th className="px-4 py-2 text-center">Status</th>
+                <div className="overflow-x-auto rounded-lg border">
+                    <table className="w-full min-w-[760px] text-sm">
+                        <thead className="bg-muted/50">
+                            <tr>
+                                <th className="px-4 py-3 text-left font-medium">Student</th>
+                                {components.map((component) => (
+                                    <th key={component.key} className="px-3 py-3 text-center font-medium">
+                                        {component.label}
+                                        <span className="text-muted-foreground ml-1 text-xs">{component.weight}%</span>
+                                    </th>
+                                ))}
+                                <th className="px-4 py-3 text-center font-medium">Calculated</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {gradeRows.map((row, index) => {
-                                const status = rowCompleteness[index];
-                                const avgTone = gradeTone(row.average === "" ? "" : Number(row.average));
-                                return (
-                                    <tr key={row.enrollmentId} className="border-border/40 hover:bg-muted/20 border-t transition-colors">
-                                        <td className="text-foreground px-4 py-3 font-medium">{row.name}</td>
-                                        <td className="text-muted-foreground px-4 py-3 font-mono text-xs">{row.studentId}</td>
-                                        {gradeColumns.map((field) => {
-                                            const tone = gradeTone(row[field] === "" ? "" : Number(row[field]));
-                                            return (
-                                                <td key={field} className="px-3 py-2 text-center align-middle">
-                                                    <div
-                                                        role="textbox"
-                                                        aria-label={`${field} grade for ${row.name}`}
-                                                        contentEditable
-                                                        suppressContentEditableWarning
-                                                        data-cell={`${index}-${field}`}
-                                                        onKeyDown={(event) => handleArrowKeyNav(event, index, field)}
-                                                        onInput={(event) => handleCellInput(event, index, field)}
-                                                        className={`focus:border-primary/40 focus:bg-primary/5 focus:ring-primary/20 h-9 w-20 rounded-md border border-transparent bg-transparent px-2 text-center text-sm font-semibold outline-none focus:ring-2 ${tone.text} ${tone.bg}`}
-                                                    >
-                                                        {row[field] ?? ""}
-                                                    </div>
-                                                </td>
-                                            );
-                                        })}
-                                        <td className="px-3 py-2 text-center align-middle">
-                                            <div
-                                                role="textbox"
-                                                aria-label={`average for ${row.name}`}
-                                                contentEditable={!autoAverageEnabled}
-                                                suppressContentEditableWarning
-                                                data-cell={`${index}-average`}
-                                                onKeyDown={(event) => handleArrowKeyNav(event, index, "average")}
-                                                onInput={(event) => {
-                                                    if (autoAverageEnabled) return;
-                                                    handleCellInput(event, index, "average");
-                                                }}
-                                                className={`focus:border-primary/40 focus:bg-primary/5 focus:ring-primary/20 disabled:text-muted-foreground h-9 w-20 rounded-md border border-transparent bg-transparent px-2 text-center text-sm font-semibold outline-none focus:ring-2 ${avgTone.text} ${avgTone.bg}`}
-                                            >
-                                                {row.average ?? ""}
-                                            </div>
+                            {gradeRows.map((row) => (
+                                <tr key={row.enrollmentId} className="border-t">
+                                    <td className="px-4 py-3">
+                                        <div className="font-medium">{row.name}</div>
+                                        <div className="text-muted-foreground text-xs">{row.studentId}</div>
+                                    </td>
+                                    {components.map((component) => (
+                                        <td key={component.key} className="px-3 py-2">
+                                            <Input
+                                                type="number"
+                                                min={numericRange.min}
+                                                max={numericRange.max}
+                                                step="any"
+                                                value={row.components[component.key] ?? ""}
+                                                onChange={(event) => updateComponent(row.enrollmentId, component.key, event.target.value)}
+                                                aria-label={`${component.label} grade for ${row.name}`}
+                                            />
                                         </td>
-                                        <td className="text-muted-foreground px-4 py-3 text-center text-xs">
-                                            <div className="flex items-center justify-center gap-1">
-                                                <Badge variant={status.prelim ? "secondary" : "outline"} className="rounded-full px-2 py-0">
-                                                    P
-                                                </Badge>
-                                                <Badge variant={status.midterm ? "secondary" : "outline"} className="rounded-full px-2 py-0">
-                                                    M
-                                                </Badge>
-                                                <Badge variant={status.finals ? "secondary" : "outline"} className="rounded-full px-2 py-0">
-                                                    F
-                                                </Badge>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
+                                    ))}
+                                    <td className="px-4 py-3 text-center">
+                                        <span className="font-mono font-semibold">{row.average || "—"}</span>
+                                    </td>
+                                </tr>
+                            ))}
                         </tbody>
                     </table>
                 </div>

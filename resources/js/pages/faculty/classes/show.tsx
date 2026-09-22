@@ -12,6 +12,7 @@ import FacultyLayout from "@/components/faculty/faculty-layout";
 import { GradeSheet } from "@/components/grade-sheet";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
+import type { GradingConfigPayload } from "@/pages/administrators/system-management/types";
 import { AttendanceOverview, ClassPostEntry, ClassSettings, ScheduleEntry, StudentEntry, TeacherEntry } from "@/types/class-detail-types";
 import { User } from "@/types/user";
 import { Head, Link } from "@inertiajs/react";
@@ -47,6 +48,7 @@ interface ClassDetailProps {
     schedule: ScheduleEntry[];
     attendance: AttendanceOverview;
     auto_average: boolean;
+    grading_policy: GradingConfigPayload;
     rooms?: { id: number; name: string }[];
 }
 
@@ -60,6 +62,7 @@ export default function ClassDetail({
     schedule = [],
     attendance,
     auto_average,
+    grading_policy,
     rooms = [],
 }: ClassDetailProps) {
     const tabs = useMemo<ClassroomTab[]>(
@@ -209,9 +212,11 @@ export default function ClassDetail({
                                         midterm: student.grades.midterm,
                                         final: student.grades.final,
                                         average: student.grades.average,
+                                        components: student.grades.components,
                                     },
                                 }))}
                                 autoAverageDefault={auto_average}
+                                gradingPolicy={grading_policy}
                             />
                         </TabsContent>
                     )}

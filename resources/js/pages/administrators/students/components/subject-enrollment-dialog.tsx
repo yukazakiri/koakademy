@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
+import { useGradingConfig } from "@/hooks/use-grading-config";
 import { BookOpen, CheckCircle, ExternalLink, FileText, Trash2 } from "lucide-react";
 import type { FormEvent } from "react";
 import type { ChecklistHistoryRecord, ChecklistSubject, StudentOptions, SubjectEnrollmentFormData } from "../types";
@@ -40,6 +40,7 @@ export function SubjectEnrollmentDialog({
     onSubmit,
     onDelete,
 }: SubjectEnrollmentDialogProps) {
+    const gradingConfig = useGradingConfig();
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-h-[90vh] gap-0 overflow-y-auto p-0 sm:max-w-[700px]">
@@ -250,19 +251,16 @@ export function SubjectEnrollmentDialog({
                                     <div className="relative">
                                         <Input
                                             id="grade"
-                                            type="number"
-                                            step="0.01"
-                                            min="1"
-                                            max="100"
+                                            type="text"
+                                            inputMode={gradingConfig.input_type === "numeric" ? "decimal" : "text"}
                                             value={data.grade}
                                             onChange={(event) => setData("grade", event.target.value)}
-                                            placeholder="--"
-                                            className={cn(
-                                                "pl-9 font-mono font-bold",
-                                                data.grade && (Number(data.grade) <= 3.0 || Number(data.grade) >= 75)
-                                                    ? "border-green-200 text-green-600 focus-visible:ring-green-500"
-                                                    : "",
-                                            )}
+                                            placeholder={
+                                                gradingConfig.input_type === "symbol"
+                                                    ? "A, B+, Pass"
+                                                    : `${gradingConfig.numeric_min}–${gradingConfig.numeric_max}`
+                                            }
+                                            className="pl-9 font-mono font-bold"
                                         />
                                         <div className="text-muted-foreground pointer-events-none absolute top-2.5 left-3">
                                             <FileText className="h-4 w-4" />

@@ -6,6 +6,11 @@ namespace App\Services;
 
 use App\Models\Course;
 use App\Models\GeneralSetting;
+use App\Models\GradingPolicy;
+use App\Models\GradingPolicyVersion;
+use App\Models\School;
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Centralized access to the grading system configuration.
@@ -26,14 +31,24 @@ final class GradingSystemService
     public static function defaults(): array
     {
         return [
-            'scale' => 'auto', // 'point' | 'percent' | 'auto'
-            'point_passing_grade' => 3.0,
-            'percent_passing_grade' => 75,
-            'point_decimal_places' => 4,
-            'percent_decimal_places' => 2,
+            'name' => 'Default grading policy',
+            'input_type' => 'numeric',
+            'numeric_min' => 0,
+            'numeric_max' => 100,
+            'direction' => 'higher_is_better',
+            'decimal_places' => 2,
             'include_failed_in_gwa' => true,
-            'excluded_keywords' => ['NSTP', 'OJT'],
+            'excluded_keywords' => [],
             'excluded_subject_ids' => [],
+            'bands' => [
+                ['id' => 'pass', 'label' => 'Passing', 'min' => 75, 'max' => 100, 'symbol' => null, 'outcome' => 'pass', 'quality_points' => null, 'color' => 'success', 'sort_order' => 0],
+                ['id' => 'fail', 'label' => 'Failing', 'min' => 0, 'max' => 74.9999, 'symbol' => null, 'outcome' => 'fail', 'quality_points' => null, 'color' => 'destructive', 'sort_order' => 1],
+            ],
+            'components' => [
+                ['id' => 'prelim', 'key' => 'prelim', 'label' => 'Prelim', 'weight' => 30, 'required' => true, 'sort_order' => 0],
+                ['id' => 'midterm', 'key' => 'midterm', 'label' => 'Midterm', 'weight' => 30, 'required' => true, 'sort_order' => 1],
+                ['id' => 'final', 'key' => 'final', 'label' => 'Final', 'weight' => 40, 'required' => true, 'sort_order' => 2],
+            ],
         ];
     }
 
@@ -42,16 +57,65 @@ final class GradingSystemService
      *
      * @return array<string, mixed>
      */
-    public function getConfig(): array
+    public function getConfig(?School $school = null): array
     {
-        $settings = GeneralSetting::first();
+        $school ??= app(TenantContext::class)->getCurrentSchool();
+
+        if ($school instanceof School) {
+            return $this->activeConfigurationForSchool($school, createWhenMissing: false);
+        }
+
+        return $this->legacyConfiguration();
+    }
+
+    /** @return array<string, mixed> */
+    public function ensureConfig(?School $school = null): array
+    {
+        $school ??= app(TenantContext::class)->getCurrentSchool();
+
+        return $school instanceof School
+            ? $this->activeConfigurationForSchool($school)
+            : $this->legacyConfiguration();
+    }
+
+    /** @return array<string, mixed> */
+    public function legacyConfiguration(): array
+    {
+        $settings = GeneralSetting::query()->first();
         $stored = [];
 
         if ($settings && is_array($settings->more_configs ?? null)) {
             $stored = $settings->more_configs[self::CONFIG_KEY] ?? [];
         }
 
-        $config = array_merge(self::defaults(), is_array($stored) ? $stored : []);
+        $legacy = is_array($stored) ? $stored : [];
+        $config = self::defaults();
+
+        if (array_key_exists('point_passing_grade', $legacy) || array_key_exists('percent_passing_grade', $legacy)) {
+            $scale = $legacy['scale'] ?? 'percent';
+            $isPoint = $scale === 'point';
+            $threshold = (float) ($isPoint ? ($legacy['point_passing_grade'] ?? 3) : ($legacy['percent_passing_grade'] ?? 75));
+            $config = [
+                ...$config,
+                'input_type' => 'numeric',
+                'numeric_min' => $isPoint ? 1 : 0,
+                'numeric_max' => $isPoint ? 5 : 100,
+                'direction' => $isPoint ? 'lower_is_better' : 'higher_is_better',
+                'decimal_places' => (int) ($isPoint ? ($legacy['point_decimal_places'] ?? 4) : ($legacy['percent_decimal_places'] ?? 2)),
+                'bands' => $isPoint
+                    ? [
+                        ['id' => 'pass', 'label' => 'Passing', 'min' => 1, 'max' => $threshold, 'symbol' => null, 'outcome' => 'pass', 'quality_points' => null, 'color' => 'success', 'sort_order' => 0],
+                        ['id' => 'fail', 'label' => 'Failing', 'min' => $threshold + 0.0001, 'max' => 5, 'symbol' => null, 'outcome' => 'fail', 'quality_points' => null, 'color' => 'destructive', 'sort_order' => 1],
+                    ]
+                    : [
+                        ['id' => 'pass', 'label' => 'Passing', 'min' => $threshold, 'max' => 100, 'symbol' => null, 'outcome' => 'pass', 'quality_points' => null, 'color' => 'success', 'sort_order' => 0],
+                        ['id' => 'fail', 'label' => 'Failing', 'min' => 0, 'max' => $threshold - 0.0001, 'symbol' => null, 'outcome' => 'fail', 'quality_points' => null, 'color' => 'destructive', 'sort_order' => 1],
+                    ],
+                'include_failed_in_gwa' => (bool) ($legacy['include_failed_in_gwa'] ?? true),
+                'excluded_keywords' => $legacy['excluded_keywords'] ?? [],
+                'excluded_subject_ids' => $legacy['excluded_subject_ids'] ?? [],
+            ];
+        }
 
         return $this->normalize($config);
     }
@@ -61,17 +125,16 @@ final class GradingSystemService
      *
      * @param  array<string, mixed>|null  $config
      */
-    public function isPassingGrade(float $grade, ?array $config = null): bool
+    public function isPassingGrade(float|int|string|null $grade, ?array $config = null): bool
     {
-        $config = $config === null
-            ? $this->getConfig()
-            : $this->normalize(array_merge(self::defaults(), $config));
-
-        if ($grade <= 5) {
-            return $grade <= (float) $config['point_passing_grade'];
+        if ($grade === null || $grade === '' || ! is_numeric($grade)) {
+            return false;
         }
 
-        return $grade >= (float) $config['percent_passing_grade'];
+        $config = $config === null ? $this->getConfig() : $this->normalize($config);
+        $evaluation = app(GradeEvaluationService::class)->evaluate((float) $grade, $config);
+
+        return $evaluation['outcome'] === 'pass';
     }
 
     /**
@@ -80,9 +143,15 @@ final class GradingSystemService
      * @param  array<string, mixed>  $input
      * @return array<string, mixed>
      */
-    public function update(array $input): array
+    public function update(array $input, ?School $school = null, ?User $author = null): array
     {
-        $settings = GeneralSetting::first();
+        $school ??= app(TenantContext::class)->getCurrentSchool();
+
+        if ($school instanceof School) {
+            return $this->publishForSchool($school, $input, $author);
+        }
+
+        $settings = GeneralSetting::query()->first();
 
         if (! $settings) {
             $settings = GeneralSetting::query()->create([
@@ -91,12 +160,76 @@ final class GradingSystemService
         }
 
         $moreConfigs = is_array($settings->more_configs ?? null) ? $settings->more_configs : [];
-        $normalized = $this->normalize(array_merge(self::defaults(), $input));
+        $normalized = $this->normalize($input);
         $moreConfigs[self::CONFIG_KEY] = $normalized;
 
         $settings->update(['more_configs' => $moreConfigs]);
 
         return $normalized;
+    }
+
+    /**
+     * @param  array<string, mixed>  $configuration
+     * @return array<string, mixed>
+     */
+    public function publishForSchool(School $school, array $configuration, ?User $author = null): array
+    {
+        $normalized = $this->normalize($configuration);
+
+        return DB::transaction(function () use ($school, $normalized, $author): array {
+            $policy = GradingPolicy::query()->firstOrCreate(
+                ['school_id' => $school->id],
+                ['name' => $normalized['name'], 'created_by' => $author?->id],
+            );
+
+            $policy->update(['name' => $normalized['name']]);
+            $nextVersion = ((int) $policy->versions()->max('version')) + 1;
+            $version = $policy->versions()->create([
+                'version' => $nextVersion,
+                'state' => GradingPolicyVersion::Published,
+                'configuration' => $normalized,
+                'created_by' => $author?->id,
+                'published_by' => $author?->id,
+                'published_at' => now(),
+            ]);
+
+            $policy->update(['active_version_id' => $version->id]);
+
+            return [...$normalized, 'policy_version_id' => $version->id, 'policy_version' => $version->version];
+        });
+    }
+
+    /** @return array<string, mixed> */
+    public function activeConfigurationForSchool(School $school, bool $createWhenMissing = true): array
+    {
+        $policy = GradingPolicy::query()->with('activeVersion')->where('school_id', $school->id)->first();
+
+        if ($policy?->activeVersion instanceof GradingPolicyVersion) {
+            return [
+                ...$this->normalize($policy->activeVersion->configuration),
+                'policy_version_id' => $policy->activeVersion->id,
+                'policy_version' => $policy->activeVersion->version,
+            ];
+        }
+
+        if ($createWhenMissing) {
+            return $this->publishForSchool($school, $this->legacyConfiguration());
+        }
+
+        return $this->legacyConfiguration();
+    }
+
+    public function activeVersionForSchool(?School $school = null): ?GradingPolicyVersion
+    {
+        $school ??= app(TenantContext::class)->getCurrentSchool();
+
+        if (! $school instanceof School) {
+            return null;
+        }
+
+        $this->activeConfigurationForSchool($school);
+
+        return GradingPolicy::query()->with('activeVersion')->where('school_id', $school->id)->first()?->activeVersion;
     }
 
     /**
@@ -135,13 +268,13 @@ final class GradingSystemService
      */
     private function normalize(array $config): array
     {
-        $scale = is_string($config['scale'] ?? null) ? $config['scale'] : 'auto';
-        if (! in_array($scale, ['point', 'percent', 'auto'], true)) {
-            $scale = 'auto';
-        }
-
-        $pointPassing = (float) ($config['point_passing_grade'] ?? 3.0);
-        $percentPassing = (float) ($config['percent_passing_grade'] ?? 75);
+        $defaults = self::defaults();
+        $inputType = in_array($config['input_type'] ?? null, ['numeric', 'symbol'], true) ? $config['input_type'] : $defaults['input_type'];
+        $direction = in_array($config['direction'] ?? null, ['higher_is_better', 'lower_is_better'], true)
+            ? $config['direction']
+            : $defaults['direction'];
+        $numericMin = is_numeric($config['numeric_min'] ?? null) ? (float) $config['numeric_min'] : (float) $defaults['numeric_min'];
+        $numericMax = is_numeric($config['numeric_max'] ?? null) ? (float) $config['numeric_max'] : (float) $defaults['numeric_max'];
 
         $keywords = array_values(array_filter(array_map(
             fn ($k): string => mb_trim((string) $k),
@@ -156,15 +289,49 @@ final class GradingSystemService
             )
         )));
 
+        $bands = collect($config['bands'] ?? $defaults['bands'])
+            ->filter(fn ($band): bool => is_array($band))
+            ->map(fn (array $band, int $index): array => [
+                'id' => mb_trim((string) ($band['id'] ?? "band_{$index}")),
+                'symbol' => ($symbol = mb_trim((string) ($band['symbol'] ?? ''))) === '' ? null : $symbol,
+                'label' => mb_trim((string) ($band['label'] ?? 'Band '.($index + 1))),
+                'min' => is_numeric($band['min'] ?? null) ? (float) $band['min'] : null,
+                'max' => is_numeric($band['max'] ?? null) ? (float) $band['max'] : null,
+                'outcome' => in_array($band['outcome'] ?? null, ['pass', 'fail', 'incomplete', 'withdrawn', 'non_credit'], true) ? $band['outcome'] : 'incomplete',
+                'quality_points' => is_numeric($band['quality_points'] ?? null) ? (float) $band['quality_points'] : null,
+                'color' => mb_trim((string) ($band['color'] ?? 'muted')),
+                'sort_order' => (int) ($band['sort_order'] ?? $index),
+            ])
+            ->sortBy('sort_order')
+            ->values()
+            ->all();
+
+        $components = collect($config['components'] ?? $defaults['components'])
+            ->filter(fn ($component): bool => is_array($component))
+            ->map(fn (array $component, int $index): array => [
+                'id' => mb_trim((string) ($component['id'] ?? $component['key'] ?? "component_{$index}")),
+                'key' => mb_trim((string) ($component['key'] ?? "component_{$index}")),
+                'label' => mb_trim((string) ($component['label'] ?? 'Component '.($index + 1))),
+                'weight' => round((float) ($component['weight'] ?? 0), 4),
+                'required' => (bool) ($component['required'] ?? true),
+                'sort_order' => (int) ($component['sort_order'] ?? $index),
+            ])
+            ->sortBy('sort_order')
+            ->values()
+            ->all();
+
         return [
-            'scale' => $scale,
-            'point_passing_grade' => max(1.0, min(5.0, $pointPassing)),
-            'percent_passing_grade' => max(0.0, min(100.0, $percentPassing)),
-            'point_decimal_places' => max(0, min(6, (int) ($config['point_decimal_places'] ?? 4))),
-            'percent_decimal_places' => max(0, min(6, (int) ($config['percent_decimal_places'] ?? 2))),
+            'name' => mb_trim((string) ($config['name'] ?? $defaults['name'])) ?: $defaults['name'],
+            'input_type' => $inputType,
+            'numeric_min' => min($numericMin, $numericMax),
+            'numeric_max' => max($numericMin, $numericMax),
+            'direction' => $direction,
+            'decimal_places' => max(0, min(6, (int) ($config['decimal_places'] ?? $defaults['decimal_places']))),
             'include_failed_in_gwa' => (bool) ($config['include_failed_in_gwa'] ?? true),
             'excluded_keywords' => $keywords,
             'excluded_subject_ids' => $subjectIds,
+            'bands' => $bands,
+            'components' => $components,
         ];
     }
 }

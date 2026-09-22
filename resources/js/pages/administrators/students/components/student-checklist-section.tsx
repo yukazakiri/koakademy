@@ -6,7 +6,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useGradingConfig } from "@/hooks/use-grading-config";
 import {
     computeGwa,
-    detectGradeScale,
     formatGwa,
     gradeScaleLabel,
     gwaToneClass,
@@ -70,10 +69,14 @@ function collectYearSubjects(yearGroup: ChecklistYearGroup): ChecklistSubject[] 
 function gradePasses(grade: number | string | null, config: GradingConfig): boolean {
     const numericGrade = parseNumericGrade(grade);
 
-    return numericGrade !== null && isPassingGrade(numericGrade, detectGradeScale(numericGrade), config);
+    return numericGrade !== null && isPassingGrade(numericGrade, config);
 }
 
 function checklistStatus(subject: ChecklistSubject, config: GradingConfig): string {
+    if (subject.grade_outcome) {
+        return subject.grade_outcome === "pass" ? "Passed" : subject.grade_outcome === "fail" ? "Failed" : subject.grade_outcome;
+    }
+
     if (parseNumericGrade(subject.grade) === null) {
         return subject.status === "Completed" ? "Passed" : subject.status;
     }
@@ -95,7 +98,9 @@ function GwaSummary({ label, result, className }: GwaSummaryProps) {
             <span className="flex items-baseline gap-1">
                 <span className="text-muted-foreground text-xs uppercase">GWA</span>
                 <span className={`font-mono text-base font-bold ${gwaToneClass(result, gradingConfig)}`}>{formatGwa(result, gradingConfig)}</span>
-                {gradeScaleLabel(result.scale) && <span className="text-muted-foreground text-xs">({gradeScaleLabel(result.scale)})</span>}
+                {gradeScaleLabel(result.scale, gradingConfig) && (
+                    <span className="text-muted-foreground text-xs">({gradeScaleLabel(result.scale, gradingConfig)})</span>
+                )}
             </span>
             <span className="text-muted-foreground text-xs">
                 {result.gradedCount}/{result.itemCount} subjects graded
@@ -188,9 +193,9 @@ export function StudentChecklistSection({
                                                                 >
                                                                     {formatGwa(semesterResult, gradingConfig)}
                                                                 </span>
-                                                                {gradeScaleLabel(semesterResult.scale) && (
+                                                                {gradeScaleLabel(semesterResult.scale, gradingConfig) && (
                                                                     <span className="text-muted-foreground text-xs">
-                                                                        ({gradeScaleLabel(semesterResult.scale)})
+                                                                        ({gradeScaleLabel(semesterResult.scale, gradingConfig)})
                                                                     </span>
                                                                 )}
                                                             </span>
@@ -286,7 +291,9 @@ export function StudentChecklistSection({
                                                                                 return null;
                                                                             }
 
-                                                                            const isPassed = gradePasses(history.grade, gradingConfig);
+                                                                            const isPassed = history.grade_outcome
+                                                                                ? history.grade_outcome === "pass"
+                                                                                : gradePasses(history.grade, gradingConfig);
 
                                                                             return (
                                                                                 <TableRow

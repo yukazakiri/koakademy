@@ -2,16 +2,12 @@
  * General Weighted Average (GWA) utilities.
  *
  * Centralized so both administrator and student-facing pages compute and
- * format GWAs consistently. Supports two Philippine grading conventions:
- *  - Point scale (1.0 – 5.0, lower is better, <= 3.0 passes)
- *  - Percent scale (0 – 100, higher is better, >= 75 passes)
- *
- * Scale is auto-detected per row; rows whose scale conflicts with earlier
- * rows in the same group are skipped to avoid misleading averages.
+ * format GWAs consistently. The active school policy declares numerical
+ * direction, grade bands, and precision instead of assuming a country-specific
+ * score range or passing threshold.
  */
 
-export type GradeScale = "point" | "percent";
-export type GradeScalePreference = GradeScale | "auto";
+export type GradeScale = "numeric";
 
 export interface GwaItemLike {
     units: number | string | null | undefined;
@@ -21,17 +17,41 @@ export interface GwaItemLike {
     id?: number | string | null;
     code?: string | null;
     title?: string | null;
+    grade_quality_points?: number | string | null;
+    grade_outcome?: string | null;
 }
 
 export interface GradingConfig {
-    scale: GradeScalePreference;
-    point_passing_grade: number;
-    percent_passing_grade: number;
-    point_decimal_places: number;
-    percent_decimal_places: number;
+    name: string;
+    input_type: "numeric" | "symbol";
+    numeric_min: number;
+    numeric_max: number;
+    direction: "higher_is_better" | "lower_is_better";
+    decimal_places: number;
     include_failed_in_gwa: boolean;
     excluded_keywords: string[];
     excluded_subject_ids: number[];
+    bands: Array<{
+        id: string;
+        symbol: string | null;
+        label: string;
+        min: number | null;
+        max: number | null;
+        outcome: "pass" | "fail" | "incomplete" | "withdrawn" | "non_credit";
+        quality_points: number | null;
+        color: string;
+        sort_order: number;
+    }>;
+    components: Array<{
+        id: string;
+        key: string;
+        label: string;
+        weight: number;
+        required: boolean;
+        sort_order: number;
+    }>;
+    policy_version_id?: number;
+    policy_version?: number;
 }
 
 export interface GwaResult {
@@ -45,14 +65,34 @@ export interface GwaResult {
 }
 
 export const DEFAULT_GRADING_CONFIG: GradingConfig = {
-    scale: "auto",
-    point_passing_grade: 3.0,
-    percent_passing_grade: 75,
-    point_decimal_places: 4,
-    percent_decimal_places: 2,
+    name: "Default grading policy",
+    input_type: "numeric",
+    numeric_min: 0,
+    numeric_max: 100,
+    direction: "higher_is_better",
+    decimal_places: 2,
     include_failed_in_gwa: true,
-    excluded_keywords: ["NSTP", "OJT"],
+    excluded_keywords: [],
     excluded_subject_ids: [],
+    bands: [
+        { id: "pass", symbol: null, label: "Passing", min: 75, max: 100, outcome: "pass", quality_points: null, color: "success", sort_order: 0 },
+        {
+            id: "fail",
+            symbol: null,
+            label: "Failing",
+            min: 0,
+            max: 74.9999,
+            outcome: "fail",
+            quality_points: null,
+            color: "destructive",
+            sort_order: 1,
+        },
+    ],
+    components: [
+        { id: "prelim", key: "prelim", label: "Prelim", weight: 30, required: true, sort_order: 0 },
+        { id: "midterm", key: "midterm", label: "Midterm", weight: 30, required: true, sort_order: 1 },
+        { id: "final", key: "final", label: "Final", weight: 40, required: true, sort_order: 2 },
+    ],
 };
 
 export interface ComputeGwaOptions {
@@ -108,25 +148,36 @@ export function parseNumericGrade(grade: number | string | null | undefined): nu
     return parsed;
 }
 
-export function detectGradeScale(grade: number): GradeScale {
-    return grade <= 5 ? "point" : "percent";
+export function gradeOutcome(
+    grade: number | string | null | undefined,
+    config?: Partial<GradingConfig> | null,
+): GradingConfig["bands"][number]["outcome"] | null {
+    const numericGrade = parseNumericGrade(grade);
+    if (numericGrade === null) {
+        return null;
+    }
+
+    const resolved = resolveConfig(config);
+    return (
+        resolved.bands.find(
+            (band) => typeof band.min === "number" && typeof band.max === "number" && numericGrade >= band.min && numericGrade <= band.max,
+        )?.outcome ?? null
+    );
 }
 
-export function isPassingGrade(grade: number, scale: GradeScale, config?: Partial<GradingConfig> | null): boolean {
+export function isPassingGrade(grade: number, config?: Partial<GradingConfig> | null): boolean {
     const resolved = resolveConfig(config);
-    return scale === "point" ? grade <= resolved.point_passing_grade : grade >= resolved.percent_passing_grade;
+    return gradeOutcome(grade, resolved) === "pass";
 }
 
 export function computeGwa(items: GwaItemLike[], options: ComputeGwaOptions = {}): GwaResult {
     const config = resolveConfig(options.config);
-    const preferredScale: GradeScale | null = config.scale === "auto" ? null : config.scale;
-
     let weightedSum = 0;
     let gradedUnits = 0;
     let totalUnits = 0;
     let gradedCount = 0;
     let excludedCount = 0;
-    let scale: GradeScale | null = preferredScale;
+    const scale: GradeScale = "numeric";
 
     for (const item of items) {
         if (isItemExcluded(item, config)) {
@@ -137,20 +188,13 @@ export function computeGwa(items: GwaItemLike[], options: ComputeGwaOptions = {}
         const units = Number(item.units) || 0;
         totalUnits += units;
 
-        const numericGrade = parseNumericGrade(item.grade);
+        const numericGrade = parseNumericGrade(item.grade) ?? parseNumericGrade(item.grade_quality_points);
         if (numericGrade === null || units <= 0) {
             continue;
         }
 
-        const rowScale = detectGradeScale(numericGrade);
-        if (scale === null) {
-            scale = rowScale;
-        } else if (scale !== rowScale) {
-            // Mixed scales — skip conflicting row to avoid misleading averages.
-            continue;
-        }
-
-        if (!config.include_failed_in_gwa && !isPassingGrade(numericGrade, rowScale, config)) {
+        const isPassing = item.grade_outcome ? item.grade_outcome === "pass" : isPassingGrade(numericGrade, config);
+        if (!config.include_failed_in_gwa && !isPassing) {
             continue;
         }
 
@@ -175,21 +219,21 @@ export function formatGwa(result: GwaResult, config?: Partial<GradingConfig> | n
         return "—";
     }
     const resolved = resolveConfig(config);
-    const decimals =
-        result.scale === "percent" ? resolved.percent_decimal_places : resolved.point_decimal_places;
-    return result.gwa.toFixed(decimals);
+    return result.gwa.toFixed(resolved.decimal_places);
 }
 
 export function gwaToneClass(result: GwaResult, config?: Partial<GradingConfig> | null): string {
     if (result.gwa === null || result.scale === null) {
         return "text-muted-foreground";
     }
-    return isPassingGrade(result.gwa, result.scale, config) ? "text-green-600" : "text-destructive";
+    return isPassingGrade(result.gwa, config) ? "text-green-600" : "text-destructive";
 }
 
-export function gradeScaleLabel(scale: GradeScale | null): string | null {
-    if (scale === null) {
-        return null;
+export function gradeScaleLabel(_scale: GradeScale | null, config?: Partial<GradingConfig> | null): string | null {
+    const resolved = resolveConfig(config);
+    if (resolved.input_type !== "numeric") {
+        return "symbol";
     }
-    return scale === "point" ? "1.0–5.0" : "%";
+
+    return `${resolved.numeric_min}–${resolved.numeric_max}`;
 }

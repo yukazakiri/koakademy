@@ -94,6 +94,12 @@ export interface GradingConfigPayload {
     zero_is_dropped?: boolean;
     treat_incomplete_as?: "exclude" | "fail";
     exclude_zero_unit_subjects?: boolean;
+    transferee_scale_enabled?: boolean;
+    transferee_point_scale_min?: number;
+    transferee_point_scale_max?: number;
+    transferee_point_passing_grade?: number;
+    transferee_point_direction?: "lower_is_better" | "higher_is_better";
+    transferee_conversion_method?: "formula" | "table";
     excluded_keywords: string[];
     excluded_subject_ids: number[];
     bands: GradingBandPayload[];

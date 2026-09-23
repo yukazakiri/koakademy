@@ -1699,7 +1699,14 @@ final class AdministratorStudentManagementController extends Controller
                         ]);
                     }
                     $numericVal = (float) $gradeInput;
-                    if ($numericVal < (float) $gradingConfig['numeric_min'] || $numericVal > (float) $gradingConfig['numeric_max']) {
+                    $isTransfereeScale = (bool) ($gradingConfig['transferee_scale_enabled'] ?? true)
+                        && $numericVal >= (float) ($gradingConfig['transferee_point_scale_min'] ?? 1.0)
+                        && $numericVal <= (float) ($gradingConfig['transferee_point_scale_max'] ?? 5.0);
+
+                    $isWithinPolicyBounds = $numericVal >= (float) $gradingConfig['numeric_min']
+                        && $numericVal <= (float) $gradingConfig['numeric_max'];
+
+                    if (! $isWithinPolicyBounds && ! $isTransfereeScale) {
                         throw ValidationException::withMessages([
                             'grade' => "Grade must be between {$gradingConfig['numeric_min']} and {$gradingConfig['numeric_max']}.",
                         ]);
@@ -1733,7 +1740,7 @@ final class AdministratorStudentManagementController extends Controller
             'grade_outcome' => $evaluation['outcome'],
             'grade_quality_points' => $evaluation['quality_points'],
             'grading_policy_version_id' => $gradingConfig['policy_version_id'] ?? null,
-            'remarks' => $validated['remarks'],
+            'remarks' => $validated['remarks'] ?? null,
             'classification' => $validated['classification'],
             'academic_year' => $validated['academic_year'],
             'school_year' => $validated['school_year'],

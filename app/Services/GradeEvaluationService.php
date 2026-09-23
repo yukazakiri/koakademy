@@ -69,6 +69,101 @@ final class GradeEvaluationService
             ];
         }
 
+        // Transferee cross-scale recognition:
+        // When the primary policy is percentage-based (e.g. 0-100 or 75-100) and a transferee grade
+        // is entered using a decimal point scale (e.g. 1.00–5.00), dynamically detect the point scale,
+        // evaluate pass/fail according to point scale cutoff (e.g. <= 3.00), and convert to institutional percentage equivalent.
+        $transfereeScaleEnabled = (bool) ($policy['transferee_scale_enabled'] ?? true);
+        $policyMax = (float) ($policy['numeric_max'] ?? 100);
+        $pointMin = (float) ($policy['transferee_point_scale_min'] ?? 1.0);
+        $pointMax = (float) ($policy['transferee_point_scale_max'] ?? 5.0);
+        $pointPassing = (float) ($policy['transferee_point_passing_grade'] ?? 3.0);
+        $pointDirection = $policy['transferee_point_direction'] ?? 'lower_is_better';
+        $conversionMethod = $policy['transferee_conversion_method'] ?? 'formula';
+
+        $isPercentagePolicy = $policyMax >= 50.0;
+        $isDecimalTransfereeGrade = $transfereeScaleEnabled
+            && $isPercentagePolicy
+            && $numericGrade >= $pointMin
+            && $numericGrade <= $pointMax;
+
+        if ($isDecimalTransfereeGrade) {
+            $isPass = $pointDirection === 'lower_is_better'
+                ? $numericGrade <= $pointPassing
+                : $numericGrade >= $pointPassing;
+
+            $passBands = $bands->filter(fn (array $b): bool => ($b['outcome'] ?? null) === 'pass' && is_numeric($b['min'] ?? null));
+            $instPassing = $passBands->isNotEmpty() ? (float) $passBands->min('min') : 75.0;
+            $instMax = $passBands->isNotEmpty() ? (float) $passBands->max('max') : 100.0;
+
+            if ($conversionMethod === 'table') {
+                $equivalent = match (true) {
+                    $numericGrade <= 1.00 => 99.0,
+                    $numericGrade <= 1.25 => 96.0,
+                    $numericGrade <= 1.50 => 93.0,
+                    $numericGrade <= 1.75 => 90.0,
+                    $numericGrade <= 2.00 => 87.0,
+                    $numericGrade <= 2.25 => 84.0,
+                    $numericGrade <= 2.50 => 81.0,
+                    $numericGrade <= 2.75 => 78.0,
+                    $numericGrade <= 3.00 => $instPassing,
+                    $numericGrade <= 4.00 => max(0.0, $instPassing - 5.0),
+                    default => max(0.0, $instPassing - 10.0),
+                };
+            } else {
+                if ($isPass) {
+                    $span = max(0.01, $pointPassing - $pointMin);
+                    $fraction = ($pointPassing - $numericGrade) / $span;
+                    $equivalent = $instPassing + ($fraction * ($instMax - $instPassing));
+                } else {
+                    $span = max(0.01, $pointMax - $pointPassing);
+                    $fraction = ($numericGrade - $pointPassing) / $span;
+                    $equivalent = max(0.0, ($instPassing - 1.0) - ($fraction * 15.0));
+                }
+            }
+
+            $equivalent = round(max(0.0, min($instMax, $equivalent)), 2);
+
+            $targetOutcome = $isPass ? 'pass' : 'fail';
+            $matchingBand = $bands->first(fn (array $b): bool => ($b['outcome'] ?? null) === $targetOutcome);
+
+            return [
+                'numeric_grade' => $numericGrade,
+                'symbol' => number_format($numericGrade, (int) ($policy['decimal_places'] ?? 2)),
+                'outcome' => $targetOutcome,
+                'quality_points' => $equivalent,
+                'band' => $matchingBand,
+            ];
+        }
+
+        // Reverse cross-scale recognition:
+        // When the primary policy is point scale (<= 10.0) and a percentage grade is provided (e.g. 75–100)
+        $isPointPolicy = $policyMax <= 10.0;
+        $isPercentageTransfereeGrade = $transfereeScaleEnabled
+            && $isPointPolicy
+            && $numericGrade > 10.0
+            && $numericGrade <= 100.0;
+
+        if ($isPercentageTransfereeGrade) {
+            $isPass = $numericGrade >= 75.0;
+            $span = max(0.01, 100.0 - 75.0);
+            $fraction = ($numericGrade - 75.0) / $span;
+            $equivalent = $isPass
+                ? round($pointPassing - ($fraction * ($pointPassing - $pointMin)), 2)
+                : round($pointPassing + (((75.0 - $numericGrade) / 75.0) * ($pointMax - $pointPassing)), 2);
+
+            $targetOutcome = $isPass ? 'pass' : 'fail';
+            $matchingBand = $bands->first(fn (array $b): bool => ($b['outcome'] ?? null) === $targetOutcome);
+
+            return [
+                'numeric_grade' => $numericGrade,
+                'symbol' => number_format($numericGrade, (int) ($policy['decimal_places'] ?? 2)),
+                'outcome' => $targetOutcome,
+                'quality_points' => $equivalent,
+                'band' => $matchingBand,
+            ];
+        }
+
         $band = $bands->first(function (array $candidate) use ($numericGrade): bool {
             if (! is_numeric($candidate['min'] ?? null) || ! is_numeric($candidate['max'] ?? null)) {
                 return false;

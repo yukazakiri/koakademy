@@ -304,6 +304,16 @@ final class AiChatController extends Controller
                     $iterator->next();
                 }
 
+                $resolvedConversationId = $stream?->conversationId ?? $agentInstance->currentConversation() ?? $conversationId;
+                if (filled($resolvedConversationId)) {
+                    $conversationTitle = Conversation::query()->where('id', $resolvedConversationId)->value('title');
+                    echo 'data: '.json_encode([
+                        'type' => 'conversation',
+                        'conversationId' => $resolvedConversationId,
+                        'title' => $conversationTitle,
+                    ])."\n\n";
+                }
+
                 echo "data: [DONE]\n\n";
                 if (ob_get_level() > 0) {
                     ob_flush();

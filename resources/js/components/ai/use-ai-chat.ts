@@ -48,8 +48,10 @@ export interface UseAiChatOptions {
     agent: AgentRoleKey;
     endpoint?: string;
     initialConversationId?: string;
+    initialMessages?: ChatMessage[];
     onFinish?: (message: ChatMessage) => void;
     onError?: (error: Error) => void;
+    onConversationCreated?: (conversationId: string, title?: string) => void;
 }
 
 export interface PromptOptions {
@@ -57,8 +59,16 @@ export interface PromptOptions {
     provider?: string;
 }
 
-export function useAiChat({ agent, endpoint, initialConversationId, onFinish, onError }: UseAiChatOptions) {
-    const [messages, setMessages] = React.useState<ChatMessage[]>([]);
+export function useAiChat({
+    agent,
+    endpoint,
+    initialConversationId,
+    initialMessages = [],
+    onFinish,
+    onError,
+    onConversationCreated,
+}: UseAiChatOptions) {
+    const [messages, setMessages] = React.useState<ChatMessage[]>(initialMessages);
     const [input, setInput] = React.useState("");
     const [isLoading, setIsLoading] = React.useState(false);
     const [conversationId, setConversationId] = React.useState<string | undefined>(initialConversationId);
@@ -69,12 +79,176 @@ export function useAiChat({ agent, endpoint, initialConversationId, onFinish, on
 
     const targetUrl = endpoint || chat.url();
 
+    React.useEffect(() => {
+        if (initialConversationId !== undefined && initialConversationId !== conversationId) {
+            setConversationId(initialConversationId);
+        }
+    }, [initialConversationId]);
+
+    React.useEffect(() => {
+        if (initialMessages.length > 0 && messages.length === 0) {
+            setMessages(initialMessages);
+        }
+    }, [initialMessages]);
+
     const appendMessage = React.useCallback((msg: Omit<ChatMessage, "id">) => {
         const id = "msg_" + Math.random().toString(36).substring(2, 9);
         const fullMessage: ChatMessage = { ...msg, id, createdAt: new Date() };
         setMessages((prev) => [...prev, fullMessage]);
         return fullMessage;
     }, []);
+
+    const readStream = React.useCallback(
+        async (response: Response, assistantId: string, retryPromptText?: string) => {
+            if (!response.body) {
+                throw new Error("No response body received from chat stream.");
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let accumulatedText = "";
+            let accumulatedReasoning = "";
+            let lineBuffer = "";
+            const pendingApprovals: PendingToolApproval[] = [];
+            const toolInvocations: Map<string, ToolInvocation> = new Map();
+            const citations: CitationSource[] = [];
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                lineBuffer += decoder.decode(value, { stream: true });
+                const lines = lineBuffer.split("\n");
+                lineBuffer = lines.pop() ?? "";
+
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed) continue;
+
+                    if (trimmed.startsWith("data: ")) {
+                        const dataPayload = trimmed.slice(6).trim();
+                        if (dataPayload === "[DONE]") continue;
+
+                        try {
+                            const parsed = JSON.parse(dataPayload);
+                            if (parsed.type === "text-delta" || parsed.type === "text_delta") {
+                                accumulatedText += parsed.delta ?? parsed.text ?? "";
+                            } else if (parsed.type === "reasoning-delta" || parsed.type === "reasoning_delta") {
+                                accumulatedReasoning += parsed.delta ?? parsed.text ?? "";
+                            } else if (parsed.type === "tool-call" || parsed.type === "tool_call") {
+                                const callId = parsed.toolCallId || parsed.id;
+                                if (callId) {
+                                    toolInvocations.set(callId, {
+                                        id: callId,
+                                        toolName: parsed.toolName || parsed.name || "Tool",
+                                        state: "input-available",
+                                        input: parsed.input || parsed.arguments,
+                                    });
+                                }
+                            } else if (parsed.type === "tool-result" || parsed.type === "tool_result") {
+                                const callId = parsed.toolCallId || parsed.id;
+                                if (callId) {
+                                    const existing = toolInvocations.get(callId);
+                                    if (existing) {
+                                        existing.state = parsed.successful ? "output-available" : "output-error";
+                                        existing.output = parsed.output;
+                                        existing.errorText = parsed.error;
+                                    } else {
+                                        toolInvocations.set(callId, {
+                                            id: callId,
+                                            toolName: parsed.toolName || "Tool",
+                                            state: parsed.successful ? "output-available" : "output-error",
+                                            output: parsed.output,
+                                            errorText: parsed.error,
+                                        });
+                                    }
+                                }
+                            } else if (parsed.type === "citation") {
+                                if (parsed.url && !citations.some((c) => c.url === parsed.url)) {
+                                    citations.push({
+                                        title: parsed.title || parsed.url,
+                                        url: parsed.url,
+                                    });
+                                }
+                            } else if (parsed.type === "conversation") {
+                                const newConvId = parsed.conversationId || parsed.id;
+                                if (newConvId) {
+                                    setConversationId(newConvId);
+                                    onConversationCreated?.(newConvId, parsed.title);
+                                }
+                            } else if (parsed.type === "error") {
+                                const errMsg = parsed.errorText || parsed.message || "An error occurred with the AI provider.";
+                                setLastError({
+                                    title: "AI Generation Error",
+                                    message: errMsg,
+                                    retryPrompt: retryPromptText,
+                                });
+                                if (!accumulatedText.trim()) {
+                                    accumulatedText = `⚠️ ${errMsg}`;
+                                }
+                            } else if (parsed.type === "tool-approval-request" || parsed.type === "tool_approval_request") {
+                                pendingApprovals.push({
+                                    id: parsed.approvalId || parsed.toolCallId || parsed.id,
+                                    tool: parsed.tool || "Tool Execution",
+                                    reason: parsed.reason,
+                                    arguments: parsed.arguments,
+                                });
+                            }
+                        } catch {
+                            // Plain text fallback
+                            accumulatedText += dataPayload;
+                        }
+                    } else if (trimmed.startsWith("0:")) {
+                        try {
+                            accumulatedText += JSON.parse(trimmed.slice(2));
+                        } catch {
+                            accumulatedText += trimmed.slice(2);
+                        }
+                    } else if (trimmed.startsWith("a:") || trimmed.includes("tool_approval")) {
+                        try {
+                            const raw = trimmed.startsWith("a:") ? trimmed.slice(2) : trimmed;
+                            const parsed = JSON.parse(raw);
+                            if (parsed?.approval) {
+                                pendingApprovals.push(parsed.approval);
+                            }
+                        } catch {
+                            // Silent fallback on non-json stream parts
+                        }
+                    }
+
+                    // Update current assistant message in real time
+                    setMessages((prev) =>
+                        prev.map((m) =>
+                            m.id === assistantId
+                                ? {
+                                      ...m,
+                                      content: accumulatedText,
+                                      reasoning: accumulatedReasoning || undefined,
+                                      toolCalls: toolInvocations.size > 0 ? Array.from(toolInvocations.values()) : undefined,
+                                      sources: citations.length > 0 ? [...citations] : undefined,
+                                      pendingApprovals: pendingApprovals.length > 0 ? [...pendingApprovals] : undefined,
+                                  }
+                                : m
+                        )
+                    );
+                }
+            }
+
+            const finalMessage: ChatMessage = {
+                id: assistantId,
+                role: "assistant",
+                content: accumulatedText,
+                reasoning: accumulatedReasoning || undefined,
+                toolCalls: toolInvocations.size > 0 ? Array.from(toolInvocations.values()) : undefined,
+                sources: citations.length > 0 ? [...citations] : undefined,
+                pendingApprovals: pendingApprovals.length > 0 ? pendingApprovals : undefined,
+            };
+
+            onFinish?.(finalMessage);
+            return finalMessage;
+        },
+        [onFinish, onConversationCreated]
+    );
 
     const sendPrompt = React.useCallback(
         async (content: string, files?: File[], options?: PromptOptions) => {
@@ -185,146 +359,7 @@ export function useAiChat({ agent, endpoint, initialConversationId, onFinish, on
                     throw new Error(errorMsg);
                 }
 
-                if (!response.body) {
-                    throw new Error("No response body received from chat stream.");
-                }
-
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let accumulatedText = "";
-                let accumulatedReasoning = "";
-                let lineBuffer = "";
-                const pendingApprovals: PendingToolApproval[] = [];
-                const toolInvocations: Map<string, ToolInvocation> = new Map();
-                const citations: CitationSource[] = [];
-
-                while (true) {
-                    const { value, done } = await reader.read();
-                    if (done) break;
-
-                    lineBuffer += decoder.decode(value, { stream: true });
-                    const lines = lineBuffer.split("\n");
-                    lineBuffer = lines.pop() ?? "";
-
-                    for (const line of lines) {
-                        const trimmed = line.trim();
-                        if (!trimmed) continue;
-
-                        if (trimmed.startsWith("data: ")) {
-                            const dataPayload = trimmed.slice(6).trim();
-                            if (dataPayload === "[DONE]") continue;
-
-                            try {
-                                const parsed = JSON.parse(dataPayload);
-                                if (parsed.type === "text-delta" || parsed.type === "text_delta") {
-                                    accumulatedText += (parsed.delta ?? parsed.text ?? "");
-                                } else if (parsed.type === "reasoning-delta" || parsed.type === "reasoning_delta") {
-                                    accumulatedReasoning += (parsed.delta ?? parsed.text ?? "");
-                                } else if (parsed.type === "tool-call" || parsed.type === "tool_call") {
-                                    const callId = parsed.toolCallId || parsed.id;
-                                    if (callId) {
-                                        toolInvocations.set(callId, {
-                                            id: callId,
-                                            toolName: parsed.toolName || parsed.name || "Tool",
-                                            state: "input-available",
-                                            input: parsed.input || parsed.arguments,
-                                        });
-                                    }
-                                } else if (parsed.type === "tool-result" || parsed.type === "tool_result") {
-                                    const callId = parsed.toolCallId || parsed.id;
-                                    if (callId) {
-                                        const existing = toolInvocations.get(callId);
-                                        if (existing) {
-                                            existing.state = parsed.successful ? "output-available" : "output-error";
-                                            existing.output = parsed.output;
-                                            existing.errorText = parsed.error;
-                                        } else {
-                                            toolInvocations.set(callId, {
-                                                id: callId,
-                                                toolName: parsed.toolName || "Tool",
-                                                state: parsed.successful ? "output-available" : "output-error",
-                                                output: parsed.output,
-                                                errorText: parsed.error,
-                                            });
-                                        }
-                                    }
-                                } else if (parsed.type === "citation") {
-                                    if (parsed.url && !citations.some((c) => c.url === parsed.url)) {
-                                        citations.push({
-                                            title: parsed.title || parsed.url,
-                                            url: parsed.url,
-                                        });
-                                    }
-                                } else if (parsed.type === "error") {
-                                    const errMsg = parsed.errorText || parsed.message || "An error occurred with the AI provider.";
-                                    setLastError({
-                                        title: "AI Generation Error",
-                                        message: errMsg,
-                                        retryPrompt: content,
-                                    });
-                                    if (!accumulatedText.trim()) {
-                                        accumulatedText = `⚠️ ${errMsg}`;
-                                    }
-                                } else if (parsed.type === "tool-approval-request" || parsed.type === "tool_approval_request") {
-                                    pendingApprovals.push({
-                                        id: parsed.approvalId || parsed.toolCallId || parsed.id,
-                                        tool: parsed.tool || "Tool Execution",
-                                        reason: parsed.reason,
-                                        arguments: parsed.arguments,
-                                    });
-                                }
-                            } catch {
-                                // Plain text fallback
-                                accumulatedText += dataPayload;
-                            }
-                        } else if (trimmed.startsWith("0:")) {
-                            try {
-                                accumulatedText += JSON.parse(trimmed.slice(2));
-                            } catch {
-                                accumulatedText += trimmed.slice(2);
-                            }
-                        } else if (trimmed.startsWith("a:") || trimmed.includes("tool_approval")) {
-                            try {
-                                const raw = trimmed.startsWith("a:") ? trimmed.slice(2) : trimmed;
-                                const parsed = JSON.parse(raw);
-                                if (parsed?.approval) {
-                                    pendingApprovals.push(parsed.approval);
-                                }
-                            } catch {
-                                // Silent fallback on non-json stream parts
-                            }
-                        }
-
-                        // Update current assistant message in real time
-                        setMessages((prev) =>
-                            prev.map((m) =>
-                                m.id === assistantId
-                                    ? {
-                                          ...m,
-                                          content: accumulatedText,
-                                          reasoning: accumulatedReasoning || undefined,
-                                          toolCalls: toolInvocations.size > 0 ? Array.from(toolInvocations.values()) : undefined,
-                                          sources: citations.length > 0 ? [...citations] : undefined,
-                                          pendingApprovals:
-                                              pendingApprovals.length > 0 ? [...pendingApprovals] : undefined,
-                                      }
-                                    : m
-                            )
-                        );
-                    }
-                }
-
-                const finalMessage: ChatMessage = {
-                    id: assistantId,
-                    role: "assistant",
-                    content: accumulatedText,
-                    reasoning: accumulatedReasoning || undefined,
-                    toolCalls: toolInvocations.size > 0 ? Array.from(toolInvocations.values()) : undefined,
-                    sources: citations.length > 0 ? [...citations] : undefined,
-                    pendingApprovals: pendingApprovals.length > 0 ? pendingApprovals : undefined,
-                };
-
-                onFinish?.(finalMessage);
+                await readStream(response, assistantId, content);
             } catch (err: any) {
                 if (err.name === "AbortError") return;
 
@@ -346,12 +381,29 @@ export function useAiChat({ agent, endpoint, initialConversationId, onFinish, on
                 abortControllerRef.current = null;
             }
         },
-        [agent, targetUrl, conversationId, isLoading, appendMessage, onFinish, onError]
+        [agent, targetUrl, conversationId, isLoading, appendMessage, readStream, onError]
     );
 
     const submitDecision = React.useCallback(
         async (callId: string, action: "approve" | "reject", result?: string) => {
             setIsLoading(true);
+
+            // Find assistant message holding the pending approval
+            const targetAssistantMessage = messages.slice().reverse().find((m) =>
+                m.role === "assistant" && m.pendingApprovals?.some((a) => a.id === callId)
+            );
+            const assistantId = targetAssistantMessage?.id || "msg_" + Math.random().toString(36).substring(2, 9);
+
+            // Optimistically update message approvals
+            setMessages((prev) =>
+                prev.map((m) => ({
+                    ...m,
+                    pendingApprovals: m.pendingApprovals?.filter((a) => a.id !== callId),
+                }))
+            );
+
+            const controller = new AbortController();
+            abortControllerRef.current = controller;
 
             try {
                 const decisions = {
@@ -375,28 +427,28 @@ export function useAiChat({ agent, endpoint, initialConversationId, onFinish, on
                         decisions,
                         conversation_id: conversationId,
                     }),
+                    signal: controller.signal,
                 });
 
                 if (!response.ok) {
                     throw new Error(`Decision submission failed (${response.status})`);
                 }
 
-                toast.success(action === "approve" ? "Approved and executed." : "Tool execution rejected.");
+                toast.success(action === "approve" ? "Approved. Executing tool..." : "Tool execution rejected.");
 
-                // Clear the pending approval from message state
-                setMessages((prev) =>
-                    prev.map((m) => ({
-                        ...m,
-                        pendingApprovals: m.pendingApprovals?.filter((a) => a.id !== callId),
-                    }))
-                );
+                const contentType = response.headers.get("content-type") || "";
+                if (contentType.includes("text/event-stream") || contentType.includes("text/plain")) {
+                    await readStream(response, assistantId);
+                }
             } catch (err: any) {
+                if (err.name === "AbortError") return;
                 toast.error(err.message || "Failed to submit approval decision.");
             } finally {
                 setIsLoading(false);
+                abortControllerRef.current = null;
             }
         },
-        [agent, targetUrl, conversationId]
+        [agent, targetUrl, conversationId, messages, readStream]
     );
 
     const stop = React.useCallback(() => {
@@ -417,12 +469,22 @@ export function useAiChat({ agent, endpoint, initialConversationId, onFinish, on
         setLastError(null);
     }, []);
 
+    const loadConversationMessages = React.useCallback((loadedMessages: ChatMessage[], newConversationId?: string) => {
+        setMessages(loadedMessages);
+        if (newConversationId !== undefined) {
+            setConversationId(newConversationId);
+        }
+        setLastError(null);
+    }, []);
+
     return {
         messages,
+        setMessages,
         input,
         setInput,
         isLoading,
         conversationId,
+        setConversationId,
         lastError,
         lastPrompt,
         clearError,
@@ -430,5 +492,6 @@ export function useAiChat({ agent, endpoint, initialConversationId, onFinish, on
         submitDecision,
         stop,
         clearChat,
+        loadConversationMessages,
     };
 }

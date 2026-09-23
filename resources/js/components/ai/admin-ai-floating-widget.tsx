@@ -24,6 +24,7 @@ import {
     Calculator,
     ChevronDown,
     Cpu,
+    ExternalLink,
     FileSpreadsheet,
     FileText,
     FileType,
@@ -42,6 +43,7 @@ import {
     CheckCircle2,
     RefreshCw,
 } from "lucide-react";
+import { router } from "@inertiajs/react";
 import * as React from "react";
 import { toast } from "sonner";
 
@@ -329,6 +331,23 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                                         title="Clear conversation"
                                     >
                                         <RotateCcw className="size-3.5" />
+                                    </Button>
+
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="size-7.5 text-muted-foreground hover:text-foreground rounded-lg"
+                                        onClick={() => {
+                                            setIsOpen(false);
+                                            const targetUrl = conversationId
+                                                ? `/administrators/ai?conversation=${conversationId}`
+                                                : "/administrators/ai";
+                                            router.visit(targetUrl);
+                                        }}
+                                        title="Open in full page AI Chat"
+                                    >
+                                        <ExternalLink className="size-3.5" />
                                     </Button>
 
                                     <Button

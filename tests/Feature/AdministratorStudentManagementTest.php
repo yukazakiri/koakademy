@@ -20,8 +20,6 @@ use Inertia\Testing\AssertableInertia;
 use function Pest\Laravel\actingAs;
 use function Pest\Laravel\withoutVite;
 
-uses(Tests\TestCase::class);
-
 beforeEach(function (): void {
     School::factory()->create();
 });
@@ -579,10 +577,15 @@ it('validates transcript grade inputs against the active grading policy bounds',
         ->assertSessionHasErrors('grade');
 });
 
-it('accepts transferee decimal point grades in a percentage policy school and stores pass outcome with equivalent quality points', function (): void {
+it('accepts transferee decimal point grades in a percentage policy school and stores pass outcome with band quality points', function (): void {
     $user = User::factory()->create(['role' => UserRole::Admin]);
     $student = Student::factory()->create();
     $subject = Subject::factory()->create();
+
+    $gradingSystem = app(GradingSystemService::class);
+    $customPolicy = $gradingSystem->defaults();
+    $customPolicy['bands'][0]['quality_points'] = 4.0;
+    $gradingSystem->update($customPolicy);
 
     actingAs($user)
         ->patch(route('administrators.students.subjects.update-grade', ['student' => $student->id, 'subject' => $subject->id]), [
@@ -605,5 +608,5 @@ it('accepts transferee decimal point grades in a percentage policy school and st
     expect($saved)->not->toBeNull()
         ->and((float) $saved->grade)->toBe(1.5)
         ->and($saved->grade_outcome)->toBe('pass')
-        ->and((float) $saved->grade_quality_points)->toBe(93.75);
+        ->and((float) $saved->grade_quality_points)->toBe(4.0);
 });

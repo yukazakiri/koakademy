@@ -86,7 +86,9 @@ final class UpdateSubjectEnrollmentGradeTool extends Tool
             if (! empty($scores)) {
                 $evaluation = $gradeEvaluation->calculate($scores, $policy);
             } elseif (array_key_exists('grade', $validated) && $validated['grade'] !== null) {
-                $evaluation = $gradeEvaluation->evaluate((float) $validated['grade'], $policy);
+                $evaluation = $gradeEvaluation->evaluate((float) $validated['grade'], $policy, [
+                    'classification' => $subjectEnrollment->classification,
+                ]);
             }
 
             $finalNumericGrade = array_key_exists('grade', $validated) && $validated['grade'] !== null

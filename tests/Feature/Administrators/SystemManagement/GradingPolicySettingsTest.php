@@ -12,8 +12,6 @@ use Spatie\Permission\Models\Permission;
 
 use function Pest\Laravel\actingAs;
 
-uses(Tests\TestCase::class);
-
 function gradingPolicyAdministrator(): array
 {
     $school = School::factory()->create(['description' => 'Test school description']);
@@ -30,6 +28,7 @@ function gradingPolicyAdministrator(): array
 }
 
 it('publishes a school scoped policy with configurable bands and components', function (): void {
+    var_dump(get_class($this));
     [$user, $school] = gradingPolicyAdministrator();
 
     actingAs($user)

@@ -268,8 +268,11 @@ export function SubjectEnrollmentDialog({
                                         </div>
                                     </div>
                                     {(() => {
+                                        if (data.classification === "internal") {
+                                            return null;
+                                        }
                                         const num = parseNumericGrade(data.grade);
-                                        if (num !== null && isTransfereeDecimalGrade(num, gradingConfig)) {
+                                        if (num !== null && isTransfereeDecimalGrade(num, gradingConfig, data.classification)) {
                                             const { isPass, equivalent } = convertTransfereePointToPercentage(num, gradingConfig);
                                             return (
                                                 <p className="text-[11px] font-medium text-blue-600 dark:text-blue-400">

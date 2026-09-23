@@ -1699,7 +1699,13 @@ final class AdministratorStudentManagementController extends Controller
                         ]);
                     }
                     $numericVal = (float) $gradeInput;
-                    $isTransfereeScale = (bool) ($gradingConfig['transferee_scale_enabled'] ?? true)
+                    $isTransfereeClassification = in_array($validated['classification'] ?? '', [
+                        SubjectEnrolledEnum::CREDITED->value,
+                        SubjectEnrolledEnum::NON_CREDITED->value,
+                    ], true);
+
+                    $isTransfereeScale = $isTransfereeClassification
+                        && (bool) ($gradingConfig['transferee_scale_enabled'] ?? true)
                         && $numericVal >= (float) ($gradingConfig['transferee_point_scale_min'] ?? 1.0)
                         && $numericVal <= (float) ($gradingConfig['transferee_point_scale_max'] ?? 5.0);
 
@@ -1732,7 +1738,9 @@ final class AdministratorStudentManagementController extends Controller
             $rawGrade = null;
         }
 
-        $evaluation = app(GradeEvaluationService::class)->evaluate($rawGrade, $gradingConfig);
+        $evaluation = app(GradeEvaluationService::class)->evaluate($rawGrade, $gradingConfig, [
+            'classification' => $validated['classification'],
+        ]);
 
         $data = [
             'grade' => $evaluation['numeric_grade'],

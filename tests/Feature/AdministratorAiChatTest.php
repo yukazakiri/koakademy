@@ -411,6 +411,13 @@ it('resolves room, student, and faculty schedules via QueryTimetableScheduleTool
 });
 
 it('manages student profiles with approval gates via ManageStudentTool', function (): void {
+    foreach (['View:Student', 'Create:Student', 'Update:Student'] as $perm) {
+        Spatie\Permission\Models\Permission::firstOrCreate(['name' => $perm, 'guard_name' => 'web']);
+    }
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $admin->givePermissionTo(['View:Student', 'Create:Student', 'Update:Student']);
+    $this->actingAs($admin);
+
     $course = App\Models\Course::factory()->create(['code' => 'BSIT', 'title' => 'Information Technology']);
 
     $tool = new App\Ai\Tools\ManageStudentTool();
@@ -464,6 +471,13 @@ it('manages student profiles with approval gates via ManageStudentTool', functio
 });
 
 it('manages curriculum subjects and class schedules via AI tools', function (): void {
+    foreach (['Create:Subject', 'Update:Subject', 'Delete:Subject', 'View:Subject', 'Create:Classes', 'Update:Classes', 'Delete:Classes', 'View:Classes'] as $perm) {
+        Spatie\Permission\Models\Permission::firstOrCreate(['name' => $perm, 'guard_name' => 'web']);
+    }
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $admin->givePermissionTo(['Create:Subject', 'Update:Subject', 'Delete:Subject', 'View:Subject', 'Create:Classes', 'Update:Classes', 'Delete:Classes', 'View:Classes']);
+    $this->actingAs($admin);
+
     $course = App\Models\Course::factory()->create(['code' => 'BSCS', 'title' => 'Computer Science']);
     $room = App\Models\Room::create(['name' => 'Lab 305', 'is_active' => true]);
 
@@ -514,8 +528,10 @@ it('manages curriculum subjects and class schedules via AI tools', function (): 
 });
 
 it('adapts built-in MCP tools seamlessly into AI agent tools', function (): void {
+    Spatie\Permission\Models\Permission::firstOrCreate(['name' => 'View:Course', 'guard_name' => 'web']);
     $school = App\Models\School::factory()->create();
     $admin = User::factory()->create(['role' => UserRole::Admin, 'school_id' => $school->id]);
+    $admin->givePermissionTo('View:Course');
     $this->actingAs($admin);
     app(App\Services\TenantContext::class)->setCurrentSchool($school);
 

@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Ai\Tools;
 
 use App\Models\Room;
+use App\Models\User;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\Support\Facades\Auth;
 use Laravel\Ai\Approvals\Approval;
 use Laravel\Ai\Concerns\InteractsWithApprovals;
 use Laravel\Ai\Contracts\Tool;
@@ -23,7 +25,26 @@ final class ManageRoomTool implements Tool
 
     public function handle(Request $request): Stringable|string
     {
+        $user = Auth::user();
+        if (! $user instanceof User) {
+            return json_encode(['error' => true, 'message' => 'Authentication is required.']);
+        }
+
         $action = mb_strtolower((string) $request['action']);
+
+        if ($action === 'get') {
+            if (! $user->hasRole('super_admin') && ! $user->can('View:Room')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to view rooms.']);
+            }
+        } elseif ($action === 'create') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Create:Room')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to create rooms.']);
+            }
+        } elseif ($action === 'update') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Update:Room')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to update rooms.']);
+            }
+        }
 
         return match ($action) {
             'create' => $this->handleCreate($request),
@@ -75,10 +96,14 @@ final class ManageRoomTool implements Tool
             'is_active' => 'nullable|boolean',
         ]);
 
+        $user = Auth::user();
+        $schoolId = $user?->school_id ?? app(\App\Services\TenantContext::class)->getCurrentSchool()?->id;
+
         $room = Room::query()->create([
             'name' => mb_trim($validated['name']),
             'class_code' => $validated['class_code'] ?? null,
             'is_active' => (bool) ($validated['is_active'] ?? true),
+            'school_id' => $schoolId,
         ]);
 
         return json_encode([
@@ -89,6 +114,7 @@ final class ManageRoomTool implements Tool
                 'id' => $room->id,
                 'name' => $room->name,
                 'is_active' => $room->is_active,
+                'school_id' => $room->school_id,
             ],
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
@@ -144,9 +170,19 @@ final class ManageRoomTool implements Tool
 
     private function resolveRoom(Request $request): ?Room
     {
+        $user = Auth::user();
+        $schoolId = $user?->school_id ?? app(\App\Services\TenantContext::class)->getCurrentSchool()?->id;
+
+        $query = Room::query();
+        if ($schoolId) {
+            $query->where(function ($q) use ($schoolId) {
+                $q->where('school_id', $schoolId)->orWhereNull('school_id');
+            });
+        }
+
         $id = $request['room_id'] ?? null;
         if ($id && is_numeric($id)) {
-            $found = Room::query()->find((int) $id);
+            $found = (clone $query)->find((int) $id);
             if ($found) {
                 return $found;
             }
@@ -154,7 +190,7 @@ final class ManageRoomTool implements Tool
 
         $name = $request['name'] ?? null;
         if ($name) {
-            return Room::query()->where('name', 'like', "%{$name}%")->first();
+            return (clone $query)->where('name', 'like', "%{$name}%")->first();
         }
 
         return null;

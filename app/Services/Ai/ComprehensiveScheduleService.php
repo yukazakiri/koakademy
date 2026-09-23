@@ -233,7 +233,7 @@ final class ComprehensiveScheduleService
             ];
         }
 
-        $scheduleData = $this->studentScheduleService->build($student);
+        $scheduleData = $this->studentScheduleService->build($student, $schoolYear, $semester);
 
         return [
             'type' => 'student',

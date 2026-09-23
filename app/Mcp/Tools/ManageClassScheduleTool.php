@@ -15,6 +15,7 @@ use Carbon\Carbon;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\ResponseFactory;
@@ -89,7 +90,7 @@ final class ManageClassScheduleTool extends Tool
             'start_time' => $schema->string()->description('Start time (HH:MM).'),
             'end_time' => $schema->string()->description('End time (HH:MM).'),
             'room_id' => $schema->integer()->description('Room ID.'),
-            'faculty_id' => $schema->integer()->description('Faculty ID.'),
+            'faculty_id' => $schema->string()->description('Faculty ID or UUID.'),
         ];
     }
 
@@ -102,7 +103,7 @@ final class ManageClassScheduleTool extends Tool
             'start_time' => ['nullable', 'string'],
             'end_time' => ['nullable', 'string'],
             'room_id' => ['nullable', 'integer'],
-            'faculty_id' => ['nullable', 'integer'],
+            'faculty_id' => ['nullable'],
             'maximum_slots' => ['nullable', 'integer', 'between:1,150'],
             'school_year' => ['nullable', 'string'],
             'semester' => ['nullable', 'integer', 'in:1,2'],
@@ -125,11 +126,17 @@ final class ManageClassScheduleTool extends Tool
             ]);
 
             if (filled($validated['day_of_week'] ?? null) && filled($validated['start_time'] ?? null) && filled($validated['end_time'] ?? null)) {
+                $dayOfWeek = mb_convert_case(mb_trim((string) $validated['day_of_week']), MB_CASE_TITLE);
+                $startTime = Carbon::parse($validated['start_time'])->format('H:i:s');
+                $endTime = Carbon::parse($validated['end_time'])->format('H:i:s');
+
+                $this->guardScheduleConflicts($validated['room_id'] ?? null, $validated['faculty_id'] ?? null, $dayOfWeek, $startTime, $endTime, $schoolYear, $semester);
+
                 Schedule::query()->create([
                     'class_id' => $newClass->id,
-                    'day_of_week' => mb_convert_case(mb_trim((string) $validated['day_of_week']), MB_CASE_TITLE),
-                    'start_time' => Carbon::parse($validated['start_time'])->format('H:i:s'),
-                    'end_time' => Carbon::parse($validated['end_time'])->format('H:i:s'),
+                    'day_of_week' => $dayOfWeek,
+                    'start_time' => $startTime,
+                    'end_time' => $endTime,
                     'room_id' => $validated['room_id'] ?? null,
                 ]);
             }
@@ -170,6 +177,10 @@ final class ManageClassScheduleTool extends Tool
         $endTime = Carbon::parse($validated['end_time'])->format('H:i:s');
 
         $schedule = Schedule::query()->where('class_id', $class->id)->first();
+        $effectiveRoomId = $validated['room_id'] ?? $schedule?->room_id ?? $class->room_id;
+
+        $this->guardScheduleConflicts($effectiveRoomId, $class->faculty_id, $dayOfWeek, $startTime, $endTime, $class->school_year, (int) $class->semester, $schedule?->id, $class->id);
+
         if ($schedule instanceof Schedule) {
             $schedule->update([
                 'day_of_week' => $dayOfWeek,
@@ -199,7 +210,7 @@ final class ManageClassScheduleTool extends Tool
     {
         $validated = $request->validate([
             'class_id' => ['required', 'integer'],
-            'faculty_id' => ['required', 'integer'],
+            'faculty_id' => ['required'],
         ]);
 
         $class = Classes::query()->find($validated['class_id']);
@@ -249,13 +260,83 @@ final class ManageClassScheduleTool extends Tool
             return Response::structured(['error' => true, 'message' => 'Class not found.']);
         }
 
+        $enrolledCount = $class->class_enrollments()->count();
+        $force = (bool) $request->get('force', false);
+        if ($enrolledCount > 0 && ! $force) {
+            return Response::structured([
+                'error' => true,
+                'message' => "Cannot delete class {$class->subject_code} ({$class->section}) because {$enrolledCount} student(s) are currently enrolled. Pass force=true to override.",
+            ]);
+        }
+
         Schedule::query()->where('class_id', $class->id)->delete();
         $class->delete();
 
         return Response::structured([
             'success' => true,
             'action' => 'delete_class',
-            'message' => 'Class deleted.',
+            'message' => "Successfully deleted class {$class->subject_code} ({$class->section}).",
         ]);
+    }
+
+    private function guardScheduleConflicts(
+        ?int $roomId,
+        mixed $facultyId,
+        string $dayOfWeek,
+        string $startTime,
+        string $endTime,
+        string $schoolYear,
+        int $semester,
+        ?int $excludeScheduleId = null,
+        ?int $excludeClassId = null
+    ): void {
+        if ($roomId) {
+            $roomConflict = Schedule::query()
+                ->where('room_id', $roomId)
+                ->where('day_of_week', $dayOfWeek)
+                ->when($excludeScheduleId, fn ($q) => $q->whereKeyNot($excludeScheduleId))
+                ->whereHas('class', function ($q) use ($schoolYear, $semester, $excludeClassId) {
+                    $q->forAcademicPeriod($schoolYear, $semester);
+                    if ($excludeClassId) {
+                        $q->whereKeyNot($excludeClassId);
+                    }
+                })
+                ->where(function ($q) use ($startTime, $endTime) {
+                    $q->where(fn ($sub) => $sub->where('start_time', '<=', $startTime)->where('end_time', '>', $startTime))
+                        ->orWhere(fn ($sub) => $sub->where('start_time', '<', $endTime)->where('end_time', '>=', $endTime))
+                        ->orWhere(fn ($sub) => $sub->where('start_time', '>=', $startTime)->where('end_time', '<=', $endTime));
+                })
+                ->first();
+
+            if ($roomConflict instanceof Schedule) {
+                $roomName = $roomConflict->room?->name ?? "Room #{$roomId}";
+                $conflictingClass = $roomConflict->class ? "{$roomConflict->class->subject_code} ({$roomConflict->class->section})" : 'another class';
+                throw new InvalidArgumentException("Room conflict detected: {$roomName} is already booked by {$conflictingClass} on {$dayOfWeek} {$roomConflict->formatted_start_time}-{$roomConflict->formatted_end_time}.");
+            }
+        }
+
+        if ($facultyId) {
+            $facultyConflict = Schedule::query()
+                ->where('day_of_week', $dayOfWeek)
+                ->when($excludeScheduleId, fn ($q) => $q->whereKeyNot($excludeScheduleId))
+                ->whereHas('class', function ($q) use ($facultyId, $schoolYear, $semester, $excludeClassId) {
+                    $q->where('faculty_id', $facultyId)->forAcademicPeriod($schoolYear, $semester);
+                    if ($excludeClassId) {
+                        $q->whereKeyNot($excludeClassId);
+                    }
+                })
+                ->where(function ($q) use ($startTime, $endTime) {
+                    $q->where(fn ($sub) => $sub->where('start_time', '<=', $startTime)->where('end_time', '>', $startTime))
+                        ->orWhere(fn ($sub) => $sub->where('start_time', '<', $endTime)->where('end_time', '>=', $endTime))
+                        ->orWhere(fn ($sub) => $sub->where('start_time', '>=', $startTime)->where('end_time', '<=', $endTime));
+                })
+                ->first();
+
+            if ($facultyConflict instanceof Schedule) {
+                $facultyName = $facultyConflict->class?->faculty?->full_name ?? 'Instructor';
+                $conflictingClass = $facultyConflict->class ? "{$facultyConflict->class->subject_code} ({$facultyConflict->class->section})" : 'another class';
+                throw new InvalidArgumentException("Faculty conflict detected: {$facultyName} is already assigned to {$conflictingClass} on {$dayOfWeek} {$facultyConflict->formatted_start_time}-{$facultyConflict->formatted_end_time}.");
+            }
+        }
     }
 }

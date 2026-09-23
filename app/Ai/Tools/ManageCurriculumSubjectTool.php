@@ -6,7 +6,9 @@ namespace App\Ai\Tools;
 
 use App\Models\Course;
 use App\Models\Subject;
+use App\Models\User;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\Support\Facades\Auth;
 use Laravel\Ai\Approvals\Approval;
 use Laravel\Ai\Concerns\InteractsWithApprovals;
 use Laravel\Ai\Contracts\Tool;
@@ -25,7 +27,30 @@ final class ManageCurriculumSubjectTool implements Tool
 
     public function handle(Request $request): Stringable|string
     {
+        $user = Auth::user();
+        if (! $user instanceof User) {
+            return json_encode(['error' => true, 'message' => 'Authentication is required.']);
+        }
+
         $action = mb_strtolower((string) $request['action']);
+
+        if ($action === 'get') {
+            if (! $user->hasRole('super_admin') && ! $user->can('View:Subject')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to view curriculum subjects.']);
+            }
+        } elseif ($action === 'create') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Create:Subject')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to create curriculum subjects.']);
+            }
+        } elseif ($action === 'delete') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Delete:Subject')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to delete curriculum subjects.']);
+            }
+        } elseif ($action === 'update') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Update:Subject')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to update curriculum subjects.']);
+            }
+        }
 
         return match ($action) {
             'create' => $this->handleCreate($request),

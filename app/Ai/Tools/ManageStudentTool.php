@@ -9,8 +9,10 @@ use App\Enums\StudentType;
 use App\Models\Course;
 use App\Models\Student;
 use App\Models\StudentClearance;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Laravel\Ai\Approvals\Approval;
 use Laravel\Ai\Concerns\InteractsWithApprovals;
@@ -30,7 +32,30 @@ final class ManageStudentTool implements Tool
 
     public function handle(Request $request): Stringable|string
     {
+        $user = Auth::user();
+        if (! $user instanceof User) {
+            return json_encode(['error' => true, 'message' => 'Authentication is required.']);
+        }
+
         $action = mb_strtolower((string) $request['action']);
+
+        if ($action === 'get') {
+            if (! $user->hasRole('super_admin') && ! $user->can('View:Student')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to view student records.']);
+            }
+        } elseif ($action === 'create') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Create:Student')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to create student records.']);
+            }
+        } elseif ($action === 'archive' || $action === 'delete') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Delete:Student') && ! $user->can('Update:Student')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to archive or delete student records.']);
+            }
+        } elseif ($action === 'update') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Update:Student')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to update student records.']);
+            }
+        }
 
         return match ($action) {
             'create' => $this->handleCreate($request),

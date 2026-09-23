@@ -15,9 +15,19 @@ final class StudentScheduleService
     /**
      * @return array{classes: list<array<string, mixed>>, conflicts: list<array<string, mixed>>}
      */
-    public function build(Student $student): array
+    public function build(Student $student, ?string $schoolYear = null, ?int $semester = null): array
     {
-        $period = $student->getCurrentAcademicPeriod();
+        if (filled($schoolYear) && filled($semester)) {
+            $normalized = GeneralSettingsService::normalizeSchoolYear($schoolYear);
+            $compact = str_replace(' ', '', $normalized);
+            $period = [
+                'school_year' => $normalized,
+                'semester' => (int) $semester,
+                'school_year_variants' => array_unique([$normalized, $compact]),
+            ];
+        } else {
+            $period = $student->getCurrentAcademicPeriod();
+        }
 
         /** @var Collection<int, ClassEnrollment> $enrollments */
         $enrollments = $student->classEnrollments()

@@ -53,7 +53,13 @@ final class ManageStudentTool extends Tool
         }
 
         $user = $this->requireWrite($request);
-        $this->requirePermission($user, 'Update:Student', 'You are not permitted to modify student records.');
+        if ($action === 'create') {
+            $this->requirePermission($user, 'Create:Student', 'You are not permitted to create student records.');
+        } elseif ($action === 'archive' || $action === 'delete') {
+            $this->requirePermission($user, 'Update:Student', 'You are not permitted to archive student records.');
+        } else {
+            $this->requirePermission($user, 'Update:Student', 'You are not permitted to modify student records.');
+        }
 
         return match ($action) {
             'create' => $this->handleCreate($request),
@@ -76,6 +82,7 @@ final class ManageStudentTool extends Tool
             'course_id' => $schema->integer()->description('Degree program database ID.'),
             'academic_year' => $schema->integer()->description('Year level (1-5).'),
             'status' => $schema->string()->description('Status: enrolled, applicant, graduated, on_leave, dropped.'),
+            'idempotency_key' => $schema->string()->description('Unique idempotency key for safe retries on create.'),
         ];
     }
 
@@ -93,7 +100,34 @@ final class ManageStudentTool extends Tool
             'gender' => ['nullable', 'string', 'in:Male,Female,Other'],
             'birth_date' => ['nullable', 'date'],
             'status' => ['nullable', 'string'],
+            'idempotency_key' => ['nullable', 'string', 'max:96'],
         ]);
+
+        $idempotencyKey = $validated['idempotency_key'] ?? null;
+        if ($idempotencyKey) {
+            $school = $this->school();
+            $cacheKey = "mcp:create-student:{$school->id}:{$idempotencyKey}";
+            $cachedStudentId = \Illuminate\Support\Facades\Cache::get($cacheKey);
+
+            if ($cachedStudentId) {
+                $existingStudent = Student::query()->find($cachedStudentId);
+                if ($existingStudent instanceof Student) {
+                    return Response::structured([
+                        'success' => true,
+                        'action' => 'create',
+                        'replayed' => true,
+                        'idempotency_key' => $idempotencyKey,
+                        'student' => [
+                            'id' => $existingStudent->id,
+                            'student_number' => (string) $existingStudent->student_id,
+                            'name' => $existingStudent->full_name,
+                            'email' => $existingStudent->email,
+                            'status' => $existingStudent->status,
+                        ],
+                    ]);
+                }
+            }
+        }
 
         $courseId = $validated['course_id'] ?? null;
         if (! $courseId && filled($validated['course_code'] ?? null)) {
@@ -110,7 +144,8 @@ final class ManageStudentTool extends Tool
             ? StudentType::Shs
             : StudentType::College;
 
-        $student = DB::transaction(function () use ($validated, $courseId, $studentType) {
+        $school = $this->school();
+        $student = DB::transaction(function () use ($validated, $courseId, $studentType, $school, $idempotencyKey) {
             $newStudentId = Student::generateNextId($studentType);
             $birthDate = filled($validated['birth_date'] ?? null)
                 ? Carbon::parse($validated['birth_date'])
@@ -118,7 +153,8 @@ final class ManageStudentTool extends Tool
 
             $newStudent = Student::query()->create([
                 'student_id' => $newStudentId,
-                'institution_id' => 1,
+                'institution_id' => $school->id,
+                'school_id' => $school->id,
                 'student_type' => $studentType->value,
                 'first_name' => $validated['first_name'],
                 'last_name' => $validated['last_name'],
@@ -137,12 +173,18 @@ final class ManageStudentTool extends Tool
                 StudentClearance::createForCurrentSemester($newStudent, $generalSetting);
             }
 
+            if ($idempotencyKey) {
+                \Illuminate\Support\Facades\Cache::put("mcp:create-student:{$school->id}:{$idempotencyKey}", $newStudent->id, now()->addDays(7));
+            }
+
             return $newStudent;
         });
 
         return Response::structured([
             'success' => true,
             'action' => 'create',
+            'replayed' => false,
+            'idempotency_key' => $idempotencyKey,
             'student' => [
                 'id' => $student->id,
                 'student_number' => (string) $student->student_id,

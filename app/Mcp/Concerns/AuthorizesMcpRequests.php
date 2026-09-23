@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\TenantContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
+use Illuminate\Support\Facades\Auth;
 use InvalidArgumentException;
 use Laravel\Mcp\Request;
 
@@ -115,15 +116,7 @@ trait AuthorizesMcpRequests
 
     protected function requirePermission(User $user, string $permission, string $message): void
     {
-        if ($user->currentAccessToken() !== null) {
-            if (! $user->can($permission)) {
-                throw new AuthorizationException($message);
-            }
-
-            return;
-        }
-
-        if ($user->canAccessAdminPortal() || $user->hasRole('super_admin')) {
+        if ($user->hasRole('super_admin')) {
             return;
         }
 

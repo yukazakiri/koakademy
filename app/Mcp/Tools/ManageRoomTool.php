@@ -65,6 +65,8 @@ final class ManageRoomTool extends Tool
 
     private function handleCreate(Request $request): ResponseFactory
     {
+        $school = $this->school();
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:100'],
             'class_code' => ['nullable', 'string', 'max:50'],
@@ -75,6 +77,7 @@ final class ManageRoomTool extends Tool
             'name' => mb_trim($validated['name']),
             'class_code' => $validated['class_code'] ?? null,
             'is_active' => (bool) ($validated['is_active'] ?? true),
+            'school_id' => $school->id,
         ]);
 
         return Response::structured([
@@ -84,6 +87,7 @@ final class ManageRoomTool extends Tool
                 'id' => $room->id,
                 'name' => $room->name,
                 'is_active' => $room->is_active,
+                'school_id' => $room->school_id,
             ],
         ]);
     }
@@ -92,7 +96,7 @@ final class ManageRoomTool extends Tool
     {
         $room = $this->resolveRoom($request);
         if (! $room instanceof Room) {
-            return Response::structured(['error' => true, 'message' => 'Room not found.']);
+            return Response::structured(['error' => true, 'message' => 'Room not found in the selected school.']);
         }
 
         $validated = $request->validate([
@@ -116,15 +120,21 @@ final class ManageRoomTool extends Tool
                 'id' => $room->id,
                 'name' => $room->name,
                 'is_active' => $room->is_active,
+                'school_id' => $room->school_id,
             ],
         ]);
     }
 
     private function resolveRoom(Request $request): ?Room
     {
+        $school = $this->school();
+        $query = Room::query()->where(function ($q) use ($school) {
+            $q->where('school_id', $school->id)->orWhereNull('school_id');
+        });
+
         $id = $request->get('room_id');
         if ($id && is_numeric($id)) {
-            $found = Room::query()->find((int) $id);
+            $found = (clone $query)->find((int) $id);
             if ($found) {
                 return $found;
             }
@@ -132,7 +142,7 @@ final class ManageRoomTool extends Tool
 
         $name = $request->get('name');
         if ($name) {
-            return Room::query()->where('name', 'like', "%{$name}%")->first();
+            return (clone $query)->where('name', 'like', "%{$name}%")->first();
         }
 
         return null;

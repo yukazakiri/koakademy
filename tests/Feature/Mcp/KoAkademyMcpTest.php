@@ -90,6 +90,12 @@ beforeEach(function (): void {
         'Update:Classes',
         'View:Room',
         'Update:Room',
+        'Create:Student',
+        'Create:Subject',
+        'Delete:Subject',
+        'Create:Classes',
+        'Delete:Classes',
+        'Create:Room',
     ];
 
     foreach ($permissions as $permission) {
@@ -1319,7 +1325,7 @@ it('queries timetable schedule across rooms, students, and faculty via MCP', fun
 it('performs student CRUD via MCP ManageStudentTool', function (): void {
     config(['api.mcp.write_enabled' => true]);
     $this->staff->createToken('Staff Agent', ['mcp:read', 'mcp:write']);
-    $this->staff->givePermissionTo(['View:Student', 'Update:Student']);
+    $this->staff->givePermissionTo(['View:Student', 'Update:Student', 'Create:Student']);
 
     $course = Course::factory()->create(['code' => 'BSSE', 'title' => 'Software Engineering']);
 
@@ -1333,16 +1339,40 @@ it('performs student CRUD via MCP ManageStudentTool', function (): void {
             'course_code' => 'BSSE',
             'academic_year' => 1,
             'student_type' => 'college',
+            'idempotency_key' => 'create-ada-1',
         ]);
 
+    $createResponse->assertOk();
     $student = Student::query()->where('email', 'ada.lovelace@example.com')->firstOrFail();
 
-    $createResponse->assertOk()
+    $createResponse->assertStructuredContent(function ($json) use ($student): void {
+        $json->where('success', true)
+            ->where('action', 'create')
+            ->where('student.name', $student->full_name)
+            ->where('student.email', 'ada.lovelace@example.com')
+            ->where('replayed', false)
+            ->etc();
+    });
+
+    // Replay student creation with same idempotency key
+    $replayResponse = KoAkademyServer::actingAs($this->staff)
+        ->tool(App\Mcp\Tools\ManageStudentTool::class, [
+            'action' => 'create',
+            'first_name' => 'Ada',
+            'last_name' => 'Lovelace',
+            'email' => 'ada.lovelace@example.com',
+            'course_code' => 'BSSE',
+            'academic_year' => 1,
+            'student_type' => 'college',
+            'idempotency_key' => 'create-ada-1',
+        ]);
+
+    $replayResponse->assertOk()
         ->assertStructuredContent(function ($json) use ($student): void {
             $json->where('success', true)
                 ->where('action', 'create')
-                ->where('student.name', $student->full_name)
-                ->where('student.email', 'ada.lovelace@example.com')
+                ->where('student.id', $student->id)
+                ->where('replayed', true)
                 ->etc();
         });
 

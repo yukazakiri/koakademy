@@ -24,6 +24,7 @@ it('renders the administrator AI chat page for authorized admins', function (): 
             ->component('administrators/ai/index')
             ->has('initialConversation')
             ->has('initialConversationId')
+            ->where('hideMobileNavigation', true)
         );
 });
 

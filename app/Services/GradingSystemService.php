@@ -38,6 +38,14 @@ final class GradingSystemService
             'direction' => 'higher_is_better',
             'decimal_places' => 2,
             'include_failed_in_gwa' => true,
+            'gwa_formula' => 'weighted_units',
+            'gwa_subject_divisor_basis' => 'enrolled_subjects',
+            'gwa_calculation_metric' => 'numeric_grade',
+            'retake_strategy' => 'latest',
+            'include_credited_in_gwa' => true,
+            'zero_is_dropped' => false,
+            'treat_incomplete_as' => 'exclude',
+            'exclude_zero_unit_subjects' => true,
             'excluded_keywords' => [],
             'excluded_subject_ids' => [],
             'bands' => [
@@ -320,6 +328,25 @@ final class GradingSystemService
             ->values()
             ->all();
 
+        $gwaFormula = in_array($config['gwa_formula'] ?? null, ['weighted_units', 'weighted_subjects', 'unweighted'], true)
+            ? $config['gwa_formula']
+            : $defaults['gwa_formula'];
+        $gwaSubjectDivisorBasis = in_array($config['gwa_subject_divisor_basis'] ?? null, ['enrolled_subjects', 'graded_subjects', 'curriculum_subjects'], true)
+            ? $config['gwa_subject_divisor_basis']
+            : $defaults['gwa_subject_divisor_basis'];
+        $gwaCalculationMetric = in_array($config['gwa_calculation_metric'] ?? null, ['numeric_grade', 'quality_points'], true)
+            ? $config['gwa_calculation_metric']
+            : $defaults['gwa_calculation_metric'];
+        $retakeStrategy = in_array($config['retake_strategy'] ?? null, ['latest', 'highest', 'first', 'all'], true)
+            ? $config['retake_strategy']
+            : $defaults['retake_strategy'];
+        $includeCreditedInGwa = (bool) ($config['include_credited_in_gwa'] ?? $defaults['include_credited_in_gwa']);
+        $zeroIsDropped = (bool) ($config['zero_is_dropped'] ?? $defaults['zero_is_dropped']);
+        $treatIncompleteAs = in_array($config['treat_incomplete_as'] ?? null, ['exclude', 'fail'], true)
+            ? $config['treat_incomplete_as']
+            : $defaults['treat_incomplete_as'];
+        $excludeZeroUnitSubjects = (bool) ($config['exclude_zero_unit_subjects'] ?? $defaults['exclude_zero_unit_subjects']);
+
         return [
             'name' => mb_trim((string) ($config['name'] ?? $defaults['name'])) ?: $defaults['name'],
             'input_type' => $inputType,
@@ -328,6 +355,14 @@ final class GradingSystemService
             'direction' => $direction,
             'decimal_places' => max(0, min(6, (int) ($config['decimal_places'] ?? $defaults['decimal_places']))),
             'include_failed_in_gwa' => (bool) ($config['include_failed_in_gwa'] ?? true),
+            'gwa_formula' => $gwaFormula,
+            'gwa_subject_divisor_basis' => $gwaSubjectDivisorBasis,
+            'gwa_calculation_metric' => $gwaCalculationMetric,
+            'retake_strategy' => $retakeStrategy,
+            'include_credited_in_gwa' => $includeCreditedInGwa,
+            'zero_is_dropped' => $zeroIsDropped,
+            'treat_incomplete_as' => $treatIncompleteAs,
+            'exclude_zero_unit_subjects' => $excludeZeroUnitSubjects,
             'excluded_keywords' => $keywords,
             'excluded_subject_ids' => $subjectIds,
             'bands' => $bands,

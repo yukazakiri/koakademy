@@ -58,6 +58,7 @@ export interface ChecklistSubject {
     id: number;
     routeSubjectId?: number;
     enrollment_id?: number | null;
+    is_enrolled?: boolean;
     code: string;
     title: string;
     units: number;

@@ -19,6 +19,11 @@ export interface GwaItemLike {
     title?: string | null;
     grade_quality_points?: number | string | null;
     grade_outcome?: string | null;
+    grade_symbol?: string | null;
+    enrollment_id?: number | string | null;
+    is_enrolled?: boolean;
+    classification?: string | null;
+    history?: GwaItemLike[];
 }
 
 export interface GradingConfig {
@@ -29,6 +34,14 @@ export interface GradingConfig {
     direction: "higher_is_better" | "lower_is_better";
     decimal_places: number;
     include_failed_in_gwa: boolean;
+    gwa_formula?: "weighted_units" | "weighted_subjects" | "unweighted";
+    gwa_subject_divisor_basis?: "enrolled_subjects" | "graded_subjects" | "curriculum_subjects";
+    gwa_calculation_metric?: "numeric_grade" | "quality_points";
+    retake_strategy?: "latest" | "highest" | "first" | "all";
+    include_credited_in_gwa?: boolean;
+    zero_is_dropped?: boolean;
+    treat_incomplete_as?: "exclude" | "fail";
+    exclude_zero_unit_subjects?: boolean;
     excluded_keywords: string[];
     excluded_subject_ids: number[];
     bands: Array<{
@@ -61,6 +74,9 @@ export interface GwaResult {
     scale: GradeScale | null;
     itemCount: number;
     gradedCount: number;
+    enrolledCount: number;
+    divisor: number;
+    divisorType: "units" | "subjects";
     excludedCount: number;
 }
 
@@ -72,6 +88,14 @@ export const DEFAULT_GRADING_CONFIG: GradingConfig = {
     direction: "higher_is_better",
     decimal_places: 2,
     include_failed_in_gwa: true,
+    gwa_formula: "weighted_units",
+    gwa_subject_divisor_basis: "enrolled_subjects",
+    gwa_calculation_metric: "numeric_grade",
+    retake_strategy: "latest",
+    include_credited_in_gwa: true,
+    zero_is_dropped: false,
+    treat_incomplete_as: "exclude",
+    exclude_zero_unit_subjects: true,
     excluded_keywords: [],
     excluded_subject_ids: [],
     bands: [
@@ -148,34 +172,62 @@ export function parseNumericGrade(grade: number | string | null | undefined): nu
     return parsed;
 }
 
+export function resolveItemBand(
+    grade: number | string | null | undefined,
+    config?: Partial<GradingConfig> | null,
+): GradingConfig["bands"][number] | null {
+    if (grade === null || grade === undefined || grade === "" || grade === "-") {
+        return null;
+    }
+    const resolved = resolveConfig(config);
+    const asString = String(grade).trim().toUpperCase();
+
+    const symbolMatch = resolved.bands.find((band) => band.symbol !== null && band.symbol.trim().toUpperCase() === asString);
+    if (symbolMatch) {
+        return symbolMatch;
+    }
+
+    const numericGrade = parseNumericGrade(grade);
+    if (numericGrade !== null) {
+        return (
+            resolved.bands.find(
+                (band) => typeof band.min === "number" && typeof band.max === "number" && numericGrade >= band.min && numericGrade <= band.max,
+            ) ?? null
+        );
+    }
+
+    return null;
+}
+
 export function gradeOutcome(
     grade: number | string | null | undefined,
     config?: Partial<GradingConfig> | null,
 ): GradingConfig["bands"][number]["outcome"] | null {
-    const numericGrade = parseNumericGrade(grade);
-    if (numericGrade === null) {
-        return null;
-    }
-
-    const resolved = resolveConfig(config);
-    return (
-        resolved.bands.find(
-            (band) => typeof band.min === "number" && typeof band.max === "number" && numericGrade >= band.min && numericGrade <= band.max,
-        )?.outcome ?? null
-    );
+    const band = resolveItemBand(grade, config);
+    return band?.outcome ?? null;
 }
 
-export function isPassingGrade(grade: number, config?: Partial<GradingConfig> | null): boolean {
+export function isPassingGrade(grade: number | string, config?: Partial<GradingConfig> | null): boolean {
     const resolved = resolveConfig(config);
     return gradeOutcome(grade, resolved) === "pass";
 }
 
 export function computeGwa(items: GwaItemLike[], options: ComputeGwaOptions = {}): GwaResult {
     const config = resolveConfig(options.config);
+    const gwaFormula = config.gwa_formula ?? "weighted_units";
+    const divisorBasis = config.gwa_subject_divisor_basis ?? "enrolled_subjects";
+    const metric = config.gwa_calculation_metric ?? (config.input_type === "symbol" ? "quality_points" : "numeric_grade");
+    const zeroIsDropped = config.zero_is_dropped ?? false;
+    const includeCredited = config.include_credited_in_gwa ?? true;
+    const treatIncompleteAs = config.treat_incomplete_as ?? "exclude";
+    const excludeZeroUnits = config.exclude_zero_unit_subjects ?? true;
+
     let weightedSum = 0;
     let gradedUnits = 0;
     let totalUnits = 0;
     let gradedCount = 0;
+    let enrolledCount = 0;
+    let eligibleItemCount = 0;
     let excludedCount = 0;
     const scale: GradeScale = "numeric";
 
@@ -185,37 +237,103 @@ export function computeGwa(items: GwaItemLike[], options: ComputeGwaOptions = {}
             continue;
         }
 
-        const units = Number(item.units) || 0;
-        totalUnits += units;
-
-        const numericGrade = parseNumericGrade(item.grade) ?? parseNumericGrade(item.grade_quality_points);
-        if (numericGrade === null || units <= 0) {
+        const isCredited = item.classification === "credited";
+        const isNonCredited = item.classification === "non_credited";
+        if (isNonCredited || (isCredited && !includeCredited)) {
+            excludedCount += 1;
             continue;
         }
 
-        const isDropped =
-            item.grade_outcome === "withdrawn" || item.grade_outcome === "dropped" || (item.grade_outcome == null && numericGrade === 0);
+        const units = Number(item.units) || 0;
+        if (excludeZeroUnits && units <= 0) {
+            excludedCount += 1;
+            continue;
+        }
+
+        totalUnits += units;
+        eligibleItemCount += 1;
+
+        const isEnrolled = item.is_enrolled !== false && (item.enrollment_id != null || item.is_enrolled === true);
+        if (isEnrolled) {
+            enrolledCount += 1;
+        }
+
+        const band = resolveItemBand(item.grade, config);
+        const outcome = item.grade_outcome ?? band?.outcome ?? null;
+        const numericGrade = parseNumericGrade(item.grade);
+
+        const isDropped = outcome === "withdrawn" || outcome === "dropped" || (zeroIsDropped && numericGrade === 0);
         if (isDropped) {
             continue;
         }
 
-        const isPassing = item.grade_outcome ? item.grade_outcome === "pass" : isPassingGrade(numericGrade, config);
+        if (outcome === "non_credit") {
+            continue;
+        }
+        if (outcome === "incomplete" && treatIncompleteAs === "exclude") {
+            continue;
+        }
+
+        let gradeValue: number | null = null;
+        if (metric === "quality_points" || config.input_type === "symbol") {
+            const qp = parseNumericGrade(item.grade_quality_points) ?? band?.quality_points ?? null;
+            if (qp !== null) {
+                gradeValue = qp;
+            } else if (numericGrade !== null) {
+                gradeValue = numericGrade;
+            }
+        } else {
+            gradeValue = numericGrade ?? parseNumericGrade(item.grade_quality_points);
+        }
+
+        if (gradeValue === null) {
+            continue;
+        }
+
+        const isPassing = outcome === "pass" || (outcome === null && numericGrade !== null && isPassingGrade(numericGrade, config));
         if (!config.include_failed_in_gwa && !isPassing) {
             continue;
         }
 
-        weightedSum += numericGrade * units;
+        if (gwaFormula === "unweighted") {
+            weightedSum += gradeValue;
+        } else {
+            weightedSum += gradeValue * units;
+        }
+
         gradedUnits += units;
         gradedCount += 1;
     }
 
+    let divisor = 0;
+    let divisorType: "units" | "subjects" = "units";
+
+    if (gwaFormula === "weighted_units") {
+        divisor = gradedUnits;
+        divisorType = "units";
+    } else {
+        divisorType = "subjects";
+        if (divisorBasis === "graded_subjects") {
+            divisor = gradedCount;
+        } else if (divisorBasis === "curriculum_subjects") {
+            divisor = eligibleItemCount;
+        } else {
+            divisor = enrolledCount > 0 ? enrolledCount : gradedCount;
+        }
+    }
+
+    const gwa = divisor > 0 && gradedCount > 0 ? weightedSum / divisor : null;
+
     return {
-        gwa: gradedUnits > 0 ? weightedSum / gradedUnits : null,
+        gwa,
         totalUnits,
         gradedUnits,
         scale,
-        itemCount: items.length,
+        itemCount: eligibleItemCount,
         gradedCount,
+        enrolledCount,
+        divisor,
+        divisorType,
         excludedCount,
     };
 }
@@ -232,7 +350,9 @@ export function gwaToneClass(result: GwaResult, config?: Partial<GradingConfig> 
     if (result.gwa === null || result.scale === null) {
         return "text-muted-foreground";
     }
-    return isPassingGrade(result.gwa, config) ? "text-green-600" : "text-destructive";
+    const normalizedGrade =
+        result.divisorType === "subjects" && result.gradedUnits > 0 ? (result.gwa * result.divisor) / result.gradedUnits : result.gwa;
+    return isPassingGrade(normalizedGrade, config) ? "text-green-600" : "text-destructive";
 }
 
 export function gradeScaleLabel(_scale: GradeScale | null, config?: Partial<GradingConfig> | null): string | null {

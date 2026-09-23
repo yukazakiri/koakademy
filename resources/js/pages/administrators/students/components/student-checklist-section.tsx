@@ -11,7 +11,9 @@ import {
     gwaToneClass,
     isPassingGrade,
     parseNumericGrade,
+    resolveItemBand,
     type GradingConfig,
+    type GwaItemLike,
     type GwaResult,
 } from "@/lib/gwa";
 import { FileText, Plus } from "lucide-react";
@@ -67,27 +69,101 @@ function collectYearSubjects(yearGroup: ChecklistYearGroup): ChecklistSubject[] 
 }
 
 function gradePasses(grade: number | string | null, config: GradingConfig): boolean {
-    const numericGrade = parseNumericGrade(grade);
+    if (grade === null || grade === undefined || grade === "" || grade === "-") {
+        return false;
+    }
 
-    return numericGrade !== null && isPassingGrade(numericGrade, config);
+    return isPassingGrade(grade, config);
 }
 
-function checklistStatus(subject: ChecklistSubject, config: GradingConfig): string {
-    if (subject.grade_outcome) {
-        if (subject.grade_outcome === "pass") return "Passed";
-        if (subject.grade_outcome === "withdrawn" || subject.grade_outcome === "dropped") return "Dropped";
-        if (subject.grade_outcome === "fail") return "Failed";
-        return subject.grade_outcome;
+interface StatusBadgeInfo {
+    label: string;
+    variant: "default" | "destructive" | "secondary" | "outline";
+    className: string;
+    isPassed: boolean;
+}
+
+function resolveStatusBadge(subject: ChecklistSubject, config: GradingConfig): StatusBadgeInfo {
+    const zeroIsDropped = config.zero_is_dropped ?? false;
+    const numeric = parseNumericGrade(subject.grade);
+
+    if (subject.grade_outcome === "withdrawn" || subject.grade_outcome === "dropped") {
+        return { label: "Dropped", variant: "destructive", className: "", isPassed: false };
     }
 
-    const numeric = parseNumericGrade(subject.grade);
-    if (numeric !== null && numeric === 0) return "Dropped";
+    if (zeroIsDropped && numeric !== null && numeric === 0) {
+        return { label: "Dropped", variant: "destructive", className: "", isPassed: false };
+    }
+
+    const band = resolveItemBand(subject.grade, config);
+    if (band) {
+        const isPassed = band.outcome === "pass";
+        const isFailOrDropped = band.outcome === "fail" || band.outcome === "withdrawn";
+        const variant = isPassed ? "default" : isFailOrDropped ? "destructive" : band.outcome === "incomplete" ? "secondary" : "outline";
+        const className = isPassed ? "bg-green-600 hover:bg-green-700" : "";
+        return {
+            label: band.label,
+            variant,
+            className,
+            isPassed,
+        };
+    }
+
+    if (subject.grade_outcome) {
+        if (subject.grade_outcome === "pass") {
+            return { label: "Passed", variant: "default", className: "bg-green-600 hover:bg-green-700", isPassed: true };
+        }
+        if (subject.grade_outcome === "fail") {
+            return { label: "Failed", variant: "destructive", className: "", isPassed: false };
+        }
+        return { label: subject.grade_outcome, variant: "outline", className: "", isPassed: false };
+    }
 
     if (numeric === null) {
-        return subject.status === "Completed" ? "Passed" : subject.status;
+        if (subject.status === "Completed") {
+            return { label: "Passed", variant: "default", className: "bg-green-600 hover:bg-green-700", isPassed: true };
+        }
+        const isProg = subject.status === "In Progress";
+        return {
+            label: subject.status,
+            variant: isProg ? "secondary" : "outline",
+            className: "",
+            isPassed: false,
+        };
     }
 
-    return gradePasses(subject.grade, config) ? "Passed" : "Failed";
+    const isPassed = isPassingGrade(numeric, config);
+    return {
+        label: isPassed ? "Passed" : "Failed",
+        variant: isPassed ? "default" : "destructive",
+        className: isPassed ? "bg-green-600 hover:bg-green-700" : "",
+        isPassed,
+    };
+}
+
+function flattenSubjectsForGwa(subjects: ChecklistSubject[], config: GradingConfig): GwaItemLike[] {
+    if (config.retake_strategy === "all") {
+        return subjects.flatMap((s) => {
+            if (s.history && s.history.length > 1) {
+                return s.history.map((h) => ({
+                    id: h.id,
+                    subject_id: s.id,
+                    code: s.code,
+                    title: s.title,
+                    units: s.units,
+                    grade: h.grade,
+                    grade_symbol: h.grade_symbol,
+                    grade_outcome: h.grade_outcome,
+                    grade_quality_points: h.grade_quality_points,
+                    enrollment_id: h.enrollment_id ?? h.id,
+                    is_enrolled: true,
+                    classification: h.classification ?? s.classification,
+                }));
+            }
+            return [s];
+        });
+    }
+    return subjects;
 }
 
 interface GwaSummaryProps {
@@ -112,7 +188,7 @@ function GwaSummary({ label, result, className }: GwaSummaryProps) {
                 {result.gradedCount}/{result.itemCount} subjects graded
             </span>
             <span className="text-muted-foreground text-xs">
-                {result.gradedUnits}/{result.totalUnits} units
+                {result.divisorType === "subjects" ? `${result.divisor} enrolled subjects` : `${result.gradedUnits}/${result.totalUnits} units`}
             </span>
         </div>
     );
@@ -128,14 +204,14 @@ export function StudentChecklistSection({
     const gradingConfig = useGradingConfig();
 
     const overallGwa = useMemo(
-        () => computeGwa(student.checklist.flatMap(collectYearSubjects), { config: gradingConfig }),
+        () => computeGwa(flattenSubjectsForGwa(student.checklist.flatMap(collectYearSubjects), gradingConfig), { config: gradingConfig }),
         [student.checklist, gradingConfig],
     );
 
     const yearGwaMap = useMemo(() => {
         const map = new Map<number, GwaResult>();
         for (const yearGroup of student.checklist) {
-            map.set(yearGroup.year, computeGwa(collectYearSubjects(yearGroup), { config: gradingConfig }));
+            map.set(yearGroup.year, computeGwa(flattenSubjectsForGwa(collectYearSubjects(yearGroup), gradingConfig), { config: gradingConfig }));
         }
         return map;
     }, [student.checklist, gradingConfig]);
@@ -144,7 +220,10 @@ export function StudentChecklistSection({
         const map = new Map<string, GwaResult>();
         for (const yearGroup of student.checklist) {
             for (const semesterGroup of yearGroup.semesters) {
-                map.set(`${yearGroup.year}-${semesterGroup.semester}`, computeGwa(semesterGroup.subjects, { config: gradingConfig }));
+                map.set(
+                    `${yearGroup.year}-${semesterGroup.semester}`,
+                    computeGwa(flattenSubjectsForGwa(semesterGroup.subjects, gradingConfig), { config: gradingConfig }),
+                );
             }
         }
         return map;
@@ -209,7 +288,9 @@ export function StudentChecklistSection({
                                                                 {semesterResult.gradedCount}/{semesterResult.itemCount} subjects
                                                             </span>
                                                             <span className="text-muted-foreground text-xs">
-                                                                {semesterResult.gradedUnits}/{semesterResult.totalUnits} units
+                                                                {semesterResult.divisorType === "subjects"
+                                                                    ? `${semesterResult.divisor} enrolled subjects`
+                                                                    : `${semesterResult.gradedUnits}/${semesterResult.totalUnits} units`}
                                                             </span>
                                                         </div>
                                                     )}
@@ -230,8 +311,7 @@ export function StudentChecklistSection({
                                                     <TableBody>
                                                         {semesterGroup.subjects.map((subject, subjectIndex) => {
                                                             const hasHistory = subject.history && subject.history.length > 1;
-                                                            const status = checklistStatus(subject, gradingConfig);
-                                                            const isPassed = status === "Passed";
+                                                            const badgeInfo = resolveStatusBadge(subject, gradingConfig);
 
                                                             return (
                                                                 <Fragment key={`${subject.id}-${subjectIndex}`}>
@@ -253,19 +333,8 @@ export function StudentChecklistSection({
                                                                             </ReuiBadge>
                                                                         </TableCell>
                                                                         <TableCell>
-                                                                            <Badge
-                                                                                variant={
-                                                                                    isPassed
-                                                                                        ? "default"
-                                                                                        : status === "Failed" || status === "Dropped"
-                                                                                          ? "destructive"
-                                                                                          : status === "In Progress"
-                                                                                            ? "secondary"
-                                                                                            : "outline"
-                                                                                }
-                                                                                className={isPassed ? "bg-green-600 hover:bg-green-700" : ""}
-                                                                            >
-                                                                                {status}
+                                                                            <Badge variant={badgeInfo.variant} className={badgeInfo.className}>
+                                                                                {badgeInfo.label}
                                                                             </Badge>
                                                                             {hasHistory && (
                                                                                 <Badge
@@ -297,10 +366,12 @@ export function StudentChecklistSection({
                                                                                 return null;
                                                                             }
 
+                                                                            const zeroIsDropped = gradingConfig.zero_is_dropped ?? false;
+                                                                            const historyNumeric = parseNumericGrade(history.grade);
                                                                             const isDropped =
                                                                                 history.grade_outcome === "withdrawn" ||
                                                                                 history.grade_outcome === "dropped" ||
-                                                                                parseNumericGrade(history.grade) === 0;
+                                                                                (zeroIsDropped && historyNumeric === 0);
                                                                             const isPassed =
                                                                                 !isDropped &&
                                                                                 (history.grade_outcome

@@ -86,6 +86,14 @@ export interface GradingConfigPayload {
     direction: "higher_is_better" | "lower_is_better";
     decimal_places: number;
     include_failed_in_gwa: boolean;
+    gwa_formula?: "weighted_units" | "weighted_subjects" | "unweighted";
+    gwa_subject_divisor_basis?: "enrolled_subjects" | "graded_subjects" | "curriculum_subjects";
+    gwa_calculation_metric?: "numeric_grade" | "quality_points";
+    retake_strategy?: "latest" | "highest" | "first" | "all";
+    include_credited_in_gwa?: boolean;
+    zero_is_dropped?: boolean;
+    treat_incomplete_as?: "exclude" | "fail";
+    exclude_zero_unit_subjects?: boolean;
     excluded_keywords: string[];
     excluded_subject_ids: number[];
     bands: GradingBandPayload[];

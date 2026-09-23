@@ -1,5 +1,7 @@
 export * from "./admin-ai-floating-widget";
 export * from "./ai-chat-sheet";
+export * from "./ai-constants";
+export * from "./ai-conversation-sidebar";
 export * from "./analytics-chart-renderer";
 export * from "./approval-card";
 export * from "./chat-message-formatter";

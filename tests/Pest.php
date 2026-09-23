@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-$_SERVER['APP_BASE_PATH'] = $_SERVER['APP_BASE_PATH'] ?? dirname(__DIR__);
-$_ENV['APP_BASE_PATH'] = $_ENV['APP_BASE_PATH'] ?? $_SERVER['APP_BASE_PATH'];
-putenv('APP_BASE_PATH='.$_SERVER['APP_BASE_PATH']);
+$_SERVER['APP_BASE_PATH'] = dirname(__DIR__);
+$_ENV['APP_BASE_PATH'] = dirname(__DIR__);
+putenv('APP_BASE_PATH='.dirname(__DIR__));
 
 spl_autoload_register(function (string $class): bool {
     if (str_starts_with($class, 'Modules\\')) {
@@ -35,7 +35,7 @@ spl_autoload_register(function (string $class): bool {
 
 use Tests\TestCase;
 
-pest()->extend(TestCase::class)->in('Unit', 'Feature');
+pest()->extend(TestCase::class)->in('Feature', 'Unit');
 
 /*
 |--------------------------------------------------------------------------

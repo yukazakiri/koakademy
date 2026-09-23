@@ -29,6 +29,8 @@ interface AdminLayoutProps {
 
 export default function AdminLayout({ user, title, children }: AdminLayoutProps) {
     const { announcements, auth, institutionOnboarding } = usePage<PageProps>().props;
+    const pageUrl = usePage().url;
+    const isAiChatPage = pageUrl.startsWith("/administrators/ai");
     const resolvedUser = auth?.user ?? user;
 
     if (!resolvedUser) {
@@ -54,7 +56,7 @@ export default function AdminLayout({ user, title, children }: AdminLayoutProps)
                 </SidebarInset>
                 <GlobalCommandPalette user={resolvedUser} />
                 <InstitutionSchoolLevelOnboarding onboarding={institutionOnboarding ?? null} />
-                <AdminAiFloatingWidget user={resolvedUser} />
+                {!isAiChatPage && <AdminAiFloatingWidget user={resolvedUser} />}
             </SidebarProvider>
         </ThemeProvider>
     );

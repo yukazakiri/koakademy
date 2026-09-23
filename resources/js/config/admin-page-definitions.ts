@@ -27,6 +27,7 @@ function pageDefinition(input: PageDefinitionInput): AdminPageDefinition {
 }
 
 const definitions: PageDefinitionInput[] = [
+    { routePattern: /^\/administrators\/ai(?:\/.*)?$/, component: "administrators/ai/index", variant: "special" },
     { routePattern: /^\/administrators\/classes\/[^/]+\/edit$/, component: "administrators/classes/create", variant: "form" },
     { routePattern: /^\/administrators\/classes\/(?!create$)[^/]+$/, component: "administrators/classes/show", variant: "detail" },
     { routePattern: /^\/administrators\/classes\/create$/, component: "administrators/classes/create", variant: "form" },

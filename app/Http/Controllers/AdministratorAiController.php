@@ -22,6 +22,8 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
+use Inertia\Inertia;
+use Inertia\Response as InertiaResponse;
 use InvalidArgumentException;
 use Laravel\Ai\Approvals\Decision;
 use Laravel\Ai\Approvals\Decisions;
@@ -31,6 +33,41 @@ use Throwable;
 
 final class AdministratorAiController extends Controller
 {
+    /**
+     * Render the full-page Administrator AI Chat interface.
+     */
+    public function index(Request $request): InertiaResponse
+    {
+        $user = Auth::user();
+        abort_unless($user instanceof User && $user->canAccessAdminPortal(), 403);
+
+        $initialConversationId = $request->query('conversation');
+        $initialConversation = null;
+
+        if (is_string($initialConversationId) && filled($initialConversationId)) {
+            $conversation = Conversation::query()
+                ->where('id', $initialConversationId)
+                ->where('participant_id', $user->id)
+                ->with(['messages'])
+                ->first();
+
+            if ($conversation) {
+                $initialConversation = [
+                    'id' => $conversation->id,
+                    'title' => $conversation->title,
+                    'created_at' => $conversation->created_at?->toISOString(),
+                    'updated_at' => $conversation->updated_at?->toISOString(),
+                    'messages' => $this->formatMessages($conversation->messages),
+                ];
+            }
+        }
+
+        return Inertia::render('administrators/ai/index', [
+            'initialConversation' => $initialConversation,
+            'initialConversationId' => $initialConversation ? $initialConversationId : null,
+        ]);
+    }
+
     /**
      * Handle streaming AI assistant chat for administrators with full multi-provider and custom model support.
      */
@@ -284,6 +321,16 @@ final class AdministratorAiController extends Controller
                     $iterator->next();
                 }
 
+                $resolvedConversationId = $stream?->conversationId ?? $agentInstance->currentConversation() ?? $conversationId;
+                if (filled($resolvedConversationId)) {
+                    $conversationTitle = Conversation::query()->where('id', $resolvedConversationId)->value('title');
+                    echo 'data: '.json_encode([
+                        'type' => 'conversation',
+                        'conversationId' => $resolvedConversationId,
+                        'title' => $conversationTitle,
+                    ])."\n\n";
+                }
+
                 echo "data: [DONE]\n\n";
                 if (ob_get_level() > 0) {
                     ob_flush();
@@ -322,6 +369,104 @@ final class AdministratorAiController extends Controller
             'Cache-Control' => 'no-cache, no-transform',
             'Content-Type' => 'text/event-stream',
             'X-Accel-Buffering' => 'no',
+        ]);
+    }
+
+    /**
+     * List administrator conversations with search and pagination.
+     */
+    public function conversations(Request $request): JsonResponse
+    {
+        $user = Auth::user();
+        abort_unless($user instanceof User && $user->canAccessAdminPortal(), 403);
+
+        $search = mb_trim((string) $request->query('query', ''));
+
+        $conversations = Conversation::query()
+            ->where('participant_id', $user->id)
+            ->where('participant_type', $user->getMorphClass())
+            ->when(filled($search), function ($query) use ($search) {
+                $query->where('title', 'like', "%{$search}%");
+            })
+            ->latest('updated_at')
+            ->paginate(20);
+
+        return response()->json($conversations);
+    }
+
+    /**
+     * Retrieve a conversation and its messages.
+     */
+    public function showConversation(string $conversationId): JsonResponse
+    {
+        $user = Auth::user();
+        abort_unless($user instanceof User && $user->canAccessAdminPortal(), 403);
+
+        $conversation = Conversation::query()
+            ->where('id', $conversationId)
+            ->where('participant_id', $user->id)
+            ->where('participant_type', $user->getMorphClass())
+            ->with(['messages'])
+            ->firstOrFail();
+
+        return response()->json([
+            'conversation' => [
+                'id' => $conversation->id,
+                'title' => $conversation->title,
+                'created_at' => $conversation->created_at?->toISOString(),
+                'updated_at' => $conversation->updated_at?->toISOString(),
+            ],
+            'messages' => $this->formatMessages($conversation->messages),
+        ]);
+    }
+
+    /**
+     * Rename a conversation title.
+     */
+    public function updateConversation(Request $request, string $conversationId): JsonResponse
+    {
+        $user = Auth::user();
+        abort_unless($user instanceof User && $user->canAccessAdminPortal(), 403);
+
+        $validated = $request->validate([
+            'title' => 'required|string|max:120',
+        ]);
+
+        $conversation = Conversation::query()
+            ->where('id', $conversationId)
+            ->where('participant_id', $user->id)
+            ->where('participant_type', $user->getMorphClass())
+            ->firstOrFail();
+
+        $conversation->update([
+            'title' => mb_trim($validated['title']),
+        ]);
+
+        return response()->json([
+            'message' => 'Conversation renamed successfully.',
+            'conversation' => $conversation,
+        ]);
+    }
+
+    /**
+     * Delete a conversation.
+     */
+    public function destroyConversation(string $conversationId): JsonResponse
+    {
+        $user = Auth::user();
+        abort_unless($user instanceof User && $user->canAccessAdminPortal(), 403);
+
+        $conversation = Conversation::query()
+            ->where('id', $conversationId)
+            ->where('participant_id', $user->id)
+            ->where('participant_type', $user->getMorphClass())
+            ->firstOrFail();
+
+        $conversation->messages()->delete();
+        $conversation->delete();
+
+        return response()->json([
+            'message' => 'Conversation deleted successfully.',
         ]);
     }
 
@@ -630,6 +775,94 @@ final class AdministratorAiController extends Controller
         }
 
         return [$providerKey, null];
+    }
+
+    /**
+     * Format conversation messages for client consumption.
+     *
+     * @param  iterable<\Laravel\Ai\Models\ConversationMessage>  $messages
+     * @return array<int, array<string, mixed>>
+     */
+    private function formatMessages(iterable $messages): array
+    {
+        $formatted = [];
+
+        foreach ($messages as $msg) {
+            $toolCalls = [];
+            $rawToolCalls = is_array($msg->tool_calls) ? $msg->tool_calls : (json_decode((string) $msg->tool_calls, true) ?: []);
+            $rawToolResults = is_array($msg->tool_results) ? $msg->tool_results : (json_decode((string) $msg->tool_results, true) ?: []);
+
+            $resultsById = collect($rawToolResults)->keyBy('id');
+
+            foreach ($rawToolCalls as $tc) {
+                $tcId = (string) ($tc['id'] ?? '');
+                $result = $resultsById->get($tcId);
+
+                $toolCalls[] = [
+                    'id' => $tcId,
+                    'toolName' => (string) ($tc['name'] ?? $tc['toolName'] ?? 'Tool'),
+                    'state' => $result !== null
+                        ? ((($result['successful'] ?? true)) ? 'output-available' : 'output-error')
+                        : 'input-available',
+                    'input' => is_array($tc['arguments'] ?? null) ? $tc['arguments'] : (is_array($tc['input'] ?? null) ? $tc['input'] : []),
+                    'output' => $result['result'] ?? $result['output'] ?? null,
+                    'errorText' => $result['error'] ?? null,
+                ];
+            }
+
+            $pendingApprovals = [];
+            $approvalState = is_array($msg->approval_state) ? $msg->approval_state : (json_decode((string) $msg->approval_state, true) ?: []);
+            if (! empty($approvalState['pending']) && is_array($approvalState['pending'])) {
+                foreach ($approvalState['pending'] as $callId => $reason) {
+                    $matchingCall = collect($rawToolCalls)->firstWhere('id', $callId);
+                    $pendingApprovals[] = [
+                        'id' => (string) $callId,
+                        'tool' => (string) ($matchingCall['name'] ?? 'Tool Execution'),
+                        'reason' => is_string($reason) ? $reason : null,
+                        'arguments' => is_array($matchingCall['arguments'] ?? null) ? $matchingCall['arguments'] : [],
+                    ];
+                }
+            }
+
+            $attachments = [];
+            $rawAttachments = is_array($msg->attachments) ? $msg->attachments : (json_decode((string) $msg->attachments, true) ?: []);
+            foreach ($rawAttachments as $att) {
+                if (is_array($att)) {
+                    $attachments[] = [
+                        'name' => (string) ($att['name'] ?? $att['filename'] ?? 'Attachment'),
+                        'size' => (int) ($att['size'] ?? 0),
+                        'type' => (string) ($att['mime'] ?? $att['type'] ?? 'application/octet-stream'),
+                        'previewUrl' => $att['url'] ?? null,
+                    ];
+                }
+            }
+
+            $meta = is_array($msg->meta) ? $msg->meta : (json_decode((string) $msg->meta, true) ?: []);
+            $citations = [];
+            if (! empty($meta['citations']) && is_array($meta['citations'])) {
+                foreach ($meta['citations'] as $c) {
+                    if (is_array($c) && ! empty($c['url'])) {
+                        $citations[] = [
+                            'title' => (string) ($c['title'] ?? $c['url']),
+                            'url' => (string) $c['url'],
+                        ];
+                    }
+                }
+            }
+
+            $formatted[] = [
+                'id' => (string) $msg->id,
+                'role' => (string) $msg->role,
+                'content' => (string) ($msg->content ?? ''),
+                'toolCalls' => ! empty($toolCalls) ? $toolCalls : null,
+                'pendingApprovals' => ! empty($pendingApprovals) ? $pendingApprovals : null,
+                'attachments' => ! empty($attachments) ? $attachments : null,
+                'sources' => ! empty($citations) ? $citations : null,
+                'createdAt' => $msg->created_at?->toISOString(),
+            ];
+        }
+
+        return $formatted;
     }
 
     private function resolveAgent(string $key): Agent

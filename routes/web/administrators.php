@@ -527,6 +527,16 @@ Route::middleware(['auth', 'administrators.only'])
 
         // Administrative AI Assistant & Document Workflows
         Route::prefix('ai')->name('ai.')->group(function () {
+            Route::get('/', [App\Http\Controllers\AdministratorAiController::class, 'index'])
+                ->name('index');
+            Route::get('/conversations', [App\Http\Controllers\AdministratorAiController::class, 'conversations'])
+                ->name('conversations.index');
+            Route::get('/conversations/{conversation}', [App\Http\Controllers\AdministratorAiController::class, 'showConversation'])
+                ->name('conversations.show');
+            Route::patch('/conversations/{conversation}', [App\Http\Controllers\AdministratorAiController::class, 'updateConversation'])
+                ->name('conversations.update');
+            Route::delete('/conversations/{conversation}', [App\Http\Controllers\AdministratorAiController::class, 'destroyConversation'])
+                ->name('conversations.destroy');
             Route::post('/chat', [App\Http\Controllers\AdministratorAiController::class, 'chat'])
                 ->middleware('throttle:ai-chat')
                 ->name('chat');

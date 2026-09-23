@@ -24,10 +24,11 @@ interface PageProps {
 interface AdminLayoutProps {
     user?: User;
     title?: string;
+    immersive?: boolean;
     children: React.ReactNode;
 }
 
-export default function AdminLayout({ user, title, children }: AdminLayoutProps) {
+export default function AdminLayout({ user, title, immersive = false, children }: AdminLayoutProps) {
     const { announcements, auth, institutionOnboarding } = usePage<PageProps>().props;
     const pageUrl = usePage().url;
     const isAiChatPage = pageUrl.startsWith("/administrators/ai");
@@ -35,6 +36,21 @@ export default function AdminLayout({ user, title, children }: AdminLayoutProps)
 
     if (!resolvedUser) {
         return null;
+    }
+
+    if (immersive) {
+        return (
+            <ThemeProvider defaultTheme="system" storageKey="app-theme">
+                <AnalyticsScripts />
+                <div className="flex h-svh flex-col">
+                    <ImpersonationBanner />
+                    <AnnouncementBanner announcements={announcements ?? []} />
+                    <div className="min-h-0 flex-1">{children}</div>
+                </div>
+                <GlobalCommandPalette user={resolvedUser} />
+                <InstitutionSchoolLevelOnboarding onboarding={institutionOnboarding ?? null} />
+            </ThemeProvider>
+        );
     }
 
     return (

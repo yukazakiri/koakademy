@@ -9,39 +9,14 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import {
-    Dialog,
-    DialogContent,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-} from "@/components/ui/dialog";
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import {
-    Loader2,
-    MessageSquare,
-    MoreHorizontal,
-    Pencil,
-    Plus,
-    Search,
-    Trash2,
-    X,
-} from "lucide-react";
+import { Loader2, MessageSquare, MoreHorizontal, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import * as React from "react";
-import {
-    ConversationGroup,
-    ConversationItem,
-    groupConversationsByDate,
-} from "./ai-constants";
+import { ConversationGroup, ConversationItem, groupConversationsByDate } from "./ai-constants";
 
 interface AiConversationSidebarProps {
     conversations: ConversationItem[];
@@ -57,6 +32,7 @@ interface AiConversationSidebarProps {
     isLoadingMore?: boolean;
     onLoadMore?: () => void;
     totalConversations?: number;
+    newChatPlacement?: "top" | "bottom";
     className?: string;
 }
 
@@ -73,6 +49,7 @@ export function AiConversationSidebar({
     hasMore = false,
     isLoadingMore = false,
     onLoadMore,
+    newChatPlacement = "top",
     className,
 }: AiConversationSidebarProps) {
     const [editingConv, setEditingConv] = React.useState<ConversationItem | null>(null);
@@ -126,37 +103,35 @@ export function AiConversationSidebar({
     };
 
     return (
-        <aside
-            className={cn(
-                "flex flex-col h-full bg-sidebar/95 border-r border-sidebar-border select-none",
-                className
-            )}
-        >
-            {/* Top Action & Search */}
-            <div className="p-3 border-b border-sidebar-border flex flex-col gap-2.5">
-                <Button
-                    type="button"
-                    onClick={onNewChat}
-                    className="w-full justify-start gap-2 shadow-xs bg-primary text-primary-foreground hover:bg-primary/90 font-medium h-9 text-xs"
-                >
-                    <Plus className="size-4" />
-                    <span>New chat</span>
-                </Button>
+        <aside className={cn("bg-sidebar/95 border-sidebar-border flex h-full flex-col border-r select-none", className)}>
+            {/* Search stays fixed while the conversation list scrolls. */}
+            <div className="border-sidebar-border flex flex-col gap-2.5 border-b p-3">
+                {newChatPlacement === "top" && (
+                    <Button
+                        type="button"
+                        onClick={onNewChat}
+                        className="bg-primary text-primary-foreground hover:bg-primary/90 h-9 w-full justify-start gap-2 text-xs font-medium shadow-xs"
+                    >
+                        <Plus className="size-4" />
+                        <span>New chat</span>
+                    </Button>
+                )}
 
                 <div className="relative">
-                    <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground pointer-events-none" />
+                    <Search className="text-muted-foreground pointer-events-none absolute top-2.5 left-2.5 size-3.5" />
                     <Input
                         type="text"
                         placeholder="Search chats..."
                         value={searchQuery}
                         onChange={(e) => onSearchChange(e.target.value)}
-                        className="pl-8 pr-7 h-8 text-xs bg-background/50 border-sidebar-border focus-visible:ring-1"
+                        className="bg-background/50 border-sidebar-border h-8 pr-7 pl-8 text-xs focus-visible:ring-1"
                     />
                     {searchQuery && (
                         <button
                             type="button"
                             onClick={() => onSearchChange("")}
-                            className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
+                            className="text-muted-foreground hover:text-foreground absolute top-2 right-2"
+                            aria-label="Clear chat search"
                         >
                             <X className="size-3.5" />
                         </button>
@@ -167,17 +142,15 @@ export function AiConversationSidebar({
             {/* Conversation History List */}
             <ScrollArea className="flex-1 px-2 py-3">
                 {isLoading && conversations.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center p-8 text-center text-muted-foreground">
-                        <Loader2 className="size-5 animate-spin mb-2" />
+                    <div className="text-muted-foreground flex flex-col items-center justify-center p-8 text-center">
+                        <Loader2 className="mb-2 size-5 animate-spin" />
                         <span className="text-xs">Loading conversations...</span>
                     </div>
                 ) : grouped.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center p-8 text-center text-muted-foreground">
-                        <MessageSquare className="size-6 mb-2 opacity-40" />
-                        <span className="text-xs font-medium">
-                            {searchQuery ? "No matching chats found" : "No conversation history yet"}
-                        </span>
-                        <p className="text-[11px] text-muted-foreground/80 mt-1 max-w-[180px]">
+                    <div className="text-muted-foreground flex flex-col items-center justify-center p-8 text-center">
+                        <MessageSquare className="mb-2 size-6 opacity-40" />
+                        <span className="text-xs font-medium">{searchQuery ? "No matching chats found" : "No conversation history yet"}</span>
+                        <p className="text-muted-foreground/80 mt-1 max-w-[180px] text-[11px]">
                             {searchQuery
                                 ? "Try searching for a different keyword"
                                 : "Start a new conversation to begin receiving AI institutional intelligence."}
@@ -187,40 +160,40 @@ export function AiConversationSidebar({
                     <div className="space-y-4">
                         {grouped.map((group: ConversationGroup) => (
                             <div key={group.label} className="space-y-1">
-                                <h4 className="px-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                                    {group.label}
-                                </h4>
+                                <h4 className="text-muted-foreground px-2 text-[10px] font-semibold tracking-wider uppercase">{group.label}</h4>
                                 <div className="space-y-0.5">
                                     {group.items.map((conv) => {
                                         const isActive = conv.id === activeConversationId;
                                         return (
                                             <div
                                                 key={conv.id}
-                                                onClick={() => onSelectConversation(conv.id)}
                                                 className={cn(
-                                                    "group relative flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer",
+                                                    "group relative flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors",
                                                     isActive
                                                         ? "bg-sidebar-accent text-sidebar-accent-foreground font-semibold"
-                                                        : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                                                        : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
                                                 )}
                                             >
-                                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => onSelectConversation(conv.id)}
+                                                    aria-current={isActive ? "page" : undefined}
+                                                    className="focus-visible:ring-sidebar-ring flex min-w-0 flex-1 items-center gap-2 text-left focus-visible:ring-2 focus-visible:outline-none"
+                                                >
                                                     <MessageSquare
                                                         className={cn(
                                                             "size-3.5 shrink-0",
-                                                            isActive
-                                                                ? "text-primary"
-                                                                : "text-muted-foreground group-hover:text-foreground"
+                                                            isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground",
                                                         )}
                                                     />
                                                     <span className="truncate">{conv.title || "Untitled Conversation"}</span>
-                                                </div>
+                                                </button>
 
                                                 {/* Actions dropdown */}
                                                 <div
                                                     className={cn(
-                                                        "flex items-center opacity-0 group-hover:opacity-100 transition-opacity",
-                                                        isActive && "opacity-100"
+                                                        "flex items-center opacity-0 transition-opacity group-hover:opacity-100",
+                                                        isActive && "opacity-100",
                                                     )}
                                                     onClick={(e) => e.stopPropagation()}
                                                 >
@@ -230,7 +203,8 @@ export function AiConversationSidebar({
                                                                 type="button"
                                                                 variant="ghost"
                                                                 size="icon"
-                                                                className="size-6 text-muted-foreground hover:text-foreground rounded"
+                                                                className="text-muted-foreground hover:text-foreground size-6 rounded"
+                                                                aria-label={`Manage ${conv.title || "Untitled Conversation"}`}
                                                             >
                                                                 <MoreHorizontal className="size-3.5" />
                                                             </Button>
@@ -238,15 +212,15 @@ export function AiConversationSidebar({
                                                         <DropdownMenuContent align="end" className="w-36 text-xs">
                                                             <DropdownMenuItem
                                                                 onClick={(e) => handleOpenRename(conv, e)}
-                                                                className="gap-2 cursor-pointer"
+                                                                className="cursor-pointer gap-2"
                                                             >
-                                                                <Pencil className="size-3.5 text-muted-foreground" />
+                                                                <Pencil className="text-muted-foreground size-3.5" />
                                                                 <span>Rename</span>
                                                             </DropdownMenuItem>
                                                             <DropdownMenuSeparator />
                                                             <DropdownMenuItem
                                                                 onClick={(e) => handleOpenDelete(conv, e)}
-                                                                className="gap-2 text-destructive focus:text-destructive cursor-pointer"
+                                                                className="text-destructive focus:text-destructive cursor-pointer gap-2"
                                                             >
                                                                 <Trash2 className="size-3.5" />
                                                                 <span>Delete</span>
@@ -262,18 +236,18 @@ export function AiConversationSidebar({
                         ))}
 
                         {hasMore && (
-                            <div className="pt-2 pb-1 px-1">
+                            <div className="px-1 pt-2 pb-1">
                                 <Button
                                     type="button"
                                     variant="outline"
                                     size="sm"
                                     onClick={onLoadMore}
                                     disabled={isLoadingMore}
-                                    className="w-full h-8 text-xs text-muted-foreground hover:text-foreground border-dashed border-sidebar-border shadow-none"
+                                    className="text-muted-foreground hover:text-foreground border-sidebar-border h-8 w-full border-dashed text-xs shadow-none"
                                 >
                                     {isLoadingMore ? (
                                         <>
-                                            <Loader2 className="size-3.5 animate-spin mr-1.5" />
+                                            <Loader2 className="mr-1.5 size-3.5 animate-spin" />
                                             <span>Loading older chats...</span>
                                         </>
                                     ) : (
@@ -285,6 +259,15 @@ export function AiConversationSidebar({
                     </div>
                 )}
             </ScrollArea>
+
+            {newChatPlacement === "bottom" && (
+                <div className="border-sidebar-border border-t p-3">
+                    <Button type="button" onClick={onNewChat} className="bg-foreground text-background hover:bg-foreground/90 h-10 w-full gap-2">
+                        <Plus className="size-4" />
+                        <span>New chat</span>
+                    </Button>
+                </div>
+            )}
 
             {/* Rename Dialog */}
             <Dialog open={!!editingConv} onOpenChange={(open) => !open && setEditingConv(null)}>
@@ -307,20 +290,11 @@ export function AiConversationSidebar({
                         />
                     </div>
                     <DialogFooter>
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => setEditingConv(null)}
-                            disabled={isRenaming}
-                        >
+                        <Button type="button" variant="outline" onClick={() => setEditingConv(null)} disabled={isRenaming}>
                             Cancel
                         </Button>
-                        <Button
-                            type="button"
-                            onClick={handleConfirmRename}
-                            disabled={isRenaming || !renameTitle.trim()}
-                        >
-                            {isRenaming && <Loader2 className="size-3.5 animate-spin mr-1.5" />}
+                        <Button type="button" onClick={handleConfirmRename} disabled={isRenaming || !renameTitle.trim()}>
+                            {isRenaming && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
                             Save
                         </Button>
                     </DialogFooter>
@@ -333,8 +307,7 @@ export function AiConversationSidebar({
                     <AlertDialogHeader>
                         <AlertDialogTitle>Delete conversation?</AlertDialogTitle>
                         <AlertDialogDescription>
-                            This will permanently delete &ldquo;{deletingConv?.title}&rdquo; and all of its messages. This
-                            action cannot be undone.
+                            This will permanently delete &ldquo;{deletingConv?.title}&rdquo; and all of its messages. This action cannot be undone.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
@@ -344,7 +317,7 @@ export function AiConversationSidebar({
                             disabled={isDeleting}
                             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                         >
-                            {isDeleting && <Loader2 className="size-3.5 animate-spin mr-1.5" />}
+                            {isDeleting && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
                             Delete
                         </AlertDialogAction>
                     </AlertDialogFooter>

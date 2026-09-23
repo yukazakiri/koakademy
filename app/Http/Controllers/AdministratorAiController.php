@@ -65,6 +65,7 @@ final class AdministratorAiController extends Controller
         return Inertia::render('administrators/ai/index', [
             'initialConversation' => $initialConversation,
             'initialConversationId' => $initialConversation ? $initialConversationId : null,
+            'hideMobileNavigation' => true,
         ]);
     }
 

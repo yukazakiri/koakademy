@@ -66,5 +66,10 @@ final class KoAkademyServer extends Server
         EnrollStudentSubjectTool::class,
         UpdateSubjectEnrollmentGradeTool::class,
         DropStudentSubjectEnrollmentTool::class,
+        \App\Mcp\Tools\QueryTimetableScheduleTool::class,
+        \App\Mcp\Tools\ManageStudentTool::class,
+        \App\Mcp\Tools\ManageCurriculumSubjectTool::class,
+        \App\Mcp\Tools\ManageClassScheduleTool::class,
+        \App\Mcp\Tools\ManageRoomTool::class,
     ];
 }

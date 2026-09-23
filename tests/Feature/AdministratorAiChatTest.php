@@ -361,3 +361,186 @@ it('returns 503 service unavailable when AI features are disabled in system sett
         ])
         ->assertStatus(503);
 });
+
+it('resolves room, student, and faculty schedules via QueryTimetableScheduleTool', function (): void {
+    $room = App\Models\Room::create(['name' => 'Lecture Hall 101', 'is_active' => true]);
+    $faculty = App\Models\Faculty::factory()->create([
+        'first_name' => 'Alan',
+        'last_name' => 'Turing',
+        'faculty_id_number' => 'FAC-101',
+    ]);
+    $class = App\Models\Classes::factory()->create([
+        'subject_code' => 'CS101',
+        'section' => 'BSCS-1A',
+        'school_year' => '2026-2027',
+        'semester' => 1,
+        'room_id' => $room->id,
+        'faculty_id' => $faculty->id,
+    ]);
+    App\Models\Schedule::create([
+        'class_id' => $class->id,
+        'day_of_week' => 'Tuesday',
+        'start_time' => '10:00:00',
+        'end_time' => '12:00:00',
+        'room_id' => $room->id,
+    ]);
+
+    $tool = new App\Ai\Tools\QueryTimetableScheduleTool();
+
+    // Query room schedule
+    $roomResult = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'target_type' => 'room',
+        'identifier' => 'Lecture Hall 101',
+        'check_availability' => true,
+    ])), true);
+
+    expect($roomResult['type'])->toBe('room')
+        ->and($roomResult['rooms'][0]['name'])->toBe('Lecture Hall 101')
+        ->and($roomResult['rooms'][0]['schedules'][0]['subject_code'])->toBe('CS101')
+        ->and($roomResult['rooms'][0]['available_windows'])->not->toBeEmpty();
+
+    // Query faculty schedule
+    $facultyResult = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'target_type' => 'faculty',
+        'identifier' => 'Turing',
+    ])), true);
+
+    expect($facultyResult['type'])->toBe('faculty')
+        ->and($facultyResult['faculty'][0]['name'])->toBe($faculty->full_name)
+        ->and($facultyResult['faculty'][0]['schedules'][0]['subject_code'])->toBe('CS101');
+});
+
+it('manages student profiles with approval gates via ManageStudentTool', function (): void {
+    $course = App\Models\Course::factory()->create(['code' => 'BSIT', 'title' => 'Information Technology']);
+
+    $tool = new App\Ai\Tools\ManageStudentTool();
+
+    // Create student
+    $createRequest = new Laravel\Ai\Tools\Request([
+        'action' => 'create',
+        'first_name' => 'Katherine',
+        'last_name' => 'Johnson',
+        'email' => 'katherine.johnson@example.com',
+        'course_code' => 'BSIT',
+        'academic_year' => 1,
+        'student_type' => 'college',
+    ]);
+
+    $createResult = json_decode((string) $tool->handle($createRequest), true);
+    expect($createResult['success'])->toBeTrue()
+        ->and($createResult['student']['name'])->toBe('Johnson, Katherine ')
+        ->and($createResult['student']['email'])->toBe('katherine.johnson@example.com');
+
+    $studentId = $createResult['student']['id'];
+
+    // Update student
+    $updateRequest = new Laravel\Ai\Tools\Request([
+        'action' => 'update',
+        'student_id' => $studentId,
+        'academic_year' => 2,
+        'status' => 'enrolled',
+    ]);
+    $updateResult = json_decode((string) $tool->handle($updateRequest), true);
+    expect($updateResult['success'])->toBeTrue()
+        ->and($updateResult['student']['status'])->toBe('enrolled');
+
+    // Get student details without approval
+    $getResult = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'action' => 'get',
+        'student_id' => $studentId,
+    ])), true);
+    expect($getResult['found'])->toBeTrue()
+        ->and($getResult['program'])->toBe('BSIT');
+
+    // Archive student
+    $archiveResult = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'action' => 'archive',
+        'student_id' => $studentId,
+        'reason' => 'Leave of absence',
+    ])), true);
+    expect($archiveResult['success'])->toBeTrue();
+    $savedStatus = App\Models\Student::find($studentId)->status;
+    expect($savedStatus instanceof BackedEnum ? $savedStatus->value : $savedStatus)->toBe('dropped');
+});
+
+it('manages curriculum subjects and class schedules via AI tools', function (): void {
+    $course = App\Models\Course::factory()->create(['code' => 'BSCS', 'title' => 'Computer Science']);
+    $room = App\Models\Room::create(['name' => 'Lab 305', 'is_active' => true]);
+
+    $subjectTool = new App\Ai\Tools\ManageCurriculumSubjectTool();
+    $classTool = new App\Ai\Tools\ManageClassScheduleTool();
+
+    // Create subject
+    $subjectResult = json_decode((string) $subjectTool->handle(new Laravel\Ai\Tools\Request([
+        'action' => 'create',
+        'code' => 'CS305',
+        'title' => 'Operating Systems',
+        'units' => 3,
+        'academic_year' => 3,
+        'semester' => 1,
+        'course_code' => 'BSCS',
+    ])), true);
+
+    expect($subjectResult['success'])->toBeTrue()
+        ->and($subjectResult['subject']['code'])->toBe('CS305');
+
+    // Create class schedule
+    $classResult = json_decode((string) $classTool->handle(new Laravel\Ai\Tools\Request([
+        'action' => 'create_class',
+        'subject_code' => 'CS305',
+        'section' => 'BSCS-3A',
+        'room_id' => $room->id,
+        'day_of_week' => 'Thursday',
+        'start_time' => '14:00',
+        'end_time' => '16:00',
+    ])), true);
+
+    expect($classResult['success'])->toBeTrue()
+        ->and($classResult['class']['subject_code'])->toBe('CS305');
+
+    $classId = $classResult['class']['id'];
+
+    // Reschedule class
+    $rescheduleResult = json_decode((string) $classTool->handle(new Laravel\Ai\Tools\Request([
+        'action' => 'reschedule',
+        'class_id' => $classId,
+        'day_of_week' => 'Friday',
+        'start_time' => '15:00',
+        'end_time' => '17:00',
+    ])), true);
+
+    expect($rescheduleResult['success'])->toBeTrue()
+        ->and($rescheduleResult['schedule']['day_of_week'])->toBe('Friday');
+});
+
+it('adapts built-in MCP tools seamlessly into AI agent tools', function (): void {
+    $school = App\Models\School::factory()->create();
+    $admin = User::factory()->create(['role' => UserRole::Admin, 'school_id' => $school->id]);
+    $this->actingAs($admin);
+    app(App\Services\TenantContext::class)->setCurrentSchool($school);
+
+    $course = App\Models\Course::factory()->create([
+        'school_id' => $school->id,
+        'code' => 'BSIT',
+        'title' => 'Information Technology',
+    ]);
+    App\Models\Subject::factory()->create([
+        'course_id' => $course->id,
+        'code' => 'IT101',
+        'title' => 'IT Fundamentals',
+        'academic_year' => 1,
+        'semester' => 1,
+    ]);
+
+    $adapter = new App\Ai\Adapters\McpToolAdapter(new App\Mcp\Tools\GetCourseCurriculumTool());
+
+    expect($adapter->name())->toBe('GetCourseCurriculumTool')
+        ->and((string) $adapter->description())->toContain('curriculum');
+
+    $result = json_decode((string) $adapter->handle(new Laravel\Ai\Tools\Request([
+        'course_id' => $course->id,
+    ])), true);
+
+    expect($result['course']['code'])->toBe('BSIT')
+        ->and($result['subjects_count'])->toBeGreaterThanOrEqual(1);
+});

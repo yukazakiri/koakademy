@@ -579,18 +579,15 @@ it('validates transcript grade inputs against the active grading policy bounds',
 });
 
 it('accepts transferee decimal point grades in a percentage policy school and stores pass outcome with band quality points', function (): void {
-    $user = User::factory()->create(['role' => UserRole::Admin]);
-    $student = Student::factory()->create();
-    $subject = Subject::factory()->create();
+    $school = School::first() ?? School::factory()->create();
+    $user = User::factory()->create(['role' => UserRole::Admin, 'school_id' => $school->id]);
+    $student = Student::factory()->create(['school_id' => $school->id]);
+    $subject = Subject::factory()->create(['school_id' => $school->id]);
 
     $gradingSystem = app(GradingSystemService::class);
     $customPolicy = $gradingSystem->defaults();
     $customPolicy['bands'][0]['quality_points'] = 4.0;
-    if ($student->school) {
-        $gradingSystem->publishForSchool($student->school, $customPolicy, $user);
-    } else {
-        $gradingSystem->update($customPolicy);
-    }
+    $gradingSystem->publishForSchool($school, $customPolicy, $user);
 
     actingAs($user)
         ->patch(route('administrators.students.subjects.update-grade', ['student' => $student->id, 'subject' => $subject->id]), [

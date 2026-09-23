@@ -505,7 +505,7 @@ final class AdministratorStudentManagementController extends Controller
         // Construct checklist data
         $checklist = [];
         $gradingSystem = app(GradingSystemService::class);
-        $gradingConfig = $gradingSystem->getConfig();
+        $gradingConfig = $gradingSystem->getConfig($student->school);
         $groupedSubjects = $student->subjects()->orderBy('academic_year')->orderBy('semester')->get()->groupBy('academic_year');
         $subjectEnrolled = $student->subjectEnrolled
             ->filter(fn (SubjectEnrollment $enrollment): bool => $enrollment->classification !== SubjectEnrolledEnum::NON_CREDITED->value)
@@ -1684,7 +1684,7 @@ final class AdministratorStudentManagementController extends Controller
             $subjectEnrollment = null;
         }
 
-        $gradingConfig = $gradingSystem->getConfig();
+        $gradingConfig = $gradingSystem->getConfig($student->school);
 
         if (array_key_exists('grade', $validated) && $validated['grade'] !== null && $validated['grade'] !== '' && $validated['grade'] !== '-') {
             $gradeInput = (string) $validated['grade'];

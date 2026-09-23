@@ -167,9 +167,11 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
             $sheet = $spreadsheet->getSheetByName('Sheet1');
             $sheet->removeColumn('L', 10);
             $sheet->getPageSetup()->setPrintArea('A1:K25');
+            \PhpOffice\PhpSpreadsheet\Calculation\Calculation::getInstance($spreadsheet)->disableCalculationCache();
             $spreadsheet->getCalculationEngine()->clearCalculationCache();
             // D25 depends on B25/C25. Evaluate dependencies explicitly after
             // column removal so PhpSpreadsheet cannot reuse a stale formula cache.
+            $sheet->getCell('B9')->getCalculatedValue();
             $sheet->getCell('B25')->getCalculatedValue();
             $sheet->getCell('C25')->getCalculatedValue();
             $sheet->getCell('D25')->getCalculatedValue();

@@ -586,7 +586,11 @@ it('accepts transferee decimal point grades in a percentage policy school and st
     $gradingSystem = app(GradingSystemService::class);
     $customPolicy = $gradingSystem->defaults();
     $customPolicy['bands'][0]['quality_points'] = 4.0;
-    $gradingSystem->update($customPolicy);
+    if ($student->school) {
+        $gradingSystem->publishForSchool($student->school, $customPolicy, $user);
+    } else {
+        $gradingSystem->update($customPolicy);
+    }
 
     actingAs($user)
         ->patch(route('administrators.students.subjects.update-grade', ['student' => $student->id, 'subject' => $subject->id]), [

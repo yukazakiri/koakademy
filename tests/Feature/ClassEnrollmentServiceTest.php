@@ -30,3 +30,14 @@ it('does not restore or modify a historical soft-deleted enrollment', function (
         ->and($historical->fresh()->trashed())->toBeTrue()
         ->and($historical->fresh()->finals_grade)->toBe(88.0);
 });
+
+it('validates class enrollment grades against active policy bounds', function (): void {
+    $validator = validator(
+        ['prelim_grade' => 1000, 'finals_grade' => -5],
+        (new App\Http\Requests\ClassEnrollmentFormRequest())->rules()
+    );
+
+    expect($validator->fails())->toBeTrue()
+        ->and($validator->errors()->has('prelim_grade'))->toBeTrue()
+        ->and($validator->errors()->has('finals_grade'))->toBeTrue();
+});

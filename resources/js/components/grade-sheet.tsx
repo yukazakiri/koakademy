@@ -14,12 +14,14 @@ import { toast } from "sonner";
 type StudentRow = {
     id: number | string;
     name: string;
-    studentId: string;
+    studentId?: string;
+    student_id?: string;
     grades: {
         prelim?: number | null;
         midterm?: number | null;
         final?: number | null;
         average?: number | null;
+        symbol?: string | null;
         components?: Record<string, number | null>;
     };
 };
@@ -30,6 +32,7 @@ type GradeRow = {
     studentId: string;
     components: Record<string, string>;
     average: string;
+    symbol: string;
 };
 
 interface GradeSheetProps {
@@ -46,6 +49,12 @@ const fallbackComponents: GradingComponentPayload[] = [
 ];
 
 export function GradeSheet({ classId, students, autoAverageDefault = true, gradingPolicy }: GradeSheetProps) {
+    const isSymbolic = gradingPolicy?.input_type === "symbol";
+    const availableSymbols = useMemo(
+        () => gradingPolicy?.bands?.map((b) => b.symbol).filter((s): s is string => Boolean(s)) ?? [],
+        [gradingPolicy?.bands],
+    );
+
     const components = useMemo(
         () =>
             gradingPolicy?.components?.length
@@ -72,9 +81,10 @@ export function GradeSheet({ classId, students, autoAverageDefault = true, gradi
                 return {
                     enrollmentId: student.id,
                     name: student.name,
-                    studentId: student.studentId,
+                    studentId: student.studentId ?? student.student_id ?? "",
                     components: gradeComponents,
                     average: student.grades.average == null ? "" : String(student.grades.average),
+                    symbol: student.grades.symbol ?? "",
                 };
             }),
         [components, students],
@@ -109,6 +119,10 @@ export function GradeSheet({ classId, students, autoAverageDefault = true, gradi
         );
     };
 
+    const updateSymbol = (enrollmentId: number | string, symbol: string) => {
+        setGradeRows((previous) => previous.map((row) => (row.enrollmentId === enrollmentId ? { ...row, symbol } : row)));
+    };
+
     const saveGrades = () => {
         setIsSavingGrades(true);
         router.put(
@@ -116,7 +130,9 @@ export function GradeSheet({ classId, students, autoAverageDefault = true, gradi
             {
                 grades: gradeRows.map((row) => ({
                     enrollment_id: row.enrollmentId,
+                    symbol: row.symbol || null,
                     components: Object.fromEntries(Object.entries(row.components).map(([key, value]) => [key, value === "" ? null : Number(value)])),
+                    average: row.average === "" ? null : Number(row.average),
                 })),
             },
             {
@@ -146,12 +162,14 @@ export function GradeSheet({ classId, students, autoAverageDefault = true, gradi
                     <CardDescription>{label}. Weighted from the active school policy, not a fixed 30 / 30 / 40 formula.</CardDescription>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex items-center gap-2">
-                        <Label htmlFor="auto-average" className="text-sm">
-                            Auto-calculate
-                        </Label>
-                        <Switch id="auto-average" checked={autoAverageEnabled} onCheckedChange={setAutoAverageEnabled} />
-                    </div>
+                    {!isSymbolic && (
+                        <div className="flex items-center gap-2">
+                            <Label htmlFor="auto-average" className="text-sm">
+                                Auto-calculate
+                            </Label>
+                            <Switch id="auto-average" checked={autoAverageEnabled} onCheckedChange={setAutoAverageEnabled} />
+                        </div>
+                    )}
                     <Button variant="outline" onClick={submitGrades} className="gap-2">
                         <Send className="size-4" /> Submit
                     </Button>
@@ -162,27 +180,42 @@ export function GradeSheet({ classId, students, autoAverageDefault = true, gradi
             </CardHeader>
             <CardContent className="pt-6">
                 <div className="mb-4 flex flex-wrap gap-2">
-                    {components.map((component) => (
-                        <Badge key={component.key} variant="outline">
-                            {component.label} {component.weight}%{component.required ? "" : " · optional"}
-                        </Badge>
-                    ))}
-                    <Badge variant="secondary">
-                        Range {numericRange.min}–{numericRange.max}
-                    </Badge>
+                    {isSymbolic ? (
+                        <>
+                            <Badge variant="outline">Symbolic Grading</Badge>
+                            {availableSymbols.length > 0 && <Badge variant="secondary">Symbols: {availableSymbols.join(", ")}</Badge>}
+                        </>
+                    ) : (
+                        <>
+                            {components.map((component) => (
+                                <Badge key={component.key} variant="outline">
+                                    {component.label} {component.weight}%{component.required ? "" : " · optional"}
+                                </Badge>
+                            ))}
+                            <Badge variant="secondary">
+                                Range {numericRange.min}–{numericRange.max}
+                            </Badge>
+                        </>
+                    )}
                 </div>
                 <div className="overflow-x-auto rounded-lg border">
                     <table className="w-full min-w-[760px] text-sm">
                         <thead className="bg-muted/50">
                             <tr>
                                 <th className="px-4 py-3 text-left font-medium">Student</th>
-                                {components.map((component) => (
-                                    <th key={component.key} className="px-3 py-3 text-center font-medium">
-                                        {component.label}
-                                        <span className="text-muted-foreground ml-1 text-xs">{component.weight}%</span>
-                                    </th>
-                                ))}
-                                <th className="px-4 py-3 text-center font-medium">Calculated</th>
+                                {isSymbolic ? (
+                                    <th className="px-4 py-3 text-center font-medium">Grade Symbol</th>
+                                ) : (
+                                    <>
+                                        {components.map((component) => (
+                                            <th key={component.key} className="px-3 py-3 text-center font-medium">
+                                                {component.label}
+                                                <span className="text-muted-foreground ml-1 text-xs">{component.weight}%</span>
+                                            </th>
+                                        ))}
+                                        <th className="px-4 py-3 text-center font-medium">Calculated</th>
+                                    </>
+                                )}
                             </tr>
                         </thead>
                         <tbody>
@@ -192,22 +225,52 @@ export function GradeSheet({ classId, students, autoAverageDefault = true, gradi
                                         <div className="font-medium">{row.name}</div>
                                         <div className="text-muted-foreground text-xs">{row.studentId}</div>
                                     </td>
-                                    {components.map((component) => (
-                                        <td key={component.key} className="px-3 py-2">
-                                            <Input
-                                                type="number"
-                                                min={numericRange.min}
-                                                max={numericRange.max}
-                                                step="any"
-                                                value={row.components[component.key] ?? ""}
-                                                onChange={(event) => updateComponent(row.enrollmentId, component.key, event.target.value)}
-                                                aria-label={`${component.label} grade for ${row.name}`}
-                                            />
+                                    {isSymbolic ? (
+                                        <td className="px-4 py-2 text-center">
+                                            {availableSymbols.length > 0 ? (
+                                                <select
+                                                    className="bg-background border-input ring-offset-background placeholder:text-muted-foreground focus:ring-ring mx-auto flex h-9 w-full max-w-[180px] rounded-md border px-3 py-1 text-sm shadow-xs focus:ring-2 focus:outline-hidden"
+                                                    value={row.symbol}
+                                                    onChange={(event) => updateSymbol(row.enrollmentId, event.target.value)}
+                                                    aria-label={`Symbol grade for ${row.name}`}
+                                                >
+                                                    <option value="">Select symbol...</option>
+                                                    {availableSymbols.map((sym) => (
+                                                        <option key={sym} value={sym}>
+                                                            {sym}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            ) : (
+                                                <Input
+                                                    className="mx-auto max-w-[180px] text-center"
+                                                    value={row.symbol}
+                                                    onChange={(event) => updateSymbol(row.enrollmentId, event.target.value)}
+                                                    placeholder="Grade symbol"
+                                                    aria-label={`Symbol grade for ${row.name}`}
+                                                />
+                                            )}
                                         </td>
-                                    ))}
-                                    <td className="px-4 py-3 text-center">
-                                        <span className="font-mono font-semibold">{row.average || "—"}</span>
-                                    </td>
+                                    ) : (
+                                        <>
+                                            {components.map((component) => (
+                                                <td key={component.key} className="px-3 py-2">
+                                                    <Input
+                                                        type="number"
+                                                        min={numericRange.min}
+                                                        max={numericRange.max}
+                                                        step="any"
+                                                        value={row.components[component.key] ?? ""}
+                                                        onChange={(event) => updateComponent(row.enrollmentId, component.key, event.target.value)}
+                                                        aria-label={`${component.label} grade for ${row.name}`}
+                                                    />
+                                                </td>
+                                            ))}
+                                            <td className="px-4 py-3 text-center">
+                                                <span className="font-mono font-semibold">{row.average || "—"}</span>
+                                            </td>
+                                        </>
+                                    )}
                                 </tr>
                             ))}
                         </tbody>

@@ -276,7 +276,7 @@ export default function SystemManagementGradingPage({
                                     id="decimal-places"
                                     type="number"
                                     min="0"
-                                    max="6"
+                                    max="2"
                                     value={gradingForm.data.decimal_places}
                                     onChange={(event) => gradingForm.setData("decimal_places", Number(event.target.value))}
                                 />

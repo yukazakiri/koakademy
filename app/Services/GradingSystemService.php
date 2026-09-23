@@ -281,8 +281,8 @@ final class GradingSystemService
         $direction = in_array($config['direction'] ?? null, ['higher_is_better', 'lower_is_better'], true)
             ? $config['direction']
             : $defaults['direction'];
-        $numericMin = is_numeric($config['numeric_min'] ?? null) ? (float) $config['numeric_min'] : (float) $defaults['numeric_min'];
-        $numericMax = is_numeric($config['numeric_max'] ?? null) ? (float) $config['numeric_max'] : (float) $defaults['numeric_max'];
+        $numericMin = is_numeric($config['numeric_min'] ?? null) ? max(0.0, min(999.99, (float) $config['numeric_min'])) : (float) $defaults['numeric_min'];
+        $numericMax = is_numeric($config['numeric_max'] ?? null) ? max(0.0, min(999.99, (float) $config['numeric_max'])) : (float) $defaults['numeric_max'];
 
         $keywords = array_values(array_filter(array_map(
             fn ($k): string => mb_trim((string) $k),
@@ -303,8 +303,8 @@ final class GradingSystemService
                 'id' => mb_trim((string) ($band['id'] ?? "band_{$index}")),
                 'symbol' => ($symbol = mb_trim((string) ($band['symbol'] ?? ''))) === '' ? null : $symbol,
                 'label' => mb_trim((string) ($band['label'] ?? 'Band '.($index + 1))),
-                'min' => is_numeric($band['min'] ?? null) ? (float) $band['min'] : null,
-                'max' => is_numeric($band['max'] ?? null) ? (float) $band['max'] : null,
+                'min' => is_numeric($band['min'] ?? null) ? max(0.0, min(999.99, round((float) $band['min'], 2))) : null,
+                'max' => is_numeric($band['max'] ?? null) ? max(0.0, min(999.99, round((float) $band['max'], 2))) : null,
                 'outcome' => in_array($band['outcome'] ?? null, ['pass', 'fail', 'incomplete', 'withdrawn', 'non_credit'], true) ? $band['outcome'] : 'incomplete',
                 'quality_points' => is_numeric($band['quality_points'] ?? null) ? (float) $band['quality_points'] : null,
                 'color' => mb_trim((string) ($band['color'] ?? 'muted')),
@@ -353,7 +353,7 @@ final class GradingSystemService
             'numeric_min' => min($numericMin, $numericMax),
             'numeric_max' => max($numericMin, $numericMax),
             'direction' => $direction,
-            'decimal_places' => max(0, min(6, (int) ($config['decimal_places'] ?? $defaults['decimal_places']))),
+            'decimal_places' => max(0, min(2, (int) ($config['decimal_places'] ?? $defaults['decimal_places']))),
             'include_failed_in_gwa' => (bool) ($config['include_failed_in_gwa'] ?? true),
             'gwa_formula' => $gwaFormula,
             'gwa_subject_divisor_basis' => $gwaSubjectDivisorBasis,

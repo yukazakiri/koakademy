@@ -156,8 +156,12 @@ final class StudentClassesController extends Controller
                 $status = 'ongoing';
             }
 
+            $isEnrolled = $enrolledData !== null && $status !== 'pending';
+
             $curriculum[$year][$sem][] = [
                 'id' => $subject->id,
+                'enrollment_id' => $enrolledData['enrollment_id'] ?? null,
+                'is_enrolled' => $isEnrolled,
                 'code' => $subject->code,
                 'title' => $subject->title,
                 'units' => $subject->units,

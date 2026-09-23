@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests;
 
+use App\Services\GradingSystemService;
 use Illuminate\Foundation\Http\FormRequest;
 
 final class ClassEnrollmentFormRequest extends FormRequest
@@ -24,6 +25,9 @@ final class ClassEnrollmentFormRequest extends FormRequest
     public function rules(): array
     {
         $isUpdate = $this->route('id') !== null;
+        $policy = app(GradingSystemService::class)->getConfig();
+        $min = (float) ($policy['numeric_min'] ?? 0);
+        $max = (float) ($policy['numeric_max'] ?? 100);
 
         return [
             'class_id' => [
@@ -46,15 +50,17 @@ final class ClassEnrollmentFormRequest extends FormRequest
                 'nullable',
                 'string',
             ],
-            'prelim_grade' => ['nullable', 'numeric'],
-            'midterm_grade' => ['nullable', 'numeric'],
-            'finals_grade' => ['nullable', 'numeric'],
+            'prelim_grade' => ['nullable', 'numeric', 'min:'.$min, 'max:'.$max],
+            'midterm_grade' => ['nullable', 'numeric', 'min:'.$min, 'max:'.$max],
+            'finals_grade' => ['nullable', 'numeric', 'min:'.$min, 'max:'.$max],
             'total_average' => [
                 'nullable',
                 'numeric',
-                'min:0',
-                'max:100',
+                'min:'.$min,
+                'max:'.$max,
             ],
+            'grading_components' => ['nullable', 'array'],
+            'grading_components.*' => ['nullable', 'numeric', 'min:'.$min, 'max:'.$max],
             'is_grades_finalized' => [
                 'nullable',
                 'boolean',

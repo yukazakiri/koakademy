@@ -33,6 +33,8 @@ import { useReactToPrint } from "react-to-print";
 
 interface CurriculumSubject {
     id: number;
+    enrollment_id?: number | null;
+    is_enrolled?: boolean;
     code: string;
     title: string;
     units: number;
@@ -572,7 +574,10 @@ export default function StudentClasses({
 
             Object.entries(sems).forEach(([semStr, subs]) => {
                 const semester = parseInt(semStr);
-                const subjects = subs as CurriculumSubject[];
+                const subjects = (subs as CurriculumSubject[]).map((s) => ({
+                    ...s,
+                    is_enrolled: s.is_enrolled ?? (s.status !== "pending" && s.enrollment_id != null),
+                }));
                 semesterMap.set(`${year}-${semester}`, computeGwa(subjects, { config: gradingConfig }));
                 yearSubjects.push(...subjects);
             });

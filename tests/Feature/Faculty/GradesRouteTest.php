@@ -129,4 +129,73 @@ final class GradesRouteTest extends TestCase
 
         $response->assertRedirect();
     }
+
+    public function test_can_submit_grades_without_term()
+    {
+        $school = \App\Models\School::factory()->create();
+        $this->user->update(['school_id' => $school->id]);
+        $this->faculty->update(['school_id' => $school->id]);
+        $this->class->update(['school_id' => $school->id]);
+        session(['current_school_id' => $school->id]);
+
+        $gradingSystem = app(\App\Services\GradingSystemService::class);
+        $published = $gradingSystem->publishForSchool($school, $gradingSystem->defaults(), author: $this->user);
+
+        $student = Student::factory()->create(['school_id' => $school->id]);
+        $enrollment = ClassEnrollment::factory()->create([
+            'school_id' => $school->id,
+            'class_id' => $this->class->id,
+            'student_id' => $student->id,
+            'grading_policy_version_id' => $published['policy_version_id'],
+            'is_grades_finalized' => false,
+        ]);
+
+        $response = $this->actingAs($this->user)
+            ->post(route('faculty.classes.grades.submit', $this->class), []);
+
+        $response->assertSessionHasNoErrors()->assertRedirect();
+        $this->assertTrue((bool) $enrollment->fresh()->is_grades_finalized);
+    }
+
+    public function test_can_save_grades_under_symbolic_policy()
+    {
+        $school = \App\Models\School::factory()->create();
+        $this->user->update(['school_id' => $school->id]);
+        $this->faculty->update(['school_id' => $school->id]);
+        $this->class->update(['school_id' => $school->id]);
+        session(['current_school_id' => $school->id]);
+
+        $gradingSystem = app(\App\Services\GradingSystemService::class);
+        $gradingSystem->publishForSchool($school, [
+            ...$gradingSystem->defaults(),
+            'name' => 'Symbolic Scheme',
+            'input_type' => 'symbol',
+            'bands' => [
+                ['id' => 'b1', 'symbol' => 'PASS', 'label' => 'Pass', 'outcome' => 'pass', 'min' => null, 'max' => null, 'quality_points' => null, 'color' => 'success', 'sort_order' => 0],
+                ['id' => 'b2', 'symbol' => 'FAIL', 'label' => 'Fail', 'outcome' => 'fail', 'min' => null, 'max' => null, 'quality_points' => null, 'color' => 'destructive', 'sort_order' => 1],
+            ],
+            'components' => [],
+        ], author: $this->user);
+
+        $student = Student::factory()->create(['school_id' => $school->id]);
+        $enrollment = ClassEnrollment::factory()->create([
+            'school_id' => $school->id,
+            'class_id' => $this->class->id,
+            'student_id' => $student->id,
+        ]);
+
+        $response = $this->actingAs($this->user)
+            ->put(route('faculty.classes.grades.update', $this->class), [
+                'grades' => [
+                    [
+                        'enrollment_id' => $enrollment->id,
+                        'symbol' => 'PASS',
+                    ],
+                ],
+            ]);
+
+        $response->assertSessionHasNoErrors()->assertRedirect();
+        $this->assertEquals('PASS', $enrollment->fresh()->grade_symbol);
+        $this->assertEquals('pass', $enrollment->fresh()->grade_outcome);
+    }
 }

@@ -58,7 +58,8 @@ final class GradeEvaluationService
         }
 
         $numericGrade = round((float) $grade, (int) ($policy['decimal_places'] ?? 2));
-        if ($numericGrade === 0.0 || $numericGrade === 0) {
+        $zeroIsDropped = (bool) ($policy['zero_is_dropped'] ?? false);
+        if ($zeroIsDropped && ($numericGrade === 0.0 || $numericGrade === 0)) {
             return [
                 'numeric_grade' => 0.0,
                 'symbol' => 'DROPPED',
@@ -88,6 +89,7 @@ final class GradeEvaluationService
     {
         $normalized = [];
         $weightedTotal = 0.0;
+        $hasMissingRequired = false;
 
         foreach ($policy['components'] ?? [] as $component) {
             $key = (string) ($component['key'] ?? '');
@@ -100,12 +102,16 @@ final class GradeEvaluationService
             $normalized[$key] = $score;
 
             if ($score === null && ($component['required'] ?? true)) {
-                return [...$this->evaluate(null, $policy), 'components' => $normalized];
+                $hasMissingRequired = true;
             }
 
             if ($score !== null) {
                 $weightedTotal += $score * ((float) ($component['weight'] ?? 0) / 100);
             }
+        }
+
+        if ($hasMissingRequired) {
+            return [...$this->evaluate(null, $policy), 'components' => $normalized];
         }
 
         return [...$this->evaluate($weightedTotal, $policy), 'components' => $normalized];

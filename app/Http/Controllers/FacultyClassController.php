@@ -429,57 +429,79 @@ final class FacultyClassController extends Controller
         $this->assertFacultyOwnsClass($class);
 
         $policy = $gradingSystem->ensureConfig();
+        $isSymbolic = ($policy['input_type'] ?? 'numeric') === 'symbol';
         $componentKeys = collect($policy['components'])->pluck('key')->all();
 
-        if ($policy['input_type'] !== 'numeric') {
-            throw ValidationException::withMessages([
-                'grades' => 'Symbolic grading policies require a final symbol workflow. Assessment components must use a numeric policy.',
-            ]);
-        }
-
-        $validated = $request->validate([
+        $rules = [
             'grades' => ['required', 'array'],
             'grades.*.enrollment_id' => ['required', 'exists:class_enrollments,id'],
+            'grades.*.symbol' => ['nullable', 'string', 'max:32'],
             'grades.*.components' => ['nullable', 'array'],
-            'grades.*.components.*' => ['nullable', 'numeric', 'min:'.((float) $policy['numeric_min']), 'max:'.((float) $policy['numeric_max'])],
             'grades.*.prelim' => ['nullable', 'numeric'],
             'grades.*.midterm' => ['nullable', 'numeric'],
             'grades.*.final' => ['nullable', 'numeric'],
             'grades.*.average' => ['nullable', 'numeric'],
-        ]);
+        ];
+
+        if (! $isSymbolic) {
+            $rules['grades.*.components.*'] = ['nullable', 'numeric', 'min:'.((float) $policy['numeric_min']), 'max:'.((float) $policy['numeric_max'])];
+        }
+
+        $validated = $request->validate($rules);
 
         foreach ($validated['grades'] as $gradeData) {
             $enrollment = ClassEnrollment::find($gradeData['enrollment_id']);
             if ($enrollment && $enrollment->class_id === $class->id) {
-                $scores = is_array($gradeData['components'] ?? null)
-                    ? collect($gradeData['components'])->only($componentKeys)->all()
-                    : collect($componentKeys)->mapWithKeys(function (string $key) use ($gradeData): array {
-                        $value = $gradeData[$key] ?? null;
-                        if ($value === null && $key === 'final') {
-                            $value = $gradeData['finals'] ?? null;
-                        } elseif ($value === null && $key === 'finals') {
-                            $value = $gradeData['final'] ?? null;
-                        }
+                if ($isSymbolic) {
+                    $symbol = $gradeData['symbol'] ?? null;
+                    if ($symbol === null && isset($gradeData['components']['symbol'])) {
+                        $symbol = (string) $gradeData['components']['symbol'];
+                    }
 
-                        return [$key => $value];
-                    })->all();
+                    $evaluation = $gradeEvaluation->evaluate($symbol, $policy);
 
-                $evaluation = $gradeEvaluation->calculate($scores, $policy);
-                $finalAverage = array_key_exists('average', $gradeData) && is_numeric($gradeData['average'])
-                    ? (float) $gradeData['average']
-                    : $evaluation['numeric_grade'];
+                    $enrollment->update([
+                        'prelim_grade' => null,
+                        'midterm_grade' => null,
+                        'finals_grade' => null,
+                        'total_average' => null,
+                        'grading_components' => null,
+                        'grade_symbol' => $evaluation['symbol'] ?? ($symbol ? mb_strtoupper(mb_trim($symbol)) : null),
+                        'grade_outcome' => $evaluation['outcome'],
+                        'grade_quality_points' => $evaluation['quality_points'],
+                        'grading_policy_version_id' => $policy['policy_version_id'] ?? null,
+                    ]);
+                } else {
+                    $scores = is_array($gradeData['components'] ?? null)
+                        ? collect($gradeData['components'])->only($componentKeys)->all()
+                        : collect($componentKeys)->mapWithKeys(function (string $key) use ($gradeData): array {
+                            $value = $gradeData[$key] ?? null;
+                            if ($value === null && $key === 'final') {
+                                $value = $gradeData['finals'] ?? null;
+                            } elseif ($value === null && $key === 'finals') {
+                                $value = $gradeData['final'] ?? null;
+                            }
 
-                $enrollment->update([
-                    'prelim_grade' => $scores['prelim'] ?? $gradeData['prelim'] ?? null,
-                    'midterm_grade' => $scores['midterm'] ?? $gradeData['midterm'] ?? null,
-                    'finals_grade' => $scores['final'] ?? $scores['finals'] ?? $gradeData['final'] ?? null,
-                    'total_average' => $finalAverage,
-                    'grading_components' => $evaluation['components'],
-                    'grade_symbol' => $evaluation['symbol'],
-                    'grade_outcome' => $evaluation['outcome'],
-                    'grade_quality_points' => $evaluation['quality_points'],
-                    'grading_policy_version_id' => $policy['policy_version_id'] ?? null,
-                ]);
+                            return [$key => $value];
+                        })->all();
+
+                    $evaluation = $gradeEvaluation->calculate($scores, $policy);
+                    $finalAverage = array_key_exists('average', $gradeData) && is_numeric($gradeData['average'])
+                        ? (float) $gradeData['average']
+                        : $evaluation['numeric_grade'];
+
+                    $enrollment->update([
+                        'prelim_grade' => $scores['prelim'] ?? $gradeData['prelim'] ?? null,
+                        'midterm_grade' => $scores['midterm'] ?? $gradeData['midterm'] ?? null,
+                        'finals_grade' => $scores['final'] ?? $scores['finals'] ?? $gradeData['final'] ?? null,
+                        'total_average' => $finalAverage,
+                        'grading_components' => $evaluation['components'],
+                        'grade_symbol' => $evaluation['symbol'],
+                        'grade_outcome' => $evaluation['outcome'],
+                        'grade_quality_points' => $evaluation['quality_points'],
+                        'grading_policy_version_id' => $policy['policy_version_id'] ?? null,
+                    ]);
+                }
             }
         }
 
@@ -492,20 +514,18 @@ final class FacultyClassController extends Controller
     {
         $this->assertFacultyOwnsClass($class);
 
-        $class->class_enrollments()->whereNotNull('grading_policy_version_id')->update(['is_grades_finalized' => true]);
-
         $validated = $request->validate([
-            'term' => ['required', 'in:prelim,midterm,finals'],
+            'term' => ['nullable', 'in:prelim,midterm,finals,final'],
         ]);
 
-        $term = $validated['term'];
+        $term = $validated['term'] ?? null;
 
-        // Logic to mark grades as submitted could go here.
-        // For now, we'll just redirect with success message as placeholder.
-        // You might want to update a column like is_prelim_submitted, etc.
+        $class->class_enrollments()->whereNotNull('grading_policy_version_id')->update(['is_grades_finalized' => true]);
+
+        $message = $term ? ucfirst((string) $term).' grades submitted successfully.' : 'Grades submitted successfully.';
 
         return redirect()->back()->with('flash', [
-            'success' => ucfirst((string) $term).' grades submitted successfully.',
+            'success' => $message,
         ]);
     }
 

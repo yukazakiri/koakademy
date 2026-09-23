@@ -56,6 +56,7 @@ use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -1519,7 +1520,16 @@ final class AdministratorStudentManagementController extends Controller
         $validated = $request->validate([
             'enrollment_record_id' => ['nullable', 'integer'],
             'is_new_record' => ['nullable', 'boolean'],
-            'grade' => ['nullable'],
+            'grade' => [
+                'nullable',
+                function (string $attribute, mixed $value, Closure $fail): void {
+                    if (! is_scalar($value)) {
+                        $fail('The grade must be a valid number or symbol.');
+                    } elseif (mb_strlen((string) $value) > 32) {
+                        $fail('The grade must not exceed 32 characters.');
+                    }
+                },
+            ],
             'remarks' => ['nullable', 'string'],
             'classification' => ['required', 'string', 'in:'.implode(',', array_column(SubjectEnrolledEnum::cases(), 'value'))],
             'school_name' => ['nullable', 'string', 'required_if:classification,credited,non_credited'],
@@ -1540,7 +1550,13 @@ final class AdministratorStudentManagementController extends Controller
         if ($enrollmentRecordId && ! $isNewRecord) {
             $subjectEnrollment = SubjectEnrollment::where('student_id', $student->id)
                 ->where('id', $enrollmentRecordId)
+                ->where(function ($query) use ($subject): void {
+                    $query->where('subject_id', $subject->id)
+                        ->orWhere('classification', SubjectEnrolledEnum::NON_CREDITED->value);
+                })
                 ->first();
+
+            abort_if(! $subjectEnrollment, 404, 'Subject enrollment not found or does not belong to this subject.');
         } elseif (! $isNewRecord) {
             // Find latest existing enrollment
             $subjectEnrollment = SubjectEnrollment::where('student_id', $student->id)
@@ -1552,11 +1568,51 @@ final class AdministratorStudentManagementController extends Controller
         }
 
         $gradingConfig = $gradingSystem->getConfig();
-        $evaluation = app(GradeEvaluationService::class)->evaluate($validated['grade'], $gradingConfig);
+
+        if (array_key_exists('grade', $validated) && $validated['grade'] !== null && $validated['grade'] !== '' && $validated['grade'] !== '-') {
+            $gradeInput = (string) $validated['grade'];
+            $normalizedSymbol = mb_strtoupper(mb_trim($gradeInput));
+            $recognizedSpecial = in_array($normalizedSymbol, ['DROP', 'DROPPED', 'DRP', 'W', 'WITHDRAWN', 'INC', 'INCOMPLETE'], true);
+
+            if (! $recognizedSpecial) {
+                if (($gradingConfig['input_type'] ?? 'numeric') === 'numeric') {
+                    if (! is_numeric($gradeInput)) {
+                        throw ValidationException::withMessages([
+                            'grade' => "Grade must be a number between {$gradingConfig['numeric_min']} and {$gradingConfig['numeric_max']} or a recognized status.",
+                        ]);
+                    }
+                    $numericVal = (float) $gradeInput;
+                    if ($numericVal < (float) $gradingConfig['numeric_min'] || $numericVal > (float) $gradingConfig['numeric_max']) {
+                        throw ValidationException::withMessages([
+                            'grade' => "Grade must be between {$gradingConfig['numeric_min']} and {$gradingConfig['numeric_max']}.",
+                        ]);
+                    }
+                } else {
+                    $validSymbols = collect($gradingConfig['bands'] ?? [])
+                        ->pluck('symbol')
+                        ->filter()
+                        ->map(fn ($s): string => mb_strtoupper(mb_trim((string) $s)))
+                        ->all();
+
+                    if (! in_array($normalizedSymbol, $validSymbols, true)) {
+                        throw ValidationException::withMessages([
+                            'grade' => 'Grade must be one of the configured symbols: '.implode(', ', $validSymbols).'.',
+                        ]);
+                    }
+                }
+            }
+        }
+
+        $rawGrade = $validated['grade'] ?? null;
+        if ($rawGrade === '' || $rawGrade === '-') {
+            $rawGrade = null;
+        }
+
+        $evaluation = app(GradeEvaluationService::class)->evaluate($rawGrade, $gradingConfig);
 
         $data = [
-            'grade' => $evaluation['numeric_grade'] ?? (is_numeric($validated['grade'] ?? null) ? (float) $validated['grade'] : null),
-            'grade_symbol' => $evaluation['symbol'] ?? (is_string($validated['grade'] ?? null) ? $validated['grade'] : null),
+            'grade' => $evaluation['numeric_grade'],
+            'grade_symbol' => $evaluation['symbol'],
             'grade_outcome' => $evaluation['outcome'],
             'grade_quality_points' => $evaluation['quality_points'],
             'grading_policy_version_id' => $gradingConfig['policy_version_id'] ?? null,

@@ -100,7 +100,7 @@ it('publishes and persists configurable GWA calculation settings', function (): 
         'numeric_min' => 1,
         'numeric_max' => 5,
         'direction' => 'lower_is_better',
-        'decimal_places' => 4,
+        'decimal_places' => 2,
         'include_failed_in_gwa' => true,
         'gwa_formula' => 'weighted_subjects',
         'gwa_subject_divisor_basis' => 'enrolled_subjects',
@@ -238,4 +238,26 @@ it('applies retake_strategy and zero_is_dropped to checklist display', function 
         ->assertInertia(fn (Inertia\Testing\AssertableInertia $page) => $page
             ->where('student.checklist.0.semesters.0.subjects.0.status', 'Dropped')
         );
+});
+
+it('rejects grading policies with numeric bounds or decimals exceeding column limits', function (): void {
+    [$user, $school] = gradingPolicyAdministrator();
+
+    actingAs($user)
+        ->put(route('administrators.system-management.grading.update'), [
+            'name' => 'Overflow Policy',
+            'input_type' => 'numeric',
+            'numeric_min' => 0,
+            'numeric_max' => 1500,
+            'direction' => 'higher_is_better',
+            'decimal_places' => 4,
+            'include_failed_in_gwa' => true,
+            'bands' => [
+                ['id' => 'b1', 'label' => 'Pass', 'symbol' => null, 'min' => 75, 'max' => 100, 'outcome' => 'pass', 'sort_order' => 0],
+            ],
+            'components' => [
+                ['id' => 'c1', 'key' => 'final', 'label' => 'Final', 'weight' => 100, 'required' => true, 'sort_order' => 0],
+            ],
+        ])
+        ->assertSessionHasErrors(['numeric_max', 'decimal_places']);
 });

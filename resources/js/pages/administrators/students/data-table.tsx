@@ -265,8 +265,11 @@ export function DataTable<TData extends Student, TValue>({
             const currentPagination = { pageIndex, pageSize };
             const nextPagination = typeof updater === "function" ? updater(currentPagination) : updater;
 
-            onPageIndexChange(nextPagination.pageIndex);
-            onPageSizeChange(nextPagination.pageSize);
+            if (nextPagination.pageSize !== pageSize) {
+                onPageSizeChange(nextPagination.pageSize);
+            } else if (nextPagination.pageIndex !== pageIndex) {
+                onPageIndexChange(nextPagination.pageIndex);
+            }
         },
     });
 
@@ -296,8 +299,8 @@ export function DataTable<TData extends Student, TValue>({
         }
 
         setIsSubmitting(true);
-        router.post(
-            route("administrators.students.bulk-status"),
+        router.patch(
+            route("administrators.students.bulk-update-status"),
             { student_ids: selectedIds, status },
             {
                 preserveScroll: true,
@@ -315,19 +318,19 @@ export function DataTable<TData extends Student, TValue>({
         );
     };
 
-    const handleBulkClearanceSubmit = (clearanceStatus: "cleared" | "not_cleared") => {
+    const handleBulkClearanceSubmit = (isCleared: boolean) => {
         if (!hasSelection || isSubmitting) {
             return;
         }
 
         setIsSubmitting(true);
         router.post(
-            route("administrators.students.bulk-clearance"),
-            { student_ids: selectedIds, clearance_status: clearanceStatus },
+            route("administrators.students.bulk-manage-clearance"),
+            { student_ids: selectedIds, is_cleared: isCleared },
             {
                 preserveScroll: true,
                 onSuccess: () => {
-                    const message = clearanceStatus === "cleared" ? "marked as cleared" : "marked as pending";
+                    const message = isCleared ? "marked as cleared" : "marked as pending";
                     toast.success(`${selectedCount} student(s) ${message}.`);
                     resetSelection();
                 },
@@ -347,27 +350,24 @@ export function DataTable<TData extends Student, TValue>({
         }
 
         setIsSubmitting(true);
-        router.post(
-            route("administrators.students.bulk-destroy"),
-            { student_ids: selectedIds },
-            {
-                preserveScroll: true,
-                onSuccess: () => {
-                    toast.success(`Moved ${selectedCount} student(s) to trash.`);
-                    setDeleteDialogOpen(false);
-                    resetSelection();
-                },
-                onError: () => {
-                    toast.error("Failed to delete students.");
-                },
-                onFinish: () => {
-                    setIsSubmitting(false);
-                },
+        router.delete(route("administrators.students.bulk-destroy"), {
+            data: { student_ids: selectedIds },
+            preserveScroll: true,
+            onSuccess: () => {
+                toast.success(`Moved ${selectedCount} student(s) to trash.`);
+                setDeleteDialogOpen(false);
+                resetSelection();
             },
-        );
+            onError: () => {
+                toast.error("Failed to delete students.");
+            },
+            onFinish: () => {
+                setIsSubmitting(false);
+            },
+        });
     };
 
-    const expectedForceConfirm = "permanently delete";
+    const expectedForceConfirm = `PERMANENTLY DELETE ${selectedCount} STUDENT${selectedCount === 1 ? "" : "S"}`;
 
     const handleBulkForceDelete = () => {
         if (!hasSelection || forceDeleteConfirmText !== expectedForceConfirm || isSubmitting) {
@@ -376,26 +376,23 @@ export function DataTable<TData extends Student, TValue>({
         }
 
         setIsSubmitting(true);
-        router.post(
-            route("administrators.students.bulk-force-destroy"),
-            { student_ids: selectedIds, confirm_phrase: forceDeleteConfirmText },
-            {
-                preserveScroll: true,
-                onSuccess: () => {
-                    toast.success(`Permanently deleted ${selectedCount} student(s).`);
-                    setForceDeleteDialogOpen(false);
-                    setForceDeleteConfirmText("");
-                    resetSelection();
-                },
-                onError: (errors) => {
-                    const firstError = Object.values(errors)[0];
-                    toast.error(typeof firstError === "string" ? firstError : "Failed to permanently delete students.");
-                },
-                onFinish: () => {
-                    setIsSubmitting(false);
-                },
+        router.delete(route("administrators.students.bulk-force-destroy"), {
+            data: { student_ids: selectedIds, confirm_text: forceDeleteConfirmText },
+            preserveScroll: true,
+            onSuccess: () => {
+                toast.success(`Permanently deleted ${selectedCount} student(s).`);
+                setForceDeleteDialogOpen(false);
+                setForceDeleteConfirmText("");
+                resetSelection();
             },
-        );
+            onError: (errors) => {
+                const firstError = Object.values(errors)[0];
+                toast.error(typeof firstError === "string" ? firstError : "Failed to permanently delete students.");
+            },
+            onFinish: () => {
+                setIsSubmitting(false);
+            },
+        });
     };
 
     const handleBulkEmailSubmit = () => {
@@ -506,11 +503,11 @@ export function DataTable<TData extends Student, TValue>({
                             <DropdownMenuContent align="end" className="w-48">
                                 <DropdownMenuLabel className="text-xs">Update Clearance</DropdownMenuLabel>
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={() => handleBulkClearanceSubmit("cleared")}>
+                                <DropdownMenuItem onClick={() => handleBulkClearanceSubmit(true)}>
                                     <CheckCircle className="mr-2 size-3.5 text-emerald-600 dark:text-emerald-400" />
                                     Mark as Cleared
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleBulkClearanceSubmit("not_cleared")}>
+                                <DropdownMenuItem onClick={() => handleBulkClearanceSubmit(false)}>
                                     <HelpCircle className="mr-2 size-3.5 text-amber-600 dark:text-amber-400" />
                                     Mark as Pending
                                 </DropdownMenuItem>
@@ -580,7 +577,6 @@ export function DataTable<TData extends Student, TValue>({
                             onValueChange={(value) => {
                                 if (value) {
                                     onPageSizeChange(Number(value));
-                                    onPageIndexChange(0);
                                 }
                             }}
                         >

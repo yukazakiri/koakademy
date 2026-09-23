@@ -271,7 +271,21 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
         return params;
     };
 
+    const cancelPendingSearch = () => {
+        if (debouncedSearchRef.current) {
+            clearTimeout(debouncedSearchRef.current);
+            debouncedSearchRef.current = null;
+        }
+    };
+
+    useEffect(() => {
+        return () => {
+            cancelPendingSearch();
+        };
+    }, []);
+
     const navigateWithParams = (params: Record<string, string | number | null>) => {
+        cancelPendingSearch();
         router.get(route("administrators.students.index"), params, {
             preserveState: true,
             preserveScroll: true,
@@ -281,19 +295,20 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
 
     const handleSearchChange = (nextSearch: string) => {
         setSearch(nextSearch);
-        if (debouncedSearchRef.current) {
-            clearTimeout(debouncedSearchRef.current);
-        }
+        cancelPendingSearch();
         debouncedSearchRef.current = setTimeout(() => {
-            navigateWithParams(buildQueryParams({ search: nextSearch, page: 1 }));
+            debouncedSearchRef.current = null;
+            router.get(route("administrators.students.index"), buildQueryParams({ search: nextSearch, page: 1 }), {
+                preserveState: true,
+                preserveScroll: true,
+                replace: true,
+            });
         }, 350);
     };
 
     const handleClearSearch = () => {
         setSearch("");
-        if (debouncedSearchRef.current) {
-            clearTimeout(debouncedSearchRef.current);
-        }
+        cancelPendingSearch();
         navigateWithParams(buildQueryParams({ search: "", page: 1 }));
     };
 

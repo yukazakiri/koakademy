@@ -146,9 +146,14 @@ final class AdministratorStudentManagementController extends Controller
 
         if (is_string($search) && mb_trim($search) !== '') {
             $searchTerm = mb_trim($search);
-            $studentsQuery->where(function (Builder $query) use ($searchTerm, $currentPeriod): void {
+            $textCast = match ($studentsQuery->getConnection()->getDriverName()) {
+                'mysql', 'mariadb' => 'CHAR',
+                default => 'TEXT',
+            };
+
+            $studentsQuery->where(function (Builder $query) use ($searchTerm, $currentPeriod, $textCast): void {
                 $like = "%{$searchTerm}%";
-                $query->where('students.student_id', 'like', $like)
+                $query->whereRaw("LOWER(CAST(students.student_id AS {$textCast})) LIKE LOWER(?)", [$like])
                     ->orWhere('students.first_name', 'like', $like)
                     ->orWhere('students.middle_name', 'like', $like)
                     ->orWhere('students.last_name', 'like', $like)

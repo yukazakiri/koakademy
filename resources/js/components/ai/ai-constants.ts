@@ -1,12 +1,4 @@
-import {
-    BarChart3,
-    Calculator,
-    GraduationCap,
-    HelpCircle,
-    ReceiptText,
-    ShieldCheck,
-    Sparkles,
-} from "lucide-react";
+import { BarChart3, Calculator, Calendar, GraduationCap, HelpCircle, ReceiptText, ShieldCheck, Sparkles } from "lucide-react";
 import * as React from "react";
 import type { AgentRoleKey } from "./use-ai-chat";
 
@@ -64,6 +56,13 @@ export const DEFAULT_PROMPT_SUGGESTIONS: PromptSuggestion[] = [
         prompt: "Generate an executive breakdown and a ring chart visualizing our current student population by gender and department.",
         agent: "admin_executive",
         icon: BarChart3,
+    },
+    {
+        title: "Room & Class Timetable",
+        description: "Check schedule and room availability for classes or faculty",
+        prompt: "Check the schedule and room availability for classrooms this week, and list any active bookings.",
+        agent: "admin_executive",
+        icon: Calendar,
     },
     {
         title: "Graduation Clearance",

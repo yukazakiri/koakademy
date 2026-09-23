@@ -433,12 +433,6 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                     <PromptInputTextarea
                         placeholder="Ask me anything..."
                         className="text-foreground placeholder:text-muted-foreground/80 max-h-40 min-h-[66px] px-4 pt-3 text-sm"
-                        onKeyDown={(event) => {
-                            if (event.key === "Enter" && !event.shiftKey) {
-                                event.preventDefault();
-                                handleSend();
-                            }
-                        }}
                     />
 
                     <PromptInputActions className="flex items-center justify-between gap-2 px-2.5 pt-1 pb-2.5">

@@ -72,6 +72,24 @@ Core Capabilities:
    - Delegate ledger adjustments, Statement of Account breakdowns, and scholarship discounts to the bursar_finance specialist.
    - Delegate institutional policy handbook checks to the campus_support specialist.
 
+6. Timetable Schedules, Room Availability & Flexible Queries:
+   - When asked about the schedule or availability of specific rooms, students, teachers/faculty members, or classes/subjects, use QueryTimetableScheduleTool.
+   - It flexibly resolves rooms, students, instructors, and classes, reports booked time slots, detects timetable conflicts, and checks room availability for specific days or time windows.
+
+7. Institutional CRUD Operations & Record Management:
+   - When the administrator instructs you to create, update, reschedule, assign, archive, delete, or inspect core models:
+     a) For classes, schedules, and instructor/room assignments, use ManageClassScheduleTool.
+     b) For student profiles, program assignments, or status updates, use ManageStudentTool.
+     c) For curriculum subjects, credit units, and prerequisites, use ManageCurriculumSubjectTool.
+     d) For classrooms, buildings, and facilities, use ManageRoomTool.
+   - All mutations alter official institutional data and automatically present a reviewable confirmation card to the administrator before execution.
+
+8. Comprehensive Student & Curriculum Profiles:
+   - Use GetStudentProfileTool for comprehensive student background, contact info, and clearance standing.
+   - Use GetCourseCurriculumTool for degree program curricula broken down by year level and semester.
+   - Use GetStatementOfAccountTool for tuition breakdowns, assessed fees, and balances.
+   - Use GetEnrollmentStatusTool and ListPendingEnrollmentsTool for enrollment pipeline progress.
+
 Guidelines:
 - Maintain an authoritative, executive, data-driven, and courteous tone.
 - Always offer actionable recommendations based on the analytics.
@@ -94,6 +112,18 @@ INSTRUCTIONS;
             new LookupClassSchedulesTool,
             new LookupRoomAvailabilityTool,
             new SearchStudentsTool,
+            new \App\Ai\Tools\QueryTimetableScheduleTool,
+            new \App\Ai\Tools\ManageStudentTool,
+            new \App\Ai\Tools\ManageCurriculumSubjectTool,
+            new \App\Ai\Tools\ManageClassScheduleTool,
+            new \App\Ai\Tools\ManageRoomTool,
+            new \App\Ai\Adapters\McpToolAdapter(new \App\Mcp\Tools\GetStudentProfileTool),
+            new \App\Ai\Adapters\McpToolAdapter(new \App\Mcp\Tools\GetCourseCurriculumTool),
+            new \App\Ai\Adapters\McpToolAdapter(new \App\Mcp\Tools\GetStatementOfAccountTool),
+            new \App\Ai\Adapters\McpToolAdapter(new \App\Mcp\Tools\GetEnrollmentStatusTool),
+            new \App\Ai\Adapters\McpToolAdapter(new \App\Mcp\Tools\ListPendingEnrollmentsTool),
+            new \App\Ai\Adapters\McpToolAdapter(new \App\Mcp\Tools\GetAvailableSubjectsTool),
+            new \App\Ai\Adapters\McpToolAdapter(new \App\Mcp\Tools\SearchFacultyTool),
             new RegistrarAuditAgent,
             new BursarFinanceAgent,
             new CampusSupportAgent,

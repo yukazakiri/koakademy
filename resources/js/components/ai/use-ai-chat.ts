@@ -3,13 +3,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import type { PendingToolApproval } from "./approval-card";
 
-export type AgentRoleKey =
-    | "admin_executive"
-    | "student_advisor"
-    | "faculty_copilot"
-    | "registrar_auditor"
-    | "bursar_finance"
-    | "campus_support";
+export type AgentRoleKey = "admin_executive" | "student_advisor" | "faculty_copilot" | "registrar_auditor" | "bursar_finance" | "campus_support";
 
 export interface ChatAttachment {
     name: string;
@@ -77,6 +71,7 @@ export function useAiChat({
     const [lastPrompt, setLastPrompt] = React.useState<string>("");
 
     const abortControllerRef = React.useRef<AbortController | null>(null);
+    const isSendingRef = React.useRef(false);
 
     const targetUrl = endpoint || chat.url();
 
@@ -229,8 +224,8 @@ export function useAiChat({
                                       sources: citations.length > 0 ? [...citations] : undefined,
                                       pendingApprovals: pendingApprovals.length > 0 ? [...pendingApprovals] : undefined,
                                   }
-                                : m
-                        )
+                                : m,
+                        ),
                     );
                 }
             }
@@ -248,12 +243,13 @@ export function useAiChat({
             onFinish?.(finalMessage);
             return finalMessage;
         },
-        [onFinish, onConversationCreated]
+        [onFinish, onConversationCreated],
     );
 
     const sendPrompt = React.useCallback(
         async (content: string, files?: File[], options?: PromptOptions) => {
-            if ((!content.trim() && (!files || files.length === 0)) || isLoading) return;
+            if ((!content.trim() && (!files || files.length === 0)) || isLoading || isSendingRef.current) return;
+            isSendingRef.current = true;
 
             setLastError(null);
             setLastPrompt(content);
@@ -363,38 +359,43 @@ export function useAiChat({
                 }
 
                 await readStream(response, assistantId, content);
-            } catch (err: any) {
-                if (err.name === "AbortError") return;
+            } catch (err: unknown) {
+                if (err instanceof Error && err.name === "AbortError") return;
 
-                toast.error(err.message || "Failed to communicate with AI agent.");
-                onError?.(err);
+                const message = err instanceof Error ? err.message : "Failed to communicate with AI agent.";
+                toast.error(message);
+                onError?.(err instanceof Error ? err : new Error(message));
 
                 setMessages((prev) =>
                     prev.map((m) =>
                         m.id === assistantId
                             ? {
                                   ...m,
-                                  content: m.content || `⚠️ Generation failed: ${err.message || "Please check endpoint credentials or connection."}`,
+                                  content: m.content || `⚠️ Generation failed: ${message}`,
                               }
-                            : m
-                    )
+                            : m,
+                    ),
                 );
             } finally {
                 setIsLoading(false);
+                isSendingRef.current = false;
                 abortControllerRef.current = null;
             }
         },
-        [agent, targetUrl, conversationId, isLoading, appendMessage, readStream, onError]
+        [agent, targetUrl, conversationId, isLoading, appendMessage, readStream, onError],
     );
 
     const submitDecision = React.useCallback(
         async (callId: string, action: "approve" | "reject", result?: string) => {
+            if (isLoading || isSendingRef.current) return;
+            isSendingRef.current = true;
             setIsLoading(true);
 
             // Find assistant message holding the pending approval
-            const targetAssistantMessage = messages.slice().reverse().find((m) =>
-                m.role === "assistant" && m.pendingApprovals?.some((a) => a.id === callId)
-            );
+            const targetAssistantMessage = messages
+                .slice()
+                .reverse()
+                .find((m) => m.role === "assistant" && m.pendingApprovals?.some((a) => a.id === callId));
             const targetApproval = targetAssistantMessage?.pendingApprovals?.find((a) => a.id === callId);
 
             // Optimistically update message approvals
@@ -402,7 +403,7 @@ export function useAiChat({
                 prev.map((m) => ({
                     ...m,
                     pendingApprovals: m.pendingApprovals?.filter((a) => a.id !== callId),
-                }))
+                })),
             );
 
             const controller = new AbortController();
@@ -422,8 +423,7 @@ export function useAiChat({
                         "Content-Type": "application/json",
                         Accept: "text/event-stream, text/plain",
                         "X-Requested-With": "XMLHttpRequest",
-                        "X-CSRF-TOKEN":
-                            (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || "",
+                        "X-CSRF-TOKEN": (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || "",
                     },
                     body: JSON.stringify({
                         agent,
@@ -454,7 +454,7 @@ export function useAiChat({
                     ]);
                     await readStream(response, continuationId);
                 }
-            } catch (err: any) {
+            } catch (err: unknown) {
                 // Restore approval on failure
                 if (targetAssistantMessage && targetApproval) {
                     setMessages((prev) =>
@@ -466,21 +466,24 @@ export function useAiChat({
                                           ? [...m.pendingApprovals.filter((a) => a.id !== callId), targetApproval]
                                           : [targetApproval],
                                   }
-                                : m
-                        )
+                                : m,
+                        ),
                     );
                 }
-                if (err.name === "AbortError") return;
-                toast.error(err.message || "Failed to submit approval decision.");
+                if (err instanceof Error && err.name === "AbortError") return;
+                const message = err instanceof Error ? err.message : "Failed to submit approval decision.";
+                toast.error(message);
             } finally {
                 setIsLoading(false);
+                isSendingRef.current = false;
                 abortControllerRef.current = null;
             }
         },
-        [agent, targetUrl, conversationId, messages, readStream]
+        [agent, targetUrl, conversationId, messages, readStream],
     );
 
     const stop = React.useCallback(() => {
+        isSendingRef.current = false;
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
             abortControllerRef.current = null;
@@ -489,6 +492,7 @@ export function useAiChat({
     }, []);
 
     const clearChat = React.useCallback(() => {
+        isSendingRef.current = false;
         setMessages([]);
         setConversationId(undefined);
         setLastError(null);

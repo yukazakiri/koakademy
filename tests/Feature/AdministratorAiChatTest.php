@@ -291,6 +291,61 @@ it('streams chat response and emits conversation event with id and title', funct
         ->and($content)->toContain('data: [DONE]');
 });
 
+it('paginates conversations beyond the first page', function (): void {
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+
+    // Create 25 conversations
+    for ($i = 1; $i <= 25; $i++) {
+        Conversation::query()->create([
+            'id' => (string) str()->uuid(),
+            'participant_id' => $admin->id,
+            'participant_type' => $admin->getMorphClass(),
+            'title' => "Archived Conversation #{$i}",
+            'updated_at' => now()->subMinutes(30 - $i),
+        ]);
+    }
+
+    $page1 = $this->actingAs($admin)
+        ->getJson(portalUrlForAdministrators('/administrators/ai/conversations?page=1'))
+        ->assertOk()
+        ->json();
+
+    expect($page1['current_page'])->toBe(1)
+        ->and($page1['last_page'])->toBe(2)
+        ->and($page1['total'])->toBe(25)
+        ->and($page1['data'])->toHaveCount(20);
+
+    $page2 = $this->actingAs($admin)
+        ->getJson(portalUrlForAdministrators('/administrators/ai/conversations?page=2'))
+        ->assertOk()
+        ->json();
+
+    expect($page2['current_page'])->toBe(2)
+        ->and($page2['data'])->toHaveCount(5);
+});
+
+it('streams chat response with designated specialist agent', function (): void {
+    App\Ai\Agents\RegistrarAuditAgent::fake([
+        'Registrar audit completed successfully.',
+    ]);
+
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+
+    $response = $this->actingAs($admin)
+        ->post(portalUrlForAdministrators('/administrators/ai/chat'), [
+            'agent' => 'registrar_auditor',
+            'message' => 'Audit senior graduation clearances.',
+        ]);
+
+    $response->assertOk();
+    $content = $response->streamedContent();
+
+    expect($content)->toContain('"type":"conversation"')
+        ->and($content)->toContain('"delta":"Registrar"')
+        ->and($content)->toContain('audit')
+        ->and($content)->toContain('data: [DONE]');
+});
+
 it('returns 503 service unavailable when AI features are disabled in system settings', function (): void {
     app(AiSettingsService::class)->merge([
         'enabled' => false,

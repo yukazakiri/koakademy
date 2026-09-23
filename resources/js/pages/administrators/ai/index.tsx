@@ -93,6 +93,10 @@ export default function AdministratorAiChatPage({
 
     const [conversations, setConversations] = React.useState<ConversationItem[]>([]);
     const [isLoadingConversations, setIsLoadingConversations] = React.useState(false);
+    const [currentPage, setCurrentPage] = React.useState(1);
+    const [hasMore, setHasMore] = React.useState(false);
+    const [isLoadingMore, setIsLoadingMore] = React.useState(false);
+    const [totalConversations, setTotalConversations] = React.useState(0);
 
     const [selectedAgent, setSelectedAgent] = React.useState<AgentRoleKey>("admin_executive");
     const [selectedModel, setSelectedModel] = React.useState<string>("");
@@ -149,27 +153,65 @@ export default function AdministratorAiChatPage({
         }
     }, [messages, isLoading]);
 
-    // Fetch conversation list
-    const fetchConversations = React.useCallback(async () => {
-        setIsLoadingConversations(true);
+    // Fetch conversation list with pagination and search
+    const fetchConversations = React.useCallback(async (page = 1, query = "", append = false) => {
+        if (append) {
+            setIsLoadingMore(true);
+        } else {
+            setIsLoadingConversations(true);
+        }
         try {
-            const res = await fetch("/administrators/ai/conversations", {
+            const params = new URLSearchParams();
+            params.set("page", String(page));
+            if (query.trim()) {
+                params.set("query", query.trim());
+            }
+
+            const res = await fetch(`/administrators/ai/conversations?${params.toString()}`, {
                 headers: { "X-Requested-With": "XMLHttpRequest" },
             });
             if (res.ok) {
                 const data = await res.json();
-                setConversations(data.data || []);
+                const fetchedItems: ConversationItem[] = data.data || [];
+                setCurrentPage(data.current_page || page);
+                setHasMore((data.current_page || page) < (data.last_page || 1));
+                setTotalConversations(data.total || 0);
+
+                setConversations((prev) => {
+                    if (!append) return fetchedItems;
+                    const existingIds = new Set(prev.map((c) => c.id));
+                    const newItems = fetchedItems.filter((c) => !existingIds.has(c.id));
+                    return [...prev, ...newItems];
+                });
             }
         } catch {
             // Silently ignore network error
         } finally {
             setIsLoadingConversations(false);
+            setIsLoadingMore(false);
         }
     }, []);
 
     React.useEffect(() => {
-        fetchConversations();
+        fetchConversations(1, "", false);
     }, [fetchConversations]);
+
+    const searchTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    const handleSearchChange = (query: string) => {
+        setSearchQuery(query);
+        if (searchTimeoutRef.current) {
+            clearTimeout(searchTimeoutRef.current);
+        }
+        searchTimeoutRef.current = setTimeout(() => {
+            fetchConversations(1, query, false);
+        }, 300);
+    };
+
+    const handleLoadMore = () => {
+        if (!isLoadingMore && hasMore) {
+            fetchConversations(currentPage + 1, searchQuery, true);
+        }
+    };
 
     // Fetch analytics summary and available models
     React.useEffect(() => {
@@ -320,6 +362,7 @@ export default function AdministratorAiChatPage({
     const handleSelectSuggestion = (suggestion: PromptSuggestion) => {
         setSelectedAgent(suggestion.agent);
         sendPrompt(suggestion.prompt, undefined, {
+            agent: suggestion.agent,
             model: selectedModel || undefined,
         });
     };
@@ -364,8 +407,12 @@ export default function AdministratorAiChatPage({
                             onRenameConversation={handleRenameConversation}
                             onDeleteConversation={handleDeleteConversation}
                             searchQuery={searchQuery}
-                            onSearchChange={setSearchQuery}
+                            onSearchChange={handleSearchChange}
                             isLoading={isLoadingConversations}
+                            hasMore={hasMore}
+                            isLoadingMore={isLoadingMore}
+                            onLoadMore={handleLoadMore}
+                            totalConversations={totalConversations}
                             className="w-64"
                         />
                     </div>
@@ -381,8 +428,12 @@ export default function AdministratorAiChatPage({
                                 onRenameConversation={handleRenameConversation}
                                 onDeleteConversation={handleDeleteConversation}
                                 searchQuery={searchQuery}
-                                onSearchChange={setSearchQuery}
+                                onSearchChange={handleSearchChange}
                                 isLoading={isLoadingConversations}
+                                hasMore={hasMore}
+                                isLoadingMore={isLoadingMore}
+                                onLoadMore={handleLoadMore}
+                                totalConversations={totalConversations}
                                 className="w-full h-full border-r-0"
                             />
                         </SheetContent>

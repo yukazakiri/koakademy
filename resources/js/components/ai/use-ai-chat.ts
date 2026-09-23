@@ -55,6 +55,7 @@ export interface UseAiChatOptions {
 }
 
 export interface PromptOptions {
+    agent?: AgentRoleKey;
     model?: string;
     provider?: string;
 }
@@ -289,12 +290,14 @@ export function useAiChat({
 
             const csrfToken = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || "";
 
+            const targetAgent = options?.agent || agent;
+
             try {
                 let requestOptions: RequestInit;
 
                 if (files && files.length > 0) {
                     const formData = new FormData();
-                    formData.append("agent", agent);
+                    formData.append("agent", targetAgent);
                     formData.append("message", content.trim() || "Please inspect and analyze the attached file(s).");
                     if (conversationId) {
                         formData.append("conversation_id", conversationId);
@@ -321,7 +324,7 @@ export function useAiChat({
                     };
                 } else {
                     const bodyPayload: Record<string, unknown> = {
-                        agent,
+                        agent: targetAgent,
                         message: content.trim(),
                         conversation_id: conversationId,
                     };
@@ -392,7 +395,7 @@ export function useAiChat({
             const targetAssistantMessage = messages.slice().reverse().find((m) =>
                 m.role === "assistant" && m.pendingApprovals?.some((a) => a.id === callId)
             );
-            const assistantId = targetAssistantMessage?.id || "msg_" + Math.random().toString(36).substring(2, 9);
+            const targetApproval = targetAssistantMessage?.pendingApprovals?.find((a) => a.id === callId);
 
             // Optimistically update message approvals
             setMessages((prev) =>
@@ -438,9 +441,35 @@ export function useAiChat({
 
                 const contentType = response.headers.get("content-type") || "";
                 if (contentType.includes("text/event-stream") || contentType.includes("text/plain")) {
-                    await readStream(response, assistantId);
+                    // Create a new assistant message placeholder for the post-decision continuation turn,
+                    // preserving the prior assistant message and its tool call details.
+                    const continuationId = "msg_" + Math.random().toString(36).substring(2, 9);
+                    setMessages((prev) => [
+                        ...prev,
+                        {
+                            id: continuationId,
+                            role: "assistant",
+                            content: "",
+                        },
+                    ]);
+                    await readStream(response, continuationId);
                 }
             } catch (err: any) {
+                // Restore approval on failure
+                if (targetAssistantMessage && targetApproval) {
+                    setMessages((prev) =>
+                        prev.map((m) =>
+                            m.id === targetAssistantMessage.id
+                                ? {
+                                      ...m,
+                                      pendingApprovals: m.pendingApprovals
+                                          ? [...m.pendingApprovals.filter((a) => a.id !== callId), targetApproval]
+                                          : [targetApproval],
+                                  }
+                                : m
+                        )
+                    );
+                }
                 if (err.name === "AbortError") return;
                 toast.error(err.message || "Failed to submit approval decision.");
             } finally {

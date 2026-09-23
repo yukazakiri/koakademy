@@ -53,6 +53,10 @@ interface AiConversationSidebarProps {
     searchQuery: string;
     onSearchChange: (query: string) => void;
     isLoading?: boolean;
+    hasMore?: boolean;
+    isLoadingMore?: boolean;
+    onLoadMore?: () => void;
+    totalConversations?: number;
     className?: string;
 }
 
@@ -66,6 +70,9 @@ export function AiConversationSidebar({
     searchQuery,
     onSearchChange,
     isLoading = false,
+    hasMore = false,
+    isLoadingMore = false,
+    onLoadMore,
     className,
 }: AiConversationSidebarProps) {
     const [editingConv, setEditingConv] = React.useState<ConversationItem | null>(null);
@@ -253,6 +260,28 @@ export function AiConversationSidebar({
                                 </div>
                             </div>
                         ))}
+
+                        {hasMore && (
+                            <div className="pt-2 pb-1 px-1">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={onLoadMore}
+                                    disabled={isLoadingMore}
+                                    className="w-full h-8 text-xs text-muted-foreground hover:text-foreground border-dashed border-sidebar-border shadow-none"
+                                >
+                                    {isLoadingMore ? (
+                                        <>
+                                            <Loader2 className="size-3.5 animate-spin mr-1.5" />
+                                            <span>Loading older chats...</span>
+                                        </>
+                                    ) : (
+                                        <span>Load older chats</span>
+                                    )}
+                                </Button>
+                            </div>
+                        )}
                     </div>
                 )}
             </ScrollArea>

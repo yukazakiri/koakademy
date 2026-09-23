@@ -40,7 +40,7 @@ beforeEach(function (): void {
     ]);
 });
 
-it('provides the complete student dataset for client-side profile filters', function (): void {
+it('filters the student dataset by profile filters on the server', function (): void {
     $technology = Department::factory()->forSchool($this->school)->create([
         'code' => 'TECH',
         'name' => 'Technology',
@@ -93,11 +93,10 @@ it('provides the complete student dataset for client-side profile filters', func
         ->get(portalUrlForAdministrators("/administrators/students?course_id={$informationTechnology->id}"))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page
-            ->has('students.data', 3)
+            ->has('students.data', 2)
             ->where('students.data', fn ($students): bool => $students->pluck('id')->sort()->values()->all() === collect([
                 $technologyFirstYear->id,
                 $technologySecondYear->id,
-                $businessFirstYear->id,
             ])->sort()->values()->all())
             ->where('filters.course_id', $informationTechnology->id)
         );
@@ -106,7 +105,7 @@ it('provides the complete student dataset for client-side profile filters', func
         ->get(portalUrlForAdministrators("/administrators/students?department_id={$business->id}"))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page
-            ->has('students.data', 3)
+            ->has('students.data', 1)
             ->where('students.data', function ($students) use ($businessFirstYear, $businessAdministration, $business): bool {
                 return $students->contains(
                     fn (array $student): bool => $student['id'] === $businessFirstYear->id
@@ -122,7 +121,7 @@ it('provides the complete student dataset for client-side profile filters', func
         ->get(portalUrlForAdministrators('/administrators/students?year_level=2'))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page
-            ->has('students.data', 3)
+            ->has('students.data', 1)
             ->where('students.data', function ($students) use ($technologySecondYear): bool {
                 return $students->contains(
                     fn (array $student): bool => $student['id'] === $technologySecondYear->id
@@ -178,7 +177,7 @@ it('filters current enrollment using only the configured school year and semeste
         ->get(portalUrlForAdministrators('/administrators/students?current_enrollment=enrolled'))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page
-            ->has('students.data', 4)
+            ->has('students.data', 1)
             ->where('students.data', function ($students) use ($current): bool {
                 return $students->contains(
                     fn (array $student): bool => $student['id'] === $current->id
@@ -192,10 +191,9 @@ it('filters current enrollment using only the configured school year and semeste
         ->get(portalUrlForAdministrators('/administrators/students?current_enrollment=not_enrolled'))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page
-            ->has('students.data', 4)
-            ->where('students.data', function ($students) use ($applicant, $current, $historical, $withoutStatus): bool {
+            ->has('students.data', 3)
+            ->where('students.data', function ($students) use ($applicant, $historical, $withoutStatus): bool {
                 return $students->pluck('id')->sort()->values()->all() === collect([
-                    $current->id,
                     $historical->id,
                     $applicant->id,
                     $withoutStatus->id,
@@ -243,14 +241,9 @@ it('combines the new filters without changing global student totals', function (
         ->get(portalUrlForAdministrators("/administrators/students?{$query}"))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page
-            ->has('students.data', 2)
-            ->where('students.data', function ($students) use ($matching, $wrongYear): bool {
-                return $students->pluck('id')->sort()->values()->all() === collect([
-                    $matching->id,
-                    $wrongYear->id,
-                ])->sort()->values()->all();
-            })
-            ->where('students.total', 2)
+            ->has('students.data', 1)
+            ->where('students.data.0.id', $matching->id)
+            ->where('students.total', 1)
             ->where('stats.total_students', 2)
         );
 });

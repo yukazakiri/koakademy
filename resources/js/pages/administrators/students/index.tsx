@@ -11,16 +11,14 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AdminLink } from "@/lib/admin-navigation";
 import type { User } from "@/types/user";
 import { Head, router } from "@inertiajs/react";
@@ -40,7 +38,6 @@ import {
     List,
     Loader2,
     MapPin,
-    MoreHorizontal,
     Plus,
     RotateCcw,
     Search,
@@ -49,12 +46,13 @@ import {
     UserIcon,
     UserPlus,
     Users,
+    X,
     XCircle,
     Zap,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { columns, Student } from "./columns";
+import { createColumns, Student } from "./columns";
 import { DataTable } from "./data-table";
 
 declare let route: (name: string, params?: Record<string, unknown> | string | number) => string;
@@ -66,38 +64,6 @@ function parseSortOption(value: string): { sort: string; direction: "asc" | "des
         sort,
         direction: direction === "asc" ? "asc" : "desc",
     };
-}
-
-function sortStudentRows(studentRows: Student[], sorting: SortingState): Student[] {
-    const activeSort = sorting[0];
-
-    if (!activeSort) {
-        return studentRows;
-    }
-
-    return [...studentRows].sort((leftStudent, rightStudent) => {
-        const leftValue = leftStudent[activeSort.id as keyof Student];
-        const rightValue = rightStudent[activeSort.id as keyof Student];
-
-        if (leftValue === rightValue) {
-            return 0;
-        }
-
-        if (leftValue === null || leftValue === undefined) {
-            return 1;
-        }
-
-        if (rightValue === null || rightValue === undefined) {
-            return -1;
-        }
-
-        const comparison =
-            typeof leftValue === "number" && typeof rightValue === "number"
-                ? leftValue - rightValue
-                : String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: "base" });
-
-        return activeSort.desc ? -comparison : comparison;
-    });
 }
 
 interface StudentsIndexProps {
@@ -153,10 +119,14 @@ interface StudentsIndexProps {
     };
 }
 
+type QuickCohort = "all" | "enrolled" | "applicant" | "graduated" | "trashed";
+
 export default function AdministratorStudentsIndex({ user, students, stats, filters, options }: StudentsIndexProps) {
     const studentRows = students?.data ?? [];
-    const isStudentsLoading = students === undefined || students === null;
     const [search, setSearch] = useState(filters.search || "");
+    const searchInputRef = useRef<HTMLInputElement>(null);
+    const debouncedSearchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
     const [viewMode, setViewMode] = useState<"list" | "grid">("list");
     const [sortOption, setSortOption] = useState(`${filters.sort ?? "created_at"}:${filters.direction ?? "desc"}`);
     const [sorting, setSorting] = useState<SortingState>(() => {
@@ -164,109 +134,29 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
 
         return [{ id: initialSort.sort, desc: initialSort.direction === "desc" }];
     });
-    const [pageIndex, setPageIndex] = useState(0);
-    const [pageSize, setPageSize] = useState(filters.per_page ?? 20);
 
     const [activeFilters, setActiveFilters] = useState<FilterType[]>([]);
 
-    const activeFilterValues = useMemo(
-        () =>
-            Object.fromEntries(
-                activeFilters
-                    .map((filter) => [filter.field, filter.values[0]] as const)
-                    .filter((entry): entry is readonly [string, string | number] => typeof entry[1] === "string" || typeof entry[1] === "number")
-                    .map(([field, value]) => [field, String(value)]),
-            ),
-        [activeFilters],
-    );
-
-    const filteredStudents = useMemo(() => {
-        const searchTerm = search.trim().toLowerCase();
-        const trashedFilter = activeFilterValues.trashed ?? "active";
-
-        return studentRows.filter((student) => {
-            if (trashedFilter === "active" && student.deleted_at !== null) return false;
-            if (trashedFilter === "trashed" && student.deleted_at === null) return false;
-
-            const matchesSearch =
-                searchTerm === "" ||
-                [
-                    student.student_id,
-                    student.name,
-                    student.course,
-                    student.course_title,
-                    student.academic_year,
-                    student.type,
-                    student.status,
-                    student.scholarship_type,
-                    student.employment_status,
-                    student.region_of_origin,
-                ]
-                    .filter((value): value is string | number => value !== null && value !== undefined)
-                    .some((value) => String(value).toLowerCase().includes(searchTerm));
-
-            if (!matchesSearch) return false;
-
-            return Object.entries(activeFilterValues).every(([field, value]) => {
-                switch (field) {
-                    case "trashed":
-                        return true;
-                    case "type":
-                        return student.type === value;
-                    case "status":
-                        return student.status === value;
-                    case "course_id":
-                        return String(student.course_id ?? "") === value;
-                    case "department_id":
-                        return String(student.department_id ?? "") === value;
-                    case "year_level":
-                        return String(student.year_level ?? "") === value;
-                    case "current_enrollment":
-                        return value === "enrolled" ? student.status === "enrolled" : student.status !== "enrolled";
-                    case "scholarship_type":
-                        return student.scholarship_type_value === value;
-                    case "employment_status":
-                        return student.employment_status_value === value;
-                    case "is_indigenous_person":
-                        return value === "yes" ? student.is_indigenous_person : !student.is_indigenous_person;
-                    case "previous_semester_cleared":
-                        return value === "true" ? student.previous_sem_clearance === "cleared" : student.previous_sem_clearance === "not_cleared";
-                    default:
-                        return true;
-                }
-            });
-        });
-    }, [activeFilterValues, search, studentRows]);
-
-    const sortedStudents = useMemo(() => sortStudentRows(filteredStudents, sorting), [filteredStudents, sorting]);
-
-    const localPagination = useMemo(() => {
-        const total = sortedStudents.length;
-        const lastPage = Math.max(1, Math.ceil(total / pageSize));
-        const currentPageIndex = Math.min(pageIndex, lastPage - 1);
-        const from = total === 0 ? 0 : currentPageIndex * pageSize + 1;
-        const to = total === 0 ? 0 : Math.min((currentPageIndex + 1) * pageSize, total);
-
-        return {
-            current_page: currentPageIndex + 1,
-            last_page: lastPage,
-            per_page: pageSize,
-            total,
-            from,
-            to,
+    // Keyboard shortcut to focus search input: '/' or 'Cmd+K' / 'Ctrl+K'
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (
+                (event.key === "/" || ((event.metaKey || event.ctrlKey) && event.key === "k")) &&
+                document.activeElement?.tagName !== "INPUT" &&
+                document.activeElement?.tagName !== "TEXTAREA"
+            ) {
+                event.preventDefault();
+                searchInputRef.current?.focus();
+            }
         };
-    }, [pageIndex, pageSize, sortedStudents.length]);
 
-    const paginatedStudents = useMemo(
-        () => sortedStudents.slice(localPagination.from > 0 ? localPagination.from - 1 : 0, localPagination.to),
-        [localPagination.from, localPagination.to, sortedStudents],
-    );
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, []);
 
+    // Synchronize initial filters from server props
     useEffect(() => {
-        setPageIndex(0);
-    }, [activeFilters, search, sortOption]);
-
-    useEffect(() => {
+        setSearch(filters.search || "");
         const initialFilters: FilterType[] = [];
         const trashedValue = filters.trashed ?? "active";
         if (trashedValue !== "active") {
@@ -304,166 +194,328 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
                 values: [filters.previous_semester_cleared],
             });
         setActiveFilters(initialFilters);
+
         const nextSortOption = `${filters.sort ?? "created_at"}:${filters.direction ?? "desc"}`;
         const nextSort = parseSortOption(nextSortOption);
         setSortOption(nextSortOption);
         setSorting([{ id: nextSort.sort, desc: nextSort.direction === "desc" }]);
-        setPageSize(filters.per_page ?? 20);
     }, [filters]);
+
+    const activeFilterValues = useMemo(
+        () =>
+            Object.fromEntries(
+                activeFilters
+                    .map((filter) => [filter.field, filter.values[0]] as const)
+                    .filter((entry): entry is readonly [string, string | number] => typeof entry[1] === "string" || typeof entry[1] === "number")
+                    .map(([field, value]) => [field, String(value)]),
+            ),
+        [activeFilters],
+    );
+
+    // Identify active quick cohort
+    const currentCohort: QuickCohort = useMemo(() => {
+        if (activeFilterValues.trashed === "trashed") {
+            return "trashed";
+        }
+        const currentStatus = activeFilterValues.status;
+        if (currentStatus === "enrolled") return "enrolled";
+        if (currentStatus === "applicant") return "applicant";
+        if (currentStatus === "graduated") return "graduated";
+        return "all";
+    }, [activeFilterValues.status, activeFilterValues.trashed]);
+
+    const buildQueryParams = (
+        overrides: {
+            search?: string;
+            filters?: FilterType[];
+            sort?: string;
+            direction?: "asc" | "desc";
+            page?: number;
+            per_page?: number;
+        } = {},
+    ) => {
+        const nextFilters = overrides.filters ?? activeFilters;
+        const filterMap = Object.fromEntries(
+            nextFilters
+                .map((filter) => [filter.field, filter.values[0]] as const)
+                .filter((entry): entry is readonly [string, string | number] => typeof entry[1] === "string" || typeof entry[1] === "number")
+                .map(([field, value]) => [field, String(value)]),
+        );
+
+        const activeSearch = overrides.search !== undefined ? overrides.search : search;
+        const activeSort = overrides.sort !== undefined ? overrides.sort : (sorting[0]?.id ?? filters.sort ?? "created_at");
+        const activeDirection = overrides.direction !== undefined ? overrides.direction : sorting[0]?.desc ? "desc" : "asc";
+        const activePerPage = overrides.per_page !== undefined ? overrides.per_page : (filters.per_page ?? 20);
+        const activePage = overrides.page !== undefined ? overrides.page : (students?.current_page ?? 1);
+
+        const params: Record<string, string | number | null> = {
+            search: activeSearch.trim() ? activeSearch.trim() : null,
+            sort: activeSort,
+            direction: activeDirection,
+            per_page: activePerPage,
+            page: activePage,
+        };
+
+        if (filterMap.trashed && filterMap.trashed !== "active") params.trashed = filterMap.trashed;
+        if (filterMap.type) params.type = filterMap.type;
+        if (filterMap.status) params.status = filterMap.status;
+        if (filterMap.course_id) params.course_id = filterMap.course_id;
+        if (filterMap.department_id) params.department_id = filterMap.department_id;
+        if (filterMap.year_level) params.year_level = filterMap.year_level;
+        if (filterMap.current_enrollment) params.current_enrollment = filterMap.current_enrollment;
+        if (filterMap.scholarship_type) params.scholarship_type = filterMap.scholarship_type;
+        if (filterMap.employment_status) params.employment_status = filterMap.employment_status;
+        if (filterMap.is_indigenous_person) params.is_indigenous_person = filterMap.is_indigenous_person;
+        if (filterMap.previous_semester_cleared) params.previous_semester_cleared = filterMap.previous_semester_cleared;
+
+        return params;
+    };
+
+    const navigateWithParams = (params: Record<string, string | number | null>) => {
+        router.get(route("administrators.students.index"), params, {
+            preserveState: true,
+            preserveScroll: true,
+            replace: true,
+        });
+    };
+
+    const handleSearchChange = (nextSearch: string) => {
+        setSearch(nextSearch);
+        if (debouncedSearchRef.current) {
+            clearTimeout(debouncedSearchRef.current);
+        }
+        debouncedSearchRef.current = setTimeout(() => {
+            navigateWithParams(buildQueryParams({ search: nextSearch, page: 1 }));
+        }, 350);
+    };
+
+    const handleClearSearch = () => {
+        setSearch("");
+        if (debouncedSearchRef.current) {
+            clearTimeout(debouncedSearchRef.current);
+        }
+        navigateWithParams(buildQueryParams({ search: "", page: 1 }));
+    };
+
+    const handleSelectCohort = (cohort: QuickCohort) => {
+        const nextFilters = activeFilters.filter((f) => f.field !== "status" && f.field !== "trashed");
+
+        if (cohort === "trashed") {
+            nextFilters.push({ id: "trashed", field: "trashed", operator: "is", values: ["trashed"] });
+        } else if (cohort !== "all") {
+            nextFilters.push({ id: "status", field: "status", operator: "is", values: [cohort] });
+        }
+
+        setActiveFilters(nextFilters);
+        navigateWithParams(buildQueryParams({ filters: nextFilters, page: 1 }));
+    };
 
     const handleFiltersChange = (newFilters: FilterType[]) => {
         setActiveFilters(newFilters);
+        navigateWithParams(buildQueryParams({ filters: newFilters, page: 1 }));
     };
 
     const clearFilters = () => {
         setActiveFilters([]);
+        navigateWithParams(buildQueryParams({ filters: [], page: 1 }));
+    };
+
+    const clearAllFiltersAndSearch = () => {
+        setActiveFilters([]);
+        setSearch("");
+        if (debouncedSearchRef.current) {
+            clearTimeout(debouncedSearchRef.current);
+        }
+        navigateWithParams(buildQueryParams({ filters: [], search: "", page: 1 }));
+    };
+
+    const removeFilter = (field: string) => {
+        const nextFilters = activeFilters.filter((f) => f.field !== field);
+        setActiveFilters(nextFilters);
+        navigateWithParams(buildQueryParams({ filters: nextFilters, page: 1 }));
     };
 
     const handleSortChange = (value: string | null) => {
-        if (!value) {
-            return;
-        }
-
+        if (!value) return;
         setSortOption(value);
         const sort = parseSortOption(value);
         setSorting([{ id: sort.sort, desc: sort.direction === "desc" }]);
+        navigateWithParams(buildQueryParams({ sort: sort.sort, direction: sort.direction, page: 1 }));
     };
 
     const handleTableSortingChange = (nextSorting: SortingState) => {
         setSorting(nextSorting);
         const nextSort = nextSorting[0];
-        setSortOption(nextSort ? `${nextSort.id}:${nextSort.desc ? "desc" : "asc"}` : "created_at:desc");
+        const sortField = nextSort?.id ?? "created_at";
+        const direction = nextSort?.desc ? "desc" : "asc";
+        setSortOption(`${sortField}:${direction}`);
+        navigateWithParams(buildQueryParams({ sort: sortField, direction, page: 1 }));
+    };
+
+    const handlePageIndexChange = (newPageIndex: number) => {
+        navigateWithParams(buildQueryParams({ page: newPageIndex + 1 }));
+    };
+
+    const handlePageSizeChange = (newPageSize: number) => {
+        navigateWithParams(buildQueryParams({ per_page: newPageSize, page: 1 }));
     };
 
     const filterFields: FilterFieldConfig[] = useMemo(
         () => [
             {
                 key: "trashed",
-                label: "Status",
+                label: "Record Visibility",
                 type: "select",
-                icon: <Filter className="h-4 w-4" />,
+                icon: <Filter className="size-4" />,
                 options: [
-                    { value: "active", label: "Active", icon: <CheckCircle className="h-4 w-4 text-green-500" /> },
-                    { value: "trashed", label: "Trashed", icon: <Trash2 className="h-4 w-4 text-red-500" /> },
-                    { value: "all", label: "All", icon: <Users className="h-4 w-4" /> },
+                    { value: "active", label: "Active Records", icon: <CheckCircle className="size-4 text-emerald-500" /> },
+                    { value: "trashed", label: "Trashed Records", icon: <Trash2 className="size-4 text-red-500" /> },
+                    { value: "all", label: "All Records", icon: <Users className="size-4" /> },
                 ],
+            },
+            {
+                key: "status",
+                label: "Enrollment Status",
+                type: "select",
+                icon: <GraduationCap className="size-4" />,
+                options: options.statuses.map((opt) => ({ ...opt, icon: <GraduationCap className="text-muted-foreground size-4" /> })),
             },
             {
                 key: "type",
                 label: "Student Type",
                 type: "select",
-                icon: <UserIcon className="h-4 w-4" />,
-                options: options.types.map((opt) => ({ ...opt, icon: <UserIcon className="text-muted-foreground h-4 w-4" /> })),
+                icon: <UserIcon className="size-4" />,
+                options: options.types.map((opt) => ({ ...opt, icon: <UserIcon className="text-muted-foreground size-4" /> })),
             },
             {
                 key: "course_id",
-                label: "Course",
+                label: "Course / Degree",
                 type: "select",
-                icon: <BookOpen className="h-4 w-4" />,
-                options: options.courses.map((opt) => ({ ...opt, icon: <BookOpen className="text-muted-foreground h-4 w-4" /> })),
+                icon: <BookOpen className="size-4" />,
+                options: options.courses.map((opt) => ({ ...opt, icon: <BookOpen className="text-muted-foreground size-4" /> })),
             },
             {
                 key: "department_id",
                 label: "Department",
                 type: "select",
-                icon: <Building2 className="h-4 w-4" />,
-                options: options.departments.map((opt) => ({ ...opt, icon: <Building2 className="text-muted-foreground h-4 w-4" /> })),
+                icon: <Building2 className="size-4" />,
+                options: options.departments.map((opt) => ({ ...opt, icon: <Building2 className="text-muted-foreground size-4" /> })),
             },
             {
                 key: "year_level",
                 label: "Year Level",
                 type: "select",
-                icon: <Layers className="h-4 w-4" />,
-                options: options.year_levels.map((opt) => ({ ...opt, icon: <Layers className="text-muted-foreground h-4 w-4" /> })),
+                icon: <Layers className="size-4" />,
+                options: options.year_levels.map((opt) => ({ ...opt, icon: <Layers className="text-muted-foreground size-4" /> })),
             },
             {
                 key: "current_enrollment",
-                label: "Current Enrollment",
+                label: "Current Period Enrollment",
                 type: "select",
-                icon: <CalendarCheck className="h-4 w-4" />,
+                icon: <CalendarCheck className="size-4" />,
                 options: [
-                    { value: "enrolled", label: "Currently enrolled", icon: <UserCheck className="h-4 w-4 text-green-500" /> },
-                    { value: "not_enrolled", label: "Not currently enrolled", icon: <XCircle className="h-4 w-4 text-red-500" /> },
+                    { value: "enrolled", label: "Currently enrolled", icon: <UserCheck className="size-4 text-emerald-500" /> },
+                    { value: "not_enrolled", label: "Not currently enrolled", icon: <XCircle className="size-4 text-red-500" /> },
                 ],
             },
             {
-                key: "status",
-                label: "Current Semester Status",
-                type: "select",
-                icon: <GraduationCap className="h-4 w-4" />,
-                options: options.statuses.map((opt) => ({ ...opt, icon: <GraduationCap className="text-muted-foreground h-4 w-4" /> })),
-            },
-            {
                 key: "previous_semester_cleared",
-                label: "Current Semester Clearance",
+                label: "Clearance Status",
                 type: "select",
-                icon: <CheckCircle className="h-4 w-4" />,
+                icon: <CheckCircle className="size-4" />,
                 options: [
-                    { value: "true", label: "Cleared", icon: <CheckCircle className="h-4 w-4 text-green-500" /> },
-                    { value: "false", label: "Pending", icon: <HelpCircle className="h-4 w-4 text-yellow-500" /> },
+                    { value: "true", label: "Cleared", icon: <CheckCircle className="size-4 text-emerald-500" /> },
+                    { value: "false", label: "Pending", icon: <HelpCircle className="size-4 text-amber-500" /> },
                 ],
             },
             {
                 key: "scholarship_type",
                 label: "Scholarship",
                 type: "select",
-                icon: <Award className="h-4 w-4" />,
-                options: options.scholarship_types.map((opt) => ({ ...opt, icon: <Award className="text-muted-foreground h-4 w-4" /> })),
+                icon: <Award className="size-4" />,
+                options: options.scholarship_types.map((opt) => ({ ...opt, icon: <Award className="text-muted-foreground size-4" /> })),
             },
             {
                 key: "employment_status",
                 label: "Employment Status",
                 type: "select",
-                icon: <Briefcase className="h-4 w-4" />,
-                options: options.employment_statuses.map((opt) => ({ ...opt, icon: <Briefcase className="text-muted-foreground h-4 w-4" /> })),
+                icon: <Briefcase className="size-4" />,
+                options: options.employment_statuses.map((opt) => ({ ...opt, icon: <Briefcase className="text-muted-foreground size-4" /> })),
             },
             {
                 key: "is_indigenous_person",
-                label: "Indigenous Person Status",
+                label: "Indigenous Person",
                 type: "select",
-                icon: <MapPin className="h-4 w-4" />,
+                icon: <MapPin className="size-4" />,
                 options: [
-                    { value: "yes", label: "Yes", icon: <CheckCircle className="h-4 w-4 text-green-500" /> },
-                    { value: "no", label: "No", icon: <XCircle className="h-4 w-4 text-red-500" /> },
+                    { value: "yes", label: "Yes", icon: <CheckCircle className="size-4 text-emerald-500" /> },
+                    { value: "no", label: "No", icon: <XCircle className="size-4 text-red-500" /> },
                 ],
             },
         ],
         [options],
     );
 
-    const getInitials = (name: string) => {
-        return name
-            .split(" ")
-            .map((n) => n[0])
-            .join("")
-            .toUpperCase()
-            .slice(0, 2);
-    };
-
-    const getStatusColor = (status: string | null) => {
-        switch (status?.toLowerCase()) {
-            case "enrolled":
-                return "bg-green-100 text-green-800 hover:bg-green-100/80 dark:bg-green-900/30 dark:text-green-400 border-transparent";
-            case "graduated":
-                return "bg-blue-100 text-blue-800 hover:bg-blue-100/80 dark:bg-blue-900/30 dark:text-blue-400 border-transparent";
-            case "dropped":
-            case "withdrawn":
-                return "bg-red-100 text-red-800 hover:bg-red-100/80 dark:bg-red-900/30 dark:text-red-400 border-transparent";
-            case "applicant":
-                return "bg-yellow-100 text-yellow-800 hover:bg-yellow-100/80 dark:bg-yellow-900/30 dark:text-yellow-400 border-transparent";
+    const getFilterFieldLabel = (field: string): string => {
+        switch (field) {
+            case "trashed":
+                return "Visibility";
+            case "status":
+                return "Status";
+            case "type":
+                return "Type";
+            case "course_id":
+                return "Course";
+            case "department_id":
+                return "Department";
+            case "year_level":
+                return "Year";
+            case "current_enrollment":
+                return "Enrollment";
+            case "previous_semester_cleared":
+                return "Clearance";
+            case "scholarship_type":
+                return "Scholarship";
+            case "employment_status":
+                return "Employment";
+            case "is_indigenous_person":
+                return "Indigenous";
             default:
-                return "bg-gray-100 text-gray-800 hover:bg-gray-100/80 dark:bg-gray-800 dark:text-gray-400 border-transparent";
+                return field;
         }
     };
 
-    const getClearanceIcon = (status: string) => {
-        switch (status) {
-            case "cleared":
-                return <CheckCircle className="h-4 w-4 text-green-600" />;
-            case "not_cleared":
-                return <XCircle className="h-4 w-4 text-red-600" />;
+    const getFilterValueLabel = (field: string, value: string | number): string => {
+        const stringValue = String(value);
+        switch (field) {
+            case "trashed":
+                return stringValue === "trashed" ? "Trashed" : stringValue === "all" ? "All" : "Active";
+            case "course_id": {
+                const found = options.courses.find((c) => c.value === stringValue);
+                return found ? found.label.split(" - ")[0] : stringValue;
+            }
+            case "department_id": {
+                const found = options.departments.find((d) => d.value === stringValue);
+                return found ? found.label.split(" - ")[0] : stringValue;
+            }
+            case "year_level":
+                return `Year ${stringValue}`;
+            case "current_enrollment":
+                return stringValue === "enrolled" ? "Enrolled" : "Not Enrolled";
+            case "previous_semester_cleared":
+                return stringValue === "true" ? "Cleared" : "Pending";
+            case "is_indigenous_person":
+                return stringValue === "yes" ? "Yes" : "No";
+            case "status":
+                return options.statuses.find((s) => s.value === stringValue)?.label ?? stringValue;
+            case "type":
+                return options.types.find((t) => t.value === stringValue)?.label ?? stringValue;
+            case "scholarship_type":
+                return options.scholarship_types.find((s) => s.value === stringValue)?.label ?? stringValue;
+            case "employment_status":
+                return options.employment_statuses.find((e) => e.value === stringValue)?.label ?? stringValue;
             default:
-                return <HelpCircle className="text-muted-foreground h-4 w-4" />;
+                return stringValue;
         }
     };
 
@@ -480,9 +532,11 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
             setConfirmForceText("");
         };
         const onRestore = (e: Event) => setRestoreTarget((e as CustomEvent<Student>).detail);
+
         window.addEventListener("students:soft-delete", onSoft as EventListener);
         window.addEventListener("students:force-delete", onForce as EventListener);
         window.addEventListener("students:restore", onRestore as EventListener);
+
         return () => {
             window.removeEventListener("students:soft-delete", onSoft as EventListener);
             window.removeEventListener("students:force-delete", onForce as EventListener);
@@ -505,7 +559,7 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
     };
 
     const handleConfirmForceDelete = () => {
-        if (!forceDeleteTarget || confirmForceText !== forceDeleteTarget.student_id) {
+        if (!forceDeleteTarget || confirmForceText.trim() !== String(forceDeleteTarget.student_id ?? "").trim()) {
             toast.error("Student ID confirmation does not match.");
             return;
         }
@@ -540,114 +594,237 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
         );
     };
 
+    const tableColumns = useMemo(
+        () =>
+            createColumns({
+                onSoftDelete: setSoftDeleteTarget,
+                onForceDelete: (student) => {
+                    setForceDeleteTarget(student);
+                    setConfirmForceText("");
+                },
+                onRestore: setRestoreTarget,
+            }),
+        [],
+    );
+
+    const statCards = [
+        {
+            key: "all" as const,
+            label: "Total records",
+            value: stats.total_students,
+            detail: "All active profiles",
+            icon: Users,
+            tone: "text-primary",
+            bgTone: "bg-primary/10",
+        },
+        {
+            key: "enrolled" as const,
+            label: "Enrolled",
+            value: stats.total_enrolled,
+            detail: "Current period",
+            icon: UserCheck,
+            tone: "text-emerald-600 dark:text-emerald-400",
+            bgTone: "bg-emerald-500/10",
+        },
+        {
+            key: "applicant" as const,
+            label: "Applicants",
+            value: stats.total_applicants,
+            detail: "Admissions pending",
+            icon: UserPlus,
+            tone: "text-amber-600 dark:text-amber-400",
+            bgTone: "bg-amber-500/10",
+        },
+        {
+            key: "graduated" as const,
+            label: "Graduated",
+            value: stats.total_graduated,
+            detail: "Completed records",
+            icon: GraduationCap,
+            tone: "text-blue-600 dark:text-blue-400",
+            bgTone: "bg-blue-500/10",
+        },
+    ];
+
     return (
         <AdminLayout user={user} title="Student Directory">
             <Head title="Administrators • Student Directory" />
 
-            <div className="flex flex-col gap-6">
-                <header className="flex flex-col gap-4 border-b pb-6 sm:flex-row sm:items-end sm:justify-between">
+            <div className="flex flex-col gap-5">
+                {/* Header */}
+                <header className="flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-end sm:justify-between">
                     <div className="space-y-1">
-                        <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.16em] uppercase">Student Records</p>
-                        <h1 className="text-2xl font-semibold tracking-tight">Student Directory</h1>
-                        <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed">
-                            Find, review, and maintain authoritative student records across the institution.
+                        <div className="flex items-center gap-2">
+                            <p className="text-muted-foreground text-[11px] font-semibold tracking-[0.16em] uppercase">Student Records</p>
+                            <span className="text-muted-foreground/60 text-xs">•</span>
+                            <span className="text-muted-foreground text-xs">Directory</span>
+                        </div>
+                        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Student Directory</h1>
+                        <p className="text-muted-foreground max-w-2xl text-xs leading-relaxed sm:text-sm">
+                            Search, manage, and audit student profiles, enrollment statuses, and clearances across academic departments.
                         </p>
                     </div>
-                    <AdminLink href={route("administrators.students.create")} className={buttonVariants({ className: "gap-2" })}>
-                        <Plus className="size-4" aria-hidden="true" />
-                        Create student
-                    </AdminLink>
+
+                    <div className="flex items-center gap-2">
+                        <AdminLink
+                            href={route("administrators.students.create")}
+                            className={buttonVariants({ className: "h-9 w-full gap-2 text-xs font-semibold shadow-xs sm:w-auto sm:text-sm" })}
+                        >
+                            <Plus className="size-4" aria-hidden="true" />
+                            Create student
+                        </AdminLink>
+                    </div>
                 </header>
 
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    {[
-                        {
-                            label: "Total records",
-                            value: stats.total_students,
-                            detail: "All student profiles",
-                            icon: Users,
-                            tone: "text-primary",
-                        },
-                        {
-                            label: "Currently enrolled",
-                            value: stats.total_enrolled,
-                            detail: "Active academic period",
-                            icon: UserCheck,
-                            tone: "text-emerald-600 dark:text-emerald-400",
-                        },
-                        {
-                            label: "Applicants",
-                            value: stats.total_applicants,
-                            detail: "Awaiting admissions processing",
-                            icon: UserPlus,
-                            tone: "text-amber-600 dark:text-amber-400",
-                        },
-                        {
-                            label: "Graduated",
-                            value: stats.total_graduated,
-                            detail: "Completed student records",
-                            icon: GraduationCap,
-                            tone: "text-blue-600 dark:text-blue-400",
-                        },
-                    ].map((metric) => (
-                        <Card key={metric.label} size="sm" className="gap-0 py-0">
-                            <CardContent className="flex items-center justify-between gap-4 p-4">
-                                <div className="min-w-0">
-                                    <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">{metric.label}</p>
-                                    <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{metric.value}</p>
-                                    <p className="text-muted-foreground mt-1 truncate text-xs">{metric.detail}</p>
-                                </div>
-                                <div className="bg-muted/60 flex size-10 shrink-0 items-center justify-center rounded-lg">
-                                    <metric.icon className={`size-5 ${metric.tone}`} aria-hidden="true" />
-                                </div>
-                            </CardContent>
-                        </Card>
-                    ))}
+                {/* Interactive Metric Summary Strip */}
+                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+                    {statCards.map((metric) => {
+                        const isActive = currentCohort === metric.key;
+
+                        return (
+                            <Card
+                                key={metric.key}
+                                onClick={() => handleSelectCohort(metric.key)}
+                                className={`hover:border-primary/50 cursor-pointer gap-0 py-0 transition-all hover:shadow-xs ${
+                                    isActive ? "ring-primary border-primary/60 bg-primary/5 shadow-xs ring-2" : ""
+                                }`}
+                                role="button"
+                                tabIndex={0}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                        e.preventDefault();
+                                        handleSelectCohort(metric.key);
+                                    }
+                                }}
+                                aria-label={`Filter by ${metric.label}`}
+                            >
+                                <CardContent className="flex items-center justify-between gap-3 p-3.5">
+                                    <div className="min-w-0">
+                                        <div className="flex items-center gap-1.5">
+                                            <p className="text-muted-foreground truncate text-[10px] font-semibold tracking-wide uppercase sm:text-[11px]">
+                                                {metric.label}
+                                            </p>
+                                            {isActive && <div className="bg-primary size-1.5 shrink-0 rounded-full" />}
+                                        </div>
+                                        <p className="text-foreground mt-0.5 text-xl font-bold tracking-tight tabular-nums sm:text-2xl">
+                                            {metric.value}
+                                        </p>
+                                        <p className="text-muted-foreground mt-0.5 truncate text-[11px]">{metric.detail}</p>
+                                    </div>
+                                    <div className={`flex size-9 shrink-0 items-center justify-center rounded-lg sm:size-10 ${metric.bgTone}`}>
+                                        <metric.icon className={`size-4 sm:size-5 ${metric.tone}`} aria-hidden="true" />
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        );
+                    })}
                 </div>
 
-                <Card size="sm" className="gap-3 py-3">
-                    <CardHeader className="flex-row items-center justify-between gap-4 px-3">
-                        <div>
-                            <p className="text-sm font-semibold">Student records</p>
-                            <p className="text-muted-foreground text-xs">
-                                {isStudentsLoading
-                                    ? "Loading student records..."
-                                    : `Showing ${localPagination.from}–${localPagination.to} of ${localPagination.total} matching records`}
-                            </p>
+                {/* Main Filter & Search Control Panel */}
+                <Card className="border-border/80 gap-3 py-3 shadow-xs">
+                    <CardContent className="space-y-3 px-3.5 sm:px-4">
+                        {/* Quick Cohort Tabs */}
+                        <div className="flex flex-wrap items-center gap-1.5 border-b pb-2.5">
+                            <span className="text-muted-foreground mr-1 hidden text-xs font-semibold sm:inline">Cohort:</span>
+                            <Button
+                                variant={currentCohort === "all" ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => handleSelectCohort("all")}
+                                className="h-7 rounded-md px-2.5 text-xs"
+                            >
+                                All Records
+                            </Button>
+                            <Button
+                                variant={currentCohort === "enrolled" ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => handleSelectCohort("enrolled")}
+                                className="h-7 gap-1.5 rounded-md px-2.5 text-xs"
+                            >
+                                <span className="size-1.5 rounded-full bg-emerald-500" />
+                                Enrolled
+                            </Button>
+                            <Button
+                                variant={currentCohort === "applicant" ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => handleSelectCohort("applicant")}
+                                className="h-7 gap-1.5 rounded-md px-2.5 text-xs"
+                            >
+                                <span className="size-1.5 rounded-full bg-amber-500" />
+                                Applicants
+                            </Button>
+                            <Button
+                                variant={currentCohort === "graduated" ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => handleSelectCohort("graduated")}
+                                className="h-7 gap-1.5 rounded-md px-2.5 text-xs"
+                            >
+                                <span className="size-1.5 rounded-full bg-blue-500" />
+                                Graduated
+                            </Button>
+                            <Button
+                                variant={currentCohort === "trashed" ? "destructive" : "ghost"}
+                                size="sm"
+                                onClick={() => handleSelectCohort("trashed")}
+                                className="text-muted-foreground hover:text-foreground ml-auto h-7 gap-1.5 rounded-md px-2.5 text-xs"
+                            >
+                                <Trash2 className="size-3.5" />
+                                Trashed
+                            </Button>
                         </div>
-                        {activeFilters.length > 0 && (
-                            <Badge variant="secondary">
-                                {activeFilters.length} active filter{activeFilters.length === 1 ? "" : "s"}
-                            </Badge>
-                        )}
-                    </CardHeader>
-                    <CardContent className="px-3">
-                        <div className="bg-muted/20 flex flex-col justify-between gap-3 rounded-lg border p-2.5 lg:flex-row lg:items-center">
+
+                        {/* Search + Action Bar */}
+                        <div className="flex flex-col justify-between gap-2.5 lg:flex-row lg:items-center">
+                            {/* Search Field */}
                             <div className="relative min-w-0 flex-1">
-                                <Search className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" aria-hidden="true" />
-                                <Input
-                                    placeholder="Search by student name, ID, course, or status..."
-                                    className="bg-background h-9 pl-9"
-                                    value={search}
-                                    onChange={(event) => {
-                                        const nextSearch = event.target.value;
-                                        setSearch(nextSearch);
-                                    }}
+                                <Search
+                                    className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
+                                    aria-hidden="true"
                                 />
+                                <Input
+                                    ref={searchInputRef}
+                                    placeholder="Search by student name, ID, course, or status... (Press '/' to focus)"
+                                    className="bg-background/50 focus:bg-background h-9 pr-8 pl-9 text-xs sm:text-sm"
+                                    value={search}
+                                    onChange={(event) => handleSearchChange(event.target.value)}
+                                />
+                                {search && (
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 size-5 -translate-y-1/2 rounded-full p-0"
+                                        onClick={handleClearSearch}
+                                        aria-label="Clear search"
+                                    >
+                                        <X className="size-3.5" />
+                                    </Button>
+                                )}
                             </div>
 
+                            {/* Toolbar actions */}
                             <div className="flex flex-wrap items-center gap-2">
                                 <Select value={sortOption} onValueChange={handleSortChange}>
-                                    <SelectTrigger className="h-8 w-[180px]">
+                                    <SelectTrigger className="h-9 w-[170px] text-xs">
                                         <SelectValue placeholder="Sort students" />
                                     </SelectTrigger>
                                     <SelectContent align="end">
-                                        <SelectItem value="created_at:desc">Latest added</SelectItem>
-                                        <SelectItem value="created_at:asc">Oldest added</SelectItem>
-                                        <SelectItem value="name:asc">Name A-Z</SelectItem>
-                                        <SelectItem value="name:desc">Name Z-A</SelectItem>
-                                        <SelectItem value="student_id:asc">Student ID ascending</SelectItem>
-                                        <SelectItem value="student_id:desc">Student ID descending</SelectItem>
+                                        <SelectItem value="created_at:desc" className="text-xs">
+                                            Latest added
+                                        </SelectItem>
+                                        <SelectItem value="created_at:asc" className="text-xs">
+                                            Oldest added
+                                        </SelectItem>
+                                        <SelectItem value="name:asc" className="text-xs">
+                                            Name A–Z
+                                        </SelectItem>
+                                        <SelectItem value="name:desc" className="text-xs">
+                                            Name Z–A
+                                        </SelectItem>
+                                        <SelectItem value="student_id:asc" className="text-xs">
+                                            Student ID (ascending)
+                                        </SelectItem>
+                                        <SelectItem value="student_id:desc" className="text-xs">
+                                            Student ID (descending)
+                                        </SelectItem>
                                     </SelectContent>
                                 </Select>
 
@@ -656,11 +833,14 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
                                     filters={activeFilters}
                                     onChange={handleFiltersChange}
                                     trigger={
-                                        <Button variant="outline" className="relative gap-2" size="sm">
-                                            <Filter className="size-4" aria-hidden="true" />
-                                            Filters
+                                        <Button variant="outline" className="relative h-9 gap-1.5 text-xs" size="sm">
+                                            <Filter className="size-3.5" aria-hidden="true" />
+                                            <span>Filters</span>
                                             {activeFilters.length > 0 && (
-                                                <Badge variant="secondary" className="ml-1 h-5 min-w-5 rounded-full px-1.5 text-xs">
+                                                <Badge
+                                                    variant="secondary"
+                                                    className="ml-0.5 flex size-5 items-center justify-center rounded-full p-0 text-[10px]"
+                                                >
                                                     {activeFilters.length}
                                                 </Badge>
                                             )}
@@ -673,165 +853,103 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
                                         variant="ghost"
                                         size="sm"
                                         onClick={clearFilters}
-                                        className="text-muted-foreground hover:text-foreground h-8 px-2"
+                                        className="text-muted-foreground hover:text-foreground h-9 gap-1 px-2 text-xs"
+                                        title="Clear all filters"
                                     >
-                                        <RotateCcw className="size-3.5" aria-hidden="true" />
-                                        Reset
+                                        <RotateCcw className="size-3" aria-hidden="true" />
+                                        <span className="hidden sm:inline">Reset</span>
                                     </Button>
                                 )}
 
-                                <Separator orientation="vertical" className="mx-1 hidden h-8 sm:block" />
+                                <Separator orientation="vertical" className="mx-1 hidden h-6 sm:block" />
 
                                 <Tabs value={viewMode} onValueChange={(value) => setViewMode(value as "list" | "grid")}>
-                                    <TabsList className="grid grid-cols-2">
-                                        <TabsTrigger value="list" title="List view" aria-label="List view">
+                                    <TabsList className="grid h-9 grid-cols-2 p-0.5">
+                                        <TabsTrigger value="list" className="h-8 px-2.5 text-xs" title="Table view" aria-label="Table view">
                                             <List className="size-4" aria-hidden="true" />
                                         </TabsTrigger>
-                                        <TabsTrigger value="grid" title="Grid view" aria-label="Grid view">
+                                        <TabsTrigger value="grid" className="h-8 px-2.5 text-xs" title="Grid cards view" aria-label="Grid cards view">
                                             <LayoutGrid className="size-4" aria-hidden="true" />
                                         </TabsTrigger>
                                     </TabsList>
                                 </Tabs>
                             </div>
                         </div>
+
+                        {/* Active Filter Removable Chips */}
+                        {activeFilters.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-1.5 border-t pt-2.5">
+                                <span className="text-muted-foreground mr-1 text-[11px] font-medium">Active filters:</span>
+                                {activeFilters.map((f) => (
+                                    <Badge
+                                        key={f.id}
+                                        variant="secondary"
+                                        className="bg-muted hover:bg-muted/80 text-foreground gap-1.5 px-2 py-0.5 text-[11px] font-normal"
+                                    >
+                                        <span className="text-muted-foreground font-semibold">{getFilterFieldLabel(f.field)}:</span>
+                                        <span>{getFilterValueLabel(f.field, f.values[0])}</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => removeFilter(f.field)}
+                                            className="text-muted-foreground hover:bg-background hover:text-foreground ml-0.5 rounded-full p-0.5 transition-colors"
+                                            aria-label={`Remove filter ${f.field}`}
+                                        >
+                                            <X className="size-3" />
+                                        </button>
+                                    </Badge>
+                                ))}
+                                <Button
+                                    variant="link"
+                                    size="sm"
+                                    onClick={clearFilters}
+                                    className="text-muted-foreground hover:text-foreground h-6 px-1.5 text-[11px]"
+                                >
+                                    Clear all
+                                </Button>
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
-                {/* Content */}
-                <AdminDeferredSection data="students" label="Loading student records" name="admin-administrators-students-index" variant="list">
-                    <Tabs value={viewMode} className="w-full">
-                        <TabsContent value="list" className="mt-0">
-                            <DataTable
-                                columns={columns}
-                                data={sortedStudents}
-                                pageIndex={localPagination.current_page - 1}
-                                pageSize={pageSize}
-                                sorting={sorting}
-                                onPageIndexChange={setPageIndex}
-                                onPageSizeChange={(nextPageSize) => {
-                                    setPageSize(nextPageSize);
-                                    setPageIndex(0);
-                                }}
-                                onSortingChange={handleTableSortingChange}
-                                bulkActions={{ statusOptions: options.statuses }}
-                            />
-                        </TabsContent>
 
-                        <TabsContent value="grid" className="mt-0">
-                            {paginatedStudents.length === 0 ? (
-                                <div className="bg-muted/10 flex h-64 flex-col items-center justify-center rounded-lg border border-dashed">
-                                    <Search className="mb-2 h-8 w-8 opacity-20" />
-                                    <p className="text-muted-foreground">No students found matching your criteria.</p>
-                                </div>
-                            ) : (
-                                <>
-                                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                                        {paginatedStudents.map((row) => (
-                                            <Card key={row.id} className="transition-shadow hover:shadow-md">
-                                                <CardHeader className="flex flex-row items-center gap-4 space-y-0 pb-2">
-                                                    <Avatar className="h-12 w-12 border">
-                                                        <AvatarImage src={row.avatar_url ?? undefined} alt={row.name} />
-                                                        <AvatarFallback className="bg-primary/10 text-primary text-lg font-medium">
-                                                            {getInitials(row.name)}
-                                                        </AvatarFallback>
-                                                    </Avatar>
-                                                    <div className="flex flex-col overflow-hidden">
-                                                        <h3 className="truncate text-sm font-semibold" title={row.name}>
-                                                            {row.name}
-                                                        </h3>
-                                                        <p className="text-muted-foreground truncate text-xs">{row.student_id ?? "No ID"}</p>
-                                                    </div>
-                                                </CardHeader>
-                                                <CardContent className="pt-4">
-                                                    <div className="mb-3 flex flex-wrap gap-2">
-                                                        <Badge className={`text-[10px] font-bold shadow-none ${getStatusColor(row.status)}`}>
-                                                            {row.status ?? "Unknown"}
-                                                        </Badge>
-                                                        <Badge variant="outline" className="text-[10px]">
-                                                            {row.course ?? "N/A"}
-                                                        </Badge>
-                                                    </div>
-                                                    <div className="text-muted-foreground space-y-1 text-xs">
-                                                        <div className="flex items-center justify-between">
-                                                            <span>Year:</span>
-                                                            <span className="text-foreground font-medium">{row.academic_year}</span>
-                                                        </div>
-                                                        <div className="flex items-center justify-between">
-                                                            <span>Clearance:</span>
-                                                            <div className="flex items-center gap-1">
-                                                                {getClearanceIcon(row.previous_sem_clearance)}
-                                                                <span className="capitalize">
-                                                                    {row.previous_sem_clearance === "cleared" ? "Cleared" : "Pending"}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </CardContent>
-                                                <CardFooter className="flex gap-2 pt-0">
-                                                    <AdminLink
-                                                        href={route("administrators.students.show", row.id)}
-                                                        className={buttonVariants({ variant: "outline", size: "sm", className: "w-full" })}
-                                                    >
-                                                        View
-                                                    </AdminLink>
-                                                    <DropdownMenu>
-                                                        <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-8 w-8" />}>
-                                                            <MoreHorizontal className="h-4 w-4" />
-                                                        </DropdownMenuTrigger>
-                                                        <DropdownMenuContent align="end">
-                                                            <DropdownMenuItem
-                                                                render={<AdminLink href={route("administrators.students.edit", row.id)} />}
-                                                            >
-                                                                Edit
-                                                            </DropdownMenuItem>
-                                                        </DropdownMenuContent>
-                                                    </DropdownMenu>
-                                                </CardFooter>
-                                            </Card>
-                                        ))}
-                                    </div>
-                                    {/* Manual Pagination for Grid View using the same style as Table */}
-                                    <div className="mt-4 flex items-center justify-between border-t pt-4">
-                                        <div className="text-muted-foreground text-sm">
-                                            Showing {localPagination.from} to {localPagination.to} of {localPagination.total} entries
-                                        </div>
-                                        <div className="flex gap-2">
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                disabled={localPagination.current_page === 1}
-                                                onClick={() => setPageIndex((currentPageIndex) => Math.max(0, currentPageIndex - 1))}
-                                            >
-                                                Previous
-                                            </Button>
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                disabled={localPagination.current_page === localPagination.last_page}
-                                                onClick={() =>
-                                                    setPageIndex((currentPageIndex) => Math.min(localPagination.last_page - 1, currentPageIndex + 1))
-                                                }
-                                            >
-                                                Next
-                                            </Button>
-                                        </div>
-                                    </div>
-                                </>
-                            )}
-                        </TabsContent>
-                    </Tabs>
+                {/* Deferred Student Data Directory Section */}
+                <AdminDeferredSection data="students" label="Loading student records" name="admin-administrators-students-index" variant="list">
+                    <DataTable
+                        columns={tableColumns}
+                        data={studentRows}
+                        pageIndex={(students?.current_page ?? 1) - 1}
+                        pageSize={students?.per_page ?? filters.per_page ?? 20}
+                        pageCount={students?.last_page ?? 1}
+                        totalCount={students?.total ?? studentRows.length}
+                        from={students?.from ?? (studentRows.length > 0 ? 1 : 0)}
+                        to={students?.to ?? studentRows.length}
+                        sorting={sorting}
+                        viewMode={viewMode}
+                        onPageIndexChange={handlePageIndexChange}
+                        onPageSizeChange={handlePageSizeChange}
+                        onSortingChange={handleTableSortingChange}
+                        bulkActions={{ statusOptions: options.statuses }}
+                        onSoftDelete={setSoftDeleteTarget}
+                        onForceDelete={(student) => {
+                            setForceDeleteTarget(student);
+                            setConfirmForceText("");
+                        }}
+                        onRestore={setRestoreTarget}
+                        onClearFilters={clearAllFiltersAndSearch}
+                    />
                 </AdminDeferredSection>
             </div>
 
+            {/* Individual Soft Delete Dialog */}
             <AlertDialog open={!!softDeleteTarget} onOpenChange={(open) => !open && setSoftDeleteTarget(null)}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
                         <AlertDialogTitle className="flex items-center gap-2">
-                            <Trash2 className="h-5 w-5" />
-                            Soft Delete Student?
+                            <Trash2 className="size-5 text-amber-600" />
+                            Move Student to Trash?
                         </AlertDialogTitle>
                         <AlertDialogDescription>
                             <strong className="text-foreground">{softDeleteTarget?.name}</strong> will be moved to trash and hidden from default
-                            views. You can restore them later from the "Trashed" filter.
+                            views. You can restore them at any time from the Trashed view.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
@@ -839,31 +957,32 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
                         <AlertDialogAction
                             onClick={handleConfirmSoftDelete}
                             disabled={deleting}
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            className="bg-amber-600 text-white hover:bg-amber-700 dark:bg-amber-600 dark:hover:bg-amber-700"
                         >
-                            {deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
-                            Soft Delete
+                            {deleting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Trash2 className="mr-2 size-4" />}
+                            Move to Trash
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
 
+            {/* Individual Permanent Delete Dialog */}
             <AlertDialog open={!!forceDeleteTarget} onOpenChange={(open) => !open && !deleting && setForceDeleteTarget(null)}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
                         <AlertDialogTitle className="text-destructive flex items-center gap-2">
-                            <Zap className="h-5 w-5" />
+                            <Zap className="size-5" />
                             Permanently Delete Student?
                         </AlertDialogTitle>
                         <AlertDialogDescription>
                             This will permanently erase <strong className="text-foreground">{forceDeleteTarget?.name}</strong> along with all
-                            enrollments, tuition, transactions, clearances, and contact data. This action{" "}
+                            enrollments, tuition, transactions, clearances, grades, and records. This action{" "}
                             <strong className="text-foreground">cannot be undone</strong>.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
-                    <div className="space-y-2">
+                    <div className="space-y-2 py-1">
                         <Label htmlFor="index-force-confirm">
-                            Type <span className="font-mono font-semibold">{forceDeleteTarget?.student_id}</span> to confirm:
+                            Type <span className="text-foreground font-mono font-semibold">{forceDeleteTarget?.student_id}</span> to confirm:
                         </Label>
                         <Input
                             id="index-force-confirm"
@@ -878,33 +997,34 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
                         <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
                         <Button
                             onClick={handleConfirmForceDelete}
-                            disabled={deleting || confirmForceText !== forceDeleteTarget?.student_id}
+                            disabled={deleting || confirmForceText.trim() !== String(forceDeleteTarget?.student_id ?? "").trim()}
                             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                         >
-                            {deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
-                            Force Delete
+                            {deleting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Zap className="mr-2 size-4" />}
+                            Permanently Delete
                         </Button>
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
 
+            {/* Individual Restore Dialog */}
             <AlertDialog open={!!restoreTarget} onOpenChange={(open) => !open && setRestoreTarget(null)}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
                         <AlertDialogTitle className="flex items-center gap-2">
-                            <RotateCcw className="h-5 w-5" />
-                            Restore Student?
+                            <RotateCcw className="text-primary size-5" />
+                            Restore Student Record?
                         </AlertDialogTitle>
                         <AlertDialogDescription>
-                            <strong className="text-foreground">{restoreTarget?.name}</strong> will be restored and reappear in the active students
-                            list.
+                            <strong className="text-foreground">{restoreTarget?.name}</strong> will be restored to active status and reappear in the
+                            active student directory.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                         <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
                         <AlertDialogAction onClick={handleConfirmRestore} disabled={deleting}>
-                            {deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
-                            Restore
+                            {deleting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <RotateCcw className="mr-2 size-4" />}
+                            Restore Student
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>

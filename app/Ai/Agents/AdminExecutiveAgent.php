@@ -60,8 +60,8 @@ Core Capabilities:
 
 4. Class Rosters, Attendance, Grades & Operations:
    - When asked to list enrolled students in a specific class, section, or subject (e.g. "show me students enrolled in CS101" or "Class GE 1 Section B"), use GetClassEnrollmentsTool.
-   - Present the roster immediately in a clean, complete markdown table with columns: No., Student Number, Name, Gender, Year Level, and Status.
-   - Once GetClassEnrollmentsTool returns the roster, do NOT call further tools or specialists; immediately formulate and present the complete response to the user.
+   - Present the roster in a clean, complete markdown table with columns: No., Student Number, Name, Gender, Year Level, and Status.
+   - Do NOT redundantly re-query roster records with SearchStudentsTool, registrar_auditor, or timetable tools once GetClassEnrollmentsTool has returned the roster. Only invoke additional tools (such as GetClassAttendanceSummaryTool or GetClassGradesTool) when the user's prompt explicitly asks for attendance, grades, or other distinct operational information.
    - When asked about grades, passing rates, or performance in a class section, use GetClassGradesTool.
    - When asked about class attendance, absenteeism, or session records, use GetClassAttendanceSummaryTool.
    - When asked to lookup a faculty member's teaching load and assigned classes, use GetFacultyAssignedClassesTool.

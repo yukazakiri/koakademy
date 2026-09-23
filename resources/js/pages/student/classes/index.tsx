@@ -33,10 +33,12 @@ import { useReactToPrint } from "react-to-print";
 
 interface CurriculumSubject {
     id: number;
+    enrollment_id?: number | null;
+    is_enrolled?: boolean;
     code: string;
     title: string;
     units: number;
-    status: "pending" | "ongoing" | "completed" | "failed";
+    status: "pending" | "ongoing" | "completed" | "failed" | "dropped";
     grade: number | null;
     remarks: string | null;
 }
@@ -138,6 +140,16 @@ const StatusBadge = ({ status, grade }: { status: CurriculumSubject["status"]; g
                     {grade ? `Grade: ${grade}` : "Failed"}
                 </Badge>
             );
+        case "dropped":
+            return (
+                <Badge
+                    variant="outline"
+                    className="bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/20 gap-1 transition-colors"
+                >
+                    <XCircle className="h-3 w-3" />
+                    Dropped
+                </Badge>
+            );
         case "ongoing":
             return (
                 <Badge
@@ -164,7 +176,7 @@ const InteractiveSubjectRow = ({ subject, activeClass }: { subject: CurriculumSu
         <TableRow
             className={cn(
                 "group hover:bg-muted/35 data-[state=selected]:bg-muted transition-colors",
-                subject.status === "failed"
+                subject.status === "failed" || subject.status === "dropped"
                     ? "bg-red-50/40 hover:bg-red-50/70 dark:bg-red-950/10 dark:hover:bg-red-950/20"
                     : subject.status === "ongoing"
                       ? "bg-blue-50/40 hover:bg-blue-50/70 dark:bg-blue-950/10 dark:hover:bg-blue-950/20"
@@ -562,7 +574,10 @@ export default function StudentClasses({
 
             Object.entries(sems).forEach(([semStr, subs]) => {
                 const semester = parseInt(semStr);
-                const subjects = subs as CurriculumSubject[];
+                const subjects = (subs as CurriculumSubject[]).map((s) => ({
+                    ...s,
+                    is_enrolled: s.is_enrolled ?? (s.status !== "pending" && s.enrollment_id != null),
+                }));
                 semesterMap.set(`${year}-${semester}`, computeGwa(subjects, { config: gradingConfig }));
                 yearSubjects.push(...subjects);
             });

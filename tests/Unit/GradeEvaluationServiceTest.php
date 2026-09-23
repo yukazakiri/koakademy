@@ -59,3 +59,59 @@ it('evaluates symbolic grades without a country-specific numeric threshold', fun
     ])
         ->and($service->evaluate('R', $policy)['outcome'])->toBe('fail');
 });
+
+it('treats a numeric grade of zero as dropped when zero_is_dropped is enabled', function (): void {
+    $policy = [...GradingSystemService::defaults(), 'zero_is_dropped' => true];
+    $service = app(GradeEvaluationService::class);
+
+    $result = $service->evaluate(0, $policy);
+    expect($result['outcome'])->toBe('withdrawn')
+        ->and($result['numeric_grade'])->toBe(0.0)
+        ->and($result['symbol'])->toBe('DROPPED');
+});
+
+it('treats a numeric grade of zero as failing when zero_is_dropped is disabled', function (): void {
+    $policy = [...GradingSystemService::defaults(), 'zero_is_dropped' => false];
+    $service = app(GradeEvaluationService::class);
+
+    $result = $service->evaluate(0.0, $policy);
+    expect($result['outcome'])->toBe('fail')
+        ->and($result['numeric_grade'])->toBe(0.0);
+});
+
+it('treats string DRP and DROPPED as dropped', function (): void {
+    $policy = GradingSystemService::defaults();
+    $service = app(GradeEvaluationService::class);
+
+    expect($service->evaluate('DRP', $policy)['outcome'])->toBe('withdrawn')
+        ->and($service->evaluate('DRP', $policy)['symbol'])->toBe('DROPPED')
+        ->and($service->evaluate('DROPPED', $policy)['outcome'])->toBe('withdrawn')
+        ->and($service->evaluate('DROP', $policy)['outcome'])->toBe('withdrawn');
+});
+
+it('treats string W and WITHDRAWN as withdrawn', function (): void {
+    $policy = GradingSystemService::defaults();
+    $service = app(GradeEvaluationService::class);
+
+    expect($service->evaluate('W', $policy)['outcome'])->toBe('withdrawn')
+        ->and($service->evaluate('WITHDRAWN', $policy)['outcome'])->toBe('withdrawn');
+});
+
+it('preserves all component scores in calculate even if an earlier required component is missing', function (): void {
+    $policy = GradingSystemService::defaults();
+    $service = app(GradeEvaluationService::class);
+
+    $scores = [
+        'prelim' => null,
+        'midterm' => 85.0,
+        'final' => 90.0,
+    ];
+
+    $result = $service->calculate($scores, $policy);
+    expect($result['outcome'])->toBe('incomplete')
+        ->and($result['components'])->toMatchArray([
+            'prelim' => null,
+            'midterm' => 85.0,
+            'final' => 90.0,
+        ]);
+});

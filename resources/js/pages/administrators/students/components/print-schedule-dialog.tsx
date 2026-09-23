@@ -614,6 +614,7 @@ tfoot td{background:#f0f0f0;font-weight:700}
                 // Calculate stats
                 let totalSubjects = 0;
                 let completedSubjects = 0;
+                let droppedSubjects = 0;
                 let inProgressSubjects = 0;
                 let totalUnits = 0;
                 let completedUnits = 0;
@@ -626,6 +627,8 @@ tfoot td{background:#f0f0f0;font-weight:700}
                             if (sub.status === "Completed") {
                                 completedSubjects++;
                                 completedUnits += Number(sub.units) || 0;
+                            } else if (sub.status === "Dropped") {
+                                droppedSubjects++;
                             } else if (sub.status === "In Progress") {
                                 inProgressSubjects++;
                             }
@@ -633,7 +636,7 @@ tfoot td{background:#f0f0f0;font-weight:700}
                     });
                 });
 
-                const pendingSubjects = totalSubjects - completedSubjects - inProgressSubjects;
+                const pendingSubjects = totalSubjects - completedSubjects - droppedSubjects - inProgressSubjects;
                 const progressPercent = totalSubjects > 0 ? Math.round((completedSubjects / totalSubjects) * 100) : 0;
 
                 const documentTitle = showChecklistCompleted ? "Academic Transcript" : "Curriculum Checklist";
@@ -735,9 +738,11 @@ tfoot td{background:#f0f0f0;font-weight:700}
                                     ? '<span class="badge badge-passed">Passed</span>'
                                     : sub.status === "Failed"
                                       ? '<span class="badge badge-failed">Failed</span>'
-                                      : sub.status === "In Progress"
-                                        ? '<span class="badge badge-progress">In Progress</span>'
-                                        : '<span class="badge badge-pending">Pending</span>';
+                                      : sub.status === "Dropped"
+                                        ? '<span class="badge badge-failed">Dropped</span>'
+                                        : sub.status === "In Progress"
+                                          ? '<span class="badge badge-progress">In Progress</span>'
+                                          : '<span class="badge badge-pending">Pending</span>';
 
                             const classification =
                                 sub.classification && sub.classification !== "internal" ? sub.classification.replace("_", " ") : "";

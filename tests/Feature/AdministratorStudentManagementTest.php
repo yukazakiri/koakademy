@@ -143,6 +143,46 @@ it('marks failing checklist grades as failed instead of passed', function (): vo
             }));
 });
 
+it('marks subjects with a grade of zero as dropped in the checklist', function (): void {
+    config(['activitylog.enabled' => false, 'inertia.testing.ensure_pages_exist' => false]);
+    withoutVite();
+
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $student = Student::factory()->create();
+    $studentEnrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'semester' => 1,
+    ]);
+    $droppedSubject = Subject::factory()->create([
+        'course_id' => $student->course_id,
+        'academic_year' => 1,
+        'semester' => 1,
+    ]);
+
+    SubjectEnrollment::create([
+        'student_id' => $student->id,
+        'enrollment_id' => $studentEnrollment->id,
+        'subject_id' => $droppedSubject->id,
+        'grade' => 0,
+        'grade_outcome' => 'withdrawn',
+        'academic_year' => 1,
+        'school_year' => '2024 - 2025',
+        'semester' => 1,
+        'classification' => SubjectEnrolledEnum::INTERNAL->value,
+    ]);
+
+    actingAs($user)
+        ->get(route('administrators.students.show', $student->id))
+        ->assertSuccessful()
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->component('administrators/students/show', false)
+            ->where('student.checklist.0.semesters.0.subjects', function ($subjects) use ($droppedSubject): bool {
+                $byId = collect($subjects)->keyBy('id');
+
+                return $byId->get($droppedSubject->id)['status'] === 'Dropped';
+            }));
+});
+
 it('creates a new historical subject enrollment if is_new_record is true', function (): void {
     $user = User::factory()->create(['role' => UserRole::Admin]);
     $student = Student::factory()->create();
@@ -462,4 +502,62 @@ it('rejects the bulk force-destroy endpoint when the confirmation text does not 
         ->assertRedirect();
 
     expect(Student::query()->whereKey($student->id)->exists())->toBeTrue();
+});
+
+it('rejects updating an enrollment record that belongs to a different subject', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $student = Student::factory()->create();
+    $subjectA = Subject::factory()->create();
+    $subjectB = Subject::factory()->create();
+
+    $studentEnrollment = StudentEnrollment::factory()->create(['student_id' => $student->id]);
+    $enrollmentB = SubjectEnrollment::create([
+        'student_id' => $student->id,
+        'enrollment_id' => $studentEnrollment->id,
+        'subject_id' => $subjectB->id,
+        'academic_year' => 1,
+        'school_year' => '2023 - 2024',
+        'semester' => 1,
+        'classification' => SubjectEnrolledEnum::INTERNAL->value,
+    ]);
+
+    actingAs($user)
+        ->patch(route('administrators.students.subjects.update-grade', ['student' => $student->id, 'subject' => $subjectA->id]), [
+            'enrollment_record_id' => $enrollmentB->id,
+            'is_new_record' => false,
+            'grade' => 85,
+            'classification' => SubjectEnrolledEnum::INTERNAL->value,
+            'academic_year' => 1,
+            'school_year' => '2023 - 2024',
+            'semester' => 1,
+        ])
+        ->assertNotFound();
+});
+
+it('validates transcript grade inputs against the active grading policy bounds', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $student = Student::factory()->create();
+    $subject = Subject::factory()->create();
+
+    actingAs($user)
+        ->patch(route('administrators.students.subjects.update-grade', ['student' => $student->id, 'subject' => $subject->id]), [
+            'is_new_record' => true,
+            'grade' => 99999,
+            'classification' => SubjectEnrolledEnum::INTERNAL->value,
+            'academic_year' => 1,
+            'school_year' => '2023 - 2024',
+            'semester' => 1,
+        ])
+        ->assertSessionHasErrors('grade');
+
+    actingAs($user)
+        ->patch(route('administrators.students.subjects.update-grade', ['student' => $student->id, 'subject' => $subject->id]), [
+            'is_new_record' => true,
+            'grade' => 'UNKNOWN_STRING',
+            'classification' => SubjectEnrolledEnum::INTERNAL->value,
+            'academic_year' => 1,
+            'school_year' => '2023 - 2024',
+            'semester' => 1,
+        ])
+        ->assertSessionHasErrors('grade');
 });

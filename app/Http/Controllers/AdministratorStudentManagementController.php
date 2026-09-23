@@ -56,6 +56,7 @@ use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -425,17 +426,36 @@ final class AdministratorStudentManagementController extends Controller
                 foreach ($subjects as $subject) {
                     $enrollments = $subjectEnrolled->get($subject->id, collect());
 
-                    // Prefer a finalized/evaluated record, then fall back to the latest attempt.
-                    $enrolledSubject = $enrollments->firstWhere(fn ($e): bool => $e->grade !== null || $e->grade_symbol !== null) ?? $enrollments->last();
+                    $retakeStrategy = $gradingConfig['retake_strategy'] ?? 'latest';
+                    $gradedEnrollments = $enrollments->filter(fn ($e): bool => $e->grade !== null || $e->grade_symbol !== null);
+
+                    $enrolledSubject = match ($retakeStrategy) {
+                        'highest' => $gradedEnrollments->isNotEmpty()
+                            ? (($gradingConfig['direction'] ?? 'higher_is_better') === 'lower_is_better'
+                                ? $gradedEnrollments->sortBy(fn ($e): float => is_numeric($e->grade) ? (float) $e->grade : INF)->first()
+                                : $gradedEnrollments->sortByDesc(fn ($e): float => is_numeric($e->grade) ? (float) $e->grade : -INF)->first())
+                            : $enrollments->sortByDesc('id')->first(),
+                        'first' => $enrollments->firstWhere(fn ($e): bool => $e->grade !== null || $e->grade_symbol !== null) ?? $enrollments->first(),
+                        default => $enrollments->sortByDesc('id')->firstWhere(fn ($e): bool => $e->grade !== null || $e->grade_symbol !== null) ?? $enrollments->sortByDesc('id')->first(),
+                    };
 
                     $status = 'Not Completed';
                     $grade = '-';
 
                     if ($enrolledSubject) {
                         if ($enrolledSubject->grade !== null || $enrolledSubject->grade_symbol !== null) {
-                            $status = ($enrolledSubject->grade_outcome ?? null) === 'pass' || $gradingSystem->isPassingGrade($enrolledSubject->grade, $gradingConfig)
-                                ? 'Completed'
-                                : 'Failed';
+                            $outcome = $enrolledSubject->grade_outcome ?? null;
+                            $zeroIsDropped = (bool) ($gradingConfig['zero_is_dropped'] ?? false);
+                            $isDropped = in_array($outcome, ['withdrawn', 'dropped'], true)
+                                || ($zeroIsDropped && (float) $enrolledSubject->grade === 0.0);
+
+                            if ($isDropped) {
+                                $status = 'Dropped';
+                            } elseif ($outcome === 'pass' || $gradingSystem->isPassingGrade($enrolledSubject->grade, $gradingConfig)) {
+                                $status = 'Completed';
+                            } else {
+                                $status = 'Failed';
+                            }
                             $grade = $enrolledSubject->grade_symbol ?? number_format((float) $enrolledSubject->grade, (int) $gradingConfig['decimal_places']);
                         } else {
                             $status = 'In Progress';
@@ -465,6 +485,7 @@ final class AdministratorStudentManagementController extends Controller
                     $subjectList[] = [
                         'id' => $subject->id,
                         'enrollment_id' => $enrolledSubject ? $enrolledSubject->id : null,
+                        'is_enrolled' => $enrolledSubject !== null,
                         'code' => $subject->code,
                         'title' => $subject->title,
                         'units' => $subject->units,
@@ -1499,7 +1520,16 @@ final class AdministratorStudentManagementController extends Controller
         $validated = $request->validate([
             'enrollment_record_id' => ['nullable', 'integer'],
             'is_new_record' => ['nullable', 'boolean'],
-            'grade' => ['nullable'],
+            'grade' => [
+                'nullable',
+                function (string $attribute, mixed $value, Closure $fail): void {
+                    if (! is_scalar($value)) {
+                        $fail('The grade must be a valid number or symbol.');
+                    } elseif (mb_strlen((string) $value) > 32) {
+                        $fail('The grade must not exceed 32 characters.');
+                    }
+                },
+            ],
             'remarks' => ['nullable', 'string'],
             'classification' => ['required', 'string', 'in:'.implode(',', array_column(SubjectEnrolledEnum::cases(), 'value'))],
             'school_name' => ['nullable', 'string', 'required_if:classification,credited,non_credited'],
@@ -1520,7 +1550,13 @@ final class AdministratorStudentManagementController extends Controller
         if ($enrollmentRecordId && ! $isNewRecord) {
             $subjectEnrollment = SubjectEnrollment::where('student_id', $student->id)
                 ->where('id', $enrollmentRecordId)
+                ->where(function ($query) use ($subject): void {
+                    $query->where('subject_id', $subject->id)
+                        ->orWhere('classification', SubjectEnrolledEnum::NON_CREDITED->value);
+                })
                 ->first();
+
+            abort_if(! $subjectEnrollment, 404, 'Subject enrollment not found or does not belong to this subject.');
         } elseif (! $isNewRecord) {
             // Find latest existing enrollment
             $subjectEnrollment = SubjectEnrollment::where('student_id', $student->id)
@@ -1532,11 +1568,51 @@ final class AdministratorStudentManagementController extends Controller
         }
 
         $gradingConfig = $gradingSystem->getConfig();
-        $evaluation = app(GradeEvaluationService::class)->evaluate($validated['grade'], $gradingConfig);
+
+        if (array_key_exists('grade', $validated) && $validated['grade'] !== null && $validated['grade'] !== '' && $validated['grade'] !== '-') {
+            $gradeInput = (string) $validated['grade'];
+            $normalizedSymbol = mb_strtoupper(mb_trim($gradeInput));
+            $recognizedSpecial = in_array($normalizedSymbol, ['DROP', 'DROPPED', 'DRP', 'W', 'WITHDRAWN', 'INC', 'INCOMPLETE'], true);
+
+            if (! $recognizedSpecial) {
+                if (($gradingConfig['input_type'] ?? 'numeric') === 'numeric') {
+                    if (! is_numeric($gradeInput)) {
+                        throw ValidationException::withMessages([
+                            'grade' => "Grade must be a number between {$gradingConfig['numeric_min']} and {$gradingConfig['numeric_max']} or a recognized status.",
+                        ]);
+                    }
+                    $numericVal = (float) $gradeInput;
+                    if ($numericVal < (float) $gradingConfig['numeric_min'] || $numericVal > (float) $gradingConfig['numeric_max']) {
+                        throw ValidationException::withMessages([
+                            'grade' => "Grade must be between {$gradingConfig['numeric_min']} and {$gradingConfig['numeric_max']}.",
+                        ]);
+                    }
+                } else {
+                    $validSymbols = collect($gradingConfig['bands'] ?? [])
+                        ->pluck('symbol')
+                        ->filter()
+                        ->map(fn ($s): string => mb_strtoupper(mb_trim((string) $s)))
+                        ->all();
+
+                    if (! in_array($normalizedSymbol, $validSymbols, true)) {
+                        throw ValidationException::withMessages([
+                            'grade' => 'Grade must be one of the configured symbols: '.implode(', ', $validSymbols).'.',
+                        ]);
+                    }
+                }
+            }
+        }
+
+        $rawGrade = $validated['grade'] ?? null;
+        if ($rawGrade === '' || $rawGrade === '-') {
+            $rawGrade = null;
+        }
+
+        $evaluation = app(GradeEvaluationService::class)->evaluate($rawGrade, $gradingConfig);
 
         $data = [
-            'grade' => $evaluation['numeric_grade'] ?? (is_numeric($validated['grade'] ?? null) ? (float) $validated['grade'] : null),
-            'grade_symbol' => $evaluation['symbol'] ?? (is_string($validated['grade'] ?? null) ? $validated['grade'] : null),
+            'grade' => $evaluation['numeric_grade'],
+            'grade_symbol' => $evaluation['symbol'],
             'grade_outcome' => $evaluation['outcome'],
             'grade_quality_points' => $evaluation['quality_points'],
             'grading_policy_version_id' => $gradingConfig['policy_version_id'] ?? null,

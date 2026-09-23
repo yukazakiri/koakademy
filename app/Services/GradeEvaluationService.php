@@ -22,6 +22,21 @@ final class GradeEvaluationService
             ];
         }
 
+        $symbolic = mb_strtoupper(mb_trim((string) $grade));
+        if (in_array($symbolic, ['DROP', 'DROPPED', 'DRP', 'W', 'WITHDRAWN', 'INC', 'INCOMPLETE'], true)) {
+            $outcome = in_array($symbolic, ['DROP', 'DROPPED', 'DRP'], true)
+                ? 'withdrawn'
+                : (in_array($symbolic, ['W', 'WITHDRAWN'], true) ? 'withdrawn' : 'incomplete');
+
+            return [
+                'numeric_grade' => is_numeric($grade) ? (float) $grade : 0.0,
+                'symbol' => in_array($symbolic, ['DROP', 'DROPPED', 'DRP'], true) ? 'DROPPED' : $symbolic,
+                'outcome' => $outcome,
+                'quality_points' => 0.0,
+                'band' => null,
+            ];
+        }
+
         $inputType = $policy['input_type'] ?? 'numeric';
         $bands = collect($policy['bands'] ?? []);
 
@@ -43,6 +58,17 @@ final class GradeEvaluationService
         }
 
         $numericGrade = round((float) $grade, (int) ($policy['decimal_places'] ?? 2));
+        $zeroIsDropped = (bool) ($policy['zero_is_dropped'] ?? false);
+        if ($zeroIsDropped && ($numericGrade === 0.0 || $numericGrade === 0)) {
+            return [
+                'numeric_grade' => 0.0,
+                'symbol' => 'DROPPED',
+                'outcome' => 'withdrawn',
+                'quality_points' => 0.0,
+                'band' => null,
+            ];
+        }
+
         $band = $bands->first(function (array $candidate) use ($numericGrade): bool {
             if (! is_numeric($candidate['min'] ?? null) || ! is_numeric($candidate['max'] ?? null)) {
                 return false;
@@ -63,6 +89,7 @@ final class GradeEvaluationService
     {
         $normalized = [];
         $weightedTotal = 0.0;
+        $hasMissingRequired = false;
 
         foreach ($policy['components'] ?? [] as $component) {
             $key = (string) ($component['key'] ?? '');
@@ -75,12 +102,16 @@ final class GradeEvaluationService
             $normalized[$key] = $score;
 
             if ($score === null && ($component['required'] ?? true)) {
-                return [...$this->evaluate(null, $policy), 'components' => $normalized];
+                $hasMissingRequired = true;
             }
 
             if ($score !== null) {
                 $weightedTotal += $score * ((float) ($component['weight'] ?? 0) / 100);
             }
+        }
+
+        if ($hasMissingRequired) {
+            return [...$this->evaluate(null, $policy), 'components' => $normalized];
         }
 
         return [...$this->evaluate($weightedTotal, $policy), 'components' => $normalized];

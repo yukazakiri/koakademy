@@ -1042,6 +1042,8 @@ export default function StudentDashboard({ user, is_new_user, student_data, id_c
                     code: classItem.subject_code,
                     title: classItem.subject_title,
                     id: classItem.id,
+                    enrollment_id: classItem.id,
+                    is_enrolled: true,
                 })),
                 { config: gradingConfig },
             ),

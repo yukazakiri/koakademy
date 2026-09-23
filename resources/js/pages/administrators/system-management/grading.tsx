@@ -74,6 +74,14 @@ export default function SystemManagementGradingPage({
         direction: grading_config.direction,
         decimal_places: grading_config.decimal_places,
         include_failed_in_gwa: grading_config.include_failed_in_gwa,
+        gwa_formula: grading_config.gwa_formula ?? "weighted_units",
+        gwa_subject_divisor_basis: grading_config.gwa_subject_divisor_basis ?? "enrolled_subjects",
+        gwa_calculation_metric: grading_config.gwa_calculation_metric ?? "numeric_grade",
+        retake_strategy: grading_config.retake_strategy ?? "latest",
+        include_credited_in_gwa: grading_config.include_credited_in_gwa ?? true,
+        zero_is_dropped: grading_config.zero_is_dropped ?? false,
+        treat_incomplete_as: grading_config.treat_incomplete_as ?? "exclude",
+        exclude_zero_unit_subjects: grading_config.exclude_zero_unit_subjects ?? true,
         excluded_keywords: grading_config.excluded_keywords ?? [],
         excluded_subject_ids: grading_config.excluded_subject_ids ?? [],
         bands: grading_config.bands ?? [],
@@ -268,7 +276,7 @@ export default function SystemManagementGradingPage({
                                     id="decimal-places"
                                     type="number"
                                     min="0"
-                                    max="6"
+                                    max="2"
                                     value={gradingForm.data.decimal_places}
                                     onChange={(event) => gradingForm.setData("decimal_places", Number(event.target.value))}
                                 />
@@ -512,21 +520,180 @@ export default function SystemManagementGradingPage({
                 <CardHeader>
                     <CardTitle>GWA Rules and Exemptions</CardTitle>
                     <CardDescription>
-                        Configure whether failed grades count in GWA and exclude special subjects without tying the policy to a specific country.
+                        Configure how the General Weighted Average is calculated across student records, terms, and retakes.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                    <div className="bg-muted/20 flex flex-wrap items-start justify-between gap-4 rounded-xl border p-4">
-                        <div>
-                            <Label className="text-base">Include failed grades in GWA</Label>
-                            <p className="text-muted-foreground mt-1 text-sm">
-                                When disabled, only bands marked as passing contribute to the weighted average.
+                    <div className="space-y-3">
+                        <Label className="text-base font-semibold">Calculation Formula</Label>
+                        <p className="text-muted-foreground text-xs">
+                            Choose how grades and subject weights combine to compute semester and cumulative averages.
+                        </p>
+                        <RadioGroup
+                            value={gradingForm.data.gwa_formula ?? "weighted_units"}
+                            onValueChange={(value) => gradingForm.setData("gwa_formula", value as GradingFormData["gwa_formula"])}
+                            className="grid gap-3 md:grid-cols-3"
+                        >
+                            <label className="hover:bg-muted/40 flex cursor-pointer gap-3 rounded-lg border p-3.5" htmlFor="formula-units">
+                                <RadioGroupItem value="weighted_units" id="formula-units" />
+                                <div>
+                                    <div className="text-sm font-medium">Standard Weighted (Units)</div>
+                                    <p className="text-muted-foreground text-xs">
+                                        Sum(Grade × Units) divided by total units. Standard collegiate GWA.
+                                    </p>
+                                </div>
+                            </label>
+                            <label className="hover:bg-muted/40 flex cursor-pointer gap-3 rounded-lg border p-3.5" htmlFor="formula-subjects">
+                                <RadioGroupItem value="weighted_subjects" id="formula-subjects" />
+                                <div>
+                                    <div className="text-sm font-medium">Weighted by Units / Subjects</div>
+                                    <p className="text-muted-foreground text-xs">
+                                        Sum(Grade × Units) divided by the student's enrolled subject count.
+                                    </p>
+                                </div>
+                            </label>
+                            <label className="hover:bg-muted/40 flex cursor-pointer gap-3 rounded-lg border p-3.5" htmlFor="formula-unweighted">
+                                <RadioGroupItem value="unweighted" id="formula-unweighted" />
+                                <div>
+                                    <div className="text-sm font-medium">Unweighted Mean</div>
+                                    <p className="text-muted-foreground text-xs">
+                                        Sum(Grade) divided by total subjects, ignoring individual subject units.
+                                    </p>
+                                </div>
+                            </label>
+                        </RadioGroup>
+                    </div>
+
+                    {(gradingForm.data.gwa_formula === "weighted_subjects" || gradingForm.data.gwa_formula === "unweighted") && (
+                        <div className="bg-muted/20 space-y-2 rounded-xl border p-4">
+                            <Label className="text-sm font-medium">Subject Divisor Basis</Label>
+                            <p className="text-muted-foreground text-xs">
+                                Select which count to divide the semester total by when calculating per-term and cumulative averages.
                             </p>
+                            <Select
+                                value={gradingForm.data.gwa_subject_divisor_basis ?? "enrolled_subjects"}
+                                onValueChange={(value) =>
+                                    gradingForm.setData("gwa_subject_divisor_basis", value as GradingFormData["gwa_subject_divisor_basis"])
+                                }
+                            >
+                                <SelectTrigger>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="enrolled_subjects">
+                                        Total subjects enrolled in the semester (Based on student enrollment)
+                                    </SelectItem>
+                                    <SelectItem value="graded_subjects">
+                                        Graded subjects only (Avoids penalizing pending or in-progress grades)
+                                    </SelectItem>
+                                    <SelectItem value="curriculum_subjects">All curriculum prospectus subjects in that semester block</SelectItem>
+                                </SelectContent>
+                            </Select>
                         </div>
-                        <Switch
-                            checked={gradingForm.data.include_failed_in_gwa}
-                            onCheckedChange={(checked) => gradingForm.setData("include_failed_in_gwa", checked)}
-                        />
+                    )}
+
+                    <div className="grid gap-4 md:grid-cols-3">
+                        <div className="space-y-2">
+                            <Label>Grade Metric for GWA</Label>
+                            <Select
+                                value={gradingForm.data.gwa_calculation_metric ?? "numeric_grade"}
+                                onValueChange={(value) =>
+                                    gradingForm.setData("gwa_calculation_metric", value as GradingFormData["gwa_calculation_metric"])
+                                }
+                            >
+                                <SelectTrigger>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="numeric_grade">Raw Numeric Grade (1.0–5.0 or 0–100)</SelectItem>
+                                    <SelectItem value="quality_points">Band Quality Points (GPA Equivalents)</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Retake / Repeat Rule</Label>
+                            <Select
+                                value={gradingForm.data.retake_strategy ?? "latest"}
+                                onValueChange={(value) => gradingForm.setData("retake_strategy", value as GradingFormData["retake_strategy"])}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="latest">Latest attempt replaces prior attempts</SelectItem>
+                                    <SelectItem value="highest">Highest / best grade achieved is used</SelectItem>
+                                    <SelectItem value="first">First attempt with a grade is kept</SelectItem>
+                                    <SelectItem value="all">All attempts count in cumulative GWA</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Incomplete (INC) Treatment</Label>
+                            <Select
+                                value={gradingForm.data.treat_incomplete_as ?? "exclude"}
+                                onValueChange={(value) => gradingForm.setData("treat_incomplete_as", value as GradingFormData["treat_incomplete_as"])}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="exclude">Exclude from GWA until completed</SelectItem>
+                                    <SelectItem value="fail">Treat as failing grade in GWA</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2">
+                        <div className="bg-muted/20 flex flex-wrap items-start justify-between gap-4 rounded-xl border p-4">
+                            <div>
+                                <Label className="text-sm font-medium">Include failed grades in GWA</Label>
+                                <p className="text-muted-foreground mt-1 text-xs">
+                                    When disabled, only bands marked as passing contribute to the weighted average.
+                                </p>
+                            </div>
+                            <Switch
+                                checked={gradingForm.data.include_failed_in_gwa}
+                                onCheckedChange={(checked) => gradingForm.setData("include_failed_in_gwa", checked)}
+                            />
+                        </div>
+
+                        <div className="bg-muted/20 flex flex-wrap items-start justify-between gap-4 rounded-xl border p-4">
+                            <div>
+                                <Label className="text-sm font-medium">Include credited / transfer subjects</Label>
+                                <p className="text-muted-foreground mt-1 text-xs">Factor transferred subjects with grades into institutional GWA.</p>
+                            </div>
+                            <Switch
+                                checked={gradingForm.data.include_credited_in_gwa ?? true}
+                                onCheckedChange={(checked) => gradingForm.setData("include_credited_in_gwa", checked)}
+                            />
+                        </div>
+
+                        <div className="bg-muted/20 flex flex-wrap items-start justify-between gap-4 rounded-xl border p-4">
+                            <div>
+                                <Label className="text-sm font-medium">Treat Grade 0 as Dropped</Label>
+                                <p className="text-muted-foreground mt-1 text-xs">
+                                    When disabled, numeric grade 0.0 is treated as a failing grade instead of dropped.
+                                </p>
+                            </div>
+                            <Switch
+                                checked={gradingForm.data.zero_is_dropped ?? false}
+                                onCheckedChange={(checked) => gradingForm.setData("zero_is_dropped", checked)}
+                            />
+                        </div>
+
+                        <div className="bg-muted/20 flex flex-wrap items-start justify-between gap-4 rounded-xl border p-4">
+                            <div>
+                                <Label className="text-sm font-medium">Exclude 0-Unit Subjects</Label>
+                                <p className="text-muted-foreground mt-1 text-xs">Automatically exclude zero-unit subjects from GWA calculations.</p>
+                            </div>
+                            <Switch
+                                checked={gradingForm.data.exclude_zero_unit_subjects ?? true}
+                                onCheckedChange={(checked) => gradingForm.setData("exclude_zero_unit_subjects", checked)}
+                            />
+                        </div>
                     </div>
                     <div className="space-y-3">
                         <Label>Keyword exclusions</Label>

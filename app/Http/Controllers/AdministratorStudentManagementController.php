@@ -44,6 +44,8 @@ use App\Services\StudentSchoolOptionService;
 use App\Settings\SiteSettings;
 use Closure;
 use Exception;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -101,142 +103,257 @@ final class AdministratorStudentManagementController extends Controller
         $direction = in_array($direction, ['asc', 'desc'], true) ? $direction : 'desc';
 
         $perPage = $request->input('per_page', 20);
-        $perPage = in_array((int) $perPage, [10, 20, 50, 100]) ? (int) $perPage : 20;
+        $perPage = in_array((int) $perPage, [10, 20, 50, 100], true) ? (int) $perPage : 20;
 
-        $studentRowsResolver = function () use ($clearanceCheckEnabled, $currentPeriod, $direction, $sort): array {
-            $studentsQuery = Student::query()
-                ->withTrashed()
-                ->select([
-                    'id',
-                    'student_id',
-                    'student_type',
-                    'first_name',
-                    'middle_name',
-                    'last_name',
-                    'course_id',
-                    'academic_year',
-                    'document_location_id',
-                    'is_indigenous_person',
-                    'region_of_origin',
-                    'scholarship_type',
-                    'employment_status',
-                    'created_at',
-                    'deleted_at',
-                ])
-                ->with([
-                    'Course:id,department_id,code,title',
-                    'DocumentLocation:id,picture_1x1',
-                    'clearances' => function ($query) use ($currentPeriod): void {
-                        $query->select(['id', 'student_id', 'academic_year', 'semester', 'is_cleared'])
-                            ->where('academic_year', $currentPeriod['academic_year'])
-                            ->where('semester', $currentPeriod['semester']);
-                    },
-                    'statusRecords' => function ($query) use ($currentPeriod): void {
-                        $query->select(['student_id', 'academic_year', 'semester', 'status'])
-                            ->where('academic_year', $currentPeriod['academic_year'])
-                            ->where('semester', $currentPeriod['semester']);
-                    },
-                ]);
-
-            if ($sort === 'name') {
-                $studentsQuery->orderBy('last_name', $direction)
-                    ->orderBy('first_name', $direction);
-            } elseif ($sort === 'status') {
-                $studentsQuery->orderBy(
-                    StudentStatusRecord::query()
-                        ->select('status')
-                        ->whereColumn('student_id', 'students.id')
+        $studentsQuery = Student::query()
+            ->select([
+                'students.id',
+                'students.student_id',
+                'students.student_type',
+                'students.first_name',
+                'students.middle_name',
+                'students.last_name',
+                'students.course_id',
+                'students.academic_year',
+                'students.document_location_id',
+                'students.is_indigenous_person',
+                'students.region_of_origin',
+                'students.scholarship_type',
+                'students.employment_status',
+                'students.created_at',
+                'students.deleted_at',
+            ])
+            ->with([
+                'Course:id,department_id,code,title',
+                'DocumentLocation:id,picture_1x1',
+                'clearances' => function ($query) use ($currentPeriod): void {
+                    $query->select(['id', 'student_id', 'academic_year', 'semester', 'is_cleared'])
                         ->where('academic_year', $currentPeriod['academic_year'])
-                        ->where('semester', $currentPeriod['semester'])
-                        ->limit(1),
-                    $direction
-                );
-            } elseif ($sort === 'student_id') {
-                $studentsQuery->orderBy('student_id', $direction);
-            } elseif ($sort === 'type') {
-                $studentsQuery->orderBy('student_type', $direction);
-            } elseif ($sort === 'course') {
-                $studentsQuery->orderBy(
-                    Course::select('code')
-                        ->whereColumn('courses.id', 'students.course_id')
-                        ->limit(1),
-                    $direction
-                );
-            } elseif (in_array($sort, ['academic_year', 'created_at', 'age', 'gender'], true)) {
-                $studentsQuery->orderBy($sort, $direction);
+                        ->where('semester', $currentPeriod['semester']);
+                },
+                'statusRecords' => function ($query) use ($currentPeriod): void {
+                    $query->select(['student_id', 'academic_year', 'semester', 'status'])
+                        ->where('academic_year', $currentPeriod['academic_year'])
+                        ->where('semester', $currentPeriod['semester']);
+                },
+            ]);
 
-                if ($sort === 'created_at') {
-                    $studentsQuery->orderBy('id', $direction);
+        if ($trashedFilter === 'trashed') {
+            $studentsQuery->onlyTrashed();
+        } elseif ($trashedFilter === 'all') {
+            $studentsQuery->withTrashed();
+        }
+
+        if (is_string($search) && mb_trim($search) !== '') {
+            $searchTerm = mb_trim($search);
+            $textCast = match ($studentsQuery->getConnection()->getDriverName()) {
+                'mysql', 'mariadb' => 'CHAR',
+                default => 'TEXT',
+            };
+
+            $studentsQuery->where(function (Builder $query) use ($searchTerm, $currentPeriod, $textCast): void {
+                $like = "%{$searchTerm}%";
+                $query->whereRaw("LOWER(CAST(students.student_id AS {$textCast})) LIKE LOWER(?)", [$like])
+                    ->orWhere('students.first_name', 'like', $like)
+                    ->orWhere('students.middle_name', 'like', $like)
+                    ->orWhere('students.last_name', 'like', $like)
+                    ->orWhereRaw("CONCAT(students.first_name, ' ', students.last_name) LIKE ?", [$like])
+                    ->orWhereRaw("CONCAT(students.last_name, ', ', students.first_name) LIKE ?", [$like])
+                    ->orWhereRaw("CONCAT(students.last_name, ' ', students.first_name) LIKE ?", [$like])
+                    ->orWhere('students.scholarship_type', 'like', $like)
+                    ->orWhere('students.employment_status', 'like', $like)
+                    ->orWhere('students.region_of_origin', 'like', $like)
+                    ->orWhereHas('Course', function (Builder $courseQuery) use ($like): void {
+                        $courseQuery->where('code', 'like', $like)
+                            ->orWhere('title', 'like', $like);
+                    })
+                    ->orWhereHas('statusRecords', function (Builder $statusQuery) use ($like, $currentPeriod): void {
+                        $statusQuery->where('academic_year', $currentPeriod['academic_year'])
+                            ->where('semester', $currentPeriod['semester'])
+                            ->where('status', 'like', $like);
+                    });
+            });
+        }
+
+        if (is_string($type) && mb_trim($type) !== '') {
+            $studentsQuery->where('students.student_type', $type);
+        }
+
+        if (is_string($status) && mb_trim($status) !== '') {
+            $studentsQuery->whereHas('statusRecords', function (Builder $statusQuery) use ($status, $currentPeriod): void {
+                $statusQuery->where('academic_year', $currentPeriod['academic_year'])
+                    ->where('semester', $currentPeriod['semester'])
+                    ->where('status', $status);
+            });
+        }
+
+        if ($courseId !== null) {
+            $studentsQuery->where('students.course_id', $courseId);
+        }
+
+        if ($departmentId !== null) {
+            $studentsQuery->whereHas('Course', function (Builder $courseQuery) use ($departmentId): void {
+                $courseQuery->where('department_id', $departmentId);
+            });
+        }
+
+        if ($yearLevel !== null) {
+            $studentsQuery->where('students.academic_year', $yearLevel);
+        }
+
+        if ($currentEnrollment === 'enrolled') {
+            $studentsQuery->whereHas('statusRecords', function (Builder $statusQuery) use ($currentPeriod): void {
+                $statusQuery->where('academic_year', $currentPeriod['academic_year'])
+                    ->where('semester', $currentPeriod['semester'])
+                    ->where('status', StudentStatus::Enrolled->value);
+            });
+        } elseif ($currentEnrollment === 'not_enrolled') {
+            $studentsQuery->whereDoesntHave('statusRecords', function (Builder $statusQuery) use ($currentPeriod): void {
+                $statusQuery->where('academic_year', $currentPeriod['academic_year'])
+                    ->where('semester', $currentPeriod['semester'])
+                    ->where('status', StudentStatus::Enrolled->value);
+            });
+        }
+
+        if (is_string($scholarshipType) && mb_trim($scholarshipType) !== '') {
+            $studentsQuery->where('students.scholarship_type', $scholarshipType);
+        }
+
+        if (is_string($employmentStatus) && mb_trim($employmentStatus) !== '') {
+            $studentsQuery->where('students.employment_status', $employmentStatus);
+        }
+
+        if ($isIndigenousPerson === 'yes') {
+            $studentsQuery->where('students.is_indigenous_person', true);
+        } elseif ($isIndigenousPerson === 'no') {
+            $studentsQuery->where('students.is_indigenous_person', false);
+        }
+
+        if (is_string($regionOfOrigin) && mb_trim($regionOfOrigin) !== '') {
+            $studentsQuery->where('students.region_of_origin', $regionOfOrigin);
+        }
+
+        if ($clearanceCheckEnabled) {
+            if ($previousSemesterCleared === 'true') {
+                $studentsQuery->whereHas('clearances', function (Builder $clearanceQuery) use ($currentPeriod): void {
+                    $clearanceQuery->where('academic_year', $currentPeriod['academic_year'])
+                        ->where('semester', $currentPeriod['semester'])
+                        ->where('is_cleared', true);
+                });
+            } elseif ($previousSemesterCleared === 'false') {
+                $studentsQuery->whereHas('clearances', function (Builder $clearanceQuery) use ($currentPeriod): void {
+                    $clearanceQuery->where('academic_year', $currentPeriod['academic_year'])
+                        ->where('semester', $currentPeriod['semester'])
+                        ->where('is_cleared', false);
+                });
+            }
+        } elseif ($previousSemesterCleared === 'true' || $previousSemesterCleared === 'false') {
+            $studentsQuery->whereRaw('1 = 0');
+        }
+
+        if ($sort === 'name') {
+            $studentsQuery->orderBy('students.last_name', $direction)
+                ->orderBy('students.first_name', $direction);
+        } elseif ($sort === 'status') {
+            $studentsQuery->orderBy(
+                StudentStatusRecord::query()
+                    ->select('status')
+                    ->whereColumn('student_id', 'students.id')
+                    ->where('academic_year', $currentPeriod['academic_year'])
+                    ->where('semester', $currentPeriod['semester'])
+                    ->limit(1),
+                $direction
+            );
+        } elseif ($sort === 'student_id') {
+            $studentsQuery->orderBy('students.student_id', $direction);
+        } elseif ($sort === 'type') {
+            $studentsQuery->orderBy('students.student_type', $direction);
+        } elseif ($sort === 'course') {
+            $studentsQuery->orderBy(
+                Course::select('code')
+                    ->whereColumn('courses.id', 'students.course_id')
+                    ->limit(1),
+                $direction
+            );
+        } elseif (in_array($sort, ['academic_year', 'created_at', 'age', 'gender'], true)) {
+            $studentsQuery->orderBy("students.{$sort}", $direction);
+        }
+
+        $studentsQuery->orderBy('students.id', $direction);
+
+        $studentTransform = function (Student $student) use ($clearanceCheckEnabled): array {
+            $studentType = $student->student_type;
+            $currentStatusRecord = $student->statusRecords->first();
+            $currentStatus = $currentStatusRecord?->status;
+            $scholarshipType = $student->scholarship_type;
+            $employmentStatus = $student->employment_status;
+
+            // Get current semester clearance status
+            $currentClearanceStatus = 'no_record';
+            if ($clearanceCheckEnabled) {
+                $currentClearance = $student->clearances->first();
+                if ($currentClearance) {
+                    $currentClearanceStatus = $currentClearance->is_cleared ? 'cleared' : 'not_cleared';
                 }
             }
 
-            return $studentsQuery->get()->map(function (Student $student) use ($clearanceCheckEnabled): array {
-                $studentType = $student->student_type;
-                $currentStatusRecord = $student->statusRecords->first();
-                $currentStatus = $currentStatusRecord?->status;
-                $scholarshipType = $student->scholarship_type;
-                $employmentStatus = $student->employment_status;
-
-                // Get current semester clearance status
-                $currentClearanceStatus = 'no_record';
-                if ($clearanceCheckEnabled) {
-                    $currentClearance = $student->clearances->first();
-                    if ($currentClearance) {
-                        $currentClearanceStatus = $currentClearance->is_cleared ? 'cleared' : 'not_cleared';
-                    }
-                }
-
-                return [
-                    'id' => $student->id,
-                    'student_id' => $student->student_id,
-                    'name' => $student->full_name,
-                    'course_id' => $student->course_id,
-                    'department_id' => $student->Course?->department_id,
-                    'course' => $student->Course?->code,
-                    'course_title' => $student->Course?->title,
-                    'year_level' => $student->academic_year,
-                    'academic_year' => $student->formatted_academic_year,
-                    'type' => $studentType instanceof StudentType ? $studentType->value : (is_string($studentType) ? $studentType : null),
-                    'status' => $currentStatus instanceof StudentStatus ? $currentStatus->value : (is_string($currentStatus) ? $currentStatus : null),
-                    'scholarship_type_value' => $scholarshipType instanceof ScholarshipType ? $scholarshipType->value : $scholarshipType,
-                    'scholarship_type' => $scholarshipType instanceof ScholarshipType ? $scholarshipType->getLabel() : ($scholarshipType ?? 'None'),
-                    'employment_status_value' => $employmentStatus instanceof EmploymentStatus ? $employmentStatus->value : $employmentStatus,
-                    'employment_status' => $employmentStatus instanceof EmploymentStatus ? $employmentStatus->getLabel() : ($employmentStatus ?? 'N/A'),
-                    'is_indigenous_person' => $student->is_indigenous_person,
-                    'region_of_origin' => $student->region_of_origin,
-                    'previous_sem_clearance' => $currentClearanceStatus,
-                    'avatar_url' => $student->picture1x1 !== '' ? $student->picture1x1 : null,
-                    'created_at' => format_timestamp($student->created_at),
-                    'deleted_at' => $student->deleted_at ? format_timestamp($student->deleted_at) : null,
-                    'filament' => [
-                        'view_url' => route('filament.admin.resources.students.view', $student),
-                        'edit_url' => route('filament.admin.resources.students.edit', $student),
-                    ],
-                ];
-            })->values()->all();
-        };
-
-        $studentsPayloadResolver = function () use ($perPage, $studentRowsResolver): array {
-            $studentRows = $studentRowsResolver();
-
             return [
-                'data' => $studentRows,
-                'total' => count($studentRows),
-                'from' => count($studentRows) > 0 ? 1 : 0,
-                'to' => count($studentRows),
-                'current_page' => 1,
-                'last_page' => 1,
-                'per_page' => $perPage,
-                'next_page_url' => null,
-                'prev_page_url' => null,
+                'id' => $student->id,
+                'student_id' => $student->student_id,
+                'name' => $student->full_name,
+                'course_id' => $student->course_id,
+                'department_id' => $student->Course?->department_id,
+                'course' => $student->Course?->code,
+                'course_title' => $student->Course?->title,
+                'year_level' => $student->academic_year,
+                'academic_year' => $student->formatted_academic_year,
+                'type' => $studentType instanceof StudentType ? $studentType->value : (is_string($studentType) ? $studentType : null),
+                'status' => $currentStatus instanceof StudentStatus ? $currentStatus->value : (is_string($currentStatus) ? $currentStatus : null),
+                'scholarship_type_value' => $scholarshipType instanceof ScholarshipType ? $scholarshipType->value : $scholarshipType,
+                'scholarship_type' => $scholarshipType instanceof ScholarshipType ? $scholarshipType->getLabel() : ($scholarshipType ?? 'None'),
+                'employment_status_value' => $employmentStatus instanceof EmploymentStatus ? $employmentStatus->value : $employmentStatus,
+                'employment_status' => $employmentStatus instanceof EmploymentStatus ? $employmentStatus->getLabel() : ($employmentStatus ?? 'N/A'),
+                'is_indigenous_person' => $student->is_indigenous_person,
+                'region_of_origin' => $student->region_of_origin,
+                'previous_sem_clearance' => $currentClearanceStatus,
+                'avatar_url' => $student->picture1x1 !== '' ? $student->picture1x1 : null,
+                'created_at' => format_timestamp($student->created_at),
+                'deleted_at' => $student->deleted_at ? format_timestamp($student->deleted_at) : null,
+                'filament' => [
+                    'view_url' => route('filament.admin.resources.students.view', $student),
+                    'edit_url' => route('filament.admin.resources.students.edit', $student),
+                ],
             ];
         };
 
-        $students = $request->header('X-Inertia') !== null
-            ? Inertia::defer($studentsPayloadResolver, 'student-directory')
-            : $studentsPayloadResolver();
+        $studentsPayloadResolver = function () use ($studentsQuery, $perPage, $studentTransform): LengthAwarePaginator {
+            /** @var LengthAwarePaginator $paginated */
+            $paginated = $studentsQuery->paginate($perPage)->withQueryString();
 
-        $globalStudentTotal = Student::query()->count();
+            return $paginated->through($studentTransform);
+        };
+
+        $hasActiveFilters = (is_string($search) && mb_trim($search) !== '')
+            || (is_string($type) && mb_trim($type) !== '')
+            || (is_string($status) && mb_trim($status) !== '')
+            || $courseId !== null
+            || $departmentId !== null
+            || $yearLevel !== null
+            || $currentEnrollment !== null
+            || (is_string($scholarshipType) && mb_trim($scholarshipType) !== '')
+            || (is_string($employmentStatus) && mb_trim($employmentStatus) !== '')
+            || $isIndigenousPerson !== null
+            || (is_string($regionOfOrigin) && mb_trim($regionOfOrigin) !== '')
+            || $previousSemesterCleared !== null
+            || $trashedFilter !== 'active';
+
+        if ($request->header('X-Inertia') !== null) {
+            $students = Inertia::defer($studentsPayloadResolver, 'student-directory');
+            $globalStudentTotal = Student::query()->count();
+        } else {
+            $students = $studentsPayloadResolver();
+            $globalStudentTotal = $hasActiveFilters ? Student::query()->count() : $students->total();
+        }
 
         $request->attributes->set('admin_students_global_total', $globalStudentTotal);
 

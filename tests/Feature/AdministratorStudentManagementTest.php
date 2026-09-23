@@ -409,7 +409,7 @@ it('force deletes a student and all of their related records', function (): void
         ->and(StudentStatusRecord::query()->where('student_id', $studentId)->exists())->toBeFalse();
 });
 
-it('provides active and trashed students for the local status filter', function (): void {
+it('provides active and trashed students according to the trashed filter', function (): void {
     config(['activitylog.enabled' => false, 'inertia.testing.ensure_pages_exist' => false]);
     withoutVite();
 
@@ -423,11 +423,11 @@ it('provides active and trashed students for the local status filter', function 
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page
             ->component('administrators/students/index', false)
-            ->where('students.data', function ($students) use ($active, $trashed): bool {
+            ->where('students.data', function ($students) use ($trashed): bool {
                 return $students->contains(
-                    fn (array $student): bool => $student['id'] === $active->id && $student['deleted_at'] === null
-                ) && $students->contains(
                     fn (array $student): bool => $student['id'] === $trashed->id && $student['deleted_at'] !== null
+                ) && ! $students->contains(
+                    fn (array $student): bool => $student['deleted_at'] === null
                 );
             })
             ->where('filters.trashed', 'trashed')
@@ -438,6 +438,21 @@ it('provides active and trashed students for the local status filter', function 
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page
             ->component('administrators/students/index', false)
+            ->where('students.data', function ($students) use ($active): bool {
+                return $students->contains(
+                    fn (array $student): bool => $student['id'] === $active->id && $student['deleted_at'] === null
+                ) && ! $students->contains(
+                    fn (array $student): bool => $student['deleted_at'] !== null
+                );
+            })
+            ->where('filters.trashed', 'active')
+        );
+
+    actingAs($user)
+        ->get(portalUrlForAdministrators('/administrators/students?trashed=all'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->component('administrators/students/index', false)
             ->where('students.data', function ($students) use ($active, $trashed): bool {
                 return $students->contains(
                     fn (array $student): bool => $student['id'] === $active->id && $student['deleted_at'] === null
@@ -445,7 +460,7 @@ it('provides active and trashed students for the local status filter', function 
                     fn (array $student): bool => $student['id'] === $trashed->id && $student['deleted_at'] !== null
                 );
             })
-            ->where('filters.trashed', 'active')
+            ->where('filters.trashed', 'all')
         );
 });
 

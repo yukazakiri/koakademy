@@ -5,7 +5,6 @@ import {
     flexRender,
     getCoreRowModel,
     getFilteredRowModel,
-    getPaginationRowModel,
     getSortedRowModel,
     useReactTable,
 } from "@tanstack/react-table";
@@ -23,32 +22,54 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { BulkExportButton, type ExportColumn } from "@/components/ui/bulk-export-button";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+    DropdownMenu,
+    DropdownMenuCheckboxItem,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { adminVisit } from "@/lib/admin-navigation";
+import { AdminLink } from "@/lib/admin-navigation";
 import { router } from "@inertiajs/react";
 import {
+    Check,
     CheckCircle,
     ChevronLeft,
     ChevronRight,
     ChevronsLeft,
     ChevronsRight,
+    Copy,
+    Eye,
+    FileText,
     GraduationCap,
+    HelpCircle,
     Loader2,
     Mail,
+    MinusCircle,
+    MoreHorizontal,
+    RotateCcw,
+    Search,
     Settings2,
     Trash2,
+    UserCheck,
+    X,
     Zap,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { Student } from "./columns";
+import { getInitials, getStatusColor, type Student } from "./columns";
 
 declare let route: (name: string, params?: Record<string, unknown> | string | number) => string;
 
@@ -57,13 +78,22 @@ interface DataTableProps<TData extends Student, TValue> {
     data: TData[];
     pageIndex: number;
     pageSize: number;
+    pageCount?: number;
+    totalCount?: number;
+    from?: number;
+    to?: number;
     sorting: SortingState;
     onPageIndexChange: (pageIndex: number) => void;
     onPageSizeChange: (pageSize: number) => void;
     onSortingChange: (sorting: SortingState) => void;
+    viewMode?: "list" | "grid";
     bulkActions?: {
         statusOptions?: { value: string; label: string }[];
     };
+    onSoftDelete?: (student: Student) => void;
+    onForceDelete?: (student: Student) => void;
+    onRestore?: (student: Student) => void;
+    onClearFilters?: () => void;
 }
 
 function readableLabel(value: string | null, fallback = "Not specified"): string {
@@ -129,16 +159,54 @@ const studentExportColumns: ExportColumn<Student>[] = [
     },
 ];
 
+function GridCardStudentId({ studentId }: { studentId: string | number | null }) {
+    const [copied, setCopied] = React.useState(false);
+
+    if (!studentId) return <span className="text-muted-foreground font-mono text-xs">No ID</span>;
+
+    const handleCopy = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        try {
+            await navigator.clipboard.writeText(String(studentId));
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+        } catch {
+            // ignore
+        }
+    };
+
+    return (
+        <button
+            type="button"
+            onClick={handleCopy}
+            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 font-mono text-xs transition-colors"
+            title={copied ? "Copied!" : "Click to copy student ID"}
+        >
+            <span>{studentId}</span>
+            {copied ? <Check className="size-3 text-emerald-600 dark:text-emerald-400" /> : <Copy className="size-3 opacity-60 hover:opacity-100" />}
+        </button>
+    );
+}
+
 export function DataTable<TData extends Student, TValue>({
     columns,
     data,
     pageIndex,
     pageSize,
+    pageCount,
+    totalCount,
+    from,
+    to,
     sorting,
     onPageIndexChange,
     onPageSizeChange,
     onSortingChange,
+    viewMode = "list",
     bulkActions,
+    onSoftDelete,
+    onForceDelete,
+    onRestore,
+    onClearFilters,
 }: DataTableProps<TData, TValue>) {
     const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({});
     const [rowSelection, setRowSelection] = React.useState({});
@@ -163,12 +231,19 @@ export function DataTable<TData extends Student, TValue>({
         setRowSelection({});
     }, [data]);
 
+    const totalMatching = totalCount !== undefined ? totalCount : data.length;
+    const fromIndex = from !== undefined ? from : totalMatching === 0 ? 0 : pageIndex * pageSize + 1;
+    const toIndex = to !== undefined ? to : totalMatching === 0 ? 0 : Math.min((pageIndex + 1) * pageSize, totalMatching);
+    const totalPages = pageCount !== undefined ? pageCount : Math.max(1, Math.ceil(totalMatching / pageSize));
+
     const table = useReactTable({
         data,
         columns,
         getRowId: (row) => String(row.id),
         getCoreRowModel: getCoreRowModel(),
-        getPaginationRowModel: getPaginationRowModel(),
+        manualPagination: true,
+        manualSorting: true,
+        pageCount: totalPages,
         onSortingChange: (updater) => {
             const nextSorting = typeof updater === "function" ? updater(sorting) : updater;
             onSortingChange(nextSorting);
@@ -190,8 +265,11 @@ export function DataTable<TData extends Student, TValue>({
             const currentPagination = { pageIndex, pageSize };
             const nextPagination = typeof updater === "function" ? updater(currentPagination) : updater;
 
-            onPageIndexChange(nextPagination.pageIndex);
-            onPageSizeChange(nextPagination.pageSize);
+            if (nextPagination.pageSize !== pageSize) {
+                onPageSizeChange(nextPagination.pageSize);
+            } else if (nextPagination.pageIndex !== pageIndex) {
+                onPageIndexChange(nextPagination.pageIndex);
+            }
         },
     });
 
@@ -240,22 +318,20 @@ export function DataTable<TData extends Student, TValue>({
         );
     };
 
-    const handleBulkClearanceSubmit = (clearance: "cleared" | "not_cleared") => {
-        if (!hasSelection || !clearance || isSubmitting) {
+    const handleBulkClearanceSubmit = (isCleared: boolean) => {
+        if (!hasSelection || isSubmitting) {
             return;
         }
 
         setIsSubmitting(true);
         router.post(
             route("administrators.students.bulk-manage-clearance"),
-            {
-                student_ids: selectedIds,
-                is_cleared: clearance === "cleared",
-            },
+            { student_ids: selectedIds, is_cleared: isCleared },
             {
                 preserveScroll: true,
                 onSuccess: () => {
-                    toast.success(`Updated clearance for ${selectedCount} student(s).`);
+                    const message = isCleared ? "marked as cleared" : "marked as pending";
+                    toast.success(`${selectedCount} student(s) ${message}.`);
                     resetSelection();
                 },
                 onError: () => {
@@ -278,7 +354,7 @@ export function DataTable<TData extends Student, TValue>({
             data: { student_ids: selectedIds },
             preserveScroll: true,
             onSuccess: () => {
-                toast.success(`Deleted ${selectedCount} student(s).`);
+                toast.success(`Moved ${selectedCount} student(s) to trash.`);
                 setDeleteDialogOpen(false);
                 resetSelection();
             },
@@ -294,21 +370,14 @@ export function DataTable<TData extends Student, TValue>({
     const expectedForceConfirm = `PERMANENTLY DELETE ${selectedCount} STUDENT${selectedCount === 1 ? "" : "S"}`;
 
     const handleBulkForceDelete = () => {
-        if (!hasSelection || isSubmitting) {
-            return;
-        }
-
-        if (forceDeleteConfirmText !== expectedForceConfirm) {
+        if (!hasSelection || forceDeleteConfirmText !== expectedForceConfirm || isSubmitting) {
             toast.error(`Type "${expectedForceConfirm}" exactly to confirm.`);
             return;
         }
 
         setIsSubmitting(true);
         router.delete(route("administrators.students.bulk-force-destroy"), {
-            data: {
-                student_ids: selectedIds,
-                confirm_text: forceDeleteConfirmText,
-            },
+            data: { student_ids: selectedIds, confirm_text: forceDeleteConfirmText },
             preserveScroll: true,
             onSuccess: () => {
                 toast.success(`Permanently deleted ${selectedCount} student(s).`);
@@ -353,119 +422,212 @@ export function DataTable<TData extends Student, TValue>({
         );
     };
 
+    const handleRowSoftDelete = (student: Student) => {
+        if (onSoftDelete) {
+            onSoftDelete(student);
+        } else {
+            window.dispatchEvent(new CustomEvent("students:soft-delete", { detail: student }));
+        }
+    };
+
+    const handleRowForceDelete = (student: Student) => {
+        if (onForceDelete) {
+            onForceDelete(student);
+        } else {
+            window.dispatchEvent(new CustomEvent("students:force-delete", { detail: student }));
+        }
+    };
+
+    const handleRowRestore = (student: Student) => {
+        if (onRestore) {
+            onRestore(student);
+        } else {
+            window.dispatchEvent(new CustomEvent("students:restore", { detail: student }));
+        }
+    };
+
+    const pageRows = table.getRowModel().rows;
+
     return (
-        <div>
-            <div className="flex flex-col gap-3 py-4 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex flex-wrap items-center gap-2">
-                    <BulkExportButton
-                        data={selectedData}
-                        columns={studentExportColumns}
-                        filename="selected-students"
-                        title="Selected Students"
-                        getSortValue={(student) => student.name}
-                        getSortTieBreaker={(student) => String(student.student_id ?? student.id)}
-                    />
-                    <Badge variant="secondary" className="h-7 px-2 text-xs">
-                        Selected {selectedCount}
-                    </Badge>
-                    {bulkActions?.statusOptions?.length ? (
+        <div className="space-y-4">
+            {/* Contextual Floating Bulk Action Bar */}
+            {hasSelection ? (
+                <div className="border-primary/20 bg-card/95 animate-in fade-in slide-in-from-top-2 sticky top-3 z-30 flex flex-wrap items-center justify-between gap-2.5 rounded-lg border p-3 shadow-lg backdrop-blur duration-200">
+                    <div className="flex items-center gap-2">
+                        <Badge variant="default" className="px-2.5 py-1 text-xs font-semibold">
+                            {selectedCount} selected
+                        </Badge>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={resetSelection}
+                            className="text-muted-foreground hover:text-foreground h-7 gap-1 px-2 text-xs"
+                        >
+                            <X className="size-3.5" />
+                            Deselect all
+                        </Button>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1.5">
+                        {bulkActions?.statusOptions?.length ? (
+                            <DropdownMenu>
+                                <DropdownMenuTrigger
+                                    render={
+                                        <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" disabled={isSubmitting}>
+                                            <GraduationCap className="size-3.5" />
+                                            Change Status
+                                        </Button>
+                                    }
+                                />
+                                <DropdownMenuContent align="end" className="w-48">
+                                    <DropdownMenuLabel className="text-xs">Set Status to</DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+                                    {bulkActions.statusOptions.map((option) => (
+                                        <DropdownMenuItem key={option.value} onClick={() => handleBulkStatusSubmit(option.value)}>
+                                            {option.label}
+                                        </DropdownMenuItem>
+                                    ))}
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        ) : null}
+
                         <DropdownMenu>
                             <DropdownMenuTrigger
-                                render={<Button variant="outline" size="sm" className="gap-2" disabled={!hasSelection || isSubmitting} />}
-                            >
-                                <GraduationCap className="h-4 w-4" />
-                                Change Status
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="start">
-                                {bulkActions.statusOptions.map((option) => (
-                                    <DropdownMenuItem key={option.value} onClick={() => handleBulkStatusSubmit(option.value)}>
-                                        {option.label}
-                                    </DropdownMenuItem>
-                                ))}
+                                render={
+                                    <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" disabled={isSubmitting}>
+                                        <CheckCircle className="size-3.5" />
+                                        Clearance
+                                    </Button>
+                                }
+                            />
+                            <DropdownMenuContent align="end" className="w-48">
+                                <DropdownMenuLabel className="text-xs">Update Clearance</DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => handleBulkClearanceSubmit(true)}>
+                                    <CheckCircle className="mr-2 size-3.5 text-emerald-600 dark:text-emerald-400" />
+                                    Mark as Cleared
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleBulkClearanceSubmit(false)}>
+                                    <HelpCircle className="mr-2 size-3.5 text-amber-600 dark:text-amber-400" />
+                                    Mark as Pending
+                                </DropdownMenuItem>
                             </DropdownMenuContent>
                         </DropdownMenu>
-                    ) : null}
-                    <DropdownMenu>
-                        <DropdownMenuTrigger
-                            render={<Button variant="outline" size="sm" className="gap-2" disabled={!hasSelection || isSubmitting} />}
+
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 gap-1.5 text-xs"
+                            disabled={isSubmitting}
+                            onClick={() => setEmailDialogOpen(true)}
                         >
-                            <CheckCircle className="h-4 w-4" />
-                            Update Clearance
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="start">
-                            <DropdownMenuItem onClick={() => handleBulkClearanceSubmit("cleared")}>Mark as Cleared</DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleBulkClearanceSubmit("not_cleared")}>Mark as Pending</DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-                    <Button variant="outline" size="sm" className="gap-2" disabled={!hasSelection} onClick={() => setEmailDialogOpen(true)}>
-                        <Mail className="h-4 w-4" />
-                        Send Email
-                    </Button>
-                    <Button variant="destructive" size="sm" className="gap-2" disabled={!hasSelection} onClick={() => setDeleteDialogOpen(true)}>
-                        <Trash2 className="h-4 w-4" />
-                        Soft Delete
-                    </Button>
-                    <Button
-                        variant="destructive"
-                        size="sm"
-                        className="gap-2 border-red-900 bg-red-700 hover:bg-red-800"
-                        disabled={!hasSelection}
-                        onClick={() => setForceDeleteDialogOpen(true)}
-                    >
-                        <Zap className="h-4 w-4" />
-                        Force Delete
-                    </Button>
+                            <Mail className="size-3.5" />
+                            Send Email
+                        </Button>
+
+                        <BulkExportButton
+                            data={selectedData}
+                            columns={studentExportColumns}
+                            filename="selected-students"
+                            title="Selected Students"
+                            getSortValue={(student) => student.name}
+                            getSortTieBreaker={(student) => String(student.student_id ?? student.id)}
+                        />
+
+                        <DropdownMenu>
+                            <DropdownMenuTrigger
+                                render={
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-8 px-2 text-xs"
+                                        disabled={isSubmitting}
+                                        aria-label="More bulk options"
+                                    >
+                                        <MoreHorizontal className="size-4" />
+                                    </Button>
+                                }
+                            />
+                            <DropdownMenuContent align="end" className="w-48">
+                                <DropdownMenuLabel className="text-xs">Destructive Actions</DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => setDeleteDialogOpen(true)} className="text-amber-600 focus:text-amber-600">
+                                    <Trash2 className="mr-2 size-3.5" /> Move to Trash
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => setForceDeleteDialogOpen(true)} className="text-destructive focus:text-destructive">
+                                    <Zap className="mr-2 size-3.5" /> Force Delete
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    </div>
                 </div>
+            ) : null}
+
+            {/* Table Utility Controls */}
+            <div className="flex items-center justify-between gap-2 px-0.5">
+                <p className="text-muted-foreground text-xs">
+                    {totalMatching === 0 ? "No records" : `Showing ${fromIndex}–${toIndex} of ${totalMatching} students`}
+                </p>
 
                 <div className="flex items-center gap-2">
-                    <div className="flex items-center space-x-2">
-                        <p className="text-sm font-medium">Rows per page</p>
+                    <div className="flex items-center gap-1.5">
+                        <span className="text-muted-foreground hidden text-xs sm:inline">Rows:</span>
                         <Select
                             value={`${pageSize}`}
                             onValueChange={(value) => {
                                 if (value) {
                                     onPageSizeChange(Number(value));
-                                    onPageIndexChange(0);
                                 }
                             }}
                         >
-                            <SelectTrigger className="h-8 w-[70px]">
+                            <SelectTrigger className="h-8 w-[72px] text-xs">
                                 <SelectValue placeholder={pageSize} />
                             </SelectTrigger>
                             <SelectContent side="top">
                                 {[10, 20, 50, 100].map((pageSizeOption) => (
-                                    <SelectItem key={pageSizeOption} value={`${pageSizeOption}`}>
+                                    <SelectItem key={pageSizeOption} value={`${pageSizeOption}`} className="text-xs">
                                         {pageSizeOption}
                                     </SelectItem>
                                 ))}
                             </SelectContent>
                         </Select>
                     </div>
-                    <DropdownMenu>
-                        <DropdownMenuTrigger render={<Button variant="outline" className="ml-auto" />}>
-                            <Settings2 className="mr-2 h-4 w-4" />
-                            View
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                            {table
-                                .getAllColumns()
-                                .filter((column) => column.getCanHide())
-                                .map((column) => {
-                                    return (
-                                        <DropdownMenuCheckboxItem
-                                            key={column.id}
-                                            className="capitalize"
-                                            checked={column.getIsVisible()}
-                                            onCheckedChange={(value) => column.toggleVisibility(!!value)}
-                                        >
-                                            {column.id.replace("_", " ")}
-                                        </DropdownMenuCheckboxItem>
-                                    );
-                                })}
-                        </DropdownMenuContent>
-                    </DropdownMenu>
+
+                    {viewMode === "list" && (
+                        <DropdownMenu>
+                            <DropdownMenuTrigger
+                                render={
+                                    <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
+                                        <Settings2 className="size-3.5" />
+                                        <span className="hidden sm:inline">Columns</span>
+                                    </Button>
+                                }
+                            />
+                            <DropdownMenuContent align="end" className="w-44">
+                                <DropdownMenuLabel className="text-xs">Toggle Columns</DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                {table
+                                    .getAllColumns()
+                                    .filter((column) => column.getCanHide())
+                                    .map((column) => {
+                                        return (
+                                            <DropdownMenuCheckboxItem
+                                                key={column.id}
+                                                className="text-xs capitalize"
+                                                checked={column.getIsVisible()}
+                                                onCheckedChange={(value) => column.toggleVisibility(!!value)}
+                                            >
+                                                {column.id.replace(/_/g, " ")}
+                                            </DropdownMenuCheckboxItem>
+                                        );
+                                    })}
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    )}
                 </div>
             </div>
+
+            {/* Email Dialog */}
             <Dialog
                 open={emailDialogOpen}
                 onOpenChange={(open) => {
@@ -477,20 +639,34 @@ export function DataTable<TData extends Student, TValue>({
             >
                 <DialogContent className="sm:max-w-xl">
                     <DialogHeader>
-                        <DialogTitle>Send Email</DialogTitle>
-                        <DialogDescription>Send a formal email to the selected students.</DialogDescription>
+                        <DialogTitle>Send Email to Students</DialogTitle>
+                        <DialogDescription>
+                            Send a notification or update to {selectedCount} selected student{selectedCount === 1 ? "" : "s"}.
+                        </DialogDescription>
                     </DialogHeader>
-                    <div className="space-y-3">
-                        <div className="grid gap-2">
-                            <span className="text-sm font-medium">Subject</span>
-                            <Input value={emailSubject} onChange={(event) => setEmailSubject(event.target.value)} />
+                    <div className="space-y-3.5 py-2">
+                        <div className="grid gap-1.5">
+                            <Label htmlFor="bulk-email-subject">Subject</Label>
+                            <Input
+                                id="bulk-email-subject"
+                                value={emailSubject}
+                                onChange={(event) => setEmailSubject(event.target.value)}
+                                placeholder="Email subject..."
+                            />
                         </div>
-                        <div className="grid gap-2">
-                            <span className="text-sm font-medium">Message</span>
-                            <Textarea value={emailMessage} onChange={(event) => setEmailMessage(event.target.value)} rows={7} />
-                            <p className="text-muted-foreground text-xs">A personalized greeting and formal closing will be added automatically.</p>
+                        <div className="grid gap-1.5">
+                            <Label htmlFor="bulk-email-message">Message</Label>
+                            <Textarea
+                                id="bulk-email-message"
+                                value={emailMessage}
+                                onChange={(event) => setEmailMessage(event.target.value)}
+                                rows={6}
+                                placeholder="Write your message here..."
+                            />
+                            <p className="text-muted-foreground text-[11px]">
+                                A personalized greeting and formal signature will be included automatically.
+                            </p>
                         </div>
-                        <p className="text-muted-foreground text-xs">Selected: {selectedCount} student(s).</p>
                     </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setEmailDialogOpen(false)} disabled={isSubmitting}>
@@ -499,44 +675,59 @@ export function DataTable<TData extends Student, TValue>({
                         <Button
                             onClick={handleBulkEmailSubmit}
                             disabled={!hasSelection || !emailSubject.trim() || !emailMessage.trim() || isSubmitting}
+                            className="gap-1.5"
                         >
-                            Send Email
+                            {isSubmitting && <Loader2 className="size-3.5 animate-spin" />}
+                            Send to {selectedCount} Student{selectedCount === 1 ? "" : "s"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {/* Soft Delete Confirmation */}
             <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
-                        <AlertDialogTitle>Delete Selected Students</AlertDialogTitle>
+                        <AlertDialogTitle className="flex items-center gap-2">
+                            <Trash2 className="size-5 text-amber-600" />
+                            Move {selectedCount} Student{selectedCount === 1 ? "" : "s"} to Trash?
+                        </AlertDialogTitle>
                         <AlertDialogDescription>
-                            This will soft delete {selectedCount} student(s). You can restore them later if needed.
+                            The selected student record{selectedCount === 1 ? "" : "s"} will be moved to trash and hidden from active views. You can
+                            restore them at any time from the Trashed view.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                         <AlertDialogCancel disabled={isSubmitting}>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleBulkDelete} className="bg-red-600 hover:bg-red-700" disabled={isSubmitting}>
-                            Soft Delete
+                        <AlertDialogAction
+                            onClick={handleBulkDelete}
+                            className="bg-amber-600 text-white hover:bg-amber-700 dark:bg-amber-600 dark:hover:bg-amber-700"
+                            disabled={isSubmitting}
+                        >
+                            {isSubmitting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Trash2 className="mr-2 size-4" />}
+                            Move to Trash
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+
+            {/* Permanent Force Delete Confirmation */}
             <AlertDialog open={forceDeleteDialogOpen} onOpenChange={(open) => !isSubmitting && setForceDeleteDialogOpen(open)}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
                         <AlertDialogTitle className="text-destructive flex items-center gap-2">
-                            <Zap className="h-5 w-5" />
+                            <Zap className="size-5" />
                             Permanently Delete {selectedCount} Student{selectedCount === 1 ? "" : "s"}?
                         </AlertDialogTitle>
                         <AlertDialogDescription>
                             This will permanently erase all {selectedCount} selected student record{selectedCount === 1 ? "" : "s"} along with their
-                            enrollments, tuition, transactions, clearances, and contact data. This action{" "}
+                            enrollments, tuition, clearances, grades, and documents. This action{" "}
                             <span className="text-foreground font-semibold">cannot be undone</span>.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
-                    <div className="space-y-2">
+                    <div className="space-y-2 py-1">
                         <Label htmlFor="bulk-force-confirm">
-                            Type <span className="font-mono font-semibold">{expectedForceConfirm}</span> to confirm:
+                            Type <span className="text-foreground font-mono font-semibold">{expectedForceConfirm}</span> to confirm:
                         </Label>
                         <Input
                             id="bulk-force-confirm"
@@ -551,126 +742,296 @@ export function DataTable<TData extends Student, TValue>({
                         <AlertDialogCancel disabled={isSubmitting}>Cancel</AlertDialogCancel>
                         <Button
                             onClick={handleBulkForceDelete}
-                            disabled={isSubmitting || forceDeleteConfirmText !== expectedForceConfirm}
-                            className="bg-red-700 text-white hover:bg-red-800"
+                            disabled={isSubmitting || forceDeleteConfirmText.trim() !== expectedForceConfirm}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                         >
-                            {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
-                            Force Delete
+                            {isSubmitting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Zap className="mr-2 size-4" />}
+                            Permanently Delete
                         </Button>
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
-            <div className="rounded-md border">
-                <Table>
-                    <TableHeader>
-                        {table.getHeaderGroups().map((headerGroup) => (
-                            <TableRow key={headerGroup.id}>
-                                {headerGroup.headers.map((header) => {
-                                    return (
-                                        <TableHead key={header.id}>
-                                            {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
-                                        </TableHead>
-                                    );
-                                })}
-                            </TableRow>
-                        ))}
-                    </TableHeader>
-                    <TableBody>
-                        {table.getRowModel().rows?.length ? (
-                            table.getRowModel().rows.map((row) => (
-                                <TableRow
-                                    key={row.id}
-                                    data-state={row.getIsSelected() && "selected"}
-                                    className="cursor-pointer"
-                                    onClick={(e) => {
-                                        // Don't navigate if clicking on checkbox, buttons, or dropdown menus
-                                        const target = e.target as HTMLElement;
-                                        if (
-                                            target.closest("button") ||
-                                            target.closest('[role="checkbox"]') ||
-                                            target.closest("a") ||
-                                            target.closest('[role="menu"]')
-                                        ) {
-                                            return;
-                                        }
 
-                                        // Navigate to student detail page
-                                        const student = row.original;
-                                        if (student?.id) {
-                                            adminVisit(route("administrators.students.show", student.id));
-                                        }
-                                    }}
-                                >
-                                    {row.getVisibleCells().map((cell) => (
-                                        <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
-                                    ))}
+            {/* View Mode: List (Table) */}
+            {viewMode === "list" ? (
+                <div className="bg-card overflow-x-auto rounded-lg border shadow-xs">
+                    <Table>
+                        <TableHeader>
+                            {table.getHeaderGroups().map((headerGroup) => (
+                                <TableRow key={headerGroup.id} className="bg-muted/40 hover:bg-muted/40">
+                                    {headerGroup.headers.map((header) => {
+                                        return (
+                                            <TableHead key={header.id} className="py-3 text-xs font-semibold">
+                                                {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                                            </TableHead>
+                                        );
+                                    })}
                                 </TableRow>
-                            ))
-                        ) : (
-                            <TableRow>
-                                <TableCell colSpan={columns.length} className="h-24 text-center">
-                                    No results.
-                                </TableCell>
-                            </TableRow>
-                        )}
-                    </TableBody>
-                </Table>
-            </div>
-
-            {/* Pagination Controls */}
-            <div className="flex items-center justify-between space-x-2 py-4">
-                <div className="text-muted-foreground flex-1 text-sm">
-                    Showing {table.getFilteredRowModel().rows.length === 0 ? 0 : pageIndex * pageSize + 1} to{" "}
-                    {Math.min((pageIndex + 1) * pageSize, table.getFilteredRowModel().rows.length)} of {table.getFilteredRowModel().rows.length}{" "}
-                    entries
+                            ))}
+                        </TableHeader>
+                        <TableBody>
+                            {pageRows?.length ? (
+                                pageRows.map((row) => (
+                                    <TableRow
+                                        key={row.id}
+                                        data-state={row.getIsSelected() && "selected"}
+                                        className="hover:bg-muted/30 transition-colors"
+                                    >
+                                        {row.getVisibleCells().map((cell) => (
+                                            <TableCell key={cell.id} className="py-2.5 text-xs">
+                                                {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                            </TableCell>
+                                        ))}
+                                    </TableRow>
+                                ))
+                            ) : (
+                                <TableRow>
+                                    <TableCell colSpan={columns.length} className="h-44 text-center">
+                                        <div className="text-muted-foreground flex flex-col items-center justify-center gap-2">
+                                            <Search className="size-8 opacity-30" />
+                                            <p className="text-sm font-medium">No students match your criteria</p>
+                                            {onClearFilters && (
+                                                <Button variant="outline" size="sm" onClick={onClearFilters} className="mt-1 h-7 text-xs">
+                                                    Reset search & filters
+                                                </Button>
+                                            )}
+                                        </div>
+                                    </TableCell>
+                                </TableRow>
+                            )}
+                        </TableBody>
+                    </Table>
                 </div>
+            ) : (
+                /* View Mode: Grid (Responsive Cards) */
+                <div>
+                    {pageRows?.length ? (
+                        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                            {pageRows.map((row) => {
+                                const student = row.original;
+                                const isSelected = row.getIsSelected();
 
-                <div className="flex items-center space-x-2">
-                    <div className="flex items-center space-x-2">
-                        <p className="text-sm font-medium">
-                            Page {pageIndex + 1} of {Math.max(1, table.getPageCount())}
-                        </p>
+                                return (
+                                    <Card
+                                        key={row.id}
+                                        className={`relative transition-all hover:shadow-md ${
+                                            isSelected ? "ring-primary border-primary/50 bg-primary/5 ring-2" : ""
+                                        }`}
+                                    >
+                                        <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 p-4 pb-2">
+                                            <div className="flex min-w-0 items-center gap-3">
+                                                <Checkbox
+                                                    checked={isSelected}
+                                                    onCheckedChange={(value) => row.toggleSelected(!!value)}
+                                                    aria-label={`Select ${student.name}`}
+                                                    className="mt-0.5"
+                                                />
+                                                <Avatar className="size-10 shrink-0 border">
+                                                    <AvatarImage src={student.avatar_url ?? undefined} alt={student.name} />
+                                                    <AvatarFallback className="bg-primary/10 text-primary text-sm font-semibold">
+                                                        {getInitials(student.name)}
+                                                    </AvatarFallback>
+                                                </Avatar>
+                                                <div className="flex min-w-0 flex-col">
+                                                    <AdminLink
+                                                        href={route("administrators.students.show", student.id)}
+                                                        className="text-foreground truncate text-sm font-semibold hover:underline"
+                                                        title={student.name}
+                                                    >
+                                                        {student.name}
+                                                    </AdminLink>
+                                                    <GridCardStudentId studentId={student.student_id} />
+                                                </div>
+                                            </div>
+
+                                            <DropdownMenu>
+                                                <DropdownMenuTrigger
+                                                    render={<Button variant="ghost" size="icon" className="-mr-1 size-7 shrink-0" />}
+                                                    aria-label={`Options for ${student.name}`}
+                                                >
+                                                    <MoreHorizontal className="size-4" />
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end" className="w-48">
+                                                    <DropdownMenuItem render={<AdminLink href={route("administrators.students.show", student.id)} />}>
+                                                        <Eye className="mr-2 size-4" /> View Details
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem render={<AdminLink href={route("administrators.students.edit", student.id)} />}>
+                                                        <UserCheck className="mr-2 size-4" /> Edit Profile
+                                                    </DropdownMenuItem>
+                                                    {student.filament?.view_url && (
+                                                        <>
+                                                            <DropdownMenuSeparator />
+                                                            <DropdownMenuItem
+                                                                render={<a href={student.filament.view_url} target="_blank" rel="noreferrer" />}
+                                                                className="opacity-80"
+                                                            >
+                                                                <FileText className="mr-2 size-4" /> View in Filament
+                                                            </DropdownMenuItem>
+                                                        </>
+                                                    )}
+                                                    <DropdownMenuSeparator />
+                                                    {student.deleted_at ? (
+                                                        <DropdownMenuItem onClick={() => handleRowRestore(student)}>
+                                                            <RotateCcw className="mr-2 size-4" /> Restore
+                                                        </DropdownMenuItem>
+                                                    ) : (
+                                                        <DropdownMenuItem
+                                                            onClick={() => handleRowSoftDelete(student)}
+                                                            className="text-amber-600 focus:text-amber-600"
+                                                        >
+                                                            <Trash2 className="mr-2 size-4" /> Move to Trash
+                                                        </DropdownMenuItem>
+                                                    )}
+                                                    <DropdownMenuItem
+                                                        onClick={() => handleRowForceDelete(student)}
+                                                        className="text-destructive focus:text-destructive"
+                                                    >
+                                                        <Zap className="mr-2 size-4" /> Force Delete
+                                                    </DropdownMenuItem>
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
+                                        </CardHeader>
+
+                                        <CardContent className="space-y-2.5 p-4 pt-2 pb-3">
+                                            <div className="flex flex-wrap items-center gap-1.5">
+                                                <Badge
+                                                    variant="outline"
+                                                    className={`text-[10px] font-semibold uppercase shadow-none ${getStatusColor(student.status)}`}
+                                                >
+                                                    {student.status ?? "Unknown"}
+                                                </Badge>
+                                                {student.course && (
+                                                    <Badge variant="outline" className="text-[10px] font-normal">
+                                                        {student.course}
+                                                    </Badge>
+                                                )}
+                                                {student.academic_year && (
+                                                    <Badge variant="secondary" className="text-[10px] font-normal">
+                                                        {student.academic_year}
+                                                    </Badge>
+                                                )}
+                                            </div>
+
+                                            <div className="text-muted-foreground space-y-1 border-t pt-2 text-xs">
+                                                <div className="flex items-center justify-between">
+                                                    <span>Clearance:</span>
+                                                    <div className="flex items-center gap-1">
+                                                        {student.previous_sem_clearance === "cleared" ? (
+                                                            <span className="inline-flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-400">
+                                                                <CheckCircle className="size-3" /> Cleared
+                                                            </span>
+                                                        ) : student.previous_sem_clearance === "not_cleared" ? (
+                                                            <span className="inline-flex items-center gap-1 font-medium text-amber-600 dark:text-amber-400">
+                                                                <HelpCircle className="size-3" /> Pending
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-muted-foreground inline-flex items-center gap-1">
+                                                                <MinusCircle className="size-3" /> No record
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                {student.scholarship_type && student.scholarship_type !== "None" && (
+                                                    <div className="flex items-center justify-between">
+                                                        <span>Scholarship:</span>
+                                                        <span className="text-foreground max-w-[150px] truncate font-medium">
+                                                            {student.scholarship_type}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </CardContent>
+
+                                        <CardFooter className="gap-2 p-4 pt-0">
+                                            <AdminLink
+                                                href={route("administrators.students.show", student.id)}
+                                                className={buttonVariants({
+                                                    variant: "outline",
+                                                    size: "sm",
+                                                    className: "h-8 w-full text-xs font-medium",
+                                                })}
+                                            >
+                                                View Profile
+                                            </AdminLink>
+                                        </CardFooter>
+                                    </Card>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <div className="bg-muted/10 flex h-56 flex-col items-center justify-center rounded-lg border border-dashed p-6 text-center">
+                            <Search className="text-muted-foreground mb-2 size-8 opacity-30" />
+                            <p className="text-foreground text-sm font-medium">No students match your criteria</p>
+                            <p className="text-muted-foreground mt-0.5 text-xs">Try adjusting your search keywords or clearing active filters.</p>
+                            {onClearFilters && (
+                                <Button variant="outline" size="sm" onClick={onClearFilters} className="mt-3 h-8 text-xs">
+                                    Reset search & filters
+                                </Button>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Streamlined Responsive Pagination */}
+            {totalMatching > 0 && (
+                <div className="flex flex-col items-center justify-between gap-3 border-t pt-4 sm:flex-row">
+                    <div className="text-muted-foreground text-xs">
+                        Showing <span className="text-foreground font-medium">{fromIndex}</span> to{" "}
+                        <span className="text-foreground font-medium">{toIndex}</span> of{" "}
+                        <span className="text-foreground font-medium">{totalMatching}</span> entries
                     </div>
-                    <div className="flex items-center space-x-2">
+
+                    <div className="flex items-center gap-1.5">
                         <Button
                             variant="outline"
-                            className="hidden h-8 w-8 p-0 lg:flex"
+                            size="icon"
+                            className="hidden size-8 sm:inline-flex"
                             onClick={() => onPageIndexChange(0)}
-                            disabled={!table.getCanPreviousPage()}
+                            disabled={pageIndex === 0}
+                            aria-label="First page"
                         >
-                            <span className="sr-only">Go to first page</span>
-                            <ChevronsLeft className="h-4 w-4" />
+                            <ChevronsLeft className="size-4" />
                         </Button>
                         <Button
                             variant="outline"
-                            className="h-8 w-8 p-0"
+                            size="sm"
+                            className="h-8 gap-1 px-2.5 text-xs"
                             onClick={() => onPageIndexChange(Math.max(0, pageIndex - 1))}
-                            disabled={!table.getCanPreviousPage()}
+                            disabled={pageIndex === 0}
                         >
-                            <span className="sr-only">Go to previous page</span>
-                            <ChevronLeft className="h-4 w-4" />
+                            <ChevronLeft className="size-4" />
+                            <span>Previous</span>
+                        </Button>
+
+                        <span className="text-muted-foreground px-2 text-xs font-medium">
+                            Page {pageIndex + 1} of {totalPages}
+                        </span>
+
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 gap-1 px-2.5 text-xs"
+                            onClick={() => onPageIndexChange(Math.min(totalPages - 1, pageIndex + 1))}
+                            disabled={pageIndex >= totalPages - 1}
+                        >
+                            <span>Next</span>
+                            <ChevronRight className="size-4" />
                         </Button>
                         <Button
                             variant="outline"
-                            className="h-8 w-8 p-0"
-                            onClick={() => onPageIndexChange(Math.min(table.getPageCount() - 1, pageIndex + 1))}
-                            disabled={!table.getCanNextPage()}
+                            size="icon"
+                            className="hidden size-8 sm:inline-flex"
+                            onClick={() => onPageIndexChange(totalPages - 1)}
+                            disabled={pageIndex >= totalPages - 1}
+                            aria-label="Last page"
                         >
-                            <span className="sr-only">Go to next page</span>
-                            <ChevronRight className="h-4 w-4" />
-                        </Button>
-                        <Button
-                            variant="outline"
-                            className="hidden h-8 w-8 p-0 lg:flex"
-                            onClick={() => onPageIndexChange(Math.max(0, table.getPageCount() - 1))}
-                            disabled={!table.getCanNextPage()}
-                        >
-                            <span className="sr-only">Go to last page</span>
-                            <ChevronsRight className="h-4 w-4" />
+                            <ChevronsRight className="size-4" />
                         </Button>
                     </div>
                 </div>
-            </div>
+            )}
         </div>
     );
 }

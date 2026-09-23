@@ -24,7 +24,7 @@ final class SchoolFactory extends Factory
      */
     public function definition(): array
     {
-        $uniqueId = fake()->unique()->numberBetween(1000, 9999);
+        $uniqueId = $this->faker->unique()->numberBetween(1000, 9999);
 
         $schoolNames = [
             'School of Information Technology',
@@ -52,7 +52,7 @@ final class SchoolFactory extends Factory
             'SFA',
         ];
 
-        $selectedIndex = fake()->numberBetween(0, count($schoolNames) - 1);
+        $selectedIndex = $this->faker->numberBetween(0, count($schoolNames) - 1);
         $name = $schoolNames[$selectedIndex].' '.$uniqueId;
         $code = $schoolCodes[$selectedIndex].$uniqueId;
 
@@ -60,10 +60,10 @@ final class SchoolFactory extends Factory
             'name' => $name,
             'code' => $code,
             'school_level' => SchoolLevel::HigherEducation,
-            'description' => fake()->paragraph(3),
-            'dean_name' => fake()->name(),
-            'dean_email' => fake()->safeEmail(),
-            'location' => fake()->randomElement([
+            'description' => $this->faker->paragraph(3),
+            'dean_name' => $this->faker->name(),
+            'dean_email' => $this->faker->safeEmail(),
+            'location' => $this->faker->randomElement([
                 'Main Campus Building A',
                 'Main Campus Building B',
                 'Academic Building 1',
@@ -71,13 +71,13 @@ final class SchoolFactory extends Factory
                 'Professional Studies Building',
                 'Science and Technology Building',
             ]),
-            'phone' => fake()->phoneNumber(),
+            'phone' => $this->faker->phoneNumber(),
             'email' => mb_strtolower($code).'@university.edu',
             'is_active' => true,
             'metadata' => [
-                'established_year' => fake()->numberBetween(1980, 2020),
-                'accreditation_status' => fake()->randomElement(['Accredited', 'Candidate', 'Pending']),
-                'student_capacity' => fake()->numberBetween(500, 3000),
+                'established_year' => $this->faker->numberBetween(1980, 2020),
+                'accreditation_status' => $this->faker->randomElement(['Accredited', 'Candidate', 'Pending']),
+                'student_capacity' => $this->faker->numberBetween(500, 3000),
             ],
         ];
     }

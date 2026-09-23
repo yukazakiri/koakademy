@@ -215,6 +215,10 @@ final class AdministratorAiController extends Controller
         }
 
         return response()->stream(function () use ($agentInstance, $prompt, $aiAttachments, $selectedProvider, $selectedModel, $agentKey, $aiSettings) {
+            if (function_exists('set_time_limit')) {
+                @set_time_limit(0);
+            }
+
             try {
                 $stream = null;
                 $iterator = null;

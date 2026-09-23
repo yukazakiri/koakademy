@@ -560,3 +560,44 @@ it('adapts built-in MCP tools seamlessly into AI agent tools', function (): void
     expect($result['course']['code'])->toBe('BSIT')
         ->and($result['subjects_count'])->toBeGreaterThanOrEqual(1);
 });
+
+it('formats class enrollments compactly without unneeded payload bloat', function (): void {
+    $class = App\Models\Classes::factory()->create([
+        'subject_code' => 'GE-1',
+        'section' => 'B',
+        'school_year' => '2026-2027',
+        'semester' => 1,
+    ]);
+
+    $student = App\Models\Student::factory()->create([
+        'first_name' => 'Stephanie',
+        'last_name' => 'Sto Domingo',
+        'student_id' => '208382',
+        'gender' => 'Male',
+        'academic_year' => 1,
+    ]);
+
+    App\Models\ClassEnrollment::factory()->create([
+        'class_id' => $class->id,
+        'student_id' => $student->id,
+        'status' => true,
+    ]);
+
+    $tool = new App\Ai\Tools\GetClassEnrollmentsTool();
+    $rawResponse = (string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'class_id' => $class->id,
+    ]));
+
+    $data = json_decode($rawResponse, true);
+
+    expect($data['class_id'])->toBe($class->id)
+        ->and($data['subject_code'])->toBe('GE-1')
+        ->and($data['section'])->toBe('B')
+        ->and($data['enrolled_count'])->toBe(1)
+        ->and($data['students'][0]['student_number'])->toBe('208382')
+        ->and($data['students'][0]['name'])->toBe('Stephanie Sto Domingo')
+        ->and($data['students'][0]['status'])->toBe('Active');
+
+    // Ensure raw response does not contain unnecessary verbose fields like full personalInfo arrays
+    expect(mb_strlen($rawResponse))->toBeLessThan(1000);
+});

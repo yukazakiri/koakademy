@@ -6,10 +6,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useGradingConfig } from "@/hooks/use-grading-config";
 import {
     computeGwa,
+    convertTransfereePointToPercentage,
     formatGwa,
     gradeScaleLabel,
     gwaToneClass,
     isPassingGrade,
+    isTransfereeDecimalGrade,
     parseNumericGrade,
     resolveItemBand,
     type GradingConfig,
@@ -68,12 +70,21 @@ function collectYearSubjects(yearGroup: ChecklistYearGroup): ChecklistSubject[] 
     return yearGroup.semesters.flatMap((sem: ChecklistSemesterGroup) => sem.subjects);
 }
 
-function gradePasses(grade: number | string | null, config: GradingConfig): boolean {
+function gradePasses(
+    grade: number | string | null,
+    config: GradingConfig,
+    outcome?: string | null,
+    classification?: string | null,
+): boolean {
+    if (outcome) {
+        return outcome === "pass";
+    }
+
     if (grade === null || grade === undefined || grade === "" || grade === "-") {
         return false;
     }
 
-    return isPassingGrade(grade, config);
+    return isPassingGrade(grade, config, classification);
 }
 
 interface StatusBadgeInfo {
@@ -95,7 +106,17 @@ function resolveStatusBadge(subject: ChecklistSubject, config: GradingConfig): S
         return { label: "Dropped", variant: "destructive", className: "", isPassed: false };
     }
 
-    const band = resolveItemBand(subject.grade, config);
+    if (subject.grade_outcome === "pass") {
+        return { label: "Passed", variant: "default", className: "bg-green-600 hover:bg-green-700", isPassed: true };
+    }
+    if (subject.grade_outcome === "fail") {
+        return { label: "Failed", variant: "destructive", className: "", isPassed: false };
+    }
+    if (subject.grade_outcome === "incomplete") {
+        return { label: "Incomplete", variant: "secondary", className: "", isPassed: false };
+    }
+
+    const band = resolveItemBand(subject.grade, config, subject.classification);
     if (band) {
         const isPassed = band.outcome === "pass";
         const isFailOrDropped = band.outcome === "fail" || band.outcome === "withdrawn";
@@ -107,16 +128,6 @@ function resolveStatusBadge(subject: ChecklistSubject, config: GradingConfig): S
             className,
             isPassed,
         };
-    }
-
-    if (subject.grade_outcome) {
-        if (subject.grade_outcome === "pass") {
-            return { label: "Passed", variant: "default", className: "bg-green-600 hover:bg-green-700", isPassed: true };
-        }
-        if (subject.grade_outcome === "fail") {
-            return { label: "Failed", variant: "destructive", className: "", isPassed: false };
-        }
-        return { label: subject.grade_outcome, variant: "outline", className: "", isPassed: false };
     }
 
     if (numeric === null) {
@@ -132,7 +143,7 @@ function resolveStatusBadge(subject: ChecklistSubject, config: GradingConfig): S
         };
     }
 
-    const isPassed = isPassingGrade(numeric, config);
+    const isPassed = isPassingGrade(numeric, config, subject.classification);
     return {
         label: isPassed ? "Passed" : "Failed",
         variant: isPassed ? "default" : "destructive",
@@ -347,15 +358,28 @@ export function StudentChecklistSection({
                                                                         </TableCell>
                                                                         <TableCell>
                                                                             {subject.grade && subject.grade !== "-" && (
-                                                                                <span
-                                                                                    className={`font-mono font-bold ${
-                                                                                        gradePasses(subject.grade, gradingConfig)
-                                                                                            ? "text-green-600"
-                                                                                            : "text-destructive"
-                                                                                    }`}
-                                                                                >
-                                                                                    {subject.grade}
-                                                                                </span>
+                                                                                <div className="flex flex-col">
+                                                                                    <span
+                                                                                        className={`font-mono font-bold ${
+                                                                                            gradePasses(subject.grade, gradingConfig, subject.grade_outcome, subject.classification)
+                                                                                                ? "text-green-600"
+                                                                                                : "text-destructive"
+                                                                                        }`}
+                                                                                    >
+                                                                                        {subject.grade}
+                                                                                    </span>
+                                                                                    {parseNumericGrade(subject.grade) !== null &&
+                                                                                        isTransfereeDecimalGrade(subject.grade, gradingConfig, subject.classification) && (
+                                                                                            <span className="text-[10px] text-muted-foreground">
+                                                                                                Eq:{" "}
+                                                                                                {convertTransfereePointToPercentage(
+                                                                                                    parseNumericGrade(subject.grade)!,
+                                                                                                    gradingConfig,
+                                                                                                ).equivalent}
+                                                                                                %
+                                                                                            </span>
+                                                                                        )}
+                                                                                </div>
                                                                             )}
                                                                         </TableCell>
                                                                     </TableRow>
@@ -376,7 +400,7 @@ export function StudentChecklistSection({
                                                                                 !isDropped &&
                                                                                 (history.grade_outcome
                                                                                     ? history.grade_outcome === "pass"
-                                                                                    : gradePasses(history.grade, gradingConfig));
+                                                                                    : gradePasses(history.grade, gradingConfig, null, history.classification));
 
                                                                             return (
                                                                                 <TableRow
@@ -420,15 +444,28 @@ export function StudentChecklistSection({
                                                                                     </TableCell>
                                                                                     <TableCell>
                                                                                         {history.grade && history.grade !== "-" ? (
-                                                                                            <span
-                                                                                                className={`font-mono text-sm ${
-                                                                                                    isPassed
-                                                                                                        ? "text-green-600/70"
-                                                                                                        : "text-destructive/70"
-                                                                                                }`}
-                                                                                            >
-                                                                                                {history.grade}
-                                                                                            </span>
+                                                                                            <div className="flex flex-col">
+                                                                                                <span
+                                                                                                    className={`font-mono text-sm ${
+                                                                                                        isPassed
+                                                                                                            ? "text-green-600/70"
+                                                                                                            : "text-destructive/70"
+                                                                                                    }`}
+                                                                                                >
+                                                                                                    {history.grade}
+                                                                                                </span>
+                                                                                                {historyNumeric !== null &&
+                                                                                                    isTransfereeDecimalGrade(history.grade, gradingConfig, history.classification) && (
+                                                                                                        <span className="text-[10px] text-muted-foreground">
+                                                                                                            Eq:{" "}
+                                                                                                            {convertTransfereePointToPercentage(
+                                                                                                                historyNumeric,
+                                                                                                                gradingConfig,
+                                                                                                            ).equivalent}
+                                                                                                            %
+                                                                                                        </span>
+                                                                                                    )}
+                                                                                            </div>
                                                                                         ) : (
                                                                                             <span className="text-muted-foreground">-</span>
                                                                                         )}

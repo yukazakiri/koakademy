@@ -13,6 +13,7 @@ use App\Models\StudentStatusRecord;
 use App\Models\Subject;
 use App\Models\SubjectEnrollment;
 use App\Models\User;
+use App\Services\GradingSystemService;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia;
@@ -575,4 +576,39 @@ it('validates transcript grade inputs against the active grading policy bounds',
             'semester' => 1,
         ])
         ->assertSessionHasErrors('grade');
+});
+
+it('accepts transferee decimal point grades in a percentage policy school and stores pass outcome with band quality points', function (): void {
+    $school = School::first() ?? School::factory()->create();
+    $user = User::factory()->create(['role' => UserRole::Admin, 'school_id' => $school->id]);
+    $student = Student::factory()->create(['school_id' => $school->id]);
+    $subject = Subject::factory()->create(['school_id' => $school->id]);
+
+    $gradingSystem = app(GradingSystemService::class);
+    $customPolicy = $gradingSystem->defaults();
+    $customPolicy['bands'][0]['quality_points'] = 4.0;
+    $gradingSystem->publishForSchool($school, $customPolicy, $user);
+
+    actingAs($user)
+        ->patch(route('administrators.students.subjects.update-grade', ['student' => $student->id, 'subject' => $subject->id]), [
+            'is_new_record' => true,
+            'grade' => '1.50',
+            'classification' => SubjectEnrolledEnum::CREDITED->value,
+            'school_name' => 'State University',
+            'external_subject_code' => 'CS 101',
+            'external_subject_title' => 'Intro to CS',
+            'external_subject_units' => 3,
+            'credited_subject_id' => $subject->id,
+            'academic_year' => 1,
+            'school_year' => '2023 - 2024',
+            'semester' => 1,
+        ])
+        ->assertSessionHasNoErrors()
+        ->assertRedirect();
+
+    $saved = SubjectEnrollment::where('student_id', $student->id)->where('subject_id', $subject->id)->first();
+    expect($saved)->not->toBeNull()
+        ->and((float) $saved->grade)->toBe(1.5)
+        ->and($saved->grade_outcome)->toBe('pass')
+        ->and((float) $saved->grade_quality_points)->toBe(4.0);
 });

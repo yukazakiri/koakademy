@@ -42,6 +42,12 @@ export interface GradingConfig {
     zero_is_dropped?: boolean;
     treat_incomplete_as?: "exclude" | "fail";
     exclude_zero_unit_subjects?: boolean;
+    transferee_scale_enabled?: boolean;
+    transferee_point_scale_min?: number;
+    transferee_point_scale_max?: number;
+    transferee_point_passing_grade?: number;
+    transferee_point_direction?: "lower_is_better" | "higher_is_better";
+    transferee_conversion_method?: "formula" | "table";
     excluded_keywords: string[];
     excluded_subject_ids: number[];
     bands: Array<{
@@ -96,6 +102,12 @@ export const DEFAULT_GRADING_CONFIG: GradingConfig = {
     zero_is_dropped: false,
     treat_incomplete_as: "exclude",
     exclude_zero_unit_subjects: true,
+    transferee_scale_enabled: true,
+    transferee_point_scale_min: 1.0,
+    transferee_point_scale_max: 5.0,
+    transferee_point_passing_grade: 3.0,
+    transferee_point_direction: "lower_is_better",
+    transferee_conversion_method: "formula",
     excluded_keywords: [],
     excluded_subject_ids: [],
     bands: [
@@ -172,9 +184,101 @@ export function parseNumericGrade(grade: number | string | null | undefined): nu
     return parsed;
 }
 
+export function convertTransfereePointToPercentage(
+    grade: number,
+    config?: Partial<GradingConfig> | null,
+): { isPass: boolean; equivalent: number } {
+    const resolved = resolveConfig(config);
+    const pointMin = resolved.transferee_point_scale_min ?? 1.0;
+    const pointMax = resolved.transferee_point_scale_max ?? 5.0;
+    const pointPassing = resolved.transferee_point_passing_grade ?? 3.0;
+    const pointDirection = resolved.transferee_point_direction ?? "lower_is_better";
+    const method = resolved.transferee_conversion_method ?? "formula";
+
+    const isPass = pointDirection === "lower_is_better" ? grade <= pointPassing : grade >= pointPassing;
+
+    const passBands = resolved.bands.filter((b) => b.outcome === "pass" && typeof b.min === "number");
+    const instPassing = passBands.length > 0 ? Math.min(...passBands.map((b) => b.min as number)) : 75.0;
+    const instMax = passBands.length > 0 ? Math.max(...passBands.map((b) => b.max as number)) : 100.0;
+
+    let equivalent: number;
+    if (method === "table") {
+        if (pointDirection === "higher_is_better") {
+            if (grade >= 5.0) equivalent = 99.0;
+            else if (grade >= 4.75) equivalent = 96.0;
+            else if (grade >= 4.5) equivalent = 93.0;
+            else if (grade >= 4.25) equivalent = 90.0;
+            else if (grade >= 4.0) equivalent = 87.0;
+            else if (grade >= 3.75) equivalent = 84.0;
+            else if (grade >= 3.5) equivalent = 81.0;
+            else if (grade >= 3.25) equivalent = 78.0;
+            else if (grade >= 3.0) equivalent = instPassing;
+            else if (grade >= 2.0) equivalent = Math.max(0, instPassing - 5.0);
+            else equivalent = Math.max(0, instPassing - 10.0);
+        } else {
+            if (grade <= 1.0) equivalent = 99.0;
+            else if (grade <= 1.25) equivalent = 96.0;
+            else if (grade <= 1.5) equivalent = 93.0;
+            else if (grade <= 1.75) equivalent = 90.0;
+            else if (grade <= 2.0) equivalent = 87.0;
+            else if (grade <= 2.25) equivalent = 84.0;
+            else if (grade <= 2.5) equivalent = 81.0;
+            else if (grade <= 2.75) equivalent = 78.0;
+            else if (grade <= 3.0) equivalent = instPassing;
+            else if (grade <= 4.0) equivalent = Math.max(0, instPassing - 5.0);
+            else equivalent = Math.max(0, instPassing - 10.0);
+        }
+    } else {
+        if (pointDirection === "higher_is_better") {
+            if (isPass) {
+                const span = Math.max(0.01, pointMax - pointPassing);
+                const fraction = (grade - pointPassing) / span;
+                equivalent = instPassing + fraction * (instMax - instPassing);
+            } else {
+                const span = Math.max(0.01, pointPassing - pointMin);
+                const fraction = (pointPassing - grade) / span;
+                equivalent = Math.max(0, instPassing - 1.0 - fraction * 15.0);
+            }
+        } else {
+            if (isPass) {
+                const span = Math.max(0.01, pointPassing - pointMin);
+                const fraction = (pointPassing - grade) / span;
+                equivalent = instPassing + fraction * (instMax - instPassing);
+            } else {
+                const span = Math.max(0.01, pointMax - pointPassing);
+                const fraction = (grade - pointPassing) / span;
+                equivalent = Math.max(0, instPassing - 1.0 - fraction * 15.0);
+            }
+        }
+    }
+
+    return {
+        isPass,
+        equivalent: Math.round(Math.max(0, Math.min(instMax, equivalent)) * 100) / 100,
+    };
+}
+
+export function isTransfereeDecimalGrade(
+    grade: number | string | null | undefined,
+    config?: Partial<GradingConfig> | null,
+    classification?: string | null,
+): boolean {
+    if (classification === "internal") return false;
+    const numeric = parseNumericGrade(grade);
+    if (numeric === null) return false;
+    const resolved = resolveConfig(config);
+    if ((resolved.transferee_scale_enabled ?? true) === false) return false;
+    const policyMax = resolved.numeric_max ?? 100;
+    const pointMin = resolved.transferee_point_scale_min ?? 1.0;
+    const pointMax = resolved.transferee_point_scale_max ?? 5.0;
+
+    return policyMax >= 50 && numeric >= pointMin && numeric <= pointMax;
+}
+
 export function resolveItemBand(
     grade: number | string | null | undefined,
     config?: Partial<GradingConfig> | null,
+    classification?: string | null,
 ): GradingConfig["bands"][number] | null {
     if (grade === null || grade === undefined || grade === "" || grade === "-") {
         return null;
@@ -189,6 +293,12 @@ export function resolveItemBand(
 
     const numericGrade = parseNumericGrade(grade);
     if (numericGrade !== null) {
+        if (isTransfereeDecimalGrade(numericGrade, resolved, classification)) {
+            const { isPass } = convertTransfereePointToPercentage(numericGrade, resolved);
+            const targetOutcome = isPass ? "pass" : "fail";
+            return resolved.bands.find((band) => band.outcome === targetOutcome) ?? null;
+        }
+
         return (
             resolved.bands.find(
                 (band) => typeof band.min === "number" && typeof band.max === "number" && numericGrade >= band.min && numericGrade <= band.max,
@@ -202,14 +312,19 @@ export function resolveItemBand(
 export function gradeOutcome(
     grade: number | string | null | undefined,
     config?: Partial<GradingConfig> | null,
+    classification?: string | null,
 ): GradingConfig["bands"][number]["outcome"] | null {
-    const band = resolveItemBand(grade, config);
+    const band = resolveItemBand(grade, config, classification);
     return band?.outcome ?? null;
 }
 
-export function isPassingGrade(grade: number | string, config?: Partial<GradingConfig> | null): boolean {
+export function isPassingGrade(
+    grade: number | string,
+    config?: Partial<GradingConfig> | null,
+    classification?: string | null,
+): boolean {
     const resolved = resolveConfig(config);
-    return gradeOutcome(grade, resolved) === "pass";
+    return gradeOutcome(grade, resolved, classification) === "pass";
 }
 
 export function computeGwa(items: GwaItemLike[], options: ComputeGwaOptions = {}): GwaResult {
@@ -258,7 +373,7 @@ export function computeGwa(items: GwaItemLike[], options: ComputeGwaOptions = {}
             enrolledCount += 1;
         }
 
-        const band = resolveItemBand(item.grade, config);
+        const band = resolveItemBand(item.grade, config, item.classification);
         const outcome = item.grade_outcome ?? band?.outcome ?? null;
         const numericGrade = parseNumericGrade(item.grade);
 
@@ -275,13 +390,18 @@ export function computeGwa(items: GwaItemLike[], options: ComputeGwaOptions = {}
         }
 
         let gradeValue: number | null = null;
+        const isTransfereeDecimal = numericGrade !== null && isTransfereeDecimalGrade(numericGrade, config, item.classification);
+
         if (metric === "quality_points" || config.input_type === "symbol") {
             const qp = parseNumericGrade(item.grade_quality_points) ?? band?.quality_points ?? null;
             if (qp !== null) {
                 gradeValue = qp;
-            } else if (numericGrade !== null) {
+            } else if (numericGrade !== null && !isTransfereeDecimal) {
                 gradeValue = numericGrade;
             }
+        } else if (isTransfereeDecimal) {
+            const { equivalent } = convertTransfereePointToPercentage(numericGrade, config);
+            gradeValue = equivalent;
         } else {
             gradeValue = numericGrade ?? parseNumericGrade(item.grade_quality_points);
         }
@@ -290,7 +410,7 @@ export function computeGwa(items: GwaItemLike[], options: ComputeGwaOptions = {}
             continue;
         }
 
-        const isPassing = outcome === "pass" || (outcome === null && numericGrade !== null && isPassingGrade(numericGrade, config));
+        const isPassing = outcome === "pass" || (outcome === null && numericGrade !== null && isPassingGrade(numericGrade, config, item.classification));
         if (!config.include_failed_in_gwa && !isPassing) {
             continue;
         }

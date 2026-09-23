@@ -46,6 +46,12 @@ final class GradingSystemService
             'zero_is_dropped' => false,
             'treat_incomplete_as' => 'exclude',
             'exclude_zero_unit_subjects' => true,
+            'transferee_scale_enabled' => true,
+            'transferee_point_scale_min' => 1.0,
+            'transferee_point_scale_max' => 5.0,
+            'transferee_point_passing_grade' => 3.0,
+            'transferee_point_direction' => 'lower_is_better',
+            'transferee_conversion_method' => 'formula',
             'excluded_keywords' => [],
             'excluded_subject_ids' => [],
             'bands' => [
@@ -346,6 +352,22 @@ final class GradingSystemService
             ? $config['treat_incomplete_as']
             : $defaults['treat_incomplete_as'];
         $excludeZeroUnitSubjects = (bool) ($config['exclude_zero_unit_subjects'] ?? $defaults['exclude_zero_unit_subjects']);
+        $transfereeScaleEnabled = (bool) ($config['transferee_scale_enabled'] ?? $defaults['transferee_scale_enabled']);
+        $transfereePointScaleMin = is_numeric($config['transferee_point_scale_min'] ?? null)
+            ? max(0.0, min(100.0, (float) $config['transferee_point_scale_min']))
+            : (float) $defaults['transferee_point_scale_min'];
+        $transfereePointScaleMax = is_numeric($config['transferee_point_scale_max'] ?? null)
+            ? max(0.0, min(100.0, (float) $config['transferee_point_scale_max']))
+            : (float) $defaults['transferee_point_scale_max'];
+        $transfereePointPassingGrade = is_numeric($config['transferee_point_passing_grade'] ?? null)
+            ? max(0.0, min(100.0, (float) $config['transferee_point_passing_grade']))
+            : (float) $defaults['transferee_point_passing_grade'];
+        $transfereePointDirection = in_array($config['transferee_point_direction'] ?? null, ['lower_is_better', 'higher_is_better'], true)
+            ? $config['transferee_point_direction']
+            : $defaults['transferee_point_direction'];
+        $transfereeConversionMethod = in_array($config['transferee_conversion_method'] ?? null, ['formula', 'table'], true)
+            ? $config['transferee_conversion_method']
+            : $defaults['transferee_conversion_method'];
 
         return [
             'name' => mb_trim((string) ($config['name'] ?? $defaults['name'])) ?: $defaults['name'],
@@ -363,6 +385,12 @@ final class GradingSystemService
             'zero_is_dropped' => $zeroIsDropped,
             'treat_incomplete_as' => $treatIncompleteAs,
             'exclude_zero_unit_subjects' => $excludeZeroUnitSubjects,
+            'transferee_scale_enabled' => $transfereeScaleEnabled,
+            'transferee_point_scale_min' => min($transfereePointScaleMin, $transfereePointScaleMax),
+            'transferee_point_scale_max' => max($transfereePointScaleMin, $transfereePointScaleMax),
+            'transferee_point_passing_grade' => $transfereePointPassingGrade,
+            'transferee_point_direction' => $transfereePointDirection,
+            'transferee_conversion_method' => $transfereeConversionMethod,
             'excluded_keywords' => $keywords,
             'excluded_subject_ids' => $subjectIds,
             'bands' => $bands,

@@ -505,7 +505,7 @@ final class AdministratorStudentManagementController extends Controller
         // Construct checklist data
         $checklist = [];
         $gradingSystem = app(GradingSystemService::class);
-        $gradingConfig = $gradingSystem->getConfig();
+        $gradingConfig = $gradingSystem->getConfig($student->school);
         $groupedSubjects = $student->subjects()->orderBy('academic_year')->orderBy('semester')->get()->groupBy('academic_year');
         $subjectEnrolled = $student->subjectEnrolled
             ->filter(fn (SubjectEnrollment $enrollment): bool => $enrollment->classification !== SubjectEnrolledEnum::NON_CREDITED->value)
@@ -1684,7 +1684,7 @@ final class AdministratorStudentManagementController extends Controller
             $subjectEnrollment = null;
         }
 
-        $gradingConfig = $gradingSystem->getConfig();
+        $gradingConfig = $gradingSystem->getConfig($student->school);
 
         if (array_key_exists('grade', $validated) && $validated['grade'] !== null && $validated['grade'] !== '' && $validated['grade'] !== '-') {
             $gradeInput = (string) $validated['grade'];
@@ -1699,7 +1699,20 @@ final class AdministratorStudentManagementController extends Controller
                         ]);
                     }
                     $numericVal = (float) $gradeInput;
-                    if ($numericVal < (float) $gradingConfig['numeric_min'] || $numericVal > (float) $gradingConfig['numeric_max']) {
+                    $isTransfereeClassification = in_array($validated['classification'] ?? '', [
+                        SubjectEnrolledEnum::CREDITED->value,
+                        SubjectEnrolledEnum::NON_CREDITED->value,
+                    ], true);
+
+                    $isTransfereeScale = $isTransfereeClassification
+                        && (bool) ($gradingConfig['transferee_scale_enabled'] ?? true)
+                        && $numericVal >= (float) ($gradingConfig['transferee_point_scale_min'] ?? 1.0)
+                        && $numericVal <= (float) ($gradingConfig['transferee_point_scale_max'] ?? 5.0);
+
+                    $isWithinPolicyBounds = $numericVal >= (float) $gradingConfig['numeric_min']
+                        && $numericVal <= (float) $gradingConfig['numeric_max'];
+
+                    if (! $isWithinPolicyBounds && ! $isTransfereeScale) {
                         throw ValidationException::withMessages([
                             'grade' => "Grade must be between {$gradingConfig['numeric_min']} and {$gradingConfig['numeric_max']}.",
                         ]);
@@ -1725,7 +1738,9 @@ final class AdministratorStudentManagementController extends Controller
             $rawGrade = null;
         }
 
-        $evaluation = app(GradeEvaluationService::class)->evaluate($rawGrade, $gradingConfig);
+        $evaluation = app(GradeEvaluationService::class)->evaluate($rawGrade, $gradingConfig, [
+            'classification' => $validated['classification'],
+        ]);
 
         $data = [
             'grade' => $evaluation['numeric_grade'],
@@ -1733,7 +1748,7 @@ final class AdministratorStudentManagementController extends Controller
             'grade_outcome' => $evaluation['outcome'],
             'grade_quality_points' => $evaluation['quality_points'],
             'grading_policy_version_id' => $gradingConfig['policy_version_id'] ?? null,
-            'remarks' => $validated['remarks'],
+            'remarks' => $validated['remarks'] ?? null,
             'classification' => $validated['classification'],
             'academic_year' => $validated['academic_year'],
             'school_year' => $validated['school_year'],

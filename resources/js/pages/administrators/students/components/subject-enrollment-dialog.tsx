@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useGradingConfig } from "@/hooks/use-grading-config";
+import { convertTransfereePointToPercentage, isTransfereeDecimalGrade, parseNumericGrade } from "@/lib/gwa";
 import { BookOpen, CheckCircle, ExternalLink, FileText, Trash2 } from "lucide-react";
 import type { FormEvent } from "react";
 import type { ChecklistHistoryRecord, ChecklistSubject, StudentOptions, SubjectEnrollmentFormData } from "../types";
@@ -258,7 +259,7 @@ export function SubjectEnrollmentDialog({
                                             placeholder={
                                                 gradingConfig.input_type === "symbol"
                                                     ? "A, B+, Pass"
-                                                    : `${gradingConfig.numeric_min}–${gradingConfig.numeric_max}`
+                                                    : `${gradingConfig.numeric_min}–${gradingConfig.numeric_max} or 1.0–5.0`
                                             }
                                             className="pl-9 font-mono font-bold"
                                         />
@@ -266,6 +267,21 @@ export function SubjectEnrollmentDialog({
                                             <FileText className="h-4 w-4" />
                                         </div>
                                     </div>
+                                    {(() => {
+                                        if (data.classification === "internal") {
+                                            return null;
+                                        }
+                                        const num = parseNumericGrade(data.grade);
+                                        if (num !== null && isTransfereeDecimalGrade(num, gradingConfig, data.classification)) {
+                                            const { isPass, equivalent } = convertTransfereePointToPercentage(num, gradingConfig);
+                                            return (
+                                                <p className="text-[11px] font-medium text-blue-600 dark:text-blue-400">
+                                                    Point scale detected &bull; {isPass ? "Passed" : "Failed"} &bull; Institutional Equiv: ~{equivalent}%
+                                                </p>
+                                            );
+                                        }
+                                        return null;
+                                    })()}
                                     {errors.grade && <span className="text-destructive text-xs">{errors.grade}</span>}
                                 </div>
 

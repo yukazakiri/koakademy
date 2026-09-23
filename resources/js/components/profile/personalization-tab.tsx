@@ -7,7 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { themes, type ColorTheme } from "@/conf/themes";
 import { useTheme } from "@/hooks/use-theme";
 import { useForm } from "@inertiajs/react";
-import { Check, Columns3, Grid2X2, Laptop, LayoutList, Monitor, Moon, Paintbrush, ReceiptText, Save, Sun } from "lucide-react";
+import { Check, Columns3, Grid2X2, Laptop, LayoutGrid, LayoutList, Monitor, Moon, Paintbrush, ReceiptText, Save, Sun } from "lucide-react";
 import { useEffect } from "react";
 import { toast } from "sonner";
 

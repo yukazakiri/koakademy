@@ -28,7 +28,6 @@ function gradingPolicyAdministrator(): array
 }
 
 it('publishes a school scoped policy with configurable bands and components', function (): void {
-    var_dump(get_class($this));
     [$user, $school] = gradingPolicyAdministrator();
 
     actingAs($user)

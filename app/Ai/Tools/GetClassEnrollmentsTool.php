@@ -151,7 +151,7 @@ final class GetClassEnrollmentsTool implements Tool
             'enrolled_count' => count($allStudents),
             'sections' => $sectionsSummary,
             'students' => $allStudents,
-        ], JSON_PRETTY_PRINT);
+        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
 
     private function formatSingleClassResponse(Classes $class): string
@@ -174,7 +174,7 @@ final class GetClassEnrollmentsTool implements Tool
             'enrolled_count' => count($enrollments),
             'maximum_slots' => $class->maximum_slots,
             'students' => $enrollments,
-        ], JSON_PRETTY_PRINT);
+        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
 
     /**
@@ -186,19 +186,20 @@ final class GetClassEnrollmentsTool implements Tool
             $student = $enrollment->student;
             $fullName = $student ? mb_trim("{$student->first_name} {$student->last_name}") : 'Unknown';
 
-            return [
-                'student_id' => $student?->id,
-                'student_number' => $student?->student_id ?? $student?->id_number ?? 'N/A',
+            $item = [
+                'student_number' => (string) ($student?->student_id ?? $student?->id_number ?? 'N/A'),
                 'name' => $fullName ?: ($student?->name ?? 'Unknown'),
-                'gender' => $student?->gender ?? $student?->personalInfo?->gender ?? 'N/A',
-                'year_level' => $student?->academic_year ?? $student?->year_level ?? 'N/A',
-                'section' => $class->section,
-                'status' => $enrollment->status ?? $student?->status ?? 'enrolled',
-                'prelim_grade' => $enrollment->prelim_grade,
-                'midterm_grade' => $enrollment->midterm_grade,
-                'finals_grade' => $enrollment->finals_grade,
-                'remarks' => $enrollment->remarks,
+                'gender' => (string) ($student?->gender ?? $student?->personalInfo?->gender ?? 'N/A'),
+                'year_level' => (string) ($student?->academic_year ?? $student?->year_level ?? 'N/A'),
+                'section' => (string) $class->section,
+                'status' => $enrollment->status ? 'Active' : 'Inactive',
             ];
+
+            if ($enrollment->finals_grade !== null) {
+                $item['grade'] = $enrollment->finals_grade;
+            }
+
+            return $item;
         })->values()->all();
     }
 }

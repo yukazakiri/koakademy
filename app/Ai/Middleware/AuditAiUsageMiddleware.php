@@ -8,6 +8,7 @@ use Closure;
 use Illuminate\Support\Facades\Log;
 use Laravel\Ai\Prompts\AgentPrompt;
 use Laravel\Ai\Responses\AgentResponse;
+use Throwable;
 
 final class AuditAiUsageMiddleware
 {
@@ -21,12 +22,16 @@ final class AuditAiUsageMiddleware
         return $next($prompt)->then(function (AgentResponse $response) use ($startTime): void {
             $durationMs = (int) round((microtime(true) - $startTime) * 1000);
 
-            Log::channel('daily')->info('AI Agent Prompt Completed', [
-                'conversation_id' => $response->conversationId,
-                'duration_ms' => $durationMs,
-                'has_approvals' => $response->hasPendingApprovals(),
-                'steps_count' => count($response->steps),
-            ]);
+            try {
+                Log::info('AI Agent Prompt Completed', [
+                    'conversation_id' => $response->conversationId,
+                    'duration_ms' => $durationMs,
+                    'has_approvals' => $response->hasPendingApprovals(),
+                    'steps_count' => count($response->steps),
+                ]);
+            } catch (Throwable) {
+                // Audit logging failure must not interrupt the AI stream or prompt response
+            }
         });
     }
 }

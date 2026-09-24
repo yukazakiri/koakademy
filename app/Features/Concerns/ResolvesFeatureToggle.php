@@ -71,12 +71,32 @@ trait ResolvesFeatureToggle
         return $lottery->choose();
     }
 
+    /**
+     * In-memory cache of global feature states (__laravel_null scope) to prevent
+     * redundant queries when multiple features are evaluated in a single request.
+     *
+     * @var array<string, mixed>|null
+     */
+    private static ?array $globalFeatureStates = null;
+
+    /**
+     * Flush the cached global feature states.
+     */
+    public static function flushGlobalFeatureStates(): void
+    {
+        self::$globalFeatureStates = null;
+    }
+
     private function globalFeatureState(): ?bool
     {
-        $globalState = DB::table('features')
-            ->where('name', static::class)
-            ->where('scope', '__laravel_null')
-            ->value('value');
+        if (self::$globalFeatureStates === null) {
+            self::$globalFeatureStates = DB::table('features')
+                ->where('scope', '__laravel_null')
+                ->pluck('value', 'name')
+                ->all();
+        }
+
+        $globalState = self::$globalFeatureStates[static::class] ?? null;
 
         if ($globalState === null) {
             return null;

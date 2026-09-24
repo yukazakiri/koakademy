@@ -123,15 +123,31 @@ final class GeneralSettingsService
         'school_portal_description',
     ];
 
+    private static ?GeneralSetting $cachedGlobalSetting = null;
+
     private ?GeneralSetting $generalSetting = null;
 
     private ?UserSetting $userSetting = null;
 
     private bool $userSettingLoaded = false;
 
+    /**
+     * Flush the memoized global setting instance.
+     */
+    public static function flushGlobalSetting(): void
+    {
+        self::$cachedGlobalSetting = null;
+    }
+
     public function __construct()
     {
         try {
+            if (self::$cachedGlobalSetting !== null) {
+                $this->generalSetting = self::$cachedGlobalSetting;
+
+                return;
+            }
+
             // Cache only the ID, not the whole model
             $globalSettingsId = Cache::rememberForever(
                 'general_settings_id',
@@ -142,6 +158,7 @@ final class GeneralSettingsService
 
             if ($cachedSetting !== null) {
                 $this->generalSetting = $cachedSetting;
+                self::$cachedGlobalSetting = $cachedSetting;
 
                 return;
             }
@@ -155,6 +172,7 @@ final class GeneralSettingsService
             }
 
             $this->generalSetting = $freshSetting;
+            self::$cachedGlobalSetting = $freshSetting;
         } catch (Exception $exception) {
             Log::error('Failed to initialize GeneralSettingsService', [
                 'error' => $exception->getMessage(),
@@ -536,7 +554,8 @@ final class GeneralSettingsService
     public function getGlobalSettingsModel(): ?GeneralSetting
     {
         if (! $this->generalSetting instanceof GeneralSetting) {
-            $this->generalSetting = GeneralSetting::query()->first();
+            $this->generalSetting = self::$cachedGlobalSetting ?? GeneralSetting::query()->first();
+            self::$cachedGlobalSetting = $this->generalSetting;
         }
 
         return $this->generalSetting;
@@ -545,6 +564,7 @@ final class GeneralSettingsService
     public function replaceGlobalSettings(?GeneralSetting $generalSetting): void
     {
         $this->generalSetting = $generalSetting;
+        self::$cachedGlobalSetting = $generalSetting;
     }
 
     /**

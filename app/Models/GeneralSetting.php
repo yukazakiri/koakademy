@@ -93,6 +93,7 @@ final class GeneralSetting extends Model
         Cache::forget('general_settings');
         Cache::forget('general_settings_id');
         Cache::forget('api_general_settings');
+        \App\Services\GeneralSettingsService::flushGlobalSetting();
     }
 
     public function getSchoolYear(): string

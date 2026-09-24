@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Features\Concerns\ResolvesFeatureToggle;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -207,6 +208,8 @@ final class FeatureToggleService
                 'updated_at' => now(),
             ]);
         }
+
+        ResolvesFeatureToggle::flushGlobalFeatureStates();
 
         // Use Pennant's API to update existing per-user rows AND clear the cache
         if ($active) {

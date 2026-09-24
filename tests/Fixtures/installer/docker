@@ -18,6 +18,7 @@ shift || true
 
 case "$command_name" in
     version) exit 0 ;;
+    pull) exit 0 ;;
     info)
         case "$*" in
             *'{{.OSType}}'*) printf 'linux\n' ;;
@@ -106,6 +107,10 @@ case "$command_name" in
             rm)
                 rm -f "$state/services/${1:-}"
                 ;;
+            update)
+                # Forced service update (edge channel re-rollout): recorded in
+                # docker.log by the top-level logger; nothing else to simulate.
+                ;;
             ps)
                 name="$1"
                 exists services "$name" || exit 1
@@ -119,7 +124,10 @@ case "$command_name" in
                 if [[ "$*" == *'UpdateStatus'* ]]; then
                     printf '\n'
                 else
-                    cat "$state/services/koakademy_app_image"
+                    # Like real Swarm, the spec image carries the resolved
+                    # digest suffix; the operator must compare digest-free.
+                    printf '%s@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n' \
+                        "$(cat "$state/services/koakademy_app_image")"
                 fi
                 ;;
             *) exit 1 ;;

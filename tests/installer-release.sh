@@ -94,17 +94,20 @@ if [[ "$channel" == stable ]]; then
     grep -Fq 'swarm init --advertise-addr 198.51.100.10' "$flag_state/docker.log"
     unset KOAKADEMY_INSTALLER_TEST_SWARM_STATE KOAKADEMY_ADVERTISE_ADDR
 
-    # A piped, non-interactive stable install must fail with an actionable
-    # domain instruction instead of silently selecting an HTTP-only default.
+    # A piped, non-interactive stable install without a domain must succeed
+    # with direct self-hosted HTTP access instead of requiring a domain.
     missing_state="$temporary_directory/missing-state"
+    unset KOAKADEMY_DOMAIN
     export KOAKADEMY_INSTALLER_TEST_STATE="$missing_state"
     export KOAKADEMY_ROOT="$missing_state/runtime"
     export KOAKADEMY_INSTALLER_TEST_NONINTERACTIVE=1
-    if bash "$bootstrap_directory/install.sh"; then
-        printf 'Expected a non-interactive stable install without a domain to fail.\n' >&2
-        exit 1
-    fi
+    bash "$bootstrap_directory/install.sh"
     unset KOAKADEMY_INSTALLER_TEST_NONINTERACTIVE
+    grep -Fq 'KOAKADEMY_DIRECT_ACCESS=true' "$missing_state/runtime/runtime.env"
+    grep -Fq 'KOAKADEMY_PUBLIC_PORT=8000' "$missing_state/runtime/runtime.env"
+    grep -Fq 'APP_URL=http://127.0.0.1:8000' "$missing_state/runtime/runtime.env"
+    grep -Fq 'swarm-stack-direct.yml' "$missing_state/docker.log"
+    grep -Fq 'INSTALLATION_COMPLETE=true' "$missing_state/runtime/runtime.env"
 
     # Restore the primary fixture state for the update lifecycle assertions.
     export KOAKADEMY_INSTALLER_TEST_STATE="$state_directory"
@@ -117,6 +120,17 @@ if [[ "$channel" == stable ]]; then
     export KOAKADEMY_INSTALLER_TEST_IMAGE="ghcr.io/yukazakiri/koakademy:sha-1111111111111111111111111111111111111111"
     bash "$state_directory/runtime/bin/koakademy" update --stable
     unset KOAKADEMY_INSTALLER_TEST_IMAGE
+
+    # A resumed install must adopt the image the current operator resolves
+    # instead of redeploying the stale recorded reference.
+    sed -i 's/^INSTALLATION_COMPLETE=true$/INSTALLATION_COMPLETE=false/' \
+        "$state_directory/runtime/runtime.env"
+    sed -i 's|^KOAKADEMY_IMAGE=.*|KOAKADEMY_IMAGE=ghcr.io/yukazakiri/koakademy:sha-0123456789012345678901234567890123456789|' \
+        "$state_directory/runtime/runtime.env"
+    bash "$bootstrap_directory/install.sh"
+    grep -Fq 'KOAKADEMY_IMAGE=ghcr.io/yukazakiri/koakademy:sha-0123456789012345678901234567890123456789-franken' \
+        "$state_directory/runtime/runtime.env"
+    grep -Fq 'INSTALLATION_COMPLETE=true' "$state_directory/runtime/runtime.env"
 else
     export KOAKADEMY_INSTALLER_TEST_SOURCE_SHA="$previous_source_sha"
     export KOAKADEMY_INSTALLER_TEST_FAIL_FIRST_STACK=1
@@ -129,6 +143,19 @@ else
     unset KOAKADEMY_INSTALLER_TEST_FAIL_FIRST_STACK
     export KOAKADEMY_INSTALLER_TEST_SOURCE_SHA="$source_sha"
     bash "$bootstrap_directory/install.sh" edge
+
+    # Edge update must fetch the newest master commit and roll it out even
+    # though the image is a moving alias whose value never changes.
+    new_source_sha="2222222222222222222222222222222222222222"
+    export KOAKADEMY_INSTALLER_TEST_SOURCE_SHA="$new_source_sha"
+    bash "$state_directory/runtime/bin/koakademy" update --edge
+    grep -Fq "RELEASE_TAG=edge-$new_source_sha" "$state_directory/runtime/runtime.env"
+    grep -Fq 'service update --force' "$state_directory/docker.log"
+    grep -Fq 'pull ghcr.io/yukazakiri/koakademy:edge-frankenphp' "$state_directory/docker.log"
+    source_sha="$new_source_sha"
+
+    # Re-running edge update with no new commit must be a clean no-op.
+    bash "$state_directory/runtime/bin/koakademy" update --edge 2>&1 | grep -Fq 'already deployed'
 fi
 
 [[ -f "$state_directory/runtime/runtime.env" ]]

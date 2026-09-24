@@ -23,6 +23,7 @@ command_name=""
 subcommand=""
 configure_mode=""
 yes=false
+wait_ready=true
 original_arguments=()
 
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -35,8 +36,8 @@ usage() {
 KoAkademy production operator
 
 Usage:
-  koakademy install [--domain school.example] [--port 8000] [--channel stable|edge] [--release vX.Y.Z]
-  koakademy update [--port 8000] [--channel stable|edge] [--release vX.Y.Z]
+  koakademy install [--domain school.example] [--port 8000] [--channel stable|edge] [--release vX.Y.Z] [--no-wait]
+  koakademy update [--port 8000] [--channel stable|edge] [--release vX.Y.Z] [--no-wait]
   koakademy configure storage <local|s3|r2|library-r2>
   koakademy configure mail <log|smtp|sequenzy>
   koakademy configure search <enable|disable>
@@ -45,10 +46,44 @@ Usage:
 
 Rollback changes only the application image. It never reverses database migrations.
 
-Stable installs may also provide KOAKADEMY_DOMAIN in the environment. When a
-stable install has no domain and is attached to a terminal, the installer asks
-for one. Non-interactive installs must provide --domain or KOAKADEMY_DOMAIN.
+Stable installs may also provide KOAKADEMY_DOMAIN in the environment. When an
+install has no domain, the installer uses direct self-hosted HTTP access on
+--port instead of domain-backed HTTPS. When attached to a terminal, the
+installer asks for an optional domain; leave it empty for direct access.
+
+Pass --no-wait (install or update) to return as soon as services are deployed
+instead of polling until the app serves traffic, Dokploy-style. Dependency
+waits and database migrations still run; only the final readiness waits move
+to the background.
 EOF
+}
+
+detect_private_ip() {
+    local ip
+    ip="$(ip -o -4 addr show scope global 2>/dev/null \
+        | awk '$2 !~ /^(docker|br-|veth)/ {print $4}' \
+        | cut -d/ -f1 \
+        | grep -E '^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)' \
+        | head -n 1 || true)"
+    printf '%s' "${ip:-}"
+}
+
+print_ready_finale() {
+    local elapsed="$1"
+    local setup_url="$2"
+    local private_ip
+    if [[ "$wait_ready" == true ]]; then
+        info "KoAkademy is ready at $setup_url (completed in $elapsed)."
+    else
+        info "KoAkademy services are starting in the background (deployed in $elapsed)."
+        info "The setup wizard will be reachable shortly at $setup_url."
+    fi
+    if [[ "$direct_access" == true ]]; then
+        private_ip="$(detect_private_ip)"
+        if [[ -n "$private_ip" ]]; then
+            info "If you are on the same local network, use http://${private_ip}:$public_port/setup"
+        fi
+    fi
 }
 
 setup_paths() {
@@ -110,12 +145,14 @@ prompt_for_domain() {
         return
     fi
 
+    # The domain is optional: an empty answer selects direct self-hosted HTTP
+    # access (http://server-ip:PORT) instead of domain-backed HTTPS.
     if [[ -n "${KOAKADEMY_INSTALLER_TEST_NONINTERACTIVE:-}" || ! -r /dev/tty ]]; then
-        fail "Stable installs require a domain. Set KOAKADEMY_DOMAIN or pass --domain, for example: curl -fsSL https://github.com/yukazakiri/koakademy/releases/latest/download/install.sh | env KOAKADEMY_DOMAIN=school.example bash"
+        printf '\n'
+        return
     fi
 
-    read -r -p "KoAkademy domain (for example school.example): " domain </dev/tty
-    [[ -n "$domain" ]] || fail "A domain is required for a stable HTTPS installation."
+    read -r -p "KoAkademy domain for HTTPS (leave empty for direct http://server-ip:PORT access): " domain </dev/tty
     printf '%s\n' "$domain"
 }
 
@@ -418,13 +455,24 @@ release_image() {
     if is_test && [[ -n "${KOAKADEMY_INSTALLER_TEST_IMAGE:-}" ]]; then
         image="$KOAKADEMY_INSTALLER_TEST_IMAGE"
     fi
+    # The Swarm topology runs FrankenPHP/Octane (OCTANE_SERVER=frankenphp), but
+    # delivery records the base per-commit tag in version.json. The matching
+    # FrankenPHP variant is published alongside it for the same commit, so
+    # resolve it here; the base image has no supervisord.frankenphp config and
+    # its tasks would crash-loop.
+    if [[ "$image" =~ ^(ghcr\.io/[A-Za-z0-9._/-]+):sha-([a-f0-9]{40})$ ]]; then
+        image="${BASH_REMATCH[1]}:sha-${BASH_REMATCH[2]}-franken"
+    fi
     [[ "$image" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[a-f0-9]{64}$ ]] && {
         printf '%s\n' "$image"; return;
     }
-    if is_test && [[ "$image" =~ ^ghcr\.io/[A-Za-z0-9._/-]+:sha-[a-f0-9]{40}$ ]]; then
-        printf '%s\n' "$image"; return
-    fi
-    fail "Release image must be an immutable GHCR digest."
+    # Delivery bakes per-commit tags (delivery.yml immutable_ref); each tag is
+    # unique to its commit and never rebuilt. The -franken suffix selects the
+    # FrankenPHP variant that the Swarm topology requires.
+    [[ "$image" =~ ^ghcr\.io/[A-Za-z0-9._/-]+:sha-[a-f0-9]{40}(-franken)?$ ]] && {
+        printf '%s\n' "$image"; return;
+    }
+    fail "Release image must be an immutable GHCR reference (digest or :sha-<commit> tag)."
 }
 
 ensure_docker() {
@@ -598,25 +646,72 @@ deploy_stack() {
     source "$runtime_file"
     set +a
     if [[ -n "$image_override" ]]; then
-        KOAKADEMY_IMAGE="$image_override" docker stack deploy --with-registry-auth --prune --compose-file "$compose_file" "$STACK_NAME"
+        KOAKADEMY_IMAGE="$image_override" docker stack deploy --detach --with-registry-auth --prune --compose-file "$compose_file" "$STACK_NAME"
         return
     fi
-    docker stack deploy --with-registry-auth --prune --compose-file "$compose_file" "$STACK_NAME"
+    docker stack deploy --detach --with-registry-auth --prune --compose-file "$compose_file" "$STACK_NAME"
+}
+
+format_duration() {
+    local total="${1:-0}"
+    printf '%dm%02ds' "$((total / 60))" "$((total % 60))"
+}
+
+phase_hint() {
+    case "${1:-}" in
+        *Preparing*) printf 'pulling image layers' ;;
+        *Pending*) printf 'waiting to be scheduled' ;;
+        *Starting*) printf 'container is booting' ;;
+        *Running*) printf 'running' ;;
+        *) printf 'working' ;;
+    esac
+}
+
+task_summary_line() {
+    local service="$1"
+    local desired_state="${2:-running}"
+    local summary
+    # Replicated-job tasks must be listed unfiltered (pass an empty desired
+    # state): their desired state does not stay "running" over their lifetime,
+    # so the filter would hide them and report "no tasks yet" forever.
+    if [[ -n "$desired_state" ]]; then
+        summary="$(docker service ps "$service" --filter "desired-state=$desired_state" --no-trunc --format '{{.CurrentState}}' 2>/dev/null | head -n 3 | tr '\n' ';' || true)"
+    else
+        summary="$(docker service ps "$service" --no-trunc --format '{{.CurrentState}}' 2>/dev/null | head -n 3 | tr '\n' ';' || true)"
+    fi
+    summary="${summary%;}"
+    printf '%s' "${summary:-no tasks yet}"
+}
+
+dump_service_diagnostics() {
+    local service="$1"
+    info "Task states for $service:"
+    docker service ps "$service" --no-trunc >&2 || true
+    info "Recent logs for $service (tail 30):"
+    docker service logs --tail 30 "$service" >&2 || true
 }
 
 wait_for_service() {
     local service="$1"
     local expected_image="${2:-}"
     local deadline="$((SECONDS + 600))"
-    local states update_state configured_image
+    local start="$SECONDS"
+    local last_compact=0
+    local last_full=0
+    local states update_state configured_image expected_bare compact full_table
+    info "Waiting for service $service to become healthy (up to 10 minutes on first boot while images pull and the app warms up)."
     while (( SECONDS < deadline )); do
         if [[ -n "$expected_image" ]]; then
             configured_image="$(docker service inspect "$service" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || true)"
-            [[ "$configured_image" == "$expected_image" ]] || { sleep 2; continue; }
+            # Swarm pins the resolved digest onto the spec
+            # (tag@sha256:...), so compare the bare references.
+            configured_image="${configured_image%@sha256:*}"
+            expected_bare="${expected_image%@sha256:*}"
+            [[ "$configured_image" == "$expected_bare" ]] || { sleep 2; continue; }
             update_state="$(docker service inspect "$service" --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{end}}' 2>/dev/null || true)"
             case "$update_state" in
                 paused|rollback_paused|rollback_completed)
-                    docker service ps "$service" --no-trunc >&2 || true
+                    dump_service_diagnostics "$service"
                     fail "Service $service did not complete its update ($update_state)."
                     ;;
                 updating|rollback_started) sleep 2; continue ;;
@@ -627,13 +722,28 @@ wait_for_service() {
         # a healthy replacement is not mistaken for a failed update.
         states="$(docker service ps "$service" --filter desired-state=running --no-trunc --format '{{.CurrentState}}' 2>/dev/null || true)"
         grep -Eqi 'Rejected|Failed' <<<"$states" && {
-            docker service ps "$service" --no-trunc >&2 || true
+            dump_service_diagnostics "$service"
             fail "Service $service failed to start."
         }
         grep -qi Running <<<"$states" && return
+        # Live progress: a compact state line every 10s so image pulls and
+        # boots are visible, plus the full task table every 30s.
+        if (( SECONDS - last_compact >= 10 )); then
+            last_compact="$SECONDS"
+            compact="$(task_summary_line "$service")"
+            info "$service: $compact ($(phase_hint "$compact"), $((SECONDS - start))s elapsed)."
+        fi
+        if (( SECONDS - last_full >= 30 )); then
+            last_full="$SECONDS"
+            full_table="$(docker service ps "$service" --no-trunc --format '{{.Name}} {{.CurrentState}} {{.Error}}' 2>/dev/null | head -n 5 || true)"
+            info "Current tasks for $service:"
+            printf '%s\n' "${full_table:-unknown}" >&2
+            info "Inspect with: docker service ps $service --no-trunc; docker service logs $service"
+        fi
         sleep 2
     done
-    fail "Timed out waiting for service $service."
+    dump_service_diagnostics "$service"
+    fail "Timed out waiting for service $service after 10 minutes."
 }
 
 run_app_job() {
@@ -641,10 +751,12 @@ run_app_job() {
     local image="$2"
     shift 2
     local deadline="$((SECONDS + 900))"
-    local states
+    local start="$SECONDS"
+    local last_compact=0
+    local states compact
     docker service rm "$job_name" >/dev/null 2>&1 || true
     docker service create \
-        --name "$job_name" --label "$MANAGED_LABEL" --mode replicated-job \
+        --name "$job_name" --label "$MANAGED_LABEL" --mode replicated-job --detach \
         --restart-condition on-failure --restart-max-attempts 3 \
         --constraint "node.hostname==$KOAKADEMY_NODE" --network "${KOAKADEMY_NETWORK:-${STACK_NAME}_private}" \
         --env-file "$runtime_file" \
@@ -683,41 +795,69 @@ run_app_job() {
         states="$(docker service ps "$job_name" --no-trunc --format '{{.CurrentState}}' 2>/dev/null | head -n 1 || true)"
         grep -qi Complete <<<"$states" && { docker service rm "$job_name" >/dev/null 2>&1 || true; return; }
         grep -Eqi 'Rejected|Failed' <<<"$states" && {
-            docker service ps "$job_name" --no-trunc >&2 || true
-            docker service logs --raw "$job_name" >&2 || true
+            dump_service_diagnostics "$job_name"
             fail "Job $job_name failed. Review the task logs above."
         }
+        if (( SECONDS - last_compact >= 15 )); then
+            last_compact="$SECONDS"
+            compact="$(task_summary_line "$job_name" "")"
+            info "$job_name: $compact ($(phase_hint "$compact"), $((SECONDS - start))s elapsed)."
+        fi
         sleep 2
     done
-    fail "Timed out waiting for job $job_name."
+    dump_service_diagnostics "$job_name"
+    fail "Timed out waiting for job $job_name after 15 minutes."
 }
 
 verify_https() {
     local deadline="$((SECONDS + 600))"
+    local start="$SECONDS"
+    local last_progress=0
     is_test && return
     if [[ "$direct_access" == true ]]; then
+        info "Waiting for KoAkademy to serve http://127.0.0.1:$public_port/up (first boot can take several minutes while Octane warms up)."
         while (( SECONDS < deadline )); do
             curl --fail --silent --show-error "http://127.0.0.1:$public_port/up" >/dev/null && return
+            if (( SECONDS - last_progress >= 30 )); then
+                last_progress="$SECONDS"
+                info "Still waiting for http://127.0.0.1:$public_port/up ($((SECONDS - start))s elapsed). Check progress with: docker service logs koakademy_app --tail 30"
+            fi
             sleep 5
         done
         fail "KoAkademy did not serve http://127.0.0.1:$public_port/up. Check docker service logs koakademy_app."
     fi
+    info "Waiting for Caddy to serve https://$KOAKADEMY_DOMAIN/up (first boot can take several minutes)."
     while (( SECONDS < deadline )); do
         curl --fail --silent --show-error --resolve "$KOAKADEMY_DOMAIN:443:127.0.0.1" "https://$KOAKADEMY_DOMAIN/up" >/dev/null && return
+        if (( SECONDS - last_progress >= 30 )); then
+            last_progress="$SECONDS"
+            info "Still waiting for https://$KOAKADEMY_DOMAIN/up ($((SECONDS - start))s elapsed). Check DNS, ports 80/443, and docker service logs koakademy_caddy."
+        fi
         sleep 5
     done
     fail "Caddy did not serve https://$KOAKADEMY_DOMAIN/up. Check DNS, ports 80/443, and docker service logs koakademy_caddy."
 }
 
 install_operator_command() {
+    # Default source is the running operator itself so checkout-driven runs
+    # install the code actually executing (the release bundle copy may be an
+    # older published build). Update passes the freshly fetched release copy
+    # explicitly so the global CLI upgrades across releases.
+    local source="${1:-$0}"
     install -d -m 0700 "$root"
-    install -m 0755 "$release_directory/koakademy" "$root/koakademy"
+    if [[ -e "$root/koakademy" ]] && [[ "$source" -ef "$root/koakademy" ]]; then
+        info "Operator command is already current."
+    else
+        install -m 0755 "$source" "$root/koakademy"
+    fi
     if is_test; then
         install -d -m 0700 "$root/bin"
         ln -sfn "$root/koakademy" "$root/bin/koakademy"
         return
     fi
+    install -d -m 0755 /usr/local/bin
     ln -sfn "$root/koakademy" /usr/local/bin/koakademy
+    info "Installed the global 'koakademy' command to /usr/local/bin/koakademy."
 }
 
 backup_database() {
@@ -734,6 +874,7 @@ backup_database() {
 perform_install() {
     local domain image resuming=false
     require_root
+    local started="$SECONDS"
     if [[ -f "$runtime_file" ]]; then
         load_runtime
         [[ "${INSTALLATION_COMPLETE:-false}" != true ]] || fail "KoAkademy is already installed. Use update or configure."
@@ -755,11 +896,11 @@ perform_install() {
         ensure_swarm_manager
         reject_legacy_installation
         if [[ -z "${KOAKADEMY_DOMAIN:-}" ]]; then
-            if [[ "$channel" == edge ]]; then
+            KOAKADEMY_DOMAIN="$(prompt_for_domain)"
+            if [[ -z "$KOAKADEMY_DOMAIN" ]]; then
                 direct_access=true
                 domain=localhost
             else
-                KOAKADEMY_DOMAIN="$(prompt_for_domain)"
                 domain="$KOAKADEMY_DOMAIN"
             fi
         else
@@ -781,9 +922,18 @@ perform_install() {
     if [[ "$resuming" == false ]]; then
         write_initial_runtime "$domain" "$image"
         load_runtime
+    elif [[ "$image" != "$KOAKADEMY_IMAGE" ]]; then
+        # A resumed install pins the stored release but must honor the image
+        # the current operator resolves for it (for example after the
+        # resolution rules changed); otherwise it would redeploy a stale ref.
+        info "Updating the recorded application image for $release_tag."
+        set_runtime KOAKADEMY_IMAGE "$image"
     fi
     ensure_initial_secrets
     ensure_release_configs
+    # Install the global CLI before touching the cluster so 'koakademy status'
+    # and friends are available for debugging even if the run is interrupted.
+    install_operator_command
     set_runtime RELEASE_TAG "$release_tag"
     set_runtime RELEASE_DIRECTORY "$release_directory"
     set_runtime APP_REPLICAS 0
@@ -800,20 +950,26 @@ perform_install() {
     run_app_job "koakademy-migrate-$(date +%s)" "$KOAKADEMY_IMAGE" php artisan migrate --force --no-interaction
     set_runtime APP_REPLICAS 1
     deploy_stack
-    wait_for_service "${STACK_NAME}_app" "$KOAKADEMY_IMAGE"
-    verify_https
+    if [[ "$wait_ready" == true ]]; then
+        wait_for_service "${STACK_NAME}_app" "$KOAKADEMY_IMAGE"
+        verify_https
+    else
+        info "Skipping readiness waits (--no-wait): the app warms up in the background."
+    fi
     install_operator_command
     set_runtime INSTALLATION_COMPLETE true
     if [[ "$direct_access" == true ]]; then
-        info "KoAkademy is ready at http://127.0.0.1:$public_port/setup"
+        print_ready_finale "$(format_duration $((SECONDS - started)))" "http://127.0.0.1:$public_port/setup"
     else
-        info "KoAkademy is ready at https://$KOAKADEMY_DOMAIN/setup"
+        print_ready_finale "$(format_duration $((SECONDS - started)))" "https://$KOAKADEMY_DOMAIN/setup"
     fi
+    info "Manage this instance globally with 'koakademy status', 'koakademy update', and 'koakademy configure'."
 }
 
 perform_update() {
     local previous image backup
     require_root
+    local started="$SECONDS"
     load_runtime
     ensure_docker
     ensure_swarm_manager
@@ -830,7 +986,21 @@ perform_update() {
     fi
     fetch_release
     image="$(release_image)"
-    [[ "$image" != "$KOAKADEMY_IMAGE" ]] || { info "KoAkademy $release_tag is already deployed."; return; }
+    if [[ "$channel" == edge ]]; then
+        # The edge image is a moving alias, so an identical image string does
+        # not mean the deployment is current: compare source commits instead.
+        if [[ "$release_tag" == "${RELEASE_TAG:-}" ]]; then
+            info "KoAkademy $release_tag is already deployed."
+            return
+        fi
+        # Refresh the moving alias before the migration job and the rollout so
+        # neither can reuse a stale local copy of the tag.
+        info "Pulling the latest edge image $image."
+        docker pull "$image"
+    elif [[ "$image" == "$KOAKADEMY_IMAGE" ]]; then
+        info "KoAkademy $release_tag is already deployed."
+        return
+    fi
     previous="$KOAKADEMY_IMAGE"
     # Persist the known-good application image before any migration runs so an
     # interrupted update still leaves an explicit application rollback target.
@@ -840,15 +1010,25 @@ perform_update() {
     run_app_job "koakademy-migrate-$(date +%s)" "$image" php artisan migrate --force --no-interaction
     ensure_release_configs
     deploy_stack "$image"
-    wait_for_service "${STACK_NAME}_app" "$image"
-    verify_https
+    if [[ "$channel" == edge ]]; then
+        # The stack spec still references the same alias tag, so force the
+        # service to re-resolve the image and roll out fresh tasks.
+        docker service update --force --with-registry-auth "${STACK_NAME}_app"
+    fi
+    if [[ "$wait_ready" == true ]]; then
+        wait_for_service "${STACK_NAME}_app" "$image"
+        verify_https
+    else
+        info "Skipping readiness waits (--no-wait): the app warms up in the background."
+    fi
     set_runtime KOAKADEMY_IMAGE "$image"
     set_runtime RELEASE_TAG "$release_tag"
     set_runtime RELEASE_CHANNEL "$channel"
     set_runtime RELEASE_DIRECTORY "$release_directory"
     set_runtime APP_REPLICAS 1
-    install_operator_command
-    info "Updated to $release_tag. Database backup: $backup"
+    install_operator_command "$release_directory/koakademy"
+    info "Updated to $release_tag in $(format_duration $((SECONDS - started))). Database backup: $backup"
+    [[ "$wait_ready" == true ]] || info "Services are restarting in the background; the app warms up shortly."
     warn "Rollback is application-only; restore that backup when schema compatibility is uncertain."
 }
 
@@ -994,6 +1174,8 @@ parse_command() {
             --port) (( $# >= 2 )) || fail "--port requires a number."; public_port="$2"; public_port_explicit=true; validate_port "$public_port"; shift 2 ;;
             --domain) (( $# >= 2 )) || fail "--domain requires a hostname."; KOAKADEMY_DOMAIN="$2"; shift 2 ;;
             --yes) yes=true; shift ;;
+            --wait) wait_ready=true; shift ;;
+            --no-wait) wait_ready=false; shift ;;
             *) fail "Unknown option: $1" ;;
         esac
     done

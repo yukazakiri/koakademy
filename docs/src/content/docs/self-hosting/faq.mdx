@@ -69,8 +69,8 @@ upgrades.
 It installs Docker when needed, initializes Swarm only when inactive, creates an attachable overlay network, and deploys Caddy, KoAkademy, PostgreSQL, Redis, and Gotenberg on a single VPS. Caddy owns ports 80/443; the remaining services are private on the Swarm overlay. The installer preserves an active manager cluster, never leaves Swarm, and stops before changing a legacy `koakademy-*` deployment.
 
 The Linux command uses the stable channel by default to resolve a published
-GitHub Release, verify its checksummed bundle, and deploy the immutable GHCR
-digest in `version.json`. Set `KOAKADEMY_DOMAIN` for a non-interactive install;
+GitHub Release, verify its checksummed bundle, and deploy the per-commit
+FrankenPHP GHCR reference recorded in `version.json`. The domain is optional;
 an attached terminal can provide the domain interactively. Use `edge` only for
 staging or development; it resolves the current `master` commit, publishes
 port `8000` when no domain is provided, and deploys the mutable

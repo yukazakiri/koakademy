@@ -17,7 +17,8 @@ The installer creates one manager-pinned Docker Swarm stack:
 - Docker Secrets supply application, database, Redis, storage, mail, and Meilisearch credentials.
 
 The stable installer uses the checksummed `version.json` from the latest stable
-GitHub Release. Its image value is an immutable GHCR digest. Use the separate
+GitHub Release. Its image value resolves to the per-commit FrankenPHP GHCR
+reference built for that release. Use the separate
 `edge` channel only for staging or development; it follows the current
 unreleased `master` commit and uses the mutable `edge-frankenphp` image.
 

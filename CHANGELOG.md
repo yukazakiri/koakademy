@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.26.0](https://github.com/yukazakiri/koakademy/compare/v1.25.0...v1.26.0) (2026-09-23)
+
+
+### Features
+
+* **ai:** expand MCP server with student, subject, and enrollment tools ([#323](https://github.com/yukazakiri/koakademy/issues/323)) ([4abe9b2](https://github.com/yukazakiri/koakademy/commit/4abe9b2cae95ac296f9d71998967187c579506dd))
+* **ai:** implement full-page AI chat for administrators with conversation history ([#326](https://github.com/yukazakiri/koakademy/issues/326)) ([d24f11a](https://github.com/yukazakiri/koakademy/commit/d24f11aeebd0755d006ab53727f1afccdcb7397d))
+* **ai:** redesign administrator copilot workspace layout and composer ([#328](https://github.com/yukazakiri/koakademy/issues/328)) ([2824c70](https://github.com/yukazakiri/koakademy/commit/2824c701cdaa0b9430b7ef44b027ed7f1390762e))
+* **settings:** make student checklist GWA calculation configurable ([#325](https://github.com/yukazakiri/koakademy/issues/325)) ([2b39be2](https://github.com/yukazakiri/koakademy/commit/2b39be257d2f5a46576279cb98c7839550ec6deb))
+* **settings:** support transferee decimal scale recognition and gwa conversion ([#330](https://github.com/yukazakiri/koakademy/issues/330)) ([e4cc07d](https://github.com/yukazakiri/koakademy/commit/e4cc07ddf08f2d463b5a1d079440fb466618ee27))
+* **students:** revamp directory UI and implement server-side search, filtering, and pagination ([#327](https://github.com/yukazakiri/koakademy/issues/327)) ([836024c](https://github.com/yukazakiri/koakademy/commit/836024c7b6d0eab22d260f6ec9d393456e19dd41))
+
+
+### Bug Fixes
+
+* **ai:** guard audit logging against permission failures and prevent streaming timeouts ([#331](https://github.com/yukazakiri/koakademy/issues/331)) ([a830bc8](https://github.com/yukazakiri/koakademy/commit/a830bc83424ec5b43dbc593abd2daa0eb0251d6d))
+* **ai:** prevent duplicate chat send and auto-integrate MCP timetable and CRUD tools ([#329](https://github.com/yukazakiri/koakademy/issues/329)) ([47a5cbd](https://github.com/yukazakiri/koakademy/commit/47a5cbd6a9454f1d33b46c89fa237b1c45f276b4))
+* **profile:** import LayoutGrid in personalization tab ([2b17614](https://github.com/yukazakiri/koakademy/commit/2b176143afcf61686b0ea492f9dc478e88300b66))
+
 ## [1.25.0](https://github.com/yukazakiri/koakademy/compare/v1.24.0...v1.25.0) (2026-09-22)
 
 

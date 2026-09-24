@@ -83,6 +83,19 @@ beforeEach(function (): void {
         'view_tuition_fees',
         'ViewAny:Faculty',
         'View:Faculty',
+        'ViewAny:ClassSchedule',
+        'Update:Student',
+        'Update:Subject',
+        'View:Subject',
+        'Update:Classes',
+        'View:Room',
+        'Update:Room',
+        'Create:Student',
+        'Create:Subject',
+        'Delete:Subject',
+        'Create:Classes',
+        'Delete:Classes',
+        'Create:Room',
     ];
 
     foreach ($permissions as $permission) {
@@ -92,7 +105,7 @@ beforeEach(function (): void {
     Spatie\Permission\Models\Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
 });
 
-it('registers all twenty-two core mcp tools on the server', function (): void {
+it('registers all core mcp tools on the server', function (): void {
     KoAkademyServer::tools()
         ->assertRegistered([
             GetMyContextTool::class,
@@ -117,6 +130,11 @@ it('registers all twenty-two core mcp tools on the server', function (): void {
             EnrollStudentSubjectTool::class,
             UpdateSubjectEnrollmentGradeTool::class,
             DropStudentSubjectEnrollmentTool::class,
+            App\Mcp\Tools\QueryTimetableScheduleTool::class,
+            App\Mcp\Tools\ManageStudentTool::class,
+            App\Mcp\Tools\ManageCurriculumSubjectTool::class,
+            App\Mcp\Tools\ManageClassScheduleTool::class,
+            App\Mcp\Tools\ManageRoomTool::class,
         ]);
 });
 
@@ -1241,6 +1259,194 @@ it('drops an enrolled subject releasing the record and recalculating tuition wit
             $json->where('subject_enrollment_id', $id)
                 ->where('dropped', true)
                 ->where('replayed', true)
+                ->etc();
+        });
+});
+
+it('queries timetable schedule across rooms, students, and faculty via MCP', function (): void {
+    $this->staff->createToken('Staff Agent', ['mcp:read']);
+    $this->staff->givePermissionTo('ViewAny:ClassSchedule');
+
+    $room = App\Models\Room::create(['name' => 'Room 402', 'is_active' => true]);
+    $faculty = Faculty::factory()->create([
+        'first_name' => 'Grace',
+        'last_name' => 'Hopper',
+        'faculty_id_number' => 'FAC-402',
+    ]);
+    $class = Classes::factory()->create([
+        'subject_code' => 'CS402',
+        'section' => 'BSCS-4A',
+        'school_year' => '2026-2027',
+        'semester' => 1,
+        'room_id' => $room->id,
+        'faculty_id' => $faculty->id,
+    ]);
+    App\Models\Schedule::create([
+        'class_id' => $class->id,
+        'day_of_week' => 'Monday',
+        'start_time' => '09:00:00',
+        'end_time' => '11:00:00',
+        'room_id' => $room->id,
+    ]);
+
+    // Query room schedule
+    $response = KoAkademyServer::actingAs($this->staff)
+        ->tool(App\Mcp\Tools\QueryTimetableScheduleTool::class, [
+            'target_type' => 'room',
+            'identifier' => 'Room 402',
+            'check_availability' => true,
+        ]);
+
+    $response->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('type', 'room')
+                ->where('rooms.0.name', 'Room 402')
+                ->where('rooms.0.schedules.0.subject_code', 'CS402')
+                ->where('rooms.0.schedules.0.day_of_week', 'Monday')
+                ->etc();
+        });
+
+    // Query faculty schedule
+    $facultyResponse = KoAkademyServer::actingAs($this->staff)
+        ->tool(App\Mcp\Tools\QueryTimetableScheduleTool::class, [
+            'target_type' => 'faculty',
+            'identifier' => 'Hopper',
+        ]);
+
+    $facultyResponse->assertOk()
+        ->assertStructuredContent(function ($json) use ($faculty): void {
+            $json->where('type', 'faculty')
+                ->where('faculty.0.name', $faculty->full_name)
+                ->where('faculty.0.schedules.0.subject_code', 'CS402')
+                ->etc();
+        });
+});
+
+it('performs student CRUD via MCP ManageStudentTool', function (): void {
+    config(['api.mcp.write_enabled' => true]);
+    $this->staff->createToken('Staff Agent', ['mcp:read', 'mcp:write']);
+    $this->staff->givePermissionTo(['View:Student', 'Update:Student', 'Create:Student']);
+
+    $course = Course::factory()->create(['code' => 'BSSE', 'title' => 'Software Engineering']);
+
+    // Create student
+    $createResponse = KoAkademyServer::actingAs($this->staff)
+        ->tool(App\Mcp\Tools\ManageStudentTool::class, [
+            'action' => 'create',
+            'first_name' => 'Ada',
+            'last_name' => 'Lovelace',
+            'email' => 'ada.lovelace@example.com',
+            'course_code' => 'BSSE',
+            'academic_year' => 1,
+            'student_type' => 'college',
+            'idempotency_key' => 'create-ada-1',
+        ]);
+
+    $createResponse->assertOk();
+    $student = Student::query()->where('email', 'ada.lovelace@example.com')->firstOrFail();
+
+    $createResponse->assertStructuredContent(function ($json) use ($student): void {
+        $json->where('success', true)
+            ->where('action', 'create')
+            ->where('student.name', $student->full_name)
+            ->where('student.email', 'ada.lovelace@example.com')
+            ->where('replayed', false)
+            ->etc();
+    });
+
+    // Replay student creation with same idempotency key
+    $replayResponse = KoAkademyServer::actingAs($this->staff)
+        ->tool(App\Mcp\Tools\ManageStudentTool::class, [
+            'action' => 'create',
+            'first_name' => 'Ada',
+            'last_name' => 'Lovelace',
+            'email' => 'ada.lovelace@example.com',
+            'course_code' => 'BSSE',
+            'academic_year' => 1,
+            'student_type' => 'college',
+            'idempotency_key' => 'create-ada-1',
+        ]);
+
+    $replayResponse->assertOk()
+        ->assertStructuredContent(function ($json) use ($student): void {
+            $json->where('success', true)
+                ->where('action', 'create')
+                ->where('student.id', $student->id)
+                ->where('replayed', true)
+                ->etc();
+        });
+
+    // Update student
+    $updateResponse = KoAkademyServer::actingAs($this->staff)
+        ->tool(App\Mcp\Tools\ManageStudentTool::class, [
+            'action' => 'update',
+            'student_id' => $student->id,
+            'academic_year' => 2,
+            'status' => 'enrolled',
+        ]);
+
+    $updateResponse->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('success', true)
+                ->where('action', 'update')
+                ->where('student.status', 'enrolled')
+                ->etc();
+        });
+
+    expect($student->refresh()->academic_year)->toBe(2);
+});
+
+it('performs curriculum subject and class schedule management via MCP', function (): void {
+    config(['api.mcp.write_enabled' => true]);
+    $this->staff->createToken('Staff Agent', ['mcp:read', 'mcp:write']);
+    $this->staff->givePermissionTo(['View:Subject', 'Update:Subject', 'View:Classes', 'Update:Classes', 'View:Room', 'Update:Room']);
+
+    $course = Course::factory()->create(['code' => 'BSDS', 'title' => 'Data Science']);
+
+    // Manage room
+    $roomResponse = KoAkademyServer::actingAs($this->staff)
+        ->tool(App\Mcp\Tools\ManageRoomTool::class, [
+            'action' => 'create',
+            'name' => 'Analytics Lab 1',
+        ]);
+    $roomResponse->assertOk();
+    $room = App\Models\Room::query()->where('name', 'Analytics Lab 1')->firstOrFail();
+
+    // Create subject
+    $subjectResponse = KoAkademyServer::actingAs($this->staff)
+        ->tool(App\Mcp\Tools\ManageCurriculumSubjectTool::class, [
+            'action' => 'create',
+            'code' => 'DS101',
+            'title' => 'Introduction to Data Science',
+            'units' => 3,
+            'academic_year' => 1,
+            'semester' => 1,
+            'course_code' => 'BSDS',
+        ]);
+    $subjectResponse->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('success', true)
+                ->where('subject.code', 'DS101')
+                ->etc();
+        });
+
+    // Create class schedule
+    $classResponse = KoAkademyServer::actingAs($this->staff)
+        ->tool(App\Mcp\Tools\ManageClassScheduleTool::class, [
+            'action' => 'create_class',
+            'subject_code' => 'DS101',
+            'section' => 'BSDS-1A',
+            'room_id' => $room->id,
+            'day_of_week' => 'Wednesday',
+            'start_time' => '13:00',
+            'end_time' => '15:00',
+        ]);
+
+    $classResponse->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('success', true)
+                ->where('action', 'create_class')
+                ->where('class.subject_code', 'DS101')
                 ->etc();
         });
 });

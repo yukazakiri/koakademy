@@ -110,6 +110,12 @@ it('publishes and persists configurable GWA calculation settings', function (): 
         'zero_is_dropped' => true,
         'treat_incomplete_as' => 'fail',
         'exclude_zero_unit_subjects' => true,
+        'transferee_scale_enabled' => true,
+        'transferee_point_scale_min' => 1.0,
+        'transferee_point_scale_max' => 5.0,
+        'transferee_point_passing_grade' => 3.0,
+        'transferee_point_direction' => 'lower_is_better',
+        'transferee_conversion_method' => 'table',
         'excluded_keywords' => ['NSTP', 'PE'],
         'excluded_subject_ids' => [],
         'bands' => [
@@ -134,7 +140,9 @@ it('publishes and persists configurable GWA calculation settings', function (): 
         ->and($config['include_credited_in_gwa'])->toBeFalse()
         ->and($config['zero_is_dropped'])->toBeTrue()
         ->and($config['treat_incomplete_as'])->toBe('fail')
-        ->and($config['exclude_zero_unit_subjects'])->toBeTrue();
+        ->and($config['exclude_zero_unit_subjects'])->toBeTrue()
+        ->and($config['transferee_scale_enabled'])->toBeTrue()
+        ->and($config['transferee_conversion_method'])->toBe('table');
 });
 
 it('applies retake_strategy and zero_is_dropped to checklist display', function (): void {

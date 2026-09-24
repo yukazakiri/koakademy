@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\TenantContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
+use Illuminate\Support\Facades\Auth;
 use InvalidArgumentException;
 use Laravel\Mcp\Request;
 
@@ -17,6 +18,10 @@ trait AuthorizesMcpRequests
     protected function user(Request $request): User
     {
         $user = $request->user();
+
+        if (! $user instanceof User) {
+            $user = Auth::user();
+        }
 
         if (! $user instanceof User) {
             throw new AuthenticationException('Authentication is required.');
@@ -38,7 +43,15 @@ trait AuthorizesMcpRequests
 
     protected function school(): School
     {
-        $school = app(TenantContext::class)->getCurrentSchool();
+        $tenantContext = app(TenantContext::class);
+        $school = $tenantContext->getCurrentSchool();
+
+        if (! $school instanceof School && Auth::user()?->school_id) {
+            $school = Auth::user()->school;
+            if ($school instanceof School) {
+                $tenantContext->setCurrentSchool($school);
+            }
+        }
 
         if (! $school instanceof School) {
             throw new AuthorizationException('An accessible school context is required.');
@@ -50,7 +63,13 @@ trait AuthorizesMcpRequests
     protected function requireRead(Request $request): User
     {
         $user = $this->user($request);
-        $this->requireTokenAbility($user, (string) config('api.mcp.abilities.read', 'mcp:read'));
+
+        if ($user->currentAccessToken() !== null) {
+            $this->requireTokenAbility($user, (string) config('api.mcp.abilities.read', 'mcp:read'));
+        } elseif (! $user->canAccessAdminPortal() && ! $user->hasRole('super_admin') && ! $user->isStudentRole()) {
+            throw new AuthorizationException('The caller does not have read access.');
+        }
+
         $this->school();
 
         return $user;
@@ -64,7 +83,11 @@ trait AuthorizesMcpRequests
             throw new AuthorizationException('MCP data modifications are disabled in system settings.');
         }
 
-        $this->requireTokenAbility($user, (string) config('api.mcp.abilities.write', 'mcp:write'));
+        if ($user->currentAccessToken() !== null) {
+            $this->requireTokenAbility($user, (string) config('api.mcp.abilities.write', 'mcp:write'));
+        } elseif (! $user->canAccessAdminPortal() && ! $user->hasRole('super_admin')) {
+            throw new AuthorizationException('The caller does not have write access.');
+        }
 
         return $user;
     }
@@ -93,6 +116,10 @@ trait AuthorizesMcpRequests
 
     protected function requirePermission(User $user, string $permission, string $message): void
     {
+        if ($user->hasRole('super_admin')) {
+            return;
+        }
+
         if (! $user->can($permission)) {
             throw new AuthorizationException($message);
         }

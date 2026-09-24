@@ -82,6 +82,12 @@ export default function SystemManagementGradingPage({
         zero_is_dropped: grading_config.zero_is_dropped ?? false,
         treat_incomplete_as: grading_config.treat_incomplete_as ?? "exclude",
         exclude_zero_unit_subjects: grading_config.exclude_zero_unit_subjects ?? true,
+        transferee_scale_enabled: grading_config.transferee_scale_enabled ?? true,
+        transferee_point_scale_min: grading_config.transferee_point_scale_min ?? 1.0,
+        transferee_point_scale_max: grading_config.transferee_point_scale_max ?? 5.0,
+        transferee_point_passing_grade: grading_config.transferee_point_passing_grade ?? 3.0,
+        transferee_point_direction: grading_config.transferee_point_direction ?? "lower_is_better",
+        transferee_conversion_method: grading_config.transferee_conversion_method ?? "formula",
         excluded_keywords: grading_config.excluded_keywords ?? [],
         excluded_subject_ids: grading_config.excluded_subject_ids ?? [],
         bands: grading_config.bands ?? [],
@@ -280,6 +286,99 @@ export default function SystemManagementGradingPage({
                                     value={gradingForm.data.decimal_places}
                                     onChange={(event) => gradingForm.setData("decimal_places", Number(event.target.value))}
                                 />
+                            </div>
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <CardTitle>Transferee & Alternate Scales</CardTitle>
+                            <CardDescription>
+                                Automatically recognize and convert decimal point scale grades (e.g. 1.0–5.0) from transferee student records
+                                when your institution uses percentage or other scales.
+                            </CardDescription>
+                        </div>
+                    </div>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                    <div className="bg-muted/20 flex flex-wrap items-start justify-between gap-4 rounded-xl border p-4">
+                        <div>
+                            <Label className="text-sm font-medium">Auto-detect and convert transferee decimal grades</Label>
+                            <p className="text-muted-foreground mt-1 text-xs">
+                                When students transfer from institutions with 1.0–5.0 point grading, evaluate their passing/failing status
+                                correctly and compute institutional percentage equivalents for checklist GWA.
+                            </p>
+                        </div>
+                        <Switch
+                            checked={gradingForm.data.transferee_scale_enabled ?? true}
+                            onCheckedChange={(checked) => gradingForm.setData("transferee_scale_enabled", checked)}
+                        />
+                    </div>
+
+                    {(gradingForm.data.transferee_scale_enabled ?? true) && (
+                        <div className="space-y-4">
+                            <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="transferee-min">Point Scale Min</Label>
+                                    <Input
+                                        id="transferee-min"
+                                        type="number"
+                                        step="0.01"
+                                        value={gradingForm.data.transferee_point_scale_min ?? 1.0}
+                                        onChange={(e) => gradingForm.setData("transferee_point_scale_min", Number(e.target.value))}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="transferee-max">Point Scale Max</Label>
+                                    <Input
+                                        id="transferee-max"
+                                        type="number"
+                                        step="0.01"
+                                        value={gradingForm.data.transferee_point_scale_max ?? 5.0}
+                                        onChange={(e) => gradingForm.setData("transferee_point_scale_max", Number(e.target.value))}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="transferee-passing">Point Passing Threshold</Label>
+                                    <Input
+                                        id="transferee-passing"
+                                        type="number"
+                                        step="0.01"
+                                        value={gradingForm.data.transferee_point_passing_grade ?? 3.0}
+                                        onChange={(e) => gradingForm.setData("transferee_point_passing_grade", Number(e.target.value))}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Conversion Method</Label>
+                                    <Select
+                                        value={gradingForm.data.transferee_conversion_method ?? "formula"}
+                                        onValueChange={(val) =>
+                                            gradingForm.setData("transferee_conversion_method", val as "formula" | "table")
+                                        }
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="formula">Proportional Linear Formula</SelectItem>
+                                            <SelectItem value="table">CHED Standard Midpoint Table</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+
+                            <div className="bg-muted/10 rounded-lg border p-3 text-xs">
+                                <span className="font-semibold">Sample Equivalence Preview:</span>
+                                <div className="text-muted-foreground mt-1 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                                    <span>1.00 &rarr; 100% / 99% (Excellent)</span>
+                                    <span>1.50 &rarr; ~93.8% (Very Good)</span>
+                                    <span>2.00 &rarr; 87.5% (Good)</span>
+                                    <span>3.00 &rarr; 75.0% (Passing)</span>
+                                </div>
                             </div>
                         </div>
                     )}

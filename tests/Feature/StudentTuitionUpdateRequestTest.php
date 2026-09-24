@@ -22,6 +22,7 @@ use Laravel\Pennant\Feature;
 use Spatie\Permission\Models\Permission;
 
 beforeEach(function (): void {
+    $this->withoutVite();
     Feature::activateForEveryone(StudentTuitionFeature::class);
     config(['inertia.testing.ensure_pages_exist' => false]);
 });
@@ -92,6 +93,71 @@ it('requires a receipt number only for payment-not-reflected requests and preven
         'school_year' => '2026 - 2027', 'semester' => 1, 'concern_type' => 'discount',
         'details' => 'My approved scholarship discount is not displayed in the assessment.',
     ])->assertRedirect();
+});
+
+it('falls back to an available academic period for an invalid selection', function (): void {
+    [$user] = tuitionRequestStudent();
+
+    $this->actingAs($user)->get(route('student.tuition.update-requests.index', [
+        'school_year' => '1999 - 2000', 'semester' => 9,
+    ]))->assertOk()->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+        ->has('periods', 1)
+        ->where('error', null)
+        ->where('selected_period.school_year', '2026 - 2027')
+        ->where('selected_period.semester', 1)
+    );
+});
+
+it('preserves a valid older academic period and confirms submission for that period', function (): void {
+    [$user, $student, $enrollment] = tuitionRequestStudent();
+    StudentEnrollment::factory()->create([
+        'student_id' => $student->id, 'course_id' => $enrollment->course_id,
+        'school_year' => '2025 - 2026', 'semester' => 2, 'academic_year' => 1,
+    ]);
+    $url = route('student.tuition.update-requests.index', ['school_year' => '2025 - 2026', 'semester' => 2]);
+
+    $this->actingAs($user)->get($url)->assertOk()->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+        ->has('periods', 2)
+        ->where('selected_period.school_year', '2025 - 2026')->where('selected_period.semester', 2));
+
+    $response = $this->actingAs($user)->post(route('student.tuition.update-requests.store'), [
+        'school_year' => '2025 - 2026', 'semester' => 2, 'concern_type' => 'other',
+        'details' => 'Please check the assessment for my previous academic period.',
+    ])->assertRedirect($url)->assertSessionHasNoErrors();
+    $request = StudentTuitionUpdateRequest::query()->sole();
+    $response->assertSessionHas('tuition_request_id', $request->id);
+    expect($request->school_year)->toBe('2025 - 2026')->and($request->semester)->toBe(2);
+    $this->get($url)->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+        ->where('submitted_request_id', $request->id)->where('requests.0.id', $request->id));
+});
+
+it('discards receipt data for nonpayment concerns', function (string $concern): void {
+    [$user] = tuitionRequestStudent();
+    $this->actingAs($user)->post(route('student.tuition.update-requests.store'), [
+        'school_year' => '2026 - 2027', 'semester' => 1, 'concern_type' => $concern,
+        'receipt_number' => 'STALE-RECEIPT', 'details' => 'Please check the incorrect amount on my assessment.',
+    ])->assertRedirect()->assertSessionHasNoErrors();
+
+    expect(StudentTuitionUpdateRequest::query()->sole()->receipt_number)->toBeNull();
+})->with(['discount', 'subject_change', 'other']);
+
+it('returns an empty period list for a student without academic records', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Student]);
+    Student::factory()->create(['user_id' => $user->id, 'email' => $user->email]);
+
+    $this->actingAs($user)->get(route('student.tuition.update-requests.index'))
+        ->assertOk()->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+        ->has('periods', 0)->has('requests', 0)->where('error', null));
+});
+
+it('rejects a submission for an academic period without student records', function (): void {
+    [$user] = tuitionRequestStudent();
+    $this->actingAs($user)->post(route('student.tuition.update-requests.store'), [
+        'school_year' => '1999 - 2000', 'semester' => 1, 'concern_type' => 'other',
+        'details' => 'Please check the amount on my tuition assessment.',
+    ])->assertSessionHasErrors('school_year');
+
+    expect(StudentTuitionUpdateRequest::query()->count())->toBe(0);
 });
 
 it('does not let a student see another students tuition update request', function (): void {

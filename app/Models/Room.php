@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToSchool;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -30,6 +31,7 @@ use Override;
  */
 final class Room extends Model
 {
+    use BelongsToSchool;
     use HasFactory;
 
     #[Override]
@@ -40,6 +42,7 @@ final class Room extends Model
         'name',
         'class_code',
         'is_active',
+        'school_id',
     ];
 
     public function classes()

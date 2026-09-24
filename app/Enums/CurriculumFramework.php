@@ -45,6 +45,17 @@ enum CurriculumFramework: string implements HasColor, HasLabel
     }
 
     /**
+     * Country owning this persisted framework ID. When adding a non-PH framework,
+     * extend this enum and the curriculum bootstrap/casts before registering it.
+     */
+    public function countryCode(): string
+    {
+        return match ($this) {
+            self::ChedPsg, self::DepedMatatag, self::DepedShsK12, self::DepedShsRevised, self::TesdaTr => 'PH',
+        };
+    }
+
+    /**
      * The institution school levels where this framework applies.
      *
      * @return list<SchoolLevel>

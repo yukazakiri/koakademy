@@ -50,7 +50,7 @@ enum SchoolLevel: string implements HasColor, HasLabel
             self::JuniorHigh => 'Middle School / Junior High School',
             self::SeniorHigh => 'Senior High School',
             self::Elementary => 'Elementary / Grade School',
-            self::TechnicalVocational => 'TESDA / Technical-Vocational Institute',
+            self::TechnicalVocational => 'Technical-Vocational Institute',
         };
     }
 
@@ -61,7 +61,7 @@ enum SchoolLevel: string implements HasColor, HasLabel
             self::JuniorHigh => 'Middle school or junior high school operations.',
             self::SeniorHigh => 'Senior high school programs, usually grades 11 to 12.',
             self::Elementary => 'Elementary or grade school operations.',
-            self::TechnicalVocational => 'Technical and vocational education and training (TVET) programs under TESDA regulations.',
+            self::TechnicalVocational => 'Technical and vocational education and training (TVET) programs.',
         };
     }
 

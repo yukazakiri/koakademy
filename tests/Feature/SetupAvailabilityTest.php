@@ -50,6 +50,7 @@ it('stores the selected school level during setup', function (): void {
 it('stores the normalized country code during setup', function (): void {
     $this->post('/setup', validSetupPayload([
         'country_code' => ' us ',
+        'currency' => 'USD',
     ]))->assertRedirect('/');
 
     $school = School::query()->first();

@@ -10,11 +10,10 @@ use App\Enums\UserRole;
 use App\Models\GeneralSetting;
 use App\Models\School;
 use App\Models\User;
-use App\Services\CurriculumBootstrapService;
 use App\Services\LogoConversionService;
 use App\Settings\SiteSettings;
 use App\Support\IsoAlpha2CountryCodes;
-use App\Support\PhilippineCurriculumCatalog;
+use App\Support\SetupCatalogRegistry;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -32,7 +31,7 @@ final class SetupController extends Controller
     /**
      * Show the setup form.
      */
-    public function show(Request $request): \Illuminate\Http\Response|\Inertia\Response|RedirectResponse|\Symfony\Component\HttpFoundation\Response
+    public function show(Request $request, SetupCatalogRegistry $catalogRegistry): \Illuminate\Http\Response|\Inertia\Response|RedirectResponse|\Symfony\Component\HttpFoundation\Response
     {
         $hasCoreData = User::query()->exists()
             || School::query()->exists();
@@ -62,30 +61,24 @@ final class SetupController extends Controller
             return redirect()->route('login');
         }
 
+        $countryCode = $request->query('country_code', 'PH');
+        $level = $request->query('school_level');
+
         return Inertia::render('setup/index', [
-            'catalog' => [
-                'as_of' => PhilippineCurriculumCatalog::AS_OF,
-                'school_levels' => SchoolLevel::optionsForFrontend(),
-                'frameworks' => CurriculumFramework::optionsForFrontend(),
-                'ched' => PhilippineCurriculumCatalog::chedClusters(),
-                'shs' => [
-                    'legacy' => PhilippineCurriculumCatalog::shsTracksLegacy(),
-                    'revised' => PhilippineCurriculumCatalog::shsTracksRevised(),
-                ],
-                'tesda' => PhilippineCurriculumCatalog::tesdaSectors(),
-                'matatag' => [
-                    'phases' => PhilippineCurriculumCatalog::matatagPhases(),
-                    'learning_areas' => PhilippineCurriculumCatalog::matatagLearningAreas(),
-                ],
-                'calendars' => PhilippineCurriculumCatalog::calendarPresets(),
-            ],
+            'catalog' => array_merge($catalogRegistry->catalog(
+                is_string($countryCode) ? mb_strtoupper(mb_trim($countryCode)) : '',
+                is_string($level) ? SchoolLevel::tryFrom($level) : null,
+            ), [
+                'countries' => $catalogRegistry->countries(),
+                'by_country' => $catalogRegistry->catalogsByCountry(),
+            ]),
         ]);
     }
 
     /**
      * Process the setup submission.
      */
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request, SetupCatalogRegistry $catalogRegistry): RedirectResponse
     {
         $currentUser = Auth::user();
         $isSuperAdmin = $currentUser?->role === UserRole::SuperAdmin;
@@ -134,7 +127,7 @@ final class SetupController extends Controller
             'site_name' => ['nullable', 'string', 'max:255'],
             'site_description' => ['nullable', 'string', 'max:500'],
             'theme_color' => ['nullable', 'string', 'max:20'],
-            'currency' => ['nullable', 'string', 'max:10'],
+            'currency' => ['required_unless:country_code,PH', 'nullable', 'string', 'regex:/\A[A-Z]{3}\z/'],
             'support_email' => ['nullable', 'string', 'email', 'max:255'],
             'support_phone' => ['nullable', 'string', 'max:50'],
             'logo' => ['nullable', 'image', 'max:5120'],
@@ -152,15 +145,17 @@ final class SetupController extends Controller
             'enable_faculty_transfer_email_notifications' => ['nullable', 'boolean'],
         ]);
 
+        $schoolLevel = SchoolLevel::from($request->input('school_level'));
+        $countryCode = $request->input('country_code');
+        $availableFrameworks = $catalogRegistry->frameworks($countryCode, $schoolLevel);
+        $provider = $catalogRegistry->provider($countryCode);
+
         $frameworkValue = $request->input('curriculum_framework');
         $framework = is_string($frameworkValue) && $frameworkValue !== ''
             ? CurriculumFramework::from($frameworkValue)
             : null;
 
-        $schoolLevelValue = $request->input('school_level');
-        $schoolLevel = SchoolLevel::from(is_string($schoolLevelValue) ? $schoolLevelValue : SchoolLevel::HigherEducation->value);
-
-        if ($framework !== null && ! in_array($schoolLevel, $framework->schoolLevels(), true)) {
+        if ($framework !== null && ! in_array($framework, $availableFrameworks, true)) {
             throw ValidationException::withMessages([
                 'curriculum_framework' => 'The selected curriculum framework does not apply to the chosen institution level.',
             ]);
@@ -175,7 +170,7 @@ final class SetupController extends Controller
         }
 
         if ($framework !== null) {
-            $allowed = PhilippineCurriculumCatalog::validProgramCodes($framework);
+            $allowed = $provider->validProgramCodes($framework);
             $invalid = array_values(array_diff($programs, $allowed));
 
             if ($invalid !== []) {
@@ -183,6 +178,18 @@ final class SetupController extends Controller
                     'programs' => 'One or more selected programs are not part of the chosen curriculum framework.',
                 ]);
             }
+        }
+
+        if ($framework === null && $programs !== []) {
+            throw ValidationException::withMessages([
+                'programs' => 'Programs require a supported curriculum framework.',
+            ]);
+        }
+
+        if ($countryCode !== 'PH' && $request->boolean('seed_strand_subjects')) {
+            throw ValidationException::withMessages([
+                'seed_strand_subjects' => 'Subject preloading is only available for Philippine curricula.',
+            ]);
         }
 
         $curriculumYearValue = $request->input('curriculum_year');
@@ -199,7 +206,7 @@ final class SetupController extends Controller
             ? $curriculumReferenceValue
             : $framework?->getReference();
 
-        $user = DB::transaction(function () use ($request, $framework, $programs, $curriculumYear, $curriculumReference) {
+        $user = DB::transaction(function () use ($request, $framework, $provider, $programs, $curriculumYear, $curriculumReference, $countryCode) {
             // Create the School
             $school = School::create([
                 'name' => $request->input('school_name'),
@@ -222,7 +229,7 @@ final class SetupController extends Controller
             $generalSetting->site_name = $request->filled('site_name') ? $request->input('site_name') : $request->input('school_name');
             $generalSetting->site_description = $request->input('site_description');
             $generalSetting->theme_color = $request->input('theme_color') ?? '#0f172a';
-            $generalSetting->currency = $request->input('currency') ?? 'PHP';
+            $generalSetting->currency = $request->input('currency') ?: ($countryCode === 'PH' ? 'PHP' : null);
             $generalSetting->support_email = $request->input('support_email');
             $generalSetting->support_phone = $request->input('support_phone');
             $generalSetting->school_starting_date = $request->input('school_starting_date');
@@ -245,7 +252,7 @@ final class SetupController extends Controller
 
             // Create the curriculum structure selected in the wizard.
             if ($framework !== null) {
-                app(CurriculumBootstrapService::class)->bootstrap(
+                $provider->bootstrap(
                     school: $school,
                     framework: $framework,
                     programCodes: $programs,

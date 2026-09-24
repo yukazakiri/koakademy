@@ -416,23 +416,25 @@ final class AdministratorStudentManagementController extends Controller
             ])
             ->all();
 
+        $statusCounts = StudentStatusRecord::query()
+            ->where('academic_year', $currentSchoolYear)
+            ->where('semester', $currentSemester)
+            ->selectRaw("
+                COUNT(CASE WHEN status = ? THEN 1 END) as enrolled_count,
+                COUNT(CASE WHEN status = ? THEN 1 END) as applicant_count,
+                COUNT(CASE WHEN status = ? THEN 1 END) as graduated_count
+            ", [
+                StudentStatus::Enrolled->value,
+                StudentStatus::Applicant->value,
+                StudentStatus::Graduated->value,
+            ])
+            ->first();
+
         $stats = [
             'total_students' => $globalStudentTotal,
-            'total_enrolled' => StudentStatusRecord::query()
-                ->where('academic_year', $currentSchoolYear)
-                ->where('semester', $currentSemester)
-                ->where('status', StudentStatus::Enrolled->value)
-                ->count(),
-            'total_applicants' => StudentStatusRecord::query()
-                ->where('academic_year', $currentSchoolYear)
-                ->where('semester', $currentSemester)
-                ->where('status', StudentStatus::Applicant->value)
-                ->count(),
-            'total_graduated' => StudentStatusRecord::query()
-                ->where('academic_year', $currentSchoolYear)
-                ->where('semester', $currentSemester)
-                ->where('status', StudentStatus::Graduated->value)
-                ->count(),
+            'total_enrolled' => (int) ($statusCounts?->enrolled_count ?? 0),
+            'total_applicants' => (int) ($statusCounts?->applicant_count ?? 0),
+            'total_graduated' => (int) ($statusCounts?->graduated_count ?? 0),
         ];
 
         return Inertia::render('administrators/students/index', [

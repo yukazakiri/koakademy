@@ -1498,11 +1498,13 @@ final class Student extends Model
 
     protected function fullName(): Attribute
     {
-        return Attribute::make(get: fn () => cache()->remember(
-            sprintf('student_%d_full_name', $this->id),
-            3600,
-            fn (): string => sprintf('%s, %s %s', $this->last_name, $this->first_name, $this->middle_name)
-        ));
+        return Attribute::make(get: function (): string {
+            $middle = mb_trim((string) $this->middle_name);
+
+            return $middle !== ''
+                ? sprintf('%s, %s %s', (string) $this->last_name, (string) $this->first_name, $middle)
+                : sprintf('%s, %s', (string) $this->last_name, (string) $this->first_name);
+        });
     }
 
     protected function picture1x1(): Attribute

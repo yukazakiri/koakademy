@@ -6,26 +6,31 @@ namespace App\Ai\Middleware;
 
 use Closure;
 use Illuminate\Support\Facades\Log;
-use Laravel\Ai\Prompts\AgentPrompt;
-use Laravel\Ai\Responses\AgentResponse;
+use Laravel\Ai\Gateway\StepResponse;
+use Laravel\Ai\PendingStep;
 
 final class AuditAiUsageMiddleware
 {
     /**
      * Audit AI prompt executions and token metrics for administrative tracking.
      */
-    public function handle(AgentPrompt $prompt, Closure $next)
+    public function handle(PendingStep $step, Closure $next)
     {
         $startTime = microtime(true);
 
-        return $next($prompt)->then(function (AgentResponse $response) use ($startTime): void {
+        return $next($step)->then(function (StepResponse $response) use ($startTime, $step): void {
             $durationMs = (int) round((microtime(true) - $startTime) * 1000);
 
-            Log::channel('daily')->info('AI Agent Prompt Completed', [
-                'conversation_id' => $response->conversationId,
+            Log::channel('daily')->info('AI Agent Generation Step Completed', [
+                'invocation_id' => $step->invocationId,
+                'step' => $step->number,
+                'provider' => $step->provider,
+                'model' => $step->model,
                 'duration_ms' => $durationMs,
-                'has_approvals' => $response->hasPendingApprovals(),
-                'steps_count' => count($response->steps),
+                'tool_calls' => count($response->toolCalls),
+                'pending_approvals' => count($response->pendingApprovals),
+                'input_tokens' => $response->usage->inputTokens,
+                'output_tokens' => $response->usage->outputTokens,
             ]);
         });
     }

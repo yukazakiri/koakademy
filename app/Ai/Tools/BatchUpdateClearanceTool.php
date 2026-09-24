@@ -8,11 +8,12 @@ use App\Models\StudentClearance;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Approvals\Approval;
 use Laravel\Ai\Concerns\InteractsWithApprovals;
+use Laravel\Ai\Contracts\Approvable;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
 
-final class BatchUpdateClearanceTool implements Tool
+final class BatchUpdateClearanceTool implements Approvable, Tool
 {
     use InteractsWithApprovals;
 

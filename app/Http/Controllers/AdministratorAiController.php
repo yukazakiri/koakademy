@@ -27,6 +27,7 @@ use Inertia\Response as InertiaResponse;
 use InvalidArgumentException;
 use Laravel\Ai\Approvals\Decision;
 use Laravel\Ai\Approvals\Decisions;
+use Laravel\Ai\Approvals\PendingApproval;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Models\Conversation;
 use Throwable;
@@ -789,37 +790,32 @@ final class AdministratorAiController extends Controller
 
         foreach ($messages as $msg) {
             $toolCalls = [];
-            $rawToolCalls = is_array($msg->tool_calls) ? $msg->tool_calls : (json_decode((string) $msg->tool_calls, true) ?: []);
-            $rawToolResults = is_array($msg->tool_results) ? $msg->tool_results : (json_decode((string) $msg->tool_results, true) ?: []);
-
-            $resultsById = collect($rawToolResults)->keyBy('id');
+            $rawToolCalls = $msg->tool_calls;
 
             foreach ($rawToolCalls as $tc) {
                 $tcId = (string) ($tc['id'] ?? '');
-                $result = $resultsById->get($tcId);
+                $hasResult = array_key_exists('result', $tc);
 
                 $toolCalls[] = [
                     'id' => $tcId,
                     'toolName' => (string) ($tc['name'] ?? $tc['toolName'] ?? 'Tool'),
-                    'state' => $result !== null
-                        ? ((($result['successful'] ?? true)) ? 'output-available' : 'output-error')
+                    'state' => $hasResult
+                        ? (($tc['failed'] ?? false) ? 'output-error' : 'output-available')
                         : 'input-available',
                     'input' => is_array($tc['arguments'] ?? null) ? $tc['arguments'] : (is_array($tc['input'] ?? null) ? $tc['input'] : []),
-                    'output' => $result['result'] ?? $result['output'] ?? null,
-                    'errorText' => $result['error'] ?? null,
+                    'output' => $tc['result'] ?? null,
+                    'errorText' => ($tc['failed'] ?? false) ? ($tc['result'] ?? 'Tool execution failed.') : null,
                 ];
             }
 
             $pendingApprovals = [];
-            $approvalState = is_array($msg->approval_state) ? $msg->approval_state : (json_decode((string) $msg->approval_state, true) ?: []);
-            if (! empty($approvalState['pending']) && is_array($approvalState['pending'])) {
-                foreach ($approvalState['pending'] as $callId => $reason) {
-                    $matchingCall = collect($rawToolCalls)->firstWhere('id', $callId);
+            foreach ($rawToolCalls as $call) {
+                if (PendingApproval::isPending($call)) {
                     $pendingApprovals[] = [
-                        'id' => (string) $callId,
-                        'tool' => (string) ($matchingCall['name'] ?? 'Tool Execution'),
-                        'reason' => is_string($reason) ? $reason : null,
-                        'arguments' => is_array($matchingCall['arguments'] ?? null) ? $matchingCall['arguments'] : [],
+                        'id' => (string) ($call['id'] ?? ''),
+                        'tool' => (string) ($call['name'] ?? 'Tool Execution'),
+                        'reason' => $call['approval_reason'] ?? null,
+                        'arguments' => is_array($call['arguments'] ?? null) ? $call['arguments'] : [],
                     ];
                 }
             }

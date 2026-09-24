@@ -8,11 +8,12 @@ use App\Models\TuitionAdjustment;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Approvals\Approval;
 use Laravel\Ai\Concerns\InteractsWithApprovals;
+use Laravel\Ai\Contracts\Approvable;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
 
-final class ApplyTuitionAdjustmentBatchTool implements Tool
+final class ApplyTuitionAdjustmentBatchTool implements Approvable, Tool
 {
     use InteractsWithApprovals;
 

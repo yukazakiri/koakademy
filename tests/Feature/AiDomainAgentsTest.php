@@ -330,21 +330,25 @@ it('supports RegistrarAuditAgent and BursarFinanceAgent in AiChatController with
 it('sanitizes credit cards and SSNs via SanitizePromptMiddleware', function (): void {
     $middleware = new App\Ai\Middleware\SanitizePromptMiddleware;
     $agent = new StudentAdvisorAgent;
-    $provider = Mockery::mock(Laravel\Ai\Contracts\Providers\TextProvider::class);
-
-    $prompt = new Laravel\Ai\Prompts\AgentPrompt(
-        $agent,
-        'My card is 4111 2222 3333 4444 and ssn is 123-45-6789',
-        [],
-        $provider,
-        'test-model'
+    $step = new Laravel\Ai\PendingStep(
+        number: 0,
+        isFinalStep: true,
+        provider: 'openai',
+        model: 'test-model',
+        instructions: null,
+        messages: [new Laravel\Ai\Messages\UserMessage('My card is 4111 2222 3333 4444 and ssn is 123-45-6789')],
+        tools: [],
+        schema: null,
+        options: null,
     );
 
-    $middleware->handle($prompt, function ($nextPrompt) {
-        expect($nextPrompt->prompt)->toContain('[REDACTED_PAYMENT_CARD]')
-            ->and($nextPrompt->prompt)->toContain('[REDACTED_IDENTIFIER]')
-            ->and($nextPrompt->prompt)->not->toContain('4111 2222 3333 4444')
-            ->and($nextPrompt->prompt)->not->toContain('123-45-6789');
+    $middleware->handle($step, function ($nextStep) {
+        $content = $nextStep->messages[0]->content;
+
+        expect($content)->toContain('[REDACTED_PAYMENT_CARD]')
+            ->and($content)->toContain('[REDACTED_IDENTIFIER]')
+            ->and($content)->not->toContain('4111 2222 3333 4444')
+            ->and($content)->not->toContain('123-45-6789');
 
         return new class
         {

@@ -22,6 +22,7 @@ final class StoreStudentTuitionUpdateRequest extends FormRequest
             'semester' => ['required', 'integer', Rule::in([1, 2])],
             'concern_type' => ['required', 'string', Rule::in(StudentTuitionUpdateRequest::concernTypes())],
             'receipt_number' => [
+                Rule::excludeIf($this->input('concern_type') !== StudentTuitionUpdateRequest::ConcernMissingPayment),
                 Rule::requiredIf($this->input('concern_type') === StudentTuitionUpdateRequest::ConcernMissingPayment),
                 'nullable', 'string', 'max:255',
             ],

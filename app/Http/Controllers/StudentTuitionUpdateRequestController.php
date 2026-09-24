@@ -39,7 +39,8 @@ final class StudentTuitionUpdateRequestController extends Controller
             ->where('student_id', $student->id)
             ->select(['school_year', 'semester'])
             ->get()
-            ->merge(StudentTuition::query()->where('student_id', $student->id)->select(['school_year', 'semester'])->get())
+            ->toBase()
+            ->concat(StudentTuition::query()->where('student_id', $student->id)->select(['school_year', 'semester'])->get())
             ->unique(fn ($record): string => $record->school_year.'|'.$record->semester)
             ->sortByDesc(fn ($record): string => $record->school_year.'|'.$record->semester)
             ->values()
@@ -49,7 +50,14 @@ final class StudentTuitionUpdateRequestController extends Controller
                 'label' => $record->school_year.' · '.((int) $record->semester === 1 ? '1st Semester' : '2nd Semester'),
             ]);
 
+        $availablePeriod = $periods->first(fn (array $period): bool => $period['school_year'] === $selectedPeriod['school_year']
+            && $period['semester'] === $selectedPeriod['semester']) ?? $periods->first();
+        if ($availablePeriod !== null) {
+            $selectedPeriod = ['school_year' => $availablePeriod['school_year'], 'semester' => $availablePeriod['semester']];
+        }
+
         return Inertia::render('student/tuition/update-requests', [
+            'submitted_request_id' => $request->session()->get('tuition_request_id'),
             'requests' => StudentTuitionUpdateRequest::query()
                 ->where('student_id', $student->id)
                 ->with(['reviewer:id,name'])
@@ -67,9 +75,13 @@ final class StudentTuitionUpdateRequestController extends Controller
     {
         $user = $request->user();
         abort_unless($user instanceof User, 403);
-        $requests->submit($user, $request->validated());
+        $tuitionRequest = $requests->submit($user, $request->validated());
 
-        return back()->with('flash', ['success' => 'Your tuition update request was submitted to Finance.']);
+        return to_route('student.tuition.update-requests.index', [
+            'school_year' => $tuitionRequest->school_year,
+            'semester' => $tuitionRequest->semester,
+        ])->with('tuition_request_id', $tuitionRequest->id)
+            ->with('flash', ['success' => 'Your tuition update request was submitted to Finance.']);
     }
 
     /** @return list<array{value: string, label: string, description: string}> */

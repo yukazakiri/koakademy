@@ -17,6 +17,7 @@ import {
 import { ModelOption, ModelSelector } from "@/components/spectrumui";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Shdr14 } from "@/components/ui/shdr-14";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import type { User } from "@/types/user";
@@ -633,13 +634,13 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                     {messages.length === 0 ? (
                         <div className="flex min-h-0 flex-1 overflow-y-auto px-5 py-16 sm:px-8">
                             <div className="mx-auto flex w-full max-w-[54rem] flex-col items-center pt-20 pb-24 text-center">
-                                <div
-                                    aria-hidden
-                                    className="relative mb-16 size-40 overflow-hidden rounded-full bg-[radial-gradient(circle_at_35%_68%,#ffffff_0%,#ffffff_13%,transparent_34%),radial-gradient(circle_at_73%_70%,#ffad84_0%,#fb9f79_25%,transparent_60%),radial-gradient(circle_at_42%_24%,#dca7f4_0%,#b386eb_30%,#f3d1ec_60%,#f2d4bc_100%)] shadow-[inset_18px_14px_34px_rgba(255,255,255,0.7),inset_-18px_-20px_34px_rgba(175,85,205,0.22),0_12px_26px_rgba(156,110,190,0.17)]"
-                                >
-                                    <span className="absolute inset-4 rounded-full border border-white/45" />
-                                    <span className="absolute top-[32%] left-[55%] size-1 rounded-full bg-amber-100 shadow-[0_0_8px_3px_rgba(255,228,160,0.8)]" />
-                                    <span className="absolute top-[62%] left-[48%] size-0.5 rounded-full bg-white shadow-[0_0_8px_3px_rgba(255,255,255,0.85)]" />
+                                <div className="mb-12 flex items-center justify-center">
+                                    <Shdr14
+                                        size={180}
+                                        state={isLoading ? "thinking" : "idle"}
+                                        ariaLabel="KoAkademy AI orb"
+                                        className="transition-transform duration-300 hover:scale-105"
+                                    />
                                 </div>
                                 <h1 className="text-foreground text-3xl font-medium tracking-tight sm:text-4xl">{getGreeting(firstName)}</h1>
                                 <p className="text-foreground mt-2 text-3xl font-medium tracking-tight sm:text-4xl">

@@ -84,7 +84,7 @@ export function SemesterSelector({
     return (
         <div className="flex items-center gap-3">
             <Select items={semesterItems} value={currentSemesterValue} onValueChange={handleSemesterChange}>
-                <SelectTrigger className="h-8 w-[140px]">
+                <SelectTrigger className="h-8 w-[140px] text-foreground font-medium">
                     <SelectValue placeholder="Select Semester" />
                 </SelectTrigger>
                 <SelectContent alignItemWithTrigger={false}>
@@ -99,7 +99,7 @@ export function SemesterSelector({
             </Select>
 
             <Select items={schoolYearItems} value={currentSchoolYearValue} onValueChange={handleSchoolYearChange}>
-                <SelectTrigger className="h-8 w-[140px]">
+                <SelectTrigger className="h-8 w-[140px] text-foreground font-medium">
                     <SelectValue placeholder="Select School Year" />
                 </SelectTrigger>
                 <SelectContent alignItemWithTrigger={false}>

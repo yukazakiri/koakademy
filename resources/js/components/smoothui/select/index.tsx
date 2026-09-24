@@ -382,7 +382,7 @@ export default function SmoothSelect({
                 data-size={size}
                 data-slot="select-trigger"
                 className={cn(
-                    "border-input bg-background flex w-full items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm whitespace-nowrap shadow-xs transition-[color,box-shadow] outline-none select-none",
+                    "border-input bg-background text-foreground flex w-full items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm whitespace-nowrap shadow-xs transition-[color,box-shadow] outline-none select-none",
                     "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
                     "aria-invalid:border-destructive aria-invalid:ring-destructive/20 disabled:cursor-not-allowed disabled:opacity-50",
                     size === "default" ? "h-9" : "h-8",
@@ -392,7 +392,10 @@ export default function SmoothSelect({
                 onKeyDown={handleKeyDown}
             >
                 <span
-                    className={cn("flex min-w-0 flex-1 items-center gap-2 truncate text-left", !selectedOption && "text-muted-foreground")}
+                    className={cn(
+                        "flex min-w-0 flex-1 items-center gap-2 truncate text-left",
+                        selectedOption ? "text-foreground" : "text-muted-foreground"
+                    )}
                     title={selectedOption?.textValue}
                 >
                     {renderedValue}

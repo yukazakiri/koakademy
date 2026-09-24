@@ -2,6 +2,7 @@ import SmoothSelect, {
     type SmoothSelectEntry,
     type SmoothSelectOption,
 } from "@/components/smoothui/select";
+import { cn } from "@/lib/utils";
 import * as React from "react";
 
 type SelectRootProps = {
@@ -46,39 +47,48 @@ type SelectGroupProps = React.HTMLAttributes<HTMLDivElement>;
 type SelectLabelProps = React.HTMLAttributes<HTMLDivElement>;
 type SelectSeparatorProps = React.HTMLAttributes<HTMLDivElement>;
 
-function SelectTrigger(_props: SelectTriggerProps) {
+function SelectTrigger(_props?: SelectTriggerProps) {
+    void _props;
     return null;
 }
 
-function SelectValue(_props: SelectValueProps) {
+function SelectValue(_props?: SelectValueProps) {
+    void _props;
     return null;
 }
 
-function SelectContent(_props: SelectContentProps) {
+function SelectContent(_props?: SelectContentProps) {
+    void _props;
     return null;
 }
 
-function SelectItem(_props: SelectItemProps) {
+function SelectItem(_props?: SelectItemProps) {
+    void _props;
     return null;
 }
 
-function SelectGroup(_props: SelectGroupProps) {
+function SelectGroup(_props?: SelectGroupProps) {
+    void _props;
     return null;
 }
 
-function SelectLabel(_props: SelectLabelProps) {
+function SelectLabel(_props?: SelectLabelProps) {
+    void _props;
     return null;
 }
 
-function SelectSeparator(_props: SelectSeparatorProps) {
+function SelectSeparator(_props?: SelectSeparatorProps) {
+    void _props;
     return null;
 }
 
-function SelectScrollUpButton(_props: React.HTMLAttributes<HTMLDivElement>) {
+function SelectScrollUpButton(_props?: React.HTMLAttributes<HTMLDivElement>) {
+    void _props;
     return null;
 }
 
-function SelectScrollDownButton(_props: React.HTMLAttributes<HTMLDivElement>) {
+function SelectScrollDownButton(_props?: React.HTMLAttributes<HTMLDivElement>) {
+    void _props;
     return null;
 }
 
@@ -224,7 +234,7 @@ function Select({
             sideOffset={content?.props.sideOffset}
             align={content?.props.align}
             alignOffset={content?.props.alignOffset}
-            className={trigger?.props.className}
+            className={cn("text-foreground", trigger?.props.className)}
             contentClassName={content?.props.className}
             id={trigger?.props.id}
             title={trigger?.props.title}

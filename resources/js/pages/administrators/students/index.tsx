@@ -66,6 +66,47 @@ function parseSortOption(value: string): { sort: string; direction: "asc" | "des
     };
 }
 
+function extractFiltersFromProps(filters: StudentsIndexProps["filters"]): FilterType[] {
+    const initialFilters: FilterType[] = [];
+    const trashedValue = filters.trashed ?? "active";
+    if (trashedValue !== "active") {
+        initialFilters.push({ id: "trashed", field: "trashed", operator: "is", values: [trashedValue] });
+    }
+    if (filters.type) initialFilters.push({ id: "type", field: "type", operator: "is", values: [filters.type] });
+    if (filters.status) initialFilters.push({ id: "status", field: "status", operator: "is", values: [filters.status] });
+    if (filters.course_id) initialFilters.push({ id: "course_id", field: "course_id", operator: "is", values: [String(filters.course_id)] });
+    if (filters.department_id)
+        initialFilters.push({ id: "department_id", field: "department_id", operator: "is", values: [String(filters.department_id)] });
+    if (filters.year_level) initialFilters.push({ id: "year_level", field: "year_level", operator: "is", values: [String(filters.year_level)] });
+    if (filters.current_enrollment)
+        initialFilters.push({
+            id: "current_enrollment",
+            field: "current_enrollment",
+            operator: "is",
+            values: [filters.current_enrollment],
+        });
+    if (filters.scholarship_type)
+        initialFilters.push({ id: "scholarship_type", field: "scholarship_type", operator: "is", values: [filters.scholarship_type] });
+    if (filters.employment_status)
+        initialFilters.push({ id: "employment_status", field: "employment_status", operator: "is", values: [filters.employment_status] });
+    if (filters.is_indigenous_person)
+        initialFilters.push({
+            id: "is_indigenous_person",
+            field: "is_indigenous_person",
+            operator: "is",
+            values: [filters.is_indigenous_person],
+        });
+    if (filters.previous_semester_cleared)
+        initialFilters.push({
+            id: "previous_semester_cleared",
+            field: "previous_semester_cleared",
+            operator: "is",
+            values: [filters.previous_semester_cleared],
+        });
+
+    return initialFilters;
+}
+
 interface StudentsIndexProps {
     user: User;
     filament: {
@@ -135,7 +176,7 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
         return [{ id: initialSort.sort, desc: initialSort.direction === "desc" }];
     });
 
-    const [activeFilters, setActiveFilters] = useState<FilterType[]>([]);
+    const [activeFilters, setActiveFilters] = useState<FilterType[]>(() => extractFiltersFromProps(filters));
 
     // Keyboard shortcut to focus search input: '/' or 'Cmd+K' / 'Ctrl+K'
     useEffect(() => {
@@ -157,43 +198,7 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
     // Synchronize initial filters from server props
     useEffect(() => {
         setSearch(filters.search || "");
-        const initialFilters: FilterType[] = [];
-        const trashedValue = filters.trashed ?? "active";
-        if (trashedValue !== "active") {
-            initialFilters.push({ id: "trashed", field: "trashed", operator: "is", values: [trashedValue] });
-        }
-        if (filters.type) initialFilters.push({ id: "type", field: "type", operator: "is", values: [filters.type] });
-        if (filters.status) initialFilters.push({ id: "status", field: "status", operator: "is", values: [filters.status] });
-        if (filters.course_id) initialFilters.push({ id: "course_id", field: "course_id", operator: "is", values: [String(filters.course_id)] });
-        if (filters.department_id)
-            initialFilters.push({ id: "department_id", field: "department_id", operator: "is", values: [String(filters.department_id)] });
-        if (filters.year_level) initialFilters.push({ id: "year_level", field: "year_level", operator: "is", values: [String(filters.year_level)] });
-        if (filters.current_enrollment)
-            initialFilters.push({
-                id: "current_enrollment",
-                field: "current_enrollment",
-                operator: "is",
-                values: [filters.current_enrollment],
-            });
-        if (filters.scholarship_type)
-            initialFilters.push({ id: "scholarship_type", field: "scholarship_type", operator: "is", values: [filters.scholarship_type] });
-        if (filters.employment_status)
-            initialFilters.push({ id: "employment_status", field: "employment_status", operator: "is", values: [filters.employment_status] });
-        if (filters.is_indigenous_person)
-            initialFilters.push({
-                id: "is_indigenous_person",
-                field: "is_indigenous_person",
-                operator: "is",
-                values: [filters.is_indigenous_person],
-            });
-        if (filters.previous_semester_cleared)
-            initialFilters.push({
-                id: "previous_semester_cleared",
-                field: "previous_semester_cleared",
-                operator: "is",
-                values: [filters.previous_semester_cleared],
-            });
-        setActiveFilters(initialFilters);
+        setActiveFilters(extractFiltersFromProps(filters));
 
         const nextSortOption = `${filters.sort ?? "created_at"}:${filters.direction ?? "desc"}`;
         const nextSort = parseSortOption(nextSortOption);

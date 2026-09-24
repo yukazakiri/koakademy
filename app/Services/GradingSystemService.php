@@ -95,7 +95,7 @@ final class GradingSystemService
     /** @return array<string, mixed> */
     public function legacyConfiguration(): array
     {
-        $settings = GeneralSetting::query()->first();
+        $settings = app(GeneralSettingsService::class)->getGlobalSettingsModel();
         $stored = [];
 
         if ($settings && is_array($settings->more_configs ?? null)) {

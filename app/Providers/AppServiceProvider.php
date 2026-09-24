@@ -86,7 +86,7 @@ final class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->singleton(GeneralSettingsService::class);
+        $this->app->scoped(GeneralSettingsService::class);
         $this->app->singleton(ExportFailureHandler::class);
         $this->app->singleton(ModuleManifestRepository::class);
         $this->app->singleton(ModuleStateRepository::class);

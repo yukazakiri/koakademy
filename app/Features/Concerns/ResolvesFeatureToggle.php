@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Features\Concerns;
 
 use App\Models\User;
-use Illuminate\Support\Facades\DB;
+use App\Services\FeatureToggleRegistry;
 use Illuminate\Support\Lottery;
 
 /**
@@ -14,6 +14,14 @@ use Illuminate\Support\Lottery;
  */
 trait ResolvesFeatureToggle
 {
+    /**
+     * Flush the cached global feature states in the central registry.
+     */
+    public static function flushGlobalFeatureStates(): void
+    {
+        FeatureToggleRegistry::flushGlobalFeatureStates();
+    }
+
     /**
      * Default resolution: check global activation state first, then audience matching.
      * Override in feature classes for custom logic.
@@ -71,32 +79,9 @@ trait ResolvesFeatureToggle
         return $lottery->choose();
     }
 
-    /**
-     * In-memory cache of global feature states (__laravel_null scope) to prevent
-     * redundant queries when multiple features are evaluated in a single request.
-     *
-     * @var array<string, mixed>|null
-     */
-    private static ?array $globalFeatureStates = null;
-
-    /**
-     * Flush the cached global feature states.
-     */
-    public static function flushGlobalFeatureStates(): void
-    {
-        self::$globalFeatureStates = null;
-    }
-
     private function globalFeatureState(): ?bool
     {
-        if (self::$globalFeatureStates === null) {
-            self::$globalFeatureStates = DB::table('features')
-                ->where('scope', '__laravel_null')
-                ->pluck('value', 'name')
-                ->all();
-        }
-
-        $globalState = self::$globalFeatureStates[static::class] ?? null;
+        $globalState = FeatureToggleRegistry::getGlobalFeatureState(static::class);
 
         if ($globalState === null) {
             return null;

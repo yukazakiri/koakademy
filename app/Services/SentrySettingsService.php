@@ -5,12 +5,16 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Models\GeneralSetting;
-use Illuminate\Support\Facades\Schema;
 use Throwable;
 
 final class SentrySettingsService
 {
     private const string CONFIG_KEY = 'sentry';
+
+    /**
+     * @var array<string, mixed>|null
+     */
+    private ?array $cachedConfig = null;
 
     /**
      * @return array{
@@ -259,15 +263,15 @@ HTML;
     /** @return array<string, mixed> */
     private function savedConfig(): array
     {
-        try {
-            if (! Schema::hasTable('general_settings')) {
-                return [];
-            }
+        if ($this->cachedConfig !== null) {
+            return $this->cachedConfig;
+        }
 
-            $moreConfigs = GeneralSetting::query()->first()?->more_configs;
+        try {
+            $moreConfigs = app(GeneralSettingsService::class)->getGlobalSettingsModel()?->more_configs;
 
             if (! is_array($moreConfigs)) {
-                return [];
+                return $this->cachedConfig = [];
             }
 
             $errorReporting = $moreConfigs['error_reporting'] ?? null;
@@ -275,15 +279,15 @@ HTML;
             $saved = is_array($providers) ? ($providers['sentry'] ?? null) : null;
 
             if (is_array($saved)) {
-                return $saved;
+                return $this->cachedConfig = $saved;
             }
 
             // Legacy single-provider row (pre multi-provider settings).
             $legacy = $moreConfigs[self::CONFIG_KEY] ?? [];
 
-            return is_array($legacy) ? $legacy : [];
+            return $this->cachedConfig = is_array($legacy) ? $legacy : [];
         } catch (Throwable) {
-            return [];
+            return $this->cachedConfig = [];
         }
     }
 

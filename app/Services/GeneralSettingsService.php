@@ -131,14 +131,6 @@ final class GeneralSettingsService
 
     private bool $userSettingLoaded = false;
 
-    /**
-     * Flush the memoized global setting instance.
-     */
-    public static function flushGlobalSetting(): void
-    {
-        self::$cachedGlobalSetting = null;
-    }
-
     public function __construct()
     {
         try {
@@ -180,6 +172,18 @@ final class GeneralSettingsService
             ]);
 
             throw $exception;
+        }
+    }
+
+    /**
+     * Flush the memoized global setting instance.
+     */
+    public static function flushGlobalSetting(): void
+    {
+        self::$cachedGlobalSetting = null;
+
+        if (app()->resolved(self::class)) {
+            app(self::class)->generalSetting = null;
         }
     }
 
@@ -232,11 +236,13 @@ final class GeneralSettingsService
             return (int) $userSetting->semester;
         }
 
+        $globalSetting = $this->getGlobalSettingsModel();
+
         if (
-            $this->generalSetting &&
-            ! is_null($this->generalSetting->semester)
+            $globalSetting &&
+            ! is_null($globalSetting->semester)
         ) {
-            return (int) $this->generalSetting->semester;
+            return (int) $globalSetting->semester;
         }
 
         return 1; // Default semester
@@ -257,11 +263,13 @@ final class GeneralSettingsService
             return (int) $userSetting->school_year_start;
         }
 
+        $globalSetting = $this->getGlobalSettingsModel();
+
         if (
-            $this->generalSetting &&
-            $this->generalSetting->school_starting_date
+            $globalSetting &&
+            $globalSetting->school_starting_date
         ) {
-            $year = $this->generalSetting->getSchoolYearStarting();
+            $year = $globalSetting->getSchoolYearStarting();
 
             return $year !== 'N/A' ? (int) $year : (int) date('Y');
         }
@@ -285,7 +293,7 @@ final class GeneralSettingsService
      */
     public function getGlobalSchoolStartingDate()
     {
-        return $this->generalSetting?->school_starting_date;
+        return $this->getGlobalSettingsModel()?->school_starting_date;
     }
 
     /**
@@ -293,7 +301,7 @@ final class GeneralSettingsService
      */
     public function getGlobalSchoolEndingDate()
     {
-        return $this->generalSetting?->school_ending_date;
+        return $this->getGlobalSettingsModel()?->school_ending_date;
     }
 
     /**
@@ -468,11 +476,13 @@ final class GeneralSettingsService
      */
     public function getSystemDefaultSemester(): int
     {
+        $globalSetting = $this->getGlobalSettingsModel();
+
         if (
-            $this->generalSetting &&
-            ! is_null($this->generalSetting->semester)
+            $globalSetting &&
+            ! is_null($globalSetting->semester)
         ) {
-            return (int) $this->generalSetting->semester;
+            return (int) $globalSetting->semester;
         }
 
         return 1; // Default semester
@@ -483,11 +493,13 @@ final class GeneralSettingsService
      */
     public function getSystemDefaultSchoolYearStart(): int
     {
+        $globalSetting = $this->getGlobalSettingsModel();
+
         if (
-            $this->generalSetting &&
-            $this->generalSetting->school_starting_date
+            $globalSetting &&
+            $globalSetting->school_starting_date
         ) {
-            $year = $this->generalSetting->getSchoolYearStarting();
+            $year = $globalSetting->getSchoolYearStarting();
 
             return $year !== 'N/A' ? (int) $year : (int) date('Y');
         }
@@ -537,7 +549,9 @@ final class GeneralSettingsService
      */
     public function getGlobalSetting(string $key, mixed $default = null): mixed
     {
-        if (! $this->generalSetting instanceof GeneralSetting) {
+        $globalSetting = $this->getGlobalSettingsModel();
+
+        if (! $globalSetting instanceof GeneralSetting) {
             return $default;
         }
 
@@ -553,7 +567,7 @@ final class GeneralSettingsService
      */
     public function getGlobalSettingsModel(): ?GeneralSetting
     {
-        if (! $this->generalSetting instanceof GeneralSetting) {
+        if ($this->generalSetting === null) {
             $this->generalSetting = self::$cachedGlobalSetting ?? GeneralSetting::query()->first();
             self::$cachedGlobalSetting = $this->generalSetting;
         }

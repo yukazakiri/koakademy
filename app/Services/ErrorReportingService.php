@@ -6,7 +6,6 @@ namespace App\Services;
 
 use App\Models\GeneralSetting;
 use Exception;
-use Illuminate\Support\Facades\Schema;
 use RuntimeException;
 use Throwable;
 
@@ -23,6 +22,11 @@ final class ErrorReportingService
     public const array PROVIDER_KEYS = ['sentry', 'flare', 'bugsnag', 'honeybadger'];
 
     private const string CONFIG_KEY = 'error_reporting';
+
+    /**
+     * @var array<string, mixed>|null
+     */
+    private ?array $cachedProviders = null;
 
     public function __construct(
         private readonly SentrySettingsService $sentrySettings,
@@ -343,28 +347,28 @@ final class ErrorReportingService
     /** @return array<string, mixed> */
     private function storedProviders(): array
     {
-        try {
-            if (! Schema::hasTable('general_settings')) {
-                return [];
-            }
+        if ($this->cachedProviders !== null) {
+            return $this->cachedProviders;
+        }
 
-            $moreConfigs = GeneralSetting::query()->first()?->more_configs;
+        try {
+            $moreConfigs = app(GeneralSettingsService::class)->getGlobalSettingsModel()?->more_configs;
 
             if (! is_array($moreConfigs)) {
-                return [];
+                return $this->cachedProviders = [];
             }
 
             $errorReporting = $moreConfigs[self::CONFIG_KEY] ?? [];
 
             if (! is_array($errorReporting)) {
-                return [];
+                return $this->cachedProviders = [];
             }
 
             $providers = $errorReporting['providers'] ?? [];
 
-            return is_array($providers) ? $providers : [];
+            return $this->cachedProviders = is_array($providers) ? $providers : [];
         } catch (Throwable) {
-            return [];
+            return $this->cachedProviders = [];
         }
     }
 

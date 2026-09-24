@@ -45,6 +45,7 @@ use App\Features\Toggles\StudentSchedule;
 use App\Features\Toggles\StudentSettings;
 use App\Features\Toggles\StudentSignaturePad;
 use App\Features\Toggles\StudentTuition;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Registry mapping feature keys to their Pennant feature class names.
@@ -110,6 +111,14 @@ final class FeatureToggleRegistry
     ];
 
     /**
+     * In-memory cache of global feature states (__laravel_null scope)
+     * shared across all feature toggle classes.
+     *
+     * @var array<string, mixed>|null
+     */
+    private static ?array $globalFeatureStates = null;
+
+    /**
      * Get the class name for a feature key.
      *
      * @return class-string<FeatureToggle>|null
@@ -137,6 +146,39 @@ final class FeatureToggleRegistry
     public static function allKeys(): array
     {
         return array_keys(self::KEY_TO_CLASS);
+    }
+
+    /**
+     * Flush cached global feature states.
+     */
+    public static function flushGlobalFeatureStates(): void
+    {
+        self::$globalFeatureStates = null;
+    }
+
+    /**
+     * Get all global feature states in a single batch query.
+     *
+     * @return array<string, mixed>
+     */
+    public static function getGlobalFeatureStates(): array
+    {
+        if (self::$globalFeatureStates === null) {
+            self::$globalFeatureStates = DB::table('features')
+                ->where('scope', '__laravel_null')
+                ->pluck('value', 'name')
+                ->all();
+        }
+
+        return self::$globalFeatureStates;
+    }
+
+    /**
+     * Get a single global feature state from the batch cache.
+     */
+    public static function getGlobalFeatureState(string $featureClass): mixed
+    {
+        return self::getGlobalFeatureStates()[$featureClass] ?? null;
     }
 
     /**

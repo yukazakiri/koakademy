@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use App\Models\GeneralSetting;
 use Illuminate\Support\Arr;
 
 final class SocialiteProviderService
 {
+    /**
+     * @var array<string, mixed>|null
+     */
+    private ?array $cachedConfig = null;
+
     /**
      * @return array<string, array{label: string, env_prefix: string}>
      */
@@ -28,10 +32,14 @@ final class SocialiteProviderService
      */
     public function config(): array
     {
-        $settings = GeneralSetting::query()->first();
+        if ($this->cachedConfig !== null) {
+            return $this->cachedConfig;
+        }
+
+        $settings = app(GeneralSettingsService::class)->getGlobalSettingsModel();
         $stored = $settings?->social_network ?? [];
 
-        return array_merge($this->defaults(), is_array($stored) ? $stored : []);
+        return $this->cachedConfig = array_merge($this->defaults(), is_array($stored) ? $stored : []);
     }
 
     /**

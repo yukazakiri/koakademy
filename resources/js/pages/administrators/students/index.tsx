@@ -505,8 +505,8 @@ export default function AdministratorStudentsIndex({ user, students, stats, filt
         }
     };
 
-    const getFilterValueLabel = (field: string, value: string | number): string => {
-        const stringValue = String(value);
+    const getFilterValueLabel = (field: string, value: unknown): string => {
+        const stringValue = String(value ?? "");
         switch (field) {
             case "trashed":
                 return stringValue === "trashed" ? "Trashed" : stringValue === "all" ? "All" : "Active";

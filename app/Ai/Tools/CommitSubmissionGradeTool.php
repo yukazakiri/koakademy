@@ -8,11 +8,12 @@ use App\Models\ClassPostSubmission;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Approvals\Approval;
 use Laravel\Ai\Concerns\InteractsWithApprovals;
+use Laravel\Ai\Contracts\Approvable;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
 
-final class CommitSubmissionGradeTool implements Tool
+final class CommitSubmissionGradeTool implements Approvable, Tool
 {
     use InteractsWithApprovals;
 

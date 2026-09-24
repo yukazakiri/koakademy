@@ -119,8 +119,8 @@ it('retrieves conversation messages and formats tool calls and approvals', funct
         'role' => 'user',
         'content' => 'Show clearance summary',
         'attachments' => '[]',
-        'tool_calls' => '[]',
-        'tool_results' => '[]',
+        'steps' => [],
+        'status' => 'completed',
         'usage' => '[]',
         'meta' => '[]',
     ]);
@@ -135,20 +135,19 @@ it('retrieves conversation messages and formats tool calls and approvals', funct
         'role' => 'assistant',
         'content' => 'Here is the clearance report.',
         'attachments' => '[]',
-        'tool_calls' => json_encode([
-            [
+        'steps' => [[
+            'content' => 'Here is the clearance report.',
+            'tool_calls' => [[
                 'id' => 'call_123',
                 'name' => 'QueryCampusAnalyticsTool',
                 'arguments' => ['metric' => 'clearances'],
-            ],
-        ]),
-        'tool_results' => json_encode([
-            [
-                'id' => 'call_123',
                 'result' => ['cleared' => 450, 'holds' => 22],
-                'successful' => true,
-            ],
-        ]),
+            ]],
+            'reasoning' => '',
+            'replay_blocks' => [],
+            'provider_tool_calls' => [],
+        ]],
+        'status' => 'completed',
         'usage' => '[]',
         'meta' => json_encode([
             'citations' => [
@@ -209,8 +208,8 @@ it('deletes an administrator conversation and its messages', function (): void {
         'role' => 'user',
         'content' => 'Hello',
         'attachments' => '[]',
-        'tool_calls' => '[]',
-        'tool_results' => '[]',
+        'steps' => [],
+        'status' => 'completed',
         'usage' => '[]',
         'meta' => '[]',
     ]);

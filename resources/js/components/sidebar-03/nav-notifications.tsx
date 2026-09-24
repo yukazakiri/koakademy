@@ -37,6 +37,7 @@ interface NotificationsPopoverProps {
      */
     baseUrl?: string;
     inboxUrl?: string;
+    renderTrigger?: (unreadCount: number) => React.ReactElement;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -47,7 +48,7 @@ function nullableString(value: unknown): string | null {
     return typeof value === "string" && value !== "" ? value : null;
 }
 
-export function NotificationsPopover({ baseUrl = "/notifications", inboxUrl }: NotificationsPopoverProps) {
+export function NotificationsPopover({ baseUrl = "/notifications", inboxUrl, renderTrigger }: NotificationsPopoverProps) {
     const { props } = usePage<PageProps>();
     const initialNotifications = props.notifications ?? [];
     const initialUnreadCount = props.unreadNotificationsCount ?? 0;
@@ -257,17 +258,25 @@ export function NotificationsPopover({ baseUrl = "/notifications", inboxUrl }: N
 
     return (
         <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="relative rounded-full" aria-label="Open notifications" />}>
-                <IconBell className="size-5" />
-                {unreadCount > 0 && (
-                    <Badge
-                        variant="destructive"
-                        className="absolute -top-1 -right-1 flex size-5 items-center justify-center rounded-full p-0 text-[10px] font-medium"
-                    >
-                        {unreadCount > 9 ? "9+" : unreadCount}
-                    </Badge>
-                )}
-            </DropdownMenuTrigger>
+            <DropdownMenuTrigger
+                render={
+                    renderTrigger ? (
+                        renderTrigger(unreadCount)
+                    ) : (
+                        <Button variant="ghost" size="icon" className="relative rounded-full" aria-label="Open notifications">
+                            <IconBell className="size-5" />
+                            {unreadCount > 0 && (
+                                <Badge
+                                    variant="destructive"
+                                    className="absolute -top-1 -right-1 flex size-5 items-center justify-center rounded-full p-0 text-[10px] font-medium"
+                                >
+                                    {unreadCount > 9 ? "9+" : unreadCount}
+                                </Badge>
+                            )}
+                        </Button>
+                    )
+                }
+            />
             <DropdownMenuContent side="right" align="start" className="my-2 w-80 max-w-[calc(100vw-1rem)] overscroll-contain p-0">
                 <DropdownMenuLabel className="flex items-center justify-between">
                     <span>Notifications</span>

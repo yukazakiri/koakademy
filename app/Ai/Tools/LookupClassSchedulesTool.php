@@ -22,7 +22,9 @@ final class LookupClassSchedulesTool implements Tool
     {
         $validated = $request->validate([
             'query' => 'nullable|string',
+            'class_id' => 'nullable|integer',
             'subject_code' => 'nullable|string',
+            'section' => 'nullable|string',
             'school_year' => 'nullable|string',
             'semester' => 'nullable|integer',
             'limit' => 'nullable|integer',
@@ -32,6 +34,10 @@ final class LookupClassSchedulesTool implements Tool
 
         $classesQuery = Classes::query()
             ->with(['faculty', 'room', 'schedules', 'class_enrollments']);
+
+        if (filled($validated['class_id'] ?? null)) {
+            $classesQuery->where('id', (int) $validated['class_id']);
+        }
 
         if (filled($validated['subject_code'] ?? null)) {
             $code = mb_trim((string) $validated['subject_code']);
@@ -43,19 +49,40 @@ final class LookupClassSchedulesTool implements Tool
             });
         }
 
+        if (filled($validated['section'] ?? null)) {
+            $classesQuery->where('section', 'like', "%{$validated['section']}%");
+        }
+
         if (filled($validated['query'] ?? null)) {
             $searchTerm = mb_trim((string) $validated['query']);
+            $clean = mb_trim(preg_replace('/\s+/', ' ', str_ireplace(['section', 'sec.', 'sec', 'class', 'class:'], '', $searchTerm)));
             $param = "%{$searchTerm}%";
 
-            $classesQuery->where(function ($q) use ($param) {
+            $classesQuery->where(function ($q) use ($searchTerm, $clean, $param) {
+                if (is_numeric($searchTerm)) {
+                    $q->orWhere('id', (int) $searchTerm);
+                }
+
                 $q->whereRaw('LOWER(subject_code) LIKE LOWER(?)', [$param])
                     ->orWhereRaw('LOWER(section) LIKE LOWER(?)', [$param])
+                    ->orWhereRaw("LOWER(CONCAT_WS(' ', subject_code, section)) LIKE LOWER(?)", ["%{$clean}%"])
+                    ->orWhereRaw("LOWER(REPLACE(CONCAT_WS(' ', subject_code, section), '-', ' ')) LIKE LOWER(?)", ['%'.str_replace('-', ' ', $clean).'%'])
                     ->orWhereHas('faculty', function ($fq) use ($param) {
                         $fq->whereRaw('LOWER(first_name) LIKE LOWER(?)', [$param])
                             ->orWhereRaw('LOWER(last_name) LIKE LOWER(?)', [$param])
                             ->orWhereRaw('LOWER(email) LIKE LOWER(?)', [$param])
                             ->orWhereRaw("LOWER(first_name || ' ' || last_name) LIKE LOWER(?)", [$param]);
                     });
+
+                $parts = explode(' ', $clean);
+                if (count($parts) >= 2) {
+                    $last = array_pop($parts);
+                    $first = implode(' ', $parts);
+                    $q->orWhere(function ($sub) use ($first, $last) {
+                        $sub->where('subject_code', 'like', "%{$first}%")
+                            ->where('section', 'like', "%{$last}%");
+                    });
+                }
             });
         }
 
@@ -105,8 +132,10 @@ final class LookupClassSchedulesTool implements Tool
     public function schema(JsonSchema $schema): array
     {
         return [
-            'query' => $schema->string()->description('Search term for subject code, section name, or faculty instructor'),
-            'subject_code' => $schema->string()->description('Filter specifically by subject code'),
+            'query' => $schema->string()->description('Search term for subject code, section name, compound code (e.g. "GE-3 Section B", "GE-3 B"), or faculty instructor'),
+            'class_id' => $schema->integer()->description('Specific class database ID (e.g. 856)'),
+            'subject_code' => $schema->string()->description('Filter specifically by subject code (e.g. "GE-3", "CS101")'),
+            'section' => $schema->string()->description('Filter specifically by class section (e.g. "B", "BSCS-1A")'),
             'school_year' => $schema->string()->description('Optional school year (e.g. 2026-2027)'),
             'semester' => $schema->integer()->description('Optional semester (1, 2, or summer)'),
             'limit' => $schema->integer()->description('Max results to return (default 15, max 50)'),

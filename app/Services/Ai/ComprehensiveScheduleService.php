@@ -33,22 +33,29 @@ final class ComprehensiveScheduleService
         ?int $semester = null,
         bool $checkAvailability = false,
         int $limit = 20,
+        ?int $classId = null,
+        ?string $subjectCode = null,
+        ?string $section = null,
     ): array {
         $schoolYear = $schoolYear ?: $this->settings->getCurrentSchoolYearString();
         $semester = $semester ?: $this->settings->getCurrentSemester();
         $dayOfWeek = $dayOfWeek ? mb_convert_case(mb_trim($dayOfWeek), MB_CASE_TITLE) : null;
         $identifier = $identifier ? mb_trim($identifier) : null;
 
-        $target = mb_strtolower($targetType);
-        if ($target === 'auto' || empty($target)) {
-            $target = $this->detectTargetType($identifier);
+        if ($classId || $subjectCode || $section) {
+            $target = 'class';
+        } else {
+            $target = mb_strtolower($targetType);
+            if ($target === 'auto' || empty($target)) {
+                $target = $this->detectTargetType($identifier);
+            }
         }
 
         return match ($target) {
             'room' => $this->queryRoomSchedule($identifier, $dayOfWeek, $schoolYear, $semester, $checkAvailability, $limit),
             'student' => $this->queryStudentSchedule($identifier, $schoolYear, $semester),
             'faculty', 'teacher', 'instructor' => $this->queryFacultySchedule($identifier, $dayOfWeek, $schoolYear, $semester, $limit),
-            'class', 'subject' => $this->queryClassSchedule($identifier, $dayOfWeek, $schoolYear, $semester, $limit),
+            'class', 'subject' => $this->queryClassSchedule($identifier, $dayOfWeek, $schoolYear, $semester, $limit, $classId, $subjectCode, $section),
             default => $this->queryMultiTargetSchedule($identifier, $dayOfWeek, $schoolYear, $semester, $limit),
         };
     }
@@ -62,7 +69,7 @@ final class ComprehensiveScheduleService
             return 'room';
         }
 
-        $clean = mb_strtolower($identifier);
+        $clean = mb_strtolower(mb_trim($identifier));
 
         if (str_contains($clean, 'room') || str_contains($clean, 'lab') || str_contains($clean, 'bldg') || str_contains($clean, 'avr') || str_contains($clean, 'hall')) {
             return 'room';
@@ -70,6 +77,14 @@ final class ComprehensiveScheduleService
 
         if (str_contains($clean, 'prof') || str_contains($clean, 'teacher') || str_contains($clean, 'instructor') || str_contains($clean, 'engr') || str_contains($clean, 'dr.')) {
             return 'faculty';
+        }
+
+        if (str_contains($clean, 'section') || str_contains($clean, 'class') || str_contains($clean, 'subject')) {
+            return 'class';
+        }
+
+        if (is_numeric($identifier) && Classes::query()->where('id', (int) $identifier)->exists()) {
+            return 'class';
         }
 
         if (Room::query()->where('name', 'like', "%{$identifier}%")->exists()) {
@@ -90,7 +105,11 @@ final class ComprehensiveScheduleService
             return 'student';
         }
 
-        if (Classes::query()->where('subject_code', 'like', "%{$identifier}%")->orWhere('section', 'like', "%{$identifier}%")->exists()) {
+        if (Classes::query()->where(function ($q) use ($identifier, $clean) {
+            $q->where('subject_code', 'like', "%{$identifier}%")
+                ->orWhere('section', 'like', "%{$identifier}%")
+                ->orWhereRaw("LOWER(CONCAT_WS(' ', subject_code, section)) LIKE LOWER(?)", ["%{$clean}%"]);
+        })->exists()) {
             return 'class';
         }
 
@@ -361,29 +380,101 @@ final class ComprehensiveScheduleService
         ?string $dayOfWeek,
         string $schoolYear,
         int $semester,
-        int $limit
+        int $limit,
+        ?int $classId = null,
+        ?string $subjectCode = null,
+        ?string $section = null,
     ): array {
-        $classesQuery = Classes::query()
-            ->forAcademicPeriod($schoolYear, $semester)
-            ->with(['faculty', 'room', 'schedules.room', 'class_enrollments', 'subject']);
+        $buildQuery = function (bool $withPeriod) use ($identifier, $classId, $subjectCode, $section, $schoolYear, $semester): Builder {
+            $query = Classes::query()
+                ->with(['faculty', 'room', 'schedules.room', 'class_enrollments', 'subject']);
 
-        if (filled($identifier)) {
-            $classesQuery->where(function ($q) use ($identifier) {
-                $q->where('subject_code', 'like', "%{$identifier}%")
-                    ->orWhere('section', 'like', "%{$identifier}%")
-                    ->orWhereHas('subject', function ($sq) use ($identifier) {
-                        $sq->where('title', 'like', "%{$identifier}%")
-                            ->orWhere('code', 'like', "%{$identifier}%");
-                    });
-            });
+            if ($withPeriod) {
+                $query->forAcademicPeriod($schoolYear, $semester);
+            }
+
+            if ($classId) {
+                return $query->where('id', $classId);
+            }
+
+            if (filled($subjectCode) && filled($section)) {
+                return $query->where(function (Builder $q) use ($subjectCode, $section): void {
+                    $q->where('subject_code', 'like', "%{$subjectCode}%")
+                        ->where('section', 'like', "%{$section}%");
+                });
+            }
+
+            if (filled($subjectCode)) {
+                return $query->where('subject_code', 'like', "%{$subjectCode}%");
+            }
+
+            if (filled($section) && blank($identifier)) {
+                return $query->where('section', 'like', "%{$section}%");
+            }
+
+            if (filled($identifier)) {
+                $clean = mb_trim(preg_replace('/\s+/', ' ', str_ireplace(['section', 'sec.', 'sec', 'class', 'class:'], '', (string) $identifier)));
+
+                return $query->where(function (Builder $q) use ($identifier, $clean): void {
+                    if (is_numeric($identifier)) {
+                        $q->orWhere('id', (int) $identifier);
+                    }
+
+                    $q->orWhere('subject_code', 'like', "%{$identifier}%")
+                        ->orWhere('section', 'like', "%{$identifier}%")
+                        ->orWhereRaw("LOWER(CONCAT_WS(' ', subject_code, section)) LIKE LOWER(?)", ["%{$clean}%"])
+                        ->orWhereRaw("LOWER(REPLACE(CONCAT_WS(' ', subject_code, section), '-', ' ')) LIKE LOWER(?)", ['%'.str_replace('-', ' ', $clean).'%'])
+                        ->orWhereHas('subject', function (Builder $sq) use ($identifier, $clean): void {
+                            $sq->where('title', 'like', "%{$identifier}%")
+                                ->orWhere('code', 'like', "%{$identifier}%")
+                                ->orWhere('title', 'like', "%{$clean}%");
+                        });
+
+                    $parts = explode(' ', $clean);
+                    if (count($parts) >= 2) {
+                        $last = array_pop($parts);
+                        $first = implode(' ', $parts);
+                        $q->orWhere(function (Builder $sub) use ($first, $last): void {
+                            $sub->where('subject_code', 'like', "%{$first}%")
+                                ->where('section', 'like', "%{$last}%");
+                        });
+                        $q->orWhere(function (Builder $sub) use ($first, $last): void {
+                            $firstClean = str_replace(['-', ' '], '', $first);
+                            $sub->whereRaw("REPLACE(REPLACE(subject_code, '-', ''), ' ', '') LIKE ?", ["%{$firstClean}%"])
+                                ->where('section', 'like', "%{$last}%");
+                        });
+                    }
+                });
+            }
+
+            return $query;
+        };
+
+        $classesQuery = $buildQuery(true);
+        $classes = $classesQuery->limit($limit)->get();
+
+        // Fallback: If no records match in the requested period, search across all periods
+        if ($classes->isEmpty()) {
+            $classes = $buildQuery(false)->limit($limit)->get();
         }
 
-        $classes = $classesQuery->limit($limit)->get()->map(function (Classes $class) use ($dayOfWeek): array {
-            $schedules = $class->schedules->when(filled($dayOfWeek), function ($collection) use ($dayOfWeek) {
+        $mappedClasses = $classes->map(function (Classes $class) use ($dayOfWeek): array {
+            $schedules = $class->schedules;
+            if ($schedules->isEmpty() && $class->schedule_id) {
+                $singleSchedule = Schedule::find($class->schedule_id);
+                if ($singleSchedule instanceof Schedule) {
+                    $schedules = collect([$singleSchedule]);
+                }
+            }
+
+            $mappedSchedules = $schedules->when(filled($dayOfWeek), function ($collection) use ($dayOfWeek) {
                 return $collection->filter(fn ($s) => mb_strtolower((string) $s->day_of_week) === mb_strtolower((string) $dayOfWeek));
             })->map(fn (Schedule $s): array => [
+                'id' => $s->id,
                 'day_of_week' => $s->day_of_week,
                 'time_range' => "{$s->formatted_start_time} - {$s->formatted_end_time}",
+                'start_time' => $s->formatted_start_time,
+                'end_time' => $s->formatted_end_time,
                 'room' => $s->room?->name ?? $class->room?->name ?? 'TBA',
             ])->values()->all();
 
@@ -392,19 +483,23 @@ final class ComprehensiveScheduleService
                 'subject_code' => $class->subject_code,
                 'subject_title' => $class->subject?->title ?? $class->subject_title ?? 'Class',
                 'section' => $class->section,
+                'school_year' => $class->school_year,
+                'semester' => $class->semester,
                 'faculty' => $class->faculty?->full_name ?? 'TBA',
                 'room' => $class->room?->name ?? 'TBA',
                 'enrolled' => $class->class_enrollments->count(),
                 'max_slots' => $class->maximum_slots,
-                'schedules' => $schedules,
+                'has_schedules' => ! empty($mappedSchedules),
+                'schedules_count' => count($mappedSchedules),
+                'schedules' => $mappedSchedules,
             ];
         })->values()->all();
 
         return [
             'type' => 'class',
             'academic_period' => "SY {$schoolYear} - Semester {$semester}",
-            'count' => count($classes),
-            'classes' => $classes,
+            'count' => count($mappedClasses),
+            'classes' => $mappedClasses,
         ];
     }
 

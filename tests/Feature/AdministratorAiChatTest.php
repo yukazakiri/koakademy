@@ -408,6 +408,43 @@ it('resolves room, student, and faculty schedules via QueryTimetableScheduleTool
     expect($facultyResult['type'])->toBe('faculty')
         ->and($facultyResult['faculty'][0]['name'])->toBe($faculty->full_name)
         ->and($facultyResult['faculty'][0]['schedules'][0]['subject_code'])->toBe('CS101');
+
+    // Query class schedule by compound identifier
+    $classResult1 = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'target_type' => 'class',
+        'identifier' => 'CS101 Section BSCS-1A',
+    ])), true);
+
+    expect($classResult1['type'])->toBe('class')
+        ->and($classResult1['count'])->toBe(1)
+        ->and($classResult1['classes'][0]['class_id'])->toBe($class->id)
+        ->and($classResult1['classes'][0]['schedules'][0]['day_of_week'])->toBe('Tuesday');
+
+    // Query class schedule by numeric class ID string
+    $classResult2 = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'target_type' => 'class',
+        'identifier' => (string) $class->id,
+    ])), true);
+
+    expect($classResult2['count'])->toBe(1)
+        ->and($classResult2['classes'][0]['class_id'])->toBe($class->id);
+
+    // Query class schedule by explicit class_id parameter
+    $classResult3 = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'class_id' => $class->id,
+    ])), true);
+
+    expect($classResult3['count'])->toBe(1)
+        ->and($classResult3['classes'][0]['class_id'])->toBe($class->id);
+
+    // Verify LookupClassSchedulesTool handles compound queries as well
+    $lookupTool = new App\Ai\Tools\LookupClassSchedulesTool();
+    $lookupResult = json_decode((string) $lookupTool->handle(new Laravel\Ai\Tools\Request([
+        'query' => 'CS101 BSCS-1A',
+    ])), true);
+
+    expect($lookupResult['count'])->toBeGreaterThanOrEqual(1)
+        ->and($lookupResult['classes'][0]['class_id'])->toBe($class->id);
 });
 
 it('manages student profiles with approval gates via ManageStudentTool', function (): void {

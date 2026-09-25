@@ -471,7 +471,7 @@ it('manages student profiles with approval gates via ManageStudentTool', functio
 
     $createResult = json_decode((string) $tool->handle($createRequest), true);
     expect($createResult['success'])->toBeTrue()
-        ->and($createResult['student']['name'])->toBe('Johnson, Katherine ')
+        ->and($createResult['student']['name'])->toBe('Johnson, Katherine')
         ->and($createResult['student']['email'])->toBe('katherine.johnson@example.com');
 
     $studentId = $createResult['student']['id'];
@@ -636,4 +636,162 @@ it('formats class enrollments compactly without unneeded payload bloat', functio
 
     // Ensure raw response does not contain unnecessary verbose fields like full personalInfo arrays
     expect(mb_strlen($rawResponse))->toBeLessThan(1000);
+});
+
+it('supports batch student upserts, class schedules, and curriculum subjects via AI tools', function (): void {
+    foreach (['Create:Student', 'Update:Student', 'Create:Subject', 'Update:Subject', 'Create:Classes', 'Update:Classes', 'Update:StudentEnrollment'] as $perm) {
+        Spatie\Permission\Models\Permission::firstOrCreate(['name' => $perm, 'guard_name' => 'web']);
+    }
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $admin->givePermissionTo(['Create:Student', 'Update:Student', 'Create:Subject', 'Update:Subject', 'Create:Classes', 'Update:Classes', 'Update:StudentEnrollment']);
+    $this->actingAs($admin);
+
+    $course = App\Models\Course::factory()->create(['code' => 'BSHM', 'title' => 'Hospitality Management']);
+    $room = App\Models\Room::create(['name' => 'Kitchen Lab 1', 'is_active' => true]);
+
+    // 1. Batch upsert students (one new, one update)
+    $existingStudent = App\Models\Student::factory()->create([
+        'first_name' => 'Maria',
+        'last_name' => 'Santos',
+        'email' => 'maria.santos@example.com',
+        'course_id' => $course->id,
+        'academic_year' => 1,
+    ]);
+
+    $studentTool = new App\Ai\Tools\ManageStudentTool();
+    $studentResult = json_decode((string) $studentTool->handle(new Laravel\Ai\Tools\Request([
+        'action' => 'batch_upsert',
+        'students' => [
+            [
+                'student_id' => $existingStudent->id,
+                'first_name' => 'Maria Clara',
+                'last_name' => 'Santos',
+                'email' => 'maria.santos@example.com',
+                'academic_year' => 2,
+                'status' => 'enrolled',
+            ],
+            [
+                'first_name' => 'Juan',
+                'last_name' => 'Dela Cruz',
+                'email' => 'juan.delacruz@example.com',
+                'course_code' => 'BSHM',
+                'academic_year' => 1,
+                'status' => 'applicant',
+            ],
+        ],
+    ])), true);
+
+    expect($studentResult['success'])->toBeTrue()
+        ->and($studentResult['created_count'])->toBe(1)
+        ->and($studentResult['updated_count'])->toBe(1);
+
+    expect($existingStudent->refresh()->first_name)->toBe('Maria Clara')
+        ->and($existingStudent->academic_year)->toBe(2);
+
+    expect(App\Models\Student::where('email', 'juan.delacruz@example.com')->exists())->toBeTrue();
+
+    // 2. Batch upsert curriculum subjects
+    $subjectTool = new App\Ai\Tools\ManageCurriculumSubjectTool();
+    $subResult = json_decode((string) $subjectTool->handle(new Laravel\Ai\Tools\Request([
+        'action' => 'batch_upsert',
+        'subjects' => [
+            [
+                'code' => 'HPC 1',
+                'title' => 'Fundamentals in Food Service',
+                'units' => 3,
+                'lecture' => 2,
+                'laboratory' => 1,
+                'academic_year' => 1,
+                'semester' => 1,
+                'course_code' => 'BSHM',
+            ],
+            [
+                'code' => 'THC 1',
+                'title' => 'Macro Perspective in Tourism',
+                'units' => 3,
+                'academic_year' => 1,
+                'semester' => 1,
+                'course_code' => 'BSHM',
+            ],
+        ],
+    ])), true);
+
+    expect($subResult['success'])->toBeTrue()
+        ->and($subResult['created_count'])->toBe(2);
+
+    // 3. Batch create class schedules
+    $classTool = new App\Ai\Tools\ManageClassScheduleTool();
+    $classResult = json_decode((string) $classTool->handle(new Laravel\Ai\Tools\Request([
+        'action' => 'batch_create',
+        'classes' => [
+            [
+                'subject_code' => 'HPC 1',
+                'section' => 'BSHM-1A',
+                'day_of_week' => 'Monday',
+                'start_time' => '08:00',
+                'end_time' => '10:00',
+                'room_name' => 'Kitchen Lab 1',
+            ],
+            [
+                'subject_code' => 'THC 1',
+                'section' => 'BSHM-1A',
+                'day_of_week' => 'Wednesday',
+                'start_time' => '10:00',
+                'end_time' => '12:00',
+                'room_name' => 'Kitchen Lab 1',
+            ],
+        ],
+    ])), true);
+
+    expect($classResult['success'])->toBeTrue()
+        ->and($classResult['created_classes_count'])->toBe(2);
+
+    expect(App\Models\Classes::where('subject_code', 'HPC 1')->where('section', 'BSHM-1A')->exists())->toBeTrue()
+        ->and(App\Models\Schedule::where('day_of_week', 'Monday')->where('start_time', '08:00:00')->exists())->toBeTrue();
+});
+
+it('extracts multi-sheet spreadsheets cleanly with titles and tables for dynamic AI agent comprehension', function (): void {
+    $book = new PhpOffice\PhpSpreadsheet\Spreadsheet();
+
+    // Sheet 1: Students roster
+    $sheet1 = $book->getActiveSheet();
+    $sheet1->setTitle('Students Roster');
+    $sheet1->setCellValue('A1', 'KOAKADEMY OFFICIAL ENROLLED STUDENTS');
+    $sheet1->setCellValue('A2', 'First Name');
+    $sheet1->setCellValue('B2', 'Last Name');
+    $sheet1->setCellValue('C2', 'Email');
+    $sheet1->setCellValue('D2', 'Program');
+    $sheet1->setCellValue('A3', 'Jose');
+    $sheet1->setCellValue('B3', 'Rizal');
+    $sheet1->setCellValue('C3', 'jose.rizal@example.com');
+    $sheet1->setCellValue('D3', 'BSHM');
+
+    // Sheet 2: Class Schedules
+    $sheet2 = $book->createSheet();
+    $sheet2->setTitle('Class Schedules');
+    $sheet2->setCellValue('A1', 'Subject Code');
+    $sheet2->setCellValue('B1', 'Section');
+    $sheet2->setCellValue('C1', 'Day');
+    $sheet2->setCellValue('D1', 'Time');
+    $sheet2->setCellValue('E1', 'Room');
+    $sheet2->setCellValue('A2', 'HPC 1');
+    $sheet2->setCellValue('B2', 'BSHM-1A');
+    $sheet2->setCellValue('C2', 'Monday');
+    $sheet2->setCellValue('D2', '08:00-10:00');
+    $sheet2->setCellValue('E2', 'Kitchen Lab');
+
+    $path = tempnam(sys_get_temp_dir(), 'test-sheets-').'.xlsx';
+    (new PhpOffice\PhpSpreadsheet\Writer\Xlsx($book))->save($path);
+    $book->disconnectWorksheets();
+
+    $uploaded = new Illuminate\Http\UploadedFile($path, 'master_records.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', null, true);
+
+    $processor = app(App\Services\Ai\AiAttachmentProcessor::class);
+    $processed = $processor->process([$uploaded], 'Please analyze the uploaded files and help me update records.');
+
+    expect($processed['enrichedPrompt'])->toContain('Sheet: \'Students Roster\'')
+        ->and($processed['enrichedPrompt'])->toContain('Sheet: \'Class Schedules\'')
+        ->and($processed['enrichedPrompt'])->toContain('jose.rizal@example.com')
+        ->and($processed['enrichedPrompt'])->toContain('Kitchen Lab')
+        ->and($processed['enrichedPrompt'])->toContain('Document Header / Metadata');
 });

@@ -419,11 +419,11 @@ final class AdministratorStudentManagementController extends Controller
         $statusCounts = StudentStatusRecord::query()
             ->where('academic_year', $currentSchoolYear)
             ->where('semester', $currentSemester)
-            ->selectRaw("
+            ->selectRaw('
                 COUNT(CASE WHEN status = ? THEN 1 END) as enrolled_count,
                 COUNT(CASE WHEN status = ? THEN 1 END) as applicant_count,
                 COUNT(CASE WHEN status = ? THEN 1 END) as graduated_count
-            ", [
+            ', [
                 StudentStatus::Enrolled->value,
                 StudentStatus::Applicant->value,
                 StudentStatus::Graduated->value,

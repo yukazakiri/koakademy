@@ -9,6 +9,7 @@ use App\Models\Subject;
 use App\Models\User;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Laravel\Ai\Approvals\Approval;
 use Laravel\Ai\Concerns\InteractsWithApprovals;
 use Laravel\Ai\Contracts\Tool;
@@ -42,6 +43,10 @@ final class ManageCurriculumSubjectTool implements Tool
             if (! $user->hasRole('super_admin') && ! $user->can('Create:Subject')) {
                 return json_encode(['error' => true, 'message' => 'You are not permitted to create curriculum subjects.']);
             }
+        } elseif ($action === 'batch_upsert') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Create:Subject') && ! $user->can('Update:Subject')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to create or update curriculum subjects.']);
+            }
         } elseif ($action === 'delete') {
             if (! $user->hasRole('super_admin') && ! $user->can('Delete:Subject')) {
                 return json_encode(['error' => true, 'message' => 'You are not permitted to delete curriculum subjects.']);
@@ -55,9 +60,10 @@ final class ManageCurriculumSubjectTool implements Tool
         return match ($action) {
             'create' => $this->handleCreate($request),
             'update' => $this->handleUpdate($request),
+            'batch_upsert' => $this->handleBatchUpsert($request),
             'delete' => $this->handleDelete($request),
             'get' => $this->handleGet($request),
-            default => json_encode(['error' => true, 'message' => "Unknown action '{$action}'. Supported: create, update, delete, get."]),
+            default => json_encode(['error' => true, 'message' => "Unknown action '{$action}'. Supported: create, update, batch_upsert, delete, get."]),
         };
     }
 
@@ -65,9 +71,24 @@ final class ManageCurriculumSubjectTool implements Tool
     {
         return [
             'action' => $schema->string()
-                ->enum(['create', 'update', 'delete', 'get'])
+                ->enum(['create', 'update', 'batch_upsert', 'delete', 'get'])
                 ->required()
                 ->description('Operation to execute on curriculum subjects.'),
+            'subjects' => $schema->array()
+                ->description('List of curriculum subjects for batch_upsert.')
+                ->items(
+                    $schema->object(fn ($s) => [
+                        'code' => $s->string()->required()->description('Subject code (e.g. CS101, MATH101).'),
+                        'title' => $s->string()->required()->description('Descriptive title.'),
+                        'units' => $s->integer()->required()->description('Credit units (e.g. 3).'),
+                        'lecture' => $s->integer()->description('Weekly lecture hours.'),
+                        'laboratory' => $s->integer()->description('Weekly lab hours.'),
+                        'academic_year' => $s->integer()->description('Year level (1-5).'),
+                        'semester' => $s->integer()->description('Semester (1 or 2).'),
+                        'course_code' => $s->string()->description('Program code (e.g. BSCS).'),
+                        'prerequisites' => $s->array()->items($s->string())->description('Prerequisite subject codes.'),
+                    ])
+                ),
             'subject_id' => $schema->integer()->description('Subject database ID (for update/delete/get).'),
             'code' => $schema->string()->description('Subject code (e.g. "CS101", "MATH101").'),
             'title' => $schema->string()->description('Descriptive subject title (e.g. "Introduction to Computer Science").'),
@@ -96,6 +117,12 @@ final class ManageCurriculumSubjectTool implements Tool
             $program = $request['course_code'] ?? ($request['course_id'] ?? 'Program');
 
             return Approval::required("Create curriculum subject '{$code}' - {$title} under program {$program}?");
+        }
+
+        if ($action === 'batch_upsert') {
+            $count = is_array($request['subjects'] ?? null) ? count($request['subjects']) : 0;
+
+            return Approval::required("Batch create or update {$count} curriculum subjects?");
         }
 
         if ($action === 'update') {
@@ -170,6 +197,102 @@ final class ManageCurriculumSubjectTool implements Tool
         } catch (Throwable $e) {
             return json_encode(['error' => true, 'message' => "Failed to create subject: {$e->getMessage()}"]);
         }
+    }
+
+    private function handleBatchUpsert(Request $request): string
+    {
+        $validated = $request->validate([
+            'subjects' => 'required|array|min:1',
+            'subjects.*.code' => 'required|string|max:50',
+            'subjects.*.title' => 'required|string|max:150',
+            'subjects.*.units' => 'required|integer|between:0,12',
+            'subjects.*.lecture' => 'nullable|integer|between:0,40',
+            'subjects.*.laboratory' => 'nullable|integer|between:0,40',
+            'subjects.*.academic_year' => 'nullable|integer|between:1,5',
+            'subjects.*.semester' => 'nullable|integer|in:1,2',
+            'subjects.*.course_id' => 'nullable|integer',
+            'subjects.*.course_code' => 'nullable|string|max:50',
+            'subjects.*.prerequisites' => 'nullable|array',
+        ]);
+
+        $created = [];
+        $updated = [];
+        $errors = [];
+
+        $defaultCourse = Course::query()->first();
+
+        DB::transaction(function () use ($validated, $defaultCourse, &$created, &$updated, &$errors) {
+            foreach ($validated['subjects'] as $idx => $sData) {
+                try {
+                    $code = mb_strtoupper(mb_trim((string) $sData['code']));
+                    $title = mb_trim((string) $sData['title']);
+                    $units = (int) $sData['units'];
+                    $lecture = (int) ($sData['lecture'] ?? $units);
+                    $lab = (int) ($sData['laboratory'] ?? 0);
+                    $year = (int) ($sData['academic_year'] ?? 1);
+                    $sem = (int) ($sData['semester'] ?? 1);
+
+                    $courseId = $sData['course_id'] ?? null;
+                    if (! $courseId && filled($sData['course_code'] ?? null)) {
+                        $c = Course::query()->where('code', $sData['course_code'])->first();
+                        $courseId = $c?->id;
+                    }
+                    if (! $courseId) {
+                        $courseId = $defaultCourse?->id ?? 1;
+                    }
+
+                    $existing = Subject::query()->where('code', $code)->first();
+                    if ($existing instanceof Subject) {
+                        $existing->update([
+                            'title' => $title,
+                            'units' => $units,
+                            'lecture' => $lecture,
+                            'laboratory' => $lab,
+                            'academic_year' => $year,
+                            'semester' => $sem,
+                            'course_id' => $courseId,
+                            'pre_riquisite' => $sData['prerequisites'] ?? $existing->pre_riquisite,
+                        ]);
+                        $updated[] = [
+                            'id' => $existing->id,
+                            'code' => $existing->code,
+                            'title' => $existing->title,
+                        ];
+                    } else {
+                        $newSub = Subject::query()->create([
+                            'code' => $code,
+                            'title' => $title,
+                            'units' => $units,
+                            'lecture' => $lecture,
+                            'laboratory' => $lab,
+                            'academic_year' => $year,
+                            'semester' => $sem,
+                            'course_id' => $courseId,
+                            'classification' => \App\Enums\SubjectEnrolledEnum::INTERNAL->value,
+                            'is_credited' => true,
+                            'pre_riquisite' => $sData['prerequisites'] ?? [],
+                        ]);
+                        $created[] = [
+                            'id' => $newSub->id,
+                            'code' => $newSub->code,
+                            'title' => $newSub->title,
+                        ];
+                    }
+                } catch (Throwable $e) {
+                    $errors[] = 'Row '.($idx + 1)." ({$sData['code']}): ".$e->getMessage();
+                }
+            }
+        });
+
+        return json_encode([
+            'success' => true,
+            'action' => 'batch_upsert',
+            'created_count' => count($created),
+            'updated_count' => count($updated),
+            'created' => $created,
+            'updated' => $updated,
+            'errors' => $errors,
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 
     private function handleUpdate(Request $request): string

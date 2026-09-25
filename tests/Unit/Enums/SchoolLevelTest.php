@@ -20,6 +20,6 @@ it('returns select options', function (): void {
         'junior_high' => 'Middle School / Junior High School',
         'senior_high' => 'Senior High School',
         'elementary' => 'Elementary / Grade School',
-        'technical_vocational' => 'TESDA / Technical-Vocational Institute',
+        'technical_vocational' => 'Technical-Vocational Institute',
     ]);
 });

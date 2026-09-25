@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Controllers\AdministratorAuditLogController;
 use App\Http\Controllers\AdministratorClassManagementController;
 use App\Http\Controllers\AdministratorCourseSchedulePdfController;
+use App\Http\Controllers\AdministratorCurriculumImportController;
 use App\Http\Controllers\AdministratorCurriculumManagementController;
 use App\Http\Controllers\AdministratorEnrollmentDiscountController;
 use App\Http\Controllers\AdministratorEnrollmentManagementController;
@@ -527,6 +528,10 @@ Route::middleware(['auth', 'administrators.only'])
 
         // Administrative AI Assistant & Document Workflows
         Route::prefix('ai')->name('ai.')->group(function () {
+            Route::post('/curriculum-imports', [AdministratorCurriculumImportController::class, 'stage'])->name('curriculum-imports.stage');
+            Route::get('/curriculum-imports/{import}', [AdministratorCurriculumImportController::class, 'show'])->name('curriculum-imports.show');
+            Route::post('/curriculum-imports/{import}/approve', [AdministratorCurriculumImportController::class, 'approve'])->name('curriculum-imports.approve');
+            Route::post('/curriculum-imports/{import}/apply', [AdministratorCurriculumImportController::class, 'apply'])->name('curriculum-imports.apply');
             Route::get('/', [App\Http\Controllers\AdministratorAiController::class, 'index'])
                 ->name('index');
             Route::get('/conversations', [App\Http\Controllers\AdministratorAiController::class, 'conversations'])

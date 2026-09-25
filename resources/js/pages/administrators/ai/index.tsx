@@ -3,6 +3,7 @@ import { ADMIN_AGENTS, DEFAULT_PROMPT_SUGGESTIONS, type ConversationItem, type P
 import { AiConversationSidebar } from "@/components/ai/ai-conversation-sidebar";
 import { ApprovalCard } from "@/components/ai/approval-card";
 import { ChatMessageFormatter } from "@/components/ai/chat-message-formatter";
+import { CurriculumImportReview } from "@/components/ai/curriculum-import-review";
 import { AgentRoleKey, ChatMessage, useAiChat } from "@/components/ai/use-ai-chat";
 import {
     FileUpload,
@@ -95,6 +96,7 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
     const [selectedModel, setSelectedModel] = React.useState<string>("");
     const [availableModels, setAvailableModels] = React.useState<ModelOption[]>([]);
     const [selectedFiles, setSelectedFiles] = React.useState<File[]>([]);
+    const [curriculumFile, setCurriculumFile] = React.useState<File | null>(null);
 
     const messagesEndRef = React.useRef<HTMLDivElement | null>(null);
     const chatContainerRef = React.useRef<HTMLDivElement | null>(null);
@@ -419,6 +421,23 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                     ))}
                 </div>
             )}
+            {selectedFiles.some((file) => /\.xlsx$/i.test(file.name)) && !isLoading && (
+                <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mb-2"
+                    onClick={() => {
+                        const workbook = selectedFiles.find((file) => /\.xlsx$/i.test(file.name));
+                        if (workbook) {
+                            setCurriculumFile(workbook);
+                            setSelectedFiles((current) => current.filter((file) => file !== workbook));
+                        }
+                    }}
+                >
+                    <FileSpreadsheet className="size-4" /> Review as curriculum import
+                </Button>
+            )}
 
             <div className="bg-muted/70 dark:bg-muted/35 rounded-[1.5rem] p-1.5">
                 <div className="text-muted-foreground px-3 pt-1.5 text-[11px]">
@@ -573,6 +592,24 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
     return (
         <AdminLayout user={user} immersive>
             <Head title="AI Chat - Administrator Copilot" />
+            <CurriculumImportReview
+                file={curriculumFile}
+                onClose={() => setCurriculumFile(null)}
+                onStaged={(id, title) => {
+                    sendPrompt(
+                        `I staged a curriculum workbook for ${title} (import ID: ${id}). Use InspectCurriculumImportTool to describe the proposed program, subjects and problems. Do not modify records; I will review and confirm them in the import panel.`,
+                        [],
+                        { agent: "admin_executive", model: selectedModel || undefined },
+                    );
+                }}
+                onApplied={(courseId) => {
+                    sendPrompt(
+                        `The approved curriculum import has been applied to program ID ${courseId}. Use GetCourseCurriculumTool to summarize its subjects.`,
+                        [],
+                        { agent: "admin_executive", model: selectedModel || undefined },
+                    );
+                }}
+            />
 
             <div className="border-border/70 bg-background flex h-full min-h-0 w-full overflow-hidden border">
                 <div className="hidden h-full w-[18.5rem] shrink-0 md:block">

@@ -126,50 +126,104 @@ final class AiAttachmentProcessor
     private function extractSpreadsheetData(UploadedFile $file, string $extension): ?string
     {
         try {
-            $spreadsheet = IOFactory::load($file->getRealPath());
-            $sheet = $spreadsheet->getActiveSheet();
-            $title = $sheet->getTitle();
-            $rows = $sheet->toArray();
+            $reader = IOFactory::createReaderForFile($file->getRealPath());
+            if (method_exists($reader, 'setReadDataOnly')) {
+                $reader->setReadDataOnly(true);
+            }
+            $spreadsheet = $reader->load($file->getRealPath());
+            $sheets = $spreadsheet->getAllSheets();
 
-            if (empty($rows)) {
+            if (empty($sheets)) {
                 return null;
             }
 
             $output = [];
-            $output[] = "### [Spreadsheet Data: {$file->getClientOriginalName()} (Sheet: '{$title}')]";
+            $totalRowsProcessed = 0;
+            $sheetsToProcess = array_slice($sheets, 0, 5);
 
-            $limitedRows = array_slice($rows, 0, self::MAX_SPREADSHEET_ROWS);
-            $header = array_shift($limitedRows);
-
-            if (! is_array($header) || empty($header)) {
-                return null;
-            }
-
-            // Clean header column names
-            $cleanHeaders = array_map(fn ($h, $idx) => filled($h) ? mb_trim((string) $h) : 'Col_'.($idx + 1), $header, array_keys($header));
-            $output[] = '| '.implode(' | ', $cleanHeaders).' |';
-            $output[] = '| '.implode(' | ', array_fill(0, count($cleanHeaders), '---')).' |';
-
-            foreach ($limitedRows as $row) {
-                if (! is_array($row) || empty(array_filter($row, fn ($val) => filled($val)))) {
-                    continue; // skip blank rows
+            foreach ($sheetsToProcess as $sheet) {
+                $title = $sheet->getTitle();
+                $rows = $sheet->toArray();
+                if (empty($rows)) {
+                    continue;
                 }
 
-                $cells = [];
-                foreach (array_keys($cleanHeaders) as $colIdx) {
-                    $cellVal = isset($row[$colIdx]) ? mb_trim((string) $row[$colIdx]) : '';
-                    $cleanCell = str_replace(['|', "\n", "\r"], [' ', ' ', ' '], $cellVal);
-                    $cells[] = $cleanCell;
+                $nonEmptyRows = array_values(array_filter($rows, fn ($r) => is_array($r) && ! empty(array_filter($r, fn ($v) => filled($v)))));
+                if (empty($nonEmptyRows)) {
+                    continue;
                 }
 
-                $output[] = '| '.implode(' | ', $cells).' |';
+                $sheetOutput = [];
+                $sheetOutput[] = "### [Spreadsheet: {$file->getClientOriginalName()} · Sheet: '{$title}']";
+
+                // Find the best header row (first row with >= 2 populated columns)
+                $headerIdx = null;
+                $metadataLines = [];
+                foreach ($nonEmptyRows as $idx => $r) {
+                    $populated = array_values(array_filter($r, fn ($v) => filled($v)));
+                    if (count($populated) >= 2) {
+                        $headerIdx = $idx;
+                        break;
+                    }
+                    $metadataLines[] = mb_trim((string) ($populated[0] ?? ''));
+
+                }
+
+                if (! empty($metadataLines)) {
+                    $sheetOutput[] = '> **Document Header / Metadata**: '.implode(' · ', array_filter($metadataLines));
+                }
+
+                if ($headerIdx === null) {
+                    // Fallback: list non-empty rows directly
+                    foreach (array_slice($nonEmptyRows, 0, 50) as $rIdx => $r) {
+                        $sheetOutput[] = '- Row '.($rIdx + 1).': '.implode(' | ', array_filter($r, fn ($v) => filled($v)));
+                    }
+                    $output[] = implode("\n", $sheetOutput);
+
+                    continue;
+                }
+
+                $rawHeader = $nonEmptyRows[$headerIdx];
+                $cleanHeaders = array_map(fn ($h, $i) => filled($h) ? mb_trim((string) $h) : 'Col_'.($i + 1), $rawHeader, array_keys($rawHeader));
+                $sheetOutput[] = '| '.implode(' | ', $cleanHeaders).' |';
+                $sheetOutput[] = '| '.implode(' | ', array_fill(0, count($cleanHeaders), '---')).' |';
+
+                $dataRows = array_slice($nonEmptyRows, $headerIdx + 1);
+                foreach ($dataRows as $row) {
+                    if ($totalRowsProcessed >= self::MAX_SPREADSHEET_ROWS) {
+                        break 2;
+                    }
+
+                    $populated = array_values(array_filter($row, fn ($v) => filled($v)));
+                    if (empty($populated)) {
+                        continue;
+                    }
+
+                    // If row is a section marker (single cell spanning across), format as subtitle row
+                    if (count($populated) === 1 && filled($row[0] ?? null)) {
+                        $sheetOutput[] = "\n**[Section: {$row[0]}]**\n";
+
+                        continue;
+                    }
+
+                    $cells = [];
+                    foreach (array_keys($cleanHeaders) as $colIdx) {
+                        $cellVal = isset($row[$colIdx]) ? mb_trim((string) $row[$colIdx]) : '';
+                        $cleanCell = str_replace(['|', "\n", "\r"], [' ', ' ', ' '], $cellVal);
+                        $cells[] = $cleanCell;
+                    }
+                    $sheetOutput[] = '| '.implode(' | ', $cells).' |';
+                    $totalRowsProcessed++;
+                }
+
+                $output[] = implode("\n", $sheetOutput);
             }
 
-            if (count($rows) > self::MAX_SPREADSHEET_ROWS) {
-                $output[] = "\n*(Note: Displaying first ".self::MAX_SPREADSHEET_ROWS.' of '.count($rows).' rows from this spreadsheet)*';
+            if ($totalRowsProcessed >= self::MAX_SPREADSHEET_ROWS) {
+                $output[] = "\n*(Note: Displaying first ".self::MAX_SPREADSHEET_ROWS.' rows from this spreadsheet)*';
             }
 
-            return implode("\n", $output);
+            return implode("\n\n", $output);
         } catch (Throwable) {
             return null;
         }

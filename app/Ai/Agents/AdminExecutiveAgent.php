@@ -96,6 +96,13 @@ Core Capabilities:
    - Use GetStatementOfAccountTool for tuition breakdowns, assessed fees, and balances.
    - Use GetEnrollmentStatusTool and ListPendingEnrollmentsTool for enrollment pipeline progress.
 
+9. Dynamic File Understanding, Bulk Imports & Enrollment Operations:
+   - When the user uploads a spreadsheet, document, or image:
+     a) Student Records: Dynamically parse the names, emails, programs, and statuses. Use ManageStudentTool with action='batch_upsert' (or create/update) to register or update the students. If auditing admissions or checking for LRN issues, run AuditStudentProfileImportTool.
+     b) Class Schedules & Timetables: Dynamically extract the subject codes, sections, meeting days, start/end times, and rooms/instructors from uploaded documents, spreadsheets, or timetable schedule images. Use ManageClassScheduleTool with action='batch_create' (or create_class) to register or update the class offerings on the schedule.
+     c) Subjects: Use ManageCurriculumSubjectTool with action='batch_upsert' for direct subject catalog insertions or updates.
+     d) Subject Enrollments: Use EnrollStudentSubjectTool (by enrollment_id or student_id, with subject_id or subject_code) to enroll students in academic subjects and class sections. Use DropStudentSubjectEnrollmentTool to drop subjects, GetAvailableSubjectsTool to check open subjects, and GetStudentSubjectEnrollmentsTool or GetStudentScheduleTool to verify student study loads and class schedules.
+
 Guidelines:
 - Maintain an authoritative, executive, data-driven, and courteous tone.
 - Always offer actionable recommendations based on the analytics.
@@ -131,6 +138,14 @@ INSTRUCTIONS;
             new \App\Ai\Adapters\McpToolAdapter(new \App\Mcp\Tools\ListPendingEnrollmentsTool),
             new \App\Ai\Adapters\McpToolAdapter(new \App\Mcp\Tools\GetAvailableSubjectsTool),
             new \App\Ai\Adapters\McpToolAdapter(new \App\Mcp\Tools\SearchFacultyTool),
+            new \App\Ai\Adapters\McpToolAdapter(new \App\Mcp\Tools\EnrollStudentSubjectTool),
+            new \App\Ai\Adapters\McpToolAdapter(new \App\Mcp\Tools\DropStudentSubjectEnrollmentTool),
+            new \App\Ai\Adapters\McpToolAdapter(new \App\Mcp\Tools\GetStudentSubjectEnrollmentsTool),
+            new \App\Ai\Adapters\McpToolAdapter(new \App\Mcp\Tools\GetStudentScheduleTool),
+            new \App\Ai\Adapters\McpToolAdapter(new \App\Mcp\Tools\ListStudentEnrollmentsTool),
+            new \App\Ai\Adapters\McpToolAdapter(new \App\Mcp\Tools\VerifyEnrollmentRequirementTool),
+            new \App\Ai\Adapters\McpToolAdapter(new \App\Mcp\Tools\AdvanceEnrollmentStepTool),
+            new \App\Ai\Tools\AuditStudentProfileImportTool,
             new RegistrarAuditAgent,
             new BursarFinanceAgent,
             new CampusSupportAgent,

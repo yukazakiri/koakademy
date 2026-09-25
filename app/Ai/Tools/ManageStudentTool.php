@@ -43,6 +43,10 @@ final class ManageStudentTool implements Tool
             if (! $user->hasRole('super_admin') && ! $user->can('View:Student')) {
                 return json_encode(['error' => true, 'message' => 'You are not permitted to view student records.']);
             }
+        } elseif ($action === 'batch_upsert') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Create:Student') && ! $user->can('Update:Student')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to insert or update student records.']);
+            }
         } elseif ($action === 'create') {
             if (! $user->hasRole('super_admin') && ! $user->can('Create:Student')) {
                 return json_encode(['error' => true, 'message' => 'You are not permitted to create student records.']);
@@ -60,9 +64,10 @@ final class ManageStudentTool implements Tool
         return match ($action) {
             'create' => $this->handleCreate($request),
             'update' => $this->handleUpdate($request),
+            'batch_upsert' => $this->handleBatchUpsert($request),
             'archive', 'delete' => $this->handleArchive($request),
             'get' => $this->handleGet($request),
-            default => json_encode(['error' => true, 'message' => "Unknown action '{$action}'. Supported actions: create, update, archive, get."]),
+            default => json_encode(['error' => true, 'message' => "Unknown action '{$action}'. Supported actions: create, update, batch_upsert, archive, get."]),
         };
     }
 
@@ -70,9 +75,27 @@ final class ManageStudentTool implements Tool
     {
         return [
             'action' => $schema->string()
-                ->enum(['create', 'update', 'archive', 'get'])
+                ->enum(['create', 'update', 'batch_upsert', 'archive', 'get'])
                 ->required()
                 ->description('The operation to perform on student records.'),
+            'students' => $schema->array()
+                ->description('Array of student records for batch_upsert.')
+                ->items(
+                    $schema->object(fn ($s) => [
+                        'student_id' => $s->string()->description('Student ID, student number, or LRN to update if existing.'),
+                        'lrn' => $s->string()->description('12-digit Learner Reference Number.'),
+                        'first_name' => $s->string()->description('Student first name.'),
+                        'last_name' => $s->string()->description('Student last name.'),
+                        'middle_name' => $s->string()->description('Middle name.'),
+                        'email' => $s->string()->description('Student email address.'),
+                        'course_code' => $s->string()->description('Program code (e.g. BSIT, BSHM).'),
+                        'academic_year' => $s->integer()->description('Year level 1-5.'),
+                        'status' => $s->string()->description('Student status (enrolled, applicant, etc.).'),
+                        'gender' => $s->string()->description('Gender: Male, Female, Other.'),
+                        'student_type' => $s->string()->description('college or shs.'),
+                        'birth_date' => $s->string()->description('YYYY-MM-DD birth date.'),
+                    ])
+                ),
             'student_id' => $schema->string()
                 ->description('Database ID or official student number (e.g. "2024-0012" or "45") for update/archive/get.'),
             'first_name' => $schema->string()->description('Student first name for create/update.'),
@@ -103,6 +126,12 @@ final class ManageStudentTool implements Tool
             $course = $request['course_code'] ?? ($request['course_id'] ?? 'unspecified course');
 
             return Approval::required("Create new official student record for '{$name}' in program {$course}?");
+        }
+
+        if ($action === 'batch_upsert') {
+            $count = is_array($request['students'] ?? null) ? count($request['students']) : 0;
+
+            return Approval::required("Batch insert or update {$count} student records in the student directory?");
         }
 
         if ($action === 'update') {
@@ -281,6 +310,136 @@ final class ManageStudentTool implements Tool
             'action' => 'archive',
             'message' => "Student {$student->full_name} (ID: {$student->student_id}) marked as dropped/archived.",
             'reason' => $validated['reason'] ?? 'Archived via administrative copilot.',
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    }
+
+    private function handleBatchUpsert(Request $request): string
+    {
+        $validated = $request->validate([
+            'students' => 'required|array|min:1',
+            'students.*.first_name' => 'required|string|max:100',
+            'students.*.last_name' => 'required|string|max:100',
+            'students.*.middle_name' => 'nullable|string|max:100',
+            'students.*.email' => 'required|email|max:150',
+            'students.*.student_id' => 'nullable',
+            'students.*.lrn' => 'nullable|string|max:20',
+            'students.*.course_code' => 'nullable|string|max:50',
+            'students.*.course_id' => 'nullable|integer',
+            'students.*.academic_year' => 'nullable|integer|between:1,5',
+            'students.*.student_type' => 'nullable|string|in:college,shs',
+            'students.*.gender' => 'nullable|string|in:Male,Female,Other',
+            'students.*.birth_date' => 'nullable|date',
+            'students.*.status' => 'nullable|string',
+        ]);
+
+        $created = [];
+        $updated = [];
+        $errors = [];
+
+        $generalSetting = \App\Models\GeneralSetting::query()->first();
+        $defaultCourse = Course::query()->first();
+
+        DB::transaction(function () use ($validated, &$created, &$updated, &$errors, $generalSetting, $defaultCourse) {
+            foreach ($validated['students'] as $idx => $sData) {
+                try {
+                    $existing = null;
+                    if (filled($sData['student_id'] ?? null)) {
+                        $existing = $this->resolveStudent((string) $sData['student_id']);
+                    }
+                    if (! $existing && filled($sData['email'] ?? null)) {
+                        $existing = $this->resolveStudent((string) $sData['email']);
+                    }
+                    if (! $existing && filled($sData['lrn'] ?? null)) {
+                        $existing = Student::query()->where('lrn', mb_trim((string) $sData['lrn']))->first();
+                    }
+
+                    $courseId = $sData['course_id'] ?? null;
+                    if (! $courseId && filled($sData['course_code'] ?? null)) {
+                        $c = Course::query()->where('code', $sData['course_code'])->first();
+                        $courseId = $c?->id;
+                    }
+                    if (! $courseId && ! $existing) {
+                        $courseId = $defaultCourse?->id ?? 1;
+                    }
+
+                    if ($existing instanceof Student) {
+                        $updates = array_filter([
+                            'first_name' => $sData['first_name'] ?? null,
+                            'last_name' => $sData['last_name'] ?? null,
+                            'middle_name' => $sData['middle_name'] ?? null,
+                            'email' => $sData['email'] ?? null,
+                            'course_id' => $courseId,
+                            'academic_year' => $sData['academic_year'] ?? null,
+                            'status' => $sData['status'] ?? null,
+                            'gender' => $sData['gender'] ?? null,
+                            'lrn' => $sData['lrn'] ?? null,
+                        ], fn ($val) => $val !== null);
+
+                        if (! empty($updates)) {
+                            $existing->update($updates);
+                        }
+
+                        $updated[] = [
+                            'id' => $existing->id,
+                            'student_number' => (string) $existing->student_id,
+                            'name' => $existing->full_name,
+                            'email' => $existing->email,
+                            'status' => $existing->status,
+                        ];
+                    } else {
+                        $studentType = isset($sData['student_type']) && $sData['student_type'] === 'shs'
+                            ? StudentType::Shs
+                            : StudentType::College;
+
+                        $newStudentId = Student::generateNextId($studentType);
+                        $birthDate = filled($sData['birth_date'] ?? null)
+                            ? Carbon::parse($sData['birth_date'])
+                            : now()->subYears(18);
+
+                        $newStudent = Student::query()->create([
+                            'student_id' => $newStudentId,
+                            'institution_id' => 1,
+                            'student_type' => $studentType->value,
+                            'first_name' => $sData['first_name'],
+                            'last_name' => $sData['last_name'],
+                            'middle_name' => $sData['middle_name'] ?? null,
+                            'email' => $sData['email'],
+                            'course_id' => $courseId,
+                            'academic_year' => $sData['academic_year'] ?? 1,
+                            'gender' => $sData['gender'] ?? 'Other',
+                            'birth_date' => $birthDate->format('Y-m-d'),
+                            'age' => $birthDate->age,
+                            'status' => $sData['status'] ?? StudentStatus::Applicant->value,
+                            'lrn' => $sData['lrn'] ?? null,
+                        ]);
+
+                        if ($generalSetting instanceof \App\Models\GeneralSetting) {
+                            StudentClearance::createForCurrentSemester($newStudent, $generalSetting);
+                        }
+
+                        $created[] = [
+                            'id' => $newStudent->id,
+                            'student_number' => (string) $newStudent->student_id,
+                            'name' => $newStudent->full_name,
+                            'email' => $newStudent->email,
+                            'status' => $newStudent->status,
+                        ];
+                    }
+                } catch (Throwable $rowEx) {
+                    $errors[] = 'Row '.($idx + 1)." ({$sData['first_name']} {$sData['last_name']}): ".$rowEx->getMessage();
+                }
+            }
+        });
+
+        return json_encode([
+            'success' => true,
+            'action' => 'batch_upsert',
+            'created_count' => count($created),
+            'updated_count' => count($updated),
+            'total_processed' => count($created) + count($updated),
+            'created' => $created,
+            'updated' => $updated,
+            'errors' => $errors,
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 

@@ -1119,6 +1119,78 @@ it('enrolls a student in a subject under an enrollment with idempotency and vali
     expect(SubjectEnrollment::query()->where('enrollment_id', $enrollment->id)->where('subject_id', $subject->id)->count())->toBe(1);
 });
 
+it('resolves student and subject dynamically and supports batch subject enrollment in EnrollStudentSubjectTool', function (): void {
+    $writeToken = $this->staff->createToken('Staff Write', ['mcp:read', 'mcp:write']);
+    $this->staff->withAccessToken($writeToken->accessToken);
+    $this->staff->givePermissionTo('Update:StudentEnrollment');
+
+    $student = Student::factory()->create(['school_id' => $this->school->id]);
+    $course = Course::factory()->create(['school_id' => $this->school->id]);
+    $enrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'school_id' => $this->school->id,
+        'school_year' => '2026 - 2027',
+        'semester' => 1,
+    ]);
+
+    $sub1 = Subject::factory()->create(['course_id' => $course->id, 'code' => 'ENG101', 'units' => 3]);
+    $sub2 = Subject::factory()->create(['course_id' => $course->id, 'code' => 'MATH101', 'units' => 3]);
+
+    // 1. Single dynamic resolution by student_id and subject_code
+    $singleRes = KoAkademyServer::actingAs($this->staff)
+        ->tool(EnrollStudentSubjectTool::class, [
+            'student_id' => (string) $student->student_id,
+            'subject_code' => 'ENG101',
+        ]);
+
+    $singleRes->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('subject.code', 'ENG101')
+                ->where('replayed', false)
+                ->etc();
+        });
+
+    expect(SubjectEnrollment::query()->where('enrollment_id', $enrollment->id)->where('subject_id', $sub1->id)->exists())->toBeTrue();
+
+    // 2. Batch enrollment by subjects list
+    $batchRes = KoAkademyServer::actingAs($this->staff)
+        ->tool(EnrollStudentSubjectTool::class, [
+            'student_id' => (string) $student->id,
+            'subjects' => [
+                ['subject_code' => 'ENG101'],
+                ['subject_code' => 'MATH101'],
+            ],
+        ]);
+
+    $batchRes->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('action', 'batch_enroll')
+                ->where('total_enrolled', 2)
+                ->where('total_units', 6)
+                ->etc();
+        });
+
+    expect(SubjectEnrollment::query()->where('enrollment_id', $enrollment->id)->where('subject_id', $sub2->id)->exists())->toBeTrue();
+
+    // 3. Drop dynamically by student_id and subject_code
+    $dropRes = KoAkademyServer::actingAs($this->staff)
+        ->tool(DropStudentSubjectEnrollmentTool::class, [
+            'student_id' => (string) $student->student_id,
+            'subject_code' => 'ENG101',
+            'reason' => 'Schedule adjustment',
+        ]);
+
+    $dropRes->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('dropped', true)
+                ->where('subject.code', 'ENG101')
+                ->etc();
+        });
+
+    expect(SubjectEnrollment::query()->where('enrollment_id', $enrollment->id)->where('subject_id', $sub1->id)->exists())->toBeFalse();
+});
+
 it('updates grades and remarks on a subject enrollment with idempotency and evaluates policy outcomes', function (): void {
     $writeToken = $this->staff->createToken('Staff Write', ['mcp:read', 'mcp:write']);
     $this->staff->withAccessToken($writeToken->accessToken);

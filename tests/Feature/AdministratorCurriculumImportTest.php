@@ -81,6 +81,11 @@ beforeEach(function (): void {
     $this->school = $school;
 });
 
+afterEach(function (): void {
+    app(TenantContext::class)->clear();
+    GeneralSettingsService::flushGlobalSetting();
+});
+
 it('stages the irregular workbook without creating subjects and applies only reviewed rows', function (): void {
     $dept = Department::factory()->create(['school_id' => $this->school->id]);
     $type = CourseType::factory()->create();

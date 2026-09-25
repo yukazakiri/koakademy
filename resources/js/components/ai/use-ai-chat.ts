@@ -52,6 +52,7 @@ export interface PromptOptions {
     agent?: AgentRoleKey;
     model?: string;
     provider?: string;
+    supportsDocuments?: boolean;
 }
 
 export function useAiChat({
@@ -95,7 +96,7 @@ export function useAiChat({
     }, []);
 
     const readStream = React.useCallback(
-        async (response: Response, assistantId: string, retryPromptText?: string) => {
+        async (response: Response, assistantId: string, retryPromptText?: string, documentRetryPrompt?: string) => {
             if (!response.body) {
                 throw new Error("No response body received from chat stream.");
             }
@@ -174,13 +175,20 @@ export function useAiChat({
                                 }
                             } else if (parsed.type === "error") {
                                 const errMsg = parsed.errorText || parsed.message || "An error occurred with the AI provider.";
+                                const documentCapabilityError = /does not support document attachments|only image attachments are supported/i.test(
+                                    errMsg,
+                                );
                                 setLastError({
-                                    title: "AI Generation Error",
-                                    message: errMsg,
-                                    retryPrompt: retryPromptText,
+                                    title: documentCapabilityError ? "Selected model cannot read document files" : "AI Generation Error",
+                                    message: documentCapabilityError
+                                        ? "This provider accepts image attachments only. Your request remains available; choose a model with document support or attach text exports/page images, then retry."
+                                        : errMsg,
+                                    retryPrompt: documentCapabilityError ? documentRetryPrompt : retryPromptText,
                                 });
                                 if (!accumulatedText.trim()) {
-                                    accumulatedText = `⚠️ ${errMsg}`;
+                                    accumulatedText = documentCapabilityError
+                                        ? "⚠️ This provider accepts image attachments only. Select a model with document support or attach text exports/page images, then retry."
+                                        : `⚠️ ${errMsg}`;
                                 }
                             } else if (parsed.type === "tool-approval-request" || parsed.type === "tool_approval_request") {
                                 pendingApprovals.push({
@@ -251,19 +259,23 @@ export function useAiChat({
             if ((!content.trim() && (!files || files.length === 0)) || isLoading || isSendingRef.current) return;
             isSendingRef.current = true;
 
+            const userMessage = content.trim() || (files?.length ? "Please analyze the attached file(s)." : "");
+            const originalRequest = content.trim();
+            const documentRetryPrompt = `${content.trim() ? `Original request: ${content.trim()}\n\n` : ""}My file is attached, but the selected model provider rejected document attachments. Use the extracted workbook/text content already present in this conversation to answer or continue. If visual OCR is needed, ask me to attach page images or switch to a document-capable model.`;
+
             setLastError(null);
-            setLastPrompt(content);
+            setLastPrompt(originalRequest);
 
             const chatAttachments: ChatAttachment[] = (files || []).map((file) => ({
                 name: file.name,
                 size: file.size,
                 type: file.type,
-                previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined,
+                previewUrl: ["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type) ? URL.createObjectURL(file) : undefined,
             }));
 
             appendMessage({
                 role: "user",
-                content: content.trim() || (files && files.length > 0 ? "Please analyze the attached file(s)." : ""),
+                content: userMessage,
                 attachments: chatAttachments.length > 0 ? chatAttachments : undefined,
             });
 
@@ -294,7 +306,7 @@ export function useAiChat({
                 if (files && files.length > 0) {
                     const formData = new FormData();
                     formData.append("agent", targetAgent);
-                    formData.append("message", content.trim() || "Please inspect and analyze the attached file(s).");
+                    formData.append("message", userMessage);
                     if (conversationId) {
                         formData.append("conversation_id", conversationId);
                     }
@@ -321,7 +333,7 @@ export function useAiChat({
                 } else {
                     const bodyPayload: Record<string, unknown> = {
                         agent: targetAgent,
-                        message: content.trim(),
+                        message: userMessage,
                         conversation_id: conversationId,
                     };
                     if (options?.model) {
@@ -349,20 +361,24 @@ export function useAiChat({
                 if (!response.ok) {
                     const errJson = await response.json().catch(() => ({}));
                     const errorMsg = errJson.message || `Server error (${response.status})`;
+                    const documentCapabilityError = /does not support document attachments|only image attachments are supported/i.test(errorMsg);
                     const errorObj = {
-                        title: `AI Error (${response.status})`,
-                        message: errorMsg,
-                        retryPrompt: content,
+                        title: documentCapabilityError ? "Selected model cannot read document files" : `AI Error (${response.status})`,
+                        message: documentCapabilityError
+                            ? "This provider accepts image attachments only. Your request is unchanged; switch to a document-capable model or attach text exports/page images, then retry."
+                            : errorMsg,
+                        retryPrompt: documentCapabilityError ? documentRetryPrompt : userMessage || documentRetryPrompt,
                     };
                     setLastError(errorObj);
                     throw new Error(errorMsg);
                 }
 
-                await readStream(response, assistantId, content);
+                await readStream(response, assistantId, userMessage, documentRetryPrompt);
             } catch (err: unknown) {
                 if (err instanceof Error && err.name === "AbortError") return;
 
                 const message = err instanceof Error ? err.message : "Failed to communicate with AI agent.";
+                const documentCapabilityError = /does not support document attachments|only image attachments are supported/i.test(message);
                 toast.error(message);
                 onError?.(err instanceof Error ? err : new Error(message));
 
@@ -371,7 +387,11 @@ export function useAiChat({
                         m.id === assistantId
                             ? {
                                   ...m,
-                                  content: m.content || `⚠️ Generation failed: ${message}`,
+                                  content:
+                                      m.content ||
+                                      (documentCapabilityError
+                                          ? "⚠️ This provider only accepts image attachments. Your uploaded files and prompt are preserved; switch to a document-capable model or attach page images, then retry."
+                                          : `⚠️ Generation failed: ${message}`),
                               }
                             : m,
                     ),

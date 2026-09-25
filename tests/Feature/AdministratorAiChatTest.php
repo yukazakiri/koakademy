@@ -14,6 +14,28 @@ beforeEach(function (): void {
     app(AiSettingsService::class)->clearCache();
 });
 
+it('reports available models with server-verified document capabilities', function (): void {
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $settings = app(AiSettingsService::class);
+    $data = $settings->defaults();
+    $data['enabled'] = true;
+    $data['primary_provider'] = 'openai-compatible';
+    $data['providers']['openai-compatible']['enabled'] = true;
+    $data['providers']['openai-compatible']['default_chat_model'] = 'omni';
+    $data['custom_providers']['omni'] = [
+        'enabled' => true,
+        'base_url' => 'https://omni.example.test/v1',
+        'default_chat_model' => 'vision-chat',
+    ];
+    $settings->save($data);
+
+    $response = $this->actingAs($admin)->getJson('/administrators/ai/analytics-summary')->assertOk();
+    $models = collect($response->json('models'))->keyBy('id');
+
+    expect($models->get('openai-compatible:omni')['supports_documents'] ?? true)->toBeFalse()
+        ->and($models->get('omni:vision-chat')['supports_documents'] ?? true)->toBeFalse();
+});
+
 it('renders the administrator AI chat page for authorized admins', function (): void {
     $admin = User::factory()->create(['role' => UserRole::Admin]);
 
@@ -789,9 +811,157 @@ it('extracts multi-sheet spreadsheets cleanly with titles and tables for dynamic
     $processor = app(App\Services\Ai\AiAttachmentProcessor::class);
     $processed = $processor->process([$uploaded], 'Please analyze the uploaded files and help me update records.');
 
-    expect($processed['enrichedPrompt'])->toContain('Sheet: \'Students Roster\'')
+    expect($processed['attachments'])->toBeEmpty()
+        ->and($processed['enrichedPrompt'])->toContain('Sheet: \'Students Roster\'')
         ->and($processed['enrichedPrompt'])->toContain('Sheet: \'Class Schedules\'')
         ->and($processed['enrichedPrompt'])->toContain('jose.rizal@example.com')
         ->and($processed['enrichedPrompt'])->toContain('Kitchen Lab')
         ->and($processed['enrichedPrompt'])->toContain('Document Header / Metadata');
+});
+
+it('extracts rows from image-based headerless schedule spreadsheets without losing first data rows', function (): void {
+    $book = new PhpOffice\PhpSpreadsheet\Spreadsheet();
+    $sheet = $book->getActiveSheet();
+    $sheet->fromArray([
+        ['MASTER SCHEDULE'],
+        ['COURSE CODE'],
+        ['HPC 1'],
+        ['BSHM 1A'],
+        ['MONDAY'],
+        ['08:00 - 10:00'],
+        ['Kitchen Lab 1'],
+    ]);
+    $path = tempnam(sys_get_temp_dir(), 'schedule-sheet-').'.xlsx';
+    (new PhpOffice\PhpSpreadsheet\Writer\Xlsx($book))->save($path);
+    $book->disconnectWorksheets();
+
+    $uploaded = new Illuminate\Http\UploadedFile($path, 'class-schedules.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', null, true);
+    $processed = app(App\Services\Ai\AiAttachmentProcessor::class)->process([$uploaded], 'Please read this schedule.', false);
+
+    expect($processed['attachments'])->toBeEmpty()
+        ->and($processed['enrichedPrompt'])->toContain('HPC 1')
+        ->and($processed['enrichedPrompt'])->toContain('BSHM 1A')
+        ->and($processed['enrichedPrompt'])->toContain('MONDAY')
+        ->and($processed['enrichedPrompt'])->toContain('08:00 - 10:00')
+        ->and($processed['enrichedPrompt'])->toContain('Kitchen Lab 1');
+});
+
+it('preserves an image attachment while extracting text from a workbook for image-only providers', function (): void {
+    $book = new PhpOffice\PhpSpreadsheet\Spreadsheet();
+    $book->getActiveSheet()->fromArray([
+        ['First Name', 'Last Name', 'Program'],
+        ['Ana', 'Reyes', 'BSHM'],
+    ]);
+    $workbookPath = tempnam(sys_get_temp_dir(), 'workbook-with-image-').'.xlsx';
+    (new PhpOffice\PhpSpreadsheet\Writer\Xlsx($book))->save($workbookPath);
+    $book->disconnectWorksheets();
+
+    $imagePath = tempnam(sys_get_temp_dir(), 'uploaded-image-').'.png';
+    $image = imagecreatetruecolor(2, 2);
+    imagepng($image, $imagePath);
+    imagedestroy($image);
+
+    $files = [
+        new Illuminate\Http\UploadedFile($workbookPath, 'students.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', null, true),
+        new Illuminate\Http\UploadedFile($imagePath, 'classroom.png', 'image/png', null, true),
+    ];
+
+    $processed = app(App\Services\Ai\AiAttachmentProcessor::class)->process($files, 'Analyze both files.', false);
+
+    expect($processed['attachments'])->toHaveCount(1)
+        ->and($processed['enrichedPrompt'])->toContain('Ana')
+        ->and($processed['enrichedPrompt'])->toContain('Reyes')
+        ->and($processed['enrichedPrompt'])->toContain('[Attached Image: classroom.png');
+});
+
+it('extracts text from PDFs for image-only provider fallback', function (): void {
+    $stream = 'BT /F1 18 Tf 72 720 Td (Culinary Arts Curriculum Overview) Tj ET';
+    $pdf = "%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n5 0 obj\n<< /Length ".mb_strlen($stream)." >>\nstream\n{$stream}\nendstream\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF";
+    $path = tempnam(sys_get_temp_dir(), 'curriculum-pdf-').'.pdf';
+    file_put_contents($path, $pdf);
+    $file = new Illuminate\Http\UploadedFile($path, 'curriculum.pdf', 'application/pdf', null, true);
+
+    $processed = app(App\Services\Ai\AiAttachmentProcessor::class)->process([$file], 'Summarize curriculum.', false);
+
+    expect($processed['attachments'])->toBeEmpty()
+        ->and($processed['enrichedPrompt'])->toContain('Culinary Arts Curriculum Overview');
+});
+
+it('extracts text from DOCX attachments instead of relying only on provider document support', function (): void {
+    $archive = new ZipArchive;
+    $path = tempnam(sys_get_temp_dir(), 'curriculum-docx-').'.docx';
+    $archive->open($path, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+    $archive->addFromString('word/document.xml', '<w:document xmlns:w="urn:w"><w:body><w:p><w:r><w:t>Culinary Arts Curriculum</w:t></w:r></w:p><w:p><w:r><w:t>HPC 1 Food Service</w:t></w:r></w:p></w:body></w:document>');
+    $archive->close();
+
+    $file = new Illuminate\Http\UploadedFile($path, 'curriculum.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', null, true);
+    $processed = app(App\Services\Ai\AiAttachmentProcessor::class)->process([$file], 'Analyze this curriculum.', false);
+
+    expect($processed['attachments'])->toBeEmpty()
+        ->and($processed['enrichedPrompt'])->toContain('Culinary Arts Curriculum')
+        ->and($processed['enrichedPrompt'])->toContain('HPC 1 Food Service');
+});
+
+it('returns spreadsheet content for every sheet within the text extraction row limit', function (): void {
+    $book = new PhpOffice\PhpSpreadsheet\Spreadsheet();
+    $sheet1 = $book->getActiveSheet();
+    $sheet1->setTitle('Sheet One');
+    $sheet1->fromArray([['Header'], ['first-sheet-row']]);
+    $sheet2 = $book->createSheet();
+    $sheet2->setTitle('Sheet Two');
+    $sheet2->fromArray([['Header'], ['second-sheet-row']]);
+
+    $path = tempnam(sys_get_temp_dir(), 'multiple-sheet-limit-').'.xlsx';
+    (new PhpOffice\PhpSpreadsheet\Writer\Xlsx($book))->save($path);
+    $book->disconnectWorksheets();
+    $file = new Illuminate\Http\UploadedFile($path, 'multi.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', null, true);
+    $processor = app(App\Services\Ai\AiAttachmentProcessor::class);
+
+    $processed = $processor->process([$file], 'Analyze both sheets.', false);
+
+    expect($processed['enrichedPrompt'])->toContain('first-sheet-row')
+        ->and($processed['enrichedPrompt'])->toContain('second-sheet-row')
+        ->and($processed['attachments'])->toBeEmpty();
+});
+
+it('does not pass spreadsheet Document attachments to image-only providers', function (): void {
+    $book = new PhpOffice\PhpSpreadsheet\Spreadsheet();
+    $sheet = $book->getActiveSheet();
+    $sheet->fromArray([['Student Number', 'Student Name'], ['2026-001', 'Ana Reyes']]);
+    $path = tempnam(sys_get_temp_dir(), 'provider-attachments-').'.xlsx';
+    (new PhpOffice\PhpSpreadsheet\Writer\Xlsx($book))->save($path);
+    $book->disconnectWorksheets();
+
+    $file = new Illuminate\Http\UploadedFile($path, 'students.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', null, true);
+    $processed = app(App\Services\Ai\AiAttachmentProcessor::class)->process([$file], 'Please import these students.', false);
+
+    expect($processed['attachments'])->toBeEmpty()
+        ->and($processed['enrichedPrompt'])->toContain('2026-001')
+        ->and($processed['enrichedPrompt'])->toContain('Ana Reyes');
+});
+
+it('extracts headerless schedule-style spreadsheets without dropping their first data row', function (): void {
+    $book = new PhpOffice\PhpSpreadsheet\Spreadsheet();
+    $sheet = $book->getActiveSheet();
+    $sheet->fromArray([
+        ['MASTER SCHEDULE'],
+        ['Course Code'],
+        ['BSHM 1A'],
+        ['1ST SEMESTER'],
+        ['HPC 1'],
+        ['Monday'],
+        ['08:00 - 10:00'],
+        ['Kitchen Lab 1'],
+    ]);
+    $path = tempnam(sys_get_temp_dir(), 'headerless-schedule-').'.xlsx';
+    (new PhpOffice\PhpSpreadsheet\Writer\Xlsx($book))->save($path);
+    $book->disconnectWorksheets();
+
+    $file = new Illuminate\Http\UploadedFile($path, 'schedule.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', null, true);
+    $processed = app(App\Services\Ai\AiAttachmentProcessor::class)->process([$file], 'Explain this schedule.', false);
+
+    expect($processed['enrichedPrompt'])->toContain('HPC 1')
+        ->and($processed['enrichedPrompt'])->toContain('Monday')
+        ->and($processed['enrichedPrompt'])->toContain('08:00 - 10:00')
+        ->and($processed['enrichedPrompt'])->toContain('Kitchen Lab 1');
 });

@@ -994,6 +994,17 @@ final class AdministratorStudentManagementController extends Controller
             $request->merge(['student_id' => $identifierGenerator->previewStudentId()]);
         }
 
+        // Sanitize name fields to prevent stored XSS attacks
+        $sanitizedNames = [];
+        foreach (['first_name', 'middle_name', 'last_name', 'suffix'] as $field) {
+            if ($request->filled($field)) {
+                $sanitizedNames[$field] = strip_tags((string) $request->input($field));
+            }
+        }
+        if ($sanitizedNames !== []) {
+            $request->merge($sanitizedNames);
+        }
+
         $validated = $request->validate([
             'student_type' => ['required', Rule::enum(StudentType::class)],
             'first_name' => ['required', 'string', 'max:100'],
@@ -1377,6 +1388,17 @@ final class AdministratorStudentManagementController extends Controller
             $generatedId = mb_str_pad((string) $student->id, 6, '0', STR_PAD_LEFT);
             $request->merge(['student_id' => $generatedId]);
             $idWasGenerated = true;
+        }
+
+        // Sanitize name fields to prevent stored XSS attacks
+        $sanitizedNames = [];
+        foreach (['first_name', 'middle_name', 'last_name', 'suffix'] as $field) {
+            if ($request->filled($field)) {
+                $sanitizedNames[$field] = strip_tags((string) $request->input($field));
+            }
+        }
+        if ($sanitizedNames !== []) {
+            $request->merge($sanitizedNames);
         }
 
         $validated = $request->validate([

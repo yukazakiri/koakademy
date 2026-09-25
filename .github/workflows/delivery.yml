@@ -366,12 +366,49 @@ jobs:
         env:
           DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
           SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           ghcr_ref="ghcr.io/${GITHUB_REPOSITORY}:sha-${SOURCE_SHA}"
           dockerhub_ref="${DOCKERHUB_IMAGE}:sha-${SOURCE_SHA}"
 
           remote_digest() {
             "${RUNNER_TEMP}/crane" digest "$1" 2>/dev/null || true
+          }
+
+          verify_provenance() {
+            local subject_name="$1"
+            local subject_digest="$2"
+
+            printf 'Verifying provenance for %s@%s...\n' "${subject_name}" "${subject_digest}"
+
+            attestation_json="$(gh attestation verify \
+              "oci://${subject_name}@${subject_digest}" \
+              --owner "${GITHUB_REPOSITORY_OWNER}" \
+              --format json 2>&1)" || {
+              printf 'Provenance verification failed: %s\n' "${attestation_json}" >&2
+              return 1
+            }
+
+            workflow_ref="$(jq --raw-output \
+              '.verificationResult.statement.predicate.buildDefinition.externalParameters.workflow.ref' \
+              <<<"${attestation_json}")"
+            workflow_repo="$(jq --raw-output \
+              '.verificationResult.statement.predicate.buildDefinition.externalParameters.workflow.repository' \
+              <<<"${attestation_json}")"
+
+            if [[ "${workflow_repo}" != "https://github.com/${GITHUB_REPOSITORY}" ]]; then
+              printf 'Provenance workflow repository %s does not match expected %s.\n' \
+                "${workflow_repo}" "https://github.com/${GITHUB_REPOSITORY}" >&2
+              return 1
+            fi
+
+            if [[ ! "${workflow_ref}" =~ ^refs/heads/master(@refs/heads/master)?$ ]]; then
+              printf 'Provenance workflow ref %s is not from the master branch.\n' "${workflow_ref}" >&2
+              return 1
+            fi
+
+            printf 'Provenance verified: built by %s from %s\n' "${workflow_repo}" "${workflow_ref}"
+            return 0
           }
 
           ghcr_digest="$(remote_digest "${ghcr_ref}")"
@@ -382,15 +419,29 @@ jobs:
             replication_required=true
             digest=
           elif [[ -n "${ghcr_digest}" && "${ghcr_digest}" == "${dockerhub_digest}" ]]; then
-            printf 'Reusing immutable image %s.\n' "${ghcr_digest}"
-            build_required=false
-            replication_required=false
-            digest="${ghcr_digest}"
+            if verify_provenance "ghcr.io/${GITHUB_REPOSITORY}" "${ghcr_digest}"; then
+              printf 'Reusing immutable image %s with verified provenance.\n' "${ghcr_digest}"
+              build_required=false
+              replication_required=false
+              digest="${ghcr_digest}"
+            else
+              printf 'Existing GHCR image lacks valid provenance; rebuilding is required.\n' >&2
+              build_required=true
+              replication_required=true
+              digest=
+            fi
           elif [[ -n "${ghcr_digest}" && -z "${dockerhub_digest}" ]]; then
-            printf 'Repairing the missing Docker Hub copy from immutable GHCR image %s.\n' "${ghcr_digest}"
-            build_required=false
-            replication_required=true
-            digest="${ghcr_digest}"
+            if verify_provenance "ghcr.io/${GITHUB_REPOSITORY}" "${ghcr_digest}"; then
+              printf 'Repairing the missing Docker Hub copy from immutable GHCR image %s with verified provenance.\n' "${ghcr_digest}"
+              build_required=false
+              replication_required=true
+              digest="${ghcr_digest}"
+            else
+              printf 'Existing GHCR image lacks valid provenance; rebuilding is required.\n' >&2
+              build_required=true
+              replication_required=true
+              digest=
+            fi
           else
             printf 'Immutable SHA tags are missing from one registry or have different digests.\n' >&2
             exit 1
@@ -407,12 +458,49 @@ jobs:
         env:
           DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
           SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           ghcr_ref="ghcr.io/${GITHUB_REPOSITORY}:sha-${SOURCE_SHA}-franken"
           dockerhub_ref="${DOCKERHUB_IMAGE}:sha-${SOURCE_SHA}-franken"
 
           remote_digest() {
             "${RUNNER_TEMP}/crane" digest "$1" 2>/dev/null || true
+          }
+
+          verify_provenance() {
+            local subject_name="$1"
+            local subject_digest="$2"
+
+            printf 'Verifying provenance for %s@%s...\n' "${subject_name}" "${subject_digest}"
+
+            attestation_json="$(gh attestation verify \
+              "oci://${subject_name}@${subject_digest}" \
+              --owner "${GITHUB_REPOSITORY_OWNER}" \
+              --format json 2>&1)" || {
+              printf 'Provenance verification failed: %s\n' "${attestation_json}" >&2
+              return 1
+            }
+
+            workflow_ref="$(jq --raw-output \
+              '.verificationResult.statement.predicate.buildDefinition.externalParameters.workflow.ref' \
+              <<<"${attestation_json}")"
+            workflow_repo="$(jq --raw-output \
+              '.verificationResult.statement.predicate.buildDefinition.externalParameters.workflow.repository' \
+              <<<"${attestation_json}")"
+
+            if [[ "${workflow_repo}" != "https://github.com/${GITHUB_REPOSITORY}" ]]; then
+              printf 'Provenance workflow repository %s does not match expected %s.\n' \
+                "${workflow_repo}" "https://github.com/${GITHUB_REPOSITORY}" >&2
+              return 1
+            fi
+
+            if [[ ! "${workflow_ref}" =~ ^refs/heads/master(@refs/heads/master)?$ ]]; then
+              printf 'Provenance workflow ref %s is not from the master branch.\n' "${workflow_ref}" >&2
+              return 1
+            fi
+
+            printf 'Provenance verified: built by %s from %s\n' "${workflow_repo}" "${workflow_ref}"
+            return 0
           }
 
           ghcr_digest="$(remote_digest "${ghcr_ref}")"
@@ -423,15 +511,29 @@ jobs:
             replication_required=true
             digest=
           elif [[ -n "${ghcr_digest}" && "${ghcr_digest}" == "${dockerhub_digest}" ]]; then
-            printf 'Reusing immutable FrankenPHP image %s.\n' "${ghcr_digest}"
-            build_required=false
-            replication_required=false
-            digest="${ghcr_digest}"
+            if verify_provenance "ghcr.io/${GITHUB_REPOSITORY}" "${ghcr_digest}"; then
+              printf 'Reusing immutable FrankenPHP image %s with verified provenance.\n' "${ghcr_digest}"
+              build_required=false
+              replication_required=false
+              digest="${ghcr_digest}"
+            else
+              printf 'Existing GHCR FrankenPHP image lacks valid provenance; rebuilding is required.\n' >&2
+              build_required=true
+              replication_required=true
+              digest=
+            fi
           elif [[ -n "${ghcr_digest}" && -z "${dockerhub_digest}" ]]; then
-            printf 'Repairing the missing Docker Hub copy from immutable GHCR FrankenPHP image %s.\n' "${ghcr_digest}"
-            build_required=false
-            replication_required=true
-            digest="${ghcr_digest}"
+            if verify_provenance "ghcr.io/${GITHUB_REPOSITORY}" "${ghcr_digest}"; then
+              printf 'Repairing the missing Docker Hub copy from immutable GHCR FrankenPHP image %s with verified provenance.\n' "${ghcr_digest}"
+              build_required=false
+              replication_required=true
+              digest="${ghcr_digest}"
+            else
+              printf 'Existing GHCR FrankenPHP image lacks valid provenance; rebuilding is required.\n' >&2
+              build_required=true
+              replication_required=true
+              digest=
+            fi
           else
             printf 'Immutable FrankenPHP SHA tags are missing from one registry or have different digests.\n' >&2
             exit 1

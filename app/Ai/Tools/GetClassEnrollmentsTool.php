@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace App\Ai\Tools;
 
 use App\Models\Classes;
+use App\Models\Faculty;
+use App\Models\User;
 use App\Services\GeneralSettingsService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
@@ -21,6 +24,16 @@ final class GetClassEnrollmentsTool implements Tool
 
     public function handle(Request $request): Stringable|string
     {
+        $user = Auth::user();
+        if (! $user instanceof User) {
+            return json_encode(['error' => true, 'message' => 'Authentication is required.'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        }
+
+        $faculty = Faculty::query()->where('user_id', $user->id)->first();
+        if (! $faculty instanceof Faculty) {
+            return json_encode(['error' => true, 'message' => 'Faculty record not found for this account.'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        }
+
         $validated = $request->validate([
             'class_id' => 'nullable|integer',
             'subject_code' => 'nullable|string',
@@ -29,18 +42,20 @@ final class GetClassEnrollmentsTool implements Tool
             'semester' => 'nullable|integer',
         ]);
 
-        $query = Classes::query()->with([
-            'class_enrollments.student.personalInfo',
-            'faculty',
-            'room',
-            'schedules',
-        ]);
+        $query = Classes::query()
+            ->where('faculty_id', $faculty->id)
+            ->with([
+                'class_enrollments.student.personalInfo',
+                'faculty',
+                'room',
+                'schedules',
+            ]);
 
         if (filled($validated['class_id'] ?? null)) {
             $class = $query->find($validated['class_id']);
 
             if (! $class instanceof Classes) {
-                return "Class #{$validated['class_id']} was not found in records.";
+                return "Class #{$validated['class_id']} was not found in records or does not belong to your teaching assignments.";
             }
 
             return $this->formatSingleClassResponse($class);
@@ -89,7 +104,7 @@ final class GetClassEnrollmentsTool implements Tool
         if ($classes->isEmpty()) {
             $identifier = $validated['subject_code'].(filled($validated['section'] ?? null) ? " (Section {$validated['section']})" : '');
 
-            return "Class '{$identifier}' was not found in records.";
+            return "Class '{$identifier}' was not found in records or does not belong to your teaching assignments.";
         }
 
         if ($classes->count() === 1) {

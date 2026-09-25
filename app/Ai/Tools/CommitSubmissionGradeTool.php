@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace App\Ai\Tools;
 
 use App\Models\ClassPostSubmission;
+use App\Models\Faculty;
+use App\Models\User;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\Support\Facades\Auth;
 use Laravel\Ai\Approvals\Approval;
 use Laravel\Ai\Concerns\InteractsWithApprovals;
 use Laravel\Ai\Contracts\Approvable;
@@ -24,15 +27,36 @@ final class CommitSubmissionGradeTool implements Approvable, Tool
 
     public function handle(Request $request): Stringable|string
     {
+        $user = Auth::user();
+        if (! $user instanceof User) {
+            return json_encode(['error' => true, 'message' => 'Authentication is required.'], JSON_PRETTY_PRINT);
+        }
+
+        $faculty = Faculty::query()->where('user_id', $user->id)->first();
+        if (! $faculty instanceof Faculty) {
+            return json_encode(['error' => true, 'message' => 'Faculty record not found for this account.'], JSON_PRETTY_PRINT);
+        }
+
         $validated = $request->validate([
             'submission_id' => 'required|integer',
             'points' => 'required|integer|min:0',
             'feedback' => 'required|string',
         ]);
 
-        $submission = ClassPostSubmission::query()->find($validated['submission_id']);
+        $submission = ClassPostSubmission::query()
+            ->with(['classPost.class'])
+            ->find($validated['submission_id']);
+
         if (! $submission instanceof ClassPostSubmission) {
             return "Submission #{$validated['submission_id']} was not found.";
+        }
+
+        $class = $submission->classPost?->class;
+        if (! $class || $class->faculty_id !== $faculty->id) {
+            return json_encode([
+                'error' => true,
+                'message' => 'Access denied. This submission does not belong to a class you are teaching.',
+            ], JSON_PRETTY_PRINT);
         }
 
         $submission->update([

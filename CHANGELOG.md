@@ -1,5 +1,45 @@
 # Changelog
 
+## [1.27.0](https://github.com/yukazakiri/koakademy/compare/v1.26.0...v1.27.0) (2026-09-25)
+
+
+### Features
+
+* **admin:** redesign administrator sidebar using ReUI and Spectrum UI ([2cb020a](https://github.com/yukazakiri/koakademy/commit/2cb020ac9d633f0be18140af7929ff5d43824753))
+* **ai:** add SHDR-14 orb to administrator chat welcome screen ([#338](https://github.com/yukazakiri/koakademy/issues/338)) ([5b5ad5f](https://github.com/yukazakiri/koakademy/commit/5b5ad5f25e1d79fe2fdcb9c8929fbbc6ce214ee1))
+* **ai:** allow administrators to upload, review, and import curriculum workbooks via MCP ([#341](https://github.com/yukazakiri/koakademy/issues/341)) ([ea2830c](https://github.com/yukazakiri/koakademy/commit/ea2830ce57bd6994a9daca08653882390b454b86))
+* **installer:** seamless domain-optional Swarm install with live progress ([ad9ae13](https://github.com/yukazakiri/koakademy/commit/ad9ae1391b4b4c618d3e545c81f30577492e1a20))
+* **setup:** redesign as full-page guided setup and add dynamic country catalog architecture ([0d1411d](https://github.com/yukazakiri/koakademy/commit/0d1411dc05ac1a69fadb5cb5f724ef89ca6055ba))
+* **setup:** redesign as minimalist onboarding with reui and spectrum ui ([0094036](https://github.com/yukazakiri/koakademy/commit/00940365ffbde7b705571b2cec02b1808735fe7c))
+* **setup:** revamp setup into guided onboarding experience for administrators ([2de79dd](https://github.com/yukazakiri/koakademy/commit/2de79ddf6c2c8f1edd9ce8d97bb8a4b10a9edc59))
+* **skills:** Add agent skills and optimize settings services ([499f30a](https://github.com/yukazakiri/koakademy/commit/499f30a7126c2aa68ad554637c0807e54811bd55))
+* **skills:** add and update agent skills ([009ec57](https://github.com/yukazakiri/koakademy/commit/009ec57ebfd704da3f795e9fdcd70ce8d08f159c))
+
+
+### Bug Fixes
+
+* **ai:** resolve class schedules by compound code and section identifier ([#335](https://github.com/yukazakiri/koakademy/issues/335)) ([3d8d66e](https://github.com/yukazakiri/koakademy/commit/3d8d66e35ab1c90e6278d0a0761811009ff23760))
+* **docs:** resolve security vulnerabilities in dependencies ([58b53ea](https://github.com/yukazakiri/koakademy/commit/58b53ea82c5cb068e49387342fe1319d3879c8c7))
+* **student:** improve tuition request experience ([#332](https://github.com/yukazakiri/koakademy/issues/332)) ([3b9b755](https://github.com/yukazakiri/koakademy/commit/3b9b75530eb17fc8808fbf0a9367896806600312))
+* **students:** initialize active filters synchronously from props on students directory ([7d9eba3](https://github.com/yukazakiri/koakademy/commit/7d9eba3ae8250a3b5a6ef821cc1433e9309cded9))
+* **ui:** resolve white text on buttons and select triggers in light mode ([718e0de](https://github.com/yukazakiri/koakademy/commit/718e0de2164933e2077c1b311a632bf6c9c02b4c))
+
+
+### Performance Improvements
+
+* **core:** memoize global feature states and general settings instances ([b6dd815](https://github.com/yukazakiri/koakademy/commit/b6dd81546171bac0efd9bce3ed8006d3858d1bfe))
+* **students:** aggregate status counts in single query and optimize fullName attribute ([5ddb450](https://github.com/yukazakiri/koakademy/commit/5ddb450858ef93c60c81117d5d4a2426a729ca8a))
+
+
+### Tests
+
+* upgrade Laravel AI SDK to 1.0 ([#337](https://github.com/yukazakiri/koakademy/issues/337)) ([d56ffd0](https://github.com/yukazakiri/koakademy/commit/d56ffd00a836eaf705f5ca24dd6ae36d3e16b926))
+
+
+### Maintenance
+
+* **deps:** update Laravel to 13.33 ([#336](https://github.com/yukazakiri/koakademy/issues/336)) ([63ef10a](https://github.com/yukazakiri/koakademy/commit/63ef10a976b36912bf96343dc88bdf110c27c69e))
+
 ## [1.26.0](https://github.com/yukazakiri/koakademy/compare/v1.25.0...v1.26.0) (2026-09-23)
 
 

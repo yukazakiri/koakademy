@@ -6,6 +6,7 @@ namespace App\Ai\Tools;
 
 use App\Models\Student;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\Support\Facades\Auth;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
@@ -19,6 +20,15 @@ final class AuditGraduationClearanceTool implements Tool
 
     public function handle(Request $request): Stringable|string
     {
+        $user = Auth::user();
+        
+        if (! $user || (! $user->hasRole('super_admin') && ! $user->can('manage_clearance'))) {
+            return json_encode([
+                'error' => true,
+                'message' => 'Unauthorized: This tool requires the manage_clearance permission.',
+            ], JSON_PRETTY_PRINT);
+        }
+
         $validated = $request->validate([
             'student_id' => 'required|integer',
         ]);

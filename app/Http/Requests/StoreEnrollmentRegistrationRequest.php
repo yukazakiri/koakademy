@@ -155,6 +155,18 @@ final class StoreEnrollmentRegistrationRequest extends FormRequest
         if (! $this->filled('income_bracket_mode')) {
             $this->merge(['income_bracket_mode' => (string) config('income_brackets.default_mode', 'annual')]);
         }
+
+        // Sanitize name fields to prevent stored XSS attacks
+        $sanitizedNames = [];
+        foreach (['first_name', 'middle_name', 'last_name', 'suffix'] as $field) {
+            if ($this->filled($field)) {
+                $sanitizedNames[$field] = strip_tags((string) $this->input($field));
+            }
+        }
+
+        if ($sanitizedNames !== []) {
+            $this->merge($sanitizedNames);
+        }
     }
 
     /**

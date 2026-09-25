@@ -41,10 +41,27 @@ final class DropStudentSubjectEnrollmentTool extends Tool
 
         $idempotencyKey = $validated['idempotency_key'] ?? (string) \Illuminate\Support\Str::uuid();
 
-        $subjectEnrollment = null;
+        // When the caller references a record by ID, check the idempotency
+        // log first so replaying a drop after the row was deleted still
+        // returns the original result instead of "record not found".
         if (filled($validated['subject_enrollment_id'] ?? null)) {
-            $subjectEnrollment = SubjectEnrollment::query()->with(['enrollment', 'subject'])->find((int) $validated['subject_enrollment_id']);
+            $providedId = (int) $validated['subject_enrollment_id'];
+            $replayKey = hash('sha256', "mcp:drop-subject:{$providedId}:{$idempotencyKey}");
+            $replayedEvent = EnrollmentWorkflowEvent::query()->where('idempotency_key', $replayKey)->first();
+            if ($replayedEvent instanceof EnrollmentWorkflowEvent) {
+                return Response::structured([
+                    'subject_enrollment_id' => $providedId,
+                    'dropped' => true,
+                    'replayed' => true,
+                    'reason' => $replayedEvent->reason,
+                    'idempotency_key' => $idempotencyKey,
+                    'message' => 'This subject enrollment was already dropped.',
+                ]);
+            }
+
+            $subjectEnrollment = SubjectEnrollment::query()->with(['enrollment', 'subject'])->find($providedId);
         } elseif (filled($validated['student_id'] ?? null)) {
+            $subjectEnrollment = null;
             $student = $this->resolveStudent((string) $validated['student_id']);
             if ($student instanceof \App\Models\Student) {
                 $query = SubjectEnrollment::query()->where('student_id', $student->id)->with(['enrollment', 'subject'])->latest('id');

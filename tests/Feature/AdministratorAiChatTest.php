@@ -471,7 +471,7 @@ it('manages student profiles with approval gates via ManageStudentTool', functio
 
     $createResult = json_decode((string) $tool->handle($createRequest), true);
     expect($createResult['success'])->toBeTrue()
-        ->and($createResult['student']['name'])->toBe('Johnson, Katherine ')
+        ->and($createResult['student']['name'])->toBe('Johnson, Katherine')
         ->and($createResult['student']['email'])->toBe('katherine.johnson@example.com');
 
     $studentId = $createResult['student']['id'];

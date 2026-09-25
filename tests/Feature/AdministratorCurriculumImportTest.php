@@ -69,6 +69,7 @@ function importSelection(array $rows, string $mode = 'new', array $options = [])
 }
 
 beforeEach(function (): void {
+    GeneralSettingsService::flushGlobalSetting();
     $school = School::factory()->create();
     $admin = User::factory()->create(['role' => UserRole::Admin, 'school_id' => $school->id]);
     foreach (['View:Course', 'Create:Course', 'Update:Course', 'Create:Subject', 'Update:Subject'] as $permission) {
@@ -133,6 +134,8 @@ it('does not allow applying without approval or when MCP writes are disabled', f
     $this->postJson("{$url}/{$draft['id']}/approve", $selection)->assertOk();
     app(GeneralSettingsService::class)->updateApiManagementConfig(['mcp_write_enabled' => false]);
     $this->postJson("{$url}/{$draft['id']}/apply")->assertForbidden();
+    app(GeneralSettingsService::class)->updateApiManagementConfig(['mcp_write_enabled' => true]);
+    GeneralSettingsService::flushGlobalSetting();
     expect(Course::query()->count())->toBe(0)
         ->and(Subject::query()->count())->toBe(0);
 });

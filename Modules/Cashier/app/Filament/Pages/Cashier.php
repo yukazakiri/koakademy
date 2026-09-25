@@ -1013,7 +1013,40 @@ final class Cashier extends Page implements HasForms
             return;
         }
 
+        // Validate that a student is selected
+        if (! $this->selectedStudent instanceof \App\Models\Student) {
+            Notification::make()
+                ->title('No student selected.')
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        // Get the current school year and semester from form state
+        $state = $this->form->getState();
+        $schoolYear = $state['selectedSchoolYear'] ?? GeneralSetting::first()->getSchoolYear();
+        $semester = $state['selectedSemester'] ?? GeneralSetting::first()->semester;
+
+        // Build a collection of valid tuition IDs that belong to the selected student
+        // The Student model uses BelongsToSchool trait, so this query is automatically
+        // scoped to the current school context
+        $validTuitionIds = $this->selectedStudent->StudentTuition()
+            ->where('school_year', $schoolYear)
+            ->where('semester', $semester)
+            ->pluck('id')
+            ->toArray();
+
+        $updatedCount = 0;
+
         foreach ($this->studentTuitionData as $tuitionData) {
+            // Validate that the tuition ID exists and belongs to the selected student
+            if (! isset($tuitionData['id']) || ! in_array($tuitionData['id'], $validTuitionIds, true)) {
+                continue;
+            }
+
+            // Fetch the tuition record - we know it belongs to the selected student
+            // and the student is already scoped to the current school
             $tuition = \App\Models\StudentTuition::find($tuitionData['id']);
             if ($tuition) {
                 // Recalculate totals before updating
@@ -1031,13 +1064,22 @@ final class Cashier extends Page implements HasForms
                     'downpayment' => $tuitionData['downpayment'],
                     'total_balance' => $totalBalance,
                 ]);
+
+                $updatedCount++;
             }
         }
 
-        Notification::make()
-            ->title('Tuition details saved successfully')
-            ->success()
-            ->send();
+        if ($updatedCount > 0) {
+            Notification::make()
+                ->title('Tuition details saved successfully')
+                ->success()
+                ->send();
+        } else {
+            Notification::make()
+                ->title('No valid tuition records to update.')
+                ->warning()
+                ->send();
+        }
 
         // Refresh the data in the form
         $this->updateStudentTuitionData();

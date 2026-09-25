@@ -156,10 +156,14 @@ final class Cashier extends Page implements HasForms
                                     ->content(
                                         fn ($get): HtmlString => new HtmlString(
                                             '<span class="">'.
-                                                ($get('selectedStudent')
-                                                    ? $get('selectedStudent')
-                                                        ->fullname
-                                                    : 'N/A').
+                                                htmlspecialchars(
+                                                    ($get('selectedStudent')
+                                                        ? $get('selectedStudent')
+                                                            ->fullname
+                                                        : 'N/A'),
+                                                    ENT_QUOTES,
+                                                    'UTF-8'
+                                                ).
                                                 '</span>'
                                         )
                                     ),
@@ -169,10 +173,14 @@ final class Cashier extends Page implements HasForms
                                     ->content(
                                         fn ($get): HtmlString => new HtmlString(
                                             '<span class="">'.
-                                                ($get('selectedStudent')
-                                                    ? $get('selectedStudent')
-                                                        ->course->code
-                                                    : 'N/A').
+                                                htmlspecialchars(
+                                                    ($get('selectedStudent')
+                                                        ? $get('selectedStudent')
+                                                            ->course->code
+                                                        : 'N/A'),
+                                                    ENT_QUOTES,
+                                                    'UTF-8'
+                                                ).
                                                 '</span>'
                                         )
                                     ),
@@ -186,9 +194,13 @@ final class Cashier extends Page implements HasForms
                                         return new HtmlString(
                                             '
                                             <span class="bg-primary-500/10 p-2 rounded-md text-primary-500 text-sm border border-primary-500"> ID#'.
-                                                ($student
-                                                    ? $student->id
-                                                    : 'N/A').
+                                                htmlspecialchars(
+                                                    (string) ($student
+                                                        ? $student->id
+                                                        : 'N/A'),
+                                                    ENT_QUOTES,
+                                                    'UTF-8'
+                                                ).
                                                 '</span>
                                         '
                                         );
@@ -204,9 +216,13 @@ final class Cashier extends Page implements HasForms
                                         return new HtmlString(
                                             '
                                             <span class="bg-primary-500/10 p-2 rounded-md text-primary-500 text-sm border border-primary-500">'.
-                                                ($student
-                                                    ? $student->formatted_academic_year
-                                                    : 'N/A').
+                                                htmlspecialchars(
+                                                    ($student
+                                                        ? $student->formatted_academic_year
+                                                        : 'N/A'),
+                                                    ENT_QUOTES,
+                                                    'UTF-8'
+                                                ).
                                                 '</span>
                                         '
                                         );
@@ -833,30 +849,30 @@ final class Cashier extends Page implements HasForms
 
                                                 $html .= '<tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
                                                     <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">'.
-                                                        $transaction->created_at->format('M d, Y h:i A').
+                                                        htmlspecialchars($transaction->created_at->format('M d, Y h:i A'), ENT_QUOTES, 'UTF-8').
                                                     '</td>
                                                     <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">'.
-                                                        $transaction->invoicenumber.
+                                                        htmlspecialchars((string) $transaction->invoicenumber, ENT_QUOTES, 'UTF-8').
                                                     '</td>
-                                                    <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate" title="'.$transaction->description.'">'.
-                                                        $transaction->description.
+                                                    <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate" title="'.htmlspecialchars($transaction->description, ENT_QUOTES, 'UTF-8').'">'.
+                                                        htmlspecialchars($transaction->description, ENT_QUOTES, 'UTF-8').
                                                     '</td>
                                                     <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">₱ '.
-                                                        number_format((float) ($transaction->total_amount ?? 0), 2).
+                                                        htmlspecialchars(number_format((float) ($transaction->total_amount ?? 0), 2), ENT_QUOTES, 'UTF-8').
                                                     '</td>
                                                     <td class="px-4 py-3 whitespace-nowrap">
                                                         <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full '.$statusClass.'">
-                                                            '.$transaction->status.'
+                                                            '.htmlspecialchars($transaction->status, ENT_QUOTES, 'UTF-8').'
                                                         </span>
                                                     </td>
                                                     <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                                         <div class="flex space-x-2">
-                                                            <a href="/transactions/'.$transaction->transaction_number.'"
+                                                            <a href="/transactions/'.htmlspecialchars($transaction->transaction_number, ENT_QUOTES, 'UTF-8').'"
                                                                class="text-primary-600 hover:text-primary-900 dark:text-primary-500 dark:hover:text-primary-400 font-medium text-xs"
                                                                target="_blank">
                                                                 View
                                                             </a>
-                                                            <a href="/transactions/'.$transaction->transaction_number.'/print"
+                                                            <a href="/transactions/'.htmlspecialchars($transaction->transaction_number, ENT_QUOTES, 'UTF-8').'/print"
                                                                class="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200 font-medium text-xs"
                                                                target="_blank">
                                                                 Print
@@ -871,7 +887,7 @@ final class Cashier extends Page implements HasForms
                                             // Add pagination info
                                             $html .= '<div class="mt-4 text-sm text-gray-500 dark:text-gray-400">
                                                 Showing up to 15 most recent transactions.
-                                                <a href="/admin/transactions?student_id='.$student->id.'" class="text-primary-600 hover:underline">
+                                                <a href="/admin/transactions?student_id='.htmlspecialchars((string) $student->id, ENT_QUOTES, 'UTF-8').'" class="text-primary-600 hover:underline">
                                                     View all transactions
                                                 </a>
                                             </div>';

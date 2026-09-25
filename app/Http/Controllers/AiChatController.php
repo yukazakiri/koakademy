@@ -30,6 +30,7 @@ use InvalidArgumentException;
 use Laravel\Ai\Approvals\Decision;
 use Laravel\Ai\Approvals\Decisions;
 use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Files\Document;
 use Laravel\Ai\Models\Conversation;
 use Laravel\Pennant\Feature;
 use Throwable;
@@ -102,13 +103,6 @@ final class AiChatController extends Controller
             $rawFiles = [$rawFiles];
         }
 
-        if (is_string($prompt) && ! empty($rawFiles)) {
-            $processor = app(AiAttachmentProcessor::class);
-            $processed = $processor->process($rawFiles, $prompt);
-            $prompt = $processed['enrichedPrompt'];
-            $aiAttachments = $processed['attachments'];
-        }
-
         $conversationId = $validated['conversation_id'] ?? null;
 
         if ($conversationId) {
@@ -129,6 +123,9 @@ final class AiChatController extends Controller
             [$p, $m] = explode(':', $selectedModel, 2);
             $selectedProvider = $p;
             $selectedModel = $m;
+        }
+        if (blank($selectedProvider)) {
+            $selectedProvider = (string) ($aiSettings['primary_provider'] ?? config('ai.default', 'anthropic'));
         }
 
         // If no provider or model selected, use primary provider or fallback to first configured provider
@@ -194,19 +191,29 @@ final class AiChatController extends Controller
             ]);
         }
 
+        $supportsDocumentAttachments = $this->providerSupportsDocumentAttachments($selectedProvider, $selectedModel);
+        if (is_string($prompt) && ! empty($rawFiles)) {
+            $processor = app(AiAttachmentProcessor::class);
+            $processed = $processor->process($rawFiles, $prompt, $supportsDocumentAttachments);
+            $prompt = $processed['enrichedPrompt'];
+            $aiAttachments = $processed['attachments'];
+        }
+
         $agentKey = $validated['agent'];
 
-        return response()->stream(function () use ($agentInstance, $prompt, $aiAttachments, $selectedProvider, $selectedModel, $agentKey, $aiSettings) {
+        return response()->stream(function () use ($agentInstance, $prompt, $aiAttachments, $selectedProvider, $selectedModel, $agentKey, $aiSettings, $supportsDocumentAttachments) {
             try {
                 $stream = null;
                 $iterator = null;
 
                 try {
-                    $stream = $agentInstance->stream(
+                    $stream = $this->streamWithDocumentCompatibility(
+                        $agentInstance,
                         $prompt,
-                        attachments: $aiAttachments,
-                        provider: filled($selectedProvider) ? $selectedProvider : null,
-                        model: filled($selectedModel) ? $selectedModel : null,
+                        $aiAttachments,
+                        $selectedProvider,
+                        $selectedModel,
+                        $supportsDocumentAttachments,
                     );
                     $iterator = $stream->getIterator();
                     $iterator->rewind();
@@ -229,11 +236,13 @@ final class AiChatController extends Controller
 
                         $selectedProvider = $fallbackProvider;
                         $selectedModel = $fallbackModel;
-                        $stream = $agentInstance->stream(
+                        $stream = $this->streamWithDocumentCompatibility(
+                            $agentInstance,
                             $prompt,
-                            attachments: $aiAttachments,
-                            provider: filled($fallbackProvider) ? $fallbackProvider : null,
-                            model: filled($fallbackModel) ? $fallbackModel : null,
+                            $aiAttachments,
+                            $fallbackProvider,
+                            $fallbackModel,
+                            $this->providerSupportsDocumentAttachments($fallbackProvider, $fallbackModel),
                         );
                         $iterator = $stream->getIterator();
                         $iterator->rewind();
@@ -501,6 +510,77 @@ final class AiChatController extends Controller
         }
 
         return [$providerKey, null];
+    }
+
+    private function streamWithDocumentCompatibility(
+        mixed $agentInstance,
+        string $prompt,
+        array $attachments,
+        ?string $provider,
+        ?string $model,
+        bool $supportsDocuments,
+    ): mixed {
+        $documentsRemoved = array_values(array_filter(
+            $attachments,
+            static fn (mixed $attachment): bool => ! $attachment instanceof Document,
+        ));
+
+        try {
+            return $agentInstance->stream(
+                $prompt,
+                attachments: $attachments,
+                provider: filled($provider) ? $provider : null,
+                model: filled($model) ? $model : null,
+            );
+        } catch (Throwable $exception) {
+            $message = mb_strtolower($this->extractErrorMessage($exception));
+            $documentError = str_contains($message, 'does not support document attachments')
+                || str_contains($message, 'document attachments are not supported')
+                || str_contains($message, 'only image attachments are supported');
+
+            if (! $documentError || $documentsRemoved === $attachments) {
+                throw $exception;
+            }
+
+            Log::warning('AI provider rejected document attachments; retrying with extracted text and images only.', [
+                'provider' => $provider,
+                'model' => $model,
+                'agent' => $agentInstance::class,
+            ]);
+
+            return $agentInstance->stream(
+                $prompt,
+                attachments: $documentsRemoved,
+                provider: filled($provider) ? $provider : null,
+                model: filled($model) ? $model : null,
+            );
+        }
+    }
+
+    private function providerSupportsDocumentAttachments(?string $provider, ?string $model): bool
+    {
+        $settings = app(AiSettingsService::class)->get();
+        if (filled($provider) && isset($settings['custom_providers'][$provider])) {
+            return false;
+        }
+
+        if (filled($provider)) {
+            $providerKey = str_contains($provider, ':') ? explode(':', $provider, 2)[0] : $provider;
+            if ($providerKey === 'openai-compatible'
+                || isset($settings['custom_providers'][$providerKey])
+                || config("ai.providers.{$providerKey}.driver") === 'openai-compatible') {
+                return false;
+            }
+
+            $supported = AiSettingsService::supportedProviders();
+
+            return isset($supported[$providerKey])
+                && in_array($supported[$providerKey]['driver'], ['openai', 'anthropic', 'gemini'], true);
+        }
+
+        $primary = (string) ($settings['primary_provider'] ?? config('ai.default', 'anthropic'));
+
+        return $this->providerSupportsDocumentAttachments($primary, $model);
     }
 
     private function resolveAgent(string $key): Agent

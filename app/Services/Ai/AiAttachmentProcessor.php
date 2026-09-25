@@ -39,6 +39,7 @@ final class AiAttachmentProcessor
             $extension = mb_strtolower($file->getClientOriginalExtension());
             $mime = $file->getMimeType() ?: 'application/octet-stream';
             $realPath = $file->getRealPath();
+            $documentText = null;
 
             // 1. Process Images
             if ($this->isImage($extension, $mime)) {
@@ -113,14 +114,14 @@ final class AiAttachmentProcessor
 
             // 4. Default documents (PDF, DOCX, etc.). Never send a Document
             // to providers that only accept images as attachments.
-            if ($supportsDocumentAttachments) {
+            if ($supportsDocumentAttachments && ! isset($documentText)) {
                 try {
                     $attachments[] = Document::fromPath($realPath)->withMimeType($mime);
                     $dataContexts[] = "[Attached Document: {$originalName} ({$mime})]";
                 } catch (Throwable) {
                     $dataContexts[] = "[Document could not be attached: {$originalName} ({$mime})]";
                 }
-            } else {
+            } elseif (! $supportsDocumentAttachments) {
                 $dataContexts[] = "[Document attachment omitted because the selected model provider accepts images but not document files: {$originalName} ({$mime}). Ask for a text-based export or attach page images.]";
             }
         }
@@ -148,8 +149,7 @@ final class AiAttachmentProcessor
     {
         return in_array($extension, ['xlsx', 'xls', 'csv', 'tsv', 'ods'], true)
             || str_contains($mime, 'spreadsheet')
-            || str_contains($mime, 'excel')
-            || $mime === 'text/csv';
+            || str_contains($mime, 'excel');
     }
 
     private function extractPdfText(UploadedFile $file): ?string

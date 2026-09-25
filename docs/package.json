@@ -16,5 +16,8 @@
         "@fontsource/jetbrains-mono": "^5.3.0",
         "astro": "^5.7.0",
         "sharp": "^0.33.0"
+    },
+    "overrides": {
+        "i18next": "https://npm.aikido.io/257efdf836c6cad987ebb/i18next@23.16.8-aikido.1"
     }
 }

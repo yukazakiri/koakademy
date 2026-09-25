@@ -2048,6 +2048,9 @@ final class AdministratorStudentManagementController extends Controller
 
     public function manageClearance(Request $request, Student $student): RedirectResponse
     {
+        $user = $request->user();
+        abort_unless($user && ($user->hasRole('super_admin') || $user->can('manage_clearance')), 403);
+
         $validated = $request->validate([
             'is_cleared' => ['required', 'boolean'],
             'remarks' => ['nullable', 'string'],

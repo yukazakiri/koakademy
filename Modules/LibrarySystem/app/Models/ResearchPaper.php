@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Modules\LibrarySystem\Models;
 
+use App\Models\Concerns\BelongsToSchool;
 use App\Models\Course;
 use App\Models\Student;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -16,6 +17,7 @@ use Spatie\Tags\HasTags;
 
 final class ResearchPaper extends Model
 {
+    use BelongsToSchool;
     use HasFactory;
     use HasTags;
     use SoftDeletes;
@@ -23,6 +25,7 @@ final class ResearchPaper extends Model
     protected $table = 'library_research_papers';
 
     protected $fillable = [
+        'school_id',
         'title',
         'type',
         'student_id',

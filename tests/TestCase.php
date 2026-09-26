@@ -29,6 +29,21 @@ abstract class TestCase extends BaseTestCase
             $this->app->make(\App\Services\TenantContext::class)->reset();
         }
 
+        // FeatureToggleRegistry caches global Pennant states in a static
+        // property. Parallel test workers reuse the PHP process, so a toggle
+        // activated in one test can otherwise leak into a later test case.
+        if (class_exists(\App\Services\FeatureToggleRegistry::class)) {
+            \App\Services\FeatureToggleRegistry::flushGlobalFeatureStates();
+        }
+
+        // Pennant also keeps its own driver cache; flush it in addition to the
+        // application registry cache before the next test reuses this worker.
+        if ($this->app && $this->app->resolved(\Laravel\Pennant\Feature::class)) {
+            \Laravel\Pennant\Feature::purge();
+        }
+
+        \App\Services\GeneralSettingsService::flushGlobalSetting();
+
         parent::tearDown();
     }
 }

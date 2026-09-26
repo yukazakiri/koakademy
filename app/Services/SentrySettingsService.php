@@ -152,6 +152,11 @@ final class SentrySettingsService
         return $this->get();
     }
 
+    public function resetCache(): void
+    {
+        $this->cachedConfig = null;
+    }
+
     /**
      * Push the resolved Sentry configuration into Laravel's runtime config.
      * Called on boot (best-effort) and immediately after admin saves.

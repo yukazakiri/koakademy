@@ -6,6 +6,7 @@ use App\Enums\UserRole;
 use App\Models\GeneralSetting;
 use App\Models\User;
 use App\Services\ErrorReportingService;
+use App\Services\GeneralSettingsService;
 use App\Services\SentrySettingsService;
 use App\Support\SystemManagementPermissions;
 use Inertia\Testing\AssertableInertia;
@@ -99,6 +100,8 @@ it('resolves Sentry settings as disabled when no DSN is configured', function ()
 });
 
 it('persists Sentry settings and applies them to the runtime config', function (): void {
+    app(GeneralSettingsService::class)->replaceGlobalSettings(null);
+    app(SentrySettingsService::class)->resetCache();
     GeneralSetting::factory()->create();
 
     $service = app(SentrySettingsService::class);
@@ -114,6 +117,9 @@ it('persists Sentry settings and applies them to the runtime config', function (
 });
 
 it('exposes every provider with install metadata', function (): void {
+    app(GeneralSettingsService::class)->replaceGlobalSettings(null);
+    app(SentrySettingsService::class)->resetCache();
+    app(ErrorReportingService::class)->resetCache();
     GeneralSetting::factory()->create();
 
     $config = app(ErrorReportingService::class)->get();
@@ -127,6 +133,9 @@ it('exposes every provider with install metadata', function (): void {
 });
 
 it('saves several providers in one request', function (): void {
+    app(GeneralSettingsService::class)->replaceGlobalSettings(null);
+    app(SentrySettingsService::class)->resetCache();
+    app(ErrorReportingService::class)->resetCache();
     $settings = GeneralSetting::factory()->create();
 
     app(ErrorReportingService::class)->save(validErrorReportingPayload([
@@ -148,6 +157,9 @@ it('saves several providers in one request', function (): void {
 });
 
 it('migrates the legacy single-provider Sentry row', function (): void {
+    app(GeneralSettingsService::class)->replaceGlobalSettings(null);
+    app(SentrySettingsService::class)->resetCache();
+    app(ErrorReportingService::class)->resetCache();
     $settings = GeneralSetting::factory()->create([
         'more_configs' => [
             'sentry' => validSentryProviderRow(['dsn' => 'https://legacy@o1.ingest.sentry.io/1']),
@@ -189,6 +201,9 @@ it('renders the observability page with the error reporting payload', function (
 });
 
 it('updates error reporting settings from the observability form', function (): void {
+    app(ErrorReportingService::class)->resetCache();
+    app(SentrySettingsService::class)->resetCache();
+    app(GeneralSettingsService::class)->replaceGlobalSettings(null);
     $settings = GeneralSetting::factory()->create();
     $user = User::factory()->create([
         'role' => UserRole::Admin,

@@ -124,9 +124,6 @@ final class AiChatController extends Controller
             $selectedProvider = $p;
             $selectedModel = $m;
         }
-        if (blank($selectedProvider)) {
-            $selectedProvider = (string) ($aiSettings['primary_provider'] ?? config('ai.default', 'anthropic'));
-        }
 
         // If no provider or model selected, use primary provider or fallback to first configured provider
         if (blank($selectedProvider)) {
@@ -160,6 +157,14 @@ final class AiChatController extends Controller
                 $selectedProvider = $primaryKey;
                 $selectedModel = $primaryConfig['default_chat_model'] ?? null;
             }
+        }
+
+        $supportsDocumentAttachments = $this->providerSupportsDocumentAttachments($selectedProvider, $selectedModel);
+        if (is_string($prompt) && ! empty($rawFiles)) {
+            $processor = app(AiAttachmentProcessor::class);
+            $processed = $processor->process($rawFiles, $prompt, $supportsDocumentAttachments);
+            $prompt = $processed['enrichedPrompt'];
+            $aiAttachments = $processed['attachments'];
         }
 
         // If custom provider selected, ensure its runtime configuration is present

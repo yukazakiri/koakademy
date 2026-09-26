@@ -24,6 +24,7 @@ subcommand=""
 configure_mode=""
 yes=false
 wait_ready=true
+preserve_volumes=false
 original_arguments=()
 
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -38,6 +39,7 @@ KoAkademy production operator
 Usage:
   koakademy install [--domain school.example] [--port 8000] [--channel stable|edge] [--release vX.Y.Z] [--no-wait]
   koakademy update [--port 8000] [--channel stable|edge] [--release vX.Y.Z] [--no-wait]
+  koakademy uninstall [--preserve-volumes] [--yes]
   koakademy configure storage <local|s3|r2|library-r2>
   koakademy configure mail <log|smtp|sequenzy>
   koakademy configure search <enable|disable>
@@ -45,6 +47,10 @@ Usage:
   koakademy rollback [--yes]
 
 Rollback changes only the application image. It never reverses database migrations.
+
+Uninstall removes the stack, its secrets and configs, its overlay network,
+and the install prefix. Named data volumes are removed too unless
+--preserve-volumes is given. Docker Engine and Swarm are left running.
 
 Stable installs may also provide KOAKADEMY_DOMAIN in the environment. When an
 install has no domain, the installer uses direct self-hosted HTTP access on
@@ -1145,6 +1151,74 @@ perform_rollback() {
     warn "Application image rolled back. Database migrations were not reversed."
 }
 
+perform_uninstall() {
+    local answer secret_key secret_name volume network_name
+    require_root
+    load_runtime
+    if [[ "$yes" != true ]]; then
+        warn "This permanently removes the KoAkademy stack, its Docker secrets and configs, its overlay network, and $root (releases, backups, runtime state)."
+        if [[ "$preserve_volumes" == true ]]; then
+            info "Named data volumes will be preserved."
+        else
+            warn "Named data volumes (database, storage) will be REMOVED."
+        fi
+        [[ -t 0 ]] || fail "Pass --yes to confirm a non-interactive uninstall."
+        read -r -p "Uninstall KoAkademy completely? [y/N] " answer
+        [[ "$answer" =~ ^[Yy]$ ]] || exit 0
+    fi
+    info "Removing the KoAkademy Swarm stack."
+    docker stack rm "$STACK_NAME" >/dev/null 2>&1 ||
+        warn "The $STACK_NAME stack was already gone."
+    local deadline="$((SECONDS + 120))"
+    while (( SECONDS < deadline )); do
+        if docker service ls --format '{{.Name}}' 2>/dev/null | grep -Eq "^${STACK_NAME}_"; then
+            sleep 2
+        else
+            break
+        fi
+    done
+    info "Removing managed Docker secrets and configs."
+    for secret_key in APP_KEY_SECRET POSTGRES_PASSWORD_SECRET REDIS_PASSWORD_SECRET \
+        S3_ACCESS_KEY_SECRET S3_SECRET_KEY_SECRET LIBRARY_ACCESS_KEY_SECRET \
+        LIBRARY_SECRET_KEY_SECRET SMTP_PASSWORD_SECRET SEQUENZY_API_KEY_SECRET \
+        MEILISEARCH_KEY_SECRET; do
+        secret_name="${!secret_key:-}"
+        [[ -n "$secret_name" ]] || continue
+        docker secret rm "$secret_name" >/dev/null 2>&1 || true
+    done
+    [[ -n "${APP_ENTRYPOINT_CONFIG:-}" ]] &&
+        docker config rm "$APP_ENTRYPOINT_CONFIG" >/dev/null 2>&1 || true
+    [[ -n "${CADDYFILE_CONFIG:-}" ]] &&
+        docker config rm "$CADDYFILE_CONFIG" >/dev/null 2>&1 || true
+    if [[ "$preserve_volumes" == true ]]; then
+        info "Preserving named data volumes; remove them manually when the data is no longer needed."
+    else
+        info "Removing named data volumes."
+        for volume in app-storage postgres-data redis-data caddy-data caddy-config; do
+            docker volume rm "${STACK_NAME}_${volume}" >/dev/null 2>&1 || true
+        done
+    fi
+    network_name="${KOAKADEMY_NETWORK:-${STACK_NAME}_private}"
+    docker network rm "$network_name" >/dev/null 2>&1 ||
+        warn "Could not remove network $network_name; remove it manually once detached."
+    if [[ -L /usr/local/bin/koakademy ]]; then
+        if [[ "$(readlink /usr/local/bin/koakademy)" == "$root/koakademy" ]]; then
+            rm -f /usr/local/bin/koakademy
+            info "Removed /usr/local/bin/koakademy."
+        else
+            warn "Leaving /usr/local/bin/koakademy in place (it points elsewhere)."
+        fi
+    fi
+    [[ -n "$root" && "$root" != "/" ]] || fail "Refusing to remove an unsafe install prefix."
+    rm -rf -- "$root"
+    if [[ "$preserve_volumes" == true ]]; then
+        info "KoAkademy uninstalled. Named data volumes were preserved."
+    else
+        info "KoAkademy uninstalled completely, including named data volumes."
+    fi
+    info "Docker Engine and Swarm were left running."
+}
+
 print_status() {
     require_root
     load_runtime
@@ -1156,7 +1230,7 @@ print_status() {
 parse_command() {
     command_name="${1:-}"; shift || true
     case "$command_name" in
-        install|update|configure|status|rollback) ;;
+        install|update|configure|status|rollback|uninstall) ;;
         -h|--help|"") usage; exit 0 ;;
         *) fail "Unknown command: $command_name" ;;
     esac
@@ -1176,6 +1250,7 @@ parse_command() {
             --yes) yes=true; shift ;;
             --wait) wait_ready=true; shift ;;
             --no-wait) wait_ready=false; shift ;;
+            --preserve-volumes) preserve_volumes=true; shift ;;
             *) fail "Unknown option: $1" ;;
         esac
     done
@@ -1200,6 +1275,7 @@ main() {
             ;;
         status) print_status ;;
         rollback) perform_rollback ;;
+        uninstall) perform_uninstall ;;
     esac
 }
 

@@ -49,8 +49,15 @@ case "$command_name" in
                 name="${*: -1}"
                 create networks "$name"
                 ;;
+            rm)
+                rm -f "$state/networks/${*: -1}"
+                ;;
             *) exit 1 ;;
         esac
+        ;;
+    volume)
+        # Named volumes are never materialized by the fixture; removal is a
+        # no-op, while docker.log records exactly what was requested.
         ;;
     secret|config)
         object="${command_name}s"
@@ -61,25 +68,38 @@ case "$command_name" in
             exists "$object" "$name"
             exit
         fi
+        if [[ "$action" == rm ]]; then
+            for object_name in "$@"; do
+                rm -f "$state/$object/$object_name"
+            done
+            exit 0
+        fi
         [[ "$action" == create ]]
         name="${*: -2:1}"
         create "$object" "$name"
         ;;
     stack)
-        [[ "${1:-}" == deploy ]]
-        if [[ -n "${KOAKADEMY_INSTALLER_TEST_FAIL_FIRST_STACK:-}" && \
-            ! -f "$state/first-stack-deploy-failed" ]]; then
-            : >"$state/first-stack-deploy-failed"
-            exit 1
-        fi
-        create services koakademy_postgres
-        create services koakademy_redis
-        create services koakademy_gotenberg
-        create services koakademy_caddy
-        if [[ "${APP_REPLICAS:-1}" != 0 ]]; then
-            create services koakademy_app
-            printf '%s\n' "${KOAKADEMY_IMAGE:-}" >"$state/services/koakademy_app_image"
-        fi
+        case "${1:-}" in
+            deploy)
+                if [[ -n "${KOAKADEMY_INSTALLER_TEST_FAIL_FIRST_STACK:-}" && \
+                    ! -f "$state/first-stack-deploy-failed" ]]; then
+                    : >"$state/first-stack-deploy-failed"
+                    exit 1
+                fi
+                create services koakademy_postgres
+                create services koakademy_redis
+                create services koakademy_gotenberg
+                create services koakademy_caddy
+                if [[ "${APP_REPLICAS:-1}" != 0 ]]; then
+                    create services koakademy_app
+                    printf '%s\n' "${KOAKADEMY_IMAGE:-}" >"$state/services/koakademy_app_image"
+                fi
+                ;;
+            rm)
+                rm -f "$state"/services/koakademy_*
+                ;;
+            *) exit 1 ;;
+        esac
         ;;
     ps)
         printf 'postgres-test-container\n'

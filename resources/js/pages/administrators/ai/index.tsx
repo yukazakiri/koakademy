@@ -3,7 +3,6 @@ import { ADMIN_AGENTS, DEFAULT_PROMPT_SUGGESTIONS, type ConversationItem, type P
 import { AiConversationSidebar } from "@/components/ai/ai-conversation-sidebar";
 import { ApprovalCard } from "@/components/ai/approval-card";
 import { ChatMessageFormatter } from "@/components/ai/chat-message-formatter";
-import { CurriculumImportReview } from "@/components/ai/curriculum-import-review";
 import { AgentRoleKey, ChatMessage, useAiChat } from "@/components/ai/use-ai-chat";
 import {
     FileUpload,
@@ -60,8 +59,19 @@ const ACCEPTED_ATTACHMENT_TYPES = [
     "application/pdf",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "application/vnd.ms-excel",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/rtf",
+    "application/vnd.oasis.opendocument.text",
+    "application/vnd.oasis.opendocument.spreadsheet",
+    "application/sql",
+    "text/tab-separated-values",
+    "text/x-log",
     "text/csv",
     "text/plain",
+    "text/markdown",
+    "application/json",
+    "image/gif",
     "image/jpeg",
     "image/png",
     "image/webp",
@@ -96,10 +106,10 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
     const [selectedModel, setSelectedModel] = React.useState<string>("");
     const [availableModels, setAvailableModels] = React.useState<ModelOption[]>([]);
     const [selectedFiles, setSelectedFiles] = React.useState<File[]>([]);
-    const [curriculumFile, setCurriculumFile] = React.useState<File | null>(null);
 
     const messagesEndRef = React.useRef<HTMLDivElement | null>(null);
     const chatContainerRef = React.useRef<HTMLDivElement | null>(null);
+    const modelSearchRef = React.useRef<HTMLInputElement | null>(null);
 
     const {
         messages,
@@ -222,6 +232,7 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                         description: model.description,
                         provider: model.provider,
                         provider_name: model.provider_name,
+                        supports_documents: model.supports_documents,
                     }));
                     setAvailableModels(mapped);
 
@@ -254,7 +265,8 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                 // A model choice is an optional local preference.
             }
         }
-        toast.success(`Active model: ${id}`);
+        const selected = availableModels.find((model) => model.id === id);
+        toast.success(`Active model: ${selected?.name ?? id}`);
     };
 
     const handleSelectConversation = async (id: string) => {
@@ -365,7 +377,9 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
     const handleSend = () => {
         if ((!input.trim() && selectedFiles.length === 0) || isLoading) return;
         sendPrompt(input, selectedFiles, {
-            model: selectedModel || undefined,
+            model: selectedModel.includes(":") ? selectedModel.split(":").slice(1).join(":") : selectedModel || undefined,
+            provider: activeModel?.provider,
+            supportsDocuments: activeModel?.supports_documents,
         });
         setSelectedFiles([]);
     };
@@ -386,7 +400,10 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
         if (["pdf"].includes(ext || "")) {
             return <FileText className="size-3.5 text-rose-500" />;
         }
-        if (["jpg", "jpeg", "png", "webp"].includes(ext || "")) {
+        if (["doc", "docx", "odt", "rtf"].includes(ext || "")) {
+            return <FileText className="size-3.5 text-blue-500" />;
+        }
+        if (["jpg", "jpeg", "png", "webp", "gif"].includes(ext || "")) {
             return <FileImage className="size-3.5 text-indigo-500" />;
         }
         return <FileCode className="text-muted-foreground size-3.5" />;
@@ -396,7 +413,8 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
     const ActiveAgentIcon = activeAgentMeta.icon;
 
     const firstName = user.name?.split(" ")[0] || "Administrator";
-    const activeModelName = availableModels.find((model) => model.id === selectedModel)?.name || "Auto select";
+    const activeModel = availableModels.find((model) => model.id === selectedModel);
+    const activeModelName = activeModel?.name || "Auto select";
 
     const renderComposer = (className?: string) => (
         <div className={cn("w-full", className)}>
@@ -421,24 +439,6 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                     ))}
                 </div>
             )}
-            {selectedFiles.some((file) => /\.xlsx$/i.test(file.name)) && !isLoading && (
-                <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="mb-2"
-                    onClick={() => {
-                        const workbook = selectedFiles.find((file) => /\.xlsx$/i.test(file.name));
-                        if (workbook) {
-                            setCurriculumFile(workbook);
-                            setSelectedFiles((current) => current.filter((file) => file !== workbook));
-                        }
-                    }}
-                >
-                    <FileSpreadsheet className="size-4" /> Review as curriculum import
-                </Button>
-            )}
-
             <div className="bg-muted/70 dark:bg-muted/35 rounded-[1.5rem] p-1.5">
                 <div className="text-muted-foreground px-3 pt-1.5 text-[11px]">
                     KoAkademy Copilot can analyze institution data and draft operational documents.
@@ -487,9 +487,22 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                                         <ChevronDown className="text-muted-foreground size-3 shrink-0" />
                                     </Button>
                                 </PopoverTrigger>
-                                <PopoverContent align="start" className="w-[min(26rem,calc(100vw-2rem))] p-3">
+                                <PopoverContent
+                                    align="start"
+                                    className="w-[min(26rem,calc(100vw-2rem))] p-3"
+                                    onOpenAutoFocus={(event) => {
+                                        event.preventDefault();
+                                        requestAnimationFrame(() => modelSearchRef.current?.focus());
+                                    }}
+                                    onCloseAutoFocus={(event) => event.preventDefault()}
+                                >
                                     {availableModels.length > 0 ? (
-                                        <ModelSelector models={availableModels} value={selectedModel} onChange={handleSelectModel} />
+                                        <ModelSelector
+                                            models={availableModels}
+                                            value={selectedModel}
+                                            onChange={handleSelectModel}
+                                            searchInputRef={modelSearchRef}
+                                        />
                                     ) : (
                                         <p className="text-muted-foreground p-2 text-sm">No AI models are configured yet.</p>
                                     )}
@@ -592,25 +605,6 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
     return (
         <AdminLayout user={user} immersive>
             <Head title="AI Chat - Administrator Copilot" />
-            <CurriculumImportReview
-                file={curriculumFile}
-                onClose={() => setCurriculumFile(null)}
-                onStaged={(id, title) => {
-                    sendPrompt(
-                        `I staged a curriculum workbook for ${title} (import ID: ${id}). Use InspectCurriculumImportTool to describe the proposed program, subjects and problems. Do not modify records; I will review and confirm them in the import panel.`,
-                        [],
-                        { agent: "admin_executive", model: selectedModel || undefined },
-                    );
-                }}
-                onApplied={(courseId) => {
-                    sendPrompt(
-                        `The approved curriculum import has been applied to program ID ${courseId}. Use GetCourseCurriculumTool to summarize its subjects.`,
-                        [],
-                        { agent: "admin_executive", model: selectedModel || undefined },
-                    );
-                }}
-            />
-
             <div className="border-border/70 bg-background flex h-full min-h-0 w-full overflow-hidden border">
                 <div className="hidden h-full w-[18.5rem] shrink-0 md:block">
                     <AiConversationSidebar
@@ -797,7 +791,11 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                                                     onClick={() => {
                                                         clearError();
                                                         sendPrompt(lastError.retryPrompt!, selectedFiles, {
-                                                            model: selectedModel || undefined,
+                                                            model: selectedModel.includes(":")
+                                                                ? selectedModel.split(":").slice(1).join(":")
+                                                                : selectedModel || undefined,
+                                                            provider: activeModel?.provider,
+                                                            supportsDocuments: activeModel?.supports_documents,
                                                         });
                                                     }}
                                                 >

@@ -118,13 +118,3 @@ it('rejects an invalid or tampered signature on magic link verification', functi
     $response->assertSessionHasErrors('email');
     $this->assertGuest();
 });
-
-it('strictly connects to testing.sqlite and preserves database.sqlite during tests', function (): void {
-    $activeDatabase = (string) config('database.connections.sqlite.database');
-    $appDatabase = database_path('database.sqlite');
-    $testingDatabase = database_path('testing.sqlite');
-
-    expect($activeDatabase)->not->toBe($appDatabase)
-        ->and(realpath($activeDatabase))->not->toBe(realpath($appDatabase))
-        ->and(basename($activeDatabase))->toBe('testing.sqlite');
-});

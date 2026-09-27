@@ -35,21 +35,60 @@ export const DEFAULT_BRANDING: Branding = {
 };
 
 export function resolveBranding(branding?: Partial<Branding> | null): Branding {
+    const orgName =
+        branding?.organizationName && branding.organizationName.trim() !== ""
+            ? branding.organizationName.trim()
+            : branding?.appName && branding.appName.trim() !== ""
+              ? branding.appName.trim()
+              : DEFAULT_BRANDING.organizationName;
+
+    const appName =
+        branding?.appName && branding.appName.trim() !== ""
+            ? branding.appName.trim()
+            : DEFAULT_BRANDING.appName;
+
+    const orgShortName =
+        branding?.organizationShortName && branding.organizationShortName.trim() !== ""
+            ? branding.organizationShortName.trim()
+            : branding?.appShortName && branding.appShortName.trim() !== ""
+              ? branding.appShortName.trim()
+              : DEFAULT_BRANDING.organizationShortName;
+
+    const appShortName =
+        branding?.appShortName && branding.appShortName.trim() !== ""
+            ? branding.appShortName.trim()
+            : orgShortName;
+
+    const currentYear = new Date().getFullYear();
+    const fallbackCopyright = `${currentYear} ${orgName}. All rights reserved.`;
+
     return {
-        appName: branding?.appName ?? DEFAULT_BRANDING.appName,
-        appShortName: branding?.appShortName ?? DEFAULT_BRANDING.appShortName,
-        organizationName: branding?.organizationName ?? DEFAULT_BRANDING.organizationName,
-        organizationShortName: branding?.organizationShortName ?? DEFAULT_BRANDING.organizationShortName,
+        appName,
+        appShortName,
+        organizationName: orgName,
+        organizationShortName: orgShortName,
         organizationAddress: branding?.organizationAddress ?? DEFAULT_BRANDING.organizationAddress,
         supportEmail: branding?.supportEmail ?? DEFAULT_BRANDING.supportEmail,
         supportPhone: branding?.supportPhone ?? DEFAULT_BRANDING.supportPhone,
-        tagline: branding?.tagline ?? DEFAULT_BRANDING.tagline,
-        copyrightText: branding?.copyrightText ?? DEFAULT_BRANDING.copyrightText,
+        tagline:
+            branding?.tagline && branding.tagline.trim() !== ""
+                ? branding.tagline.trim()
+                : DEFAULT_BRANDING.tagline,
+        copyrightText:
+            branding?.copyrightText && branding.copyrightText.trim() !== ""
+                ? branding.copyrightText.trim()
+                : fallbackCopyright,
         themeColor: branding?.themeColor ?? DEFAULT_BRANDING.themeColor,
         currency: branding?.currency ?? DEFAULT_BRANDING.currency,
         authLayout: branding?.authLayout ?? DEFAULT_BRANDING.authLayout,
-        logo: branding?.logo ?? DEFAULT_BRANDING.logo,
-        favicon: branding?.favicon ?? DEFAULT_BRANDING.favicon,
+        logo:
+            branding?.logo && branding.logo.trim() !== ""
+                ? branding.logo.trim()
+                : DEFAULT_BRANDING.logo,
+        favicon:
+            branding?.favicon && branding.favicon.trim() !== ""
+                ? branding.favicon.trim()
+                : DEFAULT_BRANDING.favicon,
     };
 }
 

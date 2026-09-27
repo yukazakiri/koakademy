@@ -6,6 +6,10 @@ $_SERVER['APP_BASE_PATH'] = dirname(__DIR__);
 $_ENV['APP_BASE_PATH'] = dirname(__DIR__);
 putenv('APP_BASE_PATH='.dirname(__DIR__));
 
+putenv('APP_CONFIG_CACHE='.sys_get_temp_dir().'/koakademy_testing_config.php');
+$_ENV['APP_CONFIG_CACHE'] = sys_get_temp_dir().'/koakademy_testing_config.php';
+$_SERVER['APP_CONFIG_CACHE'] = sys_get_temp_dir().'/koakademy_testing_config.php';
+
 spl_autoload_register(function (string $class): bool {
     if (str_starts_with($class, 'Modules\\')) {
         $parts = explode('\\', $class);

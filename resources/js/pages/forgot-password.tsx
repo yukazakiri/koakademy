@@ -1,21 +1,19 @@
-import { AnnouncementBanner } from "@/components/announcement-banner";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { TransitionWrapper } from "@/components/transition-wrapper";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { resolveBranding, type Branding } from "@/lib/branding";
 import { Link, useForm, usePage } from "@inertiajs/react";
-import { useEffect } from "react";
+import { ArrowLeft, KeyRound, Loader2, Mail } from "lucide-react";
+import { useEffect, type FormEvent } from "react";
 import { toast } from "sonner";
 
+import { AuthLayout, type AuthLayoutProps } from "@/layouts/auth-layout";
+import { Button } from "@/components/ui/button";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { resolveBranding, type Branding } from "@/lib/branding";
+import { cn } from "@/lib/utils";
+
 export default function ForgotPasswordPage() {
-    const { props } = usePage<{ branding?: Partial<Branding> | null; announcements?: unknown[] }>();
+    const { props } = usePage<{ branding?: Partial<Branding> | null; announcements?: AuthLayoutProps["announcements"] }>();
     const branding = resolveBranding(props.branding);
     const appName = branding.appName;
-    const orgShortName = branding.organizationShortName;
-    const authLayout = branding.authLayout;
-    const isSplitLayout = authLayout === "split";
 
     const { data, setData, post, processing, errors } = useForm({
         email: "",
@@ -27,95 +25,78 @@ export default function ForgotPasswordPage() {
         }
     }, [errors]);
 
-    const submit = (e: React.FormEvent) => {
+    const submit = (e: FormEvent) => {
         e.preventDefault();
         post("/forgot-password", {
-            onSuccess: () => toast.success("Password reset link sent if email exists"),
+            onSuccess: () => toast.success("Password reset instructions sent if an account exists for this email."),
         });
     };
 
     return (
-        <div className={isSplitLayout ? "grid min-h-svh lg:grid-cols-2" : "min-h-svh"}>
-            <div className="relative flex flex-col gap-4 p-6 md:p-10">
-                <div className="flex items-center justify-between md:justify-start">
-                    <a href="#" className="flex items-center gap-2 font-medium">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-md">
-                            <img src={branding.logo} alt={`${orgShortName} Logo`} className="h-10 w-10 object-contain" />
-                        </div>
-                        <span className="text-foreground text-4xl font-extrabold tracking-tight">{appName}</span>
-                    </a>
-                    <div className="md:absolute md:top-6 md:right-6">
-                        <ThemeToggle />
-                    </div>
-                </div>
-                <div className="flex flex-1 items-center justify-center">
-                    <div className={authLayout === "card" ? "bg-card border-border w-full max-w-sm rounded-2xl border p-6 shadow-sm" : "w-full max-w-xs"}>
-                        <TransitionWrapper>
-                            <div className="mb-4">
-                                <AnnouncementBanner announcements={props.announcements ?? []} />
-                            </div>
-                            <form onSubmit={submit} className="flex flex-col gap-6">
-                                <div className="flex flex-col items-center gap-2 text-center">
-                                    <h1 className="text-foreground text-xl font-bold">Forgot password</h1>
-                                    <p className="text-muted-foreground text-sm text-balance">Enter your email to receive a reset link</p>
-                                </div>
-                                <div className="grid gap-6">
-                                    <div className="grid gap-2">
-                                        <Label htmlFor="email">Email</Label>
-                                        <Input
-                                            id="email"
-                                            type="email"
-                                            placeholder="m@example.com"
-                                            required
-                                            value={data.email}
-                                            onChange={(e) => setData("email", e.target.value)}
-                                            disabled={processing}
-                                            className={errors.email ? "border-destructive focus-visible:ring-destructive" : ""}
-                                        />
-                                    </div>
-                                    <Button type="submit" className="w-full" disabled={processing}>
-                                        {processing ? "Sending..." : "Send reset link"}
-                                    </Button>
-                                </div>
-                                <div className="text-center text-sm">
-                                    <Link href="/login" className="underline underline-offset-4">
-                                        Back to login
-                                    </Link>
-                                </div>
-                            </form>
-                            <div className="text-muted-foreground hover:[&_a]:text-primary mt-6 text-center text-xs text-balance [&_a]:underline [&_a]:underline-offset-4">
-                                By clicking continue, you agree to our <Link href="/terms-of-service">Terms of Service</Link> and{" "}
-                                <Link href="/privacy-policy">Privacy Policy</Link>.
-                            </div>
-                        </TransitionWrapper>
-                    </div>
-                </div>
-            </div>
-            {isSplitLayout ? (
-                <div className="bg-muted relative hidden lg:block">
-                    <TransitionWrapper className="h-full">
-                        <div className="flex h-full items-center justify-center p-8">
-                            <div className="mx-auto max-w-md">
-                            <div className="text-muted-foreground/40 mb-6 font-serif text-4xl">“</div>
+        <AuthLayout
+            metaTitle="Forgot Password"
+            badge="Security & Recovery"
+            icon={<KeyRound className="size-6 text-primary" />}
+            title="Reset your password"
+            description={`Enter the institutional or personal email associated with your ${appName} account and we'll send you a recovery link.`}
+            announcements={props.announcements}
+            showBackToLogin={true}
+            maxWidth="sm"
+        >
+            <form onSubmit={submit}>
+                <FieldGroup className="gap-5">
+                    <Field>
+                        <FieldLabel htmlFor="email" className="text-xs font-semibold text-foreground">
+                            Account Email Address
+                        </FieldLabel>
+                        <InputGroup
+                            className={cn(
+                                "h-11 rounded-xl border-border/80 bg-background/60 shadow-2xs transition-all duration-200 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20",
+                                errors.email && "border-destructive focus-within:ring-destructive/20"
+                            )}
+                        >
+                            <InputGroupAddon align="inline-start" className="text-muted-foreground/70 pl-3">
+                                <Mail className="size-4" />
+                            </InputGroupAddon>
+                            <InputGroupInput
+                                id="email"
+                                type="email"
+                                placeholder="name@school.edu"
+                                required
+                                autoFocus
+                                value={data.email}
+                                onChange={(e) => setData("email", e.target.value)}
+                                disabled={processing}
+                                className="text-sm font-normal"
+                            />
+                        </InputGroup>
+                        {errors.email && <FieldError errors={[{ message: errors.email }]} />}
+                    </Field>
 
-                            <blockquote className="text-foreground mb-8 text-xl leading-relaxed font-medium">
-                                <span className="text-muted-foreground">Secure access to your </span>
-                                <span className="text-foreground">academic resources</span>
-                                <span className="text-muted-foreground"> is our top priority. We're here to help you get back on track.</span>
-                            </blockquote>
+                    <Button
+                        type="submit"
+                        className="h-11 w-full rounded-xl font-semibold shadow-md transition-all duration-200"
+                        disabled={processing}
+                    >
+                        {processing ? (
+                            <>
+                                <Loader2 className="mr-2 size-4 animate-spin" />
+                                <span>Sending reset link...</span>
+                            </>
+                        ) : (
+                            "Send Reset Link"
+                        )}
+                    </Button>
 
-                            <div className="flex items-center gap-3">
-                                <div className="h-8 w-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-600"></div>
-                                <div>
-                                    <div className="text-sm font-semibold">IT Support</div>
-                                    <div className="text-muted-foreground text-xs">{orgShortName} System Administrator</div>
-                                </div>
-                            </div>
-                            </div>
-                        </div>
-                    </TransitionWrapper>
-                </div>
-            ) : null}
-        </div>
+                    <div className="pt-2 text-center text-xs text-muted-foreground">
+                        Remembered your password?{" "}
+                        <Link href="/login" className="font-semibold text-primary underline-offset-4 hover:underline inline-flex items-center gap-1">
+                            <ArrowLeft className="size-3" />
+                            <span>Return to login</span>
+                        </Link>
+                    </div>
+                </FieldGroup>
+            </form>
+        </AuthLayout>
     );
 }

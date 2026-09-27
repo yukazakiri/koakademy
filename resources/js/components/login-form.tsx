@@ -1,97 +1,98 @@
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { SocialAuthButtons } from "@/components/social-auth-buttons";
-import { cn } from "@/lib/utils";
 import { Link, router, useForm } from "@inertiajs/react";
 import axios from "axios";
-import { Eye, EyeOff, GraduationCap, Key, Loader2, Lock, Mail, ShieldCheck, UserRoundCog } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import {
+    Eye,
+    EyeOff,
+    Fingerprint,
+    GraduationCap,
+    Key,
+    Loader2,
+    Lock,
+    Mail,
+    ShieldCheck,
+    UserRoundCog,
+} from "lucide-react";
+import { useCallback, useEffect, useState, type ComponentPropsWithoutRef, type FormEvent } from "react";
 import { toast } from "sonner";
+
+import { SocialAuthButtons } from "@/components/social-auth-buttons";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
+import { cn } from "@/lib/utils";
 
 declare const route: (name: string, params?: Record<string, unknown>) => string;
 
-// Helper to check if WebAuthn is supported
-const isWebAuthnSupported = () => {
-    return !!(window.PublicKeyCredential && navigator.credentials);
+const isWebAuthnSupported = (): boolean => {
+    return typeof window !== "undefined" && !!(window.PublicKeyCredential && navigator.credentials);
 };
 
-type DemoAccount = {
+export type DemoAccount = {
     role: string;
     label: string;
     description: string;
 };
 
-type DemoMode = {
+export type DemoMode = {
     enabled: boolean;
     accounts: DemoAccount[];
 };
 
-const demoAccountIcons = {
+const demoAccountIcons: Record<string, typeof GraduationCap> = {
     student: GraduationCap,
     faculty: UserRoundCog,
     admin: ShieldCheck,
 };
 
-export function LoginForm({
-    className,
-    demoMode,
-    errors,
-    status,
-    ...props
-}: React.ComponentPropsWithoutRef<"div"> & {
+export interface LoginFormProps extends ComponentPropsWithoutRef<"div"> {
     demoMode?: DemoMode;
     errors?: Record<string, string>;
-    status?: string;
-}) {
+    status?: string | null;
+}
+
+export function LoginForm({ className, demoMode, errors, status, ...props }: LoginFormProps) {
     const { data, setData, post, processing } = useForm({
         email: "",
         password: "",
         remember: false,
     });
 
-    // State for password visibility
     const [showPassword, setShowPassword] = useState(false);
     const [loggingInWithPasskey, setLoggingInWithPasskey] = useState(false);
     const [passkeyAvailable, setPasskeyAvailable] = useState(false);
 
-    // Check if passkeys are available on mount
     useEffect(() => {
         const checkPasskeySupport = async () => {
             let supported = isWebAuthnSupported();
-
-            // Also check if the device supports platform authenticators (fingerprint, face, PIN)
             if (supported && window.PublicKeyCredential?.isUserVerifyingPlatformAuthenticatorAvailable) {
                 supported = await window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
             }
-
             setPasskeyAvailable(supported);
         };
         checkPasskeySupport();
     }, []);
 
-    // Display status message if available
     useEffect(() => {
         if (status) {
             toast.success(status);
         }
     }, [status]);
 
-    // Display errors if available
     useEffect(() => {
         if (errors && Object.keys(errors).length > 0) {
-            Object.entries(errors).forEach(([_, message]) => {
+            Object.values(errors).forEach((message) => {
                 toast.error(message);
             });
         }
     }, [errors]);
 
-    const submit = (e: React.FormEvent) => {
+    const submit = (e: FormEvent) => {
         e.preventDefault();
         post("/login", {
-            onError: (errors) => {
-                Object.values(errors).forEach((error) => {
-                    toast.error(error);
+            onError: (formErrors) => {
+                Object.values(formErrors).forEach((err) => {
+                    toast.error(err);
                 });
             },
             onSuccess: () => {
@@ -102,23 +103,23 @@ export function LoginForm({
 
     const handlePasskeyLogin = useCallback(async () => {
         if (loggingInWithPasskey) return;
-
         setLoggingInWithPasskey(true);
 
         try {
-            // 1. Get options from backend (no email needed for discoverable credentials)
             const optionsResponse = await axios.post("/passkeys/options", {});
             const options = optionsResponse.data.options;
 
-            // 2. Authenticate using WebAuthn API
-            const challenge = Uint8Array.from(atob(options.challenge.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+            const challenge = Uint8Array.from(atob(options.challenge.replace(/-/g, "+").replace(/_/g, "/")), (c) =>
+                c.charCodeAt(0)
+            );
 
-            // For discoverable credentials, allowCredentials should be empty
             const allowCredentials =
                 Array.isArray(options.allowCredentials) && options.allowCredentials.length > 0
-                    ? options.allowCredentials.map((cred: any) => ({
+                    ? options.allowCredentials.map((cred: { id: string }) => ({
                           ...cred,
-                          id: Uint8Array.from(atob(cred.id.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0)),
+                          id: Uint8Array.from(atob(cred.id.replace(/-/g, "+").replace(/_/g, "/")), (c) =>
+                              c.charCodeAt(0)
+                          ),
                       }))
                     : [];
 
@@ -129,12 +130,10 @@ export function LoginForm({
             };
 
             const credential = (await navigator.credentials.get({ publicKey })) as PublicKeyCredential;
-
             if (!credential) {
                 throw new Error("Failed to get credential");
             }
 
-            // 3. Verify passkey
             const rawId = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)))
                 .replace(/\+/g, "-")
                 .replace(/\//g, "_")
@@ -176,25 +175,21 @@ export function LoginForm({
             });
 
             const redirectUrl = verifyResponse.data.url ?? verifyResponse.data.redirect;
-
             if (redirectUrl) {
                 toast.success("Welcome back!");
-                // Inertia manual visit
                 window.location.href = redirectUrl;
             } else {
                 toast.error("Passkey verification failed.");
             }
-        } catch (error: any) {
-            if (error.response?.data?.error) {
-                toast.error(error.response.data.error);
-            } else if (error.name === "NotAllowedError") {
-                // User cancelled or timed out - don't show error, just dismiss prompt
-                // toast.error("Passkey request canceled or timed out.")
-            } else if (error.name === "InvalidStateError") {
+        } catch (error: unknown) {
+            const err = error as { response?: { data?: { error?: string } }; name?: string };
+            if (err.response?.data?.error) {
+                toast.error(err.response.data.error);
+            } else if (err.name === "InvalidStateError") {
                 toast.error("No passkey found. Please sign in with your password.");
-            } else {
+            } else if (err.name !== "NotAllowedError") {
                 console.error("Passkey Error:", error);
-                toast.error("Failed to login with passkey. Please try again.");
+                toast.error("Failed to sign in with passkey. Please try again.");
             }
         } finally {
             setLoggingInWithPasskey(false);
@@ -208,185 +203,203 @@ export function LoginForm({
             {
                 onStart: () => toast.info(`Opening ${role} demo workspace...`),
                 onError: () => toast.error("Demo login is unavailable. Please try again."),
-            },
+            }
         );
     };
 
     return (
         <div className={cn("flex flex-col gap-6", className)} {...props}>
             <form onSubmit={submit}>
-                <div className="flex flex-col gap-6">
-                    <div className="grid gap-5">
-                        <div className="group relative grid gap-2">
-                            <Label htmlFor="email" className="sr-only">
-                                Email
-                            </Label>
-                            <div className="relative">
-                                <Mail className="text-muted-foreground group-focus-within:text-primary absolute top-3 left-3 z-10 h-4 w-4 transition-colors" />
-                                <Input
-                                    id="email"
-                                    type="email"
-                                    placeholder="name@example.com"
-                                    required
-                                    value={data.email}
-                                    onChange={(e) => setData("email", e.target.value)}
-                                    disabled={processing || loggingInWithPasskey}
-                                    className={cn(
-                                        "bg-background/50 border-muted-foreground/20 hover:border-primary/50 focus-visible:border-primary h-10 pl-10 transition-all duration-300",
-                                        "text-foreground placeholder:text-muted-foreground/70",
-                                        errors?.email && "border-destructive focus-visible:ring-destructive",
-                                    )}
-                                />
-                            </div>
-                        </div>
-
-                        <div className="group relative grid gap-2">
-                            <div className="flex items-center justify-between">
-                                <Label htmlFor="password" className="sr-only">
-                                    Password
-                                </Label>
-                            </div>
-                            <div className="relative">
-                                <Lock className="text-muted-foreground group-focus-within:text-primary absolute top-3 left-3 z-10 h-4 w-4 transition-colors" />
-                                <Input
-                                    id="password"
-                                    type={showPassword ? "text" : "password"}
-                                    placeholder="••••••••"
-                                    required
-                                    value={data.password}
-                                    onChange={(e) => setData("password", e.target.value)}
-                                    disabled={processing || loggingInWithPasskey}
-                                    className={cn(
-                                        "bg-background/50 border-muted-foreground/20 hover:border-primary/50 focus-visible:border-primary h-10 pr-10 pl-10 transition-all duration-300",
-                                        "text-foreground placeholder:text-muted-foreground/70",
-                                        errors?.password && "border-destructive focus-visible:ring-destructive",
-                                    )}
-                                />
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="text-muted-foreground hover:text-primary absolute top-0 right-0 h-10 w-10 transition-colors"
-                                    onClick={() => setShowPassword(!showPassword)}
-                                >
-                                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                    <span className="sr-only">Toggle password visibility</span>
-                                </Button>
-                            </div>
-                            <div className="text-right">
-                                <Link
-                                    href="/forgot-password"
-                                    className="text-muted-foreground hover:text-primary text-xs font-medium underline-offset-4 transition-colors hover:underline"
-                                >
-                                    Forgot your password?
-                                </Link>
-                            </div>
-                        </div>
-
-                        <div className="grid gap-3">
-                            <Button
-                                type="submit"
-                                className="shadow-primary/20 hover:shadow-primary/40 h-10 w-full font-bold tracking-wide shadow-lg transition-all duration-300"
-                                disabled={processing || loggingInWithPasskey}
-                            >
-                                {processing ? (
-                                    <>
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        Signing in...
-                                    </>
-                                ) : (
-                                    "Sign in"
-                                )}
-                            </Button>
-
-                            {demoMode?.enabled && demoMode.accounts.length > 0 ? (
-                                <div className="border-primary/20 bg-primary/5 grid gap-3 rounded-2xl border p-3">
-                                    <div className="space-y-1 text-center">
-                                        <p className="text-foreground text-sm font-semibold">Try the demo instantly</p>
-                                        <p className="text-muted-foreground text-xs">Choose a role to enter with a sample account.</p>
-                                    </div>
-
-                                    <div className="grid gap-2">
-                                        {demoMode.accounts.map((account) => {
-                                            const Icon = demoAccountIcons[account.role as keyof typeof demoAccountIcons] ?? Key;
-
-                                            return (
-                                                <Button
-                                                    key={account.role}
-                                                    type="button"
-                                                    variant="outline"
-                                                    className="border-primary/20 bg-background/70 hover:bg-primary/10 h-auto justify-start gap-2 px-3 py-2.5 text-left transition-all duration-300 sm:gap-3 sm:py-3"
-                                                    onClick={() => handleDemoLogin(account.role)}
-                                                    disabled={processing || loggingInWithPasskey}
-                                                >
-                                                    <span className="bg-primary/10 text-primary flex h-8 w-8 shrink-0 items-center justify-center rounded-xl sm:h-9 sm:w-9">
-                                                        <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                                                    </span>
-                                                    <span className="grid min-w-0 flex-1 gap-0.5">
-                                                        <span className="text-foreground truncate text-sm font-semibold">
-                                                            Continue as {account.label}
-                                                        </span>
-                                                        <span className="text-muted-foreground line-clamp-2 text-xs leading-snug">
-                                                            {account.description}
-                                                        </span>
-                                                    </span>
-                                                </Button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            ) : null}
-
-                            <SocialAuthButtons />
-
-                            {passkeyAvailable && (
-                                <>
-                                    <div className="relative">
-                                        <div className="absolute inset-0 flex items-center">
-                                            <span className="w-full border-t" />
-                                        </div>
-                                        <div className="relative flex justify-center text-xs uppercase">
-                                            <span className="bg-background text-muted-foreground px-2">Or continue with</span>
-                                        </div>
-                                    </div>
-
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        className="h-10 w-full"
-                                        onClick={handlePasskeyLogin}
-                                        disabled={processing || loggingInWithPasskey}
-                                    >
-                                        {loggingInWithPasskey ? (
-                                            <>
-                                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                                Verifying...
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Key className="mr-2 h-4 w-4" />
-                                                Sign in with passkey
-                                            </>
-                                        )}
-                                    </Button>
-                                </>
+                <FieldGroup className="gap-4">
+                    {/* Email field */}
+                    <Field>
+                        <FieldLabel htmlFor="email" className="text-sm font-medium text-zinc-200">
+                            Email or username
+                        </FieldLabel>
+                        <InputGroup
+                            className={cn(
+                                "h-10 rounded-lg border-zinc-800 bg-zinc-900/60 shadow-xs transition-colors focus-within:border-zinc-700 focus-within:ring-2 focus-within:ring-zinc-700/40",
+                                errors?.email && "border-destructive focus-within:ring-destructive/20"
                             )}
+                        >
+                            <InputGroupAddon align="inline-start" className="text-zinc-500 pl-3">
+                                <Mail className="size-4" />
+                            </InputGroupAddon>
+                            <InputGroupInput
+                                id="email"
+                                type="text"
+                                placeholder="name@school.edu"
+                                required
+                                autoFocus
+                                value={data.email}
+                                onChange={(e) => setData("email", e.target.value)}
+                                disabled={processing || loggingInWithPasskey}
+                                className="text-sm text-zinc-100 placeholder:text-zinc-500 font-normal px-2"
+                            />
+                        </InputGroup>
+                        {errors?.email && <FieldError errors={[{ message: errors.email }]} />}
+                    </Field>
+
+                    {/* Password field */}
+                    <Field>
+                        <div className="flex items-center justify-between">
+                            <FieldLabel htmlFor="password" className="text-sm font-medium text-zinc-200">
+                                Password
+                            </FieldLabel>
+                            <Link
+                                href="/forgot-password"
+                                className="text-xs text-zinc-400 hover:text-zinc-200 hover:underline transition-colors"
+                            >
+                                Forgot password?
+                            </Link>
                         </div>
+                        <InputGroup
+                            className={cn(
+                                "h-10 rounded-lg border-zinc-800 bg-zinc-900/60 shadow-xs transition-colors focus-within:border-zinc-700 focus-within:ring-2 focus-within:ring-zinc-700/40",
+                                errors?.password && "border-destructive focus-within:ring-destructive/20"
+                            )}
+                        >
+                            <InputGroupAddon align="inline-start" className="text-zinc-500 pl-3">
+                                <Lock className="size-4" />
+                            </InputGroupAddon>
+                            <InputGroupInput
+                                id="password"
+                                type={showPassword ? "text" : "password"}
+                                placeholder="Enter your password"
+                                required
+                                value={data.password}
+                                onChange={(e) => setData("password", e.target.value)}
+                                disabled={processing || loggingInWithPasskey}
+                                className="text-sm text-zinc-100 placeholder:text-zinc-500 font-normal px-2"
+                            />
+                            <InputGroupAddon align="inline-end" className="pr-1.5">
+                                <InputGroupButton
+                                    size="icon-xs"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    aria-label={showPassword ? "Hide password" : "Show password"}
+                                    className="text-zinc-400 hover:text-zinc-200"
+                                >
+                                    {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                                </InputGroupButton>
+                            </InputGroupAddon>
+                        </InputGroup>
+                        {errors?.password && <FieldError errors={[{ message: errors.password }]} />}
+                    </Field>
+
+                    {/* Remember me option */}
+                    <div className="flex items-center space-x-2 pt-0.5">
+                        <Checkbox
+                            id="remember"
+                            checked={data.remember}
+                            onCheckedChange={(checked) => setData("remember", Boolean(checked))}
+                            disabled={processing || loggingInWithPasskey}
+                            className="border-zinc-700 data-[state=checked]:bg-white data-[state=checked]:text-zinc-950"
+                        />
+                        <label
+                            htmlFor="remember"
+                            className="text-xs font-normal text-zinc-400 peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer select-none"
+                        >
+                            Remember this device for 30 days
+                        </label>
                     </div>
 
-                    <div className="text-muted-foreground text-center text-sm">
-                        Don&apos;t have an account?{" "}
-                        <Link href="/signup" className="text-primary font-semibold underline-offset-4 transition-all hover:underline">
+                    {/* Submit button - High contrast solid white */}
+                    <Button
+                        type="submit"
+                        className="h-10 w-full rounded-lg bg-white font-semibold text-zinc-950 shadow-sm transition-colors hover:bg-zinc-200 disabled:opacity-50 text-sm mt-1"
+                        disabled={processing || loggingInWithPasskey}
+                    >
+                        {processing ? (
+                            <>
+                                <Loader2 className="mr-2 size-4 animate-spin text-zinc-950" />
+                                <span>Signing in...</span>
+                            </>
+                        ) : (
+                            "Sign in"
+                        )}
+                    </Button>
+
+                    {/* Demo mode section */}
+                    {demoMode?.enabled && demoMode.accounts.length > 0 && (
+                        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-3 space-y-2 mt-1">
+                            <div className="text-center space-y-0.5">
+                                <p className="text-xs font-semibold text-zinc-200">Explore Demo Workspaces</p>
+                                <p className="text-[11px] text-zinc-400">Select a persona to test the portal immediately</p>
+                            </div>
+                            <div className="grid gap-1.5">
+                                {demoMode.accounts.map((account) => {
+                                    const Icon = demoAccountIcons[account.role] ?? Key;
+                                    return (
+                                        <button
+                                            key={account.role}
+                                            type="button"
+                                            onClick={() => handleDemoLogin(account.role)}
+                                            disabled={processing || loggingInWithPasskey}
+                                            className="group flex w-full items-center gap-2.5 rounded-lg border border-zinc-800 bg-zinc-900/80 p-2 text-left transition-colors hover:border-zinc-700 hover:bg-zinc-800/80 disabled:opacity-50"
+                                        >
+                                            <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-zinc-800 text-zinc-300 group-hover:text-white">
+                                                <Icon className="size-3.5" />
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="text-xs font-medium text-zinc-200 group-hover:text-white transition-colors">
+                                                    {account.label}
+                                                </div>
+                                                <div className="truncate text-[10px] text-zinc-400">
+                                                    {account.description}
+                                                </div>
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Social auth */}
+                    <SocialAuthButtons />
+
+                    {/* Passkey authentication */}
+                    {passkeyAvailable && (
+                        <div className="space-y-3">
+                            <div className="relative my-1">
+                                <div className="absolute inset-0 flex items-center">
+                                    <span className="w-full border-t border-zinc-800" />
+                                </div>
+                                <div className="relative flex justify-center text-xs">
+                                    <span className="bg-zinc-950 px-2 text-zinc-400">Or passwordless</span>
+                                </div>
+                            </div>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                className="h-10 w-full rounded-lg border-zinc-800 bg-zinc-900/60 text-zinc-200 hover:bg-zinc-800 hover:text-white transition-colors text-sm font-medium gap-2"
+                                onClick={handlePasskeyLogin}
+                                disabled={processing || loggingInWithPasskey}
+                            >
+                                {loggingInWithPasskey ? (
+                                    <>
+                                        <Loader2 className="size-4 animate-spin text-zinc-400" />
+                                        <span>Authenticating with passkey...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Fingerprint className="size-4 text-zinc-300" />
+                                        <span>Sign in with Passkey / Biometrics</span>
+                                    </>
+                                )}
+                            </Button>
+                        </div>
+                    )}
+
+                    {/* Register link */}
+                    <div className="pt-2 text-center text-sm text-zinc-400">
+                        Need an account?{" "}
+                        <Link href="/signup" className="font-semibold text-white underline-offset-4 hover:underline">
                             Sign up
                         </Link>
                     </div>
-                </div>
+                </FieldGroup>
             </form>
-
-            <div className="text-muted-foreground/60 hover:[&_a]:text-primary text-center text-xs text-balance [&_a]:underline [&_a]:underline-offset-4 [&_a]:transition-colors">
-                By clicking continue, you agree to our <Link href="/terms-of-service">ToS</Link> and{" "}
-                <Link href="/privacy-policy">Privacy Policy</Link>.
-            </div>
         </div>
     );
 }

@@ -16,6 +16,15 @@ abstract class TestCase extends BaseTestCase
     {
         parent::setUp();
 
+        $appDb = database_path('database.sqlite');
+        $activeDb = (string) config('database.connections.'.config('database.default').'.database');
+
+        if ($activeDb !== ':memory:' && file_exists($appDb) && file_exists($activeDb) && realpath($activeDb) === realpath($appDb)) {
+            throw new \RuntimeException(
+                "DANGER: Test suite attempted to run against application database ({$appDb}). Aborting to prevent data corruption."
+            );
+        }
+
         config(['inertia.ssr.enabled' => false]);
 
         $this->app->singleton(\Faker\Generator::class, function (): \Faker\Generator {

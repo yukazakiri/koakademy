@@ -17,16 +17,26 @@ export interface Branding {
     favicon: string;
 }
 
+const getInitialAppName = (): string => {
+    if (typeof window !== "undefined") {
+        const appName = (window as unknown as { appName?: string }).appName;
+        if (typeof appName === "string" && appName.trim() !== "") {
+            return appName.trim();
+        }
+    }
+    return "Portal";
+};
+
 export const DEFAULT_BRANDING: Branding = {
-    appName: "KoAkademy",
-    appShortName: "KOA",
-    organizationName: "KoAkademy",
-    organizationShortName: "KOA",
+    appName: getInitialAppName(),
+    appShortName: "Portal",
+    organizationName: getInitialAppName(),
+    organizationShortName: "Portal",
     organizationAddress: null,
     supportEmail: null,
     supportPhone: null,
     tagline: "Your Campus, Your Connection",
-    copyrightText: `${new Date().getFullYear()} KoAkademy. All rights reserved.`,
+    copyrightText: `${new Date().getFullYear()} All rights reserved.`,
     themeColor: "#0f172a",
     currency: "PHP",
     authLayout: "split",

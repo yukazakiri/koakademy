@@ -2,6 +2,28 @@
 
 declare(strict_types=1);
 
+$testDb = dirname(__DIR__).'/database/testing.sqlite';
+if (! file_exists($testDb)) {
+    touch($testDb);
+}
+$testDbReal = realpath($testDb) ?: $testDb;
+
+$_SERVER['APP_ENV'] = 'testing';
+$_ENV['APP_ENV'] = 'testing';
+putenv('APP_ENV=testing');
+
+$_SERVER['DB_CONNECTION'] = 'sqlite';
+$_ENV['DB_CONNECTION'] = 'sqlite';
+putenv('DB_CONNECTION=sqlite');
+
+$_SERVER['DB_DATABASE'] = $testDbReal;
+$_ENV['DB_DATABASE'] = $testDbReal;
+putenv("DB_DATABASE={$testDbReal}");
+
+$_SERVER['PULSE_DB_DATABASE'] = $testDbReal;
+$_ENV['PULSE_DB_DATABASE'] = $testDbReal;
+putenv("PULSE_DB_DATABASE={$testDbReal}");
+
 $_SERVER['APP_BASE_PATH'] = dirname(__DIR__);
 $_ENV['APP_BASE_PATH'] = dirname(__DIR__);
 putenv('APP_BASE_PATH='.dirname(__DIR__));
@@ -9,6 +31,10 @@ putenv('APP_BASE_PATH='.dirname(__DIR__));
 putenv('APP_CONFIG_CACHE='.sys_get_temp_dir().'/koakademy_testing_config.php');
 $_ENV['APP_CONFIG_CACHE'] = sys_get_temp_dir().'/koakademy_testing_config.php';
 $_SERVER['APP_CONFIG_CACHE'] = sys_get_temp_dir().'/koakademy_testing_config.php';
+
+putenv('APP_ROUTES_CACHE='.sys_get_temp_dir().'/koakademy_testing_routes.php');
+$_ENV['APP_ROUTES_CACHE'] = sys_get_temp_dir().'/koakademy_testing_routes.php';
+$_SERVER['APP_ROUTES_CACHE'] = sys_get_temp_dir().'/koakademy_testing_routes.php';
 
 spl_autoload_register(function (string $class): bool {
     if (str_starts_with($class, 'Modules\\')) {

@@ -1,6 +1,8 @@
 import { Link, router, useForm } from "@inertiajs/react";
 import axios from "axios";
 import {
+    ArrowLeft,
+    CheckCircle2,
     Eye,
     EyeOff,
     Fingerprint,
@@ -10,6 +12,7 @@ import {
     Lock,
     Mail,
     ShieldCheck,
+    Sparkles,
     UserRoundCog,
 } from "lucide-react";
 import { useCallback, useEffect, useState, type ComponentPropsWithoutRef, type FormEvent } from "react";
@@ -61,6 +64,17 @@ export function LoginForm({ className, demoMode, errors, status, ...props }: Log
     const [showPassword, setShowPassword] = useState(false);
     const [loggingInWithPasskey, setLoggingInWithPasskey] = useState(false);
     const [passkeyAvailable, setPasskeyAvailable] = useState(false);
+    const [loginMode, setLoginMode] = useState<"password" | "magic-link">("password");
+    const [magicLinkSent, setMagicLinkSent] = useState(false);
+    const [magicCooldown, setMagicCooldown] = useState(0);
+
+    useEffect(() => {
+        if (magicCooldown <= 0) return;
+        const timer = setInterval(() => {
+            setMagicCooldown((prev) => prev - 1);
+        }, 1000);
+        return () => clearInterval(timer);
+    }, [magicCooldown]);
 
     useEffect(() => {
         const checkPasskeySupport = async () => {
@@ -89,6 +103,23 @@ export function LoginForm({ className, demoMode, errors, status, ...props }: Log
 
     const submit = (e: FormEvent) => {
         e.preventDefault();
+
+        if (loginMode === "magic-link") {
+            post("/magic-link/send", {
+                onSuccess: () => {
+                    setMagicLinkSent(true);
+                    setMagicCooldown(60);
+                    toast.success("Magic sign-in link sent! Check your inbox.");
+                },
+                onError: (formErrors) => {
+                    Object.values(formErrors).forEach((err) => {
+                        toast.error(err);
+                    });
+                },
+            });
+            return;
+        }
+
         post("/login", {
             onError: (formErrors) => {
                 Object.values(formErrors).forEach((err) => {
@@ -240,51 +271,86 @@ export function LoginForm({ className, demoMode, errors, status, ...props }: Log
                         {errors?.email && <FieldError errors={[{ message: errors.email }]} />}
                     </Field>
 
-                    {/* Password field */}
-                    <Field>
-                        <div className="flex items-center justify-between">
-                            <FieldLabel htmlFor="password" className="text-sm font-medium text-zinc-200">
-                                Password
-                            </FieldLabel>
-                            <Link
-                                href="/forgot-password"
-                                className="text-xs text-zinc-400 hover:text-zinc-200 hover:underline transition-colors"
-                            >
-                                Forgot password?
-                            </Link>
-                        </div>
-                        <InputGroup
-                            className={cn(
-                                "h-10 rounded-lg border-zinc-800 bg-zinc-900/60 shadow-xs transition-colors focus-within:border-zinc-700 focus-within:ring-2 focus-within:ring-zinc-700/40",
-                                errors?.password && "border-destructive focus-within:ring-destructive/20"
-                            )}
-                        >
-                            <InputGroupAddon align="inline-start" className="text-zinc-500 pl-3">
-                                <Lock className="size-4" />
-                            </InputGroupAddon>
-                            <InputGroupInput
-                                id="password"
-                                type={showPassword ? "text" : "password"}
-                                placeholder="Enter your password"
-                                required
-                                value={data.password}
-                                onChange={(e) => setData("password", e.target.value)}
-                                disabled={processing || loggingInWithPasskey}
-                                className="text-sm text-zinc-100 placeholder:text-zinc-500 font-normal px-2"
-                            />
-                            <InputGroupAddon align="inline-end" className="pr-1.5">
-                                <InputGroupButton
-                                    size="icon-xs"
-                                    onClick={() => setShowPassword(!showPassword)}
-                                    aria-label={showPassword ? "Hide password" : "Show password"}
-                                    className="text-zinc-400 hover:text-zinc-200"
+                    {/* Password field - only in password mode */}
+                    {loginMode === "password" && (
+                        <Field>
+                            <div className="flex items-center justify-between">
+                                <FieldLabel htmlFor="password" className="text-sm font-medium text-zinc-200">
+                                    Password
+                                </FieldLabel>
+                                <Link
+                                    href="/forgot-password"
+                                    className="text-xs text-zinc-400 hover:text-zinc-200 hover:underline transition-colors"
                                 >
-                                    {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                                </InputGroupButton>
-                            </InputGroupAddon>
-                        </InputGroup>
-                        {errors?.password && <FieldError errors={[{ message: errors.password }]} />}
-                    </Field>
+                                    Forgot password?
+                                </Link>
+                            </div>
+                            <InputGroup
+                                className={cn(
+                                    "h-10 rounded-lg border-zinc-800 bg-zinc-900/60 shadow-xs transition-colors focus-within:border-zinc-700 focus-within:ring-2 focus-within:ring-zinc-700/40",
+                                    errors?.password && "border-destructive focus-within:ring-destructive/20"
+                                )}
+                            >
+                                <InputGroupAddon align="inline-start" className="text-zinc-500 pl-3">
+                                    <Lock className="size-4" />
+                                </InputGroupAddon>
+                                <InputGroupInput
+                                    id="password"
+                                    type={showPassword ? "text" : "password"}
+                                    placeholder="Enter your password"
+                                    required
+                                    value={data.password}
+                                    onChange={(e) => setData("password", e.target.value)}
+                                    disabled={processing || loggingInWithPasskey}
+                                    className="text-sm text-zinc-100 placeholder:text-zinc-500 font-normal px-2"
+                                />
+                                <InputGroupAddon align="inline-end" className="pr-1.5">
+                                    <InputGroupButton
+                                        size="icon-xs"
+                                        onClick={() => setShowPassword(!showPassword)}
+                                        aria-label={showPassword ? "Hide password" : "Show password"}
+                                        className="text-zinc-400 hover:text-zinc-200"
+                                    >
+                                        {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                                    </InputGroupButton>
+                                </InputGroupAddon>
+                            </InputGroup>
+                            {errors?.password && <FieldError errors={[{ message: errors.password }]} />}
+                        </Field>
+                    )}
+
+                    {loginMode === "magic-link" && magicLinkSent ? (
+                        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-center space-y-3">
+                            <div className="mx-auto flex size-10 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400">
+                                <CheckCircle2 className="size-5" />
+                            </div>
+                            <div className="space-y-1">
+                                <p className="text-xs font-semibold text-white">Check your email</p>
+                                <p className="text-[11px] text-zinc-300">
+                                    We sent a sign-in link to <span className="font-medium text-white">{data.email}</span>. Click it to log in.
+                                </p>
+                            </div>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-8 w-full rounded-lg border-zinc-800 bg-zinc-900/80 text-xs text-zinc-200 hover:bg-zinc-800 hover:text-white"
+                                onClick={submit}
+                                disabled={processing || magicCooldown > 0}
+                            >
+                                {processing ? (
+                                    <>
+                                        <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                                        <span>Sending...</span>
+                                    </>
+                                ) : magicCooldown > 0 ? (
+                                    `Resend link (${magicCooldown}s)`
+                                ) : (
+                                    "Resend magic link"
+                                )}
+                            </Button>
+                        </div>
+                    ) : null}
 
                     {/* Remember me option */}
                     <div className="flex items-center space-x-2 pt-0.5">
@@ -304,20 +370,39 @@ export function LoginForm({ className, demoMode, errors, status, ...props }: Log
                     </div>
 
                     {/* Submit button - High contrast solid white */}
-                    <Button
-                        type="submit"
-                        className="h-10 w-full rounded-lg bg-white font-semibold text-zinc-950 shadow-sm transition-colors hover:bg-zinc-200 disabled:opacity-50 text-sm mt-1"
-                        disabled={processing || loggingInWithPasskey}
-                    >
-                        {processing ? (
-                            <>
-                                <Loader2 className="mr-2 size-4 animate-spin text-zinc-950" />
-                                <span>Signing in...</span>
-                            </>
-                        ) : (
-                            "Sign in"
-                        )}
-                    </Button>
+                    {loginMode === "password" || !magicLinkSent ? (
+                        <Button
+                            type="submit"
+                            className="h-10 w-full rounded-lg bg-white font-semibold text-zinc-950 shadow-sm transition-colors hover:bg-zinc-200 disabled:opacity-50 text-sm mt-1"
+                            disabled={processing || loggingInWithPasskey}
+                        >
+                            {processing ? (
+                                <>
+                                    <Loader2 className="mr-2 size-4 animate-spin text-zinc-950" />
+                                    <span>{loginMode === "magic-link" ? "Sending link..." : "Signing in..."}</span>
+                                </>
+                            ) : loginMode === "magic-link" ? (
+                                "Send magic link"
+                            ) : (
+                                "Sign in"
+                            )}
+                        </Button>
+                    ) : null}
+
+                    {loginMode === "magic-link" && (
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            className="h-8 text-xs text-zinc-400 hover:text-zinc-200 transition-colors gap-1.5"
+                            onClick={() => {
+                                setLoginMode("password");
+                                setMagicLinkSent(false);
+                            }}
+                        >
+                            <ArrowLeft className="size-3" />
+                            <span>Sign in with password instead</span>
+                        </Button>
+                    )}
 
                     {/* Demo mode section */}
                     {demoMode?.enabled && demoMode.accounts.length > 0 && (
@@ -358,8 +443,8 @@ export function LoginForm({ className, demoMode, errors, status, ...props }: Log
                     {/* Social auth */}
                     <SocialAuthButtons />
 
-                    {/* Passkey authentication */}
-                    {passkeyAvailable && (
+                    {/* Passwordless Options (Magic link + Passkey) */}
+                    {loginMode === "password" && (
                         <div className="space-y-3">
                             <div className="relative my-1">
                                 <div className="absolute inset-0 flex items-center">
@@ -369,25 +454,41 @@ export function LoginForm({ className, demoMode, errors, status, ...props }: Log
                                     <span className="bg-zinc-950 px-2 text-zinc-400">Or passwordless</span>
                                 </div>
                             </div>
-                            <Button
-                                type="button"
-                                variant="outline"
-                                className="h-10 w-full rounded-lg border-zinc-800 bg-zinc-900/60 text-zinc-200 hover:bg-zinc-800 hover:text-white transition-colors text-sm font-medium gap-2"
-                                onClick={handlePasskeyLogin}
-                                disabled={processing || loggingInWithPasskey}
-                            >
-                                {loggingInWithPasskey ? (
-                                    <>
-                                        <Loader2 className="size-4 animate-spin text-zinc-400" />
-                                        <span>Authenticating with passkey...</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <Fingerprint className="size-4 text-zinc-300" />
-                                        <span>Sign in with Passkey / Biometrics</span>
-                                    </>
+
+                            <div className="grid gap-2">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    className="h-10 w-full rounded-lg border-zinc-800 bg-zinc-900/60 text-zinc-200 hover:bg-zinc-800 hover:text-white transition-colors text-sm font-medium gap-2"
+                                    onClick={() => setLoginMode("magic-link")}
+                                    disabled={processing || loggingInWithPasskey}
+                                >
+                                    <Sparkles className="size-4 text-amber-400" />
+                                    <span>Email me a sign-in link</span>
+                                </Button>
+
+                                {passkeyAvailable && (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        className="h-10 w-full rounded-lg border-zinc-800 bg-zinc-900/60 text-zinc-200 hover:bg-zinc-800 hover:text-white transition-colors text-sm font-medium gap-2"
+                                        onClick={handlePasskeyLogin}
+                                        disabled={processing || loggingInWithPasskey}
+                                    >
+                                        {loggingInWithPasskey ? (
+                                            <>
+                                                <Loader2 className="size-4 animate-spin text-zinc-400" />
+                                                <span>Authenticating with passkey...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Fingerprint className="size-4 text-zinc-300" />
+                                                <span>Sign in with Passkey / Biometrics</span>
+                                            </>
+                                        )}
+                                    </Button>
                                 )}
-                            </Button>
+                            </div>
                         </div>
                     )}
 

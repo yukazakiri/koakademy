@@ -214,6 +214,29 @@ it('searches students within the authorized school and enforces permissions', fu
                 ->where('students.0.name', $student->full_name)
                 ->etc();
         });
+
+    // Case-insensitive formatted name query
+    $formatted = KoAkademyServer::actingAs($this->staff)
+        ->tool(SearchStudentsTool::class, ['query' => 'SANTOS, MARIA']);
+    $formatted->assertOk()
+        ->assertStructuredContent(function ($json) use ($student): void {
+            $json->where('count', 1)
+                ->where('students.0.id', $student->id)
+                ->etc();
+        });
+
+    // Batch queries support
+    $batch = KoAkademyServer::actingAs($this->staff)
+        ->tool(SearchStudentsTool::class, ['queries' => ['SANTOS, MARIA', 'UNKNOWN PERSON']]);
+    $batch->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('count', 2)
+                ->where('found_count', 1)
+                ->where('students.0.found', true)
+                ->where('students.0.email', 'maria.santos@student.koakademy.edu')
+                ->where('students.1.found', false)
+                ->etc();
+        });
 });
 
 it('returns student schedule and detected conflict details', function (): void {

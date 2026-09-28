@@ -58,6 +58,10 @@ final class ManageClassScheduleTool implements Tool
             if (! $user->hasRole('super_admin') && ! $user->can('Create:Classes')) {
                 return json_encode(['error' => true, 'message' => 'You are not permitted to create classes.']);
             }
+        } elseif ($action === 'batch_create') {
+            if (! $user->hasRole('super_admin') && ! $user->can('Create:Classes') && ! $user->can('Update:Classes')) {
+                return json_encode(['error' => true, 'message' => 'You are not permitted to batch create class schedules.']);
+            }
         } elseif ($action === 'delete_class') {
             if (! $user->hasRole('super_admin') && ! $user->can('Delete:Classes')) {
                 return json_encode(['error' => true, 'message' => 'You are not permitted to delete classes.']);
@@ -70,12 +74,13 @@ final class ManageClassScheduleTool implements Tool
 
         return match ($action) {
             'create_class' => $this->handleCreateClass($request),
+            'batch_create' => $this->handleBatchCreate($request),
             'reschedule', 'update_schedule' => $this->handleReschedule($request),
             'assign_faculty' => $this->handleAssignFaculty($request),
             'assign_room' => $this->handleAssignRoom($request),
             'delete_class' => $this->handleDeleteClass($request),
             'get' => $this->handleGet($request),
-            default => json_encode(['error' => true, 'message' => "Unknown action '{$action}'. Supported: create_class, reschedule, assign_faculty, assign_room, delete_class, get."]),
+            default => json_encode(['error' => true, 'message' => "Unknown action '{$action}'. Supported: create_class, batch_create, reschedule, assign_faculty, assign_room, delete_class, get."]),
         };
     }
 
@@ -83,9 +88,23 @@ final class ManageClassScheduleTool implements Tool
     {
         return [
             'action' => $schema->string()
-                ->enum(['create_class', 'reschedule', 'assign_faculty', 'assign_room', 'delete_class', 'get'])
+                ->enum(['create_class', 'batch_create', 'reschedule', 'assign_faculty', 'assign_room', 'delete_class', 'get'])
                 ->required()
                 ->description('Operation to perform on classes and schedules.'),
+            'classes' => $schema->array()
+                ->description('List of class schedules to batch create.')
+                ->items(
+                    $schema->object(fn ($s) => [
+                        'subject_code' => $s->string()->required()->description('Subject code (e.g. CS101).'),
+                        'section' => $s->string()->required()->description('Section (e.g. BSCS-1A).'),
+                        'day_of_week' => $s->string()->description('Monday, Tuesday, Wednesday, Thursday, Friday, Saturday.'),
+                        'start_time' => $s->string()->description('HH:MM format.'),
+                        'end_time' => $s->string()->description('HH:MM format.'),
+                        'room_name' => $s->string()->description('Room name or number.'),
+                        'faculty_name' => $s->string()->description('Instructor name.'),
+                        'maximum_slots' => $s->integer()->description('Max capacity (default 40).'),
+                    ])
+                ),
             'class_id' => $schema->integer()->description('Class ID (for reschedule, assign, delete, get).'),
             'schedule_id' => $schema->integer()->description('Specific schedule ID to modify (optional).'),
             'subject_code' => $schema->string()->description('Subject code for the class (e.g. "CS101").'),
@@ -118,6 +137,12 @@ final class ManageClassScheduleTool implements Tool
             $time = ($request['day_of_week'] ?? '').' '.($request['start_time'] ?? '').'-'.($request['end_time'] ?? '');
 
             return Approval::required("Create new class section {$subj} ({$sec}) in Room {$room} on {$time}?");
+        }
+
+        if ($action === 'batch_create') {
+            $count = is_array($request['classes'] ?? null) ? count($request['classes']) : 0;
+
+            return Approval::required("Batch create or schedule {$count} class offerings on the institutional timetable?");
         }
 
         if ($action === 'reschedule' || $action === 'update_schedule') {
@@ -234,6 +259,128 @@ final class ManageClassScheduleTool implements Tool
         } catch (Throwable $e) {
             return json_encode(['error' => true, 'message' => "Failed to create class: {$e->getMessage()}"]);
         }
+    }
+
+    private function handleBatchCreate(Request $request): string
+    {
+        $validated = $request->validate([
+            'classes' => 'required|array|min:1',
+            'classes.*.subject_code' => 'required|string|max:50',
+            'classes.*.section' => 'required|string|max:50',
+            'classes.*.day_of_week' => 'nullable|string',
+            'classes.*.start_time' => 'nullable|string',
+            'classes.*.end_time' => 'nullable|string',
+            'classes.*.room_id' => 'nullable|integer',
+            'classes.*.room_name' => 'nullable|string',
+            'classes.*.faculty_id' => 'nullable',
+            'classes.*.faculty_name' => 'nullable|string',
+            'classes.*.maximum_slots' => 'nullable|integer|between:1,150',
+            'classes.*.school_year' => 'nullable|string',
+            'classes.*.semester' => 'nullable|integer|in:1,2',
+        ]);
+
+        $defaultSchoolYear = $this->settings->getCurrentSchoolYearString();
+        $defaultSemester = $this->settings->getCurrentSemester();
+
+        $created = [];
+        $updated = [];
+        $warnings = [];
+
+        DB::transaction(function () use ($validated, $defaultSchoolYear, $defaultSemester, &$created, &$updated, &$warnings) {
+            foreach ($validated['classes'] as $cData) {
+                $schoolYear = $cData['school_year'] ?? $defaultSchoolYear;
+                $semester = $cData['semester'] ?? $defaultSemester;
+                $subjectCode = mb_strtoupper(mb_trim((string) $cData['subject_code']));
+                $section = mb_trim((string) $cData['section']);
+
+                $roomId = $cData['room_id'] ?? null;
+                if (! $roomId && filled($cData['room_name'] ?? null)) {
+                    $room = Room::query()->where('name', 'like', "%{$cData['room_name']}%")->first();
+                    $roomId = $room?->id;
+                }
+
+                $facultyId = null;
+                if (filled($cData['faculty_id'] ?? null)) {
+                    $faculty = Faculty::query()->find($cData['faculty_id']);
+                    $facultyId = $faculty?->id;
+                } elseif (filled($cData['faculty_name'] ?? null)) {
+                    $faculty = Faculty::query()->whereRaw("TRIM(CONCAT_WS(' ', first_name, last_name)) LIKE ?", ["%{$cData['faculty_name']}%"])->first();
+                    $facultyId = $faculty?->id;
+                }
+
+                $subject = Subject::query()->where('code', $subjectCode)->first();
+
+                $class = Classes::query()
+                    ->where('subject_code', $subjectCode)
+                    ->where('section', $section)
+                    ->where('school_year', $schoolYear)
+                    ->where('semester', $semester)
+                    ->first();
+
+                if ($class instanceof Classes) {
+                    $updates = array_filter([
+                        'room_id' => $roomId,
+                        'faculty_id' => $facultyId,
+                        'maximum_slots' => $cData['maximum_slots'] ?? null,
+                    ], fn ($v) => $v !== null);
+                    if (! empty($updates)) {
+                        $class->update($updates);
+                    }
+                    $updated[] = [
+                        'id' => $class->id,
+                        'subject_code' => $class->subject_code,
+                        'section' => $class->section,
+                    ];
+                } else {
+                    $class = Classes::query()->create([
+                        'subject_code' => $subjectCode,
+                        'section' => $section,
+                        'subject_id' => $subject?->id,
+                        'school_year' => $schoolYear,
+                        'semester' => $semester,
+                        'room_id' => $roomId,
+                        'faculty_id' => $facultyId,
+                        'maximum_slots' => (int) ($cData['maximum_slots'] ?? 40),
+                    ]);
+                    $created[] = [
+                        'id' => $class->id,
+                        'subject_code' => $class->subject_code,
+                        'section' => $class->section,
+                    ];
+                }
+
+                if (filled($cData['day_of_week'] ?? null) && filled($cData['start_time'] ?? null) && filled($cData['end_time'] ?? null)) {
+                    $dayOfWeek = mb_convert_case(mb_trim((string) $cData['day_of_week']), MB_CASE_TITLE);
+                    $startTime = Carbon::parse($cData['start_time'])->format('H:i:s');
+                    $endTime = Carbon::parse($cData['end_time'])->format('H:i:s');
+
+                    try {
+                        $this->guardScheduleConflicts($roomId, $facultyId, $dayOfWeek, $startTime, $endTime, $schoolYear, $semester);
+                    } catch (Throwable $conflictEx) {
+                        $warnings[] = "{$subjectCode} ({$section}): ".$conflictEx->getMessage();
+                    }
+
+                    Schedule::query()->firstOrCreate([
+                        'class_id' => $class->id,
+                        'day_of_week' => $dayOfWeek,
+                        'start_time' => $startTime,
+                        'end_time' => $endTime,
+                    ], [
+                        'room_id' => $roomId,
+                    ]);
+                }
+            }
+        });
+
+        return json_encode([
+            'success' => true,
+            'action' => 'batch_create',
+            'created_classes_count' => count($created),
+            'updated_classes_count' => count($updated),
+            'created' => $created,
+            'updated' => $updated,
+            'warnings' => $warnings,
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 
     private function handleReschedule(Request $request): string

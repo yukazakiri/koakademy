@@ -72,7 +72,7 @@ export default function MagicLinkPage() {
             icon={<Sparkles className="size-6 text-primary" />}
             title={
                 <span>
-                    Sign in with <span className="text-white">Magic Link</span>
+                    Sign in with <span className="text-primary">Magic Link</span>
                 </span>
             }
             description={
@@ -91,15 +91,15 @@ export default function MagicLinkPage() {
                     </div>
 
                     <div className="space-y-2">
-                        <h3 className="text-lg font-semibold text-white">Check your email</h3>
-                        <p className="text-sm text-zinc-400 text-pretty">
+                        <h3 className="text-lg font-semibold text-foreground">Check your email</h3>
+                        <p className="text-sm text-muted-foreground text-pretty">
                             We have sent a single-use login link to{" "}
-                            <span className="font-medium text-zinc-200">{data.email || "your address"}</span>.
+                            <span className="font-medium text-foreground">{data.email || "your address"}</span>.
                             Click the link in your email to sign in instantly.
                         </p>
                     </div>
 
-                    <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-3 text-xs text-zinc-400">
+                    <div className="rounded-xl border border-border bg-card/60 p-3 text-xs text-muted-foreground">
                         The link expires in 15 minutes and can only be used once. Check your spam folder if it doesn&apos;t arrive soon.
                     </div>
 
@@ -107,13 +107,13 @@ export default function MagicLinkPage() {
                         <Button
                             type="button"
                             variant="outline"
-                            className="w-full h-10 rounded-lg border-zinc-800 bg-zinc-900/80 text-zinc-200 hover:bg-zinc-800 hover:text-white"
+                            className="w-full h-10 rounded-lg border-border bg-card/80 text-foreground hover:bg-accent hover:text-accent-foreground"
                             onClick={submit}
                             disabled={processing || cooldown > 0}
                         >
                             {processing ? (
                                 <>
-                                    <Loader2 className="mr-2 size-4 animate-spin text-zinc-400" />
+                                    <Loader2 className="mr-2 size-4 animate-spin text-muted-foreground" />
                                     <span>Sending new link...</span>
                                 </>
                             ) : cooldown > 0 ? (
@@ -126,7 +126,7 @@ export default function MagicLinkPage() {
                         <div>
                             <Link
                                 href="/login"
-                                className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-400 hover:text-white transition-colors"
+                                className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-primary transition-colors"
                             >
                                 <ArrowLeft className="size-3" />
                                 <span>Return to password login</span>
@@ -138,16 +138,16 @@ export default function MagicLinkPage() {
                 <form onSubmit={submit}>
                     <FieldGroup className="gap-5">
                         <Field>
-                            <FieldLabel htmlFor="email" className="text-sm font-medium text-zinc-200">
+                            <FieldLabel htmlFor="email" className="text-sm font-medium text-foreground">
                                 Email address
                             </FieldLabel>
                             <InputGroup
                                 className={cn(
-                                    "h-10 rounded-lg border-zinc-800 bg-zinc-900/60 shadow-xs transition-colors focus-within:border-zinc-700 focus-within:ring-2 focus-within:ring-zinc-700/40",
+                                    "h-10 rounded-lg border-input bg-background/80 shadow-xs transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20",
                                     errors?.email && "border-destructive focus-within:ring-destructive/20"
                                 )}
                             >
-                                <InputGroupAddon align="inline-start" className="text-zinc-500 pl-3">
+                                <InputGroupAddon align="inline-start" className="text-muted-foreground pl-3">
                                     <Mail className="size-4" />
                                 </InputGroupAddon>
                                 <InputGroupInput
@@ -159,7 +159,7 @@ export default function MagicLinkPage() {
                                     value={data.email}
                                     onChange={(e) => setData("email", e.target.value)}
                                     disabled={processing}
-                                    className="text-sm text-zinc-100 placeholder:text-zinc-500 font-normal px-2"
+                                    className="text-sm text-foreground placeholder:text-muted-foreground font-normal px-2"
                                 />
                             </InputGroup>
                             {errors?.email && <FieldError errors={[{ message: errors.email }]} />}
@@ -171,11 +171,11 @@ export default function MagicLinkPage() {
                                 checked={data.remember}
                                 onCheckedChange={(checked) => setData("remember", Boolean(checked))}
                                 disabled={processing}
-                                className="border-zinc-700 data-[state=checked]:bg-white data-[state=checked]:text-zinc-950"
+                                className="border-input data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground focus-visible:ring-ring"
                             />
                             <label
                                 htmlFor="remember"
-                                className="text-xs font-normal text-zinc-400 peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer select-none"
+                                className="text-xs font-normal text-muted-foreground peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer select-none"
                             >
                                 Stay signed in on this device
                             </label>
@@ -183,12 +183,12 @@ export default function MagicLinkPage() {
 
                         <Button
                             type="submit"
-                            className="h-10 w-full rounded-lg bg-white font-semibold text-zinc-950 shadow-sm transition-colors hover:bg-zinc-200 disabled:opacity-50 text-sm mt-1"
+                            className="h-10 w-full rounded-lg bg-primary font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:ring-ring disabled:opacity-50 text-sm mt-1"
                             disabled={processing}
                         >
                             {processing ? (
                                 <>
-                                    <Loader2 className="mr-2 size-4 animate-spin text-zinc-950" />
+                                    <Loader2 className="mr-2 size-4 animate-spin text-primary-foreground" />
                                     <span>Sending sign-in link...</span>
                                 </>
                             ) : (
@@ -196,9 +196,9 @@ export default function MagicLinkPage() {
                             )}
                         </Button>
 
-                        <div className="pt-2 text-center text-xs text-zinc-400">
+                        <div className="pt-2 text-center text-xs text-muted-foreground">
                             Prefer passwords?{" "}
-                            <Link href="/login" className="font-semibold text-white underline-offset-4 hover:underline">
+                            <Link href="/login" className="font-semibold text-primary underline-offset-4 hover:underline">
                                 Sign in with password
                             </Link>
                         </div>

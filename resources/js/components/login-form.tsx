@@ -244,16 +244,16 @@ export function LoginForm({ className, demoMode, errors, status, ...props }: Log
                 <FieldGroup className="gap-4">
                     {/* Email field */}
                     <Field>
-                        <FieldLabel htmlFor="email" className="text-sm font-medium text-zinc-200">
+                        <FieldLabel htmlFor="email" className="text-sm font-medium text-foreground">
                             Email or username
                         </FieldLabel>
                         <InputGroup
                             className={cn(
-                                "h-10 rounded-lg border-zinc-800 bg-zinc-900/60 shadow-xs transition-colors focus-within:border-zinc-700 focus-within:ring-2 focus-within:ring-zinc-700/40",
+                                "h-10 rounded-lg border-input bg-background/80 shadow-xs transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20",
                                 errors?.email && "border-destructive focus-within:ring-destructive/20"
                             )}
                         >
-                            <InputGroupAddon align="inline-start" className="text-zinc-500 pl-3">
+                            <InputGroupAddon align="inline-start" className="text-muted-foreground pl-3">
                                 <Mail className="size-4" />
                             </InputGroupAddon>
                             <InputGroupInput
@@ -265,7 +265,7 @@ export function LoginForm({ className, demoMode, errors, status, ...props }: Log
                                 value={data.email}
                                 onChange={(e) => setData("email", e.target.value)}
                                 disabled={processing || loggingInWithPasskey}
-                                className="text-sm text-zinc-100 placeholder:text-zinc-500 font-normal px-2"
+                                className="text-sm text-foreground placeholder:text-muted-foreground font-normal px-2"
                             />
                         </InputGroup>
                         {errors?.email && <FieldError errors={[{ message: errors.email }]} />}
@@ -275,23 +275,23 @@ export function LoginForm({ className, demoMode, errors, status, ...props }: Log
                     {loginMode === "password" && (
                         <Field>
                             <div className="flex items-center justify-between">
-                                <FieldLabel htmlFor="password" className="text-sm font-medium text-zinc-200">
+                                <FieldLabel htmlFor="password" className="text-sm font-medium text-foreground">
                                     Password
                                 </FieldLabel>
                                 <Link
                                     href="/forgot-password"
-                                    className="text-xs text-zinc-400 hover:text-zinc-200 hover:underline transition-colors"
+                                    className="text-xs text-muted-foreground hover:text-primary hover:underline transition-colors"
                                 >
                                     Forgot password?
                                 </Link>
                             </div>
                             <InputGroup
                                 className={cn(
-                                    "h-10 rounded-lg border-zinc-800 bg-zinc-900/60 shadow-xs transition-colors focus-within:border-zinc-700 focus-within:ring-2 focus-within:ring-zinc-700/40",
+                                    "h-10 rounded-lg border-input bg-background/80 shadow-xs transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20",
                                     errors?.password && "border-destructive focus-within:ring-destructive/20"
                                 )}
                             >
-                                <InputGroupAddon align="inline-start" className="text-zinc-500 pl-3">
+                                <InputGroupAddon align="inline-start" className="text-muted-foreground pl-3">
                                     <Lock className="size-4" />
                                 </InputGroupAddon>
                                 <InputGroupInput
@@ -302,14 +302,14 @@ export function LoginForm({ className, demoMode, errors, status, ...props }: Log
                                     value={data.password}
                                     onChange={(e) => setData("password", e.target.value)}
                                     disabled={processing || loggingInWithPasskey}
-                                    className="text-sm text-zinc-100 placeholder:text-zinc-500 font-normal px-2"
+                                    className="text-sm text-foreground placeholder:text-muted-foreground font-normal px-2"
                                 />
                                 <InputGroupAddon align="inline-end" className="pr-1.5">
                                     <InputGroupButton
                                         size="icon-xs"
                                         onClick={() => setShowPassword(!showPassword)}
                                         aria-label={showPassword ? "Hide password" : "Show password"}
-                                        className="text-zinc-400 hover:text-zinc-200"
+                                        className="text-muted-foreground hover:text-foreground"
                                     >
                                         {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                                     </InputGroupButton>
@@ -325,16 +325,16 @@ export function LoginForm({ className, demoMode, errors, status, ...props }: Log
                                 <CheckCircle2 className="size-5" />
                             </div>
                             <div className="space-y-1">
-                                <p className="text-xs font-semibold text-white">Check your email</p>
-                                <p className="text-[11px] text-zinc-300">
-                                    We sent a sign-in link to <span className="font-medium text-white">{data.email}</span>. Click it to log in.
+                                <p className="text-xs font-semibold text-foreground">Check your email</p>
+                                <p className="text-[11px] text-muted-foreground">
+                                    We sent a sign-in link to <span className="font-medium text-foreground">{data.email}</span>. Click it to log in.
                                 </p>
                             </div>
                             <Button
                                 type="button"
                                 variant="outline"
                                 size="sm"
-                                className="h-8 w-full rounded-lg border-zinc-800 bg-zinc-900/80 text-xs text-zinc-200 hover:bg-zinc-800 hover:text-white"
+                                className="h-8 w-full rounded-lg border-border bg-card/80 text-xs text-foreground hover:bg-accent hover:text-accent-foreground"
                                 onClick={submit}
                                 disabled={processing || magicCooldown > 0}
                             >
@@ -359,26 +359,26 @@ export function LoginForm({ className, demoMode, errors, status, ...props }: Log
                             checked={data.remember}
                             onCheckedChange={(checked) => setData("remember", Boolean(checked))}
                             disabled={processing || loggingInWithPasskey}
-                            className="border-zinc-700 data-[state=checked]:bg-white data-[state=checked]:text-zinc-950"
+                            className="border-input data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground focus-visible:ring-ring"
                         />
                         <label
                             htmlFor="remember"
-                            className="text-xs font-normal text-zinc-400 peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer select-none"
+                            className="text-xs font-normal text-muted-foreground peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer select-none"
                         >
                             Remember this device for 30 days
                         </label>
                     </div>
 
-                    {/* Submit button - High contrast solid white */}
+                    {/* Submit button - Uses active theme primary/accent color */}
                     {loginMode === "password" || !magicLinkSent ? (
                         <Button
                             type="submit"
-                            className="h-10 w-full rounded-lg bg-white font-semibold text-zinc-950 shadow-sm transition-colors hover:bg-zinc-200 disabled:opacity-50 text-sm mt-1"
+                            className="h-10 w-full rounded-lg bg-primary font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:ring-ring disabled:opacity-50 text-sm mt-1"
                             disabled={processing || loggingInWithPasskey}
                         >
                             {processing ? (
                                 <>
-                                    <Loader2 className="mr-2 size-4 animate-spin text-zinc-950" />
+                                    <Loader2 className="mr-2 size-4 animate-spin text-primary-foreground" />
                                     <span>{loginMode === "magic-link" ? "Sending link..." : "Signing in..."}</span>
                                 </>
                             ) : loginMode === "magic-link" ? (
@@ -393,7 +393,7 @@ export function LoginForm({ className, demoMode, errors, status, ...props }: Log
                         <Button
                             type="button"
                             variant="ghost"
-                            className="h-8 text-xs text-zinc-400 hover:text-zinc-200 transition-colors gap-1.5"
+                            className="h-8 text-xs text-muted-foreground hover:text-foreground transition-colors gap-1.5"
                             onClick={() => {
                                 setLoginMode("password");
                                 setMagicLinkSent(false);
@@ -406,10 +406,10 @@ export function LoginForm({ className, demoMode, errors, status, ...props }: Log
 
                     {/* Demo mode section */}
                     {demoMode?.enabled && demoMode.accounts.length > 0 && (
-                        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-3 space-y-2 mt-1">
+                        <div className="rounded-xl border border-border bg-card/60 p-3 space-y-2 mt-1">
                             <div className="text-center space-y-0.5">
-                                <p className="text-xs font-semibold text-zinc-200">Explore Demo Workspaces</p>
-                                <p className="text-[11px] text-zinc-400">Select a persona to test the portal immediately</p>
+                                <p className="text-xs font-semibold text-foreground">Explore Demo Workspaces</p>
+                                <p className="text-[11px] text-muted-foreground">Select a persona to test the portal immediately</p>
                             </div>
                             <div className="grid gap-1.5">
                                 {demoMode.accounts.map((account) => {
@@ -420,16 +420,16 @@ export function LoginForm({ className, demoMode, errors, status, ...props }: Log
                                             type="button"
                                             onClick={() => handleDemoLogin(account.role)}
                                             disabled={processing || loggingInWithPasskey}
-                                            className="group flex w-full items-center gap-2.5 rounded-lg border border-zinc-800 bg-zinc-900/80 p-2 text-left transition-colors hover:border-zinc-700 hover:bg-zinc-800/80 disabled:opacity-50"
+                                            className="group flex w-full items-center gap-2.5 rounded-lg border border-border/80 bg-card/80 p-2 text-left transition-colors hover:border-primary/50 hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
                                         >
-                                            <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-zinc-800 text-zinc-300 group-hover:text-white">
+                                            <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
                                                 <Icon className="size-3.5" />
                                             </div>
                                             <div className="min-w-0 flex-1">
-                                                <div className="text-xs font-medium text-zinc-200 group-hover:text-white transition-colors">
+                                                <div className="text-xs font-medium text-foreground group-hover:text-primary transition-colors">
                                                     {account.label}
                                                 </div>
-                                                <div className="truncate text-[10px] text-zinc-400">
+                                                <div className="truncate text-[10px] text-muted-foreground">
                                                     {account.description}
                                                 </div>
                                             </div>
@@ -448,10 +448,10 @@ export function LoginForm({ className, demoMode, errors, status, ...props }: Log
                         <div className="space-y-3">
                             <div className="relative my-1">
                                 <div className="absolute inset-0 flex items-center">
-                                    <span className="w-full border-t border-zinc-800" />
+                                    <span className="w-full border-t border-border" />
                                 </div>
                                 <div className="relative flex justify-center text-xs">
-                                    <span className="bg-zinc-950 px-2 text-zinc-400">Or passwordless</span>
+                                    <span className="bg-card px-2 text-muted-foreground">Or passwordless</span>
                                 </div>
                             </div>
 
@@ -459,11 +459,11 @@ export function LoginForm({ className, demoMode, errors, status, ...props }: Log
                                 <Button
                                     type="button"
                                     variant="outline"
-                                    className="h-10 w-full rounded-lg border-zinc-800 bg-zinc-900/60 text-zinc-200 hover:bg-zinc-800 hover:text-white transition-colors text-sm font-medium gap-2"
+                                    className="h-10 w-full rounded-lg border-border bg-card/60 text-foreground hover:bg-accent hover:text-accent-foreground hover:border-primary/40 transition-colors text-sm font-medium gap-2"
                                     onClick={() => setLoginMode("magic-link")}
                                     disabled={processing || loggingInWithPasskey}
                                 >
-                                    <Sparkles className="size-4 text-amber-400" />
+                                    <Sparkles className="size-4 text-primary" />
                                     <span>Email me a sign-in link</span>
                                 </Button>
 
@@ -471,18 +471,18 @@ export function LoginForm({ className, demoMode, errors, status, ...props }: Log
                                     <Button
                                         type="button"
                                         variant="outline"
-                                        className="h-10 w-full rounded-lg border-zinc-800 bg-zinc-900/60 text-zinc-200 hover:bg-zinc-800 hover:text-white transition-colors text-sm font-medium gap-2"
+                                        className="h-10 w-full rounded-lg border-border bg-card/60 text-foreground hover:bg-accent hover:text-accent-foreground hover:border-primary/40 transition-colors text-sm font-medium gap-2"
                                         onClick={handlePasskeyLogin}
                                         disabled={processing || loggingInWithPasskey}
                                     >
                                         {loggingInWithPasskey ? (
                                             <>
-                                                <Loader2 className="size-4 animate-spin text-zinc-400" />
+                                                <Loader2 className="size-4 animate-spin text-primary" />
                                                 <span>Authenticating with passkey...</span>
                                             </>
                                         ) : (
                                             <>
-                                                <Fingerprint className="size-4 text-zinc-300" />
+                                                <Fingerprint className="size-4 text-primary" />
                                                 <span>Sign in with Passkey / Biometrics</span>
                                             </>
                                         )}
@@ -493,9 +493,9 @@ export function LoginForm({ className, demoMode, errors, status, ...props }: Log
                     )}
 
                     {/* Register link */}
-                    <div className="pt-2 text-center text-sm text-zinc-400">
+                    <div className="pt-2 text-center text-sm text-muted-foreground">
                         Need an account?{" "}
-                        <Link href="/signup" className="font-semibold text-white underline-offset-4 hover:underline">
+                        <Link href="/signup" className="font-semibold text-primary underline-offset-4 hover:underline">
                             Sign up
                         </Link>
                     </div>

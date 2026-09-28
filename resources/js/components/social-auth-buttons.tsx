@@ -35,10 +35,10 @@ export function SocialAuthButtons() {
         <div className="grid gap-3">
             <div className="relative my-1">
                 <div className="absolute inset-0 flex items-center">
-                    <span className="w-full border-t border-zinc-800" />
+                    <span className="w-full border-t border-border" />
                 </div>
                 <div className="relative flex justify-center text-xs">
-                    <span className="bg-zinc-950 px-2 text-zinc-400">Or continue with</span>
+                    <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
                 </div>
             </div>
 
@@ -54,7 +54,7 @@ export function SocialAuthButtons() {
                             type="button"
                             variant="outline"
                             className={cn(
-                                "h-10 w-full rounded-lg border border-zinc-800 bg-zinc-900/60 font-medium text-sm text-zinc-200 transition-colors hover:border-zinc-700 hover:bg-zinc-800/80 hover:text-white shadow-xs",
+                                "h-10 w-full rounded-lg border border-border bg-card/60 font-medium text-sm text-foreground transition-colors hover:border-primary/40 hover:bg-accent hover:text-accent-foreground shadow-xs",
                                 isLastOdd && "col-span-2"
                             )}
                             onClick={() => {

@@ -44,11 +44,11 @@ function AnimatedGridTiles() {
             {TILE_POSITIONS.map((pos, idx) => (
                 <motion.div
                     key={idx}
-                    className="absolute size-9 rounded-md border border-zinc-700/40 bg-zinc-800/30 backdrop-blur-xs"
+                    className="absolute size-9 rounded-md border border-primary/20 bg-primary/10 backdrop-blur-xs"
                     style={{ top: pos.top, left: pos.left }}
                     animate={{
-                        opacity: [0.15, 0.65, 0.15],
-                        scale: [1, 1.04, 1],
+                        opacity: [0.15, 0.7, 0.15],
+                        scale: [1, 1.05, 1],
                     }}
                     transition={{
                         duration: 4.5,
@@ -107,7 +107,7 @@ export function AuthLayout({
     const currentYear = new Date().getFullYear();
 
     return (
-        <div className="relative min-h-svh w-full overflow-x-hidden bg-zinc-950 text-zinc-100 selection:bg-white selection:text-zinc-950 flex flex-col lg:flex-row">
+        <div className="relative min-h-svh w-full overflow-x-hidden bg-background text-foreground selection:bg-primary selection:text-primary-foreground flex flex-col lg:flex-row">
             <Head title={metaTitle ? `${metaTitle} - ${appName}` : `${appName} - Academic Management Portal`}>
                 <meta
                     name="description"
@@ -125,15 +125,18 @@ export function AuthLayout({
                 "relative z-10 flex min-h-svh w-full flex-col justify-between p-4 sm:p-8 lg:p-12 xl:p-14",
                 isSplitLayout ? "lg:w-1/2" : "max-w-2xl mx-auto"
             )}>
-                {/* Animated Grid Backdrop on the Form side */}
+                {/* Animated Grid & Ambient Accent Backdrop on the Form side */}
                 <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
                     <div
-                        className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:36px_36px]"
+                        className="absolute inset-0 bg-[linear-gradient(to_right,color-mix(in_oklch,var(--color-border)_45%,transparent)_1px,transparent_1px),linear-gradient(to_bottom,color-mix(in_oklch,var(--color-border)_45%,transparent)_1px,transparent_1px)] bg-[size:36px_36px]"
                         style={{
                             maskImage: "radial-gradient(ellipse 65% 55% at 50% 50%, #000 60%, transparent 100%)",
                             WebkitMaskImage: "radial-gradient(ellipse 65% 55% at 50% 50%, #000 60%, transparent 100%)",
                         }}
                     />
+                    {/* Theme-based ambient glow */}
+                    <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 size-96 rounded-full bg-primary/10 blur-3xl pointer-events-none" />
+                    <div className="absolute bottom-1/4 left-1/3 size-80 rounded-full bg-accent/20 blur-3xl pointer-events-none" />
                     <AnimatedGridTiles />
                 </div>
 
@@ -143,14 +146,14 @@ export function AuthLayout({
                         {showBackToLogin ? (
                             <Link
                                 href="/login"
-                                className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900/60 px-2.5 py-1 text-xs font-medium text-zinc-400 transition-colors hover:border-zinc-700 hover:bg-zinc-800 hover:text-zinc-200"
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card/70 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-accent hover:text-accent-foreground"
                             >
                                 <ArrowLeft className="size-3.5" />
                                 <span>Sign in</span>
                             </Link>
                         ) : (
                             <Link href="/" className="group flex items-center gap-2.5 transition-opacity hover:opacity-90">
-                                <div className="flex size-8 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900 shadow-xs overflow-hidden">
+                                <div className="flex size-8 items-center justify-center rounded-xl border border-border bg-card shadow-xs ring-1 ring-primary/20 overflow-hidden">
                                     {branding.logo && !headerLogoError ? (
                                         <img
                                             src={branding.logo}
@@ -159,12 +162,12 @@ export function AuthLayout({
                                             onError={() => setHeaderLogoError(true)}
                                         />
                                     ) : (
-                                        <span className="text-xs font-bold text-zinc-300">
+                                        <span className="text-xs font-bold text-foreground">
                                             {organizationShortName.slice(0, 2).toUpperCase()}
                                         </span>
                                     )}
                                 </div>
-                                <span className="text-sm font-semibold tracking-tight text-zinc-200 group-hover:text-white">
+                                <span className="text-sm font-semibold tracking-tight text-foreground group-hover:text-primary transition-colors">
                                     {appName}
                                 </span>
                             </Link>
@@ -188,10 +191,10 @@ export function AuthLayout({
 
                         {/* Card vs Split/Minimal layout */}
                         {authLayout === "card" ? (
-                            <Frame variant="default" className="shadow-2xl backdrop-blur-md [--frame-radius:var(--radius-2xl)]">
-                                <FramePanel className="border-zinc-800 bg-zinc-900/80 p-6 sm:p-8">
+                            <Frame variant="default" className="shadow-2xl backdrop-blur-md [--frame-radius:var(--radius-2xl)] border-border/80">
+                                <FramePanel className="border-border bg-card/85 p-6 sm:p-8">
                                     {/* Brand Logo Squircle */}
-                                    <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900 shadow-md ring-1 ring-zinc-700/40 backdrop-blur-xs overflow-hidden">
+                                    <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl border border-border bg-card shadow-md ring-1 ring-primary/25 backdrop-blur-xs overflow-hidden">
                                         {icon ?? (
                                             branding.logo && !centerLogoError ? (
                                                 <img
@@ -201,7 +204,7 @@ export function AuthLayout({
                                                     onError={() => setCenterLogoError(true)}
                                                 />
                                             ) : (
-                                                <span className="text-sm font-bold tracking-wider text-zinc-200">
+                                                <span className="text-sm font-bold tracking-wider text-foreground">
                                                     {organizationShortName.slice(0, 3).toUpperCase()}
                                                 </span>
                                             )
@@ -222,12 +225,12 @@ export function AuthLayout({
                                                 </div>
                                             )}
                                             {title && (
-                                                <h1 className="text-2xl font-bold tracking-tight text-white sm:text-[26px]">
+                                                <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-[26px]">
                                                     {title}
                                                 </h1>
                                             )}
                                             {description && (
-                                                <p className="text-sm text-zinc-400 text-pretty">
+                                                <p className="text-sm text-muted-foreground text-pretty">
                                                     {description}
                                                 </p>
                                             )}
@@ -244,7 +247,7 @@ export function AuthLayout({
                                     initial={{ opacity: 0, scale: 0.95 }}
                                     animate={{ opacity: 1, scale: 1 }}
                                     transition={{ duration: 0.2 }}
-                                    className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900 shadow-md ring-1 ring-zinc-700/40 backdrop-blur-xs overflow-hidden"
+                                    className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl border border-border bg-card shadow-md ring-1 ring-primary/25 backdrop-blur-xs overflow-hidden"
                                 >
                                     {icon ?? (
                                         branding.logo && !centerLogoError ? (
@@ -255,7 +258,7 @@ export function AuthLayout({
                                                 onError={() => setCenterLogoError(true)}
                                             />
                                         ) : (
-                                            <span className="text-sm font-bold tracking-wider text-zinc-200">
+                                            <span className="text-sm font-bold tracking-wider text-foreground">
                                                 {organizationShortName.slice(0, 3).toUpperCase()}
                                             </span>
                                         )
@@ -267,7 +270,7 @@ export function AuthLayout({
                                         {badge && (
                                             <div className="mb-2 flex justify-center">
                                                 {typeof badge === "string" ? (
-                                                    <span className="rounded-full border border-zinc-800 bg-zinc-900/80 px-2.5 py-0.5 text-[11px] font-medium text-zinc-300">
+                                                    <span className="rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold text-primary">
                                                         {badge}
                                                     </span>
                                                 ) : (
@@ -276,12 +279,12 @@ export function AuthLayout({
                                             </div>
                                         )}
                                         {title && (
-                                            <h1 className="text-2xl font-bold tracking-tight text-white sm:text-[26px]">
+                                            <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-[26px]">
                                                 {title}
                                             </h1>
                                         )}
                                         {description && (
-                                            <p className="text-sm text-zinc-400 text-pretty">
+                                            <p className="text-sm text-muted-foreground text-pretty">
                                                 {description}
                                             </p>
                                         )}
@@ -296,14 +299,14 @@ export function AuthLayout({
 
                 {/* Footer */}
                 {showFooter && (
-                    <footer className="relative z-10 pt-6 text-center text-xs text-zinc-500">
+                    <footer className="relative z-10 pt-6 text-center text-xs text-muted-foreground">
                         <div className="space-y-1">
-                            <p className="hover:[&_a]:text-zinc-300 [&_a]:underline [&_a]:underline-offset-4 [&_a]:transition-colors">
+                            <p className="hover:[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-4 [&_a]:transition-colors">
                                 By continuing, you agree to our{" "}
                                 <Link href="/terms-of-service">Terms of Service</Link> and{" "}
                                 <Link href="/privacy-policy">Privacy Policy</Link>.
                             </p>
-                            <p className="text-[11px] text-zinc-600">
+                            <p className="text-[11px] text-muted-foreground/80">
                                 {branding.copyrightText
                                     ? (branding.copyrightText.includes("©")
                                         ? branding.copyrightText
@@ -318,7 +321,7 @@ export function AuthLayout({
             {/* Right Column / Inset Editorial Fluid Wave Showcase */}
             {isSplitLayout && (
                 <div className="hidden lg:flex lg:w-1/2 lg:min-h-svh p-3 sm:p-4 lg:p-6 flex-col">
-                    <div className="relative h-full w-full overflow-hidden rounded-[28px] border border-zinc-800/80 bg-zinc-950 shadow-2xl flex flex-col justify-between">
+                    <div className="relative h-full w-full overflow-hidden rounded-[28px] border border-border/80 bg-card shadow-2xl flex flex-col justify-between">
                         {/* High-Resolution Fluid Wave Abstract Artwork */}
                         <img
                             src="/images/auth-editorial-wave.webp"
@@ -326,8 +329,9 @@ export function AuthLayout({
                             className="absolute inset-0 h-full w-full object-cover select-none pointer-events-none"
                         />
 
-                        {/* Subtle luxury ambient depth layer */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/80 via-transparent to-zinc-950/20 pointer-events-none" />
+                        {/* Subtle theme-aware luxury ambient depth layer */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-background/25 to-background/40 pointer-events-none" />
+                        <div className="absolute inset-0 bg-primary/10 mix-blend-color pointer-events-none" />
 
                         {/* Inset content if customRightPanel is provided */}
                         {customRightPanel ? (
@@ -337,16 +341,16 @@ export function AuthLayout({
                         ) : (
                             <div className="relative z-10 flex h-full flex-col justify-between p-8 xl:p-10 pointer-events-none">
                                 <div className="flex items-center gap-2">
-                                    <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/40 px-3 py-1 text-xs font-medium text-zinc-200 backdrop-blur-md">
-                                        <span className="size-1.5 rounded-full bg-emerald-400" />
+                                    <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/80 px-3 py-1 text-xs font-medium text-foreground backdrop-blur-md shadow-xs">
+                                        <span className="size-1.5 rounded-full bg-primary animate-pulse" />
                                         {organizationShortName} Academic System
                                     </span>
                                 </div>
                                 <div className="space-y-1.5 max-w-md">
-                                    <div className="text-lg font-semibold tracking-tight text-white drop-shadow-md">
+                                    <div className="text-lg font-semibold tracking-tight text-foreground drop-shadow-md">
                                         {organizationName}
                                     </div>
-                                    <p className="text-xs text-zinc-300/90 leading-relaxed drop-shadow">
+                                    <p className="text-xs text-muted-foreground leading-relaxed drop-shadow">
                                         {branding.tagline || "Unified student information, faculty grading, schedule management, and curriculum verification."}
                                     </p>
                                 </div>

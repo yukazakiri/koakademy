@@ -40,35 +40,142 @@ final class EnrollStudentSubjectTool extends Tool
         $this->requirePermission($user, 'Update:StudentEnrollment', 'You are not permitted to enroll students in subjects.');
 
         $validated = $request->validate([
-            'enrollment_id' => ['required', 'integer', 'min:1'],
-            'subject_id' => ['required', 'integer', 'min:1'],
+            'enrollment_id' => ['nullable', 'integer', 'min:1'],
+            'student_id' => ['nullable'],
+            'subject_id' => ['nullable', 'integer', 'min:1'],
+            'subject_code' => ['nullable', 'string', 'max:50'],
             'class_id' => ['nullable', 'integer', 'min:1'],
             'section' => ['nullable', 'string', 'max:50'],
             'is_modular' => ['nullable', 'boolean'],
-            'idempotency_key' => ['required', 'string', 'min:1', 'max:96'],
-        ], [
-            'idempotency_key.required' => 'An idempotency key is required so this subject enrollment can be safely retried.',
+            'idempotency_key' => ['nullable', 'string', 'min:1', 'max:96'],
+            'subjects' => ['nullable', 'array'],
+            'subjects.*.subject_id' => ['nullable', 'integer'],
+            'subjects.*.subject_code' => ['nullable', 'string'],
+            'subjects.*.class_id' => ['nullable', 'integer'],
+            'subjects.*.section' => ['nullable', 'string'],
         ]);
 
-        $enrollment = StudentEnrollment::query()->findOrFail($validated['enrollment_id']);
+        $idempotencyKey = $validated['idempotency_key'] ?? (string) \Illuminate\Support\Str::uuid();
+
+        $enrollment = null;
+        if (filled($validated['enrollment_id'] ?? null)) {
+            $enrollment = StudentEnrollment::query()->findOrFail($validated['enrollment_id']);
+        } elseif (filled($validated['student_id'] ?? null)) {
+            $student = $this->resolveStudent((string) $validated['student_id']);
+            if ($student instanceof \App\Models\Student) {
+                $enrollment = $student->studentEnrollments()->latest('id')->first();
+            }
+        }
+
+        if (! $enrollment instanceof StudentEnrollment) {
+            throw ValidationException::withMessages([
+                'enrollment_id' => 'Could not find an enrollment record for the specified student. Create an enrollment first.',
+            ]);
+        }
 
         if (! $enrollment->belongsToCurrentSchool()) {
             throw new \Illuminate\Auth\Access\AuthorizationException('The enrollment record does not belong to the selected school.');
         }
 
-        $subject = Subject::query()->findOrFail($validated['subject_id']);
+        // Handle batch of subjects if provided
+        if (! empty($validated['subjects'])) {
+            $enrolledItems = [];
+            $totalUnits = 0;
+            foreach ($validated['subjects'] as $subInput) {
+                $sId = $subInput['subject_id'] ?? null;
+                $sCode = $subInput['subject_code'] ?? null;
+                $subject = null;
+                if ($sId) {
+                    $subject = Subject::query()->find($sId);
+                } elseif ($sCode) {
+                    $subject = Subject::query()->where('code', mb_strtoupper(mb_trim((string) $sCode)))
+                        ->when($enrollment->course_id, fn ($q) => $q->where('course_id', $enrollment->course_id))
+                        ->first() ?? Subject::query()->where('code', mb_strtoupper(mb_trim((string) $sCode)))->first();
+                }
+
+                if (! $subject instanceof Subject) {
+                    continue;
+                }
+
+                $existing = SubjectEnrollment::query()
+                    ->where('enrollment_id', $enrollment->id)
+                    ->where('subject_id', $subject->id)
+                    ->first();
+
+                if ($existing instanceof SubjectEnrollment) {
+                    $enrolledItems[] = [
+                        'subject_id' => $subject->id,
+                        'code' => $subject->code,
+                        'title' => $subject->title,
+                        'units' => $subject->units,
+                        'replayed' => true,
+                    ];
+                    $totalUnits += $subject->units;
+
+                    continue;
+                }
+
+                $cId = $subInput['class_id'] ?? null;
+                $cSec = $subInput['section'] ?? null;
+                $se = SubjectEnrollment::query()->create([
+                    'enrollment_id' => $enrollment->id,
+                    'student_id' => $enrollment->student_id,
+                    'subject_id' => $subject->id,
+                    'class_id' => $cId,
+                    'section' => $cSec,
+                    'school_year' => $enrollment->school_year,
+                    'semester' => $enrollment->semester,
+                    'is_modular' => false,
+                ]);
+
+                $enrolledItems[] = [
+                    'id' => $se->id,
+                    'subject_id' => $subject->id,
+                    'code' => $subject->code,
+                    'title' => $subject->title,
+                    'units' => $subject->units,
+                    'replayed' => false,
+                ];
+                $totalUnits += $subject->units;
+            }
+
+            return Response::structured([
+                'success' => true,
+                'action' => 'batch_enroll',
+                'enrollment_id' => $enrollment->id,
+                'student_id' => $enrollment->student_id,
+                'total_enrolled' => count($enrolledItems),
+                'total_units' => $totalUnits,
+                'subjects' => $enrolledItems,
+            ]);
+        }
+
+        $subject = null;
+        if (filled($validated['subject_id'] ?? null)) {
+            $subject = Subject::query()->findOrFail($validated['subject_id']);
+        } elseif (filled($validated['subject_code'] ?? null)) {
+            $subject = Subject::query()->where('code', mb_strtoupper(mb_trim((string) $validated['subject_code'])))
+                ->when($enrollment->course_id, fn ($q) => $q->where('course_id', $enrollment->course_id))
+                ->first() ?? Subject::query()->where('code', mb_strtoupper(mb_trim((string) $validated['subject_code'])))->first();
+        }
+
+        if (! $subject instanceof Subject) {
+            throw ValidationException::withMessages([
+                'subject_id' => 'Subject could not be resolved. Please specify a valid subject_id or subject_code.',
+            ]);
+        }
 
         if ($enrollment->course_id !== null && (int) $subject->course_id !== (int) $enrollment->course_id) {
             throw new \Illuminate\Auth\Access\AuthorizationException("Subject [{$subject->code}] does not belong to the enrollment program.");
         }
 
-        $scopedKey = hash('sha256', "mcp:enroll-subject:{$enrollment->id}:{$subject->id}:{$validated['idempotency_key']}");
+        $scopedKey = hash('sha256', "mcp:enroll-subject:{$enrollment->id}:{$subject->id}:{$idempotencyKey}");
 
         $existingEvent = EnrollmentWorkflowEvent::query()->where('idempotency_key', $scopedKey)->first();
         if ($existingEvent instanceof EnrollmentWorkflowEvent) {
             $existingRecord = SubjectEnrollment::query()->find($existingEvent->result['subject_enrollment_id'] ?? null);
             if ($existingRecord instanceof SubjectEnrollment) {
-                return $this->buildResponse($existingRecord, $validated['idempotency_key'], true);
+                return $this->buildResponse($existingRecord, $idempotencyKey, true);
             }
         }
 
@@ -79,7 +186,7 @@ final class EnrollStudentSubjectTool extends Tool
             ->first();
 
         if ($existing instanceof SubjectEnrollment) {
-            return $this->buildResponse($existing, $validated['idempotency_key'], true);
+            return $this->buildResponse($existing, $idempotencyKey, true);
         }
 
         $classId = isset($validated['class_id']) ? (int) $validated['class_id'] : null;
@@ -172,19 +279,28 @@ final class EnrollStudentSubjectTool extends Tool
             return $created;
         }, 3);
 
-        return $this->buildResponse($subjectEnrollment, $validated['idempotency_key'], false);
+        return $this->buildResponse($subjectEnrollment, $idempotencyKey, false);
     }
 
     /** @return array<string, Type> */
     public function schema(JsonSchema $schema): array
     {
         return [
-            'enrollment_id' => $schema->integer()->min(1)->required()->description('The internal ID of the student enrollment.'),
-            'subject_id' => $schema->integer()->min(1)->required()->description('The internal ID of the curriculum subject to enroll in.'),
-            'class_id' => $schema->integer()->min(1)->description('Optional scheduled class ID to assign student to a specific schedule and section.'),
+            'enrollment_id' => $schema->integer()->min(1)->description('Internal ID of the student enrollment (optional if student_id is provided).'),
+            'student_id' => $schema->string()->description('Student ID or student number to resolve their active enrollment record.'),
+            'subject_id' => $schema->integer()->min(1)->description('Subject ID to enroll in (optional if subject_code is provided).'),
+            'subject_code' => $schema->string()->description('Subject code to enroll in (e.g. CS101, GE 1).'),
+            'class_id' => $schema->integer()->min(1)->description('Optional scheduled class section ID.'),
             'section' => $schema->string()->max(50)->description('Optional section name override.'),
-            'is_modular' => $schema->boolean()->description('Optional modular learning flag. Defaults to false.'),
-            'idempotency_key' => $schema->string()->min(1)->max(96)->required()->description('A unique key to guarantee safe replay and prevent duplicate subject additions.'),
+            'subjects' => $schema->array()->description('List of subjects for batch enrollment.')->items(
+                $schema->object(fn ($s) => [
+                    'subject_id' => $s->integer()->description('Subject ID.'),
+                    'subject_code' => $s->string()->description('Subject code.'),
+                    'class_id' => $s->integer()->description('Class ID.'),
+                    'section' => $s->string()->description('Section.'),
+                ])
+            ),
+            'idempotency_key' => $schema->string()->min(1)->max(96)->description('Unique idempotency key for safe retries.'),
         ];
     }
 
@@ -209,5 +325,22 @@ final class EnrollStudentSubjectTool extends Tool
             'replayed' => $replayed,
             'idempotency_key' => $idempotencyKey,
         ]);
+    }
+
+    private function resolveStudent(string $identifier): ?\App\Models\Student
+    {
+        $school = $this->school();
+
+        return \App\Models\Student::query()
+            ->where(fn ($q) => $q->where('school_id', $school->id)->orWhere('institution_id', $school->id))
+            ->where(function ($query) use ($identifier) {
+                if (is_numeric($identifier)) {
+                    $query->where('id', (int) $identifier)
+                        ->orWhere('student_id', (int) $identifier);
+                }
+                $query->orWhere('student_id', $identifier)
+                    ->orWhere('email', $identifier);
+            })
+            ->first();
     }
 }

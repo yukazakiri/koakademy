@@ -40,7 +40,7 @@ export default function AdminLayout({ user, title, immersive = false, children }
 
     if (immersive) {
         return (
-            <ThemeProvider defaultTheme="system" storageKey="app-theme">
+            <ThemeProvider defaultTheme="system" storageKey="ui-theme" colorStorageKey="ui-color-theme">
                 <AnalyticsScripts />
                 <div className="flex h-svh flex-col">
                     <ImpersonationBanner />
@@ -54,7 +54,7 @@ export default function AdminLayout({ user, title, immersive = false, children }
     }
 
     return (
-        <ThemeProvider defaultTheme="system" storageKey="app-theme">
+        <ThemeProvider defaultTheme="system" storageKey="ui-theme" colorStorageKey="ui-color-theme">
             <AnalyticsScripts />
             <SidebarProvider>
                 <AdministratorSidebar user={resolvedUser} />

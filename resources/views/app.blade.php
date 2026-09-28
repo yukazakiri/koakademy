@@ -140,6 +140,27 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Antic&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap"
         rel="stylesheet">
+
+    {{-- Instant pre-hydration theme applicator to prevent flash --}}
+    <script>
+        (function() {
+            try {
+                var theme = localStorage.getItem('ui-theme') || 'system';
+                var colorTheme = localStorage.getItem('ui-color-theme') || 'default';
+                var root = document.documentElement;
+                if (theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                    root.classList.add('dark');
+                    root.classList.remove('light');
+                } else if (theme === 'light') {
+                    root.classList.add('light');
+                    root.classList.remove('dark');
+                }
+                if (colorTheme) {
+                    root.classList.add('theme-' + colorTheme);
+                }
+            } catch (e) {}
+        })();
+    </script>
     {{-- Expose appName to window for Inertia --}}
     <script>
         window.appName = @json($resolvedAppName);
@@ -170,7 +191,7 @@
     @inertiaHead
 </head>
 
-<body class="text-white font-sans">
+<body class="bg-background text-foreground font-sans">
     @routes
     @inertia
     @unless(app()->environment('demo'))

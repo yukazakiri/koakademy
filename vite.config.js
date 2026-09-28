@@ -74,6 +74,7 @@ export default defineConfig({
         react(),
     ],
     resolve: {
+        preserveSymlinks: true,
         dedupe: ["react", "react-dom"],
         alias: [
             { find: "@/components", replacement: path.resolve(__dirname, "resources/js/components") },

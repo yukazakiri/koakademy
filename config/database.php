@@ -36,7 +36,11 @@ return [
         'sqlite' => [
             'driver' => 'sqlite',
             'url' => env('DB_URL'),
-            'database' => env('DB_DATABASE', database_path('database.sqlite')),
+            'database' => (env('APP_ENV') === 'testing' || (defined('PHPUNIT_COMPOSER_INSTALL') || class_exists(PHPUnit\Framework\TestCase::class, false)))
+                ? (env('DB_DATABASE') && ! str_ends_with(str_replace('\\', '/', (string) env('DB_DATABASE')), 'database.sqlite')
+                    ? env('DB_DATABASE')
+                    : database_path('testing.sqlite'))
+                : env('DB_DATABASE', database_path('database.sqlite')),
             'prefix' => '',
             'foreign_key_constraints' => env('DB_FOREIGN_KEYS', true),
             'busy_timeout' => null,
@@ -107,12 +111,14 @@ return [
             'url' => env('PULSE_DB_URL'),
             'host' => env('PULSE_DB_HOST', env('DB_HOST', 'pgsql')),
             'port' => env('PULSE_DB_PORT', env('DB_PORT', '5432')),
-            'database' => env(
-                'PULSE_DB_DATABASE',
-                // Reuse the application database unless an operator explicitly
-                // provisions a dedicated database for Pulse.
-                env('DB_DATABASE', database_path('database.sqlite'))
-            ),
+            'database' => (env('APP_ENV') === 'testing' || (defined('PHPUNIT_COMPOSER_INSTALL') || class_exists(PHPUnit\Framework\TestCase::class, false)))
+                ? database_path('testing.sqlite')
+                : env(
+                    'PULSE_DB_DATABASE',
+                    // Reuse the application database unless an operator explicitly
+                    // provisions a dedicated database for Pulse.
+                    env('DB_DATABASE', database_path('database.sqlite'))
+                ),
             'username' => env('PULSE_DB_USERNAME', env('DB_USERNAME', 'root')),
             'password' => env('PULSE_DB_PASSWORD', env('DB_PASSWORD', '')),
             'charset' => env('PULSE_DB_CHARSET', env('DB_CHARSET', 'utf8')),

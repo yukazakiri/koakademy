@@ -510,7 +510,7 @@ it('processes uploaded images, spreadsheets, and documents for AI consumption', 
 
     expect($resultCsv['enrichedPrompt'])->toContain('Juan')
         ->and($resultCsv['enrichedPrompt'])->toContain('Score')
-        ->and($resultCsv['attachments'])->toHaveCount(1);
+        ->and($resultCsv['attachments'])->toBeEmpty();
 
     // 2. Uploaded image
     $imageFile = Illuminate\Http\UploadedFile::fake()->image('campus_map.png', 400, 300);

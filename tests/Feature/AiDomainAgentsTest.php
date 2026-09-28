@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-use App\Ai\Adapters\McpToolAdapter;
 use App\Ai\Agents\AdminExecutiveAgent;
 use App\Ai\Agents\BursarFinanceAgent;
 use App\Ai\Agents\CampusSupportAgent;
 use App\Ai\Agents\FacultyCopilotAgent;
 use App\Ai\Agents\RegistrarAuditAgent;
 use App\Ai\Agents\StudentAdvisorAgent;
+use App\Ai\Mcp\ResilientMcpServerTool;
 use App\Ai\Tools\ApplyTuitionAdjustmentBatchTool;
 use App\Ai\Tools\AuditStudentProfileImportTool;
 use App\Ai\Tools\BatchUpdateClearanceTool;
@@ -31,6 +31,8 @@ use App\Models\Classes;
 use App\Models\HelpTicket;
 use App\Models\Student;
 use App\Models\User;
+use Illuminate\Auth\Access\AuthorizationException;
+use Laravel\Ai\Tools\McpServerTool;
 use Laravel\Ai\Tools\Request;
 
 beforeEach(function (): void {
@@ -274,8 +276,8 @@ it('gives every administrator page agent access to MCP tools', function (): void
 
     foreach ($agents as $agent) {
         $bridged = collect((new $agent)->tools())
-            ->filter(fn ($tool): bool => $tool instanceof McpToolAdapter)
-            ->map(fn (McpToolAdapter $tool): string => $tool->name())
+            ->filter(fn ($tool): bool => $tool instanceof McpServerTool)
+            ->map(fn (McpServerTool $tool): string => $tool->name())
             ->values();
 
         expect($bridged)
@@ -285,18 +287,18 @@ it('gives every administrator page agent access to MCP tools', function (): void
 
 it('gives the registrar, bursar, and campus agents the domain MCP tools they need', function (): void {
     $names = fn ($agent): array => collect($agent->tools())
-        ->filter(fn ($tool): bool => $tool instanceof McpToolAdapter)
-        ->map(fn (McpToolAdapter $tool): string => $tool->name())
+        ->filter(fn ($tool): bool => $tool instanceof McpServerTool)
+        ->map(fn (McpServerTool $tool): string => $tool->name())
         ->all();
 
     expect($names(new RegistrarAuditAgent))
-        ->toContain('GetStudentProfileTool', 'SearchStudentsTool', 'GetEnrollmentStatusTool', 'GetCourseCurriculumTool');
+        ->toContain('get-student-profile-tool', 'search-students-tool', 'get-enrollment-status-tool', 'get-course-curriculum-tool');
 
     expect($names(new BursarFinanceAgent))
-        ->toContain('GetStatementOfAccountTool', 'GetStudentProfileTool');
+        ->toContain('get-statement-of-account-tool', 'get-student-profile-tool');
 
     expect($names(new CampusSupportAgent))
-        ->toContain('GetMyContextTool', 'GetSchoolDetailsTool');
+        ->toContain('get-my-context-tool', 'get-school-details-tool');
 });
 
 /**
@@ -306,12 +308,12 @@ it('gives the registrar, bursar, and campus agents the domain MCP tools they nee
  */
 it('keeps record-level tools away from the campus support agent', function (): void {
     $names = collect((new CampusSupportAgent)->tools())
-        ->filter(fn ($tool): bool => $tool instanceof McpToolAdapter)
-        ->map(fn (McpToolAdapter $tool): string => $tool->name())
+        ->filter(fn ($tool): bool => $tool instanceof McpServerTool)
+        ->map(fn (McpServerTool $tool): string => $tool->name())
         ->all();
 
     expect($names)
-        ->not->toContain('GetStudentProfileTool', 'SearchStudentsTool', 'GetStatementOfAccountTool', 'ListStudentEnrollmentsTool');
+        ->not->toContain('get-student-profile-tool', 'search-students-tool', 'get-statement-of-account-tool', 'list-student-enrollments-tool');
 
     // The instructions have to say so, or the model will simply try.
     expect((string) (new CampusSupportAgent)->instructions())
@@ -319,11 +321,45 @@ it('keeps record-level tools away from the campus support agent', function (): v
 });
 
 /**
+ * The instructions drive tool routing, so every MCP tool an agent exposes has
+ * to be named in the instructions under the name the model will actually see.
+ * A rename that missed the prose silently costs routing accuracy.
+ */
+it('names every MCP tool in the instructions under its exposed name', function (): void {
+    $agents = [
+        new AdminExecutiveAgent,
+        new RegistrarAuditAgent,
+        new BursarFinanceAgent,
+        new CampusSupportAgent,
+    ];
+
+    $unnamed = [];
+
+    foreach ($agents as $agent) {
+        $instructions = (string) $agent->instructions();
+
+        foreach ($agent->tools() as $tool) {
+            if (! $tool instanceof McpServerTool) {
+                continue;
+            }
+
+            if (! str_contains($instructions, $tool->name())) {
+                $unnamed[] = class_basename($agent).': '.$tool->name();
+            }
+        }
+    }
+
+    // A tool the instructions never name is a tool the model is far less
+    // likely to reach, so this is a routing regression, not a cosmetic one.
+    expect($unnamed)->toBe([]);
+});
+
+/**
  * A bridged tool has to actually run, not merely appear in the array. The
  * adapter builds an MCP request from the AI request and hands back the
  * structured content.
  */
-it('invokes a bridged MCP tool through the adapter', function (): void {
+it('invokes a bridged MCP tool through the resilient wrapper', function (): void {
     $school = App\Models\School::factory()->create();
     app(App\Services\TenantContext::class)->setCurrentSchool($school);
 
@@ -332,8 +368,8 @@ it('invokes a bridged MCP tool through the adapter', function (): void {
     $admin->assignRole('super_admin');
     $this->actingAs($admin);
 
-    $adapter = new McpToolAdapter(new GetSchoolDetailsTool);
-    $data = json_decode((string) $adapter->handle(new Request([])), true);
+    $tool = new ResilientMcpServerTool(new GetSchoolDetailsTool);
+    $data = json_decode((string) $tool->handle(new Request([])), true);
 
     expect($data['id'])->toBe($school->id)
         ->and($data['name'])->toBe($school->name)
@@ -343,8 +379,9 @@ it('invokes a bridged MCP tool through the adapter', function (): void {
 
 /**
  * An MCP tool the caller is not entitled to must degrade into a readable error
- * rather than an exception, so the model can explain the denial instead of the
- * chat turn failing outright.
+ * rather than an exception, because the AI SDK re-throws anything a tool
+ * throws. Without the wrapper an authorization denial would fail the whole
+ * chat turn instead of reaching the model as an explanation.
  */
 it('reports an mcp access denial to the model instead of throwing', function (): void {
     $school = App\Models\School::factory()->create();
@@ -355,10 +392,32 @@ it('reports an mcp access denial to the model instead of throwing', function ():
     $user = User::factory()->create(['role' => App\Enums\UserRole::Student]);
     $this->actingAs($user);
 
-    $adapter = new McpToolAdapter(new GetStudentProfileTool);
-    $data = json_decode((string) $adapter->handle(new Request(['student_id' => $student->id])), true);
+    $tool = new ResilientMcpServerTool(new GetStudentProfileTool);
+    $data = json_decode((string) $tool->handle(new Request(['student_id' => $student->id])), true);
 
-    expect($data)->toHaveKey('error', true);
+    expect($data['error'])->toBeTrue()
+        ->and($data['denied'])->toBeTrue()
+        ->and($data['tool'])->toBe('get-student-profile-tool')
+        ->and($data['guidance'])->toContain('do not substitute a guess');
+});
+
+/**
+ * The plain SDK wrapper still throws, which is the reason the resilient
+ * subclass exists. If laravel/ai ever converts tool exceptions into tool
+ * output on its own, this wrapper can be retired.
+ */
+it('would fail the turn without the resilient wrapper, which is why it exists', function (): void {
+    $school = App\Models\School::factory()->create();
+    app(App\Services\TenantContext::class)->setCurrentSchool($school);
+
+    $student = Student::factory()->create(['school_id' => $school->id, 'institution_id' => $school->id]);
+    $user = User::factory()->create(['role' => App\Enums\UserRole::Student]);
+    $this->actingAs($user);
+
+    $bare = new McpServerTool(new GetStudentProfileTool);
+
+    expect(fn (): string => $bare->handle(new Request(['student_id' => $student->id])))
+        ->toThrow(AuthorizationException::class);
 });
 
 it('creates official support tickets when needed', function (): void {

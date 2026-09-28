@@ -51,9 +51,9 @@ Guidelines:
 3. Be welcoming, concise, and helpful.
 
 Institution Facts (MCP):
-4. Use GetMyContextTool first when a question depends on which school, academic period, or account is in scope, so an answer is never given for the wrong term.
-5. Use GetSchoolDetailsTool for institutional facts such as active departments, programs, curriculum capabilities, and official contact information, rather than recalling them.
-6. Use GetStudentScheduleTool only when the person asking is entitled to that schedule, and only report the schedule it returns. If it returns an access error, say the schedule is not available to them and offer to escalate instead of guessing their classes.
+4. Use get-my-context-tool first when a question depends on which school, academic period, or account is in scope, so an answer is never given for the wrong term.
+5. Use get-school-details-tool for institutional facts such as active departments, programs, curriculum capabilities, and official contact information, rather than recalling them.
+6. Use get-student-schedule-tool only when the person asking is entitled to that schedule, and only report the schedule it returns. If it returns an access error, say the schedule is not available to them and offer to escalate instead of guessing their classes.
 7. You cannot read student profiles, financial records, or the student directory. Do not attempt it through another route, including through an external system; name the capability you lack and point them to the registrar or bursar, or offer to file a ticket.
 
 External MCP Integrations:
@@ -73,9 +73,9 @@ INSTRUCTIONS;
             new CreateHelpTicketTool,
             new LookupTicketStatusTool,
             new EscalateToDepartmentTool,
-            new \App\Ai\Adapters\McpToolAdapter(new \App\Mcp\Tools\GetMyContextTool),
-            new \App\Ai\Adapters\McpToolAdapter(new \App\Mcp\Tools\GetSchoolDetailsTool),
-            new \App\Ai\Adapters\McpToolAdapter(new \App\Mcp\Tools\GetStudentScheduleTool),
+            new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\GetMyContextTool),
+            new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\GetSchoolDetailsTool),
+            new \App\Ai\Mcp\ResilientMcpServerTool(new \App\Mcp\Tools\GetStudentScheduleTool),
         ];
     }
 

@@ -11,9 +11,11 @@ use App\Models\GeneralSetting;
 use App\Models\Student;
 use App\Models\StudentClearance;
 use App\Models\StudentTuition;
+use App\Services\EnrollmentBillingService;
 use App\Services\GeneralSettingsService;
 use App\Services\RegistrarAnalyticsService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\Database\Eloquent\Builder;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
@@ -249,25 +251,47 @@ final class QueryCampusAnalyticsTool implements Tool
      */
     private function finance(array $period): array
     {
-        $tuition = StudentTuition::query()
-            ->whereIn('school_year', [$period['school_year'], str_replace(' ', '', $period['school_year'])])
-            ->where('semester', $period['semester']);
+        $tuition = $this->tenantScopedTuition($period);
+        $recordsInScope = (clone $tuition)->count();
 
         $assessed = (float) (clone $tuition)->sum('overall_tuition');
-        $paid = (float) (clone $tuition)->sum('paid');
         $adjustments = (float) (clone $tuition)->sum('assessment_adjustment');
+        $paid = app(EnrollmentBillingService::class)->aggregatePaid(
+            (clone $tuition)->get(['id', 'paid', 'paid_transaction_baseline', 'overall_tuition']),
+        );
 
         return [
             'academic_period' => $period,
             'currency' => $this->currency(),
-            'records_in_scope' => (clone $tuition)->count(),
+            'records_in_scope' => $recordsInScope,
             'assessed_tuition' => round($assessed, 2),
             'tuition_adjustments' => round($adjustments, 2),
             'collected_payments' => round($paid, 2),
             'outstanding_balance' => round(max(0.0, $assessed - $paid), 2),
             'collection_efficiency_percent' => $assessed > 0 ? round(($paid / $assessed) * 100, 1) : null,
-            'unavailable' => $this->financeGaps($tuition->clone()->count(), $assessed),
+            'collection_basis' => 'Verified payment allocations merged with the opening paid balance, the same precedence the billing service applies per assessment.',
+            'unavailable' => $this->financeGaps($recordsInScope, $assessed),
         ];
+    }
+
+    /**
+     * Tuition records for the period, restricted to the caller's school.
+     *
+     * `student_tuition` carries no tenant column of its own and no global
+     * school scope, so filtering on the academic period alone would aggregate
+     * every school sharing that term and report another school's money as this
+     * school's. Constraining `student_id` through the school-scoped `students`
+     * table is the only tenant link the row has.
+     *
+     * @param  array{school_year: string, semester: int, label: string}  $period
+     * @return Builder<StudentTuition>
+     */
+    private function tenantScopedTuition(array $period): Builder
+    {
+        return StudentTuition::query()
+            ->whereIn('school_year', [$period['school_year'], str_replace(' ', '', $period['school_year'])])
+            ->where('semester', $period['semester'])
+            ->whereIn('student_id', Student::query()->select('id'));
     }
 
     /**
@@ -316,12 +340,12 @@ final class QueryCampusAnalyticsTool implements Tool
     }
 
     /**
-     * @param  \Illuminate\Database\Eloquent\Builder<Student>  $query
+     * @param  Builder<Student>  $query
      * @param  array<int, string>  $normaliseBlankTo
      * @return list<array{label: string, value: int}>
      */
     private function enrolledDistribution(
-        \Illuminate\Database\Eloquent\Builder $query,
+        Builder $query,
         string $column,
         array $normaliseBlankTo = [],
         int $limit = 50,

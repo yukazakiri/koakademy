@@ -14,9 +14,11 @@ use Stringable;
 
 final class SearchStudentsTool implements Tool
 {
+    private const int MAX_BATCH_SIZE = 150;
+
     public function description(): Stringable|string
     {
-        return 'Search student directory records by name, student number, or email. Supports single queries, formatted names ("LAST, FIRST M."), or batches/lists of student names to retrieve student IDs, emails, programs, and statuses in one call.';
+        return 'Search student directory records by name, student number, or email. Supports single queries, formatted names ("LAST, FIRST M."), or batches/lists of up to 150 student names to retrieve student IDs, emails, programs, and statuses in one call.';
     }
 
     public function handle(Request $request): Stringable|string
@@ -48,10 +50,19 @@ final class SearchStudentsTool implements Tool
 
         // Batch search mode
         if (is_array($queries) && ! empty($queries)) {
+            if (count($queries) > self::MAX_BATCH_SIZE) {
+                return json_encode([
+                    'error' => true,
+                    'message' => 'The batch search limit is '.self::MAX_BATCH_SIZE.' names per request. Please split your list into batches of '.self::MAX_BATCH_SIZE.' or fewer.',
+                    'count' => count($queries),
+                    'limit' => self::MAX_BATCH_SIZE,
+                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+            }
+
             $results = [];
             $foundCount = 0;
 
-            foreach (array_slice($queries, 0, 150) as $rawItem) {
+            foreach ($queries as $rawItem) {
                 if (! is_string($rawItem) || blank($rawItem)) {
                     continue;
                 }
@@ -126,10 +137,10 @@ final class SearchStudentsTool implements Tool
     public function schema(JsonSchema $schema): array
     {
         return [
-            'query' => $schema->string()->description('Student name, student ID number, or email. Can also be a multiline block of student names.'),
-            'queries' => $schema->array()->description('Array of student names or identifiers to search in batch.')->items($schema->string()),
-            'names' => $schema->array()->description('Alias for queries. List of student names to look up.')->items($schema->string()),
-            'limit' => $schema->integer()->description('Maximum number of results to return for single query (default 10).'),
+            'query' => $schema->string()->description('Student name, student ID number, or email. Can also be a multiline block of student names (maximum '.self::MAX_BATCH_SIZE.' names).'),
+            'queries' => $schema->array()->description('Array of student names or identifiers to search in batch (maximum '.self::MAX_BATCH_SIZE.' names).')->items($schema->string()),
+            'names' => $schema->array()->description('Alias for queries: list of student names to look up (maximum '.self::MAX_BATCH_SIZE.' names).')->items($schema->string()),
+            'limit' => $schema->integer()->description('Maximum number of results to return for single query (default 10, max 50).'),
         ];
     }
 
@@ -147,9 +158,11 @@ final class SearchStudentsTool implements Tool
         if (is_numeric($clean)) {
             return Student::query()
                 ->with(['course'])
-                ->where('student_id', $clean)
-                ->orWhere('lrn', $clean)
-                ->orWhere('id', (int) $clean)
+                ->where(function (Builder $builder) use ($clean): void {
+                    $builder->where('student_id', $clean)
+                        ->orWhere('lrn', $clean)
+                        ->orWhere('id', (int) $clean);
+                })
                 ->first();
         }
 
@@ -160,17 +173,15 @@ final class SearchStudentsTool implements Tool
             $firstOnly = mb_trim(preg_replace('/\s+[A-Za-z]\.?$/u', '', $rest) ?? $rest);
             $firstWord = explode(' ', $firstOnly)[0] ?? '';
 
-            $match = Student::query()
-                ->with(['course'])
-                ->whereRaw('LOWER(last_name) LIKE ?', ['%'.mb_strtolower($last).'%'])
-                ->where(function (Builder $builder) use ($firstOnly, $firstWord): void {
-                    $builder->whereRaw('LOWER(first_name) LIKE ?', ['%'.mb_strtolower($firstOnly).'%'])
-                        ->orWhereRaw('LOWER(first_name) LIKE ?', ['%'.mb_strtolower($firstWord).'%']);
-                })
-                ->first();
-
-            if ($match instanceof Student) {
-                return $match;
+            if (filled($firstWord)) {
+                return Student::query()
+                    ->with(['course'])
+                    ->whereRaw('LOWER(last_name) LIKE ?', ['%'.mb_strtolower($last).'%'])
+                    ->where(function (Builder $builder) use ($firstOnly, $firstWord): void {
+                        $builder->whereRaw('LOWER(first_name) LIKE ?', ['%'.mb_strtolower($firstOnly).'%'])
+                            ->orWhereRaw('LOWER(first_name) LIKE ?', ['%'.mb_strtolower($firstWord).'%']);
+                    })
+                    ->first();
             }
 
             return Student::query()

@@ -17,11 +17,13 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
-#[Description('Search students in the selected school by name, student number, or email. Supports single search terms, formatted names ("LAST, FIRST M."), or batches/lists of student names in a single call.')]
+#[Description('Search students in the selected school by name, student number, or email. Supports single search terms, formatted names ("LAST, FIRST M."), or batches/lists of up to 150 student names in a single call.')]
 #[IsReadOnly]
 final class SearchStudentsTool extends Tool
 {
     use AuthorizesMcpRequests;
+
+    private const int MAX_BATCH_SIZE = 150;
 
     public function handle(Request $request): ResponseFactory
     {
@@ -53,10 +55,19 @@ final class SearchStudentsTool extends Tool
 
         // Batch search mode
         if (is_array($queries) && ! empty($queries)) {
+            if (count($queries) > self::MAX_BATCH_SIZE) {
+                return Response::structured([
+                    'error' => true,
+                    'message' => 'The batch search limit is '.self::MAX_BATCH_SIZE.' names per request. Please split your list into batches of '.self::MAX_BATCH_SIZE.' or fewer.',
+                    'count' => count($queries),
+                    'limit' => self::MAX_BATCH_SIZE,
+                ]);
+            }
+
             $results = [];
             $foundCount = 0;
 
-            foreach (array_slice($queries, 0, 150) as $rawItem) {
+            foreach ($queries as $rawItem) {
                 if (! is_string($rawItem) || blank($rawItem)) {
                     continue;
                 }
@@ -159,10 +170,10 @@ final class SearchStudentsTool extends Tool
     public function schema(JsonSchema $schema): array
     {
         return [
-            'query' => $schema->string()->min(2)->max(500)->description('Name, student number, email, or a multiline text block of student names.'),
-            'queries' => $schema->array()->description('Batch array of student names to search.')->items($schema->string()),
-            'names' => $schema->array()->description('Alias for queries: array of student names.')->items($schema->string()),
-            'limit' => $schema->integer()->min(1)->max(50)->description('Maximum number of results to return (default: 10).'),
+            'query' => $schema->string()->min(2)->max(500)->description('Name, student number, email, or a multiline text block of student names (maximum '.self::MAX_BATCH_SIZE.' names).'),
+            'queries' => $schema->array()->description('Batch array of student names to search (maximum '.self::MAX_BATCH_SIZE.' names).')->items($schema->string()),
+            'names' => $schema->array()->description('Alias for queries: array of student names (maximum '.self::MAX_BATCH_SIZE.' names).')->items($schema->string()),
+            'limit' => $schema->integer()->min(1)->max(50)->description('Maximum number of results to return (default: 10, max: 50).'),
         ];
     }
 
@@ -193,16 +204,14 @@ final class SearchStudentsTool extends Tool
             $firstOnly = mb_trim(preg_replace('/\s+[A-Za-z]\.?$/u', '', $rest) ?? $rest);
             $firstWord = explode(' ', $firstOnly)[0] ?? '';
 
-            $match = (clone $base)
-                ->whereRaw('LOWER(last_name) LIKE ?', ['%'.mb_strtolower($last).'%'])
-                ->where(function (Builder $builder) use ($firstOnly, $firstWord): void {
-                    $builder->whereRaw('LOWER(first_name) LIKE ?', ['%'.mb_strtolower($firstOnly).'%'])
-                        ->orWhereRaw('LOWER(first_name) LIKE ?', ['%'.mb_strtolower($firstWord).'%']);
-                })
-                ->first();
-
-            if ($match instanceof Student) {
-                return $match;
+            if (filled($firstWord)) {
+                return (clone $base)
+                    ->whereRaw('LOWER(last_name) LIKE ?', ['%'.mb_strtolower($last).'%'])
+                    ->where(function (Builder $builder) use ($firstOnly, $firstWord): void {
+                        $builder->whereRaw('LOWER(first_name) LIKE ?', ['%'.mb_strtolower($firstOnly).'%'])
+                            ->orWhereRaw('LOWER(first_name) LIKE ?', ['%'.mb_strtolower($firstWord).'%']);
+                    })
+                    ->first();
             }
 
             return (clone $base)

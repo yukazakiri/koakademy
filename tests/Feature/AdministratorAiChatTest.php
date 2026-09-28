@@ -1018,4 +1018,26 @@ it('searches students case-insensitively and supports batch name queries', funct
     expect($multiline['count'])->toBe(2)
         ->and($multiline['found_count'])->toBe(2)
         ->and($multiline['students'][0]['email'])->toBe('renelyn.bunalan@example.com');
+
+    // 5. Do not fall back to surname-only when a different given name was provided
+    $mismatchedGivenName = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'query' => 'BUNALAN, UNKNOWNNAME X.',
+    ])), true);
+    expect($mismatchedGivenName['count'])->toBe(0);
+
+    $batchMismatched = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'queries' => ['BUNALAN, UNKNOWNNAME X.'],
+    ])), true);
+    expect($batchMismatched['found_count'])->toBe(0)
+        ->and($batchMismatched['students'][0]['found'])->toBeFalse()
+        ->and($batchMismatched['students'][0]['email'])->toBeNull();
+
+    // 6. Explicitly rejects batches exceeding 150 names
+    $oversized = array_fill(0, 151, 'BUNALAN, RENELYN O.');
+    $oversizedRes = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'queries' => $oversized,
+    ])), true);
+    expect($oversizedRes['error'] ?? false)->toBeTrue()
+        ->and($oversizedRes['count'])->toBe(151)
+        ->and($oversizedRes['limit'])->toBe(150);
 });

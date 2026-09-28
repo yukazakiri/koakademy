@@ -227,14 +227,26 @@ it('searches students within the authorized school and enforces permissions', fu
 
     // Batch queries support
     $batch = KoAkademyServer::actingAs($this->staff)
-        ->tool(SearchStudentsTool::class, ['queries' => ['SANTOS, MARIA', 'UNKNOWN PERSON']]);
+        ->tool(SearchStudentsTool::class, ['queries' => ['SANTOS, MARIA', 'SANTOS, UNKNOWNGIVEN', 'UNKNOWN PERSON']]);
     $batch->assertOk()
         ->assertStructuredContent(function ($json): void {
-            $json->where('count', 2)
+            $json->where('count', 3)
                 ->where('found_count', 1)
                 ->where('students.0.found', true)
                 ->where('students.0.email', 'maria.santos@student.koakademy.edu')
                 ->where('students.1.found', false)
+                ->where('students.2.found', false)
+                ->etc();
+        });
+
+    // Rejects oversized batch exceeding limit
+    $oversizedBatch = KoAkademyServer::actingAs($this->staff)
+        ->tool(SearchStudentsTool::class, ['queries' => array_fill(0, 151, 'SANTOS, MARIA')]);
+    $oversizedBatch->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('error', true)
+                ->where('limit', 150)
+                ->where('count', 151)
                 ->etc();
         });
 });

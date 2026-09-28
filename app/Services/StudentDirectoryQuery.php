@@ -68,6 +68,13 @@ final class StudentDirectoryQuery
      */
     public const int MAX_BATCH_SIZE = 150;
 
+    /**
+     * How many programs one loose program term may expand to. A department code
+     * resolves to a handful; anything broader is a mistyped filter, not a
+     * cohort, and is reported as ambiguous rather than answered.
+     */
+    public const int MAX_PROGRAMS_PER_TERM = 25;
+
     public function __construct(
         private readonly GeneralSettingsService $settingsService,
     ) {}
@@ -166,8 +173,14 @@ final class StudentDirectoryQuery
      * concrete courses. An exact case-insensitive code match always wins; only
      * when nothing matches exactly do we fall back to a partial match.
      *
+     * A partial match can cover several programs — a department code like
+     * "CCS" is the normal case — so every match is returned, not just the
+     * first. A term so broad it matches more than MAX_PROGRAMS_PER_TERM
+     * programs is treated as unusable and reported as ambiguous rather than
+     * answering with an arbitrary slice of the catalog.
+     *
      * @param  array<int, mixed>  $terms
-     * @return list<array{id: int, code: string, title: string}>
+     * @return array{programs: list<array{id: int, code: string, title: string}>, ambiguous: list<string>}
      */
     public function resolvePrograms(array $terms): array
     {
@@ -178,7 +191,7 @@ final class StudentDirectoryQuery
             ->values();
 
         if ($normalized->isEmpty()) {
-            return [];
+            return ['programs' => [], 'ambiguous' => []];
         }
 
         $exact = Course::query()
@@ -187,6 +200,7 @@ final class StudentDirectoryQuery
             ->keyBy('code');
 
         $resolved = [];
+        $ambiguous = [];
 
         foreach ($normalized as $term) {
             $course = $exact->get($term);
@@ -197,7 +211,7 @@ final class StudentDirectoryQuery
                 continue;
             }
 
-            $partial = Course::query()
+            $partials = Course::query()
                 ->where(function (Builder $query) use ($term): void {
                     $like = '%'.$term.'%';
                     $query->whereRaw('UPPER(code) LIKE ?', [$like])
@@ -208,14 +222,21 @@ final class StudentDirectoryQuery
                         );
                 })
                 ->orderBy('code')
-                ->first();
+                ->limit(self::MAX_PROGRAMS_PER_TERM + 1)
+                ->get();
 
-            if ($partial instanceof Course) {
+            if ($partials->count() > self::MAX_PROGRAMS_PER_TERM) {
+                $ambiguous[] = $term;
+
+                continue;
+            }
+
+            foreach ($partials as $partial) {
                 $resolved[(int) $partial->id] = $this->programSummary($partial);
             }
         }
 
-        return array_values($resolved);
+        return ['programs' => array_values($resolved), 'ambiguous' => $ambiguous];
     }
 
     /**
@@ -327,7 +348,7 @@ final class StudentDirectoryQuery
             return null;
         }
 
-        $base = fn (): Builder => Student::query()->with('course:id,code,title', 'course.department:id,code');
+        $base = fn (): Builder => Student::query()->with('course:id,code,title,department_id', 'course.department:id,code');
 
         if (str_contains($clean, '@')) {
             return $base()
@@ -432,12 +453,25 @@ final class StudentDirectoryQuery
 
         $courseId = isset($filters['course_id']) ? (int) $filters['course_id'] : null;
         $requestedPrograms = (array) ($filters['program'] ?? []);
-        $programs = $courseId === null
+        $resolution = $courseId === null
             ? $this->resolvePrograms($requestedPrograms)
-            : [];
+            : ['programs' => [], 'ambiguous' => []];
+        $programs = $resolution['programs'];
+        $ambiguousPrograms = $resolution['ambiguous'];
         $unresolvedPrograms = $courseId === null
             ? $this->unresolvedProgramTerms($requestedPrograms, $programs)
             : [];
+
+        if ($ambiguousPrograms !== []) {
+            return $this->unresolvedProgramPayload(
+                $ambiguousPrograms,
+                $basis,
+                $term,
+                $fields,
+                'ambiguous_program',
+                'These program terms matched too many programs to be usable as a filter: '.implode(', ', $ambiguousPrograms).'. Narrow it to a specific program code.',
+            );
+        }
 
         if ($courseId === null && $requestedPrograms !== [] && $programs === []) {
             return $this->unresolvedProgramPayload($unresolvedPrograms, $basis, $term, $fields);
@@ -530,7 +564,7 @@ final class StudentDirectoryQuery
         array $term,
     ): Builder {
         $query = Student::query()
-            ->with('course:id,code,title', 'course.department:id,code');
+            ->with('course:id,code,title,department_id', 'course.department:id,code');
 
         if ($freeText !== null) {
             $like = '%'.addcslashes($freeText, '%_\\').'%';
@@ -615,6 +649,10 @@ final class StudentDirectoryQuery
         $query->whereExists(function ($sub) use ($term): void {
             $sub->selectRaw('1')
                 ->from('student_enrollment')
+                // `StudentEnrollment` soft deletes, and a raw subquery bypasses
+                // that global scope, so a withdrawn-then-deleted record would
+                // still count the student as enrolled this term.
+                ->whereNull('student_enrollment.deleted_at')
                 ->whereIn('school_year', $term['school_year_variants'])
                 ->where('semester', $term['semester'])
                 ->where(function (\Illuminate\Database\Query\Builder $outcomes): void {
@@ -644,6 +682,9 @@ final class StudentDirectoryQuery
                 ->from('class_enrollments')
                 ->join('classes', 'classes.id', '=', 'class_enrollments.class_id')
                 ->whereColumn('class_enrollments.student_id', 'students.id')
+                // Same reason as the enrollment basis: the soft-delete scope does
+                // not apply to a raw subquery.
+                ->whereNull('class_enrollments.deleted_at')
                 ->where('class_enrollments.status', true)
                 ->whereIn('classes.school_year', $term['school_year_variants'])
                 ->where('classes.semester', $term['semester']);
@@ -687,7 +728,11 @@ final class StudentDirectoryQuery
 
         /** @var Student $student */
         foreach ($students as $student) {
-            $course = $student->Course;
+            // Lower-case on purpose: the relation method is `Course()` but the
+            // eager load is registered under the `course` key, and reading
+            // `$student->Course` misses the loaded relation and issues one
+            // query per row.
+            $course = $student->course;
 
             $row = [
                 'id' => (int) $student->id,
@@ -696,7 +741,7 @@ final class StudentDirectoryQuery
                 'email' => $student->email,
                 'program_code' => $course instanceof Course ? $course->code : null,
                 'program_title' => $course instanceof Course ? $course->title : null,
-                'department' => $course instanceof Course ? $course->department()->value('code') : null,
+                'department' => $course instanceof Course ? $course->department?->code : null,
                 'year_level' => $student->academic_year,
                 // The model casts both to backed enums; the raw value is the
                 // fallback so an unrecognised legacy row still serialises.
@@ -776,11 +821,17 @@ final class StudentDirectoryQuery
      * @param  array{school_year: string, semester: int, school_year_variants: array<int, string>}  $term
      * @return array<string, mixed>
      */
-    private function unresolvedProgramPayload(array $unresolved, string $basis, array $term, string $fields): array
-    {
+    private function unresolvedProgramPayload(
+        array $unresolved,
+        string $basis,
+        array $term,
+        string $fields,
+        string $error = 'unknown_program',
+        ?string $message = null,
+    ): array {
         return [
-            'error' => 'unknown_program',
-            'message' => 'No academic program matched: '.implode(', ', $unresolved).'.',
+            'error' => $error,
+            'message' => $message ?? 'No academic program matched: '.implode(', ', $unresolved).'.',
             'hint' => 'Retry with one of the available_programs codes, or drop the program filter.',
             'available_programs' => $this->availablePrograms(),
             'term' => [

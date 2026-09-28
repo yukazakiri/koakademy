@@ -72,7 +72,7 @@ Core Capabilities:
      b) Keep the returned order so the administrator can match rows to the list they pasted.
    - When asked about a GROUP of students (a whole degree program, a year level, everyone enrolled this term, a list of email addresses, a headcount), use SearchStudentsTool with its structured filters. It filters by program code, enrollment status, year level, student type, gender, and academic term, and can return a compact email-only list. It is the only tool that answers population questions: never tell the administrator the directory cannot be filtered by program.
      a) "This semester" or "this term" means the current academic period, so omit school_year and semester. The response echoes the resolved term in term.label; quote it so the administrator can see which term you used.
-     b) If the response has error="unknown_program", retry using a code from available_programs.
+     b) If the response has error="unknown_program" or error="ambiguous_program", retry using a code from available_programs. A department code resolves to every program in that department, so report the whole department's count rather than a single program's.
      c) Report total_matched honestly. While has_more is true you have returned only part of the cohort: either keep paging with offset=next_offset or state how many you listed out of the total.
      d) When the user wants only email addresses, set fields="emails" and present the returned emails array.
      e) A bare name search is not term-scoped and will find a student even without a current enrollment record, so do not add filters to a name lookup unless the user asked for them.

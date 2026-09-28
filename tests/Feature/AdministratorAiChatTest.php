@@ -983,6 +983,12 @@ it('searches students case-insensitively and supports batch name queries', funct
 
     $tool = new App\Ai\Tools\SearchStudentsTool;
 
+    // The directory is permission-gated, so the caller must be authorized.
+    $admin = User::factory()->create();
+    Spatie\Permission\Models\Permission::firstOrCreate(['name' => 'ViewAny:Student', 'guard_name' => 'web']);
+    $admin->givePermissionTo('ViewAny:Student');
+    Illuminate\Support\Facades\Auth::login($admin);
+
     // 1. Case-insensitive single query
     $res1 = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request(['query' => 'BUNALAN'])), true);
     expect($res1['count'])->toBe(1)

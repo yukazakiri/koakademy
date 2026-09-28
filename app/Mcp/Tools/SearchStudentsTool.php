@@ -5,10 +5,8 @@ declare(strict_types=1);
 namespace App\Mcp\Tools;
 
 use App\Mcp\Concerns\AuthorizesMcpRequests;
-use App\Models\Student;
-use BackedEnum;
+use App\Services\StudentDirectoryQuery;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
@@ -17,234 +15,179 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
-#[Description('Search students in the selected school by name, student number, or email. Supports single search terms, formatted names ("LAST, FIRST M."), or batches/lists of up to 150 student names in a single call.')]
+#[Description('Query the student directory with structured filters: degree program, enrollment status, year level, student type, gender, and academic term. Also resolves named lookups, including formatted names ("LAST, FIRST M.") and batches of up to 150 pasted names. Use this instead of guessing names when a question targets a group of students, such as listing all emails of enrolled BSIT students this semester.')]
 #[IsReadOnly]
 final class SearchStudentsTool extends Tool
 {
     use AuthorizesMcpRequests;
-
-    private const int MAX_BATCH_SIZE = 150;
 
     public function handle(Request $request): ResponseFactory
     {
         $user = $this->requireRead($request);
         $this->requirePermission($user, 'ViewAny:Student', 'You are not permitted to search student records.');
 
-        $rawQuery = $request->get('query');
-        $queries = $request->get('queries') ?? $request->get('names');
+        $directory = app(StudentDirectoryQuery::class);
 
-        // Auto-detect multiline queries
-        if (is_string($rawQuery) && (str_contains($rawQuery, "\n") || str_contains($rawQuery, "\r"))) {
-            $split = array_values(array_filter(
-                array_map('trim', preg_split('/[\r\n]+/', $rawQuery) ?: []),
-                static function (string $line): bool {
-                    $clean = mb_trim(preg_replace('/^\d+[\s\.\)\-]+\s*/u', '', $line));
-                    $upper = mb_strtoupper($clean);
+        $identifiers = $this->requestedIdentifiers($request, $directory);
 
-                    return filled($clean)
-                        && ! str_starts_with($upper, 'BACHELOR')
-                        && ! str_starts_with($upper, 'LIST')
-                        && ! str_starts_with($upper, 'BATCH');
-                }
-            ));
-
-            if (count($split) > 1) {
-                $queries = $split;
-            }
-        }
-
-        // Batch search mode
-        if (is_array($queries) && ! empty($queries)) {
-            if (count($queries) > self::MAX_BATCH_SIZE) {
+        if (is_array($identifiers)) {
+            if (count($identifiers) > StudentDirectoryQuery::MAX_BATCH_SIZE) {
                 return Response::structured([
                     'error' => true,
-                    'message' => 'The batch search limit is '.self::MAX_BATCH_SIZE.' names per request. Please split your list into batches of '.self::MAX_BATCH_SIZE.' or fewer.',
-                    'count' => count($queries),
-                    'limit' => self::MAX_BATCH_SIZE,
+                    'message' => 'The batch search limit is '.StudentDirectoryQuery::MAX_BATCH_SIZE.' names per request. Please split your list into batches of '.StudentDirectoryQuery::MAX_BATCH_SIZE.' or fewer.',
+                    'count' => count($identifiers),
+                    'limit' => StudentDirectoryQuery::MAX_BATCH_SIZE,
                 ]);
             }
 
-            $results = [];
-            $foundCount = 0;
-
-            foreach ($queries as $rawItem) {
-                if (! is_string($rawItem) || blank($rawItem)) {
-                    continue;
-                }
-
-                $clean = mb_trim(preg_replace('/^\d+[\s\.\)\-]+\s*/u', '', $rawItem));
-                if (blank($clean)) {
-                    continue;
-                }
-
-                $student = $this->resolveStudent($clean);
-
-                if ($student instanceof Student) {
-                    $foundCount++;
-                    $results[] = [
-                        'query' => $rawItem,
-                        'found' => true,
-                        'student_id' => (string) $student->student_id,
-                        'name' => $student->full_name,
-                        'email' => $student->email,
-                        'course' => $student->Course?->code ?? $student->Course?->title ?? 'N/A',
-                        'status' => $student->status instanceof BackedEnum ? $student->status->value : (string) $student->status,
-                    ];
-                } else {
-                    $results[] = [
-                        'query' => $rawItem,
-                        'found' => false,
-                        'name' => null,
-                        'email' => null,
-                    ];
-                }
-            }
-
-            return Response::structured([
-                'count' => count($results),
-                'found_count' => $foundCount,
-                'students' => $results,
-            ]);
+            return Response::structured($directory->resolveBatch($identifiers));
         }
 
         $validated = $request->validate([
-            'query' => ['required', 'string', 'min:2', 'max:500'],
-            'limit' => ['nullable', 'integer', 'min:1', 'max:50'],
-        ], [
-            'query.required' => 'Provide a student name, number, or email to search.',
+            'query' => ['nullable', 'string', 'max:500'],
+            'program' => ['nullable', 'array', 'max:20'],
+            'program.*' => ['string', 'max:100'],
+            'course_id' => ['nullable', 'integer', 'min:1'],
+            'status' => ['nullable', 'array', 'max:10'],
+            'status.*' => ['string', 'max:50'],
+            'year_level' => ['nullable', 'array', 'max:10'],
+            'year_level.*' => ['integer', 'between:1,5'],
+            'student_type' => ['nullable', 'array', 'max:10'],
+            'student_type.*' => ['string', 'max:50'],
+            'gender' => ['nullable', 'string', 'max:50'],
+            'enrollment_basis' => ['nullable', 'string', 'in:enrollment,class,status,any'],
+            'school_year' => ['nullable', 'string', 'max:20'],
+            'semester' => ['nullable', 'integer', 'between:1,3'],
+            'fields' => ['nullable', 'string', 'in:summary,detailed,emails'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:500'],
+            'offset' => ['nullable', 'integer', 'min:0'],
         ]);
 
-        $query = mb_trim((string) $validated['query']);
-        $limit = (int) ($validated['limit'] ?? 10);
-
-        $students = Student::query()
-            ->select(['id', 'student_id', 'first_name', 'middle_name', 'last_name', 'suffix', 'email', 'status', 'course_id'])
-            ->with('Course:id,code,title')
-            ->where(function (Builder $builder) use ($query): void {
-                $term = '%'.mb_strtolower(addcslashes($query, '%_\\')).'%';
-
-                $builder->whereRaw('CAST(student_id AS CHAR) LIKE ?', ['%'.$query.'%'])
-                    ->orWhereRaw('LOWER(email) LIKE ?', [$term])
-                    ->orWhereRaw('LOWER(first_name) LIKE ?', [$term])
-                    ->orWhereRaw('LOWER(last_name) LIKE ?', [$term])
-                    ->orWhereRaw("LOWER(TRIM(CONCAT_WS(' ', first_name, middle_name, last_name, suffix))) LIKE ?", [$term]);
-
-                if (str_contains($query, ',')) {
-                    [$last, $first] = explode(',', $query, 2);
-                    $last = mb_trim($last);
-                    $first = mb_trim($first);
-                    $firstOnly = mb_trim(preg_replace('/\s+[A-Za-z]\.?$/u', '', $first) ?? $first);
-                    $firstWord = explode(' ', $firstOnly)[0] ?? '';
-
-                    $builder->orWhere(function (Builder $sub) use ($last, $firstWord): void {
-                        $sub->whereRaw('LOWER(last_name) LIKE ?', ['%'.mb_strtolower($last).'%'])
-                            ->whereRaw('LOWER(first_name) LIKE ?', ['%'.mb_strtolower($firstWord).'%']);
-                    });
-                }
-            })
-            ->orderBy('last_name')
-            ->orderBy('first_name')
-            ->limit($limit)
-            ->get()
-            ->map(fn (Student $student): array => [
-                'id' => $student->id,
-                'student_number' => (string) $student->student_id,
-                'name' => $student->full_name,
-                'email' => $student->email,
-                'status' => $student->status instanceof BackedEnum ? $student->status->value : $student->status,
-                'course' => $student->Course === null ? null : [
-                    'id' => $student->Course->id,
-                    'code' => $student->Course->code,
-                    'title' => $student->Course->title,
-                ],
-            ]);
-
-        return Response::structured([
-            'query' => $query,
-            'count' => $students->count(),
-            'students' => $students->all(),
+        $result = $directory->execute([
+            'query' => $identifiers ?? ($validated['query'] ?? null),
+            'program' => $validated['program'] ?? null,
+            'course_id' => $validated['course_id'] ?? null,
+            'status' => $validated['status'] ?? null,
+            'year_level' => $validated['year_level'] ?? null,
+            'student_type' => $validated['student_type'] ?? null,
+            'gender' => $validated['gender'] ?? null,
+            'basis' => $validated['enrollment_basis'] ?? null,
+            'school_year' => $validated['school_year'] ?? null,
+            'semester' => $validated['semester'] ?? null,
+            'fields' => $validated['fields'] ?? null,
+            'limit' => $validated['limit'] ?? null,
+            'offset' => $validated['offset'] ?? null,
         ]);
+
+        return Response::structured($this->present($result, (string) ($validated['fields'] ?? 'summary')));
     }
 
-    /** @return array<string, Type> */
+    /**
+     * @return array<string, Type>
+     */
     public function schema(JsonSchema $schema): array
     {
         return [
-            'query' => $schema->string()->min(2)->max(500)->description('Name, student number, email, or a multiline text block of student names (maximum '.self::MAX_BATCH_SIZE.' names).'),
-            'queries' => $schema->array()->description('Batch array of student names to search (maximum '.self::MAX_BATCH_SIZE.' names).')->items($schema->string()),
-            'names' => $schema->array()->description('Alias for queries: array of student names (maximum '.self::MAX_BATCH_SIZE.' names).')->items($schema->string()),
-            'limit' => $schema->integer()->min(1)->max(50)->description('Maximum number of results to return (default: 10, max: 50).'),
+            'program' => $schema->array()->items($schema->string())
+                ->description('Degree programs to filter by, e.g. ["BSIT"]. Accepts a program code, a title fragment, or a department code.'),
+            'status' => $schema->array()->items($schema->string())
+                ->description('Student profile statuses: applicant, enrolled, on_leave, withdrawn, dropped, graduated, transferred.'),
+            'year_level' => $schema->array()->items($schema->integer())
+                ->description('Year levels to include, e.g. [1,2].'),
+            'student_type' => $schema->array()->items($schema->string())
+                ->description('Student types: college, shs, tesda, dhrt.'),
+            'gender' => $schema->string()
+                ->description('male, female, other, prefer_not_to_say, or unspecified to include blank values.'),
+            'enrollment_basis' => $schema->string()
+                ->description('How to decide who counts for the term: "enrollment" (default, a term enrollment record that was not cancelled), "class" (has an active class this term), "status" (profile status enrolled/on leave, term ignored), or "any" (no term constraint).'),
+            'school_year' => $schema->string()
+                ->description('School year filter, e.g. "2025-2026". Defaults to the current school year.'),
+            'semester' => $schema->integer()
+                ->description('Semester filter: 1, 2, or 3 for summer. Defaults to the current semester.'),
+            'query' => $schema->string()
+                ->description('Free-text match on name, student number, LRN, or email, or a formatted name ("CRUZ, JUAN D."). A value containing line breaks is treated as a pasted list of names.'),
+            'queries' => $schema->array()->items($schema->string())
+                ->description('Resolve a pasted roster of names in one call (maximum '.StudentDirectoryQuery::MAX_BATCH_SIZE.' names). One row is returned per entry, including entries that matched nothing.'),
+            'names' => $schema->array()->items($schema->string())
+                ->description('Alias for queries.'),
+            'fields' => $schema->string()
+                ->description('summary (default), detailed, or emails for a compact de-duplicated address list.'),
+            'limit' => $schema->integer()
+                ->description('Rows to return, 1-500. Defaults to 50.'),
+            'offset' => $schema->integer()
+                ->description('Row offset for paging while has_more is true.'),
         ];
     }
 
-    private function resolveStudent(string $identifier): ?Student
+    /**
+     * Decide whether the caller asked for a batch of names or a single query.
+     *
+     * Returns the list of names to resolve, the single-query string, or null
+     * when the request is purely filter-driven.
+     *
+     * @return array<int, mixed>|string|null
+     */
+    private function requestedIdentifiers(Request $request, StudentDirectoryQuery $directory): array|string|null
     {
-        $school = $this->school();
+        $identifiers = $request->get('queries') ?? $request->get('names');
 
-        $base = Student::query()
-            ->with(['Course'])
-            ->where(fn ($q) => $q->where('school_id', $school->id)->orWhere('institution_id', $school->id));
-
-        if (str_contains($identifier, '@')) {
-            return (clone $base)->whereRaw('LOWER(email) = ?', [mb_strtolower($identifier)])->first();
+        if (is_array($identifiers) && $identifiers !== []) {
+            return $identifiers;
         }
 
-        if (is_numeric($identifier)) {
-            return (clone $base)->where(function ($q) use ($identifier) {
-                $q->where('student_id', (int) $identifier)
-                    ->orWhere('id', (int) $identifier)
-                    ->orWhere('lrn', $identifier);
-            })->first();
+        $query = $request->get('query');
+
+        if (! is_string($query) && ! is_numeric($query)) {
+            return null;
         }
 
-        if (str_contains($identifier, ',')) {
-            [$last, $rest] = explode(',', $identifier, 2);
-            $last = mb_trim($last);
-            $rest = mb_trim($rest);
-            $firstOnly = mb_trim(preg_replace('/\s+[A-Za-z]\.?$/u', '', $rest) ?? $rest);
-            $firstWord = explode(' ', $firstOnly)[0] ?? '';
+        $split = $directory->splitNameList((string) $query);
 
-            if (filled($firstWord)) {
-                return (clone $base)
-                    ->whereRaw('LOWER(last_name) LIKE ?', ['%'.mb_strtolower($last).'%'])
-                    ->where(function (Builder $builder) use ($firstOnly, $firstWord): void {
-                        $builder->whereRaw('LOWER(first_name) LIKE ?', ['%'.mb_strtolower($firstOnly).'%'])
-                            ->orWhereRaw('LOWER(first_name) LIKE ?', ['%'.mb_strtolower($firstWord).'%']);
-                    })
-                    ->first();
-            }
+        return count($split) > 1 ? $split : mb_trim((string) $query);
+    }
 
-            return (clone $base)
-                ->whereRaw('LOWER(last_name) LIKE ?', ['%'.mb_strtolower($last).'%'])
-                ->first();
+    /**
+     * Shape the payload for MCP clients.
+     *
+     * `count` is kept alongside the richer paging keys so existing clients that
+     * read `count` from the previous free-text-only tool keep working.
+     *
+     * @param  array<string, mixed>  $result
+     * @return array<string, mixed>
+     */
+    private function present(array $result, string $fields): array
+    {
+        $result = $this->redact($result, $fields);
+        $result['count'] = $result['returned'] ?? 0;
+
+        return $result;
+    }
+
+    /**
+     * Omit LRN, phone, and other direct contact details from MCP output so the
+     * structured filters can answer cohort questions without widening the PII
+     * surface that external clients already receive.
+     *
+     * @param  array<string, mixed>  $result
+     * @return array<string, mixed>
+     */
+    private function redact(array $result, string $fields): array
+    {
+        $rows = (array) ($result['students'] ?? []);
+
+        $result['students'] = array_map(static function (array $row): array {
+            unset($row['lrn'], $row['phone']);
+
+            return $row;
+        }, $rows);
+
+        if ($fields === 'emails') {
+            $result['emails'] = array_values(array_unique(array_filter(
+                (array) ($result['emails'] ?? []),
+                static fn ($email): bool => is_string($email) && $email !== '',
+            )));
         }
 
-        $words = preg_split('/\s+/u', $identifier) ?: [];
-        if (count($words) === 1) {
-            $term = mb_strtolower($words[0]);
-
-            return (clone $base)
-                ->where(function (Builder $builder) use ($term): void {
-                    $builder->whereRaw('LOWER(last_name) LIKE ?', ['%'.$term.'%'])
-                        ->orWhereRaw('LOWER(first_name) LIKE ?', ['%'.$term.'%'])
-                        ->orWhereRaw('LOWER(email) LIKE ?', ['%'.$term.'%']);
-                })
-                ->first();
-        }
-
-        $w1 = mb_strtolower($words[0]);
-        $w2 = mb_strtolower($words[count($words) - 1]);
-
-        return (clone $base)
-            ->where(function (Builder $builder) use ($w1, $w2): void {
-                $builder->where(function (Builder $sub) use ($w1, $w2): void {
-                    $sub->whereRaw('LOWER(first_name) LIKE ?', ['%'.$w1.'%'])
-                        ->whereRaw('LOWER(last_name) LIKE ?', ['%'.$w2.'%']);
-                })->orWhere(function (Builder $sub) use ($w1, $w2): void {
-                    $sub->whereRaw('LOWER(first_name) LIKE ?', ['%'.$w2.'%'])
-                        ->whereRaw('LOWER(last_name) LIKE ?', ['%'.$w1.'%']);
-                });
-            })
-            ->first();
+        return $result;
     }
 }

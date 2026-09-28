@@ -4,23 +4,42 @@ declare(strict_types=1);
 
 namespace App\Ai\Tools;
 
+use App\Enums\StudentStatus;
 use App\Models\Classes;
 use App\Models\Faculty;
 use App\Models\GeneralSetting;
 use App\Models\Student;
 use App\Models\StudentClearance;
+use App\Models\StudentTuition;
+use App\Services\EnrollmentBillingService;
+use App\Services\GeneralSettingsService;
 use App\Services\RegistrarAnalyticsService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\Database\Eloquent\Builder;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
 use Throwable;
 
+/**
+ * Live institutional analytics for the executive copilot.
+ *
+ * Every figure returned here is computed from the database. Where a metric
+ * cannot be derived from recorded data the tool reports `null` and says so in
+ * `unavailable`, rather than returning a plausible-looking placeholder, so the
+ * agent never presents an invented number to an administrator.
+ */
 final class QueryCampusAnalyticsTool implements Tool
 {
+    /**
+     * Resolved lazily so the tool stays constructible with `new`, which is how
+     * the agent registries in app/Ai/Agents and app/Http/Controllers build it.
+     */
+    private ?GeneralSettingsService $settingsService = null;
+
     public function description(): Stringable|string
     {
-        return 'Query live institutional analytics across admissions, enrollment populations, demographic distributions, student retention, graduation clearances, and tuition revenue.';
+        return 'Query live institutional analytics across enrollment populations, demographic distributions, student retention, graduation clearances, and tuition revenue. Every figure is computed from recorded data; unavailable metrics are reported as null with a reason. Use this for counts, rates, and trends, and SearchStudentsTool when the user needs actual student records or contact details.';
     }
 
     public function handle(Request $request): Stringable|string
@@ -29,18 +48,16 @@ final class QueryCampusAnalyticsTool implements Tool
             'category' => 'required|string|in:overview,enrollment,demographics,clearance,finance,faculty',
         ]);
 
-        $setting = GeneralSetting::query()->first();
-        $schoolYear = $setting?->getSchoolYearString() ?? '2026-2027';
-        $semester = $setting?->getSemester() ?? '1st Semester';
+        $period = $this->currentPeriod();
 
         return match ($validated['category']) {
-            'overview' => $this->getOverviewAnalytics($schoolYear, $semester),
-            'enrollment' => $this->getEnrollmentAnalytics($schoolYear, $semester),
-            'demographics' => $this->getDemographicAnalytics(),
-            'clearance' => $this->getClearanceAnalytics($schoolYear, $semester),
-            'finance' => $this->getFinancialAnalytics(),
-            'faculty' => $this->getFacultyAnalytics(),
-            default => 'Category not recognized.',
+            'overview' => $this->json($this->overview($period)),
+            'enrollment' => $this->json($this->enrollment($period)),
+            'demographics' => $this->json($this->demographics($period)),
+            'clearance' => $this->json($this->clearance($period)),
+            'finance' => $this->json($this->finance($period)),
+            'faculty' => $this->json($this->faculty($period)),
+            default => $this->json(['error' => true, 'message' => 'Category not recognized.']),
         };
     }
 
@@ -49,138 +66,365 @@ final class QueryCampusAnalyticsTool implements Tool
         return [
             'category' => $schema->string()
                 ->enum(['overview', 'enrollment', 'demographics', 'clearance', 'finance', 'faculty'])
-                ->required(),
+                ->required()
+                ->description('overview = campus headline counts. enrollment = headcount and growth by program, year level, and status. demographics = gender, scholarship, origin, and equity distributions. clearance = clearance completion for the term. finance = assessed tuition, collections, and outstanding balances. faculty = teaching load and department coverage.'),
         ];
     }
 
-    private function getOverviewAnalytics(string $schoolYear, string $semester): string
+    private function settings(): GeneralSettingsService
+    {
+        return $this->settingsService ??= app(GeneralSettingsService::class);
+    }
+
+    /**
+     * @return array{school_year: string, semester: int, label: string}
+     */
+    private function currentPeriod(): array
+    {
+        $schoolYear = $this->settings()->getCurrentSchoolYearString();
+        $semester = $this->settings()->getCurrentSemester();
+
+        return [
+            'school_year' => $schoolYear,
+            'semester' => $semester,
+            'label' => sprintf('%s · Semester %d', $schoolYear, $semester),
+        ];
+    }
+
+    /**
+     * @param  array{school_year: string, semester: int, label: string}  $period
+     * @return array<string, mixed>
+     */
+    private function overview(array $period): array
     {
         $totalStudents = Student::query()->count();
-        $enrolledStudents = Student::query()->where('status', 'enrolled')->count();
-        $totalFaculty = Faculty::query()->count();
-        $activeClasses = Classes::query()->count();
-        $unclearedCount = StudentClearance::query()->where('is_cleared', false)->count();
+        $enrolledStudents = Student::query()->where('status', StudentStatus::Enrolled->value)->count();
+        $activeFaculty = Faculty::query()->count();
+        $activeClasses = Classes::query()
+            ->whereIn('school_year', [$period['school_year'], str_replace(' ', '', $period['school_year'])])
+            ->where('semester', $period['semester'])
+            ->count();
+        $pendingClearances = StudentClearance::query()->where('is_cleared', false)->count();
 
-        return json_encode([
-            'academic_period' => "{$schoolYear} - {$semester}",
+        return [
+            'academic_period' => $period,
             'headline_metrics' => [
                 'total_student_population' => $totalStudents,
-                'currently_enrolled' => $enrolledStudents ?: $totalStudents,
-                'retention_rate_percent' => 94.8,
-                'active_faculty_count' => $totalFaculty,
-                'active_classes' => $activeClasses,
-                'pending_clearances' => $unclearedCount,
+                'currently_enrolled' => $enrolledStudents,
+                'applicants' => Student::query()->where('status', StudentStatus::Applicant->value)->count(),
+                'graduates' => Student::query()->where('status', StudentStatus::Graduated->value)->count(),
+                'attrition_current_status' => Student::query()
+                    ->whereIn('status', [StudentStatus::Dropped->value, StudentStatus::Withdrawn->value])
+                    ->count(),
+                'faculty_count' => $activeFaculty,
+                'classes_running_this_term' => $activeClasses,
+                'pending_clearances' => $pendingClearances,
             ],
-            'summary' => "Campus is actively serving {$totalStudents} registered students across {$activeClasses} classes with a 94.8% retention rate.",
-        ], JSON_PRETTY_PRINT);
+            'enrolled_share_of_population_percent' => $totalStudents > 0
+                ? round(($enrolledStudents / $totalStudents) * 100, 1)
+                : null,
+            'unavailable' => [
+                'retention_rate_percent' => 'Retention is not a stored figure. Derive it from the enrollment and demographics categories by comparing consecutive terms before quoting a rate.',
+            ],
+        ];
     }
 
-    private function getEnrollmentAnalytics(string $schoolYear, string $semester): string
+    /**
+     * @param  array{school_year: string, semester: int, label: string}  $period
+     * @return array<string, mixed>
+     */
+    private function enrollment(array $period): array
     {
         try {
-            $analyticsService = app(RegistrarAnalyticsService::class);
-            $data = $analyticsService->build();
-
-            return json_encode([
-                'academic_period' => "{$schoolYear} - {$semester}",
-                'current_semester_count' => $data['current_semester_count'] ?? 420,
-                'current_school_year_count' => $data['current_school_year_count'] ?? 480,
-                'previous_semester_count' => $data['previous_semester_count'] ?? 395,
-                'semester_growth_percentage' => 6.3,
-                'by_student_type' => [
-                    ['label' => 'College Undergraduate', 'value' => 310],
-                    ['label' => 'Senior High School (SHS)', 'value' => 110],
-                    ['label' => 'Technical / Vocational (TESDA)', 'value' => 45],
-                ],
-                'by_year_level' => [
-                    ['label' => '1st Year', 'value' => 140],
-                    ['label' => '2nd Year', 'value' => 115],
-                    ['label' => '3rd Year', 'value' => 98],
-                    ['label' => '4th Year', 'value' => 67],
-                ],
-            ], JSON_PRETTY_PRINT);
-        } catch (Throwable) {
-            return json_encode([
-                'current_semester_count' => 420,
-                'growth_rate' => '+6.3%',
-                'by_student_type' => [
-                    ['label' => 'College', 'value' => 310],
-                    ['label' => 'Senior High School', 'value' => 110],
-                ],
-            ], JSON_PRETTY_PRINT);
+            // Pass the period explicitly so these counts describe the same term
+            // the rest of the tool reports, rather than whatever the registrar
+            // service resolves on its own.
+            $analytics = app(RegistrarAnalyticsService::class)->build([
+                'school_year' => $period['school_year'],
+                'semester' => $period['semester'],
+            ])['analytics'];
+        } catch (Throwable $e) {
+            return [
+                'academic_period' => $period,
+                'error' => true,
+                'message' => "Registrar analytics could not be computed: {$e->getMessage()}",
+            ];
         }
+
+        $current = (int) ($analytics['current_semester_count'] ?? 0);
+        $previous = (int) ($analytics['previous_semester_count'] ?? 0);
+        $schoolYear = (int) ($analytics['current_school_year_count'] ?? 0);
+
+        return [
+            'academic_period' => $period,
+            'current_term_enrollments' => $current,
+            'school_year_enrollments' => $schoolYear,
+            'previous_term_enrollments' => $previous,
+            'term_over_term_growth_percent' => $previous > 0
+                ? round((($current - $previous) / $previous) * 100, 1)
+                : null,
+            'by_program' => $this->labelCounts($analytics['by_program'] ?? [], 'program', 'title'),
+            'by_department' => $this->labelCounts($analytics['by_department'] ?? [], 'department'),
+            'by_year_level' => $this->labelCounts($analytics['by_year_level'] ?? [], 'year_level', null, 'Year '),
+            'by_student_type' => $this->labelCounts($analytics['by_student_type'] ?? [], 'student_type', null, '', true),
+            'by_status' => $this->labelCounts($analytics['by_status'] ?? [], 'status'),
+        ];
     }
 
-    private function getDemographicAnalytics(): string
+    /**
+     * @param  array{school_year: string, semester: int, label: string}  $period
+     * @return array<string, mixed>
+     */
+    private function demographics(array $period): array
     {
-        $maleCount = Student::query()->where('gender', 'male')->count();
-        $femaleCount = Student::query()->where('gender', 'female')->count();
+        $enrolled = Student::query()->where('status', StudentStatus::Enrolled->value);
 
-        return json_encode([
-            'gender_distribution' => [
-                ['label' => 'Female', 'value' => $femaleCount ?: 245],
-                ['label' => 'Male', 'value' => $maleCount ?: 215],
+        return [
+            'academic_period' => $period,
+            'note' => 'Distributions below are computed over currently enrolled students only.',
+            'by_gender' => $this->enrolledDistribution($enrolled->clone(), 'gender', ['male', 'female', 'other', 'prefer_not_to_say']),
+            'by_year_level' => $this->enrolledDistribution($enrolled->clone(), 'academic_year'),
+            'by_scholarship' => $this->enrolledDistribution($enrolled->clone(), 'scholarship_type', ['none']),
+            'by_region_of_origin' => $this->enrolledDistribution($enrolled->clone(), 'region_of_origin', [], 15),
+            'by_student_type' => $this->enrolledDistribution($enrolled->clone(), 'student_type'),
+            'equity_groups' => [
+                'indigenous_person' => $enrolled->clone()->where('is_indigenous_person', true)->count(),
+                'person_with_disability' => $enrolled->clone()->where('is_pwd', true)->count(),
+                'solo_parent' => $enrolled->clone()->where('is_solo_parent', true)->count(),
+                'underprivileged' => $enrolled->clone()->where('is_underprivileged', true)->count(),
+                'first_generation' => $enrolled->clone()->where('is_first_generation', true)->count(),
             ],
-            'scholarship_distribution' => [
-                ['label' => 'Non-Scholar (Regular)', 'value' => 280],
-                ['label' => 'TDP / CHED Grantee', 'value' => 85],
-                ['label' => 'Institutional Academic Scholar', 'value' => 45],
-                ['label' => 'Athletic / Service Grant', 'value' => 20],
-            ],
-        ], JSON_PRETTY_PRINT);
+        ];
     }
 
-    private function getClearanceAnalytics(string $schoolYear, string $semester): string
+    /**
+     * @param  array{school_year: string, semester: int, label: string}  $period
+     * @return array<string, mixed>
+     */
+    private function clearance(array $period): array
     {
-        $cleared = StudentClearance::query()->where('is_cleared', true)->count();
-        $pending = StudentClearance::query()->where('is_cleared', false)->count();
+        $current = StudentClearance::query()
+            ->whereIn('academic_year', [$period['school_year'], str_replace(' ', '', $period['school_year'])])
+            ->where('semester', $period['semester']);
+
+        $cleared = (clone $current)->where('is_cleared', true)->count();
+        $pending = (clone $current)->where('is_cleared', false)->count();
         $total = $cleared + $pending;
 
-        return json_encode([
-            'academic_period' => "{$schoolYear} - {$semester}",
-            'total_clearances_recorded' => $total ?: 380,
-            'cleared_count' => $cleared ?: 310,
-            'pending_holds_count' => $pending ?: 70,
-            'clearance_completion_rate_percent' => $total > 0 ? round(($cleared / $total) * 100, 1) : 81.5,
-            'top_hold_reasons' => [
-                ['department' => 'Library', 'reason' => 'Overdue textbook / resource loans', 'count' => 32],
-                ['department' => 'Accounting', 'reason' => 'Outstanding tuition balance for previous term', 'count' => 24],
-                ['department' => 'Laboratories', 'reason' => 'Unreturned equipment / breakage report', 'count' => 14],
-            ],
-        ], JSON_PRETTY_PRINT);
+        $reasons = (clone $current)
+            ->where('is_cleared', false)
+            ->whereNotNull('remarks')
+            ->whereRaw("TRIM(COALESCE(remarks, '')) <> ''")
+            ->select('remarks')
+            ->get()
+            ->map(static fn ($record): array => array_filter(array_map(
+                'trim',
+                preg_split('/[;,\n]+/', (string) $record->remarks) ?: [],
+            )))
+            ->flatten()
+            ->map(static fn (string $reason): string => mb_trim($reason))
+            ->filter(static fn (string $reason): bool => $reason !== '')
+            ->countBy()
+            ->sortDesc()
+            ->take(10)
+            ->map(static fn (int $count, string $reason): array => ['reason' => $reason, 'count' => $count])
+            ->values()
+            ->all();
+
+        return [
+            'academic_period' => $period,
+            'clearances_recorded_this_term' => $total,
+            'cleared_count' => $cleared,
+            'pending_count' => $pending,
+            'completion_rate_percent' => $total > 0 ? round(($cleared / $total) * 100, 1) : null,
+            'top_pending_reasons' => $reasons,
+            'pending_reason_source' => 'Free-text remarks on uncleared clearance records for this term, split on ; , and newlines.',
+            'unavailable' => $reasons === []
+                ? ['top_pending_reasons' => 'No remarks are recorded on uncleared clearance records for this term, so no reason can be ranked.']
+                : [],
+        ];
     }
 
-    private function getFinancialAnalytics(): string
+    /**
+     * @param  array{school_year: string, semester: int, label: string}  $period
+     * @return array<string, mixed>
+     */
+    private function finance(array $period): array
     {
-        $setting = GeneralSetting::query()->first();
-        $currency = $setting?->currency ?? 'PHP';
+        $tuition = $this->tenantScopedTuition($period);
+        $recordsInScope = (clone $tuition)->count();
 
-        return json_encode([
-            'currency' => $currency,
-            'gross_assessed_tuition' => 12450000.00,
-            'collected_payments' => 9820000.00,
-            'outstanding_receivables' => 2630000.00,
-            'collection_efficiency_percent' => 78.9,
-            'scholarship_discounts_granted' => 1450000.00,
-            'recent_tuition_adjustments_count' => 18,
-        ], JSON_PRETTY_PRINT);
+        $assessed = (float) (clone $tuition)->sum('overall_tuition');
+        $adjustments = (float) (clone $tuition)->sum('assessment_adjustment');
+        $paid = app(EnrollmentBillingService::class)->aggregatePaid(
+            (clone $tuition)->get(['id', 'paid', 'paid_transaction_baseline', 'overall_tuition']),
+        );
+
+        return [
+            'academic_period' => $period,
+            'currency' => $this->currency(),
+            'records_in_scope' => $recordsInScope,
+            'assessed_tuition' => round($assessed, 2),
+            'tuition_adjustments' => round($adjustments, 2),
+            'collected_payments' => round($paid, 2),
+            'outstanding_balance' => round(max(0.0, $assessed - $paid), 2),
+            'collection_efficiency_percent' => $assessed > 0 ? round(($paid / $assessed) * 100, 1) : null,
+            'collection_basis' => 'Verified payment allocations merged with the opening paid balance, the same precedence the billing service applies per assessment.',
+            'unavailable' => $this->financeGaps($recordsInScope, $assessed),
+        ];
     }
 
-    private function getFacultyAnalytics(): string
+    /**
+     * Tuition records for the period, restricted to the caller's school.
+     *
+     * `student_tuition` carries no tenant column of its own and no global
+     * school scope, so filtering on the academic period alone would aggregate
+     * every school sharing that term and report another school's money as this
+     * school's. Constraining `student_id` through the school-scoped `students`
+     * table is the only tenant link the row has.
+     *
+     * @param  array{school_year: string, semester: int, label: string}  $period
+     * @return Builder<StudentTuition>
+     */
+    private function tenantScopedTuition(array $period): Builder
     {
+        return StudentTuition::query()
+            ->whereIn('school_year', [$period['school_year'], str_replace(' ', '', $period['school_year'])])
+            ->where('semester', $period['semester'])
+            ->whereIn('student_id', Student::query()->select('id'));
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function financeGaps(int $recordsInScope, float $assessed): array
+    {
+        if ($recordsInScope === 0 || $assessed <= 0.0) {
+            return [
+                'assessed_tuition' => 'No tuition records exist for this term, so assessed, collected, and outstanding totals are all zero rather than missing.',
+            ];
+        }
+
+        return [];
+    }
+
+    /**
+     * @param  array{school_year: string, semester: int, label: string}  $period
+     * @return array<string, mixed>
+     */
+    private function faculty(array $period): array
+    {
+        $classes = Classes::query()
+            ->whereIn('school_year', [$period['school_year'], str_replace(' ', '', $period['school_year'])])
+            ->where('semester', $period['semester']);
+
         $totalFaculty = Faculty::query()->count();
-        $totalClasses = Classes::query()->count();
-        $avgClassesPerFaculty = $totalFaculty > 0 ? round($totalClasses / $totalFaculty, 1) : 4.2;
+        $totalClasses = (clone $classes)->count();
+        $assignedFaculty = (clone $classes)->whereNotNull('faculty_id')->distinct()->count('faculty_id');
 
-        return json_encode([
-            'total_faculty_members' => $totalFaculty ?: 38,
-            'total_class_sections' => $totalClasses ?: 160,
-            'average_teaching_load' => "{$avgClassesPerFaculty} sections per faculty",
-            'departments' => [
-                ['department' => 'College of Computer Studies', 'faculty_count' => 12, 'class_count' => 52],
-                ['department' => 'College of Business & Accountancy', 'faculty_count' => 10, 'class_count' => 44],
-                ['department' => 'Senior High School Academic Strand', 'faculty_count' => 16, 'class_count' => 64],
-            ],
-        ], JSON_PRETTY_PRINT);
+        return [
+            'academic_period' => $period,
+            'faculty_count' => $totalFaculty,
+            'classes_this_term' => $totalClasses,
+            'classes_with_assigned_instructor' => (clone $classes)->whereNotNull('faculty_id')->count(),
+            'unassigned_classes' => (clone $classes)->whereNull('faculty_id')->count(),
+            'distinct_instructors_teaching' => $assignedFaculty,
+            'instructors_without_classes' => max(0, $totalFaculty - $assignedFaculty),
+            'average_classes_per_instructor' => $assignedFaculty > 0
+                ? round($totalClasses / $assignedFaculty, 1)
+                : null,
+            'unavailable' => $totalFaculty === 0
+                ? ['faculty_count' => 'No faculty records exist, so teaching load cannot be averaged.']
+                : [],
+        ];
+    }
+
+    /**
+     * @param  Builder<Student>  $query
+     * @param  array<int, string>  $normaliseBlankTo
+     * @return list<array{label: string, value: int}>
+     */
+    private function enrolledDistribution(
+        Builder $query,
+        string $column,
+        array $normaliseBlankTo = [],
+        int $limit = 50,
+    ): array {
+        $rows = $query
+            ->toBase()
+            ->select($column)
+            ->selectRaw('COUNT(*) as aggregate')
+            ->groupBy($column)
+            ->orderByDesc('aggregate')
+            ->limit($limit)
+            ->get();
+
+        $out = [];
+
+        foreach ($rows as $row) {
+            $value = $row->{$column};
+            $value = is_string($value) ? mb_trim($value) : $value;
+
+            $label = in_array($value, ['', null], true)
+                ? ($normaliseBlankTo[0] ?? 'Unspecified')
+                : (string) $value;
+
+            $out[] = [
+                'label' => ucwords(str_replace('_', ' ', $label)),
+                'value' => (int) $row->aggregate,
+            ];
+        }
+
+        usort($out, static fn (array $a, array $b): int => $b['value'] <=> $a['value']);
+
+        return $out;
+    }
+
+    /**
+     * Normalize an aggregate result set from RegistrarAnalyticsService into
+     * label/value pairs.
+     *
+     * @param  iterable<mixed>  $rows
+     * @return list<array{label: string, title: string|null, value: int}>
+     */
+    private function labelCounts(
+        iterable $rows,
+        string $labelKey,
+        ?string $titleKey = null,
+        string $prefix = '',
+        bool $humanise = false,
+    ): array {
+        $out = [];
+
+        foreach ($rows as $row) {
+            $data = is_array($row) ? $row : (array) $row;
+            $label = (string) ($data[$labelKey] ?? 'Unassigned');
+            $label = $humanise
+                ? ucwords(str_replace('_', ' ', $label))
+                : $prefix.$label;
+
+            $out[] = [
+                'label' => $label,
+                'title' => $titleKey === null ? null : (string) ($data[$titleKey] ?? ''),
+                'value' => (int) ($data['count'] ?? 0),
+            ];
+        }
+
+        return $out;
+    }
+
+    private function currency(): string
+    {
+        $currency = GeneralSetting::query()->first()?->currency;
+
+        return filled($currency) ? (string) $currency : 'PHP';
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function json(array $payload): string
+    {
+        return json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
 }

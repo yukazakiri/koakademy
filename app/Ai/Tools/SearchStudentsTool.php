@@ -4,254 +4,272 @@ declare(strict_types=1);
 
 namespace App\Ai\Tools;
 
-use App\Models\Student;
-use BackedEnum;
+use App\Models\User;
+use App\Services\StudentDirectoryQuery;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
-use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
+use Throwable;
 
 final class SearchStudentsTool implements Tool
 {
-    private const int MAX_BATCH_SIZE = 150;
-
     public function description(): Stringable|string
     {
-        return 'Search student directory records by name, student number, or email. Supports single queries, formatted names ("LAST, FIRST M."), or batches/lists of up to 150 student names to retrieve student IDs, emails, programs, and statuses in one call.';
+        return <<<'DESCRIPTION'
+Query the student directory with structured filters instead of guessing names. This is the correct tool for any question about a group of students, for example: "give me all emails of all enrolled BSIT students this semester", "how many 2nd year applicants do we have", "list the 3rd year BSA students", "show every student with no email address".
+
+Use it whenever the question targets a population rather than one named person. Combine filters freely (program + status + year level + term). Every response reports the exact criteria and the total number of matches, so you can page through large cohorts with `offset` and must state the count honestly.
+
+It also handles named lookups: a single `query` (name, "LAST, FIRST M.", student number, or email), or `queries` / `names` for a pasted roster of up to 150 names at once.
+
+Notes:
+- `program` accepts a program code ("BSIT"), a title fragment ("Computer Studies"), or a department code, and a department code returns every program in that department. If it returns `unknown_program` or `ambiguous_program`, retry with one of `available_programs`.
+- Omitting `school_year` and `semester` uses the current term, which is what "this semester" means.
+- `enrollment_basis` decides who counts for the term. It defaults to `enrollment` (a real term enrollment record, not just a profile flag) for any population question, and to `any` for a bare name search. Pass `status` when the user wants students whose profile status is enrolled or on leave, or `class` when they mean students who have an active class this term.
+- Set `fields` to `emails` when the user wants only email addresses; it returns a compact de-duplicated `emails` array.
+- A `query` containing line breaks is read as a pasted list of names and resolved one name per line. A formatted "LAST, FIRST M." entry never matches on surname alone, so an unmatched name is reported honestly as not found instead of resolving to the wrong student.
+- If `has_more` is true, you have not shown every match: keep paging or say how many were returned out of the total.
+DESCRIPTION;
     }
 
     public function handle(Request $request): Stringable|string
     {
-        $rawQuery = $request['query'] ?? null;
-        $queries = $request['queries'] ?? ($request['names'] ?? null);
-
-        // Auto-detect multiline text blocks containing multiple student names
-        if (is_string($rawQuery) && (str_contains($rawQuery, "\n") || str_contains($rawQuery, "\r"))) {
-            $split = array_values(array_filter(
-                array_map('trim', preg_split('/[\r\n]+/', $rawQuery) ?: []),
-                static function (string $line): bool {
-                    $clean = mb_trim(preg_replace('/^\d+[\s\.\)\-]+\s*/u', '', $line));
-                    $upper = mb_strtoupper($clean);
-
-                    return filled($clean)
-                        && ! str_starts_with($upper, 'BACHELOR')
-                        && ! str_starts_with($upper, 'LIST')
-                        && ! str_starts_with($upper, 'BATCH')
-                        && ! str_starts_with($upper, 'NAME')
-                        && ! str_starts_with($upper, 'STUDENT');
-                }
-            ));
-
-            if (count($split) > 1) {
-                $queries = $split;
-            }
+        if (! $this->canReadDirectory()) {
+            return $this->encode([
+                'error' => true,
+                'message' => 'You are not permitted to view student directory records.',
+            ]);
         }
 
-        // Batch search mode
-        if (is_array($queries) && ! empty($queries)) {
-            if (count($queries) > self::MAX_BATCH_SIZE) {
-                return json_encode([
-                    'error' => true,
-                    'message' => 'The batch search limit is '.self::MAX_BATCH_SIZE.' names per request. Please split your list into batches of '.self::MAX_BATCH_SIZE.' or fewer.',
-                    'count' => count($queries),
-                    'limit' => self::MAX_BATCH_SIZE,
-                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        $directory = app(StudentDirectoryQuery::class);
+
+        try {
+            $identifiers = $this->requestedIdentifiers($request, $directory);
+
+            if (is_array($identifiers)) {
+                // A pasted list is a bulk read even when every entry is a single
+                // person, so it needs the bulk-read permission rather than the
+                // single-record view permission.
+                if (! $this->canExportCohort()) {
+                    return $this->encode($this->deniedCohort());
+                }
+
+                if (count($identifiers) > StudentDirectoryQuery::MAX_BATCH_SIZE) {
+                    return $this->encode([
+                        'error' => true,
+                        'message' => 'The batch search limit is '.StudentDirectoryQuery::MAX_BATCH_SIZE.' names per request. Please split your list into batches of '.StudentDirectoryQuery::MAX_BATCH_SIZE.' or fewer.',
+                        'count' => count($identifiers),
+                        'limit' => StudentDirectoryQuery::MAX_BATCH_SIZE,
+                    ]);
+                }
+
+                return $this->encode($directory->resolveBatch($identifiers));
             }
 
-            $results = [];
-            $foundCount = 0;
+            $validated = $request->validate([
+                'query' => 'nullable|string|max:500',
+                'program' => 'nullable|array|max:20',
+                'program.*' => 'string|max:100',
+                'course_id' => 'nullable|integer|min:1',
+                'status' => 'nullable|array|max:10',
+                'status.*' => 'string|max:50',
+                'year_level' => 'nullable|array|max:10',
+                'year_level.*' => 'integer|between:1,5',
+                'student_type' => 'nullable|array|max:10',
+                'student_type.*' => 'string|max:50',
+                'gender' => 'nullable|string|max:50',
+                'enrollment_basis' => 'nullable|string|in:enrollment,class,status,any',
+                'school_year' => 'nullable|string|max:20',
+                'semester' => 'nullable|integer|between:1,3',
+                'fields' => 'nullable|string|in:summary,detailed,emails',
+                'limit' => 'nullable|integer|min:1|max:500',
+                'offset' => 'nullable|integer|min:0',
+            ]);
 
-            foreach ($queries as $rawItem) {
-                if (! is_string($rawItem) || blank($rawItem)) {
-                    continue;
-                }
-
-                $clean = mb_trim(preg_replace('/^\d+[\s\.\)\-]+\s*/u', '', $rawItem));
-                $upper = mb_strtoupper($clean);
-                if (blank($clean) || str_starts_with($upper, 'BACHELOR') || str_starts_with($upper, 'LIST') || str_starts_with($upper, 'BATCH')) {
-                    continue;
-                }
-
-                $student = $this->resolveSingleStudent($clean);
-
-                if ($student instanceof Student) {
-                    $foundCount++;
-                    $results[] = [
-                        'query' => $rawItem,
-                        'found' => true,
-                        'student_id' => (string) $student->student_id,
-                        'name' => mb_trim("{$student->first_name} {$student->last_name}"),
-                        'email' => $student->email,
-                        'course' => $student->course?->title ?? $student->course?->code ?? 'N/A',
-                        'year_level' => $student->academic_year,
-                        'status' => $student->status instanceof BackedEnum ? $student->status->value : (string) $student->status,
-                    ];
-                } else {
-                    $results[] = [
-                        'query' => $rawItem,
-                        'found' => false,
-                        'name' => null,
-                        'email' => null,
-                    ];
-                }
+            // Any structured filter turns this from "look up the student I
+            // named" into "export a cohort", which is a bulk read. A bare
+            // name stays available to callers who may only view one record,
+            // because that is how they find the record they are allowed to open.
+            if ($this->isCohortRequest($validated) && ! $this->canExportCohort()) {
+                return $this->encode($this->deniedCohort());
             }
 
-            return json_encode([
-                'count' => count($results),
-                'found_count' => $foundCount,
-                'students' => $results,
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+            return $this->encode($this->present($directory->execute([
+                'query' => $identifiers ?? ($validated['query'] ?? null),
+
+                'program' => $validated['program'] ?? null,
+                'course_id' => $validated['course_id'] ?? null,
+                'status' => $validated['status'] ?? null,
+                'year_level' => $validated['year_level'] ?? null,
+                'student_type' => $validated['student_type'] ?? null,
+                'gender' => $validated['gender'] ?? null,
+                'basis' => $validated['enrollment_basis'] ?? null,
+                'school_year' => $validated['school_year'] ?? null,
+                'semester' => $validated['semester'] ?? null,
+                'fields' => $validated['fields'] ?? null,
+                'limit' => $validated['limit'] ?? null,
+                'offset' => $validated['offset'] ?? null,
+            ])));
+        } catch (Throwable $e) {
+            return $this->encode([
+                'error' => true,
+                'message' => "The student directory query failed: {$e->getMessage()}",
+            ]);
         }
-
-        // Single query mode
-        $term = mb_trim(preg_replace('/^\d+[\s\.\)\-]+\s*/u', '', (string) ($rawQuery ?? '')));
-        $limit = min(50, max(1, (int) ($request['limit'] ?? 10)));
-
-        if (blank($term)) {
-            return json_encode([
-                'count' => 0,
-                'students' => [],
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-        }
-
-        $students = $this->searchStudents($term, $limit);
-
-        return json_encode([
-            'count' => $students->count(),
-            'students' => $students->map(static function (Student $student): array {
-                return [
-                    'id' => $student->id,
-                    'student_id' => $student->student_id,
-                    'name' => mb_trim("{$student->first_name} {$student->last_name}"),
-                    'email' => $student->email,
-                    'course' => $student->course?->title ?? $student->course?->code ?? 'N/A',
-                    'year_level' => $student->academic_year,
-                    'status' => $student->status instanceof BackedEnum ? $student->status->value : (string) $student->status,
-                    'enrolled_classes_count' => $student->classEnrollments?->count() ?? 0,
-                ];
-            })->all(),
-        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 
     public function schema(JsonSchema $schema): array
     {
         return [
-            'query' => $schema->string()->description('Student name, student ID number, or email. Can also be a multiline block of student names (maximum '.self::MAX_BATCH_SIZE.' names).'),
-            'queries' => $schema->array()->description('Array of student names or identifiers to search in batch (maximum '.self::MAX_BATCH_SIZE.' names).')->items($schema->string()),
-            'names' => $schema->array()->description('Alias for queries: list of student names to look up (maximum '.self::MAX_BATCH_SIZE.' names).')->items($schema->string()),
-            'limit' => $schema->integer()->description('Maximum number of results to return for single query (default 10, max 50).'),
+            'program' => $schema->array()
+                ->items($schema->string())
+                ->description('Degree programs to filter by, e.g. ["BSIT"] or ["BSIT","BSCS"]. Accepts a program code, a title fragment ("Computer Studies"), or a department code. Omit to include every program.'),
+            'status' => $schema->array()
+                ->items($schema->string())
+                ->description('Student profile statuses: applicant, enrolled, on_leave, withdrawn, dropped, graduated, transferred. Omit for all statuses.'),
+            'year_level' => $schema->array()
+                ->items($schema->integer())
+                ->description('Year levels to include, e.g. [1,2] for first and second year.'),
+            'student_type' => $schema->array()
+                ->items($schema->string())
+                ->description('Student types: college, shs, tesda, dhrt.'),
+            'gender' => $schema->string()
+                ->description('male, female, other, prefer_not_to_say, or unspecified to include blank values.'),
+            'enrollment_basis' => $schema->string()
+                ->enum(['enrollment', 'class', 'status', 'any'])
+                ->description('How to decide who counts for the term. Defaults to "enrollment" (a term enrollment record that was not cancelled) for any population question, and to "any" for a bare name search. "class" = has an active class this term. "status" = profile status is enrolled/on leave, term ignored. "any" = no term constraint.'),
+            'school_year' => $schema->string()
+                ->description('School year filter, e.g. "2025-2026". Omit for the current school year, which is what "this semester" uses.'),
+            'semester' => $schema->integer()
+                ->description('Semester filter: 1, 2, or 3 for summer. Omit for the current semester.'),
+            'query' => $schema->string()
+                ->description('Optional free-text match on first name, last name, student number, LRN, or email, or a formatted name ("CRUZ, JUAN D."). A value containing line breaks is treated as a pasted list of names, one per line. Not needed for population questions.'),
+            'queries' => $schema->array()
+                ->items($schema->string())
+                ->description('Resolve a pasted roster of names in one call, up to '.StudentDirectoryQuery::MAX_BATCH_SIZE.' entries. Returns one row per entry with found true or false, so unmatched names are visible rather than dropped.'),
+            'names' => $schema->array()
+                ->items($schema->string())
+                ->description('Alias for queries.'),
+            'fields' => $schema->string()
+                ->enum(['summary', 'detailed', 'emails'])
+                ->description('summary (default) = number, name, email, program, year level, status. detailed adds LRN, phone, gender, department. emails returns only a compact de-duplicated email list, which is what to use when the user asks for email addresses.'),
+            'limit' => $schema->integer()
+                ->description('Rows to return, 1-500. Defaults to 50. Use a higher limit for large cohorts and report the total from total_matched.'),
+            'offset' => $schema->integer()
+                ->description('Row offset for paging. Use next_offset from the previous response while has_more is true.'),
         ];
     }
 
-    private function resolveSingleStudent(string $query): ?Student
+    /**
+     * Decide whether the caller asked for a batch of names or a single query.
+     *
+     * Returns the list of names to resolve, the single-query string, or null
+     * when the request is purely filter-driven.
+     */
+    private function requestedIdentifiers(Request $request, StudentDirectoryQuery $directory): array|string|null
     {
-        $clean = mb_trim($query);
+        $identifiers = $request['queries'] ?? $request['names'] ?? null;
 
-        if (str_contains($clean, '@')) {
-            return Student::query()
-                ->with(['course'])
-                ->whereRaw('LOWER(email) = ?', [mb_strtolower($clean)])
-                ->first();
+        if (is_array($identifiers) && $identifiers !== []) {
+            return $identifiers;
         }
 
-        if (is_numeric($clean)) {
-            return Student::query()
-                ->with(['course'])
-                ->where(function (Builder $builder) use ($clean): void {
-                    $builder->where('student_id', $clean)
-                        ->orWhere('lrn', $clean)
-                        ->orWhere('id', (int) $clean);
-                })
-                ->first();
+        $query = $request['query'] ?? null;
+
+        if (! is_string($query) && ! is_numeric($query)) {
+            return null;
         }
 
-        if (str_contains($clean, ',')) {
-            [$last, $rest] = explode(',', $clean, 2);
-            $last = mb_trim($last);
-            $rest = mb_trim($rest);
-            $firstOnly = mb_trim(preg_replace('/\s+[A-Za-z]\.?$/u', '', $rest) ?? $rest);
-            $firstWord = explode(' ', $firstOnly)[0] ?? '';
+        $split = $directory->splitNameList((string) $query);
 
-            if (filled($firstWord)) {
-                return Student::query()
-                    ->with(['course'])
-                    ->whereRaw('LOWER(last_name) LIKE ?', ['%'.mb_strtolower($last).'%'])
-                    ->where(function (Builder $builder) use ($firstOnly, $firstWord): void {
-                        $builder->whereRaw('LOWER(first_name) LIKE ?', ['%'.mb_strtolower($firstOnly).'%'])
-                            ->orWhereRaw('LOWER(first_name) LIKE ?', ['%'.mb_strtolower($firstWord).'%']);
-                    })
-                    ->first();
-            }
+        return count($split) > 1 ? $split : mb_trim((string) $query);
+    }
 
-            return Student::query()
-                ->with(['course'])
-                ->whereRaw('LOWER(last_name) LIKE ?', ['%'.mb_strtolower($last).'%'])
-                ->first();
+    private function canReadDirectory(): bool
+    {
+        $user = Auth::user();
+
+        if (! $user instanceof User) {
+            return false;
         }
 
-        $words = preg_split('/\s+/u', $clean) ?: [];
-        if (count($words) === 1) {
-            $term = mb_strtolower($words[0]);
-
-            return Student::query()
-                ->with(['course'])
-                ->where(function (Builder $builder) use ($term): void {
-                    $builder->whereRaw('LOWER(last_name) LIKE ?', ['%'.$term.'%'])
-                        ->orWhereRaw('LOWER(first_name) LIKE ?', ['%'.$term.'%'])
-                        ->orWhereRaw('LOWER(email) LIKE ?', ['%'.$term.'%']);
-                })
-                ->first();
-        }
-
-        $w1 = mb_strtolower($words[0]);
-        $w2 = mb_strtolower($words[count($words) - 1]);
-
-        return Student::query()
-            ->with(['course'])
-            ->where(function (Builder $builder) use ($w1, $w2): void {
-                $builder->where(function (Builder $sub) use ($w1, $w2): void {
-                    $sub->whereRaw('LOWER(first_name) LIKE ?', ['%'.$w1.'%'])
-                        ->whereRaw('LOWER(last_name) LIKE ?', ['%'.$w2.'%']);
-                })->orWhere(function (Builder $sub) use ($w1, $w2): void {
-                    $sub->whereRaw('LOWER(first_name) LIKE ?', ['%'.$w2.'%'])
-                        ->whereRaw('LOWER(last_name) LIKE ?', ['%'.$w1.'%']);
-                });
-            })
-            ->first();
+        return $user->hasRole('super_admin')
+            || $user->can('View:Student')
+            || $user->can('ViewAny:Student');
     }
 
     /**
-     * @return \Illuminate\Database\Eloquent\Collection<int, Student>
+     * Whether the caller may read many students at once.
+     *
+     * `View:Student` alone is deliberately not enough. Roles such as security
+     * guard are seeded with `View:Student` but not `ViewAny:Student` because
+     * they verify one person at a time; letting them filter by program and page
+     * through the roster would hand them a bulk export of the whole directory
+     * through the chat box. This mirrors the MCP tool, which already requires
+     * `ViewAny:Student`.
      */
-    private function searchStudents(string $query, int $limit)
+    private function canExportCohort(): bool
     {
-        $clean = mb_trim($query);
+        $user = Auth::user();
 
-        return Student::query()
-            ->with(['course', 'classEnrollments'])
-            ->where(function (Builder $builder) use ($clean): void {
-                $term = '%'.mb_strtolower($clean).'%';
+        if (! $user instanceof User) {
+            return false;
+        }
 
-                $builder->whereRaw('LOWER(first_name) LIKE ?', [$term])
-                    ->orWhereRaw('LOWER(last_name) LIKE ?', [$term])
-                    ->orWhereRaw('CAST(student_id AS CHAR) LIKE ?', ['%'.$clean.'%'])
-                    ->orWhereRaw('LOWER(email) LIKE ?', [$term]);
+        return $user->hasRole('super_admin') || $user->can('ViewAny:Student');
+    }
 
-                if (str_contains($clean, ',')) {
-                    [$last, $first] = explode(',', $clean, 2);
-                    $last = mb_trim($last);
-                    $first = mb_trim($first);
-                    $firstOnly = mb_trim(preg_replace('/\s+[A-Za-z]\.?$/u', '', $first) ?? $first);
-                    $firstWord = explode(' ', $firstOnly)[0] ?? '';
+    /**
+     * Whether the request asks for a population rather than a named person.
+     *
+     * @param  array<string, mixed>  $filters
+     */
+    private function isCohortRequest(array $filters): bool
+    {
+        foreach (['program', 'course_id', 'status', 'year_level', 'student_type', 'gender', 'school_year', 'semester', 'enrollment_basis', 'fields'] as $key) {
+            if (($filters[$key] ?? null) !== null) {
+                return true;
+            }
+        }
 
-                    $builder->orWhere(function (Builder $sub) use ($last, $firstWord): void {
-                        $sub->whereRaw('LOWER(last_name) LIKE ?', ['%'.mb_strtolower($last).'%'])
-                            ->whereRaw('LOWER(first_name) LIKE ?', ['%'.mb_strtolower($firstWord).'%']);
-                    });
-                }
-            })
-            ->limit($limit)
-            ->get();
+        // Paging is only meaningful across a population; a bare name lookup
+        // returns the one match and stops.
+        return ($filters['offset'] ?? null) !== null;
+    }
+
+    /**
+     * @return array{error: true, message: string, required_permission: string}
+     */
+    private function deniedCohort(): array
+    {
+        return [
+            'error' => true,
+            'message' => 'You can look up a student by name, but exporting a filtered cohort requires the ViewAny:Student permission. Ask an administrator for access, or narrow the request to one named student.',
+            'required_permission' => 'ViewAny:Student',
+        ];
+    }
+
+    /**
+     * Add `count` alongside the paging keys so callers that predate
+     * total_matched keep a single number to report.
+     *
+     * @param  array<string, mixed>  $result
+     * @return array<string, mixed>
+     */
+    private function present(array $result): array
+    {
+        $result['count'] = $result['returned'] ?? 0;
+
+        return $result;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function encode(array $payload): string
+    {
+        return json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
 }

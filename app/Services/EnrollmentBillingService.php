@@ -36,21 +36,70 @@ final class EnrollmentBillingService
         ];
     }
 
-    public function totalPaid(StudentTuition $tuition): float
+    /**
+     * Sum `totalPaid()` across many tuition records.
+     *
+     * Reports that aggregate tuition must not read the `student_tuition.paid`
+     * column: `syncTuitionBalance()` only writes `total_balance` and `status`,
+     * so that column goes stale as soon as a payment is made through the
+     * allocation flow. Summing it understates collections and inflates the
+     * outstanding balance and the collection efficiency ratio.
+     *
+     * This applies the same precedence as `totalPaid()` per record, with the
+     * verified allocation totals fetched in one grouped query so a whole-term
+     * report does not run two queries per student. Records with no allocation
+     * fall back to the full per-record chain, which is the legacy path.
+     *
+     * @param  iterable<int, StudentTuition>  $tuition
+     */
+    public function aggregatePaid(iterable $tuition): float
     {
-        $openingPaid = (float) ($tuition->getRawOriginal('paid') ?? 0);
-        $verifiedPaid = $this->verifiedPaid($tuition);
-        $verifiedBaseline = $tuition->getRawOriginal('paid_transaction_baseline');
+        $records = [];
 
-        if ($verifiedBaseline !== null) {
-            return round(
-                max($openingPaid, (float) $verifiedBaseline)
-                + max(0, $verifiedPaid - (float) $verifiedBaseline),
-                2,
-            );
+        foreach ($tuition as $record) {
+            $records[] = $record;
         }
 
-        return max($openingPaid, $verifiedPaid);
+        if ($records === []) {
+            return 0.0;
+        }
+
+        $allocated = PaymentAllocation::query()
+            ->whereIn('student_tuition_id', array_map(static fn (StudentTuition $r): int => (int) $r->id, $records))
+            ->where('target_type', 'assessment')
+            ->whereHas('transaction', fn ($query) => $query->whereIn('status', ['Paid', 'Completed', 'paid', 'completed']))
+            ->groupBy('student_tuition_id')
+            ->selectRaw('student_tuition_id, SUM(amount) as verified_total')
+            ->pluck('verified_total', 'student_tuition_id');
+
+        $total = 0.0;
+
+        foreach ($records as $record) {
+            $verified = $allocated->get($record->id);
+
+            $total += $verified === null
+                ? $this->totalPaid($record)
+                : $this->combinePaid(
+                    (float) ($record->getRawOriginal('paid') ?? 0),
+                    (float) $verified,
+                    $record->getRawOriginal('paid_transaction_baseline') === null
+                        ? null
+                        : (float) $record->getRawOriginal('paid_transaction_baseline'),
+                );
+        }
+
+        return round($total, 2);
+    }
+
+    public function totalPaid(StudentTuition $tuition): float
+    {
+        return $this->combinePaid(
+            (float) ($tuition->getRawOriginal('paid') ?? 0),
+            $this->verifiedPaid($tuition),
+            $tuition->getRawOriginal('paid_transaction_baseline') === null
+                ? null
+                : (float) $tuition->getRawOriginal('paid_transaction_baseline'),
+        );
     }
 
     public function verifiedPaid(StudentTuition $tuition): float
@@ -237,6 +286,25 @@ final class EnrollmentBillingService
         ])->save();
 
         return $this->syncTuitionBalance($existingTuition, (float) $existingTuition->downpayment);
+    }
+
+    /**
+     * Combine the opening column with verified payments.
+     *
+     * The baseline is the verified total already folded into `paid` when the
+     * record was migrated, so only payments above it are added; without a
+     * baseline the column is simply the floor.
+     */
+    private function combinePaid(float $openingPaid, float $verifiedPaid, ?float $verifiedBaseline): float
+    {
+        if ($verifiedBaseline !== null) {
+            return round(
+                max($openingPaid, $verifiedBaseline) + max(0, $verifiedPaid - $verifiedBaseline),
+                2,
+            );
+        }
+
+        return max($openingPaid, $verifiedPaid);
     }
 
     private function tuitionPaymentFromSettlements(Transaction $transaction): float

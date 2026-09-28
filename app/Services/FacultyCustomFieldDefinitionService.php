@@ -44,6 +44,15 @@ final class FacultyCustomFieldDefinitionService
 
     public function ensureDefaults(int $schoolId): void
     {
+        $existingCount = FacultyCustomFieldDefinition::query()
+            ->where('school_id', $schoolId)
+            ->whereIn('key', array_column(self::DEFAULTS, 'key'))
+            ->count();
+
+        if ($existingCount === count(self::DEFAULTS)) {
+            return;
+        }
+
         foreach (self::DEFAULTS as $index => $definition) {
             FacultyCustomFieldDefinition::query()->createOrFirst(
                 ['school_id' => $schoolId, 'key' => $definition['key']],

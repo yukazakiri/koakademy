@@ -158,7 +158,7 @@ final readonly class SettingsShareService
      */
     private function getUserPermissions(User $user): array
     {
-        $permissions = $user->getAllPermissions()->pluck('name')->values()->all();
+        $permissions = $user->getAllPermissionNames();
 
         if (count($permissions) > 0) {
             return $permissions;

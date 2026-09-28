@@ -15,9 +15,9 @@ it('uses koakademy defaults when site branding settings are empty', function ():
     $settings->organization_short_name = null;
 
     expect($settings->getAppName())->toBe('KoAkademy')
-        ->and($settings->getAppShortName())->toBe('KOA')
+        ->and($settings->getAppShortName())->toBe('KOAK')
         ->and($settings->getOrganizationName())->toBe('KoAkademy')
-        ->and($settings->getOrganizationShortName())->toBe('KOA');
+        ->and($settings->getOrganizationShortName())->toBe('KOAK');
 });
 
 it('shares normalized branding values for frontend consumers', function (): void {

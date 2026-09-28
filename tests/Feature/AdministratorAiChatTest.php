@@ -14,6 +14,28 @@ beforeEach(function (): void {
     app(AiSettingsService::class)->clearCache();
 });
 
+it('reports available models with server-verified document capabilities', function (): void {
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $settings = app(AiSettingsService::class);
+    $data = $settings->defaults();
+    $data['enabled'] = true;
+    $data['primary_provider'] = 'openai-compatible';
+    $data['providers']['openai-compatible']['enabled'] = true;
+    $data['providers']['openai-compatible']['default_chat_model'] = 'omni';
+    $data['custom_providers']['omni'] = [
+        'enabled' => true,
+        'base_url' => 'https://omni.example.test/v1',
+        'default_chat_model' => 'vision-chat',
+    ];
+    $settings->save($data);
+
+    $response = $this->actingAs($admin)->getJson('/administrators/ai/analytics-summary')->assertOk();
+    $models = collect($response->json('models'))->keyBy('id');
+
+    expect($models->get('openai-compatible:omni')['supports_documents'] ?? true)->toBeFalse()
+        ->and($models->get('omni:vision-chat')['supports_documents'] ?? true)->toBeFalse();
+});
+
 it('renders the administrator AI chat page for authorized admins', function (): void {
     $admin = User::factory()->create(['role' => UserRole::Admin]);
 
@@ -471,7 +493,7 @@ it('manages student profiles with approval gates via ManageStudentTool', functio
 
     $createResult = json_decode((string) $tool->handle($createRequest), true);
     expect($createResult['success'])->toBeTrue()
-        ->and($createResult['student']['name'])->toBe('Johnson, Katherine ')
+        ->and($createResult['student']['name'])->toBe('Johnson, Katherine')
         ->and($createResult['student']['email'])->toBe('katherine.johnson@example.com');
 
     $studentId = $createResult['student']['id'];
@@ -636,4 +658,386 @@ it('formats class enrollments compactly without unneeded payload bloat', functio
 
     // Ensure raw response does not contain unnecessary verbose fields like full personalInfo arrays
     expect(mb_strlen($rawResponse))->toBeLessThan(1000);
+});
+
+it('supports batch student upserts, class schedules, and curriculum subjects via AI tools', function (): void {
+    foreach (['Create:Student', 'Update:Student', 'Create:Subject', 'Update:Subject', 'Create:Classes', 'Update:Classes', 'Update:StudentEnrollment'] as $perm) {
+        Spatie\Permission\Models\Permission::firstOrCreate(['name' => $perm, 'guard_name' => 'web']);
+    }
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+    $admin->givePermissionTo(['Create:Student', 'Update:Student', 'Create:Subject', 'Update:Subject', 'Create:Classes', 'Update:Classes', 'Update:StudentEnrollment']);
+    $this->actingAs($admin);
+
+    $course = App\Models\Course::factory()->create(['code' => 'BSHM', 'title' => 'Hospitality Management']);
+    $room = App\Models\Room::create(['name' => 'Kitchen Lab 1', 'is_active' => true]);
+
+    // 1. Batch upsert students (one new, one update)
+    $existingStudent = App\Models\Student::factory()->create([
+        'first_name' => 'Maria',
+        'last_name' => 'Santos',
+        'email' => 'maria.santos@example.com',
+        'course_id' => $course->id,
+        'academic_year' => 1,
+    ]);
+
+    $studentTool = new App\Ai\Tools\ManageStudentTool();
+    $studentResult = json_decode((string) $studentTool->handle(new Laravel\Ai\Tools\Request([
+        'action' => 'batch_upsert',
+        'students' => [
+            [
+                'student_id' => $existingStudent->id,
+                'first_name' => 'Maria Clara',
+                'last_name' => 'Santos',
+                'email' => 'maria.santos@example.com',
+                'academic_year' => 2,
+                'status' => 'enrolled',
+            ],
+            [
+                'first_name' => 'Juan',
+                'last_name' => 'Dela Cruz',
+                'email' => 'juan.delacruz@example.com',
+                'course_code' => 'BSHM',
+                'academic_year' => 1,
+                'status' => 'applicant',
+            ],
+        ],
+    ])), true);
+
+    expect($studentResult['success'])->toBeTrue()
+        ->and($studentResult['created_count'])->toBe(1)
+        ->and($studentResult['updated_count'])->toBe(1);
+
+    expect($existingStudent->refresh()->first_name)->toBe('Maria Clara')
+        ->and($existingStudent->academic_year)->toBe(2);
+
+    expect(App\Models\Student::where('email', 'juan.delacruz@example.com')->exists())->toBeTrue();
+
+    // 2. Batch upsert curriculum subjects
+    $subjectTool = new App\Ai\Tools\ManageCurriculumSubjectTool();
+    $subResult = json_decode((string) $subjectTool->handle(new Laravel\Ai\Tools\Request([
+        'action' => 'batch_upsert',
+        'subjects' => [
+            [
+                'code' => 'HPC 1',
+                'title' => 'Fundamentals in Food Service',
+                'units' => 3,
+                'lecture' => 2,
+                'laboratory' => 1,
+                'academic_year' => 1,
+                'semester' => 1,
+                'course_code' => 'BSHM',
+            ],
+            [
+                'code' => 'THC 1',
+                'title' => 'Macro Perspective in Tourism',
+                'units' => 3,
+                'academic_year' => 1,
+                'semester' => 1,
+                'course_code' => 'BSHM',
+            ],
+        ],
+    ])), true);
+
+    expect($subResult['success'])->toBeTrue()
+        ->and($subResult['created_count'])->toBe(2);
+
+    // 3. Batch create class schedules
+    $classTool = new App\Ai\Tools\ManageClassScheduleTool();
+    $classResult = json_decode((string) $classTool->handle(new Laravel\Ai\Tools\Request([
+        'action' => 'batch_create',
+        'classes' => [
+            [
+                'subject_code' => 'HPC 1',
+                'section' => 'BSHM-1A',
+                'day_of_week' => 'Monday',
+                'start_time' => '08:00',
+                'end_time' => '10:00',
+                'room_name' => 'Kitchen Lab 1',
+            ],
+            [
+                'subject_code' => 'THC 1',
+                'section' => 'BSHM-1A',
+                'day_of_week' => 'Wednesday',
+                'start_time' => '10:00',
+                'end_time' => '12:00',
+                'room_name' => 'Kitchen Lab 1',
+            ],
+        ],
+    ])), true);
+
+    expect($classResult['success'])->toBeTrue()
+        ->and($classResult['created_classes_count'])->toBe(2);
+
+    expect(App\Models\Classes::where('subject_code', 'HPC 1')->where('section', 'BSHM-1A')->exists())->toBeTrue()
+        ->and(App\Models\Schedule::where('day_of_week', 'Monday')->where('start_time', '08:00:00')->exists())->toBeTrue();
+});
+
+it('extracts multi-sheet spreadsheets cleanly with titles and tables for dynamic AI agent comprehension', function (): void {
+    $book = new PhpOffice\PhpSpreadsheet\Spreadsheet();
+
+    // Sheet 1: Students roster
+    $sheet1 = $book->getActiveSheet();
+    $sheet1->setTitle('Students Roster');
+    $sheet1->setCellValue('A1', 'KOAKADEMY OFFICIAL ENROLLED STUDENTS');
+    $sheet1->setCellValue('A2', 'First Name');
+    $sheet1->setCellValue('B2', 'Last Name');
+    $sheet1->setCellValue('C2', 'Email');
+    $sheet1->setCellValue('D2', 'Program');
+    $sheet1->setCellValue('A3', 'Jose');
+    $sheet1->setCellValue('B3', 'Rizal');
+    $sheet1->setCellValue('C3', 'jose.rizal@example.com');
+    $sheet1->setCellValue('D3', 'BSHM');
+
+    // Sheet 2: Class Schedules
+    $sheet2 = $book->createSheet();
+    $sheet2->setTitle('Class Schedules');
+    $sheet2->setCellValue('A1', 'Subject Code');
+    $sheet2->setCellValue('B1', 'Section');
+    $sheet2->setCellValue('C1', 'Day');
+    $sheet2->setCellValue('D1', 'Time');
+    $sheet2->setCellValue('E1', 'Room');
+    $sheet2->setCellValue('A2', 'HPC 1');
+    $sheet2->setCellValue('B2', 'BSHM-1A');
+    $sheet2->setCellValue('C2', 'Monday');
+    $sheet2->setCellValue('D2', '08:00-10:00');
+    $sheet2->setCellValue('E2', 'Kitchen Lab');
+
+    $path = tempnam(sys_get_temp_dir(), 'test-sheets-').'.xlsx';
+    (new PhpOffice\PhpSpreadsheet\Writer\Xlsx($book))->save($path);
+    $book->disconnectWorksheets();
+
+    $uploaded = new Illuminate\Http\UploadedFile($path, 'master_records.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', null, true);
+
+    $processor = app(App\Services\Ai\AiAttachmentProcessor::class);
+    $processed = $processor->process([$uploaded], 'Please analyze the uploaded files and help me update records.');
+
+    expect($processed['attachments'])->toBeEmpty()
+        ->and($processed['enrichedPrompt'])->toContain('Sheet: \'Students Roster\'')
+        ->and($processed['enrichedPrompt'])->toContain('Sheet: \'Class Schedules\'')
+        ->and($processed['enrichedPrompt'])->toContain('jose.rizal@example.com')
+        ->and($processed['enrichedPrompt'])->toContain('Kitchen Lab')
+        ->and($processed['enrichedPrompt'])->toContain('Document Header / Metadata');
+});
+
+it('extracts rows from image-based headerless schedule spreadsheets without losing first data rows', function (): void {
+    $book = new PhpOffice\PhpSpreadsheet\Spreadsheet();
+    $sheet = $book->getActiveSheet();
+    $sheet->fromArray([
+        ['MASTER SCHEDULE'],
+        ['COURSE CODE'],
+        ['HPC 1'],
+        ['BSHM 1A'],
+        ['MONDAY'],
+        ['08:00 - 10:00'],
+        ['Kitchen Lab 1'],
+    ]);
+    $path = tempnam(sys_get_temp_dir(), 'schedule-sheet-').'.xlsx';
+    (new PhpOffice\PhpSpreadsheet\Writer\Xlsx($book))->save($path);
+    $book->disconnectWorksheets();
+
+    $uploaded = new Illuminate\Http\UploadedFile($path, 'class-schedules.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', null, true);
+    $processed = app(App\Services\Ai\AiAttachmentProcessor::class)->process([$uploaded], 'Please read this schedule.', false);
+
+    expect($processed['attachments'])->toBeEmpty()
+        ->and($processed['enrichedPrompt'])->toContain('HPC 1')
+        ->and($processed['enrichedPrompt'])->toContain('BSHM 1A')
+        ->and($processed['enrichedPrompt'])->toContain('MONDAY')
+        ->and($processed['enrichedPrompt'])->toContain('08:00 - 10:00')
+        ->and($processed['enrichedPrompt'])->toContain('Kitchen Lab 1');
+});
+
+it('preserves an image attachment while extracting text from a workbook for image-only providers', function (): void {
+    $book = new PhpOffice\PhpSpreadsheet\Spreadsheet();
+    $book->getActiveSheet()->fromArray([
+        ['First Name', 'Last Name', 'Program'],
+        ['Ana', 'Reyes', 'BSHM'],
+    ]);
+    $workbookPath = tempnam(sys_get_temp_dir(), 'workbook-with-image-').'.xlsx';
+    (new PhpOffice\PhpSpreadsheet\Writer\Xlsx($book))->save($workbookPath);
+    $book->disconnectWorksheets();
+
+    $imagePath = tempnam(sys_get_temp_dir(), 'uploaded-image-').'.png';
+    $image = imagecreatetruecolor(2, 2);
+    imagepng($image, $imagePath);
+    imagedestroy($image);
+
+    $files = [
+        new Illuminate\Http\UploadedFile($workbookPath, 'students.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', null, true),
+        new Illuminate\Http\UploadedFile($imagePath, 'classroom.png', 'image/png', null, true),
+    ];
+
+    $processed = app(App\Services\Ai\AiAttachmentProcessor::class)->process($files, 'Analyze both files.', false);
+
+    expect($processed['attachments'])->toHaveCount(1)
+        ->and($processed['enrichedPrompt'])->toContain('Ana')
+        ->and($processed['enrichedPrompt'])->toContain('Reyes')
+        ->and($processed['enrichedPrompt'])->toContain('[Attached Image: classroom.png');
+});
+
+it('extracts text from PDFs for image-only provider fallback', function (): void {
+    $stream = 'BT /F1 18 Tf 72 720 Td (Culinary Arts Curriculum Overview) Tj ET';
+    $pdf = "%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n5 0 obj\n<< /Length ".mb_strlen($stream)." >>\nstream\n{$stream}\nendstream\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF";
+    $path = tempnam(sys_get_temp_dir(), 'curriculum-pdf-').'.pdf';
+    file_put_contents($path, $pdf);
+    $file = new Illuminate\Http\UploadedFile($path, 'curriculum.pdf', 'application/pdf', null, true);
+
+    $processed = app(App\Services\Ai\AiAttachmentProcessor::class)->process([$file], 'Summarize curriculum.', false);
+
+    expect($processed['attachments'])->toBeEmpty()
+        ->and($processed['enrichedPrompt'])->toContain('Culinary Arts Curriculum Overview');
+});
+
+it('extracts text from DOCX attachments instead of relying only on provider document support', function (): void {
+    $archive = new ZipArchive;
+    $path = tempnam(sys_get_temp_dir(), 'curriculum-docx-').'.docx';
+    $archive->open($path, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+    $archive->addFromString('word/document.xml', '<w:document xmlns:w="urn:w"><w:body><w:p><w:r><w:t>Culinary Arts Curriculum</w:t></w:r></w:p><w:p><w:r><w:t>HPC 1 Food Service</w:t></w:r></w:p></w:body></w:document>');
+    $archive->close();
+
+    $file = new Illuminate\Http\UploadedFile($path, 'curriculum.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', null, true);
+    $processed = app(App\Services\Ai\AiAttachmentProcessor::class)->process([$file], 'Analyze this curriculum.', false);
+
+    expect($processed['attachments'])->toBeEmpty()
+        ->and($processed['enrichedPrompt'])->toContain('Culinary Arts Curriculum')
+        ->and($processed['enrichedPrompt'])->toContain('HPC 1 Food Service');
+});
+
+it('returns spreadsheet content for every sheet within the text extraction row limit', function (): void {
+    $book = new PhpOffice\PhpSpreadsheet\Spreadsheet();
+    $sheet1 = $book->getActiveSheet();
+    $sheet1->setTitle('Sheet One');
+    $sheet1->fromArray([['Header'], ['first-sheet-row']]);
+    $sheet2 = $book->createSheet();
+    $sheet2->setTitle('Sheet Two');
+    $sheet2->fromArray([['Header'], ['second-sheet-row']]);
+
+    $path = tempnam(sys_get_temp_dir(), 'multiple-sheet-limit-').'.xlsx';
+    (new PhpOffice\PhpSpreadsheet\Writer\Xlsx($book))->save($path);
+    $book->disconnectWorksheets();
+    $file = new Illuminate\Http\UploadedFile($path, 'multi.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', null, true);
+    $processor = app(App\Services\Ai\AiAttachmentProcessor::class);
+
+    $processed = $processor->process([$file], 'Analyze both sheets.', false);
+
+    expect($processed['enrichedPrompt'])->toContain('first-sheet-row')
+        ->and($processed['enrichedPrompt'])->toContain('second-sheet-row')
+        ->and($processed['attachments'])->toBeEmpty();
+});
+
+it('does not pass spreadsheet Document attachments to image-only providers', function (): void {
+    $book = new PhpOffice\PhpSpreadsheet\Spreadsheet();
+    $sheet = $book->getActiveSheet();
+    $sheet->fromArray([['Student Number', 'Student Name'], ['2026-001', 'Ana Reyes']]);
+    $path = tempnam(sys_get_temp_dir(), 'provider-attachments-').'.xlsx';
+    (new PhpOffice\PhpSpreadsheet\Writer\Xlsx($book))->save($path);
+    $book->disconnectWorksheets();
+
+    $file = new Illuminate\Http\UploadedFile($path, 'students.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', null, true);
+    $processed = app(App\Services\Ai\AiAttachmentProcessor::class)->process([$file], 'Please import these students.', false);
+
+    expect($processed['attachments'])->toBeEmpty()
+        ->and($processed['enrichedPrompt'])->toContain('2026-001')
+        ->and($processed['enrichedPrompt'])->toContain('Ana Reyes');
+});
+
+it('extracts headerless schedule-style spreadsheets without dropping their first data row', function (): void {
+    $book = new PhpOffice\PhpSpreadsheet\Spreadsheet();
+    $sheet = $book->getActiveSheet();
+    $sheet->fromArray([
+        ['MASTER SCHEDULE'],
+        ['Course Code'],
+        ['BSHM 1A'],
+        ['1ST SEMESTER'],
+        ['HPC 1'],
+        ['Monday'],
+        ['08:00 - 10:00'],
+        ['Kitchen Lab 1'],
+    ]);
+    $path = tempnam(sys_get_temp_dir(), 'headerless-schedule-').'.xlsx';
+    (new PhpOffice\PhpSpreadsheet\Writer\Xlsx($book))->save($path);
+    $book->disconnectWorksheets();
+
+    $file = new Illuminate\Http\UploadedFile($path, 'schedule.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', null, true);
+    $processed = app(App\Services\Ai\AiAttachmentProcessor::class)->process([$file], 'Explain this schedule.', false);
+
+    expect($processed['enrichedPrompt'])->toContain('HPC 1')
+        ->and($processed['enrichedPrompt'])->toContain('Monday')
+        ->and($processed['enrichedPrompt'])->toContain('08:00 - 10:00')
+        ->and($processed['enrichedPrompt'])->toContain('Kitchen Lab 1');
+});
+
+it('searches students case-insensitively and supports batch name queries', function (): void {
+    $course = App\Models\Course::factory()->create(['title' => 'BSBA Financial Management', 'code' => 'BSBA']);
+    $s1 = App\Models\Student::factory()->create([
+        'first_name' => 'Renelyn',
+        'last_name' => 'Bunalan',
+        'email' => 'renelyn.bunalan@example.com',
+        'course_id' => $course->id,
+    ]);
+    $s2 = App\Models\Student::factory()->create([
+        'first_name' => 'Audrey Irish',
+        'last_name' => 'Fermante',
+        'email' => 'audrey.fermante@example.com',
+        'course_id' => $course->id,
+    ]);
+
+    $tool = new App\Ai\Tools\SearchStudentsTool;
+
+    // 1. Case-insensitive single query
+    $res1 = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request(['query' => 'BUNALAN'])), true);
+    expect($res1['count'])->toBe(1)
+        ->and($res1['students'][0]['email'])->toBe('renelyn.bunalan@example.com');
+
+    // 2. Formatted name: "LAST, FIRST M."
+    $res2 = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request(['query' => 'FERMANTE, AUDREY IRISH G.'])), true);
+    expect($res2['count'])->toBe(1)
+        ->and($res2['students'][0]['email'])->toBe('audrey.fermante@example.com');
+
+    // 3. Batch queries array
+    $batch = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'queries' => [
+            '1 BUNALAN, RENELYN O.',
+            '2 FERMANTE, AUDREY IRISH G.',
+            '3 NONEXISTENT, PERSON X.',
+        ],
+    ])), true);
+
+    expect($batch['count'])->toBe(3)
+        ->and($batch['found_count'])->toBe(2)
+        ->and($batch['students'][0]['found'])->toBeTrue()
+        ->and($batch['students'][0]['email'])->toBe('renelyn.bunalan@example.com')
+        ->and($batch['students'][1]['found'])->toBeTrue()
+        ->and($batch['students'][1]['email'])->toBe('audrey.fermante@example.com')
+        ->and($batch['students'][2]['found'])->toBeFalse();
+
+    // 4. Multiline text query
+    $multiline = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'query' => "1\tBUNALAN, RENELYN O.\n2\tFERMANTE, AUDREY IRISH G.",
+    ])), true);
+
+    expect($multiline['count'])->toBe(2)
+        ->and($multiline['found_count'])->toBe(2)
+        ->and($multiline['students'][0]['email'])->toBe('renelyn.bunalan@example.com');
+
+    // 5. Do not fall back to surname-only when a different given name was provided
+    $mismatchedGivenName = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'query' => 'BUNALAN, UNKNOWNNAME X.',
+    ])), true);
+    expect($mismatchedGivenName['count'])->toBe(0);
+
+    $batchMismatched = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'queries' => ['BUNALAN, UNKNOWNNAME X.'],
+    ])), true);
+    expect($batchMismatched['found_count'])->toBe(0)
+        ->and($batchMismatched['students'][0]['found'])->toBeFalse()
+        ->and($batchMismatched['students'][0]['email'])->toBeNull();
+
+    // 6. Explicitly rejects batches exceeding 150 names
+    $oversized = array_fill(0, 151, 'BUNALAN, RENELYN O.');
+    $oversizedRes = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'queries' => $oversized,
+    ])), true);
+    expect($oversizedRes['error'] ?? false)->toBeTrue()
+        ->and($oversizedRes['count'])->toBe(151)
+        ->and($oversizedRes['limit'])->toBe(150);
 });

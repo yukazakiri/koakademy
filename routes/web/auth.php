@@ -64,6 +64,12 @@ Route::middleware('auth')->get('/dashboard', function () {
 // Login/Logout
 Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login');
 Route::post('/login', [AuthController::class, 'login']);
+
+// Passwordless Magic Link
+Route::get('/magic-link', [App\Http\Controllers\MagicLinkAuthController::class, 'show'])->name('magic-link.request');
+Route::post('/magic-link/send', [App\Http\Controllers\MagicLinkAuthController::class, 'send'])->middleware('throttle:5,1')->name('magic-link.send');
+Route::get('/magic-link/verify/{user}', [App\Http\Controllers\MagicLinkAuthController::class, 'verify'])->name('magic-link.verify');
+
 Route::get('/auth/{provider}/redirect', [SocialAuthController::class, 'redirect'])->name('social.auth.redirect');
 Route::get('/auth/{provider}/callback', [SocialAuthController::class, 'callback'])->name('social.auth.callback');
 Route::post('/demo-login/{role}', [AuthController::class, 'demoLogin'])->name('demo.login');

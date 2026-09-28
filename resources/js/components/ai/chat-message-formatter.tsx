@@ -15,6 +15,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Response } from "@/components/ui/response";
 import { Download, FileText, Loader2 } from "lucide-react";
+import {
+    CodeBlock,
+    CodeBlockCopyButton,
+    CodeBlockDownloadButton,
+    CodeBlockHeader,
+    CodeBlockLanguage,
+    CodeBlockTitle,
+} from "@/components/reui/code-block/code-block";
 import * as React from "react";
 import { toast } from "sonner";
 import { AnalyticsChartRenderer, ChartArtifact } from "./analytics-chart-renderer";
@@ -114,10 +122,29 @@ export function ChatMessageFormatter({
             }
 
             if (!handled) {
+                // Render code block via ReUI CodeBlock
+                const codeLang = explicitType || (match[0].match(/^```(\w+)/)?.[1] || "text");
+                const codeTitle = body.match(/^(?:\/\/\s*|#\s*)?(?:filename|file|title):\s*([^\n]+)/i)?.[1]?.trim();
                 blocks.push(
-                    <Response key={`code_${blockStart}`} className="leading-relaxed text-sm">
-                        {match[0]}
-                    </Response>
+                    <div key={`code_${blockStart}`} className="my-2.5 not-prose w-full">
+                        <CodeBlock
+                            code={body}
+                            language={codeLang}
+                            showLineNumbers={body.split("\n").length > 1}
+                            className="border-border/70 dark:border-border/50 shadow-xs"
+                        >
+                            <CodeBlockHeader className="justify-between px-3 py-1 bg-muted/40">
+                                <div className="flex items-center gap-2">
+                                    {codeTitle && <CodeBlockTitle className="text-xs font-mono">{codeTitle}</CodeBlockTitle>}
+                                    <CodeBlockLanguage />
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    <CodeBlockDownloadButton />
+                                    <CodeBlockCopyButton />
+                                </div>
+                            </CodeBlockHeader>
+                        </CodeBlock>
+                    </div>
                 );
             }
 
@@ -229,13 +256,13 @@ export function ChatMessageFormatter({
                 outputObj.document_id ||
                 tool.toolName === "GenerateAdministrativeDocumentTool"
             ) {
-                const docId = outputObj.document_id;
+                const docId = typeof outputObj.document_id === "string" ? outputObj.document_id : undefined;
                 if (!docId || !renderedDocIds.has(docId)) {
                     if (docId) renderedDocIds.add(docId);
                     items.push(
                         <DocumentDownloadCard
                             key={`tool_doc_${tool.id}_${docId || "doc"}`}
-                            document={outputObj as DocumentArtifact}
+                            document={outputObj as unknown as DocumentArtifact}
                         />
                     );
                 }
@@ -246,13 +273,13 @@ export function ChatMessageFormatter({
                 outputObj.chart_type ||
                 tool.toolName === "GenerateAnalyticsChartTool"
             ) {
-                const key = outputObj.title || tool.id;
+                const key = typeof outputObj.title === "string" ? outputObj.title : tool.id;
                 if (!renderedChartKeys.has(key)) {
                     renderedChartKeys.add(key);
                     items.push(
                         <AnalyticsChartRenderer
                             key={`tool_chart_${tool.id}`}
-                            chart={outputObj as ChartArtifact}
+                            chart={outputObj as unknown as ChartArtifact}
                         />
                     );
                 }
@@ -301,7 +328,7 @@ export function ChatMessageFormatter({
                 const blobUrl = window.URL.createObjectURL(blob);
                 const a = window.document.createElement("a");
                 a.href = blobUrl;
-                a.download = `${title.replace(/[^\w\-]/g, "_")}.pdf`;
+                a.download = `${title.replace(/[^\w-]/g, "_")}.pdf`;
                 window.document.body.appendChild(a);
                 a.click();
                 window.document.body.removeChild(a);

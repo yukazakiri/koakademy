@@ -13,9 +13,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('general_settings', function (Blueprint $table): void {
-            $table->boolean('is_setup')->default(false);
-        });
+        if (Schema::hasTable('general_settings') && ! Schema::hasColumn('general_settings', 'is_setup')) {
+            Schema::table('general_settings', function (Blueprint $table): void {
+                $table->boolean('is_setup')->default(false);
+            });
+        }
     }
 
     /**
@@ -23,8 +25,10 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('general_settings', function (Blueprint $table): void {
-            $table->dropColumn('is_setup');
-        });
+        if (Schema::hasTable('general_settings') && Schema::hasColumn('general_settings', 'is_setup')) {
+            Schema::table('general_settings', function (Blueprint $table): void {
+                $table->dropColumn('is_setup');
+            });
+        }
     }
 };

@@ -12,6 +12,7 @@ use App\Models\StudentStatusRecord;
 use App\Models\User;
 use App\Services\GeneralSettingsService;
 use Illuminate\Support\Facades\Mail;
+use Spatie\Permission\Models\Permission;
 
 use function Pest\Laravel\actingAs;
 
@@ -55,7 +56,9 @@ it('bulk updates student status', function (): void {
 });
 
 it('bulk updates student clearance for current semester', function (): void {
+    Permission::firstOrCreate(['name' => 'manage_clearance', 'guard_name' => 'web']);
     $user = User::factory()->create(['role' => UserRole::Admin]);
+    $user->givePermissionTo('manage_clearance');
     $students = Student::factory()->count(2)->create();
 
     actingAs($user)
@@ -79,6 +82,40 @@ it('bulk updates student clearance for current semester', function (): void {
         expect($clearance)->not->toBeNull()
             ->and($clearance?->is_cleared)->toBeTrue();
     }
+});
+
+it('denies bulk student clearance updates without the manage clearance permission', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $students = Student::factory()->count(2)->create();
+
+    actingAs($user)
+        ->post(route('administrators.students.bulk-manage-clearance'), [
+            'student_ids' => $students->pluck('id')->all(),
+            'is_cleared' => true,
+        ])
+        ->assertForbidden();
+
+    $settingsService = app(GeneralSettingsService::class);
+
+    $clearances = StudentClearance::query()
+        ->whereIn('student_id', $students->pluck('id')->all())
+        ->where('academic_year', $settingsService->getCurrentSchoolYearString())
+        ->where('semester', $settingsService->getCurrentSemester())
+        ->get();
+
+    expect($clearances)->toBeEmpty();
+});
+
+it('allows super admins to bulk update student clearance without the permission grant', function (): void {
+    $user = User::factory()->create(['role' => UserRole::SuperAdmin]);
+    $students = Student::factory()->count(2)->create();
+
+    actingAs($user)
+        ->post(route('administrators.students.bulk-manage-clearance'), [
+            'student_ids' => $students->pluck('id')->all(),
+            'is_cleared' => true,
+        ])
+        ->assertRedirect();
 });
 
 it('bulk soft deletes students', function (): void {

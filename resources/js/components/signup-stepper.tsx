@@ -1,14 +1,29 @@
-import { Link, router, useForm } from "@inertiajs/react";
+import { Link, useForm } from "@inertiajs/react";
 import axios from "axios";
-import { Check, Loader2, Mail } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+    ArrowLeft,
+    ArrowRight,
+    BadgeCheck,
+    Check,
+    Eye,
+    EyeOff,
+    GraduationCap,
+    KeyRound,
+    Loader2,
+    Lock,
+    Mail,
+    ShieldAlert,
+    User,
+    UserCheck,
+} from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Progress } from "@/components/ui/progress";
+import { IconTile } from "@/components/reui/icon-tile";
 import { SocialAuthButtons } from "@/components/social-auth-buttons";
+import { Button } from "@/components/ui/button";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { cn } from "@/lib/utils";
 
 type UserType = "faculty" | "student" | null;
@@ -58,23 +73,27 @@ interface SocialiteSignup {
 
 function loadPersistedState(): PersistedState | null {
     try {
-        const raw = sessionStorage.getItem(STORAGE_KEY);
+        const raw = localStorage.getItem(STORAGE_KEY);
         return raw ? JSON.parse(raw) : null;
     } catch {
         return null;
     }
 }
 
-function persistState(state: PersistedState) {
+function persistState(state: PersistedState): void {
     try {
-        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {}
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch {
+        return;
+    }
 }
 
-function clearPersistedState() {
+function clearPersistedState(): void {
     try {
-        sessionStorage.removeItem(STORAGE_KEY);
-    } catch {}
+        localStorage.removeItem(STORAGE_KEY);
+    } catch {
+        return;
+    }
 }
 
 export function SignupStepper({
@@ -91,7 +110,8 @@ export function SignupStepper({
     const [emailLookupResult, setEmailLookupResult] = useState<EmailLookupResult | null>(null);
     const [userType, setUserType] = useState<UserType>(saved.current?.userType ?? null);
     const [studentType, setStudentType] = useState<StudentType>(saved.current?.studentType ?? null);
-    const [otpSent, setOtpSent] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
     const { data, setData, post, processing, errors } = useForm({
         name: saved.current?.name ?? socialiteSignup?.name ?? "",
@@ -138,42 +158,30 @@ export function SignupStepper({
             setEmailLookupResult(
                 saved.current?.email?.length
                     ? { found: true, type: saved.current.userType ?? undefined, name: saved.current.name || undefined }
-                    : null,
+                    : null
             );
         }
         isRestored.current = false;
     }, []);
 
-    // Show error notifications
     useEffect(() => {
         if (errors && Object.keys(errors).length > 0) {
             const firstErrorKey = Object.keys(errors)[0] as keyof typeof errors;
             const firstErrorMessage = errors[firstErrorKey];
-
             if (firstErrorMessage) {
-                toast.error(firstErrorMessage, {
-                    description: "Please check the form and try again.",
-                });
+                toast.error(firstErrorMessage);
             }
         }
     }, [errors]);
 
-    // Client-side validation
     const validateEmail = (email: string) => {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        return emailRegex.test(email);
-    };
-
-    const validatePassword = (password: string) => {
-        return password.length >= 8;
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
     };
 
     const passwordsMatch = data.password === data.password_confirmation && data.password_confirmation !== "";
 
-    // Password strength calculation
     const getPasswordStrength = (password: string) => {
         if (!password) return { strength: 0, label: "" };
-
         let strength = 0;
         if (password.length >= 8) strength += 1;
         if (/[A-Z]/.test(password)) strength += 1;
@@ -181,29 +189,28 @@ export function SignupStepper({
         if (/[0-9]/.test(password)) strength += 1;
         if (/[^A-Za-z0-9]/.test(password)) strength += 1;
 
-        if (strength <= 2) return { strength, label: "Weak", color: "bg-red-500" };
-        if (strength <= 3) return { strength, label: "Medium", color: "bg-yellow-500" };
-        if (strength <= 4) return { strength, label: "Strong", color: "bg-green-500" };
-        return { strength, label: "Very Strong", color: "bg-green-600" };
+        if (strength <= 2) return { strength, label: "Weak", color: "bg-destructive" };
+        if (strength <= 3) return { strength, label: "Medium", color: "bg-warning" };
+        if (strength <= 4) return { strength, label: "Strong", color: "bg-success" };
+        return { strength, label: "Very Strong", color: "bg-success" };
     };
 
     const passwordStrength = getPasswordStrength(data.password);
 
-    // Steps based on user type
     const getSteps = () => {
         if (userType === "student") {
             return [
                 { id: "email", label: "Email" },
-                { id: "details", label: "Details" },
-                { id: "verification", label: "Verify" },
+                { id: "details", label: "Personal" },
+                { id: "verification", label: "Student ID" },
                 { id: "otp", label: "Confirm" },
             ];
         }
         return [
             { id: "email", label: "Email" },
-            { id: "details", label: "Details" },
-            { id: "role", label: "Role" },
-            { id: "verification", label: "Verify" },
+            { id: "details", label: "Personal" },
+            { id: "role", label: "Position" },
+            { id: "verification", label: "Faculty ID" },
             { id: "otp", label: "Confirm" },
         ];
     };
@@ -215,14 +222,14 @@ export function SignupStepper({
         { value: "associate_professor", label: "Associate Professor", description: "Associate Professor rank" },
         { value: "assistant_professor", label: "Assistant Professor", description: "Assistant Professor rank" },
         { value: "instructor", label: "Instructor", description: "Teaching Instructor" },
-        { value: "part_time_faculty", label: "Part-time Faculty", description: "Part-time teaching position" },
+        { value: "part_time_faculty", label: "Part-time Faculty", description: "Part-time teaching appointment" },
     ];
 
     const sendOtp = async () => {
         try {
             await axios.post("/signup/send-otp", {
                 email: data.email,
-                user_type: userType,
+                user_type: data.user_type,
                 student_type: data.student_type,
                 record_id: data.record_id,
                 student_id: data.student_id,
@@ -230,479 +237,586 @@ export function SignupStepper({
                 role: data.role,
                 faculty_id_number: data.faculty_id_number,
             });
-            toast.success("Verification code sent", {
-                description: `We sent a code to ${data.email}`,
-            });
-            setOtpSent(true);
-            setCurrentStep(currentStep + 1);
-        } catch (error: any) {
-            console.error("OTP Error:", error);
-            const errorMessage = error.response?.data?.message || "Failed to send verification code.";
-            const errors = error.response?.data?.errors;
-
-            if (errors && typeof errors === "object") {
-                Object.values(errors)
-                    .flat()
-                    .forEach((err: any) => {
-                        toast.error(err as string);
-                    });
-            } else {
-                toast.error("Error", {
-                    description: errorMessage,
-                });
-            }
+            toast.success("Verification code sent to your email.");
+            setCurrentStep(steps.length - 1);
+        } catch (error: unknown) {
+            const err = error as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } };
+            const errorMessage =
+                err.response?.data?.message ||
+                (err.response?.data?.errors && Object.values(err.response.data.errors)[0]?.[0]) ||
+                "Failed to send verification code. Please try again.";
+            toast.error(errorMessage);
         }
     };
 
-    // Email lookup function
     const handleEmailLookup = async () => {
         if (!validateEmail(data.email)) {
-            toast.error("Please enter a valid email address");
+            toast.error("Please enter a valid email address.");
             return;
         }
 
         setIsCheckingEmail(true);
-        setEmailLookupResult(null);
-
         try {
             const response = await axios.post("/signup/email-lookup", { email: data.email });
             const result: EmailLookupResult = response.data;
             setEmailLookupResult(result);
 
             if (result.found) {
-                setUserType(result.type || null);
-
                 if (result.type === "faculty") {
+                    setUserType("faculty");
                     setData((prev) => ({
                         ...prev,
-                        name: result.name || "",
-                        faculty_id_number: result.faculty_id_number || "",
+                        name: result.name || prev.name,
+                        faculty_id_number: result.faculty_id_number || prev.faculty_id_number,
                         user_type: "faculty",
                         record_id: result.record_id || "",
                     }));
-                    toast.success(`Welcome, ${result.name}!`, {
-                        description: "Your faculty record was found.",
-                    });
+                    toast.success("Faculty record found!");
                 } else if (result.type === "student") {
-                    const isShs = result.is_shs || result.student_type === "shs";
+                    const isShs = result.student_type === "shs" || result.is_shs;
+                    setUserType("student");
                     setStudentType(isShs ? "shs" : "college");
                     setData((prev) => ({
                         ...prev,
-                        name: result.name || "",
-                        // Do not prefill sensitive IDs to ensure user verifies them
-                        student_id: "",
-                        lrn: "",
+                        name: result.name || prev.name,
+                        student_id: result.student_id ? String(result.student_id) : prev.student_id,
+                        lrn: result.lrn || prev.lrn,
                         user_type: "student",
                         student_type: isShs ? "shs" : "college",
                         record_id: result.record_id || "",
                     }));
-                    toast.success(`Welcome, ${result.name}!`, {
-                        description: `Your ${isShs ? "SHS" : "College"} student record was found. Please complete verification.`,
-                    });
+                    toast.success("Student record found!");
                 }
                 setCurrentStep(1);
             } else {
-                if (result.message?.includes("already exists")) {
-                    toast.error("Account exists", {
-                        description: result.message,
-                        action: {
-                            label: "Sign in",
-                            onClick: () => router.visit("/login"),
-                        },
-                    });
-                } else {
-                    toast.error("Email not found", {
-                        description: result.message || "Please use your registered school email.",
-                    });
-                }
+                toast.error(result.message || "Email address is not associated with an existing academic record.");
             }
-        } catch (error: any) {
-            console.error("Email lookup error:", error);
-            const errorMessage = error.response?.data?.message || "Please try again later.";
-            const errors = error.response?.data?.errors;
-
-            if (errors && typeof errors === "object") {
-                // Show validation errors if any
-                Object.values(errors)
-                    .flat()
-                    .forEach((err: any) => {
-                        toast.error(err as string);
-                    });
-            } else {
-                toast.error("Error checking email", {
-                    description: errorMessage,
-                });
-            }
+        } catch (error: unknown) {
+            const err = error as { response?: { data?: { message?: string } } };
+            toast.error(err.response?.data?.message || "Failed to verify email. Please try again.");
         } finally {
             setIsCheckingEmail(false);
         }
     };
 
     const handleNext = () => {
-        if (currentStep < steps.length - 1) {
-            setCurrentStep(currentStep + 1);
-        }
+        setCurrentStep((prev) => Math.min(prev + 1, steps.length - 1));
     };
 
     const handlePrev = () => {
-        if (currentStep > 0) {
-            setCurrentStep(currentStep - 1);
-        }
+        setCurrentStep((prev) => Math.max(prev - 1, 0));
     };
 
-    const submit = (e: React.FormEvent) => {
+    const submit = (e: FormEvent) => {
         e.preventDefault();
-
-        if (!canProceedFromDetails) {
-            toast.error("Please fill in all required fields correctly");
-            return;
-        }
-
-        if (userType === "faculty" && !canProceedFromRole) {
-            toast.error("Please select a faculty role");
-            return;
-        }
-
         post("/signup", {
             onSuccess: () => {
                 clearPersistedState();
-                toast.success("Account created successfully!", {
-                    description: "Redirecting to dashboard...",
-                });
+                toast.success("Account created successfully!");
             },
-            onError: (errors) => {
-                const firstErrorKey = Object.keys(errors || {})[0] as keyof typeof errors;
-                const firstErrorMessage = errors?.[firstErrorKey];
-
-                if (firstErrorMessage) {
-                    toast.error(firstErrorMessage, {
-                        description: "Please check the form and try again.",
-                    });
-                }
+            onError: (formErrors) => {
+                const first = Object.values(formErrors)[0];
+                if (first) toast.error(first);
             },
         });
     };
 
-    const canProceedFromDetails = data.name && data.password && validatePassword(data.password) && data.password_confirmation && passwordsMatch;
+    const canProceedFromDetails =
+        data.name.trim().length > 0 && data.password.length >= 8 && passwordsMatch;
 
-    const canProceedFromRole = userType === "student" || data.role !== "";
-
-    const canSubmit = canProceedFromDetails && (userType === "student" || canProceedFromRole);
-
-    const progressValue = ((currentStep + 1) / steps.length) * 100;
+    const canProceedFromRole = data.role.length > 0;
 
     return (
-        <div className={cn("flex flex-col gap-6", className)} {...props}>
+        <div className={cn("space-y-6", className)} {...props}>
+            {/* Step Progress Header */}
+            <div className="rounded-2xl border border-border/70 bg-card/60 p-4 shadow-2xs backdrop-blur-xs">
+                <div className="mb-2.5 flex items-center justify-between text-xs">
+                    <span className="font-semibold text-foreground">
+                        Step {currentStep + 1} of {steps.length}
+                    </span>
+                    <span className="font-bold text-primary">
+                        {steps[currentStep]?.label}
+                    </span>
+                </div>
+                <div
+                    className="grid gap-1.5"
+                    style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}
+                >
+                    {steps.map((step, idx) => (
+                        <div
+                            key={step.id}
+                            className={cn(
+                                "h-1.5 rounded-full transition-all duration-300",
+                                idx < currentStep
+                                    ? "bg-primary"
+                                    : idx === currentStep
+                                      ? "bg-primary shadow-xs ring-2 ring-primary/30"
+                                      : "bg-muted"
+                            )}
+                        />
+                    ))}
+                </div>
+            </div>
+
             <form onSubmit={submit}>
-                <div className="flex flex-col gap-6">
-                    <div className="flex flex-col items-center gap-2 text-center">
-                        <h1 className="text-2xl font-bold tracking-tight">Create an account</h1>
-                        <p className="text-muted-foreground text-sm">Enter your email below to create your account</p>
-                    </div>
+                <FieldGroup className="gap-5">
+                    {/* Step 0: Email Verification */}
+                    {currentStep === 0 && (
+                        <div className="space-y-5">
+                            <SocialAuthButtons />
 
-                    <SocialAuthButtons />
-
-                    <div className="space-y-2">
-                        <Progress value={progressValue} className="h-1" />
-                        <div className="text-muted-foreground flex justify-between px-1 text-xs">
-                            <span>Step {currentStep + 1}</span>
-                            <span>{steps[currentStep]?.label}</span>
-                        </div>
-                    </div>
-
-                    <div className="grid gap-6">
-                        {/* Step 0: Email Verification */}
-                        {currentStep === 0 && (
-                            <div className="grid gap-4">
-                                <div className="grid gap-2">
-                                    <Label htmlFor="email">Email</Label>
-                                    <Input
+                            <Field>
+                                <FieldLabel htmlFor="email" className="text-xs font-semibold text-foreground">
+                                    Institutional or Registered Email
+                                </FieldLabel>
+                                <InputGroup
+                                    className={cn(
+                                        "h-11 rounded-xl border-border/80 bg-background/60 shadow-2xs transition-all duration-200 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20",
+                                        errors.email && "border-destructive focus-within:ring-destructive/20"
+                                    )}
+                                >
+                                    <InputGroupAddon align="inline-start" className="pl-3 text-muted-foreground/70">
+                                        <Mail className="size-4" />
+                                    </InputGroupAddon>
+                                    <InputGroupInput
                                         id="email"
                                         type="email"
-                                        placeholder="m@example.com"
+                                        placeholder="name@school.edu"
                                         required
+                                        autoFocus
                                         value={data.email}
                                         onChange={(e) => {
                                             setData("email", e.target.value);
                                             setEmailLookupResult(null);
                                         }}
-                                        className={cn(
-                                            errors.email && "border-destructive focus-visible:ring-destructive",
-                                            emailLookupResult?.found && "border-green-500 focus-visible:ring-green-500",
-                                        )}
                                         onKeyDown={(e) => {
                                             if (e.key === "Enter") {
                                                 e.preventDefault();
                                                 handleEmailLookup();
                                             }
                                         }}
+                                        className="text-sm font-normal"
                                     />
-                                    {errors.email && <p className="text-destructive text-sm">{errors.email}</p>}
-                                </div>
-                                <Button
-                                    type="button"
-                                    onClick={handleEmailLookup}
-                                    disabled={isCheckingEmail || !validateEmail(data.email)}
-                                    className="w-full"
-                                >
-                                    {isCheckingEmail ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Verify Email"}
-                                </Button>
+                                </InputGroup>
+                                {errors.email && <FieldError errors={[{ message: errors.email }]} />}
+                                <FieldDescription className="text-xs text-muted-foreground">
+                                    Enter your registered academic email to automatically locate your record.
+                                </FieldDescription>
+                            </Field>
 
-                                {emailLookupResult && (
-                                    <div
+                            <Button
+                                type="button"
+                                onClick={handleEmailLookup}
+                                disabled={isCheckingEmail || !validateEmail(data.email)}
+                                className="h-11 w-full rounded-xl font-semibold shadow-md transition-all duration-200"
+                            >
+                                {isCheckingEmail ? (
+                                    <>
+                                        <Loader2 className="mr-2 size-4 animate-spin" />
+                                        <span>Searching Academic Directory...</span>
+                                    </>
+                                ) : (
+                                    <span className="inline-flex items-center gap-2">
+                                        <span>Continue with Email</span>
+                                        <ArrowRight className="size-4" />
+                                    </span>
+                                )}
+                            </Button>
+
+                            {emailLookupResult && (
+                                <div
+                                    className={cn(
+                                        "flex items-start gap-3 rounded-xl border p-4 text-xs shadow-2xs",
+                                        emailLookupResult.found
+                                            ? "border-success/30 bg-success/10 text-success-foreground"
+                                            : "border-destructive/30 bg-destructive/10 text-destructive-foreground"
+                                    )}
+                                >
+                                    <IconTile
+                                        variant="soft"
+                                        size="sm"
                                         className={cn(
-                                            "rounded-md border p-4 text-sm",
-                                            emailLookupResult.found
-                                                ? "border-green-200 bg-green-50/50 text-green-800 dark:bg-green-950/20 dark:text-green-300"
-                                                : "border-red-200 bg-red-50/50 text-red-800 dark:bg-red-950/20 dark:text-red-300",
+                                            "rounded-lg shrink-0",
+                                            emailLookupResult.found ? "text-success" : "text-destructive"
                                         )}
                                     >
-                                        {emailLookupResult.found ? (
-                                            <div className="flex items-center gap-2">
-                                                <Check className="h-4 w-4" />
-                                                <div>
-                                                    <p className="font-medium">
-                                                        {emailLookupResult.type === "student" ? "Student" : "Faculty"} record found
-                                                    </p>
-                                                    <p className="opacity-90">Welcome, {emailLookupResult.name}</p>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <p>{emailLookupResult.message || "Email not found."}</p>
-                                        )}
+                                        {emailLookupResult.found ? <Check className="size-4" /> : <ShieldAlert className="size-4" />}
+                                    </IconTile>
+                                    <div className="space-y-1">
+                                        <p className="font-semibold text-foreground">
+                                            {emailLookupResult.found
+                                                ? `${emailLookupResult.type === "student" ? "Student" : "Faculty"} Record Identified`
+                                                : "No Record Found"}
+                                        </p>
+                                        <p className="text-muted-foreground">
+                                            {emailLookupResult.found
+                                                ? `Welcome, ${emailLookupResult.name}! Your academic records are linked.`
+                                                : emailLookupResult.message || "Email address is not yet in the official roster."}
+                                        </p>
                                     </div>
-                                )}
-                            </div>
-                        )}
+                                </div>
+                            )}
+                        </div>
+                    )}
 
-                        {/* Step 1: Personal Details */}
-                        {currentStep === 1 && (
-                            <div className="grid gap-4">
-                                <div className="grid gap-2">
-                                    <Label htmlFor="name">Full Name</Label>
-                                    <Input
+                    {/* Step 1: Personal Details */}
+                    {currentStep === 1 && (
+                        <div className="space-y-4">
+                            <Field>
+                                <FieldLabel htmlFor="name" className="text-xs font-semibold text-foreground">
+                                    Full Legal Name
+                                </FieldLabel>
+                                <InputGroup className="h-11 rounded-xl border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
+                                    <InputGroupAddon align="inline-start" className="pl-3 text-muted-foreground/70">
+                                        <User className="size-4" />
+                                    </InputGroupAddon>
+                                    <InputGroupInput
                                         id="name"
                                         type="text"
                                         required
+                                        autoFocus
                                         value={data.name}
                                         onChange={(e) => setData("name", e.target.value)}
-                                        className={errors.name && "border-destructive"}
+                                        placeholder="Given Name Surname"
+                                        className="text-sm font-normal"
                                     />
-                                </div>
+                                </InputGroup>
+                                {errors.name && <FieldError errors={[{ message: errors.name }]} />}
+                            </Field>
 
-                                <div className="grid gap-2">
-                                    <Label htmlFor="email_display">Email</Label>
-                                    <Input id="email_display" type="email" value={data.email} disabled className="bg-muted opacity-50" />
-                                </div>
+                            <Field>
+                                <FieldLabel htmlFor="email_display" className="text-xs font-semibold text-foreground">
+                                    Verified Email
+                                </FieldLabel>
+                                <InputGroup className="h-11 rounded-xl border-border/80 bg-muted/40 opacity-90">
+                                    <InputGroupAddon align="inline-start" className="pl-3 text-muted-foreground/70">
+                                        <Mail className="size-4" />
+                                    </InputGroupAddon>
+                                    <InputGroupInput
+                                        id="email_display"
+                                        type="email"
+                                        value={data.email}
+                                        disabled
+                                        className="text-sm font-normal text-muted-foreground"
+                                    />
+                                </InputGroup>
+                            </Field>
 
-                                <div className="grid gap-2">
-                                    <Label htmlFor="password">Password</Label>
-                                    <Input
+                            <Field>
+                                <FieldLabel htmlFor="password" className="text-xs font-semibold text-foreground">
+                                    Password
+                                </FieldLabel>
+                                <InputGroup className="h-11 rounded-xl border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
+                                    <InputGroupAddon align="inline-start" className="pl-3 text-muted-foreground/70">
+                                        <Lock className="size-4" />
+                                    </InputGroupAddon>
+                                    <InputGroupInput
                                         id="password"
-                                        type="password"
+                                        type={showPassword ? "text" : "password"}
                                         required
                                         value={data.password}
                                         onChange={(e) => setData("password", e.target.value)}
+                                        placeholder="At least 8 characters"
+                                        className="text-sm font-normal"
                                     />
-                                    {data.password && !errors.password && (
-                                        <div className="mt-1 flex h-1 gap-1">
-                                            {[1, 2, 3, 4, 5].map((level) => (
+                                    <InputGroupAddon align="inline-end" className="pr-1.5">
+                                        <InputGroupButton
+                                            size="icon-xs"
+                                            onClick={() => setShowPassword(!showPassword)}
+                                            aria-label={showPassword ? "Hide password" : "Show password"}
+                                            className="text-muted-foreground hover:text-foreground"
+                                        >
+                                            {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                                        </InputGroupButton>
+                                    </InputGroupAddon>
+                                </InputGroup>
+                                {data.password && (
+                                    <div className="mt-1 space-y-1">
+                                        <div className="flex h-1.5 gap-1">
+                                            {[1, 2, 3, 4, 5].map((lvl) => (
                                                 <div
-                                                    key={level}
+                                                    key={lvl}
                                                     className={cn(
                                                         "h-full flex-1 rounded-full transition-colors",
-                                                        level <= passwordStrength.strength ? passwordStrength.color : "bg-secondary",
+                                                        lvl <= passwordStrength.strength
+                                                            ? passwordStrength.color
+                                                            : "bg-muted"
                                                     )}
                                                 />
                                             ))}
                                         </div>
-                                    )}
-                                </div>
+                                        <p className="text-[11px] text-muted-foreground">
+                                            Strength: <span className="font-semibold text-foreground">{passwordStrength.label}</span>
+                                        </p>
+                                    </div>
+                                )}
+                                {errors.password && <FieldError errors={[{ message: errors.password }]} />}
+                            </Field>
 
-                                <div className="grid gap-2">
-                                    <Label htmlFor="password_confirmation">Confirm Password</Label>
-                                    <Input
+                            <Field>
+                                <FieldLabel htmlFor="password_confirmation" className="text-xs font-semibold text-foreground">
+                                    Confirm Password
+                                </FieldLabel>
+                                <InputGroup
+                                    className={cn(
+                                        "h-11 rounded-xl border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20",
+                                        passwordsMatch && "border-success focus-within:ring-success/20"
+                                    )}
+                                >
+                                    <InputGroupAddon align="inline-start" className="pl-3 text-muted-foreground/70">
+                                        <Lock className="size-4" />
+                                    </InputGroupAddon>
+                                    <InputGroupInput
                                         id="password_confirmation"
-                                        type="password"
+                                        type={showConfirmPassword ? "text" : "password"}
                                         required
                                         value={data.password_confirmation}
                                         onChange={(e) => setData("password_confirmation", e.target.value)}
-                                        className={cn(
-                                            data.password_confirmation && !passwordsMatch && "border-destructive focus-visible:ring-destructive",
-                                            data.password_confirmation && passwordsMatch && "border-green-500 focus-visible:ring-green-500",
-                                        )}
+                                        placeholder="Repeat your password"
+                                        className="text-sm font-normal"
                                     />
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Step 2: Role Selection (Faculty only) */}
-                        {currentStep === 2 && userType === "faculty" && (
-                            <div className="grid gap-4">
-                                <Label>Select Faculty Position</Label>
-                                <div className="grid gap-2">
-                                    {facultyRoles.map((role) => (
-                                        <div
-                                            key={role.value}
-                                            className={cn(
-                                                "hover:bg-accent flex cursor-pointer items-center space-x-3 rounded-md border p-3 transition-colors",
-                                                data.role === role.value && "border-primary bg-accent",
-                                            )}
-                                            onClick={() => setData("role", role.value)}
+                                    <InputGroupAddon align="inline-end" className="pr-1.5">
+                                        {passwordsMatch && (
+                                            <span className="text-success mr-1 flex items-center">
+                                                <Check className="size-4" />
+                                            </span>
+                                        )}
+                                        <InputGroupButton
+                                            size="icon-xs"
+                                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                            aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                                            className="text-muted-foreground hover:text-foreground"
                                         >
-                                            <div
-                                                className={cn(
-                                                    "flex h-4 w-4 items-center justify-center rounded-full border",
-                                                    data.role === role.value
-                                                        ? "border-primary bg-primary text-primary-foreground"
-                                                        : "border-muted-foreground",
-                                                )}
+                                            {showConfirmPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                                        </InputGroupButton>
+                                    </InputGroupAddon>
+                                </InputGroup>
+                            </Field>
+                        </div>
+                    )}
+
+                    {/* Step 2: Role Selection (Faculty) */}
+                    {currentStep === 2 && userType === "faculty" && (
+                        <div className="space-y-3">
+                            <FieldLabel className="text-xs font-semibold text-foreground">
+                                Select Academic Rank or Title
+                            </FieldLabel>
+                            <div className="grid gap-2">
+                                {facultyRoles.map((r) => {
+                                    const selected = data.role === r.value;
+                                    return (
+                                        <button
+                                            key={r.value}
+                                            type="button"
+                                            onClick={() => setData("role", r.value)}
+                                            className={cn(
+                                                "group flex w-full items-center gap-3.5 rounded-xl border p-3.5 text-left transition-all duration-200",
+                                                selected
+                                                    ? "border-primary bg-primary/10 shadow-xs ring-1 ring-primary/30"
+                                                    : "border-border/80 bg-background/60 hover:border-primary/40 hover:bg-muted/30"
+                                            )}
+                                        >
+                                            <IconTile
+                                                variant={selected ? "solid" : "soft"}
+                                                size="sm"
+                                                className="rounded-lg shrink-0"
                                             >
-                                                {data.role === role.value && <Check className="h-3 w-3" />}
+                                                {selected ? <Check className="size-4" /> : <UserCheck className="size-4" />}
+                                            </IconTile>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="text-xs font-semibold text-foreground">{r.label}</div>
+                                                <div className="text-[11px] text-muted-foreground">{r.description}</div>
                                             </div>
-                                            <div className="flex-1 space-y-1">
-                                                <p className="text-sm leading-none font-medium">{role.label}</p>
-                                                <p className="text-muted-foreground text-xs">{role.description}</p>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
+                                        </button>
+                                    );
+                                })}
                             </div>
-                        )}
+                        </div>
+                    )}
 
-                        {/* Step 2: Student Verification */}
-                        {currentStep === 2 && userType === "student" && (
-                            <div className="grid gap-4">
-                                <div className="bg-muted/50 rounded-md p-4">
-                                    <p className="text-muted-foreground text-sm">
-                                        Please verify your {studentType === "shs" ? "LRN" : "Student ID"} to continue.
-                                    </p>
-                                </div>
+                    {/* Step 2: Student ID Verification (Student) */}
+                    {currentStep === 2 && userType === "student" && (
+                        <div className="space-y-4">
+                            <div className="rounded-xl border border-primary/20 bg-primary/5 p-3.5 text-xs text-muted-foreground">
+                                Confirm your {studentType === "shs" ? "Learner Reference Number (LRN)" : "Official Student ID Number"} to verify your student account.
+                            </div>
 
-                                {studentType === "shs" ? (
-                                    <div className="grid gap-2">
-                                        <Label htmlFor="lrn">LRN</Label>
-                                        <Input
+                            {studentType === "shs" ? (
+                                <Field>
+                                    <FieldLabel htmlFor="lrn" className="text-xs font-semibold text-foreground">
+                                        12-Digit LRN
+                                    </FieldLabel>
+                                    <InputGroup className="h-11 rounded-xl border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
+                                        <InputGroupAddon align="inline-start" className="pl-3 text-muted-foreground/70">
+                                            <BadgeCheck className="size-4" />
+                                        </InputGroupAddon>
+                                        <InputGroupInput
                                             id="lrn"
-                                            placeholder="12-digit Learner Reference Number"
+                                            placeholder="123456789012"
                                             value={data.lrn}
                                             onChange={(e) => setData("lrn", e.target.value)}
+                                            className="text-sm font-normal"
                                         />
-                                    </div>
-                                ) : (
-                                    <div className="grid gap-2">
-                                        <Label htmlFor="student_id">Student ID</Label>
-                                        <Input
+                                    </InputGroup>
+                                </Field>
+                            ) : (
+                                <Field>
+                                    <FieldLabel htmlFor="student_id" className="text-xs font-semibold text-foreground">
+                                        College Student ID
+                                    </FieldLabel>
+                                    <InputGroup className="h-11 rounded-xl border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
+                                        <InputGroupAddon align="inline-start" className="pl-3 text-muted-foreground/70">
+                                            <GraduationCap className="size-4" />
+                                        </InputGroupAddon>
+                                        <InputGroupInput
                                             id="student_id"
-                                            placeholder="Student ID Number"
+                                            placeholder="2025-00123"
                                             value={data.student_id}
                                             onChange={(e) => setData("student_id", e.target.value)}
+                                            className="text-sm font-normal"
                                         />
-                                    </div>
-                                )}
-                            </div>
-                        )}
+                                    </InputGroup>
+                                </Field>
+                            )}
+                        </div>
+                    )}
 
-                        {/* Step 3: Faculty Verification */}
-                        {currentStep === 3 && userType === "faculty" && (
-                            <div className="grid gap-4">
-                                <div className="grid gap-2">
-                                    <Label htmlFor="faculty_id_number">Faculty ID (Optional)</Label>
-                                    <Input
+                    {/* Step 3: Faculty ID (Optional) */}
+                    {currentStep === 3 && userType === "faculty" && (
+                        <div className="space-y-4">
+                            <Field>
+                                <FieldLabel htmlFor="faculty_id_number" className="text-xs font-semibold text-foreground">
+                                    Faculty ID Number (Optional)
+                                </FieldLabel>
+                                <InputGroup className="h-11 rounded-xl border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
+                                    <InputGroupAddon align="inline-start" className="pl-3 text-muted-foreground/70">
+                                        <BadgeCheck className="size-4" />
+                                    </InputGroupAddon>
+                                    <InputGroupInput
                                         id="faculty_id_number"
-                                        placeholder="Enter your Faculty ID"
+                                        placeholder="e.g. FAC-2025-001"
                                         value={data.faculty_id_number}
                                         onChange={(e) => setData("faculty_id_number", e.target.value)}
+                                        className="text-sm font-normal uppercase"
                                     />
-                                    <p className="text-muted-foreground text-xs">You can verify this later in your dashboard.</p>
-                                </div>
-                            </div>
-                        )}
+                                </InputGroup>
+                                <FieldDescription className="text-xs text-muted-foreground">
+                                    You may also complete this verification step later from your faculty profile.
+                                </FieldDescription>
+                            </Field>
+                        </div>
+                    )}
 
-                        {/* Step X: OTP Verification */}
-                        {currentStep === steps.length - 1 && (
-                            <div className="grid gap-4">
-                                <div className="bg-muted/40 rounded-lg border p-4">
-                                    <div className="flex items-start gap-3">
-                                        <Mail className="text-primary mt-0.5 h-5 w-5" />
-                                        <div className="flex-1 space-y-1">
-                                            <p className="text-sm leading-none font-medium">Check your email</p>
-                                            <p className="text-muted-foreground text-sm">
-                                                We sent a verification code to <span className="text-foreground font-medium">{data.email}</span>.
-                                                Enter it below to confirm your account.
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="grid gap-2">
-                                    <Label htmlFor="otp">Verification Code</Label>
-                                    <Input
-                                        id="otp"
-                                        placeholder="Enter 6-character code"
-                                        value={data.otp}
-                                        onChange={(e) => setData("otp", e.target.value.toUpperCase())}
-                                        maxLength={6}
-                                        className="text-center font-mono text-lg tracking-widest uppercase"
-                                    />
-                                    <p className="text-muted-foreground text-center text-xs">
-                                        Didn't receive the code?{" "}
-                                        <button type="button" onClick={sendOtp} className="text-primary font-medium hover:underline">
-                                            Resend Code
-                                        </button>
+                    {/* Step Last: OTP Code */}
+                    {currentStep === steps.length - 1 && (
+                        <div className="space-y-4">
+                            <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs">
+                                <IconTile variant="soft" size="sm" className="rounded-lg shrink-0">
+                                    <Mail className="size-4" />
+                                </IconTile>
+                                <div className="space-y-1">
+                                    <p className="font-semibold text-foreground">Verification Code Sent</p>
+                                    <p className="text-muted-foreground">
+                                        We sent a 6-digit confirmation code to{" "}
+                                        <span className="font-semibold text-foreground">{data.email}</span>.
                                     </p>
                                 </div>
                             </div>
-                        )}
 
-                        {/* Navigation Buttons */}
-                        {currentStep > 0 && (
-                            <div className="flex gap-3">
-                                <Button type="button" variant="ghost" onClick={handlePrev} className="shrink-0">
-                                    Back
-                                </Button>
-
-                                {currentStep < steps.length - 2 ? (
-                                    <Button
-                                        type="button"
-                                        onClick={handleNext}
-                                        disabled={
-                                            (currentStep === 1 && !canProceedFromDetails) ||
-                                            (currentStep === 2 && userType === "faculty" && !canProceedFromRole)
-                                        }
-                                        className="min-w-0 flex-1"
-                                    >
-                                        Continue
-                                    </Button>
-                                ) : currentStep === steps.length - 2 ? (
-                                    <Button
+                            <Field>
+                                <FieldLabel htmlFor="otp" className="text-xs font-semibold text-foreground">
+                                    6-Digit Verification Code
+                                </FieldLabel>
+                                <InputGroup className="h-12 rounded-xl border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
+                                    <InputGroupAddon align="inline-start" className="pl-3 text-muted-foreground/70">
+                                        <KeyRound className="size-4" />
+                                    </InputGroupAddon>
+                                    <InputGroupInput
+                                        id="otp"
+                                        placeholder="123456"
+                                        maxLength={6}
+                                        value={data.otp}
+                                        onChange={(e) => setData("otp", e.target.value.toUpperCase())}
+                                        className="font-mono text-center text-lg tracking-widest uppercase"
+                                    />
+                                </InputGroup>
+                                <div className="flex justify-end pt-1">
+                                    <button
                                         type="button"
                                         onClick={sendOtp}
-                                        disabled={
-                                            userType === "student" &&
-                                            ((studentType === "shs" && !data.lrn) || (studentType === "college" && !data.student_id))
-                                        }
-                                        className="min-w-0 flex-1"
+                                        className="text-xs font-medium text-primary hover:underline"
                                     >
-                                        Send Verification Code
-                                    </Button>
-                                ) : (
-                                    <Button type="submit" disabled={processing || !data.otp || data.otp.length < 6} className="min-w-0 flex-1">
-                                        {processing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                        Verify & Create Account
-                                    </Button>
-                                )}
-                            </div>
-                        )}
-                    </div>
+                                        Resend Code
+                                    </button>
+                                </div>
+                            </Field>
+                        </div>
+                    )}
 
-                    <div className="text-center text-sm">
-                        Already have an account?{" "}
-                        <Link href="/login" className="hover:text-primary underline underline-offset-4">
-                            Sign in
+                    {/* Navigation Buttons */}
+                    {currentStep > 0 && (
+                        <div className="flex items-center gap-3 pt-2">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={handlePrev}
+                                className="h-11 rounded-xl px-4 font-medium"
+                            >
+                                <ArrowLeft className="mr-1.5 size-4" />
+                                <span>Back</span>
+                            </Button>
+
+                            {currentStep < steps.length - 2 ? (
+                                <Button
+                                    type="button"
+                                    onClick={handleNext}
+                                    disabled={
+                                        (currentStep === 1 && !canProceedFromDetails) ||
+                                        (currentStep === 2 && userType === "faculty" && !canProceedFromRole)
+                                    }
+                                    className="h-11 flex-1 rounded-xl font-semibold shadow-md"
+                                >
+                                    <span>Continue</span>
+                                    <ArrowRight className="ml-1.5 size-4" />
+                                </Button>
+                            ) : currentStep === steps.length - 2 ? (
+                                <Button
+                                    type="button"
+                                    onClick={sendOtp}
+                                    disabled={
+                                        userType === "student" &&
+                                        ((studentType === "shs" && !data.lrn) || (studentType === "college" && !data.student_id))
+                                    }
+                                    className="h-11 flex-1 rounded-xl font-semibold shadow-md"
+                                >
+                                    <span>Send Verification Code</span>
+                                </Button>
+                            ) : (
+                                <Button
+                                    type="submit"
+                                    disabled={processing || !data.otp || data.otp.length < 6}
+                                    className="h-11 flex-1 rounded-xl font-semibold shadow-md"
+                                >
+                                    {processing ? (
+                                        <>
+                                            <Loader2 className="mr-2 size-4 animate-spin" />
+                                            <span>Creating Account...</span>
+                                        </>
+                                    ) : (
+                                        "Confirm & Activate Account"
+                                    )}
+                                </Button>
+                            )}
+                        </div>
+                    )}
+
+                    <div className="pt-2 text-center text-xs text-muted-foreground">
+                        Already have an institutional account?{" "}
+                        <Link href="/login" className="font-semibold text-primary underline-offset-4 hover:underline">
+                            Sign in here
                         </Link>
                     </div>
-                </div>
+                </FieldGroup>
             </form>
         </div>
     );

@@ -31,7 +31,7 @@ createInertiaApp({
         router.on("finish", () => document.documentElement.classList.remove("is-navigating"));
 
         const inertiaApp = (
-            <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
+            <ThemeProvider defaultTheme="system" storageKey="ui-theme" colorStorageKey="ui-color-theme">
                 <App {...props} />
             </ThemeProvider>
         );

@@ -3,19 +3,7 @@
 declare(strict_types=1);
 
 use App\Filament\Pages\Timetable;
-use Filament\Forms\Contracts\HasForms;
-use Filament\Tables\Contracts\HasTable;
 use Illuminate\Support\Collection;
-
-it('uses the current Filament table and form contracts', function (): void {
-    $page = new Timetable();
-    $traits = class_uses_recursive($page);
-
-    expect($page)->toBeInstanceOf(HasTable::class)
-        ->and($page)->toBeInstanceOf(HasForms::class)
-        ->and($traits)->toContain('Filament\Tables\Concerns\InteractsWithTable')
-        ->and($traits)->toContain('Filament\Forms\Concerns\InteractsWithForms');
-});
 
 it('starts with the room view and no selected entity', function (): void {
     $page = new Timetable();

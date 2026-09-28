@@ -51,6 +51,7 @@ final class ManageCurriculumSubjectTool extends Tool
         return match ($action) {
             'create' => $this->handleCreate($request),
             'update' => $this->handleUpdate($request),
+            'batch_upsert' => $this->handleBatchUpsert($request),
             'delete' => $this->handleDelete($request),
             default => Response::structured(['error' => true, 'message' => "Unsupported action '{$action}'."]),
         };
@@ -60,7 +61,19 @@ final class ManageCurriculumSubjectTool extends Tool
     public function schema(JsonSchema $schema): array
     {
         return [
-            'action' => $schema->string()->enum(['create', 'update', 'delete', 'get'])->required()->description('Operation: create, update, delete, get.'),
+            'action' => $schema->string()->enum(['create', 'update', 'batch_upsert', 'delete', 'get'])->required()->description('Operation: create, update, batch_upsert, delete, get.'),
+            'subjects' => $schema->array()->description('List of subjects for batch_upsert.')->items(
+                $schema->object(fn ($s) => [
+                    'code' => $s->string()->required()->description('Subject code (e.g. CS101).'),
+                    'title' => $s->string()->required()->description('Subject title.'),
+                    'units' => $s->integer()->required()->description('Credit units.'),
+                    'lecture' => $s->integer()->description('Lecture hours.'),
+                    'laboratory' => $s->integer()->description('Lab hours.'),
+                    'academic_year' => $s->integer()->description('Year level 1-5.'),
+                    'semester' => $s->integer()->description('Semester 1 or 2.'),
+                    'course_code' => $s->string()->description('Program code.'),
+                ])
+            ),
             'subject_id' => $schema->integer()->description('Subject database ID.'),
             'code' => $schema->string()->description('Subject code (e.g. CS101).'),
             'title' => $schema->string()->description('Subject title.'),
@@ -117,6 +130,90 @@ final class ManageCurriculumSubjectTool extends Tool
                 'title' => $subject->title,
                 'units' => $subject->units,
             ],
+        ]);
+    }
+
+    private function handleBatchUpsert(Request $request): ResponseFactory
+    {
+        $validated = $request->validate([
+            'subjects' => ['required', 'array', 'min:1'],
+            'subjects.*.code' => ['required', 'string', 'max:50'],
+            'subjects.*.title' => ['required', 'string', 'max:150'],
+            'subjects.*.units' => ['required', 'integer', 'between:0,12'],
+            'subjects.*.lecture' => ['nullable', 'integer', 'between:0,40'],
+            'subjects.*.laboratory' => ['nullable', 'integer', 'between:0,40'],
+            'subjects.*.academic_year' => ['nullable', 'integer', 'between:1,5'],
+            'subjects.*.semester' => ['nullable', 'integer', 'in:1,2'],
+            'subjects.*.course_code' => ['nullable', 'string', 'max:50'],
+        ]);
+
+        $defaultCourse = Course::query()->first();
+        $created = [];
+        $updated = [];
+
+        DB::transaction(function () use ($validated, $defaultCourse, &$created, &$updated) {
+            foreach ($validated['subjects'] as $sData) {
+                $code = mb_strtoupper(mb_trim((string) $sData['code']));
+                $title = mb_trim((string) $sData['title']);
+                $units = (int) $sData['units'];
+                $lecture = (int) ($sData['lecture'] ?? $units);
+                $lab = (int) ($sData['laboratory'] ?? 0);
+                $year = (int) ($sData['academic_year'] ?? 1);
+                $sem = (int) ($sData['semester'] ?? 1);
+
+                $courseId = null;
+                if (filled($sData['course_code'] ?? null)) {
+                    $c = Course::query()->where('code', $sData['course_code'])->first();
+                    $courseId = $c?->id;
+                }
+                if (! $courseId) {
+                    $courseId = $defaultCourse?->id ?? 1;
+                }
+
+                $existing = Subject::query()->where('code', $code)->first();
+                if ($existing instanceof Subject) {
+                    $existing->update([
+                        'title' => $title,
+                        'units' => $units,
+                        'lecture' => $lecture,
+                        'laboratory' => $lab,
+                        'academic_year' => $year,
+                        'semester' => $sem,
+                        'course_id' => $courseId,
+                    ]);
+                    $updated[] = [
+                        'id' => $existing->id,
+                        'code' => $existing->code,
+                        'title' => $existing->title,
+                    ];
+                } else {
+                    $newSub = Subject::query()->create([
+                        'code' => $code,
+                        'title' => $title,
+                        'units' => $units,
+                        'lecture' => $lecture,
+                        'laboratory' => $lab,
+                        'academic_year' => $year,
+                        'semester' => $sem,
+                        'course_id' => $courseId,
+                        'classification' => \App\Enums\SubjectEnrolledEnum::INTERNAL->value,
+                        'is_credited' => true,
+                    ]);
+                    $created[] = [
+                        'id' => $newSub->id,
+                        'code' => $newSub->code,
+                        'title' => $newSub->title,
+                    ];
+                }
+            }
+        });
+
+        return Response::structured([
+            'success' => true,
+            'action' => 'batch_upsert',
+            'created_count' => count($created),
+            'updated_count' => count($updated),
+            'subjects' => array_merge($created, $updated),
         ]);
     }
 

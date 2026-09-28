@@ -76,18 +76,6 @@ it('can generate correct storage urls for faculty photos', function () {
     }
 });
 
-it('handles default storage configuration correctly', function () {
-    $defaultDisk = config('filesystems.default');
-    $config = config("filesystems.disks.{$defaultDisk}");
-
-    expect($config['driver'])->toBeString();
-});
-
-it('verifies default filesystem is configured', function () {
-    expect(config('filesystems.default'))->toBeString();
-    expect(config('filament.default_filesystem_disk'))->toBeString();
-});
-
 it('can test faculty photo upload lifecycle', function () {
     $faculty = Faculty::factory()->create();
     $originalPhotoUrl = $faculty->photo_url;

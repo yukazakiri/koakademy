@@ -209,10 +209,67 @@ it('searches students within the authorized school and enforces permissions', fu
     $response->assertOk()
         ->assertStructuredContent(function ($json) use ($student): void {
             $json->where('count', 1)
+                ->where('total_matched', 1)
                 ->where('students.0.id', $student->id)
                 ->where('students.0.student_number', '202601')
                 ->where('students.0.name', $student->full_name)
+                // Direct contact details are withheld from MCP output.
+                ->where('students.0', fn ($row): bool => ! array_key_exists('lrn', (array) $row))
                 ->etc();
+        });
+});
+
+it('lists a program cohort for the current term via MCP SearchStudentsTool', function (): void {
+    $this->staff->createToken('Staff Agent', ['mcp:read']);
+    $this->staff->givePermissionTo('ViewAny:Student');
+
+    $term = app(GeneralSettingsService::class)->getCurrentSchoolYearString();
+    $semester = app(GeneralSettingsService::class)->getCurrentSemester();
+
+    $bsit = Course::factory()->create(['code' => 'BSIT', 'title' => 'Information Technology']);
+    $bscs = Course::factory()->create(['code' => 'BSCS', 'title' => 'Computer Science']);
+
+    $bsitStudent = Student::factory()->create([
+        'school_id' => $this->school->id,
+        'institution_id' => $this->school->id,
+        'course_id' => $bsit->id,
+        'first_name' => 'Juan',
+        'last_name' => 'Dela Cruz',
+    ]);
+
+    $bscsStudent = Student::factory()->create([
+        'school_id' => $this->school->id,
+        'institution_id' => $this->school->id,
+        'course_id' => $bscs->id,
+        'first_name' => 'Maria',
+        'last_name' => 'Santos',
+    ]);
+
+    foreach ([$bsitStudent, $bscsStudent] as $student) {
+        StudentEnrollment::factory()->create([
+            'student_id' => (string) $student->id,
+            'course_id' => $student->course_id,
+            'school_year' => $term,
+            'semester' => $semester,
+            'terminal_outcome' => null,
+        ]);
+    }
+
+    $response = KoAkademyServer::actingAs($this->staff)
+        ->tool(SearchStudentsTool::class, [
+            'program' => ['BSIT'],
+            'fields' => 'emails',
+        ]);
+
+    $response->assertOk()
+        ->assertStructuredContent(function ($json) use ($bsitStudent, $bscsStudent): void {
+            $json->where('total_matched', 1)
+                ->where('emails.0', $bsitStudent->email)
+                ->where('has_more', false)
+                ->where('term.enrollment_basis', 'enrollment')
+                ->etc();
+
+            expect($json->toArray()['emails'])->not->toContain($bscsStudent->email);
         });
 });
 

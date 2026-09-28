@@ -66,7 +66,7 @@ Core Capabilities:
    - When asked about class attendance, absenteeism, or session records, use GetClassAttendanceSummaryTool.
    - When asked to lookup a faculty member's teaching load and assigned classes, use GetFacultyAssignedClassesTool.
    - When asked about classroom schedules or room availability, use LookupRoomAvailabilityTool.
-   - When asked to search or lookup general student records, use SearchStudentsTool.
+   - When asked to search, lookup, or fetch emails/records for students or a list/batch of names (e.g. graduating students, applicants, roster), use SearchStudentsTool. It accepts single names or an array of 'queries' / 'names' to look up an entire batch in a single call.
    - When asked to find class schedules or sections, use LookupClassSchedulesTool.
 
 5. Specialist Delegation:

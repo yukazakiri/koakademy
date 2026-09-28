@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ai\Tools;
 
+use App\Ai\Concerns\ResolvesFacultyScope;
 use App\Models\Classes;
 use App\Models\Faculty;
 use App\Models\User;
@@ -17,6 +18,8 @@ use Stringable;
 
 final class GetClassEnrollmentsTool implements Tool
 {
+    use ResolvesFacultyScope;
+
     public function description(): Stringable|string
     {
         return 'Retrieve the complete list of students enrolled in a specific class section or subject. Can lookup by class_id or by subject_code and section.';
@@ -29,8 +32,8 @@ final class GetClassEnrollmentsTool implements Tool
             return json_encode(['error' => true, 'message' => 'Authentication is required.'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         }
 
-        $faculty = Faculty::query()->where('user_id', $user->id)->first();
-        if (! $faculty instanceof Faculty) {
+        $faculty = $this->resolveScopedFaculty($user);
+        if (! $this->hasFullClassVisibility($user) && ! $faculty instanceof Faculty) {
             return json_encode(['error' => true, 'message' => 'Faculty record not found for this account.'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         }
 
@@ -43,7 +46,7 @@ final class GetClassEnrollmentsTool implements Tool
         ]);
 
         $query = Classes::query()
-            ->where('faculty_id', $faculty->id)
+            ->when($faculty instanceof Faculty, fn ($builder) => $builder->where('faculty_id', $faculty->id))
             ->with([
                 'class_enrollments.student.personalInfo',
                 'faculty',

@@ -699,6 +699,8 @@ it('automatically falls back to configured custom provider on general ai chat en
 });
 
 it('retrieves enrolled students in a class via GetClassEnrollmentsTool', function (): void {
+    $this->actingAs(User::factory()->create(['role' => App\Enums\UserRole::Admin]));
+
     $class = Classes::factory()->create([
         'subject_code' => 'CS101',
         'section' => '1A',
@@ -731,6 +733,8 @@ it('retrieves enrolled students in a class via GetClassEnrollmentsTool', functio
 });
 
 it('retrieves enrolled students across sections prioritizing active academic period via GetClassEnrollmentsTool', function (): void {
+    $this->actingAs(User::factory()->create(['role' => App\Enums\UserRole::Admin]));
+
     // Old inactive class with 0 enrollments
     Classes::factory()->create([
         'subject_code' => 'GE-1',
@@ -862,6 +866,8 @@ it('searches student directory via SearchStudentsTool', function (): void {
 });
 
 it('retrieves class grades sheet via GetClassGradesTool', function (): void {
+    $this->actingAs(User::factory()->create(['role' => App\Enums\UserRole::Admin]));
+
     $class = Classes::factory()->create([
         'subject_code' => 'CS102',
         'section' => '1B',
@@ -896,6 +902,8 @@ it('retrieves class grades sheet via GetClassGradesTool', function (): void {
 });
 
 it('retrieves class attendance breakdown via GetClassAttendanceSummaryTool', function (): void {
+    $this->actingAs(User::factory()->create(['role' => App\Enums\UserRole::Admin]));
+
     $class = Classes::factory()->create([
         'subject_code' => 'ENG101',
         'section' => 'SEC-A',
@@ -972,4 +980,72 @@ it('checks classroom availability via LookupRoomAvailabilityTool', function (): 
     expect($data)->toHaveKey('rooms')
         ->and($data['count'])->toBeGreaterThanOrEqual(1)
         ->and($data['rooms'][0]['name'])->toBe('Room 302');
+});
+
+it('scopes class roster tools to the acting faculty teaching assignments', function (): void {
+    $ownerFaculty = App\Models\Faculty::factory()->create();
+    $otherFaculty = App\Models\Faculty::factory()->create();
+
+    $ownerClass = Classes::factory()->create([
+        'subject_code' => 'CS201',
+        'section' => '1A',
+        'faculty_id' => $ownerFaculty->id,
+    ]);
+
+    $otherClass = Classes::factory()->create([
+        'subject_code' => 'CS202',
+        'section' => '1B',
+        'faculty_id' => $otherFaculty->id,
+    ]);
+
+    $owner = User::factory()->create([
+        'role' => App\Enums\UserRole::Professor,
+        'record_id' => $ownerFaculty->id,
+    ]);
+
+    $tool = new App\Ai\Tools\GetClassEnrollmentsTool;
+
+    // Faculty can read their own class.
+    $this->actingAs($owner);
+    $own = json_decode((string) $tool->handle(new Request(['class_id' => $ownerClass->id])), true);
+    expect($own['class_id'])->toBe($ownerClass->id);
+
+    // Faculty cannot read a class taught by someone else.
+    $foreign = (string) $tool->handle(new Request(['class_id' => $otherClass->id]));
+    expect($foreign)->toContain('does not belong to your teaching assignments');
+
+    // Administrative roles keep oversight of every class.
+    $this->actingAs(User::factory()->create(['role' => App\Enums\UserRole::Admin]));
+    $admin = json_decode((string) $tool->handle(new Request(['class_id' => $otherClass->id])), true);
+    expect($admin['class_id'])->toBe($otherClass->id);
+});
+
+it('denies class roster tools to unauthenticated callers', function (): void {
+    $class = Classes::factory()->create([
+        'subject_code' => 'CS301',
+        'section' => '1C',
+    ]);
+
+    $tool = new App\Ai\Tools\GetClassEnrollmentsTool;
+    $result = json_decode((string) $tool->handle(new Request(['class_id' => $class->id])), true);
+
+    expect($result)->toHaveKey('error')
+        ->and($result['error'])->toBeTrue()
+        ->and($result['message'])->toBe('Authentication is required.');
+});
+
+it('denies class roster tools to faculty without a linked faculty record', function (): void {
+    $this->actingAs(User::factory()->create(['role' => App\Enums\UserRole::Professor]));
+
+    $class = Classes::factory()->create([
+        'subject_code' => 'CS302',
+        'section' => '1D',
+    ]);
+
+    $tool = new App\Ai\Tools\GetClassEnrollmentsTool;
+    $result = json_decode((string) $tool->handle(new Request(['class_id' => $class->id])), true);
+
+    expect($result)->toHaveKey('error')
+        ->and($result['error'])->toBeTrue()
+        ->and($result['message'])->toBe('Faculty record not found for this account.');
 });

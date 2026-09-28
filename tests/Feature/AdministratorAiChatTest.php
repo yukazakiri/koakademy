@@ -620,6 +620,8 @@ it('adapts built-in MCP tools seamlessly into AI agent tools', function (): void
 });
 
 it('formats class enrollments compactly without unneeded payload bloat', function (): void {
+    $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
+
     $class = App\Models\Classes::factory()->create([
         'subject_code' => 'GE-1',
         'section' => 'B',

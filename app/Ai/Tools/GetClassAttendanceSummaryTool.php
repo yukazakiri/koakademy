@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ai\Tools;
 
+use App\Ai\Concerns\ResolvesFacultyScope;
 use App\Models\ClassAttendanceRecord;
 use App\Models\ClassAttendanceSession;
 use App\Models\Classes;
@@ -18,6 +19,8 @@ use Stringable;
 
 final class GetClassAttendanceSummaryTool implements Tool
 {
+    use ResolvesFacultyScope;
+
     public function description(): Stringable|string
     {
         return 'Retrieve attendance metrics, total session count, and student attendance breakdowns (present, late, absent, excused) for a class section.';
@@ -30,8 +33,8 @@ final class GetClassAttendanceSummaryTool implements Tool
             return json_encode(['error' => true, 'message' => 'Authentication is required.'], JSON_PRETTY_PRINT);
         }
 
-        $faculty = Faculty::query()->where('user_id', $user->id)->first();
-        if (! $faculty instanceof Faculty) {
+        $faculty = $this->resolveScopedFaculty($user);
+        if (! $this->hasFullClassVisibility($user) && ! $faculty instanceof Faculty) {
             return json_encode(['error' => true, 'message' => 'Faculty record not found for this account.'], JSON_PRETTY_PRINT);
         }
 
@@ -44,7 +47,7 @@ final class GetClassAttendanceSummaryTool implements Tool
         ]);
 
         $query = Classes::query()
-            ->where('faculty_id', $faculty->id)
+            ->when($faculty instanceof Faculty, fn ($builder) => $builder->where('faculty_id', $faculty->id))
             ->with([
                 'class_enrollments.student',
                 'faculty',

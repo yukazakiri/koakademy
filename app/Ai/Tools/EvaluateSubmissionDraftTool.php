@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ai\Tools;
 
+use App\Ai\Concerns\ResolvesFacultyScope;
 use App\Models\ClassPostSubmission;
 use App\Models\Faculty;
 use App\Models\User;
@@ -15,6 +16,8 @@ use Stringable;
 
 final class EvaluateSubmissionDraftTool implements Tool
 {
+    use ResolvesFacultyScope;
+
     public function description(): Stringable|string
     {
         return 'Read and draft formative feedback and recommended points for a student assignment submission without mutating records.';
@@ -27,8 +30,8 @@ final class EvaluateSubmissionDraftTool implements Tool
             return json_encode(['error' => true, 'message' => 'Authentication is required.'], JSON_PRETTY_PRINT);
         }
 
-        $faculty = Faculty::query()->where('user_id', $user->id)->first();
-        if (! $faculty instanceof Faculty) {
+        $faculty = $this->resolveScopedFaculty($user);
+        if (! $this->hasFullClassVisibility($user) && ! $faculty instanceof Faculty) {
             return json_encode(['error' => true, 'message' => 'Faculty record not found for this account.'], JSON_PRETTY_PRINT);
         }
 
@@ -45,7 +48,7 @@ final class EvaluateSubmissionDraftTool implements Tool
         }
 
         $class = $submission->classPost?->class;
-        if (! $class || $class->faculty_id !== $faculty->id) {
+        if (! $class || ($faculty instanceof Faculty && $class->faculty_id !== $faculty->id)) {
             return json_encode([
                 'error' => true,
                 'message' => 'Access denied. This submission does not belong to a class you are teaching.',

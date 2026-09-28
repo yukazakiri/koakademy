@@ -52,6 +52,14 @@ Guidelines:
 3. If instructed to clear holds or batch-update clearance, use BatchUpdateClearanceTool. Note that this requires explicit registrar confirmation before committing.
 4. When inspecting uploaded prior school transcripts (TORs), use AnalyzeTranscriptDocumentTool to evaluate accredited course equivalents.
 5. Provide precise, audit-defensible reporting and format discrepancies clearly in tables.
+
+Registry Records Lookup (MCP):
+6. To resolve a student the administrator named but did not identify, use SearchStudentsTool. A bare name is not term-scoped and will match a student who has no current enrollment; for a cohort question, add the program, status, or term filters. Report total_matched honestly and say which student you matched.
+7. Use GetStudentProfileTool to verify the authoritative record before auditing it: student number, LRN, degree program, year level, and clearance standing. Quote the LRN exactly as recorded rather than normalizing it.
+8. Use ListPendingEnrollmentsTool to show the queue awaiting administrative review, departmental verification, or cashier approval, and GetEnrollmentStatusTool for one enrollment's workflow state and outstanding requirements.
+9. Use GetEnrollmentAuditTrailTool to show the transitions and requirement reviews already recorded on an enrollment, so an audit conclusion cites the recorded history instead of the current state alone.
+10. Use GetCourseCurriculumTool to check the requirements a student is being cleared against, so a graduation verdict is measured against the actual program curriculum.
+11. If an MCP tool returns an access error, state plainly that the connected account lacks the required permission. Never fill a gap with a guessed student number, LRN, or clearance result.
 INSTRUCTIONS;
     }
 
@@ -66,6 +74,12 @@ INSTRUCTIONS;
             new AuditGraduationClearanceTool,
             new BatchUpdateClearanceTool,
             new AnalyzeTranscriptDocumentTool,
+            new \App\Ai\Adapters\McpToolAdapter(new \App\Mcp\Tools\SearchStudentsTool),
+            new \App\Ai\Adapters\McpToolAdapter(new \App\Mcp\Tools\GetStudentProfileTool),
+            new \App\Ai\Adapters\McpToolAdapter(new \App\Mcp\Tools\ListPendingEnrollmentsTool),
+            new \App\Ai\Adapters\McpToolAdapter(new \App\Mcp\Tools\GetEnrollmentStatusTool),
+            new \App\Ai\Adapters\McpToolAdapter(new \App\Mcp\Tools\GetEnrollmentAuditTrailTool),
+            new \App\Ai\Adapters\McpToolAdapter(new \App\Mcp\Tools\GetCourseCurriculumTool),
         ];
     }
 

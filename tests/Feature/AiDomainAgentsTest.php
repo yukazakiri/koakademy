@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Ai\Adapters\McpToolAdapter;
+use App\Ai\Agents\AdminExecutiveAgent;
 use App\Ai\Agents\BursarFinanceAgent;
+use App\Ai\Agents\CampusSupportAgent;
 use App\Ai\Agents\FacultyCopilotAgent;
 use App\Ai\Agents\RegistrarAuditAgent;
 use App\Ai\Agents\StudentAdvisorAgent;
@@ -22,6 +25,8 @@ use App\Ai\Tools\GetCurriculumProgressTool;
 use App\Ai\Tools\SimulateScholarshipAdjustmentTool;
 use App\Ai\Tools\SubmitEnrollmentPlanTool;
 use App\Ai\Tools\ValidateAdjustmentSpreadsheetTool;
+use App\Mcp\Tools\GetSchoolDetailsTool;
+use App\Mcp\Tools\GetStudentProfileTool;
 use App\Models\Classes;
 use App\Models\HelpTicket;
 use App\Models\Student;
@@ -251,6 +256,111 @@ it('searches campus knowledge base for policies', function (): void {
         ->and((string) $result)->toContain('Clearance Policy');
 });
 
+/**
+ * Every agent the /administrators/ai page offers must be able to reach the
+ * KoAkademy MCP tools.
+ *
+ * AdminExecutiveAgent bridged MCP tools while registrar_auditor,
+ * bursar_finance and campus_support exposed built-in tools only, so 34 of the
+ * 34 MCP tools were unreachable from three of the four agents on that page.
+ */
+it('gives every administrator page agent access to MCP tools', function (): void {
+    $agents = [
+        AdminExecutiveAgent::class,
+        RegistrarAuditAgent::class,
+        BursarFinanceAgent::class,
+        CampusSupportAgent::class,
+    ];
+
+    foreach ($agents as $agent) {
+        $bridged = collect((new $agent)->tools())
+            ->filter(fn ($tool): bool => $tool instanceof McpToolAdapter)
+            ->map(fn (McpToolAdapter $tool): string => $tool->name())
+            ->values();
+
+        expect($bridged)
+            ->not->toBeEmpty(class_basename($agent).' exposes no MCP tools');
+    }
+});
+
+it('gives the registrar, bursar, and campus agents the domain MCP tools they need', function (): void {
+    $names = fn ($agent): array => collect($agent->tools())
+        ->filter(fn ($tool): bool => $tool instanceof McpToolAdapter)
+        ->map(fn (McpToolAdapter $tool): string => $tool->name())
+        ->all();
+
+    expect($names(new RegistrarAuditAgent))
+        ->toContain('GetStudentProfileTool', 'SearchStudentsTool', 'GetEnrollmentStatusTool', 'GetCourseCurriculumTool');
+
+    expect($names(new BursarFinanceAgent))
+        ->toContain('GetStatementOfAccountTool', 'GetStudentProfileTool');
+
+    expect($names(new CampusSupportAgent))
+        ->toContain('GetMyContextTool', 'GetSchoolDetailsTool');
+});
+
+/**
+ * Campus support answers questions from students and visitors, so it is
+ * deliberately not given record-level read access. It reports institutional
+ * facts and schedules, and escalates anything about a specific account.
+ */
+it('keeps record-level tools away from the campus support agent', function (): void {
+    $names = collect((new CampusSupportAgent)->tools())
+        ->filter(fn ($tool): bool => $tool instanceof McpToolAdapter)
+        ->map(fn (McpToolAdapter $tool): string => $tool->name())
+        ->all();
+
+    expect($names)
+        ->not->toContain('GetStudentProfileTool', 'SearchStudentsTool', 'GetStatementOfAccountTool', 'ListStudentEnrollmentsTool');
+
+    // The instructions have to say so, or the model will simply try.
+    expect((string) (new CampusSupportAgent)->instructions())
+        ->toContain('cannot read student profiles');
+});
+
+/**
+ * A bridged tool has to actually run, not merely appear in the array. The
+ * adapter builds an MCP request from the AI request and hands back the
+ * structured content.
+ */
+it('invokes a bridged MCP tool through the adapter', function (): void {
+    $school = App\Models\School::factory()->create();
+    app(App\Services\TenantContext::class)->setCurrentSchool($school);
+
+    Spatie\Permission\Models\Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+    $admin = User::factory()->create();
+    $admin->assignRole('super_admin');
+    $this->actingAs($admin);
+
+    $adapter = new McpToolAdapter(new GetSchoolDetailsTool);
+    $data = json_decode((string) $adapter->handle(new Request([])), true);
+
+    expect($data['id'])->toBe($school->id)
+        ->and($data['name'])->toBe($school->name)
+        ->and($data)->toHaveKey('departments')
+        ->and($data)->toHaveKey('curriculum_capabilities');
+});
+
+/**
+ * An MCP tool the caller is not entitled to must degrade into a readable error
+ * rather than an exception, so the model can explain the denial instead of the
+ * chat turn failing outright.
+ */
+it('reports an mcp access denial to the model instead of throwing', function (): void {
+    $school = App\Models\School::factory()->create();
+    app(App\Services\TenantContext::class)->setCurrentSchool($school);
+
+    // A plain student account may not read another student's account record.
+    $student = Student::factory()->create(['school_id' => $school->id, 'institution_id' => $school->id]);
+    $user = User::factory()->create(['role' => App\Enums\UserRole::Student]);
+    $this->actingAs($user);
+
+    $adapter = new McpToolAdapter(new GetStudentProfileTool);
+    $data = json_decode((string) $adapter->handle(new Request(['student_id' => $student->id])), true);
+
+    expect($data)->toHaveKey('error', true);
+});
+
 it('creates official support tickets when needed', function (): void {
     $user = User::factory()->create();
 
@@ -461,7 +571,7 @@ it('generates downloadable administrative documents and stores them in cache', f
 });
 
 it('allows admin to stream chat, fetch KPI summaries, and download documents via AdministratorAiController', function (): void {
-    App\Ai\Agents\AdminExecutiveAgent::fake([
+    AdminExecutiveAgent::fake([
         'Here is the executive report on campus operations.',
     ]);
 
@@ -526,7 +636,7 @@ it('processes uploaded images, spreadsheets, and documents for AI consumption', 
 });
 
 it('accepts file attachments on the administrative ai chat endpoint', function (): void {
-    App\Ai\Agents\AdminExecutiveAgent::fake([
+    AdminExecutiveAgent::fake([
         'I have parsed the attached spreadsheet and generated your report.',
     ]);
 
@@ -543,7 +653,7 @@ it('accepts file attachments on the administrative ai chat endpoint', function (
 });
 
 it('accepts custom model selection and streams response with diagnostics', function (): void {
-    App\Ai\Agents\AdminExecutiveAgent::fake([
+    AdminExecutiveAgent::fake([
         'Responding with custom model.',
     ]);
 

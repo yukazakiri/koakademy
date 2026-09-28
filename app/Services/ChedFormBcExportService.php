@@ -9,6 +9,8 @@ use App\Enums\StudentStatus;
 use App\Models\Course;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
+use App\Support\ChedProgramGroup;
+use App\Support\ChedProgramGrouper;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
@@ -118,6 +120,8 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
         'Basic' => 'Basic',
     ];
 
+    public function __construct(private readonly ChedProgramGrouper $programGrouper) {}
+
     /**
      * @param array{
      *     school_year?: string|null,
@@ -154,16 +158,16 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
         $semester = ! empty($filters['semester']) ? (int) $filters['semester'] : null;
         $schoolId = isset($filters['school_id']) ? (int) $filters['school_id'] : null;
 
-        $courses = $this->queryCourses($filters);
+        $programs = $this->queryProgramGroups($filters);
 
         if ($reportKey === RegulatoryReportRegistry::CHED_SPECIAL_EQUITY) {
-            $this->populateSpecialEquitySheet($spreadsheet, $courses, $schoolYear, $semester, $schoolId);
+            $this->populateSpecialEquitySheet($spreadsheet, $programs, $schoolYear, $semester, $schoolId);
 
             return $spreadsheet;
         }
 
         if ($reportKey === RegulatoryReportRegistry::CHED_EQUITY_ENROLLMENT) {
-            $this->populateSpecialEquitySummarySheet($spreadsheet, $courses, $schoolYear, $semester, $schoolId, enrollmentOnly: true);
+            $this->populateSpecialEquitySummarySheet($spreadsheet, $programs, $schoolYear, $semester, $schoolId, enrollmentOnly: true);
             $sheet = $spreadsheet->getSheetByName('Sheet1');
             $sheet->removeColumn('L', 10);
             $sheet->getPageSetup()->setPrintArea('A1:K25');
@@ -180,13 +184,15 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
         $enrollmentCounts = $this->queryEnrollmentMatrix($schoolYear, $semester, $schoolId);
         $graduatesCounts = $this->queryGraduatesMatrix($schoolYear, $semester, $schoolId);
 
-        $this->populateCurricularSheets($spreadsheet, $courses, $enrollmentCounts, $graduatesCounts);
+        $programs = $this->filterProgramsWithData($programs, $filters, $enrollmentCounts, $graduatesCounts);
+
+        $this->populateCurricularSheets($spreadsheet, $programs, $enrollmentCounts, $graduatesCounts);
         if ($reportKey === RegulatoryReportRegistry::CHED_BACCALAUREATE) {
             return $spreadsheet;
         }
 
-        $this->populateSpecialEquitySheet($spreadsheet, $courses, $schoolYear, $semester, $schoolId);
-        $this->populateSpecialEquitySummarySheet($spreadsheet, $courses, $schoolYear, $semester, $schoolId);
+        $this->populateSpecialEquitySheet($spreadsheet, $programs, $schoolYear, $semester, $schoolId);
+        $this->populateSpecialEquitySummarySheet($spreadsheet, $programs, $schoolYear, $semester, $schoolId);
 
         return $spreadsheet;
     }
@@ -215,19 +221,23 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
         $semester = ! empty($filters['semester']) ? (int) $filters['semester'] : null;
         $schoolId = isset($filters['school_id']) ? (int) $filters['school_id'] : null;
 
-        $courses = $this->queryCourses($filters);
+        $programs = $this->queryProgramGroups($filters);
         $enrollmentCounts = $this->queryEnrollmentMatrix($schoolYear, $semester, $schoolId);
         $graduatesCounts = $this->queryGraduatesMatrix($schoolYear, $semester, $schoolId);
+
+        $programs = $this->filterProgramsWithData($programs, $filters, $enrollmentCounts, $graduatesCounts);
 
         $sheetsData = [];
         $totalStudents = 0;
         $totalGraduates = 0;
 
-        foreach ($courses as $course) {
+        foreach ($programs as $program) {
+            $course = $program->representative;
             $sheetName = $this->resolveSheetName($course);
-            $cId = (int) $course->id;
-            $enr = $enrollmentCounts->get($cId, []);
-            $grad = $graduatesCounts->get($cId, ['male' => 0, 'female' => 0, 'other' => 0, 'prefer_not_to_say' => 0, 'total' => 0]);
+            $enr = $this->aggregateCounts($enrollmentCounts, $program->courseIds);
+            $grad = $this->aggregateCounts($graduatesCounts, $program->courseIds, [
+                'male' => 0, 'female' => 0, 'other' => 0, 'prefer_not_to_say' => 0, 'total' => 0,
+            ]);
 
             $subtotalMale = (int) ($enr['freshman_male'] ?? 0)
                 + (int) ($enr['continuing_first_year_male'] ?? 0)
@@ -253,8 +263,14 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
 
             $rowData = [
                 'course_id' => $course->id,
-                'program_title' => $course->title,
-                'program_code' => $course->officialChedProgramCode(),
+                'program_title' => $program->title,
+                'program_code' => $program->programCode,
+                'merged_course_count' => count($program->courseIds),
+                'merged_course_codes' => $program->courses
+                    ->map(static fn (Course $member): string => (string) $member->code)
+                    ->unique()
+                    ->values()
+                    ->all(),
                 'major' => $course->ched_major,
                 'major_code' => $course->ched_major_code,
                 'with_thesis' => $course->ched_has_thesis ? '1 - Yes' : '2 - No',
@@ -298,7 +314,8 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
             'subtitle' => "School Year: {$schoolYear}".($semester ? " Term {$semester}" : ''),
             'sheets' => $sheetsData,
             'summary' => [
-                'total_programs' => $courses->count(),
+                'total_programs' => $programs->count(),
+                'total_course_records' => $programs->sum(static fn (ChedProgramGroup $program): int => count($program->courseIds)),
                 'total_enrolled' => $totalStudents,
                 'total_graduates' => $totalGraduates,
             ],
@@ -307,9 +324,9 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
 
     /**
      * @param  array<string, mixed>  $filters
-     * @return Collection<int, Course>
+     * @return Collection<int, ChedProgramGroup>
      */
-    private function queryCourses(array $filters): Collection
+    private function queryProgramGroups(array $filters): Collection
     {
         $query = Course::query()
             ->with(['courseType', 'department', 'industryCourseCode.authority'])
@@ -321,17 +338,177 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
         if (! empty($filters['department_id']) && $filters['department_id'] !== 'all') {
             $query->where('department_id', $filters['department_id']);
         }
-        if (! empty($filters['course_id']) && $filters['course_id'] !== 'all') {
-            $query->where('id', $filters['course_id']);
+
+        $courseIds = $this->selectedCourseIds($filters);
+        if ($courseIds !== []) {
+            $query->whereIn('id', $courseIds);
         }
 
         $courses = $query->orderBy('code')->get();
 
+        $programs = $this->shouldMergePrograms($filters)
+            ? $this->programGrouper->group($courses)
+            : $courses->map(fn (Course $course): ChedProgramGroup => $this->programGrouper->singleProgram($course))->values();
+
+        $programs = $this->applyAttributeFilters($programs, $filters);
+
         if (($filters['report_key'] ?? null) === RegulatoryReportRegistry::CHED_BACCALAUREATE) {
-            return $courses->filter(fn (Course $course): bool => $this->resolveSheetName($course) === 'Baccalaureate')->values();
+            return $programs
+                ->filter(fn (ChedProgramGroup $program): bool => $this->resolveSheetName($program->representative) === 'Baccalaureate')
+                ->values();
         }
 
-        return $courses;
+        return $programs;
+    }
+
+    /**
+     * Curriculum variants merge into one program line by default. The inspector
+     * can switch this off to list every course row separately.
+     *
+     * @param  array<string, mixed>  $filters
+     */
+    private function shouldMergePrograms(array $filters): bool
+    {
+        $value = $filters['merge_programs'] ?? true;
+
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        return ! in_array(mb_strtolower(mb_trim((string) $value)), ['0', 'false', 'off', 'no'], true);
+    }
+
+    /**
+     * Narrow the program list to a single delivery mode and/or program status.
+     *
+     * @param  Collection<int, ChedProgramGroup>  $programs
+     * @param  array<string, mixed>  $filters
+     * @return Collection<int, ChedProgramGroup>
+     */
+    private function applyAttributeFilters(Collection $programs, array $filters): Collection
+    {
+        $deliveryMode = $this->stringFilter($filters['delivery_mode'] ?? 'all');
+        $programStatus = $this->stringFilter($filters['program_status'] ?? 'all');
+
+        return $programs
+            ->filter(function (ChedProgramGroup $program) use ($deliveryMode, $programStatus): bool {
+                $course = $program->representative;
+
+                if ($deliveryMode !== 'all' && mb_strtoupper(mb_trim((string) $course->ched_delivery_mode)) !== $deliveryMode) {
+                    return false;
+                }
+
+                if ($programStatus !== 'all' && mb_strtoupper(mb_trim((string) $course->ched_program_status)) !== $programStatus) {
+                    return false;
+                }
+
+                return true;
+            })
+            ->values();
+    }
+
+    /**
+     * Uppercase the requested value. The "all" sentinel stays lowercase so
+     * callers can compare against it directly.
+     */
+    private function stringFilter(mixed $value): string
+    {
+        $normalised = mb_strtoupper(mb_trim((string) $value));
+
+        return $normalised === '' || $normalised === 'ALL' ? 'all' : $normalised;
+    }
+
+    /**
+     * Optionally drop programs that have neither enrollees nor graduates in the
+     * selected period, so the report lists only rows with data.
+     *
+     * @param  Collection<int, ChedProgramGroup>  $programs
+     * @param  array<string, mixed>  $filters
+     * @param  Collection<int, array<string, int>>  $enrollmentCounts
+     * @param  Collection<int, array<string, int>>  $graduatesCounts
+     * @return Collection<int, ChedProgramGroup>
+     */
+    private function filterProgramsWithData(
+        Collection $programs,
+        array $filters,
+        Collection $enrollmentCounts,
+        Collection $graduatesCounts,
+    ): Collection {
+        $onlyWithData = $filters['only_with_data'] ?? false;
+        $enabled = is_bool($onlyWithData)
+            ? $onlyWithData
+            : ! in_array(mb_strtolower(mb_trim((string) $onlyWithData)), ['0', 'false', 'off', 'no'], true);
+
+        if (! $enabled) {
+            return $programs;
+        }
+
+        return $programs
+            ->filter(function (ChedProgramGroup $program) use ($enrollmentCounts, $graduatesCounts): bool {
+                $enrollment = array_sum($this->aggregateCounts($enrollmentCounts, $program->courseIds));
+                $graduates = (int) ($this->aggregateCounts($graduatesCounts, $program->courseIds)['total'] ?? 0);
+
+                return $enrollment > 0 || $graduates > 0;
+            })
+            ->values();
+    }
+
+    /**
+     * Resolve the course selection. Accepts a single id, a list of ids, or the
+     * literal "all". An empty result means no course filter is applied.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return list<int>
+     */
+    private function selectedCourseIds(array $filters): array
+    {
+        $raw = $filters['course_ids'] ?? $filters['course_id'] ?? 'all';
+
+        if (is_array($raw)) {
+            $values = $raw;
+        } elseif (is_numeric($raw)) {
+            $values = [(string) $raw];
+        } else {
+            $raw = mb_trim((string) $raw);
+            $values = ($raw === '' || $raw === 'all') ? [] : explode(',', $raw);
+        }
+
+        return collect($values)
+            ->filter(static fn (mixed $id): bool => is_numeric($id) && (int) $id > 0)
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Sum a per-course count matrix across every course merged into a program.
+     *
+     * @param  Collection<int, array<string, int>>  $matrix
+     * @param  list<int>  $courseIds
+     * @param  array<string, int>  $defaults
+     * @return array<string, int>
+     */
+    private function aggregateCounts(Collection $matrix, array $courseIds, array $defaults = []): array
+    {
+        $totals = $defaults;
+
+        foreach ($courseIds as $courseId) {
+            $row = $matrix->get($courseId);
+            if (! is_array($row)) {
+                continue;
+            }
+
+            foreach ($row as $key => $value) {
+                if ($key === 'course_id') {
+                    continue;
+                }
+
+                $totals[$key] = (int) ($totals[$key] ?? 0) + (int) $value;
+            }
+        }
+
+        return $totals;
     }
 
     /**
@@ -429,19 +606,20 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
     }
 
     /**
-     * @param  Collection<int, Course>  $courses
+     * @param  Collection<int, ChedProgramGroup>  $programs
      * @param  Collection<int, array<string, int>>  $enrollmentCounts
      * @param  Collection<int, array{male: int, female: int, other: int, prefer_not_to_say: int, total: int}>  $graduatesCounts
      */
     private function populateCurricularSheets(
         Spreadsheet $spreadsheet,
-        Collection $courses,
+        Collection $programs,
         Collection $enrollmentCounts,
         Collection $graduatesCounts,
     ): void {
         $sheetRows = [];
 
-        foreach ($courses as $course) {
+        foreach ($programs as $program) {
+            $course = $program->representative;
             $sheetName = $this->resolveSheetName($course);
             $sheet = $spreadsheet->getSheetByName($sheetName);
             if (! $sheet) {
@@ -453,13 +631,14 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
             }
             $row = $sheetRows[$sheetName];
 
-            $cId = (int) $course->id;
-            $enr = $enrollmentCounts->get($cId, []);
-            $grad = $graduatesCounts->get($cId, ['male' => 0, 'female' => 0, 'total' => 0]);
+            $enr = $this->aggregateCounts($enrollmentCounts, $program->courseIds);
+            $grad = $this->aggregateCounts($graduatesCounts, $program->courseIds, [
+                'male' => 0, 'female' => 0, 'other' => 0, 'prefer_not_to_say' => 0, 'total' => 0,
+            ]);
 
             // Program Information (Columns A - Q)
-            $this->setTextCell($sheet, "A{$row}", $course->title);
-            $this->setTextCell($sheet, "B{$row}", $course->officialChedProgramCode());
+            $this->setTextCell($sheet, "A{$row}", $program->title);
+            $this->setTextCell($sheet, "B{$row}", $program->programCode);
             $this->setTextCell($sheet, "C{$row}", $course->ched_major ?: '');
             $this->setTextCell($sheet, "D{$row}", $course->ched_major_code ?: '');
             $sheet->setCellValue("E{$row}", $course->ched_has_thesis ? 1 : 2);
@@ -511,11 +690,11 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
     /**
      * Populate Special Equity Groups Sheet (Disabilities, IP, Solo Parents, Senior Citizens, Magna Carta, Underprivileged)
      *
-     * @param  Collection<int, Course>  $courses
+     * @param  Collection<int, ChedProgramGroup>  $programs
      */
     private function populateSpecialEquitySheet(
         Spreadsheet $spreadsheet,
-        Collection $courses,
+        Collection $programs,
         string $schoolYear,
         ?int $semester,
         ?int $schoolId,
@@ -564,13 +743,13 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
         $gradEquity = $this->aggregateEquityByCourse($gradQuery, 'students.course_id');
 
         $row = self::START_ROW;
-        foreach ($courses as $course) {
-            $cId = (int) $course->id;
-            $e = $enrEquity->get($cId, []);
-            $g = $gradEquity->get($cId, []);
+        foreach ($programs as $program) {
+            $course = $program->representative;
+            $e = $this->aggregateCounts($enrEquity, $program->courseIds);
+            $g = $this->aggregateCounts($gradEquity, $program->courseIds);
 
             // Program and Major
-            $this->setTextCell($sheet, "A{$row}", $course->title);
+            $this->setTextCell($sheet, "A{$row}", $program->title);
             $this->setTextCell($sheet, "B{$row}", $course->ched_major ?: 'None');
 
             // Enrollment Distribution by Special Equity Group (Columns C - S)
@@ -621,11 +800,11 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
      * The template has one row per equity group and separate columns for
      * enrollment and graduates split by sex and year level.
      *
-     * @param  Collection<int, Course>  $courses
+     * @param  Collection<int, ChedProgramGroup>  $programs
      */
     private function populateSpecialEquitySummarySheet(
         Spreadsheet $spreadsheet,
-        Collection $courses,
+        Collection $programs,
         string $schoolYear,
         ?int $semester,
         ?int $schoolId,
@@ -636,8 +815,9 @@ final class ChedFormBcExportService implements RegulatoryReportAdapter
             return;
         }
 
-        $courseIds = $courses
-            ->pluck('id')
+        $courseIds = $programs
+            ->flatMap(static fn (ChedProgramGroup $program): array => $program->courseIds)
+            ->unique()
             ->map(static fn (mixed $courseId): string => (string) $courseId)
             ->values()
             ->all();

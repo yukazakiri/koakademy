@@ -20,6 +20,7 @@ use App\Services\AssessmentExportCoordinator;
 use App\Services\AssessmentExportNotificationService;
 use App\Services\ChedFormBcExportService;
 use App\Services\RegulatoryReportRegistry;
+use App\Services\TenantContext;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -27,7 +28,7 @@ use PhpOffice\PhpSpreadsheet\Cell\DataType;
 
 test('separate ched reports export only their selected layout and preview the same counts', function (): void {
     $school = School::factory()->create();
-    app(App\Services\TenantContext::class)->setCurrentSchool($school);
+    app(TenantContext::class)->setCurrentSchool($school);
     $college = CourseType::firstOrCreate(['name' => 'College Undergraduate']);
     $masters = CourseType::firstOrCreate(['name' => 'Masters']);
     $course = Course::factory()->create(['school_id' => $school->id, 'course_type_id' => $college->id, 'code' => 'AAA', 'is_active' => true]);
@@ -338,6 +339,264 @@ test('ched form bc export service generates populated workbook and preview', fun
         ->and((int) $summarySheet->getCell('E10')->getCalculatedValue())->toBe(1) // PWD first year
         ->and((int) $summarySheet->getCell('C19')->getCalculatedValue())->toBe(1) // Indigenous female
         ->and((int) $summarySheet->getCell('F19')->getCalculatedValue())->toBe(1); // Indigenous second year
+});
+
+test('ched form bc merges curriculum variants of the same program into one row', function (): void {
+    $school = School::factory()->create();
+    $collegeType = CourseType::firstOrCreate(['name' => 'College Undergraduate']);
+    $department = Department::factory()->forSchool($school)->create(['code' => 'BA', 'name' => 'Business Administration']);
+
+    $title = 'Bachelor of Science in Business Administration';
+    $variants = [
+        ['code' => 'BSBA (2009 - 2010)', 'curriculum_year' => '2009-2010'],
+        ['code' => 'BSBA (2015 - 2016)', 'curriculum_year' => '2015-2016'],
+        ['code' => 'BSBA (2024 - 2025) NON-ABM', 'curriculum_year' => '2024-2025', 'ched_program_code' => 'BSBA'],
+        ['code' => 'BSBA (2024 - 2025) ABM', 'curriculum_year' => '2024-2025'],
+    ];
+
+    $courses = collect($variants)->map(function (array $variant) use ($school, $collegeType, $department, $title): Course {
+        return Course::factory()->create([
+            'school_id' => $school->id,
+            'department_id' => $department->id,
+            'course_type_id' => $collegeType->id,
+            'title' => $title,
+            'is_active' => true,
+        ] + $variant);
+    });
+
+    // One enrolled student per curriculum row proves the counts are summed.
+    // Row 0 is a new freshman, row 1 an old first year, rows 2-3 later years.
+    $profile = [
+        ['gender' => 'Male', 'academic_year' => 1, 'intake_category' => 'new_freshman'],
+        ['gender' => 'Female', 'academic_year' => 1, 'intake_category' => 'continuing_first_year'],
+        ['gender' => 'Male', 'academic_year' => 2, 'intake_category' => 'continuing_first_year'],
+        ['gender' => 'Female', 'academic_year' => 3, 'intake_category' => 'continuing_first_year'],
+    ];
+
+    foreach ($courses->values() as $index => $course) {
+        $student = Student::factory()->minimal()->create([
+            'school_id' => $school->id,
+            'course_id' => $course->id,
+            'gender' => $profile[$index]['gender'],
+            'status' => StudentStatus::Enrolled->value,
+        ]);
+        StudentEnrollment::factory()->create([
+            'school_id' => $school->id,
+            'student_id' => $student->id,
+            'course_id' => $course->id,
+            'academic_year' => $profile[$index]['academic_year'],
+            'intake_category' => $profile[$index]['intake_category'],
+            'school_year' => '2026-2027',
+            'semester' => 1,
+        ]);
+    }
+
+    // A same-title program in another department must stay its own row.
+    $otherDepartment = Department::factory()->forSchool($school)->create(['code' => 'BA2', 'name' => 'Business Administration 2']);
+    $otherCourse = Course::factory()->create([
+        'school_id' => $school->id,
+        'department_id' => $otherDepartment->id,
+        'course_type_id' => $collegeType->id,
+        'title' => $title,
+        'code' => 'BSBA (2024 - 2025) OTHER',
+        'curriculum_year' => '2024-2025',
+        'is_active' => true,
+    ]);
+
+    $service = app(ChedFormBcExportService::class);
+    $preview = $service->buildPreviewData([
+        'school_year' => '2026-2027',
+        'semester' => 1,
+        'school_id' => $school->id,
+    ]);
+
+    $rows = $preview['sheets']['Baccalaureate'];
+
+    expect($preview['summary']['total_programs'])->toBe(2)
+        ->and($preview['summary']['total_course_records'])->toBe(5)
+        ->and($rows)->toHaveCount(2);
+
+    $merged = collect($rows)->firstWhere('merged_course_count', 4);
+    expect($merged)->not->toBeNull()
+        ->and($merged['program_title'])->toBe($title)
+        // Latest curriculum row carries the CHED code; the year/track suffix is stripped.
+        ->and($merged['program_code'])->toBe('BSBA')
+        ->and($merged['merged_course_codes'])->toHaveCount(4)
+        // All four curriculum rows contribute to the single reported row.
+        ->and($merged['enrolment']['total'])->toBe(4)
+        ->and($merged['enrolment']['new_freshmen']['male'])->toBe(1)
+        ->and($merged['enrolment']['old_first_year']['female'])->toBe(1)
+        ->and($merged['enrolment']['year_2']['male'])->toBe(1)
+        ->and($merged['enrolment']['year_3']['female'])->toBe(1);
+
+    $separate = collect($rows)->firstWhere('course_id', $otherCourse->id);
+    expect($separate)->not->toBeNull()
+        ->and($separate['merged_course_count'])->toBe(1)
+        ->and($separate['enrolment']['total'])->toBe(0);
+
+    // The exported workbook gets the same single merged line.
+    $sheet = $service->generate([
+        'school_year' => '2026-2027',
+        'semester' => 1,
+        'school_id' => $school->id,
+    ])->getSheetByName('Baccalaureate');
+
+    expect($sheet->getCell('A10')->getValue())->toBe($title)
+        ->and($sheet->getCell('B10')->getValue())->toBe('BSBA')
+        ->and((int) $sheet->getCell('AJ10')->getCalculatedValue())->toBe(4)
+        ->and($sheet->getCell('A11')->getValue())->toBe($title)
+        ->and($sheet->getCell('A12')->getValue() ?? '')->toBe('');
+});
+
+test('ched form bc filters to only the ticked programs', function (): void {
+    $school = School::factory()->create();
+    $collegeType = CourseType::firstOrCreate(['name' => 'College Undergraduate']);
+
+    $bsba = Course::factory()->create([
+        'school_id' => $school->id, 'course_type_id' => $collegeType->id,
+        'code' => 'BSBA', 'title' => 'Bachelor of Science in Business Administration', 'is_active' => true,
+    ]);
+    $bsit = Course::factory()->create([
+        'school_id' => $school->id, 'course_type_id' => $collegeType->id,
+        'code' => 'BSIT', 'title' => 'Bachelor of Science in Information Technology', 'is_active' => true,
+    ]);
+
+    $preview = app(ChedFormBcExportService::class)->buildPreviewData([
+        'school_year' => '2026-2027',
+        'semester' => 1,
+        'school_id' => $school->id,
+        'course_ids' => [$bsit->id],
+    ]);
+
+    expect($preview['summary']['total_programs'])->toBe(1)
+        ->and($preview['sheets']['Baccalaureate'][0]['program_title'])->toBe('Bachelor of Science in Information Technology');
+});
+
+test('ched form bc can list every curriculum course row again when merging is off', function (): void {
+    $school = School::factory()->create();
+    $collegeType = CourseType::firstOrCreate(['name' => 'College Undergraduate']);
+    $department = Department::factory()->forSchool($school)->create(['code' => 'BA', 'name' => 'Business Administration']);
+
+    foreach (['2009-2010', '2015-2016', '2024-2025'] as $curriculumYear) {
+        Course::factory()->create([
+            'school_id' => $school->id,
+            'department_id' => $department->id,
+            'course_type_id' => $collegeType->id,
+            'code' => sprintf('BSBA (%s)', $curriculumYear),
+            'title' => 'Bachelor of Science in Business Administration',
+            'curriculum_year' => $curriculumYear,
+            'is_active' => true,
+        ]);
+    }
+
+    $service = app(ChedFormBcExportService::class);
+    $baseFilters = ['school_year' => '2026-2027', 'semester' => 1, 'school_id' => $school->id];
+
+    $merged = $service->buildPreviewData($baseFilters);
+    $unmerged = $service->buildPreviewData([...$baseFilters, 'merge_programs' => '0']);
+
+    expect($merged['summary']['total_programs'])->toBe(1)
+        ->and($merged['summary']['total_course_records'])->toBe(3)
+        ->and($unmerged['summary']['total_programs'])->toBe(3)
+        ->and($unmerged['summary']['total_course_records'])->toBe(3)
+        ->and(collect($unmerged['sheets']['Baccalaureate'])->firstWhere('merged_course_count', 4))->toBeNull();
+});
+
+test('ched form bc filters by delivery mode, program status and data presence', function (): void {
+    $school = School::factory()->create();
+    $collegeType = CourseType::firstOrCreate(['name' => 'College Undergraduate']);
+
+    $serial = Course::factory()->create([
+        'school_id' => $school->id,
+        'course_type_id' => $collegeType->id,
+        'code' => 'BSIT',
+        'title' => 'Bachelor of Science in Information Technology',
+        'ched_delivery_mode' => 'SE',
+        'ched_program_status' => 'CO',
+        'is_active' => true,
+    ]);
+    $trisemester = Course::factory()->create([
+        'school_id' => $school->id,
+        'course_type_id' => $collegeType->id,
+        'code' => 'BSED',
+        'title' => 'Bachelor of Science in Education',
+        'ched_delivery_mode' => 'TR',
+        'ched_program_status' => 'PO',
+        'is_active' => true,
+    ]);
+
+    $student = Student::factory()->minimal()->create([
+        'school_id' => $school->id,
+        'course_id' => $serial->id,
+        'gender' => 'Male',
+    ]);
+    StudentEnrollment::factory()->create([
+        'school_id' => $school->id,
+        'student_id' => $student->id,
+        'course_id' => $serial->id,
+        'academic_year' => 1,
+        'intake_category' => 'new_freshman',
+        'school_year' => '2026-2027',
+        'semester' => 1,
+    ]);
+
+    $service = app(ChedFormBcExportService::class);
+    $baseFilters = ['school_year' => '2026-2027', 'semester' => 1, 'school_id' => $school->id];
+
+    $trisemesterOnly = $service->buildPreviewData([...$baseFilters, 'delivery_mode' => 'tr']);
+    expect($trisemesterOnly['summary']['total_programs'])->toBe(1)
+        ->and($trisemesterOnly['sheets']['Baccalaureate'][0]['program_title'])->toBe('Bachelor of Science in Education');
+
+    $phasedOut = $service->buildPreviewData([...$baseFilters, 'program_status' => 'PO']);
+    expect($phasedOut['summary']['total_programs'])->toBe(1)
+        ->and($phasedOut['sheets']['Baccalaureate'][0]['program_title'])->toBe('Bachelor of Science in Education');
+
+    $withData = $service->buildPreviewData([...$baseFilters, 'only_with_data' => '1']);
+    expect($withData['summary']['total_programs'])->toBe(1)
+        ->and($withData['sheets']['Baccalaureate'][0]['program_title'])->toBe('Bachelor of Science in Information Technology');
+
+    // Unset attribute filters must not narrow the report at all.
+    $unfiltered = $service->buildPreviewData($baseFilters);
+    expect($unfiltered['summary']['total_programs'])->toBe(2);
+});
+
+test('regulatory program options collapse curriculum variants into one tickable program', function (): void {
+    $school = School::factory()->create();
+    app(TenantContext::class)->setCurrentSchool($school);
+    $collegeType = CourseType::firstOrCreate(['name' => 'College Undergraduate']);
+    $department = Department::factory()->forSchool($school)->create(['code' => 'IT', 'name' => 'Information Technology']);
+
+    foreach (['2018-2019', '2024-2025'] as $curriculumYear) {
+        Course::factory()->create([
+            'school_id' => $school->id,
+            'department_id' => $department->id,
+            'course_type_id' => $collegeType->id,
+            'code' => sprintf('BSIT (%s)', $curriculumYear),
+            'title' => 'Bachelor of Science in Information Technology',
+            'curriculum_year' => $curriculumYear,
+            'is_active' => true,
+        ]);
+    }
+
+    $user = User::factory()->create([
+        'school_id' => $school->id,
+        'role' => UserRole::SuperAdmin,
+    ]);
+
+    $response = $this->actingAs($user)
+        ->get(route('administrators.registrar.reports.regulatory.course-options'));
+
+    $response->assertOk()->assertJsonCount(1, 'programs');
+
+    $program = $response->json('programs.0');
+
+    expect($program['title'])->toBe('Bachelor of Science in Information Technology')
+        ->and($program['program_code'])->toBe('BSIT')
+        ->and($program['department'])->toBe('IT')
+        ->and($program['course_ids'])->toHaveCount(2)
+        ->and($program['course_codes'])->toHaveCount(2)
+        ->and($program['curriculum_years'])->toBe(['2024-2025', '2018-2019'])
+        ->and($program['key'])->toBe(implode(',', $program['course_ids']));
 });
 
 test('administrator can preview and download ched form bc report', function (): void {

@@ -146,6 +146,8 @@ Route::middleware(['auth', 'administrators.only'])
             ->middleware('throttle:10,1')
             ->name('registrar.analytics.student-profile-imports.confirm');
         Route::get('/registrar/reports', [AdministratorRegistrarInsightsController::class, 'reports'])->name('registrar.reports.index');
+        Route::get('/registrar/reports/regulatory/course-options', [AdministratorRegistrarInsightsController::class, 'regulatoryCourseOptions'])
+            ->name('registrar.reports.regulatory.course-options');
         Route::get('/registrar/reports/regulatory/{reportKey}/preview', [AdministratorRegistrarInsightsController::class, 'regulatoryPreview'])
             ->where('reportKey', '[a-z0-9_-]+')
             ->name('registrar.reports.regulatory.preview');

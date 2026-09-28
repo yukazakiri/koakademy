@@ -5,10 +5,14 @@ import { SemesterSelector, type SemesterSelectorProps } from "@/components/semes
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -20,6 +24,7 @@ import axios from "axios";
 import {
     ArrowLeftRight,
     Check,
+    ChevronDown,
     ChevronRight,
     Download,
     FileSpreadsheet,
@@ -32,6 +37,7 @@ import {
     Search,
     SlidersHorizontal,
     Sparkles,
+    X,
     ZoomIn,
     ZoomOut,
 } from "lucide-react";
@@ -123,6 +129,25 @@ type StudentDocumentPayload = {
 };
 type PreviewData = Record<string, unknown> | StudentDocumentPayload | null;
 type AvailableCourse = { id: number; code: string; title: string | null; department: string | null; department_id?: number | null };
+type RegulatoryProgramOption = {
+    key: string;
+    title: string;
+    program_code: string;
+    course_ids: number[];
+    course_codes: string[];
+    curriculum_years: string[];
+    department_id: number | null;
+    department: string | null;
+    label: string;
+};
+type RegulatoryInspectorFilters = {
+    /** Empty means every program. Keys are the comma-joined member course ids. */
+    program_keys: string[];
+    merge_programs: boolean;
+    only_with_data: boolean;
+    delivery_mode: string;
+    program_status: string;
+};
 type CatalogCategory = "all" | "student" | "report" | "regulatory";
 type PaperSize = "letter" | "a4" | "legal";
 type PreviewOrientation = "variant" | "portrait" | "landscape";
@@ -134,6 +159,33 @@ const DEFAULT_REPORT_FILTERS: ReportFilters = {
     year_level_filter: "all",
     status_filter: "active",
 };
+
+const DEFAULT_REGULATORY_FILTERS: RegulatoryInspectorFilters = {
+    program_keys: [],
+    merge_programs: true,
+    only_with_data: false,
+    delivery_mode: "all",
+    program_status: "all",
+};
+
+const CHED_PROGRAM_STATUS_OPTIONS = [
+    { value: "all", label: "All program statuses" },
+    { value: "CO", label: "CO — New" },
+    { value: "PO", label: "PO — Phased Out" },
+    { value: "DO", label: "DO — Discontinued" },
+    { value: "NO", label: "NO — Newly Operating" },
+    { value: "NA", label: "NA — Not Applicable" },
+];
+
+const CHED_DELIVERY_MODE_OPTIONS = [
+    { value: "all", label: "All delivery modes" },
+    { value: "SE", label: "SE — Serial" },
+    { value: "TR", label: "TR — Trisemester" },
+    { value: "SD", label: "SD — Semestral" },
+    { value: "TD", label: "TD — Trimester" },
+    { value: "DE", label: "DE — Dual" },
+    { value: "OT", label: "OT — Other" },
+];
 
 const CATALOG_CATEGORIES: Array<{ key: CatalogCategory; label: string }> = [
     { key: "all", label: "All templates" },
@@ -199,40 +251,36 @@ function resolveCurrentSemesterLabel(filters: SemesterSelectorProps): string {
     return filters.availableSemesters?.[currentSemester] ?? `Semester ${currentSemester}`;
 }
 
-function parsePositiveIntegerFilter(value: string): number | null {
-    const parsed = Number(value);
+function resolveRegulatoryCourseFilter(regulatoryFilters: RegulatoryInspectorFilters, programs: RegulatoryProgramOption[]): string {
+    if (regulatoryFilters.program_keys.length === 0) return "all";
 
-    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
-}
+    const courseIds = programs
+        .filter((program) => regulatoryFilters.program_keys.includes(program.key))
+        .flatMap((program) => program.course_ids)
+        .filter((id) => Number.isInteger(id) && id > 0);
 
-function resolveRegulatoryCourseFilter(reportFilters: ReportFilters, availableCourses: AvailableCourse[]): string | number {
-    if (reportFilters.course_filter === "all") return "all";
+    // Every ticked program resolves to the same rows as "all", so keep the short form.
+    if (courseIds.length === 0) return "all";
 
-    const selectedCourse = availableCourses.find((course) => course.code === reportFilters.course_filter);
-
-    return selectedCourse?.id ?? parsePositiveIntegerFilter(reportFilters.course_filter) ?? "all";
-}
-
-function resolveRegulatoryDepartmentFilter(reportFilters: ReportFilters, availableCourses: AvailableCourse[]): string | number {
-    if (reportFilters.department_filter === "all") return "all";
-
-    const selectedCourse = availableCourses.find((course) => course.code === reportFilters.course_filter);
-    if (selectedCourse?.department === reportFilters.department_filter && selectedCourse.department_id) return selectedCourse.department_id;
-
-    return parsePositiveIntegerFilter(reportFilters.department_filter) ?? "all";
+    return Array.from(new Set(courseIds)).join(",");
 }
 
 function buildRegulatoryReportQuery(
-    reportFilters: ReportFilters,
-    availableCourses: AvailableCourse[],
+    regulatoryFilters: RegulatoryInspectorFilters,
+    programs: RegulatoryProgramOption[],
+    departmentFilter: string,
     schoolYear: string,
     semester: number | null,
 ): Record<string, string | number | null | undefined> {
     return {
         school_year: schoolYear,
         semester,
-        department_filter: resolveRegulatoryDepartmentFilter(reportFilters, availableCourses),
-        course_filter: resolveRegulatoryCourseFilter(reportFilters, availableCourses),
+        department_filter: departmentFilter,
+        course_filter: resolveRegulatoryCourseFilter(regulatoryFilters, programs),
+        merge_programs: regulatoryFilters.merge_programs ? "1" : "0",
+        only_with_data: regulatoryFilters.only_with_data ? "1" : "0",
+        delivery_mode: regulatoryFilters.delivery_mode,
+        program_status: regulatoryFilters.program_status,
     };
 }
 
@@ -461,6 +509,175 @@ function buildClientPreview(template: TemplateKey, variant: string, selectedStud
         : buildSampleOperationalReport(template, variant);
 }
 
+function RegulatoryProgramPicker({
+    programs,
+    selectedKeys,
+    onChange,
+    isLoading,
+    errorMessage,
+    onRetry,
+}: {
+    programs: RegulatoryProgramOption[];
+    selectedKeys: string[];
+    onChange: (keys: string[]) => void;
+    isLoading: boolean;
+    errorMessage: string | null;
+    onRetry: () => void;
+}) {
+    const [open, setOpen] = useState(false);
+    const [query, setQuery] = useState("");
+
+    const filteredPrograms = useMemo(() => {
+        const normalized = query.trim().toLowerCase();
+
+        if (!normalized) return programs;
+
+        return programs.filter((program) =>
+            [program.title, program.program_code, program.department, program.course_codes.join(" ")].filter(Boolean).join(" ").toLowerCase().includes(normalized),
+        );
+    }, [programs, query]);
+
+    const selectedSet = useMemo(() => new Set(selectedKeys), [selectedKeys]);
+    const allVisibleSelected = filteredPrograms.length > 0 && filteredPrograms.every((program) => selectedSet.has(program.key));
+
+    const toggleProgram = (key: string): void => {
+        onChange(selectedSet.has(key) ? selectedKeys.filter((item) => item !== key) : [...selectedKeys, key]);
+    };
+
+    const toggleAllVisible = (): void => {
+        if (allVisibleSelected) {
+            const visible = new Set(filteredPrograms.map((program) => program.key));
+            onChange(selectedKeys.filter((key) => !visible.has(key)));
+            return;
+        }
+
+        onChange(Array.from(new Set([...selectedKeys, ...filteredPrograms.map((program) => program.key)])));
+    };
+
+    const triggerLabel = selectedKeys.length === 0 ? "All programs" : selectedKeys.length === 1 ? "1 program" : `${selectedKeys.length} programs`;
+
+    return (
+        <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="ched-program-picker">Programs</Label>
+                <span className="text-muted-foreground text-[11px]">
+                    {programs.length === 0 ? "No programs" : `${selectedKeys.length || "All"} of ${programs.length}`}
+                </span>
+            </div>
+            {errorMessage !== null ? (
+                <div className="space-y-2 rounded-xl border border-dashed p-3 text-xs">
+                    <p className="text-destructive">{errorMessage}</p>
+                    <Button type="button" size="sm" variant="outline" onClick={onRetry}>
+                        <RefreshCw className="size-3.5" aria-hidden="true" />
+                        Retry
+                    </Button>
+                </div>
+            ) : (
+                <Popover
+                    open={open}
+                    onOpenChange={(nextOpen) => {
+                        setOpen(nextOpen);
+                        if (!nextOpen) setQuery("");
+                    }}
+                >
+                    <PopoverTrigger asChild>
+                        <Button
+                            id="ched-program-picker"
+                            type="button"
+                            variant="outline"
+                            role="combobox"
+                            aria-expanded={open}
+                            disabled={isLoading}
+                            className="h-auto min-h-10 w-full justify-between py-2"
+                        >
+                            <span className={cn("truncate text-left", selectedKeys.length === 0 && "text-muted-foreground")}>
+                                {isLoading ? "Loading programs..." : triggerLabel}
+                            </span>
+                            <ChevronDown className="size-4 shrink-0 opacity-50" aria-hidden="true" />
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-[min(24rem,calc(100vw-2rem))] sm:w-[380px] p-0 shadow-lg">
+                        <div className="space-y-2 p-2">
+                            <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search programs" className="h-8" />
+                            <div className="flex items-center justify-between gap-2">
+                                <Label className="flex cursor-pointer items-center gap-2 py-0 text-xs font-normal">
+                                    <Checkbox checked={allVisibleSelected} onCheckedChange={toggleAllVisible} aria-label="Toggle every visible program" />
+                                    {allVisibleSelected ? "Clear visible" : "Select visible"}
+                                </Label>
+                                <span className="text-muted-foreground text-[11px]">{filteredPrograms.length} shown</span>
+                            </div>
+                            <ScrollArea className="max-h-72 pr-1">
+                                {filteredPrograms.length === 0 ? (
+                                    <p className="text-muted-foreground px-2 py-6 text-center text-xs">
+                                        {isLoading ? "Loading programs..." : "No programs found."}
+                                    </p>
+                                ) : (
+                                    <ul className="space-y-0.5">
+                                        {filteredPrograms.map((program) => {
+                                            const isSelected = selectedSet.has(program.key);
+
+                                            return (
+                                                <li key={program.key}>
+                                                    <label className="hover:bg-muted/60 flex cursor-pointer items-start gap-2.5 rounded-md p-2 text-xs transition-colors">
+                                                        <Checkbox
+                                                            checked={isSelected}
+                                                            onCheckedChange={() => toggleProgram(program.key)}
+                                                            aria-label={`Toggle ${program.title}`}
+                                                            className="mt-0.5"
+                                                        />
+                                                        <span className="min-w-0 flex-1">
+                                                            <span className="block font-medium leading-snug">{program.title}</span>
+                                                            <span className="text-muted-foreground block text-[11px] leading-tight mt-0.5">
+                                                                {[
+                                                                    program.program_code,
+                                                                    program.department,
+                                                                    program.curriculum_years.join(", "),
+                                                                    program.course_ids.length > 1 ? `${program.course_ids.length} course records` : null,
+                                                                ]
+                                                                    .filter(Boolean)
+                                                                    .join(" · ")}
+                                                            </span>
+                                                        </span>
+                                                    </label>
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                )}
+                            </ScrollArea>
+                        </div>
+                    </PopoverContent>
+                </Popover>
+            )}
+            {selectedKeys.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1">
+                    {selectedKeys.slice(0, 4).map((key) => {
+                        const program = programs.find((item) => item.key === key);
+
+                        return (
+                            <Badge key={key} variant="secondary" className="max-w-full gap-1 text-[10px]">
+                                <span className="truncate">{program?.program_code || program?.title || key}</span>
+                                <button
+                                    type="button"
+                                    aria-label={`Remove ${program?.title ?? key}`}
+                                    onClick={() => onChange(selectedKeys.filter((item) => item !== key))}
+                                    className="hover:text-foreground text-muted-foreground"
+                                >
+                                    <X className="size-3" aria-hidden="true" />
+                                </button>
+                            </Badge>
+                        );
+                    })}
+                    {selectedKeys.length > 4 && <span className="text-muted-foreground text-[11px]">+{selectedKeys.length - 4} more</span>}
+                    <button type="button" className="text-muted-foreground hover:text-foreground ml-auto text-[11px] underline" onClick={() => onChange([])}>
+                        Clear all
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function RegistrarReports({ user, filters, regulatory_reports, assessment_export_options }: RegistrarReportsProps) {
     const availableReportKeys = useMemo(() => new Set(regulatory_reports?.available_report_keys ?? []), [regulatory_reports?.available_report_keys]);
     const availableTemplates = useMemo(
@@ -480,6 +697,10 @@ export default function RegistrarReports({ user, filters, regulatory_reports, as
     const [availableCourses, setAvailableCourses] = useState<AvailableCourse[]>([]);
     const [isLoadingAvailableCourses, setIsLoadingAvailableCourses] = useState(false);
     const [courseOptionsError, setCourseOptionsError] = useState<string | null>(null);
+    const [regulatoryFilters, setRegulatoryFilters] = useState<RegulatoryInspectorFilters>(DEFAULT_REGULATORY_FILTERS);
+    const [regulatoryPrograms, setRegulatoryPrograms] = useState<RegulatoryProgramOption[]>([]);
+    const [isLoadingRegulatoryPrograms, setIsLoadingRegulatoryPrograms] = useState(false);
+    const [regulatoryProgramsError, setRegulatoryProgramsError] = useState<string | null>(null);
     const [purpose, setPurpose] = useState("Scholarship, employment, or other lawful purpose");
     const [selectedVariants, setSelectedVariants] = useState<Record<TemplateKey, string>>(() => getDefaultTemplateVariants());
     const [previewOrientation, setPreviewOrientation] = useState<PreviewOrientation>("variant");
@@ -589,6 +810,38 @@ export default function RegistrarReports({ user, filters, regulatory_reports, as
         }
     }, []);
 
+    const loadRegulatoryPrograms = useCallback(async (): Promise<void> => {
+        setIsLoadingRegulatoryPrograms(true);
+        setRegulatoryProgramsError(null);
+
+        try {
+            const response = await fetch(buildUrl("administrators.registrar.reports.regulatory.course-options", {}), {
+                headers: { Accept: "application/json" },
+            });
+            const payload = (await response.json().catch(() => ({}))) as {
+                programs?: RegulatoryProgramOption[];
+                message?: string;
+            };
+
+            if (!response.ok) {
+                throw new Error(payload.message ?? "Program options could not be loaded.");
+            }
+
+            setRegulatoryPrograms(Array.isArray(payload.programs) ? payload.programs : []);
+        } catch (error) {
+            setRegulatoryPrograms([]);
+            const message = error instanceof Error ? error.message : "Program options could not be loaded.";
+            setRegulatoryProgramsError(message);
+            toast.error(message);
+        } finally {
+            setIsLoadingRegulatoryPrograms(false);
+        }
+    }, []);
+
+    const updateRegulatoryFilters = (updater: SetStateAction<RegulatoryInspectorFilters>) => {
+        setRegulatoryFilters(updater);
+    };
+
     const addRecentOutput = useCallback(
         (format: RecentOutput["format"], detail: string) => {
             setRecentOutputs((current) =>
@@ -646,7 +899,8 @@ export default function RegistrarReports({ user, filters, regulatory_reports, as
             .then((payload: { subjects?: typeof availableSubjects }) => setAvailableSubjects(payload.subjects ?? []))
             .catch(() => toast.error("Subject options could not be loaded. Please try again."));
         void loadCourseOptions();
-    }, [loadCourseOptions]);
+        void loadRegulatoryPrograms();
+    }, [loadCourseOptions, loadRegulatoryPrograms]);
 
     const handleTemplateSelect = (key: TemplateKey) => {
         const nextVariant = selectedVariants[key] ?? getTemplateDefinition(key).defaultVariant;
@@ -654,6 +908,7 @@ export default function RegistrarReports({ user, filters, regulatory_reports, as
         setPreviewData(buildClientPreview(key, nextVariant, selectedStudent));
         setIsSamplePreview(!isRegulatoryTemplate(getTemplateDefinition(key)));
         setReportFilters(DEFAULT_REPORT_FILTERS);
+        setRegulatoryFilters(DEFAULT_REGULATORY_FILTERS);
     };
 
     const handleVariantSelect = (key: TemplateKey, variant: string) => {
@@ -694,7 +949,13 @@ export default function RegistrarReports({ user, filters, regulatory_reports, as
                   ? buildRegulatoryUrl(
                         "administrators.registrar.reports.regulatory.preview",
                         regulatoryReportKey,
-                        buildRegulatoryReportQuery(reportFilters, availableCourses, currentSchoolYear, currentSemester),
+                        buildRegulatoryReportQuery(
+                            regulatoryFilters,
+                            regulatoryPrograms,
+                            reportFilters.department_filter,
+                            currentSchoolYear,
+                            currentSemester,
+                        ),
                     )
                   : buildUrl("administrators.enrollments.reports.data", {
                         report_type: activeTemplate,
@@ -714,12 +975,13 @@ export default function RegistrarReports({ user, filters, regulatory_reports, as
     }, [
         activeTemplate,
         activeVariant.key,
-        availableCourses,
         currentSchoolYear,
         currentSemester,
         isStudent,
         purpose,
-        reportFilters,
+        regulatoryFilters,
+        regulatoryPrograms,
+        reportFilters.department_filter,
         selectedStudent,
         template,
     ]);
@@ -778,7 +1040,13 @@ export default function RegistrarReports({ user, filters, regulatory_reports, as
         const url = buildRegulatoryUrl(
             "administrators.registrar.reports.regulatory.export",
             template.regulatoryReportKey,
-            buildRegulatoryReportQuery(reportFilters, availableCourses, currentSchoolYear, currentSemester),
+            buildRegulatoryReportQuery(
+                regulatoryFilters,
+                regulatoryPrograms,
+                reportFilters.department_filter,
+                currentSchoolYear,
+                currentSemester,
+            ),
         );
         const toastId = "regulatory-report-export";
         toast.loading("Queueing Excel export...", { id: toastId });
@@ -843,23 +1111,35 @@ export default function RegistrarReports({ user, filters, regulatory_reports, as
     ];
     const regulatoryDepartmentOptions = useMemo(() => {
         const departments = new Map<string, string>();
-        availableCourses.forEach((course) => {
-            if (course.department_id) departments.set(String(course.department_id), course.department ?? `Department ${course.department_id}`);
+        regulatoryPrograms.forEach((program) => {
+            if (program.department_id) {
+                departments.set(String(program.department_id), program.department ?? `Department ${program.department_id}`);
+            }
         });
 
         return [{ value: "all", label: "All departments" }, ...Array.from(departments, ([value, label]) => ({ value, label }))];
-    }, [availableCourses]);
+    }, [regulatoryPrograms]);
     const departmentOptions = activeIsRegulatory ? regulatoryDepartmentOptions : OPERATIONAL_DEPARTMENT_OPTIONS;
     const selectedCourseLabel = courseOptions.find((option) => option.value === reportFilters.course_filter)?.label ?? "All courses";
     const selectedSubjectLabel = subjectOptions.find((option) => option.value === reportFilters.subject_filter)?.label ?? "All subjects";
     const selectedDepartmentLabel = departmentOptions.find((option) => option.value === reportFilters.department_filter)?.label ?? "All departments";
+    const selectedProgramCount = regulatoryFilters.program_keys.length;
+    const selectedProgramLabel = activeIsRegulatory
+        ? selectedProgramCount === 0
+            ? "All programs"
+            : selectedProgramCount === 1
+              ? (regulatoryPrograms.find((program) => program.key === regulatoryFilters.program_keys[0])?.label ?? "1 program")
+              : `${selectedProgramCount} programs`
+        : selectedCourseLabel;
     const selectedPeriodLabel = `${currentSchoolYear || "Current school year"}${currentSemester ? ` · ${resolveCurrentSemesterLabel(filters)}` : ""}`;
     const scopeSummary = isStudent
         ? selectedStudent
             ? selectedStudent.full_name
             : "Sample student only"
         : activeIsRegulatory
-          ? `${selectedDepartmentLabel} · ${selectedCourseLabel} · ${selectedPeriodLabel}`
+          ? [selectedDepartmentLabel, selectedProgramLabel, selectedPeriodLabel, regulatoryFilters.merge_programs ? "" : "Unmerged courses"]
+              .filter(Boolean)
+              .join(" · ")
           : [
                 activeTemplate === "enrolled_by_subject" ? selectedSubjectLabel : selectedCourseLabel,
                 selectedDepartmentLabel,
@@ -1355,17 +1635,13 @@ export default function RegistrarReports({ user, filters, regulatory_reports, as
                                                             <p className="font-semibold">Regulatory period</p>
                                                             <p className="text-muted-foreground mt-1">{selectedPeriodLabel}</p>
                                                         </div>
-                                                        <Combobox
-                                                            label="CHED course"
-                                                            options={courseOptions}
-                                                            value={reportFilters.course_filter}
-                                                            onValueChange={(value) =>
-                                                                updateReportFilters((current) => ({ ...current, course_filter: value }))
-                                                            }
-                                                            placeholder="All courses"
-                                                            searchPlaceholder="Search courses"
-                                                            emptyText={isLoadingAvailableCourses ? "Loading courses..." : "No courses found."}
-                                                            disabled={isLoadingAvailableCourses}
+                                                        <RegulatoryProgramPicker
+                                                            programs={regulatoryPrograms}
+                                                            selectedKeys={regulatoryFilters.program_keys}
+                                                            onChange={(keys) => updateRegulatoryFilters((current) => ({ ...current, program_keys: keys }))}
+                                                            isLoading={isLoadingRegulatoryPrograms}
+                                                            errorMessage={regulatoryProgramsError}
+                                                            onRetry={() => void loadRegulatoryPrograms()}
                                                         />
                                                         <div className="space-y-2">
                                                             <Label>CHED department</Label>
@@ -1386,6 +1662,92 @@ export default function RegistrarReports({ user, filters, regulatory_reports, as
                                                                     ))}
                                                                 </SelectContent>
                                                             </Select>
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <Label htmlFor="ched-delivery-mode">Delivery mode</Label>
+                                                            <Select
+                                                                value={regulatoryFilters.delivery_mode}
+                                                                onValueChange={(value) => updateRegulatoryFilters((current) => ({ ...current, delivery_mode: value }))}
+                                                            >
+                                                                <SelectTrigger id="ched-delivery-mode">
+                                                                    <SelectValue placeholder="All delivery modes" />
+                                                                </SelectTrigger>
+                                                                <SelectContent>
+                                                                    {CHED_DELIVERY_MODE_OPTIONS.map((option) => (
+                                                                        <SelectItem key={option.value} value={option.value}>
+                                                                            {option.label}
+                                                                        </SelectItem>
+                                                                    ))}
+                                                                </SelectContent>
+                                                            </Select>
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <Label htmlFor="ched-program-status">Program status</Label>
+                                                            <Select
+                                                                value={regulatoryFilters.program_status}
+                                                                onValueChange={(value) => updateRegulatoryFilters((current) => ({ ...current, program_status: value }))}
+                                                            >
+                                                                <SelectTrigger id="ched-program-status">
+                                                                    <SelectValue placeholder="All program statuses" />
+                                                                </SelectTrigger>
+                                                                <SelectContent>
+                                                                    {CHED_PROGRAM_STATUS_OPTIONS.map((option) => (
+                                                                        <SelectItem key={option.value} value={option.value}>
+                                                                            {option.label}
+                                                                        </SelectItem>
+                                                                    ))}
+                                                                </SelectContent>
+                                                            </Select>
+                                                        </div>
+                                                        <div className="space-y-3 border-t pt-4">
+                                                            <div className="flex items-start justify-between gap-3">
+                                                                <div className="space-y-0.5">
+                                                                    <Label htmlFor="ched-merge-programs">Merge curriculum variants</Label>
+                                                                    <p className="text-muted-foreground text-xs">
+                                                                        One row per program. Turn off to list every curriculum-year course separately.
+                                                                    </p>
+                                                                </div>
+                                                                <Switch
+                                                                    id="ched-merge-programs"
+                                                                    checked={regulatoryFilters.merge_programs}
+                                                                    onCheckedChange={(checked) =>
+                                                                        updateRegulatoryFilters((current) => ({ ...current, merge_programs: checked }))
+                                                                    }
+                                                                />
+                                                            </div>
+                                                            <div className="flex items-start justify-between gap-3">
+                                                                <div className="space-y-0.5">
+                                                                    <Label htmlFor="ched-only-with-data">Only programs with data</Label>
+                                                                    <p className="text-muted-foreground text-xs">Hide programs with no enrollees and no graduates this period.</p>
+                                                                </div>
+                                                                <Switch
+                                                                    id="ched-only-with-data"
+                                                                    checked={regulatoryFilters.only_with_data}
+                                                                    onCheckedChange={(checked) =>
+                                                                        updateRegulatoryFilters((current) => ({ ...current, only_with_data: checked }))
+                                                                    }
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                        <div className="pt-2">
+                                                            <Button
+                                                                type="button"
+                                                                className="w-full gap-2"
+                                                                onClick={() => void loadPreview()}
+                                                                disabled={isLoadingPreview}
+                                                            >
+                                                                {isLoadingPreview ? (
+                                                                    <>
+                                                                        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                                                                        Updating preview...
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <RefreshCw className="size-4" aria-hidden="true" />
+                                                                        Update preview
+                                                                    </>
+                                                                )}
+                                                            </Button>
                                                         </div>
                                                     </div>
                                                 ) : (

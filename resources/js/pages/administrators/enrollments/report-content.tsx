@@ -13,6 +13,8 @@ type ChedEnrollmentYearKey = "year_5" | "year_6" | "year_7";
 type ChedReportRow = {
     program_title: string;
     program_code: string;
+    merged_course_count?: number;
+    merged_course_codes?: string[];
     major: string | null;
     major_code: string | null;
     with_thesis: string;
@@ -557,7 +559,7 @@ function ChedReportContent({ data }: ReportContentProps) {
     if (directReport?.type !== "ched_eform_bc") return null;
 
     const report = directReport as ReportPayload & {
-        summary?: { total_programs?: number; total_enrolled?: number; total_graduates?: number };
+        summary?: { total_programs?: number; total_course_records?: number; total_enrolled?: number; total_graduates?: number };
         sheets?: Record<string, ChedReportRow[]>;
     };
     const school = data.school as { name: string; logo: string; contact: string; email: string; address: string } | undefined;
@@ -603,7 +605,11 @@ function ChedReportContent({ data }: ReportContentProps) {
 
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "8pt", color: "#555", marginBottom: 12 }}>
                 <div>
-                    Programs: <strong>{report.summary?.total_programs ?? 0}</strong> | Enrolment:{" "}
+                    Programs: <strong>{report.summary?.total_programs ?? 0}</strong>
+                    {(report.summary?.total_course_records ?? 0) > (report.summary?.total_programs ?? 0) && (
+                        <> (from {report.summary?.total_course_records} course records)</>
+                    )}{" "}
+                    | Enrolment:{" "}
                     <strong>{report.summary?.total_enrolled ?? 0}</strong> | Graduates: <strong>{report.summary?.total_graduates ?? 0}</strong>
                 </div>
                 {(generatedAt || generatedBy) && (
@@ -712,7 +718,19 @@ function ChedReportContent({ data }: ReportContentProps) {
                                 <tbody>
                                     {rows.map((row, rowIndex) => (
                                         <tr key={rowIndex} style={{ backgroundColor: rowIndex % 2 === 1 ? "#fafafa" : "#fff" }}>
-                                            <td style={{ ...tdStyle, fontWeight: "500" }}>{row.program_title}</td>
+                                            <td
+                                                style={{ ...tdStyle, fontWeight: "500" }}
+                                                title={
+                                                    (row.merged_course_count ?? 1) > 1
+                                                        ? `Merged from ${row.merged_course_count} course records: ${(row.merged_course_codes ?? []).join(", ")}`
+                                                        : undefined
+                                                }
+                                            >
+                                                {row.program_title}
+                                                {(row.merged_course_count ?? 1) > 1 && (
+                                                    <span style={{ color: "#666", fontWeight: "400" }}> ({row.merged_course_count} curric.)</span>
+                                                )}
+                                            </td>
                                             <td style={{ ...tdStyle, textAlign: "center" }}>{row.program_code}</td>
                                             <td style={tdStyle}>{row.major || "—"}</td>
                                             <td style={{ ...tdStyle, textAlign: "center" }}>{row.program_status}</td>

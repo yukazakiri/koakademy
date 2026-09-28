@@ -8,6 +8,7 @@ use App\Exports\RegistrarAnalyticsExport;
 use App\Http\Requests\Administrators\ConfirmRegistrarStudentProfileImportRequest;
 use App\Http\Requests\Administrators\StoreRegistrarStudentProfileImportRequest;
 use App\Http\Requests\RegistrarAnalyticsFilterRequest;
+use App\Models\Course;
 use App\Models\RegistrarStudentProfileImport;
 use App\Models\School;
 use App\Models\Student;
@@ -20,6 +21,8 @@ use App\Services\RegistrarAnalyticsService;
 use App\Services\RegistrarStudentProfileImportService;
 use App\Services\RegulatoryReportRegistry;
 use App\Services\TenantContext;
+use App\Support\ChedProgramGroup;
+use App\Support\ChedProgramGrouper;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -38,6 +41,7 @@ final class AdministratorRegistrarInsightsController extends Controller
         private readonly QueueRegulatoryReportExportService $regulatoryExportQueue,
         private readonly AssessmentExportPayloadService $assessmentExportPayloads,
         private readonly TenantContext $tenantContext,
+        private readonly ChedProgramGrouper $programGrouper,
     ) {}
 
     public function analytics(RegistrarAnalyticsFilterRequest $request): Response|RedirectResponse
@@ -153,6 +157,62 @@ final class AdministratorRegistrarInsightsController extends Controller
         ]);
     }
 
+    /**
+     * Programs offered by the school, grouped so the inspector can tick one
+     * entry per program instead of one per curriculum-year course row.
+     */
+    public function regulatoryCourseOptions(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($user instanceof User, 401);
+        Gate::authorize('viewAny', StudentEnrollment::class);
+
+        $school = $this->tenantContext->getCurrentSchool();
+
+        $query = Course::query()
+            ->with(['department:id,code,name', 'courseType:id,name'])
+            ->where('is_active', true)
+            ->orderBy('code');
+
+        if (! empty($school)) {
+            $query->where('school_id', $school->id);
+        }
+
+        $departmentId = $this->numericFilter($request->query('department_filter', 'all'));
+        if ($departmentId !== 'all') {
+            $query->where('department_id', $departmentId);
+        }
+
+        $courses = $query->get();
+
+        $programs = $this->programGrouper->group($courses)
+            ->map(fn (ChedProgramGroup $program): array => [
+                'key' => implode(',', $program->courseIds),
+                'title' => $program->title,
+                'program_code' => $program->programCode,
+                'course_ids' => $program->courseIds,
+                'course_codes' => $program->courses
+                    ->map(static fn (Course $member): string => (string) $member->code)
+                    ->unique()
+                    ->values()
+                    ->all(),
+                'curriculum_years' => $program->courses
+                    ->map(static fn (Course $member): string => mb_trim((string) $member->curriculum_year))
+                    ->filter()
+                    ->unique()
+                    ->values()
+                    ->all(),
+                'department_id' => $program->representative->department_id,
+                'department' => $program->representative->department?->code,
+                'label' => $program->programCode !== ''
+                    ? sprintf('%s - %s', $program->programCode, $program->title)
+                    : $program->title,
+            ])
+            ->values();
+
+        return response()->json(['programs' => $programs]);
+    }
+
     public function chedPreview(Request $request): JsonResponse
     {
         return $this->regulatoryPreview($request, RegulatoryReportRegistry::CHED_EFORM_BC);
@@ -222,16 +282,22 @@ final class AdministratorRegistrarInsightsController extends Controller
     }
 
     /**
-     * @return array{school_year: string|null, semester: int|null, department_id: int|string, course_id: int|string, school_id: int}
+     * @return array{school_year: string|null, semester: int|null, department_id: int|string, course_ids: list<int>, merge_programs: bool, only_with_data: bool, delivery_mode: string, program_status: string, school_id: int}
      */
     private function validatedReportFilters(Request $request, School $school): array
     {
-        /** @var array{school_year?: string|null, semester?: int|string|null, department_filter?: string|null, course_filter?: string|null} $validated */
+        /** @var array{school_year?: string|null, semester?: int|string|null, department_filter?: string|null, course_filter?: string|array|null, merge_programs?: mixed, only_with_data?: mixed, delivery_mode?: string|null, program_status?: string|null} $validated */
         $validated = $request->validate([
             'school_year' => ['nullable', 'string', 'regex:/^\d{4}(?: - |-)\d{4}$/'],
             'semester' => ['nullable', 'integer', 'between:1,3'],
             'department_filter' => ['nullable', 'string', 'regex:/^(all|[1-9]\d*)$/'],
-            'course_filter' => ['nullable', 'string', 'regex:/^(all|[1-9]\d*)$/'],
+            // Comma separated ids let the inspector show only the ticked programs.
+            'course_filter' => ['nullable', 'regex:/^(all|[1-9]\d*(?:,[1-9]\d*)*)$/'],
+            'course_filter.*' => ['integer', 'min:1'],
+            'merge_programs' => ['nullable'],
+            'only_with_data' => ['nullable'],
+            'delivery_mode' => ['nullable', 'string', 'max:50'],
+            'program_status' => ['nullable', 'string', 'max:50'],
         ]);
 
         return [
@@ -240,9 +306,62 @@ final class AdministratorRegistrarInsightsController extends Controller
                 : null,
             'semester' => isset($validated['semester']) ? (int) $validated['semester'] : null,
             'department_id' => $this->numericFilter($validated['department_filter'] ?? 'all'),
-            'course_id' => $this->numericFilter($validated['course_filter'] ?? 'all'),
+            'course_ids' => $this->courseIdList($validated['course_filter'] ?? 'all'),
+            'merge_programs' => $this->toggleFilter($validated['merge_programs'] ?? true, default: true),
+            'only_with_data' => $this->toggleFilter($validated['only_with_data'] ?? false, default: false),
+            'delivery_mode' => $this->stringFilter($validated['delivery_mode'] ?? null),
+            'program_status' => $this->stringFilter($validated['program_status'] ?? null),
             'school_id' => $school->id,
         ];
+    }
+
+    /**
+     * Read a checkbox toggle that may arrive as "1"/"0", true/false, or on/off.
+     */
+    private function toggleFilter(mixed $value, bool $default): bool
+    {
+        if ($value === null || $value === '') {
+            return $default;
+        }
+
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        return ! in_array(
+            mb_strtolower(mb_trim((string) $value)),
+            ['0', 'false', 'off', 'no'],
+            true,
+        );
+    }
+
+    private function stringFilter(mixed $value): string
+    {
+        $normalised = mb_strtoupper(mb_trim((string) $value));
+
+        return $normalised === '' || $normalised === 'ALL' ? 'all' : $normalised;
+    }
+
+    /**
+     * Normalise a course selection into a list of ids. An empty list means
+     * "every program", which is the default scope for the report.
+     *
+     * @return list<int>
+     */
+    private function courseIdList(mixed $value): array
+    {
+        $values = is_array($value) ? $value : explode(',', (string) $value);
+
+        if ($values === ['all']) {
+            return [];
+        }
+
+        return collect($values)
+            ->filter(static fn (mixed $id): bool => is_numeric($id) && (int) $id > 0)
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function numericFilter(string $value): int|string

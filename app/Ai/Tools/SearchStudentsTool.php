@@ -25,7 +25,7 @@ Use it whenever the question targets a population rather than one named person. 
 It also handles named lookups: a single `query` (name, "LAST, FIRST M.", student number, or email), or `queries` / `names` for a pasted roster of up to 150 names at once.
 
 Notes:
-- `program` accepts a program code ("BSIT"), a title fragment ("Computer Studies"), or a department code. If it returns `unknown_program`, retry with one of `available_programs`.
+- `program` accepts a program code ("BSIT"), a title fragment ("Computer Studies"), or a department code, and a department code returns every program in that department. If it returns `unknown_program` or `ambiguous_program`, retry with one of `available_programs`.
 - Omitting `school_year` and `semester` uses the current term, which is what "this semester" means.
 - `enrollment_basis` decides who counts for the term. It defaults to `enrollment` (a real term enrollment record, not just a profile flag) for any population question, and to `any` for a bare name search. Pass `status` when the user wants students whose profile status is enrolled or on leave, or `class` when they mean students who have an active class this term.
 - Set `fields` to `emails` when the user wants only email addresses; it returns a compact de-duplicated `emails` array.
@@ -49,6 +49,13 @@ DESCRIPTION;
             $identifiers = $this->requestedIdentifiers($request, $directory);
 
             if (is_array($identifiers)) {
+                // A pasted list is a bulk read even when every entry is a single
+                // person, so it needs the bulk-read permission rather than the
+                // single-record view permission.
+                if (! $this->canExportCohort()) {
+                    return $this->encode($this->deniedCohort());
+                }
+
                 if (count($identifiers) > StudentDirectoryQuery::MAX_BATCH_SIZE) {
                     return $this->encode([
                         'error' => true,
@@ -81,8 +88,17 @@ DESCRIPTION;
                 'offset' => 'nullable|integer|min:0',
             ]);
 
+            // Any structured filter turns this from "look up the student I
+            // named" into "export a cohort", which is a bulk read. A bare
+            // name stays available to callers who may only view one record,
+            // because that is how they find the record they are allowed to open.
+            if ($this->isCohortRequest($validated) && ! $this->canExportCohort()) {
+                return $this->encode($this->deniedCohort());
+            }
+
             return $this->encode($this->present($directory->execute([
                 'query' => $identifiers ?? ($validated['query'] ?? null),
+
                 'program' => $validated['program'] ?? null,
                 'course_id' => $validated['course_id'] ?? null,
                 'status' => $validated['status'] ?? null,
@@ -182,6 +198,57 @@ DESCRIPTION;
         return $user->hasRole('super_admin')
             || $user->can('View:Student')
             || $user->can('ViewAny:Student');
+    }
+
+    /**
+     * Whether the caller may read many students at once.
+     *
+     * `View:Student` alone is deliberately not enough. Roles such as security
+     * guard are seeded with `View:Student` but not `ViewAny:Student` because
+     * they verify one person at a time; letting them filter by program and page
+     * through the roster would hand them a bulk export of the whole directory
+     * through the chat box. This mirrors the MCP tool, which already requires
+     * `ViewAny:Student`.
+     */
+    private function canExportCohort(): bool
+    {
+        $user = Auth::user();
+
+        if (! $user instanceof User) {
+            return false;
+        }
+
+        return $user->hasRole('super_admin') || $user->can('ViewAny:Student');
+    }
+
+    /**
+     * Whether the request asks for a population rather than a named person.
+     *
+     * @param  array<string, mixed>  $filters
+     */
+    private function isCohortRequest(array $filters): bool
+    {
+        foreach (['program', 'course_id', 'status', 'year_level', 'student_type', 'gender', 'school_year', 'semester', 'enrollment_basis', 'fields'] as $key) {
+            if (($filters[$key] ?? null) !== null) {
+                return true;
+            }
+        }
+
+        // Paging is only meaningful across a population; a bare name lookup
+        // returns the one match and stops.
+        return ($filters['offset'] ?? null) !== null;
+    }
+
+    /**
+     * @return array{error: true, message: string, required_permission: string}
+     */
+    private function deniedCohort(): array
+    {
+        return [
+            'error' => true,
+            'message' => 'You can look up a student by name, but exporting a filtered cohort requires the ViewAny:Student permission. Ask an administrator for access, or narrow the request to one named student.',
+            'required_permission' => 'ViewAny:Student',
+        ];
     }
 
     /**

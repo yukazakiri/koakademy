@@ -303,7 +303,7 @@ it('reports missing email addresses rather than silently dropping rows', functio
 
 it('serves the copilot tool the population answer the tool previously could not give', function (): void {
     $user = User::factory()->create();
-    $user->givePermissionTo('View:Student');
+    $user->givePermissionTo('ViewAny:Student');
     Auth::login($user);
 
     $bsit = makeProgram('BSIT', 'Bachelor of Science in Information Technology');
@@ -445,9 +445,56 @@ it('refuses the directory to a caller without student read permission', function
         ->and($data['message'])->toContain('not permitted');
 });
 
+it('separates a single-record lookup from a cohort export', function (): void {
+    // Security guard is seeded with View:Student but not ViewAny:Student,
+    // because it verifies one person at a time. It must not be able to turn the
+    // chat box into a directory export.
+    $guard = User::factory()->create();
+    $guard->givePermissionTo('View:Student');
+    Auth::login($guard);
+
+    $bsit = makeProgram('BSIT', 'Information Technology');
+    $student = Student::factory()->create([
+        'course_id' => $bsit->id,
+        'first_name' => 'Juan',
+        'last_name' => 'Dela Cruz',
+    ]);
+
+    $tool = new SearchStudentsTool;
+
+    // A bare name is how a guard finds the person they are allowed to open.
+    $byName = json_decode((string) $tool->handle(new Request([
+        'query' => 'Dela Cruz',
+    ])), true);
+
+    expect($byName['count'])->toBe(1)
+        ->and($byName['students'][0]['student_number'])->toBe((string) $student->student_id);
+
+    foreach ([
+        ['program' => ['BSIT']],
+        ['fields' => 'emails'],
+        ['status' => ['enrolled']],
+        ['school_year' => $this->term],
+        ['offset' => 0],
+    ] as $cohortFilter) {
+        $denied = json_decode((string) $tool->handle(new Request($cohortFilter)), true);
+
+        expect($denied['error'])->toBeTrue()
+            ->and($denied['required_permission'])->toBe('ViewAny:Student');
+    }
+
+    // A pasted list is a bulk read even when each entry is one person.
+    $batch = json_decode((string) $tool->handle(new Request([
+        'queries' => ['Dela Cruz, Juan'],
+    ])), true);
+
+    expect($batch['error'])->toBeTrue()
+        ->and($batch['required_permission'])->toBe('ViewAny:Student');
+});
+
 it('resolves a pasted name list without falling back to a surname-only match', function (): void {
     $admin = User::factory()->create();
-    $admin->givePermissionTo('View:Student');
+    $admin->givePermissionTo('ViewAny:Student');
     Auth::login($admin);
 
     $renelyn = Student::factory()->create([

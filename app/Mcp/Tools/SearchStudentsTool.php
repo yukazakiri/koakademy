@@ -15,7 +15,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
-#[Description('Query the student directory with structured filters: degree program, enrollment status, year level, student type, gender, and academic term. Use this instead of guessing names when a question targets a group of students, such as listing all emails of enrolled BSIT students this semester.')]
+#[Description('Query the student directory with structured filters: degree program, enrollment status, year level, student type, gender, and academic term. Also resolves named lookups, including formatted names ("LAST, FIRST M.") and batches of up to 150 pasted names. Use this instead of guessing names when a question targets a group of students, such as listing all emails of enrolled BSIT students this semester.')]
 #[IsReadOnly]
 final class SearchStudentsTool extends Tool
 {
@@ -26,8 +26,25 @@ final class SearchStudentsTool extends Tool
         $user = $this->requireRead($request);
         $this->requirePermission($user, 'ViewAny:Student', 'You are not permitted to search student records.');
 
+        $directory = app(StudentDirectoryQuery::class);
+
+        $identifiers = $this->requestedIdentifiers($request, $directory);
+
+        if (is_array($identifiers)) {
+            if (count($identifiers) > StudentDirectoryQuery::MAX_BATCH_SIZE) {
+                return Response::structured([
+                    'error' => true,
+                    'message' => 'The batch search limit is '.StudentDirectoryQuery::MAX_BATCH_SIZE.' names per request. Please split your list into batches of '.StudentDirectoryQuery::MAX_BATCH_SIZE.' or fewer.',
+                    'count' => count($identifiers),
+                    'limit' => StudentDirectoryQuery::MAX_BATCH_SIZE,
+                ]);
+            }
+
+            return Response::structured($directory->resolveBatch($identifiers));
+        }
+
         $validated = $request->validate([
-            'query' => ['nullable', 'string', 'max:100'],
+            'query' => ['nullable', 'string', 'max:500'],
             'program' => ['nullable', 'array', 'max:20'],
             'program.*' => ['string', 'max:100'],
             'course_id' => ['nullable', 'integer', 'min:1'],
@@ -46,8 +63,8 @@ final class SearchStudentsTool extends Tool
             'offset' => ['nullable', 'integer', 'min:0'],
         ]);
 
-        $result = app(StudentDirectoryQuery::class)->execute([
-            'query' => $validated['query'] ?? null,
+        $result = $directory->execute([
+            'query' => $identifiers ?? ($validated['query'] ?? null),
             'program' => $validated['program'] ?? null,
             'course_id' => $validated['course_id'] ?? null,
             'status' => $validated['status'] ?? null,
@@ -88,7 +105,11 @@ final class SearchStudentsTool extends Tool
             'semester' => $schema->integer()
                 ->description('Semester filter: 1, 2, or 3 for summer. Defaults to the current semester.'),
             'query' => $schema->string()
-                ->description('Optional free-text match on name, student number, LRN, or email.'),
+                ->description('Free-text match on name, student number, LRN, or email, or a formatted name ("CRUZ, JUAN D."). A value containing line breaks is treated as a pasted list of names.'),
+            'queries' => $schema->array()->items($schema->string())
+                ->description('Resolve a pasted roster of names in one call (maximum '.StudentDirectoryQuery::MAX_BATCH_SIZE.' names). One row is returned per entry, including entries that matched nothing.'),
+            'names' => $schema->array()->items($schema->string())
+                ->description('Alias for queries.'),
             'fields' => $schema->string()
                 ->description('summary (default), detailed, or emails for a compact de-duplicated address list.'),
             'limit' => $schema->integer()
@@ -96,6 +117,33 @@ final class SearchStudentsTool extends Tool
             'offset' => $schema->integer()
                 ->description('Row offset for paging while has_more is true.'),
         ];
+    }
+
+    /**
+     * Decide whether the caller asked for a batch of names or a single query.
+     *
+     * Returns the list of names to resolve, the single-query string, or null
+     * when the request is purely filter-driven.
+     *
+     * @return array<int, mixed>|string|null
+     */
+    private function requestedIdentifiers(Request $request, StudentDirectoryQuery $directory): array|string|null
+    {
+        $identifiers = $request->get('queries') ?? $request->get('names');
+
+        if (is_array($identifiers) && $identifiers !== []) {
+            return $identifiers;
+        }
+
+        $query = $request->get('query');
+
+        if (! is_string($query) && ! is_numeric($query)) {
+            return null;
+        }
+
+        $split = $directory->splitNameList((string) $query);
+
+        return count($split) > 1 ? $split : mb_trim((string) $query);
     }
 
     /**

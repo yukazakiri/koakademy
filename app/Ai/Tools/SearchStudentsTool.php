@@ -22,11 +22,14 @@ Query the student directory with structured filters instead of guessing names. T
 
 Use it whenever the question targets a population rather than one named person. Combine filters freely (program + status + year level + term). Every response reports the exact criteria and the total number of matches, so you can page through large cohorts with `offset` and must state the count honestly.
 
+It also handles named lookups: a single `query` (name, "LAST, FIRST M.", student number, or email), or `queries` / `names` for a pasted roster of up to 150 names at once.
+
 Notes:
 - `program` accepts a program code ("BSIT"), a title fragment ("Computer Studies"), or a department code. If it returns `unknown_program`, retry with one of `available_programs`.
 - Omitting `school_year` and `semester` uses the current term, which is what "this semester" means.
 - `enrollment_basis` decides who counts for the term. It defaults to `enrollment` (a real term enrollment record, not just a profile flag) for any population question, and to `any` for a bare name search. Pass `status` when the user wants students whose profile status is enrolled or on leave, or `class` when they mean students who have an active class this term.
 - Set `fields` to `emails` when the user wants only email addresses; it returns a compact de-duplicated `emails` array.
+- A `query` containing line breaks is read as a pasted list of names and resolved one name per line. A formatted "LAST, FIRST M." entry never matches on surname alone, so an unmatched name is reported honestly as not found instead of resolving to the wrong student.
 - If `has_more` is true, you have not shown every match: keep paging or say how many were returned out of the total.
 DESCRIPTION;
     }
@@ -40,31 +43,46 @@ DESCRIPTION;
             ]);
         }
 
-        $validated = $request->validate([
-            'query' => 'nullable|string|max:100',
-            'program' => 'nullable|array|max:20',
-            'program.*' => 'string|max:100',
-            'course_id' => 'nullable|integer|min:1',
-            'status' => 'nullable|array|max:10',
-            'status.*' => 'string|max:50',
-            'year_level' => 'nullable|array|max:10',
-            'year_level.*' => 'integer|between:1,5',
-            'student_type' => 'nullable|array|max:10',
-            'student_type.*' => 'string|max:50',
-            'gender' => 'nullable|string|max:50',
-            'enrollment_basis' => 'nullable|string|in:enrollment,class,status,any',
-            'school_year' => 'nullable|string|max:20',
-            'semester' => 'nullable|integer|between:1,3',
-            'fields' => 'nullable|string|in:summary,detailed,emails',
-            'limit' => 'nullable|integer|min:1|max:500',
-            'offset' => 'nullable|integer|min:0',
-        ]);
+        $directory = app(StudentDirectoryQuery::class);
 
         try {
-            $directory = app(StudentDirectoryQuery::class);
+            $identifiers = $this->requestedIdentifiers($request, $directory);
 
-            return $this->encode($directory->execute([
-                'query' => $validated['query'] ?? null,
+            if (is_array($identifiers)) {
+                if (count($identifiers) > StudentDirectoryQuery::MAX_BATCH_SIZE) {
+                    return $this->encode([
+                        'error' => true,
+                        'message' => 'The batch search limit is '.StudentDirectoryQuery::MAX_BATCH_SIZE.' names per request. Please split your list into batches of '.StudentDirectoryQuery::MAX_BATCH_SIZE.' or fewer.',
+                        'count' => count($identifiers),
+                        'limit' => StudentDirectoryQuery::MAX_BATCH_SIZE,
+                    ]);
+                }
+
+                return $this->encode($directory->resolveBatch($identifiers));
+            }
+
+            $validated = $request->validate([
+                'query' => 'nullable|string|max:500',
+                'program' => 'nullable|array|max:20',
+                'program.*' => 'string|max:100',
+                'course_id' => 'nullable|integer|min:1',
+                'status' => 'nullable|array|max:10',
+                'status.*' => 'string|max:50',
+                'year_level' => 'nullable|array|max:10',
+                'year_level.*' => 'integer|between:1,5',
+                'student_type' => 'nullable|array|max:10',
+                'student_type.*' => 'string|max:50',
+                'gender' => 'nullable|string|max:50',
+                'enrollment_basis' => 'nullable|string|in:enrollment,class,status,any',
+                'school_year' => 'nullable|string|max:20',
+                'semester' => 'nullable|integer|between:1,3',
+                'fields' => 'nullable|string|in:summary,detailed,emails',
+                'limit' => 'nullable|integer|min:1|max:500',
+                'offset' => 'nullable|integer|min:0',
+            ]);
+
+            return $this->encode($this->present($directory->execute([
+                'query' => $identifiers ?? ($validated['query'] ?? null),
                 'program' => $validated['program'] ?? null,
                 'course_id' => $validated['course_id'] ?? null,
                 'status' => $validated['status'] ?? null,
@@ -77,7 +95,7 @@ DESCRIPTION;
                 'fields' => $validated['fields'] ?? null,
                 'limit' => $validated['limit'] ?? null,
                 'offset' => $validated['offset'] ?? null,
-            ]));
+            ])));
         } catch (Throwable $e) {
             return $this->encode([
                 'error' => true,
@@ -111,7 +129,13 @@ DESCRIPTION;
             'semester' => $schema->integer()
                 ->description('Semester filter: 1, 2, or 3 for summer. Omit for the current semester.'),
             'query' => $schema->string()
-                ->description('Optional free-text match on first name, last name, student number, LRN, or email. Not needed for population questions.'),
+                ->description('Optional free-text match on first name, last name, student number, LRN, or email, or a formatted name ("CRUZ, JUAN D."). A value containing line breaks is treated as a pasted list of names, one per line. Not needed for population questions.'),
+            'queries' => $schema->array()
+                ->items($schema->string())
+                ->description('Resolve a pasted roster of names in one call, up to '.StudentDirectoryQuery::MAX_BATCH_SIZE.' entries. Returns one row per entry with found true or false, so unmatched names are visible rather than dropped.'),
+            'names' => $schema->array()
+                ->items($schema->string())
+                ->description('Alias for queries.'),
             'fields' => $schema->string()
                 ->enum(['summary', 'detailed', 'emails'])
                 ->description('summary (default) = number, name, email, program, year level, status. detailed adds LRN, phone, gender, department. emails returns only a compact de-duplicated email list, which is what to use when the user asks for email addresses.'),
@@ -120,6 +144,31 @@ DESCRIPTION;
             'offset' => $schema->integer()
                 ->description('Row offset for paging. Use next_offset from the previous response while has_more is true.'),
         ];
+    }
+
+    /**
+     * Decide whether the caller asked for a batch of names or a single query.
+     *
+     * Returns the list of names to resolve, the single-query string, or null
+     * when the request is purely filter-driven.
+     */
+    private function requestedIdentifiers(Request $request, StudentDirectoryQuery $directory): array|string|null
+    {
+        $identifiers = $request['queries'] ?? $request['names'] ?? null;
+
+        if (is_array($identifiers) && $identifiers !== []) {
+            return $identifiers;
+        }
+
+        $query = $request['query'] ?? null;
+
+        if (! is_string($query) && ! is_numeric($query)) {
+            return null;
+        }
+
+        $split = $directory->splitNameList((string) $query);
+
+        return count($split) > 1 ? $split : mb_trim((string) $query);
     }
 
     private function canReadDirectory(): bool
@@ -133,6 +182,20 @@ DESCRIPTION;
         return $user->hasRole('super_admin')
             || $user->can('View:Student')
             || $user->can('ViewAny:Student');
+    }
+
+    /**
+     * Add `count` alongside the paging keys so callers that predate
+     * total_matched keep a single number to report.
+     *
+     * @param  array<string, mixed>  $result
+     * @return array<string, mixed>
+     */
+    private function present(array $result): array
+    {
+        $result['count'] = $result['returned'] ?? 0;
+
+        return $result;
     }
 
     /**

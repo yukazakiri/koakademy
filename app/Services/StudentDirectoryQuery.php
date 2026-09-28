@@ -62,6 +62,12 @@ final class StudentDirectoryQuery
 
     public const int MAX_LIMIT = 500;
 
+    /**
+     * Upper bound on how many names a single pasted list may carry, so one
+     * request cannot ask the model to resolve an unbounded set of lookups.
+     */
+    public const int MAX_BATCH_SIZE = 150;
+
     public function __construct(
         private readonly GeneralSettingsService $settingsService,
     ) {}
@@ -213,6 +219,184 @@ final class StudentDirectoryQuery
     }
 
     /**
+     * Resolve a pasted list of names into one row per entry, marking the ones
+     * that matched nothing.
+     *
+     * Both the copilot tool and the MCP server route through here so a
+     * graduation list resolves identically on either surface.
+     *
+     * @param  array<int, mixed>  $identifiers
+     * @return array{count: int, found_count: int, students: list<array<string, mixed>>}
+     */
+    public function resolveBatch(array $identifiers): array
+    {
+        $term = $this->resolveTerm();
+        $rows = [];
+        $found = 0;
+
+        foreach ($identifiers as $raw) {
+            if (! is_string($raw) && ! is_numeric($raw)) {
+                continue;
+            }
+
+            $label = mb_trim((string) $raw);
+            $clean = $this->stripListRowNumber($label);
+
+            if ($clean === '' || $this->isListPreamble($clean)) {
+                continue;
+            }
+
+            $student = $this->resolveIdentifier($clean);
+
+            if (! $student instanceof Student) {
+                // Report the miss explicitly rather than dropping the entry, so a
+                // roster lookup cannot silently lose a person.
+                $rows[] = [
+                    'query' => $label,
+                    'found' => false,
+                    'id' => null,
+                    'student_id' => null,
+                    'student_number' => null,
+                    'name' => null,
+                    'email' => null,
+                ];
+
+                continue;
+            }
+
+            $found++;
+
+            $rows[] = [
+                'query' => $label,
+                'found' => true,
+                // `student_id` is the identifier the previous name-lookup tool
+                // returned; kept so existing consumers keep resolving students.
+                'student_id' => (string) $student->student_id,
+            ] + $this->present(
+                collect([$student]),
+                'summary',
+                self::BASIS_ANY,
+                $term,
+            )[0];
+        }
+
+        return [
+            'count' => count($rows),
+            'found_count' => $found,
+            'students' => $rows,
+        ];
+    }
+
+    /**
+     * Split a pasted block of names into individual lookups.
+     *
+     * Registrar lists arrive as free text, one name per line, often with a
+     * leading row number ("1  CRUZ, JUAN D."). Header lines and list preambles
+     * are dropped so a copied table does not turn into bogus lookups.
+     *
+     * @return list<string>
+     */
+    public function splitNameList(?string $raw): array
+    {
+        if (! is_string($raw) || ! str_contains($raw, "\n") && ! str_contains($raw, "\r")) {
+            return [];
+        }
+
+        $lines = array_map('trim', preg_split('/[\r\n]+/', $raw) ?: []);
+
+        return array_values(array_filter(array_map(
+            fn (string $line): string => $this->stripListRowNumber($line),
+            $lines,
+        ), fn (string $line): bool => filled($line) && ! $this->isListPreamble($line)));
+    }
+
+    /**
+     * Resolve one identifier to a single student.
+     *
+     * Stricter than the free-text filter used by `execute()`: this is the path
+     * a pasted list takes, where a wrong match is worse than no match. A
+     * formatted "LAST, FIRST M." entry is never allowed to fall back to a
+     * surname-only match, because that would silently attach the wrong person
+     * to a graduation or clearance list.
+     */
+    public function resolveIdentifier(string $identifier): ?Student
+    {
+        $clean = mb_trim($identifier);
+
+        if ($clean === '') {
+            return null;
+        }
+
+        $base = fn (): Builder => Student::query()->with('course:id,code,title', 'course.department:id,code');
+
+        if (str_contains($clean, '@')) {
+            return $base()
+                ->whereRaw('LOWER(email) = ?', [mb_strtolower($clean)])
+                ->first();
+        }
+
+        if (is_numeric($clean)) {
+            return $base()
+                ->where(function (Builder $query) use ($clean): void {
+                    $query->where('student_id', $clean)
+                        ->orWhere('lrn', $clean)
+                        ->orWhere('id', (int) $clean);
+                })
+                ->first();
+        }
+
+        if (str_contains($clean, ',')) {
+            [$last, $rest] = explode(',', $clean, 2);
+            $last = mb_strtolower(mb_trim($last));
+            $given = mb_trim($rest);
+            // Registrars write "CRUZ, JUAN D."; the trailing initial must not
+            // be part of the given name we match on.
+            $given = mb_trim(preg_replace('/\s+[A-Za-z]\.?$/u', '', $given) ?? $given);
+            $firstWord = mb_strtolower(explode(' ', $given)[0] ?? '');
+
+            if ($last !== '' && $firstWord !== '') {
+                return $base()
+                    ->whereRaw('LOWER(last_name) LIKE ?', ['%'.$last.'%'])
+                    ->whereRaw('LOWER(first_name) LIKE ?', ['%'.$firstWord.'%'])
+                    ->first();
+            }
+
+            return $last === '' ? null : $base()->whereRaw('LOWER(last_name) LIKE ?', ['%'.$last.'%'])->first();
+        }
+
+        $words = preg_split('/\s+/u', $clean) ?: [];
+
+        if (count($words) < 2) {
+            $term = mb_strtolower($words[0] ?? '');
+
+            return $base()
+                ->where(function (Builder $query) use ($term): void {
+                    $query->whereRaw('LOWER(last_name) LIKE ?', ['%'.$term.'%'])
+                        ->orWhereRaw('LOWER(first_name) LIKE ?', ['%'.$term.'%'])
+                        ->orWhereRaw('LOWER(email) LIKE ?', ['%'.$term.'%']);
+                })
+                ->first();
+        }
+
+        $first = mb_strtolower($words[0]);
+        $last = mb_strtolower($words[count($words) - 1]);
+
+        return $base()
+            ->where(function (Builder $query) use ($first, $last): void {
+                $query->where(function (Builder $forward) use ($first, $last): void {
+                    $forward->whereRaw('LOWER(first_name) LIKE ?', ['%'.$first.'%'])
+                        ->whereRaw('LOWER(last_name) LIKE ?', ['%'.$last.'%']);
+                })->orWhere(function (Builder $reversed) use ($first, $last): void {
+                    // "Bunalan Renelyn" is as common in a pasted roster as
+                    // "Renelyn Bunalan".
+                    $reversed->whereRaw('LOWER(first_name) LIKE ?', ['%'.$last.'%'])
+                        ->whereRaw('LOWER(last_name) LIKE ?', ['%'.$first.'%']);
+                });
+            })
+            ->first();
+    }
+
+    /**
      * Run a directory query.
      *
      * @param  array{
@@ -351,7 +535,7 @@ final class StudentDirectoryQuery
         if ($freeText !== null) {
             $like = '%'.addcslashes($freeText, '%_\\').'%';
 
-            $query->where(function (Builder $nested) use ($like): void {
+            $query->where(function (Builder $nested) use ($freeText, $like): void {
                 $nested->where('first_name', 'like', $like)
                     ->orWhere('last_name', 'like', $like)
                     ->orWhere('middle_name', 'like', $like)
@@ -362,6 +546,19 @@ final class StudentDirectoryQuery
                         "LOWER(TRIM(CONCAT_WS(' ', first_name, middle_name, last_name, suffix))) LIKE ?",
                         [mb_strtolower($like)],
                     );
+
+                // A formatted registrar name ("CRUZ, JUAN D.") matches no single
+                // column, so add the surname + given-name pairing. Both parts
+                // are required: falling back to surname alone would attach the
+                // wrong person to a roster.
+                $pairing = $this->surnameGivenPairing($freeText);
+
+                if ($pairing !== null) {
+                    $nested->orWhere(function (Builder $paired) use ($pairing): void {
+                        $paired->whereRaw('LOWER(last_name) LIKE ?', ['%'.$pairing[0].'%'])
+                            ->whereRaw('LOWER(first_name) LIKE ?', ['%'.$pairing[1].'%']);
+                    });
+                }
             });
         }
 
@@ -664,6 +861,51 @@ final class StudentDirectoryQuery
         }
 
         return self::BASIS_ANY;
+    }
+
+    /**
+     * Split a "LAST, FIRST M." entry into a surname and given-name fragment.
+     *
+     * @return array{0: string, 1: string}|null
+     */
+    private function surnameGivenPairing(string $freeText): ?array
+    {
+        if (! str_contains($freeText, ',')) {
+            return null;
+        }
+
+        [$last, $rest] = explode(',', $freeText, 2);
+        $last = mb_strtolower(mb_trim($last));
+        $given = mb_trim(preg_replace('/\s+[A-Za-z]\.?$/u', '', mb_trim($rest)) ?? mb_trim($rest));
+        $firstWord = mb_strtolower(explode(' ', $given)[0] ?? '');
+
+        return $last !== '' && $firstWord !== ''
+            ? [$last, $firstWord]
+            : null;
+    }
+
+    /**
+     * Drop the "1." / "2)" row numbers registrar spreadsheets carry.
+     */
+    private function stripListRowNumber(string $line): string
+    {
+        return mb_trim(preg_replace('/^\d+[\s\.\)\-]+\s*/u', '', $line) ?? $line);
+    }
+
+    /**
+     * Whether a line is a list header or preamble rather than a person.
+     */
+    private function isListPreamble(string $line): bool
+    {
+        $upper = mb_strtoupper($line);
+
+        foreach (['BACHELOR', 'LIST', 'BATCH', 'NAME', 'STUDENT'] as $prefix) {
+            if (str_starts_with($upper, $prefix)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function normalizeFields(mixed $fields): string

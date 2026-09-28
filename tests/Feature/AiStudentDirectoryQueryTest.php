@@ -445,6 +445,75 @@ it('refuses the directory to a caller without student read permission', function
         ->and($data['message'])->toContain('not permitted');
 });
 
+it('resolves a pasted name list without falling back to a surname-only match', function (): void {
+    $admin = User::factory()->create();
+    $admin->givePermissionTo('View:Student');
+    Auth::login($admin);
+
+    $renelyn = Student::factory()->create([
+        'first_name' => 'Renelyn',
+        'last_name' => 'Bunalan',
+        'email' => 'renelyn.bunalan@example.com',
+    ]);
+
+    $tool = new SearchStudentsTool;
+
+    $batch = json_decode((string) $tool->handle(new Request([
+        'queries' => [
+            '1 BUNALAN, RENELYN O.',
+            '2 BUNALAN, UNKNOWNGIVEN X.',
+        ],
+    ])), true);
+
+    expect($batch['count'])->toBe(2)
+        ->and($batch['found_count'])->toBe(1)
+        ->and($batch['students'][0]['found'])->toBeTrue()
+        ->and($batch['students'][0]['email'])->toBe($renelyn->email)
+        // A formatted name with the wrong given name must report a miss, not
+        // resolve to the one student who shares the surname.
+        ->and($batch['students'][1]['found'])->toBeFalse()
+        ->and($batch['students'][1]['email'])->toBeNull();
+
+    // A multiline query is read as a list, and the "1." row numbers registrar
+    // pastes carry are stripped rather than searched for.
+    $multiline = json_decode((string) $tool->handle(new Request([
+        'query' => "1\tBUNALAN, RENELYN O.\n2\tBUNALAN, UNKNOWNGIVEN X.",
+    ])), true);
+
+    expect($multiline['count'])->toBe(2)
+        ->and($multiline['found_count'])->toBe(1)
+        ->and($multiline['students'][0]['email'])->toBe($renelyn->email);
+
+    // Batch size is bounded so one request cannot ask for an unbounded lookup.
+    $oversized = json_decode((string) $tool->handle(new Request([
+        'queries' => array_fill(0, StudentDirectoryQuery::MAX_BATCH_SIZE + 1, 'BUNALAN, RENELYN O.'),
+    ])), true);
+
+    expect($oversized['error'])->toBeTrue()
+        ->and($oversized['limit'])->toBe(StudentDirectoryQuery::MAX_BATCH_SIZE);
+});
+
+it('matches a formatted surname and given name through the filtered query too', function (): void {
+    $admin = User::factory()->create();
+    $admin->givePermissionTo('View:Student');
+    Auth::login($admin);
+
+    $student = Student::factory()->create([
+        'first_name' => 'Audrey Irish',
+        'last_name' => 'Fermante',
+    ]);
+
+    $data = json_decode((string) (new SearchStudentsTool)->handle(new Request([
+        'query' => 'FERMANTE, AUDREY IRISH G.',
+    ])), true);
+
+    expect($data['count'])->toBe(1)
+        ->and($data['students'][0]['student_number'])->toBe((string) $student->student_id)
+        // A bare name search is not term-scoped, so a student without a current
+        // enrollment record is still found.
+        ->and($data['term']['enrollment_basis'])->toBe(StudentDirectoryQuery::BASIS_ANY);
+});
+
 it('computes enrollment analytics from the registrar service instead of fixed numbers', function (): void {
     // Constructed with `new`, exactly as the agent registries build it.
     $tool = new QueryCampusAnalyticsTool;

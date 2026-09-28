@@ -965,3 +965,85 @@ it('extracts headerless schedule-style spreadsheets without dropping their first
         ->and($processed['enrichedPrompt'])->toContain('08:00 - 10:00')
         ->and($processed['enrichedPrompt'])->toContain('Kitchen Lab 1');
 });
+
+it('searches students case-insensitively and supports batch name queries', function (): void {
+    $course = App\Models\Course::factory()->create(['title' => 'BSBA Financial Management', 'code' => 'BSBA']);
+    $s1 = App\Models\Student::factory()->create([
+        'first_name' => 'Renelyn',
+        'last_name' => 'Bunalan',
+        'email' => 'renelyn.bunalan@example.com',
+        'course_id' => $course->id,
+    ]);
+    $s2 = App\Models\Student::factory()->create([
+        'first_name' => 'Audrey Irish',
+        'last_name' => 'Fermante',
+        'email' => 'audrey.fermante@example.com',
+        'course_id' => $course->id,
+    ]);
+
+    $tool = new App\Ai\Tools\SearchStudentsTool;
+
+    // The directory is permission-gated, so the caller must be authorized.
+    $admin = User::factory()->create();
+    Spatie\Permission\Models\Permission::firstOrCreate(['name' => 'ViewAny:Student', 'guard_name' => 'web']);
+    $admin->givePermissionTo('ViewAny:Student');
+    Illuminate\Support\Facades\Auth::login($admin);
+
+    // 1. Case-insensitive single query
+    $res1 = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request(['query' => 'BUNALAN'])), true);
+    expect($res1['count'])->toBe(1)
+        ->and($res1['students'][0]['email'])->toBe('renelyn.bunalan@example.com');
+
+    // 2. Formatted name: "LAST, FIRST M."
+    $res2 = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request(['query' => 'FERMANTE, AUDREY IRISH G.'])), true);
+    expect($res2['count'])->toBe(1)
+        ->and($res2['students'][0]['email'])->toBe('audrey.fermante@example.com');
+
+    // 3. Batch queries array
+    $batch = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'queries' => [
+            '1 BUNALAN, RENELYN O.',
+            '2 FERMANTE, AUDREY IRISH G.',
+            '3 NONEXISTENT, PERSON X.',
+        ],
+    ])), true);
+
+    expect($batch['count'])->toBe(3)
+        ->and($batch['found_count'])->toBe(2)
+        ->and($batch['students'][0]['found'])->toBeTrue()
+        ->and($batch['students'][0]['email'])->toBe('renelyn.bunalan@example.com')
+        ->and($batch['students'][1]['found'])->toBeTrue()
+        ->and($batch['students'][1]['email'])->toBe('audrey.fermante@example.com')
+        ->and($batch['students'][2]['found'])->toBeFalse();
+
+    // 4. Multiline text query
+    $multiline = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'query' => "1\tBUNALAN, RENELYN O.\n2\tFERMANTE, AUDREY IRISH G.",
+    ])), true);
+
+    expect($multiline['count'])->toBe(2)
+        ->and($multiline['found_count'])->toBe(2)
+        ->and($multiline['students'][0]['email'])->toBe('renelyn.bunalan@example.com');
+
+    // 5. Do not fall back to surname-only when a different given name was provided
+    $mismatchedGivenName = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'query' => 'BUNALAN, UNKNOWNNAME X.',
+    ])), true);
+    expect($mismatchedGivenName['count'])->toBe(0);
+
+    $batchMismatched = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'queries' => ['BUNALAN, UNKNOWNNAME X.'],
+    ])), true);
+    expect($batchMismatched['found_count'])->toBe(0)
+        ->and($batchMismatched['students'][0]['found'])->toBeFalse()
+        ->and($batchMismatched['students'][0]['email'])->toBeNull();
+
+    // 6. Explicitly rejects batches exceeding 150 names
+    $oversized = array_fill(0, 151, 'BUNALAN, RENELYN O.');
+    $oversizedRes = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
+        'queries' => $oversized,
+    ])), true);
+    expect($oversizedRes['error'] ?? false)->toBeTrue()
+        ->and($oversizedRes['count'])->toBe(151)
+        ->and($oversizedRes['limit'])->toBe(150);
+});

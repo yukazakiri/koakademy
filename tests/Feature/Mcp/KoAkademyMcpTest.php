@@ -217,6 +217,41 @@ it('searches students within the authorized school and enforces permissions', fu
                 ->where('students.0', fn ($row): bool => ! array_key_exists('lrn', (array) $row))
                 ->etc();
         });
+
+    // Case-insensitive formatted name query
+    $formatted = KoAkademyServer::actingAs($this->staff)
+        ->tool(SearchStudentsTool::class, ['query' => 'SANTOS, MARIA']);
+    $formatted->assertOk()
+        ->assertStructuredContent(function ($json) use ($student): void {
+            $json->where('count', 1)
+                ->where('students.0.id', $student->id)
+                ->etc();
+        });
+
+    // Batch queries support
+    $batch = KoAkademyServer::actingAs($this->staff)
+        ->tool(SearchStudentsTool::class, ['queries' => ['SANTOS, MARIA', 'SANTOS, UNKNOWNGIVEN', 'UNKNOWN PERSON']]);
+    $batch->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('count', 3)
+                ->where('found_count', 1)
+                ->where('students.0.found', true)
+                ->where('students.0.email', 'maria.santos@student.koakademy.edu')
+                ->where('students.1.found', false)
+                ->where('students.2.found', false)
+                ->etc();
+        });
+
+    // Rejects oversized batch exceeding limit
+    $oversizedBatch = KoAkademyServer::actingAs($this->staff)
+        ->tool(SearchStudentsTool::class, ['queries' => array_fill(0, 151, 'SANTOS, MARIA')]);
+    $oversizedBatch->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('error', true)
+                ->where('limit', 150)
+                ->where('count', 151)
+                ->etc();
+        });
 });
 
 it('lists a program cohort for the current term via MCP SearchStudentsTool', function (): void {

@@ -1186,10 +1186,12 @@ perform_uninstall() {
         [[ -n "$secret_name" ]] || continue
         docker secret rm "$secret_name" >/dev/null 2>&1 || true
     done
-    [[ -n "${APP_ENTRYPOINT_CONFIG:-}" ]] &&
+    if [[ -n "${APP_ENTRYPOINT_CONFIG:-}" ]]; then
         docker config rm "$APP_ENTRYPOINT_CONFIG" >/dev/null 2>&1 || true
-    [[ -n "${CADDYFILE_CONFIG:-}" ]] &&
+    fi
+    if [[ -n "${CADDYFILE_CONFIG:-}" ]]; then
         docker config rm "$CADDYFILE_CONFIG" >/dev/null 2>&1 || true
+    fi
     if [[ "$preserve_volumes" == true ]]; then
         info "Preserving named data volumes; remove them manually when the data is no longer needed."
     else

@@ -116,6 +116,20 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->scoped(\App\Services\ErrorReportingService::class);
         $this->app->scoped(\App\Services\TenantContext::class);
         $this->app->bind(AssessmentFormPdfRenderer::class, LaravelAssessmentFormPdfRenderer::class);
+
+        $this->app->singleton(\Tighten\Ziggy\BladeRouteGenerator::class, function (): \Tighten\Ziggy\BladeRouteGenerator {
+            return new class extends \Tighten\Ziggy\BladeRouteGenerator
+            {
+                public function generate(array|string|null $group = null, ?string $nonce = null, ?bool $json = false): string
+                {
+                    $cacheKey = 'ziggy_blade_script_'.md5(serialize([$group, $nonce, $json, config('app.url')]));
+
+                    return \Illuminate\Support\Facades\Cache::remember($cacheKey, 3600, function () use ($group, $nonce, $json): string {
+                        return parent::generate($group, $nonce, $json);
+                    });
+                }
+            };
+        });
     }
 
     /**

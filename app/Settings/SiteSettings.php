@@ -13,13 +13,13 @@ final class SiteSettings extends Settings
      * Default branding values for backward compatibility.
      * These are used when settings are not configured in the database.
      */
-    private const string DEFAULT_APP_NAME = 'KoAkademy';
+    private const string DEFAULT_APP_NAME = 'Portal';
 
-    private const string DEFAULT_APP_SHORT_NAME = 'KOA';
+    private const string DEFAULT_APP_SHORT_NAME = 'PORTAL';
 
-    private const string DEFAULT_ORG_NAME = 'KoAkademy';
+    private const string DEFAULT_ORG_NAME = 'Academic Portal';
 
-    private const string DEFAULT_ORG_SHORT_NAME = 'KOA';
+    private const string DEFAULT_ORG_SHORT_NAME = 'PORTAL';
 
     private const string DEFAULT_THEME_COLOR = '#0f172a';
 
@@ -91,7 +91,15 @@ final class SiteSettings extends Settings
      */
     public function getAppName(): string
     {
-        return $this->app_name ?? $this->name ?? self::DEFAULT_APP_NAME;
+        $name = $this->app_name ?? $this->name;
+
+        if (is_string($name) && mb_trim($name) !== '') {
+            return mb_trim($name);
+        }
+
+        $configName = (string) config('app.name');
+
+        return $configName !== '' ? $configName : self::DEFAULT_APP_NAME;
     }
 
     public function getPortalName(): string
@@ -104,10 +112,6 @@ final class SiteSettings extends Settings
 
         $trimmedPortalName = mb_trim($portalName);
 
-        if (in_array($trimmedPortalName, ['KoAkademy', 'KoAkademy Portal'], true)) {
-            return $this->getAppName();
-        }
-
         return $trimmedPortalName;
     }
 
@@ -116,7 +120,13 @@ final class SiteSettings extends Settings
      */
     public function getAppShortName(): string
     {
-        return $this->app_short_name ?? self::DEFAULT_APP_SHORT_NAME;
+        if (is_string($this->app_short_name) && mb_trim($this->app_short_name) !== '') {
+            return mb_trim($this->app_short_name);
+        }
+
+        $appName = $this->getAppName();
+
+        return mb_strtoupper((string) str($appName)->limit(4, ''));
     }
 
     /**
@@ -124,7 +134,11 @@ final class SiteSettings extends Settings
      */
     public function getOrganizationName(): string
     {
-        return $this->organization_name ?? self::DEFAULT_ORG_NAME;
+        if (is_string($this->organization_name) && mb_trim($this->organization_name) !== '') {
+            return mb_trim($this->organization_name);
+        }
+
+        return $this->getAppName();
     }
 
     /**
@@ -132,7 +146,11 @@ final class SiteSettings extends Settings
      */
     public function getOrganizationShortName(): string
     {
-        return $this->organization_short_name ?? self::DEFAULT_ORG_SHORT_NAME;
+        if (is_string($this->organization_short_name) && mb_trim($this->organization_short_name) !== '') {
+            return mb_trim($this->organization_short_name);
+        }
+
+        return $this->getAppShortName();
     }
 
     /**

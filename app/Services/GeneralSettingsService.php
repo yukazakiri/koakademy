@@ -720,6 +720,7 @@ final class GeneralSettingsService
         ]);
 
         $this->generalSetting = $settings->fresh();
+        self::$cachedGlobalSetting = $this->generalSetting;
 
         return $this->getApiManagementConfig();
     }

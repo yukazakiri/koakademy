@@ -13,6 +13,7 @@ use App\Models\Transaction;
 use App\Models\TuitionAdjustment;
 use App\Models\User;
 use App\Notifications\StudentTuitionUpdateRequestReviewedNotification;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -147,8 +148,10 @@ final class StudentTuitionUpdateRequestService
     public function studentFor(User $user): ?Student
     {
         return Student::query()
-            ->where('email', $user->email)
-            ->orWhere('user_id', $user->id)
+            ->where(function (Builder $query) use ($user): void {
+                $query->where('user_id', $user->id)
+                    ->orWhere('email', $user->email);
+            })
             ->first();
     }
 

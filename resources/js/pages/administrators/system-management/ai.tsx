@@ -50,6 +50,7 @@ import { toast } from "sonner";
 
 import { submitSystemForm } from "./form-submit";
 import SystemManagementLayout from "./layout";
+import McpServersSection from "./mcp-servers-section";
 import type {
     AiConfigPayload,
     AiDiscoveredModel,
@@ -173,6 +174,7 @@ export default function SystemManagementAiPage({
     user,
     access,
     ai_config,
+    mcp_servers,
 }: SystemManagementPageProps) {
     const canUpdate = access.sections.ai?.can_update ?? false;
 
@@ -1243,6 +1245,10 @@ export default function SystemManagementAiPage({
                     </div>
                 )}
             </form>
+
+            {/* Kept outside the form above: this is its own CRUD surface, and a
+                form cannot be nested. */}
+            <McpServersSection servers={mcp_servers ?? []} canUpdate={canUpdate} />
         </SystemManagementLayout>
     );
 }

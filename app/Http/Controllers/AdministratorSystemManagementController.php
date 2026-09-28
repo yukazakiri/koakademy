@@ -28,15 +28,18 @@ use App\Http\Requests\Administrators\UpdateSchoolRequest;
 use App\Http\Requests\Administrators\UpdateSchoolStatusRequest;
 use App\Http\Requests\Administrators\UpdateSentrySettingsRequest;
 use App\Http\Requests\Administrators\UpdateTuitionPaymentScheduleSettingsRequest;
+use App\Http\Requests\Administrators\UpsertMcpServerRequest;
 use App\Models\Course;
 use App\Models\EnrollmentPolicy;
 use App\Models\EnrollmentPolicyVersion;
 use App\Models\GeneralSetting;
+use App\Models\McpServer;
 use App\Models\School;
 use App\Models\SchoolCurriculumCapability;
 use App\Models\User;
 use App\Services\Ai\AiModelFetchService;
 use App\Services\Ai\AiSettingsService;
+use App\Services\Ai\McpServerService;
 use App\Services\AnalyticsSettingsService;
 use App\Services\CurriculumCapabilityResolver;
 use App\Services\EnrollmentPipelineService;
@@ -275,13 +278,16 @@ final class AdministratorSystemManagementController extends Controller
         return Redirect::back()->with('success', 'Error reporting settings updated successfully.');
     }
 
-    public function ai(AiSettingsService $aiSettings): Response
+    public function ai(AiSettingsService $aiSettings, McpServerService $mcpServers): Response
     {
         return $this->renderSystemManagementPage(
             'administrators/system-management/ai',
             'ai',
             'viewAi',
-            ['ai_config' => $aiSettings->forAdministration()],
+            [
+                'ai_config' => $aiSettings->forAdministration(),
+                'mcp_servers' => $mcpServers->forAdministration(),
+            ],
         );
     }
 
@@ -346,6 +352,61 @@ final class AdministratorSystemManagementController extends Controller
             'success' => true,
             'message' => $result['message'],
             'latency_ms' => $result['latency_ms'],
+        ]);
+    }
+
+    /**
+     * External MCP servers the AI assistants may call.
+     */
+    public function storeMcpServer(
+        UpsertMcpServerRequest $request,
+        McpServerService $mcpServers,
+    ): RedirectResponse {
+        $server = $mcpServers->create($request->validated());
+
+        return Redirect::back()->with('success', "MCP server \"{$server->name}\" saved.");
+    }
+
+    public function updateMcpServer(
+        UpsertMcpServerRequest $request,
+        McpServer $mcpServer,
+        McpServerService $mcpServers,
+    ): RedirectResponse {
+        $server = $mcpServers->update($mcpServer, $request->validated());
+
+        return Redirect::back()->with('success', "MCP server \"{$server->name}\" updated.");
+    }
+
+    public function destroyMcpServer(
+        McpServer $mcpServer,
+        McpServerService $mcpServers,
+    ): RedirectResponse {
+        $mcpServers->delete($mcpServer);
+
+        return Redirect::back()->with('success', 'MCP server removed.');
+    }
+
+    /**
+     * List the tools a server advertises so they can be allowlisted.
+     */
+    public function discoverMcpServerTools(
+        McpServer $mcpServer,
+        McpServerService $mcpServers,
+    ): JsonResponse {
+        $result = $mcpServers->discover($mcpServer);
+
+        if ($result['error'] !== null) {
+            return response()->json([
+                'success' => false,
+                'message' => $result['error'],
+                'tools' => [],
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => count($result['tools']).' tools discovered.',
+            'tools' => $result['tools'],
         ]);
     }
 

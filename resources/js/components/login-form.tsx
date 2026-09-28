@@ -1,97 +1,129 @@
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { SocialAuthButtons } from "@/components/social-auth-buttons";
-import { cn } from "@/lib/utils";
 import { Link, router, useForm } from "@inertiajs/react";
 import axios from "axios";
-import { Eye, EyeOff, GraduationCap, Key, Loader2, Lock, Mail, ShieldCheck, UserRoundCog } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import {
+    ArrowLeft,
+    CheckCircle2,
+    Eye,
+    EyeOff,
+    Fingerprint,
+    GraduationCap,
+    Key,
+    Loader2,
+    Lock,
+    Mail,
+    ShieldCheck,
+    Sparkles,
+    UserRoundCog,
+} from "lucide-react";
+import { useCallback, useEffect, useState, type ComponentPropsWithoutRef, type FormEvent } from "react";
 import { toast } from "sonner";
+
+import { SocialAuthButtons } from "@/components/social-auth-buttons";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
+import { cn } from "@/lib/utils";
 
 declare const route: (name: string, params?: Record<string, unknown>) => string;
 
-// Helper to check if WebAuthn is supported
-const isWebAuthnSupported = () => {
-    return !!(window.PublicKeyCredential && navigator.credentials);
+const isWebAuthnSupported = (): boolean => {
+    return typeof window !== "undefined" && !!(window.PublicKeyCredential && navigator.credentials);
 };
 
-type DemoAccount = {
+export type DemoAccount = {
     role: string;
     label: string;
     description: string;
 };
 
-type DemoMode = {
+export type DemoMode = {
     enabled: boolean;
     accounts: DemoAccount[];
 };
 
-const demoAccountIcons = {
+const demoAccountIcons: Record<string, typeof GraduationCap> = {
     student: GraduationCap,
     faculty: UserRoundCog,
     admin: ShieldCheck,
 };
 
-export function LoginForm({
-    className,
-    demoMode,
-    errors,
-    status,
-    ...props
-}: React.ComponentPropsWithoutRef<"div"> & {
+export interface LoginFormProps extends ComponentPropsWithoutRef<"div"> {
     demoMode?: DemoMode;
     errors?: Record<string, string>;
-    status?: string;
-}) {
+    status?: string | null;
+}
+
+export function LoginForm({ className, demoMode, errors, status, ...props }: LoginFormProps) {
     const { data, setData, post, processing } = useForm({
         email: "",
         password: "",
         remember: false,
     });
 
-    // State for password visibility
     const [showPassword, setShowPassword] = useState(false);
     const [loggingInWithPasskey, setLoggingInWithPasskey] = useState(false);
     const [passkeyAvailable, setPasskeyAvailable] = useState(false);
+    const [loginMode, setLoginMode] = useState<"password" | "magic-link">("password");
+    const [magicLinkSent, setMagicLinkSent] = useState(false);
+    const [magicCooldown, setMagicCooldown] = useState(0);
 
-    // Check if passkeys are available on mount
+    useEffect(() => {
+        if (magicCooldown <= 0) return;
+        const timer = setInterval(() => {
+            setMagicCooldown((prev) => prev - 1);
+        }, 1000);
+        return () => clearInterval(timer);
+    }, [magicCooldown]);
+
     useEffect(() => {
         const checkPasskeySupport = async () => {
             let supported = isWebAuthnSupported();
-
-            // Also check if the device supports platform authenticators (fingerprint, face, PIN)
             if (supported && window.PublicKeyCredential?.isUserVerifyingPlatformAuthenticatorAvailable) {
                 supported = await window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
             }
-
             setPasskeyAvailable(supported);
         };
         checkPasskeySupport();
     }, []);
 
-    // Display status message if available
     useEffect(() => {
         if (status) {
             toast.success(status);
         }
     }, [status]);
 
-    // Display errors if available
     useEffect(() => {
         if (errors && Object.keys(errors).length > 0) {
-            Object.entries(errors).forEach(([_, message]) => {
+            Object.values(errors).forEach((message) => {
                 toast.error(message);
             });
         }
     }, [errors]);
 
-    const submit = (e: React.FormEvent) => {
+    const submit = (e: FormEvent) => {
         e.preventDefault();
+
+        if (loginMode === "magic-link") {
+            post("/magic-link/send", {
+                onSuccess: () => {
+                    setMagicLinkSent(true);
+                    setMagicCooldown(60);
+                    toast.success("Magic sign-in link sent! Check your inbox.");
+                },
+                onError: (formErrors) => {
+                    Object.values(formErrors).forEach((err) => {
+                        toast.error(err);
+                    });
+                },
+            });
+            return;
+        }
+
         post("/login", {
-            onError: (errors) => {
-                Object.values(errors).forEach((error) => {
-                    toast.error(error);
+            onError: (formErrors) => {
+                Object.values(formErrors).forEach((err) => {
+                    toast.error(err);
                 });
             },
             onSuccess: () => {
@@ -102,23 +134,23 @@ export function LoginForm({
 
     const handlePasskeyLogin = useCallback(async () => {
         if (loggingInWithPasskey) return;
-
         setLoggingInWithPasskey(true);
 
         try {
-            // 1. Get options from backend (no email needed for discoverable credentials)
             const optionsResponse = await axios.post("/passkeys/options", {});
             const options = optionsResponse.data.options;
 
-            // 2. Authenticate using WebAuthn API
-            const challenge = Uint8Array.from(atob(options.challenge.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+            const challenge = Uint8Array.from(atob(options.challenge.replace(/-/g, "+").replace(/_/g, "/")), (c) =>
+                c.charCodeAt(0)
+            );
 
-            // For discoverable credentials, allowCredentials should be empty
             const allowCredentials =
                 Array.isArray(options.allowCredentials) && options.allowCredentials.length > 0
-                    ? options.allowCredentials.map((cred: any) => ({
+                    ? options.allowCredentials.map((cred: { id: string }) => ({
                           ...cred,
-                          id: Uint8Array.from(atob(cred.id.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0)),
+                          id: Uint8Array.from(atob(cred.id.replace(/-/g, "+").replace(/_/g, "/")), (c) =>
+                              c.charCodeAt(0)
+                          ),
                       }))
                     : [];
 
@@ -129,12 +161,10 @@ export function LoginForm({
             };
 
             const credential = (await navigator.credentials.get({ publicKey })) as PublicKeyCredential;
-
             if (!credential) {
                 throw new Error("Failed to get credential");
             }
 
-            // 3. Verify passkey
             const rawId = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)))
                 .replace(/\+/g, "-")
                 .replace(/\//g, "_")
@@ -176,25 +206,21 @@ export function LoginForm({
             });
 
             const redirectUrl = verifyResponse.data.url ?? verifyResponse.data.redirect;
-
             if (redirectUrl) {
                 toast.success("Welcome back!");
-                // Inertia manual visit
                 window.location.href = redirectUrl;
             } else {
                 toast.error("Passkey verification failed.");
             }
-        } catch (error: any) {
-            if (error.response?.data?.error) {
-                toast.error(error.response.data.error);
-            } else if (error.name === "NotAllowedError") {
-                // User cancelled or timed out - don't show error, just dismiss prompt
-                // toast.error("Passkey request canceled or timed out.")
-            } else if (error.name === "InvalidStateError") {
+        } catch (error: unknown) {
+            const err = error as { response?: { data?: { error?: string } }; name?: string };
+            if (err.response?.data?.error) {
+                toast.error(err.response.data.error);
+            } else if (err.name === "InvalidStateError") {
                 toast.error("No passkey found. Please sign in with your password.");
-            } else {
+            } else if (err.name !== "NotAllowedError") {
                 console.error("Passkey Error:", error);
-                toast.error("Failed to login with passkey. Please try again.");
+                toast.error("Failed to sign in with passkey. Please try again.");
             }
         } finally {
             setLoggingInWithPasskey(false);
@@ -208,185 +234,273 @@ export function LoginForm({
             {
                 onStart: () => toast.info(`Opening ${role} demo workspace...`),
                 onError: () => toast.error("Demo login is unavailable. Please try again."),
-            },
+            }
         );
     };
 
     return (
         <div className={cn("flex flex-col gap-6", className)} {...props}>
             <form onSubmit={submit}>
-                <div className="flex flex-col gap-6">
-                    <div className="grid gap-5">
-                        <div className="group relative grid gap-2">
-                            <Label htmlFor="email" className="sr-only">
-                                Email
-                            </Label>
-                            <div className="relative">
-                                <Mail className="text-muted-foreground group-focus-within:text-primary absolute top-3 left-3 z-10 h-4 w-4 transition-colors" />
-                                <Input
-                                    id="email"
-                                    type="email"
-                                    placeholder="name@example.com"
-                                    required
-                                    value={data.email}
-                                    onChange={(e) => setData("email", e.target.value)}
-                                    disabled={processing || loggingInWithPasskey}
-                                    className={cn(
-                                        "bg-background/50 border-muted-foreground/20 hover:border-primary/50 focus-visible:border-primary h-10 pl-10 transition-all duration-300",
-                                        "text-foreground placeholder:text-muted-foreground/70",
-                                        errors?.email && "border-destructive focus-visible:ring-destructive",
-                                    )}
-                                />
-                            </div>
-                        </div>
+                <FieldGroup className="gap-4">
+                    {/* Email field */}
+                    <Field>
+                        <FieldLabel htmlFor="email" className="text-sm font-medium text-foreground">
+                            Email or username
+                        </FieldLabel>
+                        <InputGroup
+                            className={cn(
+                                "h-10 rounded-lg border-input bg-background/80 shadow-xs transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20",
+                                errors?.email && "border-destructive focus-within:ring-destructive/20"
+                            )}
+                        >
+                            <InputGroupAddon align="inline-start" className="text-muted-foreground pl-3">
+                                <Mail className="size-4" />
+                            </InputGroupAddon>
+                            <InputGroupInput
+                                id="email"
+                                type="text"
+                                placeholder="name@school.edu"
+                                required
+                                autoFocus
+                                value={data.email}
+                                onChange={(e) => setData("email", e.target.value)}
+                                disabled={processing || loggingInWithPasskey}
+                                className="text-sm text-foreground placeholder:text-muted-foreground font-normal px-2"
+                            />
+                        </InputGroup>
+                        {errors?.email && <FieldError errors={[{ message: errors.email }]} />}
+                    </Field>
 
-                        <div className="group relative grid gap-2">
+                    {/* Password field - only in password mode */}
+                    {loginMode === "password" && (
+                        <Field>
                             <div className="flex items-center justify-between">
-                                <Label htmlFor="password" className="sr-only">
+                                <FieldLabel htmlFor="password" className="text-sm font-medium text-foreground">
                                     Password
-                                </Label>
+                                </FieldLabel>
+                                <Link
+                                    href="/forgot-password"
+                                    className="text-xs text-muted-foreground hover:text-primary hover:underline transition-colors"
+                                >
+                                    Forgot password?
+                                </Link>
                             </div>
-                            <div className="relative">
-                                <Lock className="text-muted-foreground group-focus-within:text-primary absolute top-3 left-3 z-10 h-4 w-4 transition-colors" />
-                                <Input
+                            <InputGroup
+                                className={cn(
+                                    "h-10 rounded-lg border-input bg-background/80 shadow-xs transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20",
+                                    errors?.password && "border-destructive focus-within:ring-destructive/20"
+                                )}
+                            >
+                                <InputGroupAddon align="inline-start" className="text-muted-foreground pl-3">
+                                    <Lock className="size-4" />
+                                </InputGroupAddon>
+                                <InputGroupInput
                                     id="password"
                                     type={showPassword ? "text" : "password"}
-                                    placeholder="••••••••"
+                                    placeholder="Enter your password"
                                     required
                                     value={data.password}
                                     onChange={(e) => setData("password", e.target.value)}
                                     disabled={processing || loggingInWithPasskey}
-                                    className={cn(
-                                        "bg-background/50 border-muted-foreground/20 hover:border-primary/50 focus-visible:border-primary h-10 pr-10 pl-10 transition-all duration-300",
-                                        "text-foreground placeholder:text-muted-foreground/70",
-                                        errors?.password && "border-destructive focus-visible:ring-destructive",
-                                    )}
+                                    className="text-sm text-foreground placeholder:text-muted-foreground font-normal px-2"
                                 />
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="text-muted-foreground hover:text-primary absolute top-0 right-0 h-10 w-10 transition-colors"
-                                    onClick={() => setShowPassword(!showPassword)}
-                                >
-                                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                    <span className="sr-only">Toggle password visibility</span>
-                                </Button>
-                            </div>
-                            <div className="text-right">
-                                <Link
-                                    href="/forgot-password"
-                                    className="text-muted-foreground hover:text-primary text-xs font-medium underline-offset-4 transition-colors hover:underline"
-                                >
-                                    Forgot your password?
-                                </Link>
-                            </div>
-                        </div>
+                                <InputGroupAddon align="inline-end" className="pr-1.5">
+                                    <InputGroupButton
+                                        size="icon-xs"
+                                        onClick={() => setShowPassword(!showPassword)}
+                                        aria-label={showPassword ? "Hide password" : "Show password"}
+                                        className="text-muted-foreground hover:text-foreground"
+                                    >
+                                        {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                                    </InputGroupButton>
+                                </InputGroupAddon>
+                            </InputGroup>
+                            {errors?.password && <FieldError errors={[{ message: errors.password }]} />}
+                        </Field>
+                    )}
 
-                        <div className="grid gap-3">
+                    {loginMode === "magic-link" && magicLinkSent ? (
+                        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-center space-y-3">
+                            <div className="mx-auto flex size-10 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400">
+                                <CheckCircle2 className="size-5" />
+                            </div>
+                            <div className="space-y-1">
+                                <p className="text-xs font-semibold text-foreground">Check your email</p>
+                                <p className="text-[11px] text-muted-foreground">
+                                    We sent a sign-in link to <span className="font-medium text-foreground">{data.email}</span>. Click it to log in.
+                                </p>
+                            </div>
                             <Button
-                                type="submit"
-                                className="shadow-primary/20 hover:shadow-primary/40 h-10 w-full font-bold tracking-wide shadow-lg transition-all duration-300"
-                                disabled={processing || loggingInWithPasskey}
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-8 w-full rounded-lg border-border bg-card/80 text-xs text-foreground hover:bg-accent hover:text-accent-foreground"
+                                onClick={submit}
+                                disabled={processing || magicCooldown > 0}
                             >
                                 {processing ? (
                                     <>
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        Signing in...
+                                        <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                                        <span>Sending...</span>
                                     </>
+                                ) : magicCooldown > 0 ? (
+                                    `Resend link (${magicCooldown}s)`
                                 ) : (
-                                    "Sign in"
+                                    "Resend magic link"
                                 )}
                             </Button>
+                        </div>
+                    ) : null}
 
-                            {demoMode?.enabled && demoMode.accounts.length > 0 ? (
-                                <div className="border-primary/20 bg-primary/5 grid gap-3 rounded-2xl border p-3">
-                                    <div className="space-y-1 text-center">
-                                        <p className="text-foreground text-sm font-semibold">Try the demo instantly</p>
-                                        <p className="text-muted-foreground text-xs">Choose a role to enter with a sample account.</p>
-                                    </div>
+                    {/* Remember me option */}
+                    <div className="flex items-center space-x-2 pt-0.5">
+                        <Checkbox
+                            id="remember"
+                            checked={data.remember}
+                            onCheckedChange={(checked) => setData("remember", Boolean(checked))}
+                            disabled={processing || loggingInWithPasskey}
+                            className="border-input data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground focus-visible:ring-ring"
+                        />
+                        <label
+                            htmlFor="remember"
+                            className="text-xs font-normal text-muted-foreground peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer select-none"
+                        >
+                            Remember this device for 30 days
+                        </label>
+                    </div>
 
-                                    <div className="grid gap-2">
-                                        {demoMode.accounts.map((account) => {
-                                            const Icon = demoAccountIcons[account.role as keyof typeof demoAccountIcons] ?? Key;
-
-                                            return (
-                                                <Button
-                                                    key={account.role}
-                                                    type="button"
-                                                    variant="outline"
-                                                    className="border-primary/20 bg-background/70 hover:bg-primary/10 h-auto justify-start gap-2 px-3 py-2.5 text-left transition-all duration-300 sm:gap-3 sm:py-3"
-                                                    onClick={() => handleDemoLogin(account.role)}
-                                                    disabled={processing || loggingInWithPasskey}
-                                                >
-                                                    <span className="bg-primary/10 text-primary flex h-8 w-8 shrink-0 items-center justify-center rounded-xl sm:h-9 sm:w-9">
-                                                        <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                                                    </span>
-                                                    <span className="grid min-w-0 flex-1 gap-0.5">
-                                                        <span className="text-foreground truncate text-sm font-semibold">
-                                                            Continue as {account.label}
-                                                        </span>
-                                                        <span className="text-muted-foreground line-clamp-2 text-xs leading-snug">
-                                                            {account.description}
-                                                        </span>
-                                                    </span>
-                                                </Button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            ) : null}
-
-                            <SocialAuthButtons />
-
-                            {passkeyAvailable && (
+                    {/* Submit button - Uses active theme primary/accent color */}
+                    {loginMode === "password" || !magicLinkSent ? (
+                        <Button
+                            type="submit"
+                            className="h-10 w-full rounded-lg bg-primary font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:ring-ring disabled:opacity-50 text-sm mt-1"
+                            disabled={processing || loggingInWithPasskey}
+                        >
+                            {processing ? (
                                 <>
-                                    <div className="relative">
-                                        <div className="absolute inset-0 flex items-center">
-                                            <span className="w-full border-t" />
-                                        </div>
-                                        <div className="relative flex justify-center text-xs uppercase">
-                                            <span className="bg-background text-muted-foreground px-2">Or continue with</span>
-                                        </div>
-                                    </div>
+                                    <Loader2 className="mr-2 size-4 animate-spin text-primary-foreground" />
+                                    <span>{loginMode === "magic-link" ? "Sending link..." : "Signing in..."}</span>
+                                </>
+                            ) : loginMode === "magic-link" ? (
+                                "Send magic link"
+                            ) : (
+                                "Sign in"
+                            )}
+                        </Button>
+                    ) : null}
 
+                    {loginMode === "magic-link" && (
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            className="h-8 text-xs text-muted-foreground hover:text-foreground transition-colors gap-1.5"
+                            onClick={() => {
+                                setLoginMode("password");
+                                setMagicLinkSent(false);
+                            }}
+                        >
+                            <ArrowLeft className="size-3" />
+                            <span>Sign in with password instead</span>
+                        </Button>
+                    )}
+
+                    {/* Demo mode section */}
+                    {demoMode?.enabled && demoMode.accounts.length > 0 && (
+                        <div className="rounded-xl border border-border bg-card/60 p-3 space-y-2 mt-1">
+                            <div className="text-center space-y-0.5">
+                                <p className="text-xs font-semibold text-foreground">Explore Demo Workspaces</p>
+                                <p className="text-[11px] text-muted-foreground">Select a persona to test the portal immediately</p>
+                            </div>
+                            <div className="grid gap-1.5">
+                                {demoMode.accounts.map((account) => {
+                                    const Icon = demoAccountIcons[account.role] ?? Key;
+                                    return (
+                                        <button
+                                            key={account.role}
+                                            type="button"
+                                            onClick={() => handleDemoLogin(account.role)}
+                                            disabled={processing || loggingInWithPasskey}
+                                            className="group flex w-full items-center gap-2.5 rounded-lg border border-border/80 bg-card/80 p-2 text-left transition-colors hover:border-primary/50 hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+                                        >
+                                            <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                                                <Icon className="size-3.5" />
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="text-xs font-medium text-foreground group-hover:text-primary transition-colors">
+                                                    {account.label}
+                                                </div>
+                                                <div className="truncate text-[10px] text-muted-foreground">
+                                                    {account.description}
+                                                </div>
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Social auth */}
+                    <SocialAuthButtons />
+
+                    {/* Passwordless Options (Magic link + Passkey) */}
+                    {loginMode === "password" && (
+                        <div className="space-y-3">
+                            <div className="relative my-1">
+                                <div className="absolute inset-0 flex items-center">
+                                    <span className="w-full border-t border-border" />
+                                </div>
+                                <div className="relative flex justify-center text-xs">
+                                    <span className="bg-card px-2 text-muted-foreground">Or passwordless</span>
+                                </div>
+                            </div>
+
+                            <div className="grid gap-2">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    className="h-10 w-full rounded-lg border-border bg-card/60 text-foreground hover:bg-accent hover:text-accent-foreground hover:border-primary/40 transition-colors text-sm font-medium gap-2"
+                                    onClick={() => setLoginMode("magic-link")}
+                                    disabled={processing || loggingInWithPasskey}
+                                >
+                                    <Sparkles className="size-4 text-primary" />
+                                    <span>Email me a sign-in link</span>
+                                </Button>
+
+                                {passkeyAvailable && (
                                     <Button
                                         type="button"
                                         variant="outline"
-                                        className="h-10 w-full"
+                                        className="h-10 w-full rounded-lg border-border bg-card/60 text-foreground hover:bg-accent hover:text-accent-foreground hover:border-primary/40 transition-colors text-sm font-medium gap-2"
                                         onClick={handlePasskeyLogin}
                                         disabled={processing || loggingInWithPasskey}
                                     >
                                         {loggingInWithPasskey ? (
                                             <>
-                                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                                Verifying...
+                                                <Loader2 className="size-4 animate-spin text-primary" />
+                                                <span>Authenticating with passkey...</span>
                                             </>
                                         ) : (
                                             <>
-                                                <Key className="mr-2 h-4 w-4" />
-                                                Sign in with passkey
+                                                <Fingerprint className="size-4 text-primary" />
+                                                <span>Sign in with Passkey / Biometrics</span>
                                             </>
                                         )}
                                     </Button>
-                                </>
-                            )}
+                                )}
+                            </div>
                         </div>
-                    </div>
+                    )}
 
-                    <div className="text-muted-foreground text-center text-sm">
-                        Don&apos;t have an account?{" "}
-                        <Link href="/signup" className="text-primary font-semibold underline-offset-4 transition-all hover:underline">
+                    {/* Register link */}
+                    <div className="pt-2 text-center text-sm text-muted-foreground">
+                        Need an account?{" "}
+                        <Link href="/signup" className="font-semibold text-primary underline-offset-4 hover:underline">
                             Sign up
                         </Link>
                     </div>
-                </div>
+                </FieldGroup>
             </form>
-
-            <div className="text-muted-foreground/60 hover:[&_a]:text-primary text-center text-xs text-balance [&_a]:underline [&_a]:underline-offset-4 [&_a]:transition-colors">
-                By clicking continue, you agree to our <Link href="/terms-of-service">ToS</Link> and{" "}
-                <Link href="/privacy-policy">Privacy Policy</Link>.
-            </div>
         </div>
     );
 }

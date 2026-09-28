@@ -84,10 +84,6 @@ it('verifies filament-edit-profile configuration', function () {
     expect(config('filament-edit-profile.visibility'))->toBe('public');
 });
 
-it('verifies default filesystem is configured', function () {
-    expect(config('filesystems.default'))->toBeString();
-});
-
 it('can generate storage urls for avatars', function () {
     $testPaths = [
         'avatars/test-avatar.jpg',

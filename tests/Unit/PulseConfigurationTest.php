@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
-it('uses the application database for Pulse storage by default', function (): void {
+it('uses the isolated testing database for Pulse storage when testing', function (): void {
     $process = new Process([
         PHP_BINARY,
         '-d',
@@ -25,5 +25,5 @@ it('uses the application database for Pulse storage by default', function (): vo
 
     $process->mustRun();
 
-    expect(mb_trim($process->getOutput()))->toBe('koakademy');
+    expect(mb_trim($process->getOutput()))->toBe(database_path('testing.sqlite'));
 });

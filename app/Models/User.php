@@ -26,6 +26,7 @@ use Illuminate\Notifications\DatabaseNotificationCollection;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Ai\Concerns\HasConversations;
 use Laravel\Passkeys\Contracts\PasskeyUser;
@@ -147,6 +148,9 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
     protected $casts = [
         'preferences' => 'array',
     ];
+
+    /** @var array<int, string>|null */
+    protected ?array $allPermissionNamesCache = null;
 
     /**
      * Get the channels that event should broadcast on.
@@ -723,6 +727,34 @@ final class User extends Authenticatable implements FilamentUser, HasAppAuthenti
     public function getTrackingTime(): Carbon
     {
         return $this->created_at ?? $this->freshTimestamp();
+    }
+
+    /**
+     * Get all permission names efficiently without hydrating hundreds of Eloquent models.
+     *
+     * @return array<int, string>
+     */
+    public function getAllPermissionNames(): array
+    {
+        return $this->allPermissionNamesCache ??= (function (): array {
+            $roleIds = DB::table('model_has_roles')
+                ->where('model_id', $this->getKey())
+                ->where('model_type', $this->getMorphClass())
+                ->pluck('role_id');
+
+            $directPermNames = DB::table('model_has_permissions')
+                ->join('permissions', 'permissions.id', '=', 'model_has_permissions.permission_id')
+                ->where('model_id', $this->getKey())
+                ->where('model_type', $this->getMorphClass())
+                ->pluck('permissions.name');
+
+            $rolePermNames = DB::table('role_has_permissions')
+                ->join('permissions', 'permissions.id', '=', 'role_has_permissions.permission_id')
+                ->whereIn('role_has_permissions.role_id', $roleIds)
+                ->pluck('permissions.name');
+
+            return $directPermNames->merge($rolePermNames)->unique()->values()->all();
+        })();
     }
 
     /**

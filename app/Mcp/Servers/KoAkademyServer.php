@@ -56,6 +56,8 @@ final class KoAkademyServer extends Server
         ListPendingEnrollmentsTool::class,
         GetEnrollmentAuditTrailTool::class,
         GetCourseCurriculumTool::class,
+        \App\Mcp\Tools\InspectCurriculumImportTool::class,
+        \App\Mcp\Tools\ApplyApprovedCurriculumImportTool::class,
         GetAvailableSubjectsTool::class,
         GetStudentSubjectEnrollmentsTool::class,
         ListAcademicOfferingsTool::class,

@@ -61,7 +61,9 @@ function PromptInput({
     };
 
     const handleClick: React.MouseEventHandler<HTMLDivElement> = (e) => {
-        if (!disabled) textareaRef.current?.focus();
+        const target = e.target;
+        const interactive = target instanceof Element && target.closest('button, input, textarea, select, a, [role="dialog"]');
+        if (!disabled && !interactive) textareaRef.current?.focus();
         onClick?.(e);
     };
 

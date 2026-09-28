@@ -11,6 +11,7 @@ use App\Enums\NotificationChannel;
 use App\Enums\PaymentMethod;
 use App\Enums\SchoolLevel;
 use App\Enums\StudentType;
+use App\Enums\UserRole;
 use App\Features\DynamicEnrollmentPolicies;
 use App\Http\Requests\Administrators\FetchAiModelsRequest;
 use App\Http\Requests\Administrators\StoreSchoolRequest;
@@ -96,7 +97,7 @@ final class AdministratorSystemManagementController extends Controller
                 'email' => $user->email,
                 'avatar' => $user->avatar_url ?? null,
                 'role' => $user->role?->getLabel() ?? 'Administrator',
-                'permissions' => $user->getAllPermissions()->pluck('name')->values()->all(),
+                'permissions' => $user->getAllPermissionNames(),
             ],
             'access' => [
                 'active_section' => null,
@@ -194,15 +195,15 @@ final class AdministratorSystemManagementController extends Controller
                     'enrollment_channels' => $optionList(['public' => 'Public registration', 'administrator' => 'Administrator', 'continuing' => 'Continuing student', 'api' => 'API']),
                     'student_types' => $optionList(StudentType::asSelectOptions()),
                     'schools' => School::query()->orderBy('name')->pluck('name', 'id')->mapWithKeys(fn (string $label, int $id): array => [(string) $id => $label])->map(fn (string $label, string $value): array => ['value' => $value, 'label' => $label])->values(),
-                    'programs' => Course::query()->orderBy('code')->get(['id', 'code', 'title'])->map(fn (Course $course): array => ['value' => (string) $course->id, 'label' => "{$course->code} · {$course->title}"]),
+                    'programs' => Course::query()->orderBy('code')->toBase()->get(['id', 'code', 'title'])->map(fn ($course): array => ['value' => (string) $course->id, 'label' => "{$course->code} · {$course->title}"]),
                     'periods' => [[
                         'value' => $generalSettings->getCurrentSchoolYearString().'|'.$generalSettings->getCurrentSemester(),
                         'label' => $generalSettings->getCurrentSchoolYearString().' · Semester '.$generalSettings->getCurrentSemester(),
                     ]],
                     'year_levels' => collect(range(1, 6))->map(fn (int $year): array => ['value' => (string) $year, 'label' => "Year {$year}"]),
                     'payment_methods' => collect(PaymentMethod::cases())->map(fn (PaymentMethod $method): array => ['value' => $method->value, 'label' => $method->value]),
-                    'roles' => Role::query()->orderBy('name')->get(['id', 'name'])->map(fn (Role $role): array => ['value' => (string) $role->id, 'label' => str($role->name)->headline()->toString()]),
-                    'permissions' => Permission::query()->orderBy('name')->get(['id', 'name'])->map(fn (Permission $permission): array => ['value' => $permission->name, 'label' => str($permission->name)->headline()->toString()]),
+                    'roles' => Role::query()->orderBy('name')->toBase()->get(['id', 'name'])->map(fn ($role): array => ['value' => (string) $role->id, 'label' => str($role->name)->headline()->toString()]),
+                    'permissions' => Permission::query()->orderBy('name')->toBase()->pluck('name')->map(fn (string $name): array => ['value' => $name, 'label' => str($name)->headline()->toString()]),
                     'notification_channels' => collect(NotificationChannel::cases())
                         ->where('value', NotificationChannel::Mail->value)
                         ->map(fn (NotificationChannel $channel): array => ['value' => $channel->value, 'label' => $channel->getLabel() ?? $channel->value])
@@ -1198,7 +1199,7 @@ final class AdministratorSystemManagementController extends Controller
         }
 
         $schools = School::all();
-        $curriculumCapabilities = $activeSchool instanceof School
+        $curriculumCapabilities = ($activeSection === 'school' && $activeSchool instanceof School)
             ? app(CurriculumCapabilityResolver::class)->forSchool($activeSchool)->values()->all()
             : [];
 
@@ -1229,7 +1230,7 @@ final class AdministratorSystemManagementController extends Controller
 
         abort_unless($user instanceof User, 403);
 
-        $permissions = $user->getAllPermissions()->pluck('name')->values()->all();
+        $permissions = $user->getAllPermissionNames();
 
         return [
             'user' => [
@@ -1254,23 +1255,33 @@ final class AdministratorSystemManagementController extends Controller
             'sentry' => app(ErrorReportingService::class)->get()['providers']['sentry'],
             'enrollment_pipeline' => $this->enrollmentPipelineService->getConfiguration(),
             'enrollment_stats' => $this->enrollmentPipelineService->getStatsConfiguration(),
-            'api_management' => $generalSettingsService->getApiManagementConfig(),
-            'grading_config' => $activeSchool instanceof School
-                ? app(GradingSystemService::class)->activeConfigurationForSchool($activeSchool, createWhenMissing: false)
-                : app(GradingSystemService::class)->getConfig(),
-            'id_sequences' => app(IdentifierGenerator::class)->configuration(),
-            'courses_with_subjects' => app(GradingSystemService::class)->getCoursesWithSubjects(),
-            'available_enrollment_courses' => Course::query()
-                ->where('is_active', true)
-                ->orderBy('title')
-                ->get(['id', 'code', 'title'])
-                ->map(fn (Course $course): array => [
-                    'id' => $course->id,
-                    'code' => $course->code,
-                    'title' => $course->title,
-                ])
-                ->values()
-                ->all(),
+            'api_management' => $activeSection === 'api'
+                ? $generalSettingsService->getApiManagementConfig()
+                : ($settings->more_configs['api_management'] ?? $generalSettingsService->getApiManagementConfig()),
+            'grading_config' => $activeSection === 'grading'
+                ? ($activeSchool instanceof School
+                    ? app(GradingSystemService::class)->activeConfigurationForSchool($activeSchool, createWhenMissing: false)
+                    : app(GradingSystemService::class)->getConfig())
+                : ($settings->more_configs['grading'] ?? app(GradingSystemService::class)->getConfig()),
+            'id_sequences' => $activeSection === 'identifiers'
+                ? app(IdentifierGenerator::class)->configuration()
+                : null,
+            'courses_with_subjects' => $activeSection === 'grading'
+                ? app(GradingSystemService::class)->getCoursesWithSubjects()
+                : [],
+            'available_enrollment_courses' => $activeSection === 'pipeline'
+                ? Course::query()
+                    ->where('is_active', true)
+                    ->orderBy('title')
+                    ->get(['id', 'code', 'title'])
+                    ->map(fn (Course $course): array => [
+                        'id' => $course->id,
+                        'code' => $course->code,
+                        'title' => $course->title,
+                    ])
+                    ->values()
+                    ->all()
+                : [],
             'system_semester' => $generalSettingsService->getSystemDefaultSemester(),
             'system_school_year_start' => $generalSettingsService->getSystemDefaultSchoolYearStart(),
             'system_school_year_end' => $generalSettingsService->getSystemDefaultSchoolYearStart() + 1,
@@ -1278,7 +1289,9 @@ final class AdministratorSystemManagementController extends Controller
             'system_school_ending_date' => $generalSettingsService->getGlobalSchoolEndingDate()?->format('Y-m-d'),
             'available_semesters' => $generalSettingsService->getAvailableSemesters(),
             'available_school_years' => $generalSettingsService->getAvailableSchoolYears(),
-            'registrar_reporting' => app(RegistrarReportingSettingsService::class)->get(),
+            'registrar_reporting' => $activeSection === 'school'
+                ? app(RegistrarReportingSettingsService::class)->get()
+                : ($settings->more_configs['registrar_reporting'] ?? ['maximum_year_level' => 4]),
             'public_api_url' => url('/api/v1/public/settings'),
             'mcp_server_url' => url('/mcp/koakademy'),
             'public_api_fields' => GeneralSettingsService::publicApiFieldDefinitions(),
@@ -1301,8 +1314,12 @@ final class AdministratorSystemManagementController extends Controller
                     'sender_id' => '',
                 ],
             ],
-            'finance_document_settings' => app(FinanceDocumentSettingsService::class)->get(),
-            'tuition_payment_schedule_settings' => app(TuitionPaymentScheduleSettingsService::class)->get(),
+            'finance_document_settings' => $activeSection === 'finance_documents'
+                ? app(FinanceDocumentSettingsService::class)->get()
+                : ($settings->more_configs['finance_documents'] ?? []),
+            'tuition_payment_schedule_settings' => $activeSection === 'tuition_payment_schedule'
+                ? app(TuitionPaymentScheduleSettingsService::class)->get()
+                : ($settings->more_configs['tuition_payment_schedule'] ?? []),
             'third_party_services' => $settings->more_configs['third_party_services'] ?? $thirdPartyServices,
             'branding' => [
                 'app_name' => $this->siteSettings->app_name,
@@ -1329,55 +1346,43 @@ final class AdministratorSystemManagementController extends Controller
      */
     private function getSectionAccessMap(User $user): array
     {
+        $superAdminRoleName = (string) config('filament-shield.super_admin.name', 'super_admin');
+        $hasFullAccess = $user->role === UserRole::SuperAdmin
+            || $user->role === UserRole::Developer
+            || $user->hasRole($superAdminRoleName)
+            || $user->hasRole(UserRole::Developer->value);
+
+        $definitions = SystemManagementPermissions::definitions();
         $access = [];
 
-        foreach (SystemManagementPermissions::sectionKeys() as $section) {
-            $viewPermission = SystemManagementPermissions::viewPermission($section);
-            $updatePermission = SystemManagementPermissions::updatePermission($section);
-            $canUpdate = $updatePermission !== null && $user->can(match ($section) {
-                'school' => 'updateSchool',
-                'pipeline' => 'updateEnrollmentPipeline',
-                'seo' => 'updateSeo',
-                'analytics' => 'updateAnalytics',
-                'brand' => 'updateBrand',
-                'socialite' => 'updateSocialite',
-                'newsletter' => 'updateNewsletter',
-                'api' => 'updateApi',
-                'notifications' => 'updateNotifications',
-                'finance_documents' => 'updateFinanceDocuments',
-                'tuition_payment_schedule' => 'updateTuitionPaymentSchedule',
-                'grading' => 'updateGrading',
-                'identifiers' => 'updateIdentifiers',
-                'faculty_fields' => 'updateFacultyFields',
-                'observability' => 'updateObservability',
-                'ai' => 'updateAi',
-                default => 'viewAny',
-            }, GeneralSetting::class);
+        if ($hasFullAccess) {
+            foreach ($definitions as $section => $permission) {
+                $access[$section] = [
+                    'can_view' => true,
+                    'can_update' => $permission['update'] !== null,
+                    'view_permission' => $permission['view'],
+                    'update_permission' => $permission['update'],
+                ];
+            }
 
-            $canView = $user->can(match ($section) {
-                'school' => 'viewSchool',
-                'pipeline' => 'viewEnrollmentPipeline',
-                'seo' => 'viewSeo',
-                'analytics' => 'viewAnalytics',
-                'brand' => 'viewBrand',
-                'socialite' => 'viewSocialite',
-                'mail' => 'viewMail',
-                'newsletter' => 'viewNewsletter',
-                'api' => 'viewApi',
-                'notifications' => 'viewNotifications',
-                'finance_documents' => 'viewFinanceDocuments',
-                'tuition_payment_schedule' => 'viewTuitionPaymentSchedule',
-                'grading' => 'viewGrading',
-                'identifiers' => 'viewIdentifiers',
-                'faculty_fields' => 'viewFacultyFields',
-                'pulse' => 'viewPulse',
-                'observability' => 'viewObservability',
-                'ai' => 'viewAi',
-            }, GeneralSetting::class);
+            return $access;
+        }
+
+        $userPermissions = array_fill_keys(
+            $user->getAllPermissionNames(),
+            true,
+        );
+
+        foreach ($definitions as $section => $permission) {
+            $viewPermission = $permission['view'];
+            $updatePermission = $permission['update'];
+
+            $hasUpdate = $updatePermission !== null && isset($userPermissions[$updatePermission]);
+            $hasView = isset($userPermissions[$viewPermission]) || $hasUpdate;
 
             $access[$section] = [
-                'can_view' => $canView,
-                'can_update' => $canUpdate,
+                'can_view' => $hasView,
+                'can_update' => $hasUpdate,
                 'view_permission' => $viewPermission,
                 'update_permission' => $updatePermission,
             ];

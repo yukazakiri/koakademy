@@ -16,6 +16,15 @@ abstract class TestCase extends BaseTestCase
     {
         parent::setUp();
 
+        $appDb = database_path('database.sqlite');
+        $activeDb = (string) config('database.connections.'.config('database.default').'.database');
+
+        if ($activeDb !== ':memory:' && file_exists($appDb) && file_exists($activeDb) && realpath($activeDb) === realpath($appDb)) {
+            throw new \RuntimeException(
+                "DANGER: Test suite attempted to run against application database ({$appDb}). Aborting to prevent data corruption."
+            );
+        }
+
         config(['inertia.ssr.enabled' => false]);
 
         $this->app->singleton(\Faker\Generator::class, function (): \Faker\Generator {
@@ -28,6 +37,21 @@ abstract class TestCase extends BaseTestCase
         if ($this->app && $this->app->bound(\App\Services\TenantContext::class)) {
             $this->app->make(\App\Services\TenantContext::class)->reset();
         }
+
+        // FeatureToggleRegistry caches global Pennant states in a static
+        // property. Parallel test workers reuse the PHP process, so a toggle
+        // activated in one test can otherwise leak into a later test case.
+        if (class_exists(\App\Services\FeatureToggleRegistry::class)) {
+            \App\Services\FeatureToggleRegistry::flushGlobalFeatureStates();
+        }
+
+        // Pennant also keeps its own driver cache; flush it in addition to the
+        // application registry cache before the next test reuses this worker.
+        if ($this->app && $this->app->resolved(\Laravel\Pennant\Feature::class)) {
+            \Laravel\Pennant\Feature::purge();
+        }
+
+        \App\Services\GeneralSettingsService::flushGlobalSetting();
 
         parent::tearDown();
     }

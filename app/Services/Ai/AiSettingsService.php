@@ -184,6 +184,7 @@ final class AiSettingsService
                 'last_fetched_at' => $current['last_fetched_at'] ?? null,
                 'requires_key' => $meta['requires_key'],
                 'supports_model_fetch' => $meta['supports_model_fetch'],
+                'supports_document_attachments' => in_array($key, ['openai', 'anthropic', 'gemini'], true),
                 'is_custom' => false,
             ];
         }
@@ -215,6 +216,7 @@ final class AiSettingsService
                 'last_fetched_at' => $custom['last_fetched_at'] ?? null,
                 'requires_key' => (bool) ($custom['requires_key'] ?? false),
                 'supports_model_fetch' => true,
+                'supports_document_attachments' => false,
                 'is_custom' => true,
             ];
         }

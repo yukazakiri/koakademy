@@ -1,18 +1,23 @@
-import { Head, Link, useForm, usePage } from "@inertiajs/react";
+import { Link, useForm, usePage } from "@inertiajs/react";
 import axios from "axios";
-import { ArrowLeft, Fingerprint, KeyRound, Loader2, Mail, ShieldAlert, ShieldCheck, Smartphone } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+    ArrowLeft,
+    Fingerprint,
+    KeyRound,
+    Loader2,
+    Mail,
+    ShieldAlert,
+    ShieldCheck,
+    Smartphone,
+} from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
-import { AnnouncementBanner } from "@/components/announcement-banner";
-import { OnboardingPanel } from "@/components/onboarding-panel";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { TransitionWrapper } from "@/components/transition-wrapper";
+import { AuthLayout, type AuthLayoutProps } from "@/layouts/auth-layout";
+import { IconTile } from "@/components/reui/icon-tile";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { resolveBranding, type Branding } from "@/lib/branding";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 
 type VerificationMethod = "select" | "passkey" | "authenticator" | "email" | "recovery";
 
@@ -35,49 +40,34 @@ function supportsWebAuthn(): boolean {
 }
 
 export default function TwoFactorChallengePage() {
-    const { has_app_auth, has_email_auth, has_passkeys, branding, announcements } = usePage<{
+    const { has_app_auth, has_email_auth, has_passkeys, announcements } = usePage<{
         has_app_auth: boolean;
         has_email_auth: boolean;
         has_passkeys: boolean;
-        branding?: Partial<Branding> | null;
-        announcements?: unknown[];
+        announcements?: AuthLayoutProps["announcements"];
     }>().props;
 
-    const resolvedBranding = resolveBranding(branding);
-    const appName = resolvedBranding.appName;
-    const orgShortName = resolvedBranding.organizationShortName;
-
-    const browserSupportsPasskeys = supportsWebAuthn();
+    const [browserSupportsPasskeys, setBrowserSupportsPasskeys] = useState(false);
     const passkeyAvailable = has_passkeys && browserSupportsPasskeys;
 
-    // Build list of available methods
-    const availableMethods: Exclude<VerificationMethod, "select">[] = [];
-    if (passkeyAvailable) {
-        availableMethods.push("passkey");
-    }
-    if (has_app_auth) {
-        availableMethods.push("authenticator");
-    }
-    if (has_email_auth) {
-        availableMethods.push("email");
-    }
-    if (has_app_auth) {
-        availableMethods.push("recovery");
-    }
+    useEffect(() => {
+        setBrowserSupportsPasskeys(supportsWebAuthn());
+    }, []);
 
-    // Determine initial view: if only one method, go straight to it; otherwise select
+    const availableMethods: Exclude<VerificationMethod, "select">[] = [];
+    if (passkeyAvailable) availableMethods.push("passkey");
+    if (has_app_auth) availableMethods.push("authenticator");
+    if (has_email_auth) availableMethods.push("email");
+    availableMethods.push("recovery");
+
     const getInitialMethod = (): VerificationMethod => {
         if (availableMethods.length === 1) {
             return availableMethods[0];
         }
-        // Auto-prompt passkey if available
-        if (passkeyAvailable) {
-            return "passkey";
-        }
-        if (availableMethods.length > 1) {
-            return "select";
-        }
-        return availableMethods[0] ?? "select";
+        if (passkeyAvailable) return "passkey";
+        if (has_app_auth) return "authenticator";
+        if (has_email_auth) return "email";
+        return "select";
     };
 
     const [activeMethod, setActiveMethod] = useState<VerificationMethod>(getInitialMethod);
@@ -91,16 +81,16 @@ export default function TwoFactorChallengePage() {
         recovery_code: "",
     });
 
-    // Auto-prompt passkey ceremony on mount when it's the active method
     useEffect(() => {
-        if (activeMethod === "passkey" && passkeyAvailable && !passkeyAutoPrompted && !passkeyTriggeredRef.current) {
+        if (activeMethod === "passkey" && !passkeyAutoPrompted && !passkeyTriggeredRef.current) {
             passkeyTriggeredRef.current = true;
             setPasskeyAutoPrompted(true);
             handlePasskeyVerify(true);
         }
-    }, [activeMethod, passkeyAvailable, passkeyAutoPrompted]);
+    }, [activeMethod]);
 
     const handlePasskeyVerify = async (isAutoPrompt = false) => {
+        if (passkeyVerifying) return;
         setPasskeyVerifying(true);
 
         try {
@@ -108,7 +98,7 @@ export default function TwoFactorChallengePage() {
             const options = optionsResponse.data.options;
 
             const challenge = base64urlToBuffer(options.challenge);
-            const allowCredentials = (options.allowCredentials || []).map((cred: any) => ({
+            const allowCredentials = (options.allowCredentials ?? []).map((cred: { id: string; type: string }) => ({
                 ...cred,
                 id: base64urlToBuffer(cred.id),
             }));
@@ -119,17 +109,17 @@ export default function TwoFactorChallengePage() {
                 allowCredentials,
             };
 
-            const credential = (await navigator.credentials.get({ publicKey })) as PublicKeyCredential;
-
+            const credential = (await navigator.credentials.get({ publicKey })) as PublicKeyCredential | null;
             if (!credential) {
                 throw new Error("Failed to get credential");
             }
 
+            const rawId = bufferToBase64url(credential.rawId);
             const assertionResponse = credential.response as AuthenticatorAssertionResponse;
 
             const passkeyData = {
                 id: credential.id,
-                rawId: bufferToBase64url(credential.rawId),
+                rawId,
                 type: credential.type,
                 response: {
                     authenticatorData: bufferToBase64url(assertionResponse.authenticatorData),
@@ -143,68 +133,53 @@ export default function TwoFactorChallengePage() {
                 credential: passkeyData,
             });
 
-            const redirectUrl = verifyResponse.data.url ?? verifyResponse.data.redirect;
-
-            if (redirectUrl) {
-                window.location.href = redirectUrl;
-            }
-        } catch (error: any) {
-            console.error("Passkey verification failed:", error);
-            setPasskeyVerifying(false);
-
-            if (error?.name === "NotAllowedError") {
-                // User cancelled or timed out — fall back to method select if other methods exist
-                if (isAutoPrompt && availableMethods.length > 1) {
-                    setActiveMethod("select");
-                    return;
-                }
-                // If auto-prompted with no other methods, stay silent — user can retry or go back
+            const redirectUrl = verifyResponse.data.url ?? verifyResponse.data.redirect ?? "/dashboard";
+            toast.success("Authentication successful");
+            window.location.href = redirectUrl;
+        } catch (error: unknown) {
+            const err = error as { name?: string; response?: { data?: { message?: string } } };
+            if (err.name === "NotAllowedError") {
                 if (!isAutoPrompt) {
-                    toast.error("Passkey verification was cancelled or timed out.");
+                    toast.error("Passkey verification cancelled.");
                 }
-            } else if (error?.response?.data?.error) {
-                toast.error(error.response.data.error);
+            } else if (err.response?.data?.message) {
+                toast.error(err.response.data.message);
             } else {
                 toast.error("Passkey verification failed.");
             }
-
-            // If there are other methods, show the selector
-            if (availableMethods.length > 1) {
-                setActiveMethod("select");
-            }
+        } finally {
+            setPasskeyVerifying(false);
         }
     };
 
-    const handleCodeSubmit = (e: React.FormEvent) => {
+    const handleCodeSubmit = (e: FormEvent) => {
         e.preventDefault();
         form.post("/two-factor-challenge");
     };
 
-    const handleSendEmailCode = () => {
-        axios
-            .post("/two-factor-challenge/send-email")
-            .then(() => {
-                setEmailCodeSent(true);
-                toast.success("Verification code sent to your email.");
-            })
-            .catch(() => {
-                toast.error("Failed to send verification code.");
-            });
+    const handleSendEmailCode = async () => {
+        try {
+            await axios.post("/two-factor-challenge/send-email");
+            setEmailCodeSent(true);
+            toast.success("Verification code sent to your email.");
+        } catch {
+            toast.error("Failed to send verification code. Please try again.");
+        }
     };
 
     const switchMethod = (method: VerificationMethod) => {
-        setActiveMethod(method);
         form.reset();
         form.clearErrors();
+        setActiveMethod(method);
     };
 
     const showBackButton = activeMethod !== "select" && availableMethods.length > 1;
 
-    const methodConfig: Record<Exclude<VerificationMethod, "select">, { icon: React.ElementType; label: string; description: string }> = {
+    const methodConfig: Record<Exclude<VerificationMethod, "select">, { icon: typeof Fingerprint; label: string; description: string }> = {
         passkey: {
             icon: Fingerprint,
-            label: "Passkey",
-            description: "Use your fingerprint, face, or hardware security key",
+            label: "Passkey / Biometrics",
+            description: "Use your fingerprint, face, or hardware key",
         },
         authenticator: {
             icon: Smartphone,
@@ -213,20 +188,19 @@ export default function TwoFactorChallengePage() {
         },
         email: {
             icon: Mail,
-            label: "Email Code",
-            description: "Receive a one-time code sent to your email address",
+            label: "Email Verification",
+            description: "Receive a one-time code sent to your inbox",
         },
         recovery: {
             icon: KeyRound,
             label: "Recovery Code",
-            description: "Use one of your saved recovery codes",
+            description: "Use an emergency single-use backup code",
         },
     };
 
     const renderMethodSelect = () => (
-        <div className="space-y-3">
-            <p className="text-muted-foreground text-sm">Choose how you want to verify your identity:</p>
-            <div className="space-y-2">
+        <div className="space-y-4">
+            <div className="grid gap-2.5">
                 {availableMethods.map((method) => {
                     const config = methodConfig[method];
                     const Icon = config.icon;
@@ -235,136 +209,115 @@ export default function TwoFactorChallengePage() {
                             key={method}
                             type="button"
                             onClick={() => switchMethod(method)}
-                            className="hover:bg-muted/80 border-border hover:border-primary/30 flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors"
+                            className="group flex w-full items-center gap-3.5 rounded-xl border border-border/80 bg-background/80 p-3.5 text-left transition-all duration-200 hover:border-primary/40 hover:bg-primary/5 hover:shadow-xs focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20"
                         >
-                            <div className="bg-muted flex h-10 w-10 shrink-0 items-center justify-center rounded-lg">
-                                <Icon className="text-foreground h-5 w-5" />
-                            </div>
+                            <IconTile variant="soft" size="lg" className="rounded-xl shrink-0 group-hover:scale-105 transition-transform">
+                                <Icon className="size-5" />
+                            </IconTile>
                             <div className="min-w-0 flex-1">
-                                <p className="text-sm font-medium">{config.label}</p>
-                                <p className="text-muted-foreground text-xs">{config.description}</p>
+                                <p className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
+                                    {config.label}
+                                </p>
+                                <p className="text-xs text-muted-foreground">{config.description}</p>
                             </div>
                         </button>
                     );
                 })}
             </div>
 
-            {/* Show notice if passkeys exist but browser doesn't support them */}
             {has_passkeys && !browserSupportsPasskeys && (
-                <div className="bg-muted/50 flex items-start gap-2 rounded-lg border p-3">
-                    <ShieldAlert className="text-muted-foreground mt-0.5 h-4 w-4 shrink-0" />
-                    <p className="text-muted-foreground text-xs">
-                        You have passkeys registered, but this browser does not support them. Use a different browser or choose another method.
+                <div className="flex items-start gap-2.5 rounded-xl border border-warning/30 bg-warning/10 p-3 text-xs text-warning-foreground">
+                    <ShieldAlert className="mt-0.5 size-4 shrink-0 text-warning" />
+                    <p>
+                        You have passkeys registered, but this browser does not support them. Please choose another method.
                     </p>
                 </div>
             )}
 
-            <Link
-                href="/login"
-                className="text-muted-foreground hover:text-primary block w-full text-center text-xs underline-offset-4 hover:underline"
-            >
-                Back to login
-            </Link>
+            <div className="pt-2 text-center">
+                <Link
+                    href="/login"
+                    className="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors underline-offset-4 hover:underline"
+                >
+                    Cancel and return to sign in
+                </Link>
+            </div>
         </div>
     );
 
     const renderPasskey = () => (
-        <div className="space-y-4">
-            <div className="flex flex-col items-center gap-3 py-4">
+        <div className="space-y-5">
+            <div className="flex flex-col items-center gap-3 rounded-2xl border border-border/60 bg-muted/20 py-6 text-center">
+                <IconTile variant={passkeyVerifying ? "soft" : "elevated"} size="xl" className="rounded-2xl">
+                    {passkeyVerifying ? (
+                        <Loader2 className="size-7 animate-spin text-primary" />
+                    ) : (
+                        <Fingerprint className="size-7 text-primary" />
+                    )}
+                </IconTile>
+                <div className="space-y-1">
+                    <p className="text-sm font-semibold text-foreground">
+                        {passkeyVerifying ? "Waiting for authorization..." : "Authorize with Passkey"}
+                    </p>
+                    <p className="max-w-xs text-xs text-muted-foreground">
+                        {passkeyVerifying
+                            ? "Follow the biometric or security key prompt on your device."
+                            : "Touch your fingerprint sensor, use facial recognition, or insert your security key."}
+                    </p>
+                </div>
+            </div>
+
+            <Button
+                type="button"
+                className="h-11 w-full rounded-xl font-semibold shadow-md"
+                onClick={() => handlePasskeyVerify(false)}
+                disabled={passkeyVerifying}
+            >
                 {passkeyVerifying ? (
                     <>
-                        <div className="bg-primary/10 flex h-16 w-16 items-center justify-center rounded-full">
-                            <Loader2 className="text-primary h-8 w-8 animate-spin" />
-                        </div>
-                        <div className="text-center">
-                            <p className="text-sm font-medium">Waiting for passkey...</p>
-                            <p className="text-muted-foreground text-xs">Follow the prompts from your browser or device.</p>
-                        </div>
+                        <Loader2 className="mr-2 size-4 animate-spin" />
+                        <span>Verifying...</span>
                     </>
                 ) : (
                     <>
-                        <div className="bg-muted flex h-16 w-16 items-center justify-center rounded-full">
-                            <Fingerprint className="text-foreground h-8 w-8" />
-                        </div>
-                        <div className="text-center">
-                            <p className="text-sm font-medium">Verify with your passkey</p>
-                            <p className="text-muted-foreground text-xs">Use your fingerprint, face, or hardware security key.</p>
-                        </div>
+                        <Fingerprint className="mr-2 size-4" />
+                        <span>Authenticate with Passkey</span>
                     </>
                 )}
-            </div>
-            <Button type="button" className="w-full" onClick={() => handlePasskeyVerify(false)} disabled={passkeyVerifying}>
-                <Fingerprint className="mr-2 h-4 w-4" />
-                {passkeyVerifying ? "Verifying..." : "Verify with Passkey"}
             </Button>
-            <div className="space-y-1.5">
+
+            <div className="space-y-2 text-center text-xs">
                 {availableMethods.length > 1 && (
                     <button
                         type="button"
                         onClick={() => switchMethod("select")}
-                        className="text-muted-foreground hover:text-primary w-full text-center text-sm underline-offset-4 hover:underline"
+                        className="font-medium text-primary hover:text-primary/80 transition-colors hover:underline block w-full"
                     >
-                        Try another way
+                        Try another verification method
                     </button>
                 )}
                 <Link
                     href="/login"
-                    className="text-muted-foreground hover:text-primary block w-full text-center text-xs underline-offset-4 hover:underline"
+                    className="text-muted-foreground hover:text-foreground transition-colors block w-full underline-offset-4 hover:underline"
                 >
-                    Back to login
+                    Return to login
                 </Link>
             </div>
         </div>
     );
 
     const renderAuthenticator = () => (
-        <form onSubmit={handleCodeSubmit} className="space-y-4">
-            <div className="space-y-2">
-                <Label htmlFor="code" className="flex items-center gap-1.5">
-                    <Smartphone className="h-3.5 w-3.5" />
-                    Authenticator Code
-                </Label>
-                <p className="text-muted-foreground text-xs">Enter the 6-digit code from your authenticator app.</p>
-                <Input
-                    id="code"
-                    type="text"
-                    inputMode="numeric"
-                    autoFocus
-                    autoComplete="one-time-code"
-                    value={form.data.code}
-                    onChange={(e) => form.setData("code", e.target.value)}
-                    placeholder="XXX XXX"
-                    className="text-center font-mono text-lg tracking-widest"
-                />
-                {form.errors.code && <p className="text-destructive text-sm">{form.errors.code}</p>}
-            </div>
-            <Button type="submit" className="w-full" disabled={form.processing}>
-                {form.processing ? "Verifying..." : "Verify"}
-            </Button>
-        </form>
-    );
-
-    const renderEmail = () => (
-        <form onSubmit={handleCodeSubmit} className="space-y-4">
-            <div className="space-y-2">
-                <Label htmlFor="code" className="flex items-center gap-1.5">
-                    <Mail className="h-3.5 w-3.5" />
-                    Email Verification Code
-                </Label>
-                <p className="text-muted-foreground text-xs">
-                    {emailCodeSent
-                        ? "A code has been sent to your email. Enter it below."
-                        : "Click the button below to receive a verification code at your email address."}
-                </p>
-                {!emailCodeSent && (
-                    <Button type="button" variant="outline" className="w-full" onClick={handleSendEmailCode}>
-                        <Mail className="mr-2 h-4 w-4" />
-                        Send Code to Email
-                    </Button>
-                )}
-                {emailCodeSent && (
-                    <>
-                        <Input
+        <form onSubmit={handleCodeSubmit}>
+            <FieldGroup className="gap-5">
+                <Field>
+                    <FieldLabel htmlFor="code" className="text-xs font-semibold text-foreground">
+                        Authenticator Code
+                    </FieldLabel>
+                    <InputGroup className="h-12 rounded-xl border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
+                        <InputGroupAddon align="inline-start" className="pl-3 text-muted-foreground/70">
+                            <Smartphone className="size-4" />
+                        </InputGroupAddon>
+                        <InputGroupInput
                             id="code"
                             type="text"
                             inputMode="numeric"
@@ -372,53 +325,201 @@ export default function TwoFactorChallengePage() {
                             autoComplete="one-time-code"
                             value={form.data.code}
                             onChange={(e) => form.setData("code", e.target.value)}
-                            placeholder="XXX XXX"
-                            className="text-center font-mono text-lg tracking-widest"
+                            placeholder="123456"
+                            maxLength={8}
+                            className="font-mono text-base tracking-widest text-center"
                         />
-                        {form.errors.code && <p className="text-destructive text-sm">{form.errors.code}</p>}
-                    </>
-                )}
-            </div>
-            {emailCodeSent && (
-                <>
-                    <Button type="submit" className="w-full" disabled={form.processing}>
-                        {form.processing ? "Verifying..." : "Verify"}
-                    </Button>
-                    <button
-                        type="button"
-                        onClick={handleSendEmailCode}
-                        className="text-muted-foreground hover:text-primary w-full text-center text-xs underline-offset-4 hover:underline"
+                    </InputGroup>
+                    {form.errors.code && <FieldError errors={[{ message: form.errors.code }]} />}
+                </Field>
+
+                <Button
+                    type="submit"
+                    className="h-11 w-full rounded-xl font-semibold shadow-md"
+                    disabled={form.processing || !form.data.code}
+                >
+                    {form.processing ? (
+                        <>
+                            <Loader2 className="mr-2 size-4 animate-spin" />
+                            <span>Verifying code...</span>
+                        </>
+                    ) : (
+                        "Verify Code"
+                    )}
+                </Button>
+
+                <div className="space-y-2 text-center text-xs">
+                    {availableMethods.length > 1 && (
+                        <button
+                            type="button"
+                            onClick={() => switchMethod("select")}
+                            className="font-medium text-primary hover:text-primary/80 transition-colors hover:underline block w-full"
+                        >
+                            Try another verification method
+                        </button>
+                    )}
+                    <Link
+                        href="/login"
+                        className="text-muted-foreground hover:text-foreground transition-colors block w-full underline-offset-4 hover:underline"
                     >
-                        Resend code
-                    </button>
-                </>
-            )}
+                        Return to login
+                    </Link>
+                </div>
+            </FieldGroup>
+        </form>
+    );
+
+    const renderEmail = () => (
+        <form onSubmit={handleCodeSubmit}>
+            <FieldGroup className="gap-5">
+                <Field>
+                    <FieldLabel htmlFor="code" className="text-xs font-semibold text-foreground">
+                        Email One-Time Code
+                    </FieldLabel>
+                    {!emailCodeSent ? (
+                        <div className="space-y-3">
+                            <p className="text-xs text-muted-foreground">
+                                We will dispatch a temporary 6-digit verification code to your verified email address.
+                            </p>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                className="h-11 w-full rounded-xl gap-2 font-medium"
+                                onClick={handleSendEmailCode}
+                            >
+                                <Mail className="size-4 text-primary" />
+                                <span>Send Verification Code to Email</span>
+                            </Button>
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            <InputGroup className="h-12 rounded-xl border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
+                                <InputGroupAddon align="inline-start" className="pl-3 text-muted-foreground/70">
+                                    <Mail className="size-4" />
+                                </InputGroupAddon>
+                                <InputGroupInput
+                                    id="code"
+                                    type="text"
+                                    inputMode="numeric"
+                                    autoFocus
+                                    autoComplete="one-time-code"
+                                    value={form.data.code}
+                                    onChange={(e) => form.setData("code", e.target.value)}
+                                    placeholder="123456"
+                                    maxLength={8}
+                                    className="font-mono text-base tracking-widest text-center"
+                                />
+                            </InputGroup>
+                            {form.errors.code && <FieldError errors={[{ message: form.errors.code }]} />}
+                            <div className="flex justify-end">
+                                <button
+                                    type="button"
+                                    onClick={handleSendEmailCode}
+                                    className="text-xs font-medium text-primary hover:underline"
+                                >
+                                    Resend code
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </Field>
+
+                {emailCodeSent && (
+                    <Button
+                        type="submit"
+                        className="h-11 w-full rounded-xl font-semibold shadow-md"
+                        disabled={form.processing || !form.data.code}
+                    >
+                        {form.processing ? (
+                            <>
+                                <Loader2 className="mr-2 size-4 animate-spin" />
+                                <span>Verifying...</span>
+                            </>
+                        ) : (
+                            "Verify & Continue"
+                        )}
+                    </Button>
+                )}
+
+                <div className="space-y-2 text-center text-xs">
+                    {availableMethods.length > 1 && (
+                        <button
+                            type="button"
+                            onClick={() => switchMethod("select")}
+                            className="font-medium text-primary hover:text-primary/80 transition-colors hover:underline block w-full"
+                        >
+                            Try another verification method
+                        </button>
+                    )}
+                    <Link
+                        href="/login"
+                        className="text-muted-foreground hover:text-foreground transition-colors block w-full underline-offset-4 hover:underline"
+                    >
+                        Return to login
+                    </Link>
+                </div>
+            </FieldGroup>
         </form>
     );
 
     const renderRecovery = () => (
-        <form onSubmit={handleCodeSubmit} className="space-y-4">
-            <div className="space-y-2">
-                <Label htmlFor="recovery_code" className="flex items-center gap-1.5">
-                    <KeyRound className="h-3.5 w-3.5" />
-                    Recovery Code
-                </Label>
-                <p className="text-muted-foreground text-xs">Enter one of the recovery codes you saved when setting up two-factor authentication.</p>
-                <Input
-                    id="recovery_code"
-                    type="text"
-                    autoFocus
-                    autoComplete="off"
-                    value={form.data.recovery_code}
-                    onChange={(e) => form.setData("recovery_code", e.target.value)}
-                    placeholder="xxxx-xxxx-xxxx"
-                    className="font-mono"
-                />
-                {form.errors.recovery_code && <p className="text-destructive text-sm">{form.errors.recovery_code}</p>}
-            </div>
-            <Button type="submit" className="w-full" disabled={form.processing}>
-                {form.processing ? "Verifying..." : "Verify"}
-            </Button>
+        <form onSubmit={handleCodeSubmit}>
+            <FieldGroup className="gap-5">
+                <Field>
+                    <FieldLabel htmlFor="recovery_code" className="text-xs font-semibold text-foreground">
+                        Emergency Recovery Code
+                    </FieldLabel>
+                    <InputGroup className="h-12 rounded-xl border-border/80 bg-background/60 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
+                        <InputGroupAddon align="inline-start" className="pl-3 text-muted-foreground/70">
+                            <KeyRound className="size-4" />
+                        </InputGroupAddon>
+                        <InputGroupInput
+                            id="recovery_code"
+                            type="text"
+                            autoFocus
+                            autoComplete="off"
+                            value={form.data.recovery_code}
+                            onChange={(e) => form.setData("recovery_code", e.target.value)}
+                            placeholder="xxxx-xxxx-xxxx"
+                            className="font-mono text-sm tracking-wider text-center"
+                        />
+                    </InputGroup>
+                    {form.errors.recovery_code && <FieldError errors={[{ message: form.errors.recovery_code }]} />}
+                </Field>
+
+                <Button
+                    type="submit"
+                    className="h-11 w-full rounded-xl font-semibold shadow-md"
+                    disabled={form.processing || !form.data.recovery_code}
+                >
+                    {form.processing ? (
+                        <>
+                            <Loader2 className="mr-2 size-4 animate-spin" />
+                            <span>Verifying recovery code...</span>
+                        </>
+                    ) : (
+                        "Verify Recovery Code"
+                    )}
+                </Button>
+
+                <div className="space-y-2 text-center text-xs">
+                    {availableMethods.length > 1 && (
+                        <button
+                            type="button"
+                            onClick={() => switchMethod("select")}
+                            className="font-medium text-primary hover:text-primary/80 transition-colors hover:underline block w-full"
+                        >
+                            Try another verification method
+                        </button>
+                    )}
+                    <Link
+                        href="/login"
+                        className="text-muted-foreground hover:text-foreground transition-colors block w-full underline-offset-4 hover:underline"
+                    >
+                        Return to login
+                    </Link>
+                </div>
+            </FieldGroup>
         </form>
     );
 
@@ -437,63 +538,41 @@ export default function TwoFactorChallengePage() {
         }
     };
 
-    return (
-        <div className="grid min-h-svh lg:grid-cols-2">
-            <Head title="Two Factor Authentication" />
-            <div className="relative flex flex-col gap-4 p-6 md:p-10">
-                <div className="flex items-center justify-between md:justify-start">
-                    <a href="#" className="flex items-center gap-2 font-medium">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-md">
-                            <img src={resolvedBranding.logo} alt={`${orgShortName} Logo`} className="h-10 w-10 object-contain" />
-                        </div>
-                        <span className="text-foreground text-4xl font-extrabold tracking-tight">{appName}</span>
-                    </a>
-                    <div className="md:absolute md:top-6 md:right-6">
-                        <ThemeToggle />
-                    </div>
-                </div>
-                <div className="flex flex-1 items-center justify-center">
-                    <div className="w-full max-w-sm">
-                        <TransitionWrapper>
-                            <div className="mb-4">
-                                <AnnouncementBanner announcements={announcements ?? []} />
-                            </div>
-                            <Card>
-                                <CardHeader>
-                                    <div className="flex items-center gap-2">
-                                        {showBackButton && (
-                                            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => switchMethod("select")}>
-                                                <ArrowLeft className="h-4 w-4" />
-                                            </Button>
-                                        )}
-                                        <div>
-                                            <CardTitle className="flex items-center gap-2">
-                                                <ShieldCheck className="h-5 w-5" />
-                                                {activeMethod === "select"
-                                                    ? "Verify Your Identity"
-                                                    : (methodConfig[activeMethod as keyof typeof methodConfig]?.label ?? "Two-Factor Authentication")}
-                                            </CardTitle>
-                                            <CardDescription className="mt-1">
-                                                {activeMethod === "select"
-                                                    ? "An additional verification step is required to access your account."
-                                                    : (methodConfig[activeMethod as keyof typeof methodConfig]?.description ??
-                                                      "Confirm access to your account.")}
-                                            </CardDescription>
-                                        </div>
-                                    </div>
-                                </CardHeader>
-                                <CardContent>{renderActiveMethod()}</CardContent>
-                            </Card>
-                        </TransitionWrapper>
-                    </div>
-                </div>
-            </div>
+    const currentTitle =
+        activeMethod === "select"
+            ? "Two-Factor Verification"
+            : methodConfig[activeMethod]?.label;
 
-            <div className="bg-muted relative hidden lg:block">
-                <TransitionWrapper className="h-full">
-                    <OnboardingPanel className="h-full" />
-                </TransitionWrapper>
-            </div>
-        </div>
+    const currentDescription =
+        activeMethod === "select"
+            ? "Please confirm your identity using one of your registered authentication methods."
+            : methodConfig[activeMethod]?.description;
+
+    return (
+        <AuthLayout
+            metaTitle="Two-Factor Authentication"
+            badge="Security Gate"
+            icon={
+                showBackButton ? (
+                    <button
+                        type="button"
+                        onClick={() => switchMethod("select")}
+                        className="text-primary hover:text-primary/80 flex items-center justify-center"
+                        title="Back to method selection"
+                    >
+                        <ArrowLeft className="size-6" />
+                    </button>
+                ) : (
+                    <ShieldCheck className="size-6 text-primary" />
+                )
+            }
+            title={currentTitle}
+            description={currentDescription}
+            announcements={announcements}
+            showBackToLogin={false}
+            maxWidth="sm"
+        >
+            {renderActiveMethod()}
+        </AuthLayout>
     );
 }

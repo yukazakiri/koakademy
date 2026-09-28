@@ -23,6 +23,7 @@ use App\Services\SocialiteProviderService;
 use App\Services\StudentClassShareService;
 use App\Support\AdministratorSidebarCounts;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Inertia\Middleware;
@@ -90,7 +91,7 @@ final class HandleInertiaRequests extends Middleware
                 'socialAuthProviders' => $socialiteProviderService->enabledProviders(...),
                 'version' => config('app.version'),
                 'ziggy' => fn (): array => [
-                    ...(new \Tighten\Ziggy\Ziggy)->toArray(),
+                    ...Cache::remember('ziggy_routes_payload', 3600, static fn (): array => (new \Tighten\Ziggy\Ziggy)->toArray()),
                     'location' => $request->url(),
                 ],
                 'onboarding' => $isAdministratorPortal

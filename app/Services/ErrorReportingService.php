@@ -32,6 +32,11 @@ final class ErrorReportingService
         private readonly SentrySettingsService $sentrySettings,
     ) {}
 
+    public function resetCache(): void
+    {
+        $this->cachedProviders = null;
+    }
+
     /**
      * @return array<string, array{key: string, label: string, description: string, package: string, docs_url: string, install_command: string, installed: bool}>
      */
@@ -90,9 +95,9 @@ final class ErrorReportingService
         return [
             'providers' => [
                 'sentry' => $this->sentrySettings->get(),
-                'flare' => $this->simpleProvider('flare'),
-                'bugsnag' => $this->simpleProvider('bugsnag'),
-                'honeybadger' => $this->simpleProvider('honeybadger'),
+                'flare' => $this->simpleProvider('flare', $this->storedProviders()),
+                'bugsnag' => $this->simpleProvider('bugsnag', $this->storedProviders()),
+                'honeybadger' => $this->simpleProvider('honeybadger', $this->storedProviders()),
             ],
             'meta' => $this->meta(),
         ];
@@ -150,6 +155,7 @@ final class ErrorReportingService
 
         $settings->update(['more_configs' => $moreConfigs]);
         GeneralSetting::clearCache();
+        $this->resetCache();
 
         $this->applyToConfig();
 
@@ -179,6 +185,7 @@ final class ErrorReportingService
      */
     public function applyToConfig(): void
     {
+        $this->resetCache();
         $this->sentrySettings->applyToConfig();
 
         try {
@@ -301,9 +308,9 @@ final class ErrorReportingService
     }
 
     /** @return array{enabled: bool, api_key: string, environment: string, release: string} */
-    private function simpleProvider(string $key): array
+    private function simpleProvider(string $key, ?array $storedProviders = null): array
     {
-        $saved = $this->storedProviders()[$key] ?? [];
+        $saved = ($storedProviders ?? $this->storedProviders())[$key] ?? [];
         $saved = is_array($saved) ? $saved : [];
 
         return [

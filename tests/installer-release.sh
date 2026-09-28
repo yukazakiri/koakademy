@@ -185,4 +185,49 @@ else
     compgen -G "$state_directory/runtime/backups/*.dump" >/dev/null
 fi
 
+if [[ "$channel" == stable ]]; then
+    # Uninstall without confirmation must fail outside a terminal and change
+    # nothing.
+    export KOAKADEMY_INSTALLER_TEST_STATE="$flag_state"
+    export KOAKADEMY_ROOT="$flag_state/runtime"
+    if bash "$flag_state/runtime/bin/koakademy" uninstall </dev/null; then
+        printf 'Uninstall without confirmation must fail.\n' >&2
+        exit 1
+    fi
+    [[ -f "$flag_state/runtime/runtime.env" ]]
+
+    # Full uninstall (including volumes) through the bootstrap on the
+    # domain-less install.
+    export KOAKADEMY_INSTALLER_TEST_STATE="$missing_state"
+    export KOAKADEMY_ROOT="$missing_state/runtime"
+    bash "$bootstrap_directory/install.sh" uninstall --yes
+    [[ ! -e "$missing_state/runtime" ]]
+    grep -Fq 'stack rm koakademy' "$missing_state/docker.log"
+    grep -Fq 'secret rm koakademy_' "$missing_state/docker.log"
+    grep -Fq 'config rm koakademy_' "$missing_state/docker.log"
+    grep -Fq 'volume rm koakademy_postgres-data' "$missing_state/docker.log"
+    grep -Fq 'volume rm koakademy_app-storage' "$missing_state/docker.log"
+    grep -Fq 'network rm koakademy_private' "$missing_state/docker.log"
+
+    # Preserved volumes must survive uninstall.
+    export KOAKADEMY_INSTALLER_TEST_STATE="$flag_state"
+    export KOAKADEMY_ROOT="$flag_state/runtime"
+    bash "$flag_state/runtime/bin/koakademy" uninstall --yes --preserve-volumes
+    [[ ! -e "$flag_state/runtime" ]]
+    grep -Fq 'stack rm koakademy' "$flag_state/docker.log"
+    if grep -Fq 'volume rm' "$flag_state/docker.log"; then
+        printf 'Preserved volumes must not be removed.\n' >&2
+        exit 1
+    fi
+
+    # Uninstalling nothing must fail instead of removing anything.
+    empty_state="$temporary_directory/empty-state"
+    export KOAKADEMY_INSTALLER_TEST_STATE="$empty_state"
+    export KOAKADEMY_ROOT="$empty_state/runtime"
+    if bash "$bootstrap_directory/install.sh" uninstall --yes; then
+        printf 'Uninstall without an installation must fail.\n' >&2
+        exit 1
+    fi
+fi
+
 printf '%s installer fixture passed.\n' "$channel"

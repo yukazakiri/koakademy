@@ -29,6 +29,7 @@ use Laravel\Ai\Approvals\Decision;
 use Laravel\Ai\Approvals\Decisions;
 use Laravel\Ai\Approvals\PendingApproval;
 use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Files\Document;
 use Laravel\Ai\Models\Conversation;
 use Throwable;
 
@@ -101,7 +102,7 @@ final class AdministratorAiController extends Controller
             'decisions.*.action' => ['required_with:decisions', Rule::in(['approve', 'reject'])],
             'decisions.*.result' => ['nullable', 'string'],
             'attachments' => ['nullable'],
-            'attachments.*' => ['file', 'max:20480'],
+            'attachments.*' => ['file', 'max:20480', 'mimes:pdf,doc,docx,rtf,odt,ods,xlsx,xls,csv,tsv,txt,md,json,sql,log,png,jpg,jpeg,webp,gif,bmp,tif,tiff'],
         ]);
 
         $agentKey = $validated['agent'] ?? 'admin_executive';
@@ -109,12 +110,11 @@ final class AdministratorAiController extends Controller
 
         $selectedProvider = $validated['provider'] ?? null;
         $selectedModel = $validated['model'] ?? null;
-
-        // Support composite "{provider}:{model}" selection format from model-selector
-        if (is_string($selectedModel) && str_contains($selectedModel, ':') && blank($selectedProvider)) {
-            [$p, $m] = explode(':', $selectedModel, 2);
-            $selectedProvider = $p;
-            $selectedModel = $m;
+        $modelProviderPrefix = filled($selectedModel) && str_contains($selectedModel, ':')
+            ? explode(':', $selectedModel, 2)[0]
+            : null;
+        if ($modelProviderPrefix !== null && $selectedProvider === null) {
+            [$selectedProvider, $selectedModel] = explode(':', $selectedModel, 2);
         }
 
         // If no provider or model selected, use primary provider or fallback to first configured provider
@@ -191,13 +191,15 @@ final class AdministratorAiController extends Controller
 
         $aiAttachments = [];
         $rawFiles = $request->file('attachments', []);
+        // Attachment support is derived from the server's configured model list.
+        $supportsDocumentAttachments = $this->providerSupportsDocumentAttachments($selectedProvider, $selectedModel);
         if ($rawFiles instanceof UploadedFile) {
             $rawFiles = [$rawFiles];
         }
 
         if (is_string($prompt) && ! empty($rawFiles)) {
             $processor = app(AiAttachmentProcessor::class);
-            $processed = $processor->process($rawFiles, $prompt);
+            $processed = $processor->process($rawFiles, $prompt, $supportsDocumentAttachments);
             $prompt = $processed['enrichedPrompt'];
             $aiAttachments = $processed['attachments'];
         }
@@ -215,7 +217,7 @@ final class AdministratorAiController extends Controller
             $agentInstance = $agent->forUser($user);
         }
 
-        return response()->stream(function () use ($agentInstance, $prompt, $aiAttachments, $selectedProvider, $selectedModel, $agentKey, $aiSettings) {
+        return response()->stream(function () use ($agentInstance, $prompt, $aiAttachments, $selectedProvider, $selectedModel, $agentKey, $aiSettings, $supportsDocumentAttachments) {
             if (function_exists('set_time_limit')) {
                 @set_time_limit(0);
             }
@@ -225,11 +227,13 @@ final class AdministratorAiController extends Controller
                 $iterator = null;
 
                 try {
-                    $stream = $agentInstance->stream(
+                    $stream = $this->streamWithDocumentCompatibility(
+                        $agentInstance,
                         $prompt,
-                        attachments: $aiAttachments,
-                        provider: filled($selectedProvider) ? $selectedProvider : null,
-                        model: filled($selectedModel) ? $selectedModel : null,
+                        $aiAttachments,
+                        $selectedProvider,
+                        $selectedModel,
+                        $supportsDocumentAttachments,
                     );
                     $iterator = $stream->getIterator();
                     $iterator->rewind();
@@ -252,11 +256,13 @@ final class AdministratorAiController extends Controller
 
                         $selectedProvider = $fallbackProvider;
                         $selectedModel = $fallbackModel;
-                        $stream = $agentInstance->stream(
+                        $stream = $this->streamWithDocumentCompatibility(
+                            $agentInstance,
                             $prompt,
-                            attachments: $aiAttachments,
-                            provider: filled($fallbackProvider) ? $fallbackProvider : null,
-                            model: filled($fallbackModel) ? $fallbackModel : null,
+                            $aiAttachments,
+                            $fallbackProvider,
+                            $fallbackModel,
+                            $this->providerSupportsDocumentAttachments($fallbackProvider, $fallbackModel),
                         );
                         $iterator = $stream->getIterator();
                         $iterator->rewind();
@@ -539,6 +545,8 @@ final class AdministratorAiController extends Controller
 
             $providerName = $meta['label'];
             $isPrimary = $key === $primaryKey;
+            $supportsDocuments = in_array($key, ['openai', 'anthropic', 'gemini'], true)
+                && config("ai.providers.{$key}.driver") !== 'openai-compatible';
 
             // Default model
             if (filled($cfg['default_chat_model'] ?? null)) {
@@ -549,6 +557,7 @@ final class AdministratorAiController extends Controller
                     'name' => $mId,
                     'provider' => $key,
                     'provider_name' => $providerName,
+                    'supports_documents' => $supportsDocuments,
                     'badge' => $isPrimary ? 'Default' : 'Built-in',
                     'description' => "{$providerName} default chat model",
                 ];
@@ -563,6 +572,7 @@ final class AdministratorAiController extends Controller
                     'name' => $mId,
                     'provider' => $key,
                     'provider_name' => $providerName,
+                    'supports_documents' => $supportsDocuments,
                     'badge' => 'Fast',
                     'description' => "{$providerName} fast model",
                 ];
@@ -578,6 +588,7 @@ final class AdministratorAiController extends Controller
                         'name' => (string) ($dm['name'] ?? $dmId),
                         'provider' => $key,
                         'provider_name' => $providerName,
+                        'supports_documents' => $supportsDocuments,
                         'badge' => 'Live',
                     ];
                 }
@@ -593,6 +604,7 @@ final class AdministratorAiController extends Controller
                         'name' => $cmId,
                         'provider' => $key,
                         'provider_name' => $providerName,
+                        'supports_documents' => $supportsDocuments,
                         'badge' => 'Custom',
                     ];
                 }
@@ -620,6 +632,7 @@ final class AdministratorAiController extends Controller
                 'name' => $cChatModel,
                 'provider' => $customKey,
                 'provider_name' => $providerName,
+                'supports_documents' => false,
                 'badge' => $isPrimary ? 'Default' : 'Custom API',
                 'description' => (string) ($custom['base_url'] ?? ''),
             ];
@@ -634,6 +647,7 @@ final class AdministratorAiController extends Controller
                         'name' => (string) ($cdm['name'] ?? $cdmId),
                         'provider' => $customKey,
                         'provider_name' => $providerName,
+                        'supports_documents' => false,
                         'badge' => 'Live',
                     ];
                 }
@@ -649,6 +663,7 @@ final class AdministratorAiController extends Controller
                         'name' => $ccmId,
                         'provider' => $customKey,
                         'provider_name' => $providerName,
+                        'supports_documents' => false,
                         'badge' => 'Custom',
                     ];
                 }
@@ -720,6 +735,189 @@ final class AdministratorAiController extends Controller
         }
 
         return $e->getMessage();
+    }
+
+    /**
+     * Stream using only images for image-only providers, retrying document
+     * capability errors after dropping Document inputs. Extracted spreadsheet,
+     * text, and PDF content has already been added to the prompt context.
+     *
+     * @param  array<int, mixed>  $attachments
+     */
+    private function streamWithDocumentCompatibility(
+        mixed $agentInstance,
+        string $prompt,
+        array $attachments,
+        ?string $provider,
+        ?string $model,
+        bool $supportsDocuments,
+    ): mixed {
+        $providerValue = filled($provider) ? $provider : null;
+        $documentFreeAttachments = array_values(array_filter(
+            $attachments,
+            static fn (mixed $attachment): bool => ! $attachment instanceof Document,
+        ));
+
+        try {
+            return $agentInstance->stream(
+                $prompt,
+                attachments: $attachments,
+                provider: $providerValue,
+                model: filled($model) ? $model : null,
+            );
+        } catch (Throwable $exception) {
+            $message = mb_strtolower($this->extractErrorMessage($exception));
+            $isAttachmentCapabilityError = str_contains($message, 'does not support document attachments')
+                || str_contains($message, 'document attachments are not supported')
+                || str_contains($message, 'only image attachments are supported');
+
+            if (! $isAttachmentCapabilityError || $documentFreeAttachments === $attachments) {
+                throw $exception;
+            }
+
+            Log::warning('AI provider rejected document attachments; retrying with extracted prompt text and image attachments only.', [
+                'provider' => $provider,
+                'model' => $model,
+                'agent' => $agentInstance::class,
+            ]);
+
+            return $agentInstance->stream(
+                $prompt,
+                attachments: $documentFreeAttachments,
+                provider: $providerValue,
+                model: filled($model) ? $model : null,
+            );
+        }
+    }
+
+    private function providerSupportsDocumentAttachments(?string $provider, ?string $model): bool
+    {
+        $settings = app(AiSettingsService::class)->get();
+        $modelOption = $this->configuredModelOption($settings, $provider, $model);
+        if ($modelOption !== null) {
+            return (bool) ($modelOption['supports_documents'] ?? false);
+        }
+
+        if (filled($provider) && isset($settings['custom_providers'][$provider])) {
+            return false;
+        }
+
+        if (filled($provider)) {
+            $providerKey = $provider;
+            if (str_contains($providerKey, ':')) {
+                [$providerKey] = explode(':', $providerKey, 2);
+            }
+
+            $configuredDriver = data_get($settings, "custom_providers.{$providerKey}.driver")
+                ?? data_get($settings, "providers.{$providerKey}.driver")
+                ?? config("ai.providers.{$providerKey}.driver");
+
+            if ($configuredDriver === 'openai-compatible'
+                || isset($settings['custom_providers'][$providerKey])
+                || $providerKey === 'openai-compatible') {
+                return false;
+            }
+
+            $supported = AiSettingsService::supportedProviders();
+            if (isset($supported[$providerKey])) {
+                return in_array($supported[$providerKey]['driver'] ?? $providerKey, ['openai', 'anthropic', 'gemini'], true)
+                    && config("ai.providers.{$providerKey}.driver") !== 'openai-compatible';
+            }
+
+            return false;
+        }
+
+        $provider = (string) ($settings['primary_provider'] ?? config('ai.default', 'anthropic'));
+        if (isset($settings['custom_providers'][$provider])) {
+            return false;
+        }
+
+        $supported = AiSettingsService::supportedProviders();
+
+        return isset($supported[$provider])
+            && in_array($supported[$provider]['driver'] ?? $provider, ['openai', 'anthropic', 'gemini'], true)
+            && config("ai.providers.{$provider}.driver") !== 'openai-compatible';
+    }
+
+    /** @param array<string, mixed> $settings @return array<string, mixed>|null */
+    private function configuredModelOption(array $settings, ?string $provider, ?string $model): ?array
+    {
+        if (blank($model)) {
+            return null;
+        }
+
+        $options = $this->availableModelOptions($settings);
+        foreach ($options as $option) {
+            $optionId = (string) ($option['id'] ?? '');
+            $optionModel = str_contains($optionId, ':') ? explode(':', $optionId, 2)[1] : $optionId;
+            $optionProvider = $option['provider'] ?? (str_contains($optionId, ':') ? explode(':', $optionId, 2)[0] : null);
+            if ($optionModel !== $model && $optionId !== $model) {
+                continue;
+            }
+            if (filled($provider) && $optionProvider !== $provider) {
+                continue;
+            }
+            if (! filled($provider) && filled($optionProvider) && $optionProvider !== $settings['primary_provider']) {
+                continue;
+            }
+
+            return $option;
+        }
+
+        return null;
+    }
+
+    /** @param array<string, mixed> $settings @return list<array<string, mixed>> */
+    private function availableModelOptions(array $settings): array
+    {
+        $options = [];
+        foreach (AiSettingsService::supportedProviders() as $key => $meta) {
+            $config = $settings['providers'][$key] ?? [];
+            if (! (bool) ($config['enabled'] ?? false)) {
+                continue;
+            }
+            if (($meta['requires_key'] ?? false) && blank($config['api_key'] ?? config("ai.providers.{$key}.key"))) {
+                continue;
+            }
+            $configuredDriver = config("ai.providers.{$key}.driver");
+            $supportsDocuments = in_array($key, ['openai', 'anthropic', 'gemini'], true)
+                && $configuredDriver !== 'openai-compatible';
+            foreach (['default_chat_model', 'default_fast_model'] as $modelKey) {
+                $model = $config[$modelKey] ?? null;
+                if (filled($model)) {
+                    $options[] = ['id' => "{$key}:{$model}", 'provider' => $key, 'supports_documents' => $supportsDocuments];
+                }
+            }
+            $customModels = $config['custom_models'] ?? [];
+            foreach ($customModels as $customModel) {
+                $model = is_array($customModel) ? ($customModel['id'] ?? null) : $customModel;
+                if (filled($model)) {
+                    $options[] = ['id' => "{$key}:{$model}", 'provider' => $key, 'supports_documents' => $supportsDocuments];
+                }
+            }
+            foreach ($config['discovered_models'] ?? [] as $discoveredModel) {
+                $model = is_array($discoveredModel) ? ($discoveredModel['id'] ?? null) : $discoveredModel;
+                if (filled($model)) {
+                    $options[] = ['id' => "{$key}:{$model}", 'provider' => $key, 'supports_documents' => $supportsDocuments];
+                }
+            }
+        }
+        foreach ($settings['custom_providers'] ?? [] as $key => $config) {
+            if (! (bool) ($config['enabled'] ?? true) || blank($config['base_url'] ?? null)) {
+                continue;
+            }
+            $models = array_filter([
+                $config['default_chat_model'] ?? null,
+                $config['default_fast_model'] ?? null,
+                ...($config['custom_models'] ?? []),
+                ...array_map(static fn ($item) => is_array($item) ? ($item['id'] ?? null) : $item, $config['discovered_models'] ?? []),
+            ]);
+            foreach (array_unique($models) as $model) {
+                $options[] = ['id' => "{$key}:{$model}", 'provider' => $key, 'supports_documents' => (bool) ($config['supports_documents'] ?? false)];
+            }
+        }
+
+        return $options;
     }
 
     private function shouldRetryWithFallback(Throwable $e): bool

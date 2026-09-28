@@ -80,6 +80,8 @@ Options:
   --source-sha SHA        Pin an exact 40-char master commit for edge installs
   install                 Default command (optional, for Dokploy-style parity)
   update                  Download the operator then run 'koakademy update'
+  uninstall [--preserve-volumes] [--yes]
+                          Remove the installation via the operator
   --no-wait               Return once services are deployed; the app warms up
                           in the background (forwarded to the operator)
   -h, --help              Show this help
@@ -293,7 +295,14 @@ while [ $# -gt 0 ]; do
             command="install"
             shift
             ;;
-        update)
+        uninstall)
+            # Uninstall needs no channel or release flags; remaining args
+            # (--preserve-volumes, --yes) fall through to the generic
+            # collector below and are forwarded to the operator.
+            command="uninstall"
+            shift
+            break
+            ;;        update)
             # 'update' replaces the default install command; the verb itself is
             # carried by $command so it must not also land in forward_args.
             command="update"
@@ -446,6 +455,10 @@ fi
 # Uses $0 (POSIX) instead of BASH_SOURCE so 'sh install.sh' also works.
 script_dir="$(dirname "$0")"
 if is_test && [ -f "${script_dir}/koakademy" ]; then
+    if [ "${command}" = "uninstall" ]; then
+        # shellcheck disable=SC2086
+        exec bash "${script_dir}/koakademy" uninstall ${forward_args}
+    fi
     # shellcheck disable=SC2086
     if [ "${channel}" = "stable" ]; then
         # shellcheck disable=SC2086
@@ -515,6 +528,10 @@ run_operator() {
         "$@"
 }
 
+# shellcheck disable=SC2086
+if [ "${command}" = "uninstall" ]; then
+    run_operator uninstall ${forward_args}
+fi
 # shellcheck disable=SC2086
 if [ "${channel}" = "stable" ]; then
     # shellcheck disable=SC2086

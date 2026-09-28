@@ -396,7 +396,12 @@ it('queries institutional analytics metrics across categories', function (): voi
     $financeData = json_decode((string) $finance, true);
 
     expect($financeData)->toHaveKey('collection_efficiency_percent')
-        ->and($financeData)->toHaveKey('gross_assessed_tuition');
+        ->and($financeData)->toHaveKey('assessed_tuition')
+        ->and($financeData)->toHaveKey('collected_payments')
+        ->and($financeData)->toHaveKey('outstanding_balance')
+        // Metrics that cannot be derived from recorded data must be reported as
+        // unavailable rather than filled with a plausible placeholder.
+        ->and($overviewData['unavailable'])->toHaveKey('retention_rate_percent');
 });
 
 it('formats interactive visual analytics chart artifacts', function (): void {
@@ -847,18 +852,30 @@ it('searches class schedules by faculty name via LookupClassSchedulesTool', func
 it('searches student directory via SearchStudentsTool', function (): void {
     $student = Student::factory()->create([
         'first_name' => 'Crisostomo',
+        'middle_name' => 'Diaz',
         'last_name' => 'Ibarra',
         'student_id' => 2026999,
     ]);
+
+    // The directory is permission-gated, so the caller must be authorized.
+    $admin = User::factory()->create();
+    Spatie\Permission\Models\Permission::firstOrCreate(['name' => 'View:Student', 'guard_name' => 'web']);
+    $admin->givePermissionTo('View:Student');
+    Illuminate\Support\Facades\Auth::login($admin);
 
     $tool = new App\Ai\Tools\SearchStudentsTool;
     $result = $tool->handle(new Request(['query' => 'Crisostomo']));
     $data = json_decode((string) $result, true);
 
+    // Results are ordered by surname, and other fixture students may share the
+    // given name, so assert on the located record rather than the first row.
+    $match = collect($data['students'])->firstWhere('student_number', '2026999');
+
     expect($data)->toHaveKey('students')
-        ->and($data['count'])->toBeGreaterThanOrEqual(1)
-        ->and($data['students'][0]['name'])->toBe('Crisostomo Ibarra')
-        ->and((int) $data['students'][0]['student_id'])->toBe(2026999);
+        ->and($data['total_matched'])->toBeGreaterThanOrEqual(1)
+        ->and($match)->not->toBeNull()
+        ->and($match['name'])->toBe($student->full_name)
+        ->and($match['name'])->toContain('Ibarra');
 });
 
 it('retrieves class grades sheet via GetClassGradesTool', function (): void {

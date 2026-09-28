@@ -11,11 +11,11 @@ final class BulkUpdateStudentClearanceRequest extends FormRequest
     public function authorize(): bool
     {
         $user = $this->user();
-        
+
         if (! $user) {
             return false;
         }
-        
+
         return $user->hasRole('super_admin') || $user->can('manage_clearance');
     }
 

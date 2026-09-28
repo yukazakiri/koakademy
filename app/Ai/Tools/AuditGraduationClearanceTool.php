@@ -21,7 +21,7 @@ final class AuditGraduationClearanceTool implements Tool
     public function handle(Request $request): Stringable|string
     {
         $user = Auth::user();
-        
+
         if (! $user || (! $user->hasRole('super_admin') && ! $user->can('manage_clearance'))) {
             return json_encode([
                 'error' => true,

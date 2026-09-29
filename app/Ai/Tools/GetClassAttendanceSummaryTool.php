@@ -4,17 +4,23 @@ declare(strict_types=1);
 
 namespace App\Ai\Tools;
 
+use App\Ai\Concerns\ResolvesFacultyScope;
 use App\Models\ClassAttendanceRecord;
 use App\Models\ClassAttendanceSession;
 use App\Models\Classes;
+use App\Models\Faculty;
+use App\Models\User;
 use App\Services\GeneralSettingsService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\Support\Facades\Auth;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
 
 final class GetClassAttendanceSummaryTool implements Tool
 {
+    use ResolvesFacultyScope;
+
     public function description(): Stringable|string
     {
         return 'Retrieve attendance metrics, total session count, and student attendance breakdowns (present, late, absent, excused) for a class section.';
@@ -22,6 +28,16 @@ final class GetClassAttendanceSummaryTool implements Tool
 
     public function handle(Request $request): Stringable|string
     {
+        $user = Auth::user();
+        if (! $user instanceof User) {
+            return json_encode(['error' => true, 'message' => 'Authentication is required.'], JSON_PRETTY_PRINT);
+        }
+
+        $faculty = $this->resolveScopedFaculty($user);
+        if (! $this->hasFullClassVisibility($user) && ! $faculty instanceof Faculty) {
+            return json_encode(['error' => true, 'message' => 'Faculty record not found for this account.'], JSON_PRETTY_PRINT);
+        }
+
         $validated = $request->validate([
             'class_id' => 'nullable|integer',
             'subject_code' => 'nullable|string',
@@ -30,10 +46,12 @@ final class GetClassAttendanceSummaryTool implements Tool
             'semester' => 'nullable|integer',
         ]);
 
-        $query = Classes::query()->with([
-            'class_enrollments.student',
-            'faculty',
-        ]);
+        $query = Classes::query()
+            ->when($faculty instanceof Faculty, fn ($builder) => $builder->where('faculty_id', $faculty->id))
+            ->with([
+                'class_enrollments.student',
+                'faculty',
+            ]);
 
         if (filled($validated['class_id'] ?? null)) {
             $class = $query->find($validated['class_id']);
@@ -80,7 +98,7 @@ final class GetClassAttendanceSummaryTool implements Tool
         if (! $class instanceof Classes) {
             $target = $validated['class_id'] ?? ($validated['subject_code'].(filled($validated['section'] ?? null) ? " ({$validated['section']})" : ''));
 
-            return "Class '{$target}' was not found in records.";
+            return "Class '{$target}' was not found in records or does not belong to your teaching assignments.";
         }
 
         $sessionsCount = ClassAttendanceSession::query()

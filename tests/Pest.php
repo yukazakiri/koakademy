@@ -2,11 +2,7 @@
 
 declare(strict_types=1);
 
-$testDb = dirname(__DIR__).'/database/testing.sqlite';
-if (! file_exists($testDb)) {
-    touch($testDb);
-}
-$testDbReal = realpath($testDb) ?: $testDb;
+$testDbReal = Tests\Support\TestingDatabase::ensureExists();
 
 $_SERVER['APP_ENV'] = 'testing';
 $_ENV['APP_ENV'] = 'testing';

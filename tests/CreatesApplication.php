@@ -5,16 +5,13 @@ declare(strict_types=1);
 namespace Tests;
 
 use Illuminate\Contracts\Console\Kernel;
+use Tests\Support\TestingDatabase;
 
 trait CreatesApplication
 {
     public function createApplication()
     {
-        $testDb = dirname(__DIR__).'/database/testing.sqlite';
-        if (! file_exists($testDb)) {
-            touch($testDb);
-        }
-        $testDbReal = realpath($testDb) ?: $testDb;
+        $testDbReal = TestingDatabase::ensureExists();
 
         putenv('APP_ENV=testing');
         $_ENV['APP_ENV'] = 'testing';

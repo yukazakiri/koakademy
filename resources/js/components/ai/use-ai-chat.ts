@@ -111,6 +111,8 @@ export function useAiChat({
             const pendingApprovals: PendingToolApproval[] = [];
             const toolInvocations: Map<string, ToolInvocation> = new Map();
             const citations: CitationSource[] = [];
+            let sawDone = false;
+            let sawStreamError = false;
 
             while (true) {
                 const { value, done } = await reader.read();
@@ -126,7 +128,10 @@ export function useAiChat({
 
                     if (trimmed.startsWith("data: ")) {
                         const dataPayload = trimmed.slice(6).trim();
-                        if (dataPayload === "[DONE]") continue;
+                        if (dataPayload === "[DONE]") {
+                            sawDone = true;
+                            continue;
+                        }
 
                         try {
                             const parsed = JSON.parse(dataPayload);
@@ -176,6 +181,7 @@ export function useAiChat({
                                     onConversationCreated?.(newConvId, parsed.title);
                                 }
                             } else if (parsed.type === "error") {
+                                sawStreamError = true;
                                 const errMsg = parsed.errorText || parsed.message || "An error occurred with the AI provider.";
                                 const documentCapabilityError = /does not support document attachments|only image attachments are supported/i.test(
                                     errMsg,
@@ -238,6 +244,42 @@ export function useAiChat({
                         ),
                     );
                 }
+            }
+
+            // A dropped connection (proxy timeout, server kill) ends the reader
+            // without [DONE] and without an error event — previously the chat
+            // just stopped on a blank bubble. Surface it as a retryable error.
+            if (!sawDone && !sawStreamError) {
+                sawStreamError = true;
+                const interruptMsg =
+                    "The connection to the AI service was interrupted before the response completed. Your request is preserved — retry the request.";
+                setLastError({
+                    title: "AI Generation Error",
+                    message: interruptMsg,
+                    retryPrompt: retryPromptText,
+                });
+                if (!accumulatedText.trim()) {
+                    accumulatedText = `⚠️ ${interruptMsg}`;
+                }
+            }
+
+            // An empty turn with no text, tools, or approvals is never a valid
+            // silent stop — ensure the error banner and a visible message exist.
+            if (
+                !accumulatedText.trim() &&
+                toolInvocations.size === 0 &&
+                pendingApprovals.length === 0 &&
+                !sawStreamError
+            ) {
+                sawStreamError = true;
+                const emptyMsg =
+                    "The assistant stopped without producing a response. Your request is preserved — retry the request.";
+                setLastError({
+                    title: "AI Generation Error",
+                    message: emptyMsg,
+                    retryPrompt: retryPromptText,
+                });
+                accumulatedText = `⚠️ ${emptyMsg}`;
             }
 
             const finalMessage: ChatMessage = {
@@ -393,6 +435,16 @@ export function useAiChat({
 
                 const message = err instanceof Error ? err.message : "Failed to communicate with AI agent.";
                 const documentCapabilityError = /does not support document attachments|only image attachments are supported/i.test(message);
+                // Stream/network failures previously only toasted, leaving no
+                // Retry affordance and sometimes a blank bubble. Always set a
+                // retryable error so the banner + retry button appear.
+                if (!documentCapabilityError) {
+                    setLastError({
+                        title: "AI Generation Error",
+                        message,
+                        retryPrompt: userMessage || documentRetryPrompt,
+                    });
+                }
                 toast.error(message);
                 onError?.(err instanceof Error ? err : new Error(message));
 
@@ -417,6 +469,57 @@ export function useAiChat({
             }
         },
         [agent, targetUrl, conversationId, isLoading, appendMessage, readStream, onError],
+    );
+
+    /**
+     * Resend a previously sent user message: truncate the transcript back to
+     * it, then send its content again as a fresh turn. Attachments cannot be
+     * reconstructed from history, so only the text is resent.
+     */
+    const resendUserMessage = React.useCallback(
+        async (messageId: string, options?: PromptOptions) => {
+            if (isLoading || isSendingRef.current) return;
+            const idx = messages.findIndex((m) => m.id === messageId);
+            if (idx < 0) return;
+            const target = messages[idx];
+            if (target.role !== "user" || !target.content.trim()) return;
+            if (target.attachments && target.attachments.length > 0) {
+                toast.info("Resending text only — attachments are not resent.");
+            }
+            setMessages((prev) => prev.slice(0, idx));
+            setLastError(null);
+            setLastPrompt(target.content);
+            await sendPrompt(target.content, undefined, {
+                ...(options ?? {}),
+                agent: options?.agent ?? agent,
+            });
+        },
+        [agent, isLoading, messages, sendPrompt]
+    );
+
+    /**
+     * Regenerate an assistant reply: find the nearest preceding user message,
+     * truncate the transcript back to it, and send it again.
+     */
+    const regenerateAssistant = React.useCallback(
+        async (messageId: string, options?: PromptOptions) => {
+            if (isLoading || isSendingRef.current) return;
+            const idx = messages.findIndex((m) => m.id === messageId);
+            if (idx < 0 || messages[idx].role !== "assistant") return;
+            let userIdx = -1;
+            for (let i = idx - 1; i >= 0; i--) {
+                if (messages[i].role === "user") {
+                    userIdx = i;
+                    break;
+                }
+            }
+            if (userIdx < 0) {
+                toast.info("No earlier message to regenerate from.");
+                return;
+            }
+            await resendUserMessage(messages[userIdx].id, options);
+        },
+        [isLoading, messages, resendUserMessage]
     );
 
     const submitDecision = React.useCallback(
@@ -486,7 +589,10 @@ export function useAiChat({
                             content: "",
                         },
                     ]);
-                    await readStream(response, continuationId);
+                    // Forward the last user prompt so a failed continuation turn
+                    // still offers a working Retry affordance instead of an
+                    // error that promises retry with no button.
+                    await readStream(response, continuationId, lastPrompt || undefined);
                 }
             } catch (err: unknown) {
                 // Restore approval on failure
@@ -513,7 +619,7 @@ export function useAiChat({
                 abortControllerRef.current = null;
             }
         },
-        [agent, targetUrl, conversationId, messages, readStream],
+        [agent, targetUrl, conversationId, messages, lastPrompt, readStream],
     );
 
     const stop = React.useCallback(() => {
@@ -557,6 +663,8 @@ export function useAiChat({
         clearError,
         sendPrompt,
         submitDecision,
+        resendUserMessage,
+        regenerateAssistant,
         stop,
         clearChat,
         loadConversationMessages,

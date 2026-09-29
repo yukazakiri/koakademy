@@ -249,7 +249,7 @@ final class AdministratorAiController extends Controller
             $agentInstance = $agent->forUser($user);
         }
 
-        return response()->stream(function () use ($agentInstance, $prompt, $promptForPersistence, $aiAttachments, $selectedProvider, $selectedModel, $agentKey, $aiSettings, $supportsDocumentAttachments) {
+        return response()->stream(function () use ($agentInstance, $prompt, $promptForPersistence, $conversationId, $aiAttachments, $selectedProvider, $selectedModel, $agentKey, $aiSettings, $supportsDocumentAttachments) {
             if (function_exists('set_time_limit')) {
                 @set_time_limit(0);
             }
@@ -257,6 +257,12 @@ final class AdministratorAiController extends Controller
             try {
                 $stream = null;
                 $iterator = null;
+                $sawText = false;
+                $sawTool = false;
+                $sawApproval = false;
+                $sawError = false;
+                /** @var list<string> $failedTools */
+                $failedTools = [];
 
                 try {
                     $stream = $this->streamWithDocumentCompatibility(
@@ -307,6 +313,9 @@ final class AdministratorAiController extends Controller
                     $event = $iterator->current();
 
                     if ($event instanceof \Laravel\Ai\Streaming\Events\TextDelta) {
+                        if (filled($event->delta)) {
+                            $sawText = true;
+                        }
                         echo 'data: '.json_encode([
                             'type' => 'text-delta',
                             'delta' => $event->delta,
@@ -318,6 +327,7 @@ final class AdministratorAiController extends Controller
                             'delta' => $event->delta,
                         ])."\n\n";
                     } elseif ($event instanceof \Laravel\Ai\Streaming\Events\ToolCall) {
+                        $sawTool = true;
                         echo 'data: '.json_encode([
                             'type' => 'tool-call',
                             'toolCallId' => $event->toolCall->id,
@@ -325,6 +335,10 @@ final class AdministratorAiController extends Controller
                             'input' => $event->toolCall->arguments,
                         ])."\n\n";
                     } elseif ($event instanceof \Laravel\Ai\Streaming\Events\ToolResult) {
+                        $sawTool = true;
+                        if (! $event->successful) {
+                            $failedTools[] = (string) ($event->toolResult->name ?? 'Tool');
+                        }
                         echo 'data: '.json_encode([
                             'type' => 'tool-result',
                             'toolCallId' => $event->toolResult->id,
@@ -340,6 +354,7 @@ final class AdministratorAiController extends Controller
                             'url' => $event->citation->url,
                         ])."\n\n";
                     } elseif ($event instanceof \Laravel\Ai\Streaming\Events\ToolApprovalRequest) {
+                        $sawApproval = true;
                         foreach ($event->pendingApprovals as $pendingApproval) {
                             echo 'data: '.json_encode([
                                 'type' => 'tool-approval-request',
@@ -351,6 +366,7 @@ final class AdministratorAiController extends Controller
                             ])."\n\n";
                         }
                     } elseif ($event instanceof \Laravel\Ai\Streaming\Events\Error) {
+                        $sawError = true;
                         echo 'data: '.json_encode([
                             'type' => 'error',
                             'errorText' => (string) $event,
@@ -363,6 +379,41 @@ final class AdministratorAiController extends Controller
                     flush();
 
                     $iterator->next();
+                }
+
+                // Never end a turn silently: if the model produced no text and is
+                // not waiting on a human approval, the chat would otherwise just
+                // stop with an empty bubble and no error (the reported production
+                // symptom after failed tool calls).
+                if (! $sawText && ! $sawApproval && ! $sawError) {
+                    if ($failedTools !== []) {
+                        $uniqueFailed = array_values(array_unique($failedTools));
+                        $toolList = implode(', ', $uniqueFailed);
+                        Log::warning('Administrative AI turn ended after tool failures with no assistant text.', [
+                            'agent' => $agentKey,
+                            'provider' => $selectedProvider ?? config('ai.default'),
+                            'model' => $selectedModel,
+                            'failed_tools' => $uniqueFailed,
+                        ]);
+                        echo 'data: '.json_encode([
+                            'type' => 'error',
+                            'errorText' => "Tool execution failed ({$toolList}) and the assistant stopped before answering. Your request is preserved — retry, approve any pending tool, or switch to the global default model and try again.",
+                        ])."\n\n";
+                    } elseif (! $sawTool) {
+                        Log::warning('Administrative AI turn ended with no assistant output.', [
+                            'agent' => $agentKey,
+                            'provider' => $selectedProvider ?? config('ai.default'),
+                            'model' => $selectedModel,
+                        ]);
+                        echo 'data: '.json_encode([
+                            'type' => 'error',
+                            'errorText' => 'The assistant stopped without producing a response. Your request is preserved — retry the request.',
+                        ])."\n\n";
+                    }
+                    if (ob_get_level() > 0) {
+                        ob_flush();
+                    }
+                    flush();
                 }
 
                 $resolvedConversationId = $stream?->conversationId ?? $agentInstance->currentConversation() ?? $conversationId;
@@ -392,6 +443,13 @@ final class AdministratorAiController extends Controller
                     'original_message' => $e->getMessage(),
                     'trace' => $e->getTraceAsString(),
                 ]);
+
+                // A failed turn may still have persisted the mode-augmented user
+                // message before throwing; restore the faithful version so the
+                // transcript stays clean for existing conversations.
+                if (filled($conversationId)) {
+                    $this->restoreFaithfulUserPrompt((string) $conversationId, $promptForPersistence, is_string($prompt) ? $prompt : null);
+                }
 
                 $providerName = (string) ($selectedProvider ?? config('ai.default', 'anthropic'));
                 $modelName = (string) ($selectedModel ?? 'default');

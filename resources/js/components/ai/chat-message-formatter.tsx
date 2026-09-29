@@ -1,8 +1,10 @@
 import {
-    Loader,
     Reasoning,
     ReasoningContent,
     ReasoningTrigger,
+} from "@/components/ai-elements/reasoning";
+import {
+    Loader,
     Source,
     SourceContent,
     SourceTrigger,
@@ -41,7 +43,8 @@ interface ChatMessageFormatterProps {
  * Enhanced Chat Message Formatter using:
  * - ElevenLabs UI Response component (streamdown) for reliable streaming markdown rendering
  * - Prompt-Kit Steps & Tool components for tool executions
- * - Prompt-Kit Reasoning component for model thought processes
+ * - AI SDK Elements Reasoning component for model thought processes
+ *   (@see https://elements.ai-sdk.dev/components/reasoning)
  * - Prompt-Kit Source component for verifiable citations
  * - Interactive Recharts visualizations & Downloadable Document cards
  *
@@ -348,18 +351,33 @@ export function ChatMessageFormatter({
     const hasContent = parsedBlocks.length > 0;
     const hasReasoning = Boolean(reasoning && reasoning.trim());
     const hasTools = Boolean(toolCalls && toolCalls.length > 0);
+    // A completed turn with no text, reasoning, tools, or artifacts must never
+    // render as a blank bubble (the reported "chat just stops" symptom).
+    const isEmptyCompleted =
+        !isStreaming && !hasContent && !hasReasoning && !hasTools && toolArtifacts.length === 0;
 
     return (
         <div className="space-y-3 text-sm text-foreground">
-            {/* Prompt-Kit Reasoning Thought Process */}
+            {isEmptyCompleted && (
+                <div className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+                    <Loader variant="dots" size="sm" className="text-destructive shrink-0" />
+                    <div>
+                        <p className="font-semibold">The assistant stopped without a response.</p>
+                        <p className="mt-0.5 text-destructive/90">
+                            Your request is preserved — use Retry, or switch to the global default model and try again.
+                        </p>
+                    </div>
+                </div>
+            )}
+            {/* AI SDK Elements Reasoning — auto-opens while streaming, shows
+                "Thinking..." shimmer, then collapses to "Thought for N seconds" */}
             {hasReasoning && (
-                <Reasoning className="border border-border/60 bg-muted/20 rounded-xl overflow-hidden p-2.5">
-                    <ReasoningTrigger className="text-xs font-medium text-muted-foreground hover:text-foreground">
-                        Thought Process & Reasoning
-                    </ReasoningTrigger>
-                    <ReasoningContent className="mt-2 text-xs font-mono text-muted-foreground/90 whitespace-pre-wrap border-t border-border/40 pt-2 max-h-48 overflow-y-auto">
-                        {reasoning}
-                    </ReasoningContent>
+                <Reasoning
+                    isStreaming={isStreaming}
+                    className="border border-border/60 bg-muted/20 rounded-xl px-2.5 py-2"
+                >
+                    <ReasoningTrigger />
+                    <ReasoningContent>{reasoning ?? ""}</ReasoningContent>
                 </Reasoning>
             )}
 

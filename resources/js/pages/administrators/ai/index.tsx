@@ -8,6 +8,10 @@ import {
 import { AiConversationSidebar } from "@/components/ai/ai-conversation-sidebar";
 import { ApprovalCard } from "@/components/ai/approval-card";
 import { ChatMessageFormatter } from "@/components/ai/chat-message-formatter";
+import {
+    AssistantMessageActions,
+    UserMessageActions,
+} from "@/components/ai/message-actions";
 import { AgentRoleKey, ChatMessage, useAiChat } from "@/components/ai/use-ai-chat";
 import { ModelOption, ModelSelector } from "@/components/spectrumui";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -201,6 +205,8 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
         clearError,
         sendPrompt,
         submitDecision,
+        resendUserMessage,
+        regenerateAssistant,
         stop,
         clearChat,
         loadConversationMessages,
@@ -609,6 +615,15 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
 
     const activeConversation = conversations.find((c) => c.id === conversationId);
     const activeConversationTitle = activeConversation?.title || (messages.length > 0 ? "Conversation" : "New Chat");
+
+    // Shared send options for resend / regenerate, mirroring handleSend.
+    const resendOptions = () => ({
+        model: selectedModel.includes(":") ? selectedModel.split(":").slice(1).join(":") : selectedModel || undefined,
+        provider: activeModel?.provider,
+        supportsDocuments: activeModel?.supports_documents,
+        thinking: isThinkingMode,
+        search: isSearchMode,
+    });
 
     // Context percentage approximation based on token budget
     const totalChars = messages.reduce((acc, m) => acc + (m.content?.length || 0), 0) + input.length;
@@ -1026,19 +1041,13 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                                                                 </div>
                                                             )}
                                                         </div>
-                                                        <div className="flex items-center gap-2 text-[11px] text-muted-foreground pr-1">
+                                                        <div className="flex items-center gap-1 text-[11px] text-muted-foreground pr-1">
                                                             {message.createdAt && <span>{formatMessageTime(message.createdAt)}</span>}
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => {
-                                                                    navigator.clipboard.writeText(message.content);
-                                                                    toast.success("Copied to clipboard.");
-                                                                }}
-                                                                className="hover:text-foreground transition-colors"
-                                                                title="Copy message"
-                                                            >
-                                                                <Copy className="size-3" />
-                                                            </button>
+                                                            <UserMessageActions
+                                                                content={message.content}
+                                                                disabled={isLoading}
+                                                                onResend={() => resendUserMessage(message.id, resendOptions())}
+                                                            />
                                                         </div>
                                                     </div>
                                                     <Avatar className="size-8 rounded-full border border-border/70 shrink-0 self-end mb-4">
@@ -1078,6 +1087,15 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                                                         sources={message.sources}
                                                         isStreaming={isStreamingThis}
                                                     />
+
+                                                    {/* ReUI reply actions: copy + regenerate */}
+                                                    {!isStreamingThis && (
+                                                        <AssistantMessageActions
+                                                            content={message.content}
+                                                            disabled={isLoading}
+                                                            onRegenerate={() => regenerateAssistant(message.id, resendOptions())}
+                                                        />
+                                                    )}
 
                                                     {/* Pending Approvals */}
                                                     {message.pendingApprovals?.map((approval) => (

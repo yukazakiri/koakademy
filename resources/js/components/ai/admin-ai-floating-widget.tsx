@@ -49,6 +49,7 @@ import { toast } from "sonner";
 
 import { ApprovalCard } from "./approval-card";
 import { ChatMessageFormatter } from "./chat-message-formatter";
+import { AssistantMessageActions, UserMessageActions } from "./message-actions";
 import { AgentRoleKey, useAiChat } from "./use-ai-chat";
 
 const PREFERRED_MODEL_KEY = "koakademy_ai_preferred_model";
@@ -128,6 +129,8 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
         clearError,
         sendPrompt,
         submitDecision,
+        resendUserMessage,
+        regenerateAssistant,
         clearChat,
         stop,
     } = useAiChat({
@@ -492,6 +495,32 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                                                             sources={msg.sources}
                                                             isStreaming={isLoading && msg.id === messages.at(-1)?.id}
                                                         />
+                                                    )}
+
+                                                    {/* ReUI reply actions: resend / regenerate */}
+                                                    {isUser ? (
+                                                        <UserMessageActions
+                                                            content={msg.content}
+                                                            disabled={isLoading}
+                                                            className="justify-end [&_button]:text-primary-foreground/70 [&_button:hover]:text-primary-foreground [&_button:hover]:bg-primary-foreground/10"
+                                                            onResend={() =>
+                                                                resendUserMessage(msg.id, {
+                                                                    model: selectedModel || undefined,
+                                                                })
+                                                            }
+                                                        />
+                                                    ) : (
+                                                        !(isLoading && msg.id === messages.at(-1)?.id) && (
+                                                            <AssistantMessageActions
+                                                                content={msg.content}
+                                                                disabled={isLoading}
+                                                                onRegenerate={() =>
+                                                                    regenerateAssistant(msg.id, {
+                                                                        model: selectedModel || undefined,
+                                                                    })
+                                                                }
+                                                            />
+                                                        )
                                                     )}
 
                                                     {/* Approvals */}

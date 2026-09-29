@@ -5,6 +5,7 @@ export * from "./ai-conversation-sidebar";
 export * from "./analytics-chart-renderer";
 export * from "./approval-card";
 export * from "./chat-message-formatter";
+export * from "./message-actions";
 export * from "./document-download-card";
 export * from "./interactive-table";
 export * from "./use-ai-chat";

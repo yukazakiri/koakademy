@@ -67,6 +67,11 @@ use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Http\Request;
+use Illuminate\Queue\Events\JobExceptionOccurred;
+use Illuminate\Queue\Events\JobFailed;
+use Illuminate\Queue\Events\JobProcessed;
+use Illuminate\Queue\Events\JobProcessing;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
@@ -77,6 +82,8 @@ use Laravel\Passkeys\Passkeys;
 use Laravel\Pennant\Feature;
 use Livewire\Livewire;
 use Nwidart\Modules\Contracts\RepositoryInterface;
+use PhpOffice\PhpSpreadsheet\Cell\Cell;
+use PhpOffice\PhpSpreadsheet\Cell\DefaultValueBinder;
 use Throwable;
 
 final class AppServiceProvider extends ServiceProvider
@@ -132,11 +139,10 @@ final class AppServiceProvider extends ServiceProvider
         });
     }
 
-    /**
-     * Bootstrap any application services.
-     */
     public function boot(): void
     {
+        $this->resetPhpSpreadsheetValueBinderBetweenUnitsOfWork();
+
         RateLimiter::for('api', function (Request $request): Limit {
             return Limit::perMinute((int) config('api.rate_limit', 60))
                 ->by($request->user()?->getAuthIdentifier() ?? $request->ip());
@@ -191,6 +197,45 @@ final class AppServiceProvider extends ServiceProvider
             $this->applySentrySettings();
             $this->applyAiSettings();
         });
+    }
+
+    /**
+     * Bootstrap any application services.
+     */
+    /**
+     * Keep PhpSpreadsheet's global value binder from leaking between units of work.
+     *
+     * Maatwebsite installs the sheet or import currently being written as
+     * PhpSpreadsheet's process-wide static value binder and never restores the
+     * default. Exports in this application bind every value as text so that
+     * identifiers keep their leading zeros, so a registrar export leaves a
+     * force-to-text binder installed for the rest of the process. Every
+     * spreadsheet built afterwards then has `setCellValue()` coerced to a
+     * string, which silently turns formulas into literal text: a CHED Form B/C
+     * report generated afterwards stored `=B25+C25` as that literal string, so
+     * `getCalculatedValue()` returned the formula text and every total read
+     * zero. In a queue worker that runs a registrar export and then a
+     * regulatory report, that is a report filed with wrong numbers rather than
+     * an error.
+     *
+     * Resetting at the request and job boundaries contains the leak without
+     * having to trust Maatwebsite to restore it, and works on the write paths
+     * that dispatch no events.
+     */
+    private function resetPhpSpreadsheetValueBinderBetweenUnitsOfWork(): void
+    {
+        $reset = static function (): void {
+            Cell::setValueBinder(new DefaultValueBinder);
+        };
+
+        $this->app->terminating($reset);
+
+        Event::listen([
+            JobProcessing::class,
+            JobProcessed::class,
+            JobFailed::class,
+            JobExceptionOccurred::class,
+        ], $reset);
     }
 
     private function definePennantFeatures(): void

@@ -6,6 +6,9 @@ namespace Tests;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use PhpOffice\PhpSpreadsheet\Cell\Cell;
+use PhpOffice\PhpSpreadsheet\Cell\DefaultValueBinder;
+use RuntimeException;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -16,11 +19,19 @@ abstract class TestCase extends BaseTestCase
     {
         parent::setUp();
 
+        // Maatwebsite installs the sheet or import being written as
+        // PhpSpreadsheet's process-wide static value binder and never restores
+        // the default. Exports that bind values as text therefore poison every
+        // spreadsheet built later in the same process, which is how a CHED Form
+        // B/C report came to store its totals as text and read zero. Reset it
+        // between tests so no test inherits another's global spreadsheet state.
+        Cell::setValueBinder(new DefaultValueBinder);
+
         $appDb = database_path('database.sqlite');
         $activeDb = (string) config('database.connections.'.config('database.default').'.database');
 
         if ($activeDb !== ':memory:' && file_exists($appDb) && file_exists($activeDb) && realpath($activeDb) === realpath($appDb)) {
-            throw new \RuntimeException(
+            throw new RuntimeException(
                 "DANGER: Test suite attempted to run against application database ({$appDb}). Aborting to prevent data corruption."
             );
         }

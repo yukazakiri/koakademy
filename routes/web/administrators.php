@@ -488,6 +488,10 @@ Route::middleware(['auth', 'administrators.only'])
         Route::put('/system-management/ai', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateAi'])->name('system-management.ai.update');
         Route::post('/system-management/ai/fetch-models', [App\Http\Controllers\AdministratorSystemManagementController::class, 'fetchAiModels'])->name('system-management.ai.fetch-models');
         Route::post('/system-management/ai/test-connection', [App\Http\Controllers\AdministratorSystemManagementController::class, 'testAiConnection'])->name('system-management.ai.test-connection');
+        Route::post('/system-management/ai/mcp-servers', [App\Http\Controllers\AdministratorSystemManagementController::class, 'storeMcpServer'])->name('system-management.ai.mcp-servers.store');
+        Route::put('/system-management/ai/mcp-servers/{mcpServer}', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateMcpServer'])->name('system-management.ai.mcp-servers.update');
+        Route::delete('/system-management/ai/mcp-servers/{mcpServer}', [App\Http\Controllers\AdministratorSystemManagementController::class, 'destroyMcpServer'])->name('system-management.ai.mcp-servers.destroy');
+        Route::post('/system-management/ai/mcp-servers/{mcpServer}/discover', [App\Http\Controllers\AdministratorSystemManagementController::class, 'discoverMcpServerTools'])->name('system-management.ai.mcp-servers.discover');
         Route::put('/system-management/enrollment-pipeline', [App\Http\Controllers\AdministratorSystemManagementController::class, 'updateEnrollmentPipeline'])->name('system-management.enrollment-pipeline.update');
         Route::post('/system-management/enrollment-policies', [AdministratorEnrollmentPolicyController::class, 'store'])->name('system-management.enrollment-policies.store');
         Route::get('/system-management/enrollment-policies/compatibility', [AdministratorEnrollmentPolicyController::class, 'compatibility'])->name('system-management.enrollment-policies.compatibility');

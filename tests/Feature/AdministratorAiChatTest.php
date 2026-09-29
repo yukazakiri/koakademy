@@ -606,12 +606,12 @@ it('adapts built-in MCP tools seamlessly into AI agent tools', function (): void
         'semester' => 1,
     ]);
 
-    $adapter = new App\Ai\Adapters\McpToolAdapter(new App\Mcp\Tools\GetCourseCurriculumTool());
+    $tool = new App\Ai\Mcp\ResilientMcpServerTool(new App\Mcp\Tools\GetCourseCurriculumTool());
 
-    expect($adapter->name())->toBe('GetCourseCurriculumTool')
-        ->and((string) $adapter->description())->toContain('curriculum');
+    expect($tool->name())->toBe('get-course-curriculum-tool')
+        ->and((string) $tool->description())->toContain('curriculum');
 
-    $result = json_decode((string) $adapter->handle(new Laravel\Ai\Tools\Request([
+    $result = json_decode((string) $tool->handle(new Laravel\Ai\Tools\Request([
         'course_id' => $course->id,
     ])), true);
 

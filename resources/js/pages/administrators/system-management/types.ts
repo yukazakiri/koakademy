@@ -78,6 +78,38 @@ export interface AiConfigPayload {
     custom_providers?: Record<string, CustomAiProviderAdminConfig>;
 }
 
+export interface McpServerConfig {
+    id: number;
+    public_id: string;
+    name: string;
+    description: string | null;
+    transport: "web" | "local";
+    url: string | null;
+    command: string | null;
+    command_arguments: string[];
+    auth_type: "none" | "bearer" | "oauth";
+    /** Presence only. The stored token is never sent to the browser. */
+    has_token: boolean;
+    enabled_tools: string[];
+    allowed_agents: string[];
+    is_active: boolean;
+    timeout_seconds: number;
+    cache_ttl_seconds: number;
+    is_usable: boolean;
+    /** True when no tool is allowlisted, so the AI cannot reach it. */
+    exposes_nothing: boolean;
+    assigned_to_no_agent: boolean;
+    last_connected_at: string | null;
+    last_error: string | null;
+}
+
+export interface McpDiscoveredTool {
+    name: string;
+    title: string | null;
+    description: string | null;
+    enabled: boolean;
+}
+
 export interface GradingConfigPayload {
     name: string;
     input_type: "numeric" | "symbol";
@@ -554,6 +586,7 @@ export interface SystemManagementPageProps {
     mail_config: MailConfig;
     newsletter_config: NewsletterConfig;
     ai_config?: AiConfigPayload;
+    mcp_servers?: McpServerConfig[];
     analytics: AnalyticsConfig;
     sentry: SentryConfig;
     error_reporting: ErrorReportingConfig;

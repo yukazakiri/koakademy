@@ -2,10 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Ai\Agents\AdminExecutiveAgent;
 use App\Ai\Agents\BursarFinanceAgent;
+use App\Ai\Agents\CampusSupportAgent;
 use App\Ai\Agents\FacultyCopilotAgent;
 use App\Ai\Agents\RegistrarAuditAgent;
 use App\Ai\Agents\StudentAdvisorAgent;
+use App\Ai\Mcp\ResilientMcpServerTool;
 use App\Ai\Tools\ApplyTuitionAdjustmentBatchTool;
 use App\Ai\Tools\AuditStudentProfileImportTool;
 use App\Ai\Tools\BatchUpdateClearanceTool;
@@ -22,10 +25,14 @@ use App\Ai\Tools\GetCurriculumProgressTool;
 use App\Ai\Tools\SimulateScholarshipAdjustmentTool;
 use App\Ai\Tools\SubmitEnrollmentPlanTool;
 use App\Ai\Tools\ValidateAdjustmentSpreadsheetTool;
+use App\Mcp\Tools\GetSchoolDetailsTool;
+use App\Mcp\Tools\GetStudentProfileTool;
 use App\Models\Classes;
 use App\Models\HelpTicket;
 use App\Models\Student;
 use App\Models\User;
+use Illuminate\Auth\Access\AuthorizationException;
+use Laravel\Ai\Tools\McpServerTool;
 use Laravel\Ai\Tools\Request;
 
 beforeEach(function (): void {
@@ -251,6 +258,168 @@ it('searches campus knowledge base for policies', function (): void {
         ->and((string) $result)->toContain('Clearance Policy');
 });
 
+/**
+ * Every agent the /administrators/ai page offers must be able to reach the
+ * KoAkademy MCP tools.
+ *
+ * AdminExecutiveAgent bridged MCP tools while registrar_auditor,
+ * bursar_finance and campus_support exposed built-in tools only, so 34 of the
+ * 34 MCP tools were unreachable from three of the four agents on that page.
+ */
+it('gives every administrator page agent access to MCP tools', function (): void {
+    $agents = [
+        AdminExecutiveAgent::class,
+        RegistrarAuditAgent::class,
+        BursarFinanceAgent::class,
+        CampusSupportAgent::class,
+    ];
+
+    foreach ($agents as $agent) {
+        $bridged = collect((new $agent)->tools())
+            ->filter(fn ($tool): bool => $tool instanceof McpServerTool)
+            ->map(fn (McpServerTool $tool): string => $tool->name())
+            ->values();
+
+        expect($bridged)
+            ->not->toBeEmpty(class_basename($agent).' exposes no MCP tools');
+    }
+});
+
+it('gives the registrar, bursar, and campus agents the domain MCP tools they need', function (): void {
+    $names = fn ($agent): array => collect($agent->tools())
+        ->filter(fn ($tool): bool => $tool instanceof McpServerTool)
+        ->map(fn (McpServerTool $tool): string => $tool->name())
+        ->all();
+
+    expect($names(new RegistrarAuditAgent))
+        ->toContain('get-student-profile-tool', 'search-students-tool', 'get-enrollment-status-tool', 'get-course-curriculum-tool');
+
+    expect($names(new BursarFinanceAgent))
+        ->toContain('get-statement-of-account-tool', 'get-student-profile-tool');
+
+    expect($names(new CampusSupportAgent))
+        ->toContain('get-my-context-tool', 'get-school-details-tool');
+});
+
+/**
+ * Campus support answers questions from students and visitors, so it is
+ * deliberately not given record-level read access. It reports institutional
+ * facts and schedules, and escalates anything about a specific account.
+ */
+it('keeps record-level tools away from the campus support agent', function (): void {
+    $names = collect((new CampusSupportAgent)->tools())
+        ->filter(fn ($tool): bool => $tool instanceof McpServerTool)
+        ->map(fn (McpServerTool $tool): string => $tool->name())
+        ->all();
+
+    expect($names)
+        ->not->toContain('get-student-profile-tool', 'search-students-tool', 'get-statement-of-account-tool', 'list-student-enrollments-tool');
+
+    // The instructions have to say so, or the model will simply try.
+    expect((string) (new CampusSupportAgent)->instructions())
+        ->toContain('cannot read student profiles');
+});
+
+/**
+ * The instructions drive tool routing, so every MCP tool an agent exposes has
+ * to be named in the instructions under the name the model will actually see.
+ * A rename that missed the prose silently costs routing accuracy.
+ */
+it('names every MCP tool in the instructions under its exposed name', function (): void {
+    $agents = [
+        new AdminExecutiveAgent,
+        new RegistrarAuditAgent,
+        new BursarFinanceAgent,
+        new CampusSupportAgent,
+    ];
+
+    $unnamed = [];
+
+    foreach ($agents as $agent) {
+        $instructions = (string) $agent->instructions();
+
+        foreach ($agent->tools() as $tool) {
+            if (! $tool instanceof McpServerTool) {
+                continue;
+            }
+
+            if (! str_contains($instructions, $tool->name())) {
+                $unnamed[] = class_basename($agent).': '.$tool->name();
+            }
+        }
+    }
+
+    // A tool the instructions never name is a tool the model is far less
+    // likely to reach, so this is a routing regression, not a cosmetic one.
+    expect($unnamed)->toBe([]);
+});
+
+/**
+ * A bridged tool has to actually run, not merely appear in the array. The
+ * adapter builds an MCP request from the AI request and hands back the
+ * structured content.
+ */
+it('invokes a bridged MCP tool through the resilient wrapper', function (): void {
+    $school = App\Models\School::factory()->create();
+    app(App\Services\TenantContext::class)->setCurrentSchool($school);
+
+    Spatie\Permission\Models\Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+    $admin = User::factory()->create();
+    $admin->assignRole('super_admin');
+    $this->actingAs($admin);
+
+    $tool = new ResilientMcpServerTool(new GetSchoolDetailsTool);
+    $data = json_decode((string) $tool->handle(new Request([])), true);
+
+    expect($data['id'])->toBe($school->id)
+        ->and($data['name'])->toBe($school->name)
+        ->and($data)->toHaveKey('departments')
+        ->and($data)->toHaveKey('curriculum_capabilities');
+});
+
+/**
+ * An MCP tool the caller is not entitled to must degrade into a readable error
+ * rather than an exception, because the AI SDK re-throws anything a tool
+ * throws. Without the wrapper an authorization denial would fail the whole
+ * chat turn instead of reaching the model as an explanation.
+ */
+it('reports an mcp access denial to the model instead of throwing', function (): void {
+    $school = App\Models\School::factory()->create();
+    app(App\Services\TenantContext::class)->setCurrentSchool($school);
+
+    // A plain student account may not read another student's account record.
+    $student = Student::factory()->create(['school_id' => $school->id, 'institution_id' => $school->id]);
+    $user = User::factory()->create(['role' => App\Enums\UserRole::Student]);
+    $this->actingAs($user);
+
+    $tool = new ResilientMcpServerTool(new GetStudentProfileTool);
+    $data = json_decode((string) $tool->handle(new Request(['student_id' => $student->id])), true);
+
+    expect($data['error'])->toBeTrue()
+        ->and($data['denied'])->toBeTrue()
+        ->and($data['tool'])->toBe('get-student-profile-tool')
+        ->and($data['guidance'])->toContain('do not substitute a guess');
+});
+
+/**
+ * The plain SDK wrapper still throws, which is the reason the resilient
+ * subclass exists. If laravel/ai ever converts tool exceptions into tool
+ * output on its own, this wrapper can be retired.
+ */
+it('would fail the turn without the resilient wrapper, which is why it exists', function (): void {
+    $school = App\Models\School::factory()->create();
+    app(App\Services\TenantContext::class)->setCurrentSchool($school);
+
+    $student = Student::factory()->create(['school_id' => $school->id, 'institution_id' => $school->id]);
+    $user = User::factory()->create(['role' => App\Enums\UserRole::Student]);
+    $this->actingAs($user);
+
+    $bare = new McpServerTool(new GetStudentProfileTool);
+
+    expect(fn (): string => $bare->handle(new Request(['student_id' => $student->id])))
+        ->toThrow(AuthorizationException::class);
+});
+
 it('creates official support tickets when needed', function (): void {
     $user = User::factory()->create();
 
@@ -461,7 +630,7 @@ it('generates downloadable administrative documents and stores them in cache', f
 });
 
 it('allows admin to stream chat, fetch KPI summaries, and download documents via AdministratorAiController', function (): void {
-    App\Ai\Agents\AdminExecutiveAgent::fake([
+    AdminExecutiveAgent::fake([
         'Here is the executive report on campus operations.',
     ]);
 
@@ -526,7 +695,7 @@ it('processes uploaded images, spreadsheets, and documents for AI consumption', 
 });
 
 it('accepts file attachments on the administrative ai chat endpoint', function (): void {
-    App\Ai\Agents\AdminExecutiveAgent::fake([
+    AdminExecutiveAgent::fake([
         'I have parsed the attached spreadsheet and generated your report.',
     ]);
 
@@ -543,7 +712,7 @@ it('accepts file attachments on the administrative ai chat endpoint', function (
 });
 
 it('accepts custom model selection and streams response with diagnostics', function (): void {
-    App\Ai\Agents\AdminExecutiveAgent::fake([
+    AdminExecutiveAgent::fake([
         'Responding with custom model.',
     ]);
 

@@ -538,7 +538,10 @@ export function useAiChat({
                             content: "",
                         },
                     ]);
-                    await readStream(response, continuationId);
+                    // Forward the last user prompt so a failed continuation turn
+                    // still offers a working Retry affordance instead of an
+                    // error that promises retry with no button.
+                    await readStream(response, continuationId, lastPrompt || undefined);
                 }
             } catch (err: unknown) {
                 // Restore approval on failure
@@ -565,7 +568,7 @@ export function useAiChat({
                 abortControllerRef.current = null;
             }
         },
-        [agent, targetUrl, conversationId, messages, readStream],
+        [agent, targetUrl, conversationId, messages, lastPrompt, readStream],
     );
 
     const stop = React.useCallback(() => {

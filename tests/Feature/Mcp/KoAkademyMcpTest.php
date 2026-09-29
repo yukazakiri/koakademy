@@ -1560,6 +1560,175 @@ it('performs student CRUD via MCP ManageStudentTool', function (): void {
     expect($student->refresh()->academic_year)->toBe(2);
 });
 
+it('writes and reads special equity data via MCP ManageStudentTool', function (): void {
+    config(['api.mcp.write_enabled' => true]);
+    $this->staff->createToken('Staff Agent', ['mcp:read', 'mcp:write']);
+    $this->staff->givePermissionTo(['View:Student', 'Update:Student', 'Create:Student']);
+
+    $student = Student::factory()->create([
+        'first_name' => 'Maria',
+        'last_name' => 'Dela Cruz',
+        'email' => 'maria.dc@example.com',
+    ]);
+
+    // Raw form values: full region label, human income label, "Yes"-style disability type.
+    $updateResponse = KoAkademyServer::actingAs($this->staff)
+        ->tool(App\Mcp\Tools\ManageStudentTool::class, [
+            'action' => 'update',
+            'student_id' => $student->id,
+            'ethnicity' => 'Kankanaey',
+            'region_of_origin' => 'CAR - Cordillera Administrative Region',
+            'province_of_origin' => 'Benguet',
+            'city_of_origin' => 'Baguio City',
+            'is_indigenous_person' => true,
+            'indigenous_group' => 'Kankanaey',
+            'is_pwd' => true,
+            'pwd_type' => 'hearing',
+            'is_solo_parent' => false,
+            'is_solo_parent_dependent' => true,
+            'is_senior_citizen' => false,
+            'is_magna_carta' => false,
+            'is_underprivileged' => true,
+            'is_first_generation' => true,
+            'family_income_bracket' => '₱250,000 and below',
+        ]);
+
+    $updateResponse->assertOk();
+
+    $student->refresh();
+
+    // Region and income labels are canonicalized to the stored keys.
+    expect($student->region_of_origin)->toBe('CAR')
+        ->and($student->family_income_bracket)->toBe('below_250k')
+        ->and($student->ethnicity)->toBe('Kankanaey')
+        ->and($student->indigenous_group)->toBe('Kankanaey')
+        // A disability alias must land on a real CHED category, not a free-text string.
+        ->and($student->pwd_type)->toBe('Deaf/Hard of Hearing Disability')
+        ->and($student->is_indigenous_person)->toBeTrue()
+        ->and($student->is_pwd)->toBeTrue()
+        // An explicit false must be persisted, not dropped as "absent".
+        ->and($student->is_solo_parent)->toBeFalse()
+        ->and($student->is_senior_citizen)->toBeFalse()
+        ->and($student->is_magna_carta)->toBeFalse()
+        ->and($student->is_solo_parent_dependent)->toBeTrue()
+        ->and($student->is_underprivileged)->toBeTrue()
+        ->and($student->is_first_generation)->toBeTrue();
+
+    $updateResponse->assertStructuredContent(function ($json): void {
+        $json->where('success', true)
+            ->where('action', 'update')
+            ->where('equity.is_indigenous_person', true)
+            ->where('equity.is_pwd', true)
+            ->where('equity.pwd_type', 'Deaf/Hard of Hearing Disability')
+            ->where('equity.region_of_origin', 'CAR')
+            ->where('equity.family_income_bracket', 'below_250k')
+            ->where('equity.is_solo_parent', false)
+            ->etc();
+    });
+
+    // Read back through the get action.
+    $getResponse = KoAkademyServer::actingAs($this->staff)
+        ->tool(App\Mcp\Tools\ManageStudentTool::class, [
+            'action' => 'get',
+            'student_id' => (string) $student->id,
+        ]);
+
+    $getResponse->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('found', true)
+                ->where('equity.is_first_generation', true)
+                ->where('equity.indigenous_group', 'Kankanaey')
+                ->etc();
+        });
+
+    // A later partial update must not wipe equity fields it does not mention.
+    KoAkademyServer::actingAs($this->staff)
+        ->tool(App\Mcp\Tools\ManageStudentTool::class, [
+            'action' => 'update',
+            'student_id' => $student->id,
+            'academic_year' => 3,
+        ])->assertOk();
+
+    expect($student->refresh()->is_underprivileged)->toBeTrue()
+        ->and($student->academic_year)->toBe(3);
+});
+
+it('rejects special equity values outside the allowed vocabularies', function (): void {
+    config(['api.mcp.write_enabled' => true]);
+    $this->staff->createToken('Staff Agent', ['mcp:read', 'mcp:write']);
+    $this->staff->givePermissionTo(['View:Student', 'Update:Student']);
+
+    $student = Student::factory()->create(['email' => 'reject@example.com']);
+
+    $response = KoAkademyServer::actingAs($this->staff)
+        ->tool(App\Mcp\Tools\ManageStudentTool::class, [
+            'action' => 'update',
+            'student_id' => $student->id,
+            'pwd_type' => 'Some Category CHED Does Not Recognise',
+        ]);
+
+    $response->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('error', true)
+                ->where('invalid_fields.0.field', 'pwd_type')
+                ->etc();
+        });
+
+    // Nothing may be written when part of the payload is invalid.
+    expect($student->refresh()->pwd_type)->toBeNull();
+});
+
+it('advertises special equity fields in the ManageStudentTool schema', function (): void {
+    $tool = new App\Mcp\Tools\ManageStudentTool();
+    $schema = $tool->schema(new Illuminate\JsonSchema\JsonSchemaTypeFactory);
+
+    $fields = collect($schema)->map(fn ($type) => $type->toArray())->all();
+
+    foreach (['is_indigenous_person', 'indigenous_group', 'is_pwd', 'pwd_type', 'is_solo_parent',
+        'is_solo_parent_dependent', 'is_senior_citizen', 'is_magna_carta', 'is_underprivileged',
+        'is_first_generation', 'family_income_bracket', 'ethnicity', 'region_of_origin',
+        'province_of_origin', 'city_of_origin'] as $key) {
+        expect(array_key_exists($key, $fields))->toBeTrue("schema is missing equity field '{$key}'");
+    }
+
+    // Constrained fields must publish their allowed values so a caller can pick one.
+    expect($fields['is_pwd']['type'])->toBe('boolean')
+        ->and($fields['pwd_type']['enum'])->toContain('Deaf/Hard of Hearing Disability')
+        ->and($fields['region_of_origin']['enum'])->toContain('CAR')
+        ->and($fields['family_income_bracket']['enum'])->toContain('below_250k')
+        ->and($fields['family_income_bracket']['enum'])->toContain('above_8m');
+});
+
+it('normalizes special equity aliases to canonical CHED categories', function (): void {
+    $workbook = app(App\Support\RegistrarStudentProfileWorkbook::class);
+
+    $canonical = array_keys($workbook->field('pwd_type')['options']);
+
+    foreach (['hearing', 'physical', 'psychosocial', 'visual', 'orthopedic', 'speech'] as $alias) {
+        [$normalized, $error] = $workbook->normalizeInput('pwd_type', $alias);
+
+        expect($error)->toBeNull("alias '{$alias}' should normalize cleanly")
+            ->and(in_array($normalized, $canonical, true))->toBeTrue(
+                "alias '{$alias}' produced '{$normalized}', which is not a CHED category"
+            );
+    }
+
+    // Values with no canonical CHED counterpart must fail rather than be stored uncountable.
+    [$normalized, $error] = $workbook->normalizeInput('pwd_type', 'multiple');
+    expect($error)->not->toBeNull()
+        ->and($normalized)->toBeNull();
+
+    // A real boolean must survive normalization rather than reading as blank.
+    [$value, $error] = $workbook->normalizeInput('is_pwd', false);
+    expect($error)->toBeNull()
+        ->and($value)->toBeFalse();
+
+    // Excel-style region strings map to the stored region code.
+    [$value, $error] = $workbook->normalizeInput('region_of_origin', 'Region I - Ilocos Region');
+    expect($error)->toBeNull()
+        ->and($value)->toBe('Region I');
+});
+
 it('performs curriculum subject and class schedule management via MCP', function (): void {
     config(['api.mcp.write_enabled' => true]);
     $this->staff->createToken('Staff Agent', ['mcp:read', 'mcp:write']);

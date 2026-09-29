@@ -361,6 +361,12 @@ final class RegistrarStudentProfileWorkbook
             return [null, 'This column is not importable.'];
         }
 
+        // A real boolean must be honoured as-is. (string) false is '', which the
+        // blank check below would otherwise read as "no answer supplied".
+        if ($field['type'] === 'boolean' && is_bool($value)) {
+            return [$value, null];
+        }
+
         $text = mb_trim((string) $value);
         if ($text === '') {
             return [null, null];
@@ -557,17 +563,20 @@ final class RegistrarStudentProfileWorkbook
                 str_contains($normalized, 'bangsamoro') => 'BARMM',
                 default => null,
             },
+            // Aliases must resolve to the canonical CHED option values listed in
+            // PROFILE_FIELDS. Values outside that list cannot be counted in the
+            // E-FORM B/C PWD columns, so unmapped input is left to fail loudly
+            // as "unsupported" rather than being stored as an uncountable string.
             'pwd_type' => match ($normalized) {
                 'visual' => 'Visual Disability',
-                'hearing' => 'Hearing Disability',
+                'hearing', 'deaf', 'deaf_hard_of_hearing' => 'Deaf/Hard of Hearing Disability',
                 'speech', 'speech_and_language' => 'Speech and Language Impairment',
-                'physical', 'physical_orthopedic', 'orthopedic' => 'Physical / Orthopedic Disability',
+                'physical', 'physical_orthopedic', 'orthopedic' => 'Apparent Physical Disability',
                 'intellectual' => 'Intellectual Disability',
                 'learning' => 'Learning Disability',
-                'psychosocial', 'psychosocial_mental' => 'Psychosocial / Mental Health Disability',
-                'chronic', 'chronic_illness' => 'Disability Due to Chronic Illness',
-                'multiple' => 'Multiple Disabilities',
-                'other' => 'Other',
+                'psychosocial', 'psychosocial_mental', 'mental' => 'Mental/Psycho social Disability',
+                'cancer', 'non_apparent_cancer' => 'Non-apparent Cancer',
+                'rare_disease', 'non_apparent_rare_disease' => 'Non-apparent Rare Disease',
                 default => null,
             },
             'religion' => match ($normalized) {

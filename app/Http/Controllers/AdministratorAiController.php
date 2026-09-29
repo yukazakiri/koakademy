@@ -96,6 +96,8 @@ final class AdministratorAiController extends Controller
             ])],
             'provider' => ['nullable', 'string', 'max:64'],
             'model' => ['nullable', 'string', 'max:255'],
+            'thinking' => ['nullable', 'boolean'],
+            'search' => ['nullable', 'boolean'],
             'conversation_id' => ['nullable', 'string', 'max:36'],
             'message' => ['nullable', 'string', 'required_without:decisions', 'prohibits:decisions'],
             'decisions' => ['nullable', 'array', 'required_without:message', 'prohibits:message'],
@@ -104,6 +106,9 @@ final class AdministratorAiController extends Controller
             'attachments' => ['nullable'],
             'attachments.*' => ['file', 'max:20480', 'mimes:pdf,doc,docx,rtf,odt,ods,xlsx,xls,csv,tsv,txt,md,json,sql,log,png,jpg,jpeg,webp,gif,bmp,tif,tiff'],
         ]);
+
+        $thinkingMode = (bool) ($validated['thinking'] ?? false);
+        $searchMode = (bool) ($validated['search'] ?? false);
 
         $agentKey = $validated['agent'] ?? 'admin_executive';
         $agent = $this->resolveAgent($agentKey);
@@ -188,6 +193,27 @@ final class AdministratorAiController extends Controller
                 }
             )->all())
             : (string) ($validated['message'] ?? '');
+
+        // Think / Search modes are explicit composer toggles. They must affect
+        // the turn, not just the button state: thinking requests step-by-step
+        // reasoning (surfaced via reasoning-delta stream events), search forces
+        // grounding through campus knowledge / retrieval tools.
+        if (is_string($prompt) && $prompt !== '' && ($thinkingMode || $searchMode)) {
+            $prefixes = [];
+            if ($thinkingMode) {
+                $prefixes[] = 'Think through this step-by-step with deep reasoning before answering. Show your intermediate reasoning so the UI can display the Thought Process.';
+            }
+            if ($searchMode) {
+                $prefixes[] = 'Ground your answer with current institutional records. Use CampusKnowledgeSearchTool, QueryCampusAnalyticsTool, or SearchStudentsTool (as appropriate for the active specialist) before answering from memory, and cite the tool results.';
+            }
+            if ($prefixes !== []) {
+                $prompt = '[Modes: '.implode(' | ', array_map(
+                    static fn (bool $on, string $label): string => $label.'='.($on ? 'on' : 'off'),
+                    [$thinkingMode, $searchMode],
+                    ['thinking', 'search']
+                ))."]\n".implode("\n", $prefixes)."\n\n".$prompt;
+            }
+        }
 
         $aiAttachments = [];
         $rawFiles = $request->file('attachments', []);
@@ -711,7 +737,138 @@ final class AdministratorAiController extends Controller
             ],
             'models' => $modelOptions,
             'primary_provider' => $primaryKey,
+            'fallback_provider' => (string) ($aiSettings['fallback_provider'] ?? ''),
+            'default_model' => $this->resolveGlobalDefaultModelId($aiSettings, $primaryKey, $modelOptions),
+            'default_provider' => $primaryKey,
+            'provider_defaults' => $this->resolvePerProviderDefaultIds($aiSettings),
         ]);
+    }
+
+    /**
+     * List the actual tools / MCP integrations available to a specialist agent.
+     *
+     * The composer "tools" popover must show tools that will be used, not the
+     * list of specialist agents. This introspects the agent's tools() so custom
+     * MCP servers appear automatically without frontend hard-coding.
+     */
+    public function agentTools(Request $request): JsonResponse
+    {
+        $user = Auth::user();
+        abort_unless($user instanceof User && $user->canAccessAdminPortal(), 403);
+
+        $validated = $request->validate([
+            'agent' => ['nullable', 'string', Rule::in([
+                'admin_executive',
+                'registrar_auditor',
+                'bursar_finance',
+                'campus_support',
+            ])],
+        ]);
+
+        $agentKey = (string) ($validated['agent'] ?? 'admin_executive');
+        $agent = $this->resolveAgent($agentKey);
+
+        $tools = [];
+        try {
+            foreach ($agent->tools() as $tool) {
+                $class = is_object($tool) ? $tool::class : (string) $tool;
+                $short = $class !== '' && str_contains($class, '\\') ? substr($class, strrpos($class, '\\') + 1) : $class;
+
+                $name = $short;
+                $description = '';
+                if (is_object($tool) && method_exists($tool, 'name')) {
+                    try {
+                        $resolved = $tool->name();
+                        $name = is_string($resolved) ? $resolved : (string) $resolved;
+                    } catch (Throwable) {
+                        $name = $short;
+                    }
+                }
+                if (is_object($tool) && method_exists($tool, 'description')) {
+                    try {
+                        $descResolved = $tool->description();
+                        $description = $descResolved instanceof \Stringable ? (string) $descResolved : (string) $descResolved;
+                    } catch (Throwable) {
+                        $description = '';
+                    }
+                }
+
+                $kind = 'tool';
+                if (is_object($tool) && $tool instanceof \Laravel\Ai\Contracts\Agent) {
+                    $kind = 'agent';
+                } elseif ($class === \App\Ai\Mcp\ExternalMcpTool::class
+                    || $class === \App\Ai\Mcp\ResilientMcpServerTool::class
+                    || str_contains($class, 'Mcp')
+                    || str_starts_with((string) $name, 'mcp_')) {
+                    $kind = 'mcp';
+                }
+
+                $tools[] = [
+                    'name' => $name,
+                    'class' => $short,
+                    'description' => mb_strimwidth($description, 0, 220, '...'),
+                    'kind' => $kind,
+                ];
+            }
+        } catch (Throwable $e) {
+            Log::warning('Failed to introspect agent tools', ['agent' => $agentKey, 'error' => $e->getMessage()]);
+        }
+
+        usort($tools, static fn (array $a, array $b): int => ['tool' => 0, 'mcp' => 1, 'agent' => 2][$a['kind']] <=> ['tool' => 0, 'mcp' => 1, 'agent' => 2][$b['kind']]);
+
+        return response()->json([
+            'agent' => $agentKey,
+            'count' => count($tools),
+            'tools' => $tools,
+        ]);
+    }
+
+    /**
+     * Explicit global default model id (provider:model) for frontend selection.
+     *
+     * @param  array<string, mixed>  $aiSettings
+     * @param  list<array<string, mixed>>  $modelOptions
+     */
+    private function resolveGlobalDefaultModelId(array $aiSettings, string $primaryKey, array $modelOptions): string
+    {
+        $primaryConfig = $aiSettings['providers'][$primaryKey] ?? $aiSettings['custom_providers'][$primaryKey] ?? [];
+        $primaryDefaultChat = is_array($primaryConfig) ? (string) ($primaryConfig['default_chat_model'] ?? '') : '';
+        if (filled($primaryDefaultChat)) {
+            return "{$primaryKey}:{$primaryDefaultChat}";
+        }
+
+        return (string) ($modelOptions[0]['id'] ?? '');
+    }
+
+    /**
+     * Per-provider global defaults (provider => provider:model id).
+     *
+     * @param  array<string, mixed>  $aiSettings
+     * @return array<string, string>
+     */
+    private function resolvePerProviderDefaultIds(array $aiSettings): array
+    {
+        $defaults = [];
+        foreach ($aiSettings['providers'] ?? [] as $pKey => $pCfg) {
+            if (! is_array($pCfg)) {
+                continue;
+            }
+            $chat = (string) ($pCfg['default_chat_model'] ?? '');
+            if (filled($chat)) {
+                $defaults[$pKey] = "{$pKey}:{$chat}";
+            }
+        }
+        foreach ($aiSettings['custom_providers'] ?? [] as $cKey => $cCfg) {
+            if (! is_array($cCfg)) {
+                continue;
+            }
+            $chat = (string) ($cCfg['default_chat_model'] ?? '');
+            if (filled($chat)) {
+                $defaults[$cKey] = "{$cKey}:{$chat}";
+            }
+        }
+
+        return $defaults;
     }
 
     private function extractErrorMessage(Throwable $e): string
@@ -993,9 +1150,38 @@ final class AdministratorAiController extends Controller
 
         foreach ($messages as $msg) {
             $toolCalls = [];
-            $rawToolCalls = $msg->tool_calls;
+            // Support both legacy tool_calls column and SDK v1 steps[] structure.
+            $rawToolCalls = $msg->tool_calls ?? [];
+            if (! is_array($rawToolCalls)) {
+                $rawToolCalls = [];
+            }
+            $steps = [];
+            if (isset($msg->steps)) {
+                $steps = is_array($msg->steps) ? $msg->steps : (json_decode((string) $msg->steps, true) ?: []);
+            }
+
+            // Extract reasoning from steps[].reasoning (SDK v1) or meta.reasoning (legacy).
+            $reasoningParts = [];
+            if (is_array($steps)) {
+                foreach ($steps as $step) {
+                    if (is_array($step) && filled($step['reasoning'] ?? null)) {
+                        $reasoningParts[] = (string) $step['reasoning'];
+                    }
+                    // Tool calls may also live inside steps in SDK v1.
+                    if (is_array($step) && ! empty($step['tool_calls']) && is_array($step['tool_calls'])) {
+                        foreach ($step['tool_calls'] as $stepCall) {
+                            if (is_array($stepCall)) {
+                                $rawToolCalls[] = $stepCall;
+                            }
+                        }
+                    }
+                }
+            }
 
             foreach ($rawToolCalls as $tc) {
+                if (! is_array($tc)) {
+                    continue;
+                }
                 $tcId = (string) ($tc['id'] ?? '');
                 $hasResult = array_key_exists('result', $tc);
 
@@ -1037,6 +1223,10 @@ final class AdministratorAiController extends Controller
             }
 
             $meta = is_array($msg->meta) ? $msg->meta : (json_decode((string) $msg->meta, true) ?: []);
+            if (filled($meta['reasoning'] ?? null)) {
+                $reasoningParts[] = (string) $meta['reasoning'];
+            }
+            $reasoning = $reasoningParts !== [] ? implode("\n\n", $reasoningParts) : null;
             $citations = [];
             if (! empty($meta['citations']) && is_array($meta['citations'])) {
                 foreach ($meta['citations'] as $c) {
@@ -1053,6 +1243,7 @@ final class AdministratorAiController extends Controller
                 'id' => (string) $msg->id,
                 'role' => (string) $msg->role,
                 'content' => (string) ($msg->content ?? ''),
+                'reasoning' => $reasoning,
                 'toolCalls' => ! empty($toolCalls) ? $toolCalls : null,
                 'pendingApprovals' => ! empty($pendingApprovals) ? $pendingApprovals : null,
                 'attachments' => ! empty($attachments) ? $attachments : null,

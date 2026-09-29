@@ -348,9 +348,24 @@ export function ChatMessageFormatter({
     const hasContent = parsedBlocks.length > 0;
     const hasReasoning = Boolean(reasoning && reasoning.trim());
     const hasTools = Boolean(toolCalls && toolCalls.length > 0);
+    // A completed turn with no text, reasoning, tools, or artifacts must never
+    // render as a blank bubble (the reported "chat just stops" symptom).
+    const isEmptyCompleted =
+        !isStreaming && !hasContent && !hasReasoning && !hasTools && toolArtifacts.length === 0;
 
     return (
         <div className="space-y-3 text-sm text-foreground">
+            {isEmptyCompleted && (
+                <div className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+                    <Loader variant="dots" size="sm" className="text-destructive shrink-0" />
+                    <div>
+                        <p className="font-semibold">The assistant stopped without a response.</p>
+                        <p className="mt-0.5 text-destructive/90">
+                            Your request is preserved — use Retry, or switch to the global default model and try again.
+                        </p>
+                    </div>
+                </div>
+            )}
             {/* Prompt-Kit Reasoning Thought Process */}
             {hasReasoning && (
                 <Reasoning className="border border-border/60 bg-muted/20 rounded-xl overflow-hidden p-2.5">

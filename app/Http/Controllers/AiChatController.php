@@ -210,6 +210,12 @@ final class AiChatController extends Controller
             try {
                 $stream = null;
                 $iterator = null;
+                $sawText = false;
+                $sawTool = false;
+                $sawApproval = false;
+                $sawError = false;
+                /** @var list<string> $failedTools */
+                $failedTools = [];
 
                 try {
                     $stream = $this->streamWithDocumentCompatibility(
@@ -260,6 +266,9 @@ final class AiChatController extends Controller
                     $event = $iterator->current();
 
                     if ($event instanceof \Laravel\Ai\Streaming\Events\TextDelta) {
+                        if (filled($event->delta)) {
+                            $sawText = true;
+                        }
                         echo 'data: '.json_encode([
                             'type' => 'text-delta',
                             'delta' => $event->delta,
@@ -271,6 +280,7 @@ final class AiChatController extends Controller
                             'delta' => $event->delta,
                         ])."\n\n";
                     } elseif ($event instanceof \Laravel\Ai\Streaming\Events\ToolCall) {
+                        $sawTool = true;
                         echo 'data: '.json_encode([
                             'type' => 'tool-call',
                             'toolCallId' => $event->toolCall->id,
@@ -278,6 +288,10 @@ final class AiChatController extends Controller
                             'input' => $event->toolCall->arguments,
                         ])."\n\n";
                     } elseif ($event instanceof \Laravel\Ai\Streaming\Events\ToolResult) {
+                        $sawTool = true;
+                        if (! $event->successful) {
+                            $failedTools[] = (string) ($event->toolResult->name ?? 'Tool');
+                        }
                         echo 'data: '.json_encode([
                             'type' => 'tool-result',
                             'toolCallId' => $event->toolResult->id,
@@ -293,6 +307,7 @@ final class AiChatController extends Controller
                             'url' => $event->citation->url,
                         ])."\n\n";
                     } elseif ($event instanceof \Laravel\Ai\Streaming\Events\ToolApprovalRequest) {
+                        $sawApproval = true;
                         foreach ($event->pendingApprovals as $pendingApproval) {
                             echo 'data: '.json_encode([
                                 'type' => 'tool-approval-request',
@@ -304,6 +319,7 @@ final class AiChatController extends Controller
                             ])."\n\n";
                         }
                     } elseif ($event instanceof \Laravel\Ai\Streaming\Events\Error) {
+                        $sawError = true;
                         echo 'data: '.json_encode([
                             'type' => 'error',
                             'errorText' => (string) $event,
@@ -316,6 +332,39 @@ final class AiChatController extends Controller
                     flush();
 
                     $iterator->next();
+                }
+
+                // Never end a turn silently: surface failed tools or empty output
+                // as an explicit error event instead of a blank stopped chat.
+                if (! $sawText && ! $sawApproval && ! $sawError) {
+                    if ($failedTools !== []) {
+                        $uniqueFailed = array_values(array_unique($failedTools));
+                        $toolList = implode(', ', $uniqueFailed);
+                        Log::warning('General AI turn ended after tool failures with no assistant text.', [
+                            'agent' => $agentKey,
+                            'provider' => $selectedProvider ?? config('ai.default'),
+                            'model' => $selectedModel,
+                            'failed_tools' => $uniqueFailed,
+                        ]);
+                        echo 'data: '.json_encode([
+                            'type' => 'error',
+                            'errorText' => "Tool execution failed ({$toolList}) and the assistant stopped before answering. Your request is preserved — retry the request.",
+                        ])."\n\n";
+                    } elseif (! $sawTool) {
+                        Log::warning('General AI turn ended with no assistant output.', [
+                            'agent' => $agentKey,
+                            'provider' => $selectedProvider ?? config('ai.default'),
+                            'model' => $selectedModel,
+                        ]);
+                        echo 'data: '.json_encode([
+                            'type' => 'error',
+                            'errorText' => 'The assistant stopped without producing a response. Your request is preserved — retry the request.',
+                        ])."\n\n";
+                    }
+                    if (ob_get_level() > 0) {
+                        ob_flush();
+                    }
+                    flush();
                 }
 
                 $resolvedConversationId = $stream?->conversationId ?? $agentInstance->currentConversation() ?? $conversationId;

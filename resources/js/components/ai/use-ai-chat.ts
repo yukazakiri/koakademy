@@ -111,6 +111,8 @@ export function useAiChat({
             const pendingApprovals: PendingToolApproval[] = [];
             const toolInvocations: Map<string, ToolInvocation> = new Map();
             const citations: CitationSource[] = [];
+            let sawDone = false;
+            let sawStreamError = false;
 
             while (true) {
                 const { value, done } = await reader.read();
@@ -126,7 +128,10 @@ export function useAiChat({
 
                     if (trimmed.startsWith("data: ")) {
                         const dataPayload = trimmed.slice(6).trim();
-                        if (dataPayload === "[DONE]") continue;
+                        if (dataPayload === "[DONE]") {
+                            sawDone = true;
+                            continue;
+                        }
 
                         try {
                             const parsed = JSON.parse(dataPayload);
@@ -176,6 +181,7 @@ export function useAiChat({
                                     onConversationCreated?.(newConvId, parsed.title);
                                 }
                             } else if (parsed.type === "error") {
+                                sawStreamError = true;
                                 const errMsg = parsed.errorText || parsed.message || "An error occurred with the AI provider.";
                                 const documentCapabilityError = /does not support document attachments|only image attachments are supported/i.test(
                                     errMsg,
@@ -238,6 +244,42 @@ export function useAiChat({
                         ),
                     );
                 }
+            }
+
+            // A dropped connection (proxy timeout, server kill) ends the reader
+            // without [DONE] and without an error event — previously the chat
+            // just stopped on a blank bubble. Surface it as a retryable error.
+            if (!sawDone && !sawStreamError) {
+                sawStreamError = true;
+                const interruptMsg =
+                    "The connection to the AI service was interrupted before the response completed. Your request is preserved — retry the request.";
+                setLastError({
+                    title: "AI Generation Error",
+                    message: interruptMsg,
+                    retryPrompt: retryPromptText,
+                });
+                if (!accumulatedText.trim()) {
+                    accumulatedText = `⚠️ ${interruptMsg}`;
+                }
+            }
+
+            // An empty turn with no text, tools, or approvals is never a valid
+            // silent stop — ensure the error banner and a visible message exist.
+            if (
+                !accumulatedText.trim() &&
+                toolInvocations.size === 0 &&
+                pendingApprovals.length === 0 &&
+                !sawStreamError
+            ) {
+                sawStreamError = true;
+                const emptyMsg =
+                    "The assistant stopped without producing a response. Your request is preserved — retry the request.";
+                setLastError({
+                    title: "AI Generation Error",
+                    message: emptyMsg,
+                    retryPrompt: retryPromptText,
+                });
+                accumulatedText = `⚠️ ${emptyMsg}`;
             }
 
             const finalMessage: ChatMessage = {
@@ -393,6 +435,16 @@ export function useAiChat({
 
                 const message = err instanceof Error ? err.message : "Failed to communicate with AI agent.";
                 const documentCapabilityError = /does not support document attachments|only image attachments are supported/i.test(message);
+                // Stream/network failures previously only toasted, leaving no
+                // Retry affordance and sometimes a blank bubble. Always set a
+                // retryable error so the banner + retry button appear.
+                if (!documentCapabilityError) {
+                    setLastError({
+                        title: "AI Generation Error",
+                        message,
+                        retryPrompt: userMessage || documentRetryPrompt,
+                    });
+                }
                 toast.error(message);
                 onError?.(err instanceof Error ? err : new Error(message));
 

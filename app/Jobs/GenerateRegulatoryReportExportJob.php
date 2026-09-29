@@ -27,12 +27,15 @@ final class GenerateRegulatoryReportExportJob implements ShouldBeUnique, ShouldQ
     use Queueable;
     use SerializesModels;
 
+    public int $timeout = 600;
+
     public int $tries;
 
     public bool $failOnTimeout = true;
 
     public function __construct(public string $exportId)
     {
+        $this->timeout = (int) config('assessment-exports.merge.timeout', 600);
         $this->tries = (int) config('assessment-exports.merge.tries', 2);
     }
 
@@ -67,6 +70,8 @@ final class GenerateRegulatoryReportExportJob implements ShouldBeUnique, ShouldQ
         $coordinator->broadcast($export->refresh());
 
         $temporaryPath = null;
+        $originalMemoryLimit = ini_get('memory_limit');
+        ini_set('memory_limit', '1G');
 
         try {
             $filters = $export->filters;
@@ -82,6 +87,8 @@ final class GenerateRegulatoryReportExportJob implements ShouldBeUnique, ShouldQ
             }
 
             (new Xlsx($spreadsheet))->save($temporaryPath);
+            $spreadsheet->disconnectWorksheets();
+            unset($spreadsheet);
 
             $disk = (string) config('assessment-exports.disk');
             $storagePath = sprintf(
@@ -146,6 +153,11 @@ final class GenerateRegulatoryReportExportJob implements ShouldBeUnique, ShouldQ
         } finally {
             if ($temporaryPath !== null) {
                 @unlink($temporaryPath);
+            }
+
+            gc_collect_cycles();
+            if ($originalMemoryLimit !== false) {
+                @ini_set('memory_limit', $originalMemoryLimit);
             }
         }
     }

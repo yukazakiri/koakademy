@@ -247,6 +247,25 @@ it('rejects a request that contains no supported fields', function (): void {
         ->assertJsonPath('message', 'No supported fields were provided.');
 });
 
+it('answers quick-update as a plain JSON API and never as an Inertia page', function (): void {
+    $user = User::factory()->create(['role' => UserRole::Admin]);
+    $student = Student::factory()->create(['academic_year' => 1]);
+
+    // The inline editor sends this with useHttp, which does not set X-Inertia.
+    // If the endpoint ever started returning an Inertia page (or an
+    // X-Inertia response header), the client would break the way it did when
+    // this was originally called through router.patch().
+    $response = actingAs($user)
+        ->patchJson(route('administrators.students.quick-update', $student), [
+            'academic_year' => 2,
+        ])
+        ->assertOk()
+        ->assertJsonStructure(['message', 'student' => ['id', 'academic_year', 'formatted_academic_year', 'status']]);
+
+    expect($response->headers->has('x-inertia'))->toBeFalse();
+    expect($response->headers->get('content-type'))->toContain('application/json');
+});
+
 it('exposes the raw year level on the show page for the inline editor', function (): void {
     withoutVite();
 

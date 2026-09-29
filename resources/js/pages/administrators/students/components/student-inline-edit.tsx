@@ -1,5 +1,5 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { router } from "@inertiajs/react";
+import { router, useHttp } from "@inertiajs/react";
 import { Check, Loader2, Pencil, X } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
@@ -7,6 +7,21 @@ import { toast } from "sonner";
 import type { StudentDetail } from "../types";
 
 declare const route: (name: string, params?: Record<string, unknown> | string | number | Array<string | number>) => string;
+
+type QuickUpdatePayload = {
+    academic_year?: number;
+    status?: string;
+};
+
+type QuickUpdateResponse = {
+    message: string;
+    student: {
+        id: number;
+        academic_year: number;
+        formatted_academic_year: string;
+        status: string;
+    };
+};
 
 const YEAR_LEVELS = [
     { value: "1", label: "1st Year" },
@@ -41,17 +56,25 @@ interface StudentInlineEditProps {
  * Inline editors for the two fields that change most often during registration:
  * year level and status.
  *
- * Each commit hits the lightweight quick-update endpoint and repaints
- * optimistically, then reconciles with a partial reload of only the `student`
+ * Each commit hits the lightweight quick-update endpoint over plain JSON, repaints
+ * the field immediately, then reconciles with a partial reload of only the `student`
  * prop so the authoritative values land without rebuilding the whole page.
  */
 export function StudentInlineEdit({ student }: StudentInlineEditProps) {
     const [editing, setEditing] = useState<PendingField | null>(null);
     const [saving, setSaving] = useState<PendingField | null>(null);
     const [draft, setDraft] = useState("");
+    // Repaints the field before the server responds, and is dropped on failure
+    // so the value snaps back to the persisted one.
+    const [optimistic, setOptimistic] = useState<{ field: PendingField; value: string } | null>(null);
+
+    // quick-update answers with plain JSON, so it must be sent with a real HTTP
+    // client. router.patch() would perform an Inertia visit, and Inertia treats a
+    // non-Inertia JSON response as an invalid response instead of firing onSuccess.
+    const http = useHttp<QuickUpdatePayload, QuickUpdateResponse>(`student-quick-update-${student.id}`, {});
 
     const commit = useCallback(
-        (field: PendingField, value: string) => {
+        async (field: PendingField, value: string) => {
             if (saving !== null || value === "") return;
 
             const current = field === "academic_year" ? String(student.academic_year_value ?? "") : String(student.status ?? "");
@@ -62,50 +85,51 @@ export function StudentInlineEdit({ student }: StudentInlineEditProps) {
 
             setEditing(null);
             setSaving(field);
+            setOptimistic({ field, value });
 
-            const optimistic = (props: { student: StudentDetail }): { student: StudentDetail } => ({
-                ...props,
-                student:
-                    field === "academic_year"
-                        ? {
-                              ...props.student,
-                              academic_year_value: Number(value),
-                              academic_year: formatYearLevel(Number(value)),
-                          }
-                        : { ...props.student, status: value },
-            });
+            // useHttp reads the request body from its own form state.
+            http.setData(field === "academic_year" ? { academic_year: Number(value) } : { status: value });
 
-            router.optimistic(optimistic).patch(
-                route("administrators.students.quick-update", student.id),
-                { [field]: value },
-                {
-                    preserveScroll: true,
-                    preserveState: true,
-                    async: true,
-                    onSuccess: async () => {
-                        // Reconcile with the server's authoritative values.
-                        // reload() already preserves scroll and state.
-                        await router.reload({ only: ["student"] });
-                        toast.success(`${field === "academic_year" ? "Year level" : "Status"} updated`);
-                    },
+            // A 422 resolves with undefined after invoking onError, so the
+            // validation message arrives through the callback rather than a throw.
+            let failure: string | null = null;
+
+            try {
+                const result = await http.patch(route("administrators.students.quick-update", student.id), {
                     onError: (errors) => {
-                        const message = Object.values(errors)[0];
-                        toast.error(typeof message === "string" ? message : "Failed to update student");
+                        const first = Object.values(errors)[0];
+                        failure = typeof first === "string" ? first : "Failed to update student";
                     },
-                    onFinish: () => {
-                        setSaving(null);
-                    },
-                },
-            );
+                });
+
+                if (failure !== null || result === undefined) {
+                    toast.error(failure ?? "Failed to update student");
+                    return;
+                }
+
+                toast.success(`${field === "academic_year" ? "Year level" : "Status"} updated`);
+
+                // Reconcile the rest of the page (checklist, sidebar) with the
+                // server's authoritative values. reload() preserves scroll/state.
+                await router.reload({ only: ["student"] });
+            } catch (error) {
+                toast.error(error instanceof Error ? error.message : "Failed to update student");
+            } finally {
+                setOptimistic(null);
+                setSaving(null);
+            }
         },
-        [saving, student],
+        [http, saving, student],
     );
+
+    const shownYearLevel = optimistic?.field === "academic_year" ? Number(optimistic.value) : student.academic_year_value;
+    const shownStatus = optimistic?.field === "status" ? optimistic.value : student.status;
 
     return (
         <>
             <InlineField
                 label="Year Level"
-                displayValue={formatYearLevel(student.academic_year_value)}
+                displayValue={formatYearLevel(shownYearLevel)}
                 isEditing={editing === "academic_year"}
                 isSaving={saving === "academic_year"}
                 options={YEAR_LEVELS}
@@ -121,7 +145,7 @@ export function StudentInlineEdit({ student }: StudentInlineEditProps) {
 
             <InlineField
                 label="Status"
-                displayValue={STATUSES.find((s) => s.value === student.status)?.label ?? student.status ?? "—"}
+                displayValue={STATUSES.find((s) => s.value === shownStatus)?.label ?? shownStatus ?? "—"}
                 isEditing={editing === "status"}
                 isSaving={saving === "status"}
                 options={STATUSES}

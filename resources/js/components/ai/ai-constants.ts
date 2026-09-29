@@ -87,6 +87,94 @@ export const DEFAULT_PROMPT_SUGGESTIONS: PromptSuggestion[] = [
     },
 ];
 
+export interface AgentToolInfo {
+    name: string;
+    class?: string;
+    description: string;
+    kind: "tool" | "mcp" | "agent";
+}
+
+/**
+ * Fallback static catalogue of tools actually bound to each administrator
+ * specialist. Mirrors app/Ai/Agents/*.php tools() so the composer "tools"
+ * popover shows tools/MCP that will be used — not the list of agents.
+ *
+ * The full-page chat prefers the live `/administrators/ai/agent-tools`
+ * endpoint (which also includes enabled external MCP servers) and only uses
+ * this map when the endpoint is unreachable.
+ */
+export const AGENT_TOOLS_FALLBACK: Record<AgentRoleKey, AgentToolInfo[]> = {
+    admin_executive: [
+        { name: "query-campus-analytics-tool", description: "Live enrollment, demographics, clearance, finance, and faculty counts.", kind: "tool" },
+        { name: "generate-analytics-chart-tool", description: "Builds ring / bar / line / gauge chart artifacts for the transcript.", kind: "tool" },
+        { name: "generate-administrative-document-tool", description: "Generates official PDF / CSV / Markdown documents for download.", kind: "tool" },
+        { name: "get-class-enrollments-tool", description: "Class-section roster with student number, name, and status.", kind: "tool" },
+        { name: "get-class-grades-tool", description: "Passing rates and performance for a class section.", kind: "tool" },
+        { name: "get-class-attendance-summary-tool", description: "Attendance and absenteeism summary for a class.", kind: "tool" },
+        { name: "get-faculty-assigned-classes-tool", description: "Teaching load and assigned classes for a faculty member.", kind: "tool" },
+        { name: "lookup-class-schedules-tool", description: "Find class sections and meeting schedules.", kind: "tool" },
+        { name: "lookup-room-availability-tool", description: "Classroom availability and bookings.", kind: "tool" },
+        { name: "search-students-tool", description: "Directory search by name, program, status, and term filters.", kind: "tool" },
+        { name: "query-timetable-schedule-tool", description: "Timetable meetings for classes, rooms, students, or faculty.", kind: "tool" },
+        { name: "manage-student-tool", description: "Create / update student profiles (requires confirmation).", kind: "tool" },
+        { name: "manage-curriculum-subject-tool", description: "Single curriculum subject CRUD.", kind: "tool" },
+        { name: "manage-class-schedule-tool", description: "Class, schedule, and instructor / room assignment mutations.", kind: "tool" },
+        { name: "manage-room-tool", description: "Classroom and facility management.", kind: "tool" },
+        { name: "get-student-profile-tool", description: "Authoritative student background and clearance standing (MCP).", kind: "mcp" },
+        { name: "get-course-curriculum-tool", description: "Degree program curriculum by year and semester (MCP).", kind: "mcp" },
+        { name: "get-statement-of-account-tool", description: "Auditable tuition assessment and balance (MCP).", kind: "mcp" },
+        { name: "get-enrollment-status-tool", description: "Single enrollment workflow state (MCP).", kind: "mcp" },
+        { name: "list-pending-enrollments-tool", description: "Queue awaiting review / verification / cashier approval (MCP).", kind: "mcp" },
+        { name: "registrar_auditor", description: "Delegated registrar audits and clearance checks.", kind: "agent" },
+        { name: "bursar_finance", description: "Delegated ledger and Statement of Account work.", kind: "agent" },
+        { name: "campus_support", description: "Delegated handbook and policy checks.", kind: "agent" },
+    ],
+    registrar_auditor: [
+        { name: "audit-student-profile-import-tool", description: "Catches malformed LRNs and duplicates in import batches.", kind: "tool" },
+        { name: "simulate-policy-impact-tool", description: "Simulates enrollment policy rules.", kind: "tool" },
+        { name: "audit-graduation-clearance-tool", description: "Outstanding obligations across departments.", kind: "tool" },
+        { name: "batch-update-clearance-tool", description: "Clear holds in batch (requires confirmation).", kind: "tool" },
+        { name: "analyze-transcript-document-tool", description: "Evaluates prior-school transcripts (TOR).", kind: "tool" },
+        { name: "search-students-tool", description: "Resolve named students or cohorts (MCP).", kind: "mcp" },
+        { name: "get-student-profile-tool", description: "Authoritative student record verification (MCP).", kind: "mcp" },
+        { name: "list-pending-enrollments-tool", description: "Queue awaiting administrative review (MCP).", kind: "mcp" },
+        { name: "get-enrollment-status-tool", description: "Single enrollment workflow state (MCP).", kind: "mcp" },
+        { name: "get-enrollment-audit-trail-tool", description: "Recorded transitions on one enrollment (MCP).", kind: "mcp" },
+        { name: "get-course-curriculum-tool", description: "Program requirements for clearance verdicts (MCP).", kind: "mcp" },
+    ],
+    bursar_finance: [
+        { name: "explain-statement-of-account-tool", description: "Breaks down tuition, lab fees, and payments.", kind: "tool" },
+        { name: "validate-adjustment-spreadsheet-tool", description: "Catches negative entries and duplicate adjustment rows.", kind: "tool" },
+        { name: "simulate-scholarship-adjustment-tool", description: "Projects net scholarship discounts.", kind: "tool" },
+        { name: "apply-tuition-adjustment-batch-tool", description: "Commits ledger modifications (requires approval).", kind: "tool" },
+        { name: "get-statement-of-account-tool", description: "Actual assessment record for audit-defensible figures (MCP).", kind: "mcp" },
+        { name: "get-student-profile-tool", description: "Confirm whose account is discussed (MCP).", kind: "mcp" },
+        { name: "get-enrollment-status-tool", description: "Confirm enrollment the assessment belongs to (MCP).", kind: "mcp" },
+        { name: "search-students-tool", description: "Resolve student by name when only a name is given (MCP).", kind: "mcp" },
+    ],
+    campus_support: [
+        { name: "campus-knowledge-search-tool", description: "Search handbooks, policies, and academic calendars.", kind: "tool" },
+        { name: "create-help-ticket-tool", description: "Files a support ticket for escalation.", kind: "tool" },
+        { name: "lookup-ticket-status-tool", description: "Checks ticket progress.", kind: "tool" },
+        { name: "escalate-to-department-tool", description: "Escalates to the responsible department.", kind: "tool" },
+        { name: "get-my-context-tool", description: "Current school, academic period, and account scope (MCP).", kind: "mcp" },
+        { name: "get-school-details-tool", description: "Departments, programs, and official contacts (MCP).", kind: "mcp" },
+        { name: "get-student-schedule-tool", description: "Schedule for the entitled requester only (MCP).", kind: "mcp" },
+    ],
+    student_advisor: [
+        { name: "search-students-tool", description: "Student directory lookup (MCP).", kind: "mcp" },
+        { name: "get-course-curriculum-tool", description: "Program curriculum by year and semester (MCP).", kind: "mcp" },
+    ],
+    faculty_copilot: [
+        { name: "generate-rubric-tool", description: "Rubric formulation for assignments.", kind: "tool" },
+        { name: "detect-at-risk-students-tool", description: "Academic risk signals.", kind: "tool" },
+    ],
+};
+
+export function getFallbackTools(agent: AgentRoleKey): AgentToolInfo[] {
+    return AGENT_TOOLS_FALLBACK[agent] ?? [];
+}
+
 export interface ConversationItem {
     id: string;
     title: string;

@@ -832,7 +832,7 @@ export default function SystemManagementAiPage({
                             </div>
                         </div>
 
-                        {/* Provider Horizontal Tabs */}
+                        {/* Provider Horizontal Tabs — ★ marks the global default (primary) provider */}
                         <div className="pt-2 overflow-x-auto">
                             <Tabs
                                 value={activeTab}
@@ -844,10 +844,11 @@ export default function SystemManagementAiPage({
                             >
                                 <TabsList className="bg-muted/60 p-1 flex-wrap h-auto gap-1">
                                     {(Object.keys(PROVIDER_METAS) as AiProviderKey[]).map((pKey) => {
-                                        const isConfigured = ai_config?.providers?.[pKey]?.configured;
                                         const isEnabled = form.data.providers[pKey]?.enabled;
+                                        const isPrimary = form.data.primary_provider === pKey;
                                         return (
                                             <TabsTrigger key={pKey} value={pKey} className="text-xs gap-1.5 px-3 h-7">
+                                                {isPrimary && <span className="text-amber-500" title="Global default provider">★</span>}
                                                 {PROVIDER_METAS[pKey].name}
                                                 {isEnabled && <span className="size-1.5 rounded-full bg-emerald-500" />}
                                             </TabsTrigger>
@@ -857,12 +858,14 @@ export default function SystemManagementAiPage({
                                     {/* Custom Provider Tabs */}
                                     {Object.keys(form.data.custom_providers).map((cKey) => {
                                         const custom = form.data.custom_providers[cKey];
+                                        const isPrimary = form.data.primary_provider === cKey;
                                         return (
                                             <TabsTrigger
                                                 key={cKey}
                                                 value={cKey}
                                                 className="text-xs gap-1.5 px-3 h-7 border border-dashed border-primary/40 bg-primary/5 text-primary"
                                             >
+                                                {isPrimary && <span className="text-amber-500" title="Global default provider">★</span>}
                                                 <Server className="size-3" />
                                                 {custom.label}
                                                 {custom.enabled && <span className="size-1.5 rounded-full bg-emerald-500" />}
@@ -875,10 +878,10 @@ export default function SystemManagementAiPage({
                     </CardHeader>
 
                     <CardContent className="p-6 space-y-6">
-                        {/* Provider Header Banner */}
+                        {/* Provider Header Banner — shows which provider is the system-wide global default */}
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border bg-muted/20 gap-3">
                             <div>
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
                                     <h3 className="font-semibold text-base flex items-center gap-2">
                                         {isCustomProvider && <Server className="size-4 text-primary" />}
                                         {activeLabel}
@@ -886,6 +889,28 @@ export default function SystemManagementAiPage({
                                     <Badge variant="outline" className="text-xs">
                                         {activeBadge}
                                     </Badge>
+                                    {form.data.primary_provider === activeTab ? (
+                                        <Badge className="text-xs bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30">
+                                            ★ Global Default Provider
+                                        </Badge>
+                                    ) : (
+                                        canUpdate && (
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => {
+                                                    form.setData("primary_provider", activeTab);
+                                                    toast.success(`"${activeLabel}" will be the global default provider on save.`);
+                                                }}
+                                                className="h-7 text-[11px] gap-1"
+                                                title="Use this provider's default model globally"
+                                            >
+                                                <Sparkles className="size-3" />
+                                                Set as global default
+                                            </Button>
+                                        )
+                                    )}
                                     {isCustomProvider && (
                                         <Badge variant="secondary" className="text-[10px] font-mono">
                                             key: {activeTab}
@@ -893,6 +918,13 @@ export default function SystemManagementAiPage({
                                     )}
                                 </div>
                                 <p className="text-xs text-muted-foreground mt-0.5">{activeDescription}</p>
+                                <p className="text-[11px] text-muted-foreground mt-1">
+                                    This provider&apos;s <span className="font-mono">Default Chat Model</span> below is used globally
+                                    whenever this provider is active
+                                    {form.data.primary_provider === activeTab
+                                        ? " — and as the system-wide default for new chats."
+                                        : "."}
+                                </p>
                             </div>
 
                             <div className="flex items-center gap-4 shrink-0">
@@ -1078,15 +1110,20 @@ export default function SystemManagementAiPage({
                             </Alert>
                         )}
 
-                        {/* Model Selection Matrix (Dropdown / Manual Hybrid) */}
+                        {/* Model Selection Matrix (Dropdown / Manual Hybrid) — per-provider global defaults */}
                         <div className="space-y-4 pt-2">
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center justify-between flex-wrap gap-2">
                                 <h4 className="text-sm font-semibold flex items-center gap-1.5">
                                     <Layers className="size-4 text-indigo-500" />
                                     Default Model Assignments
+                                    {form.data.primary_provider === activeTab && (
+                                        <Badge className="text-[10px] bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30 ml-1">
+                                            System-wide default
+                                        </Badge>
+                                    )}
                                 </h4>
                                 <span className="text-[11px] text-muted-foreground">
-                                    Select from discovered models or type custom model identifier
+                                    Each provider&apos;s default is used globally when that provider is active — select from discovered models or type a custom identifier
                                 </span>
                             </div>
 

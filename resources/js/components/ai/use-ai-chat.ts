@@ -53,6 +53,8 @@ export interface PromptOptions {
     model?: string;
     provider?: string;
     supportsDocuments?: boolean;
+    thinking?: boolean;
+    search?: boolean;
 }
 
 export function useAiChat({
@@ -316,6 +318,12 @@ export function useAiChat({
                     if (options?.provider) {
                         formData.append("provider", options.provider);
                     }
+                    if (typeof options?.thinking === "boolean") {
+                        formData.append("thinking", options.thinking ? "1" : "0");
+                    }
+                    if (typeof options?.search === "boolean") {
+                        formData.append("search", options.search ? "1" : "0");
+                    }
                     files.forEach((file) => {
                         formData.append("attachments[]", file);
                     });
@@ -341,6 +349,12 @@ export function useAiChat({
                     }
                     if (options?.provider) {
                         bodyPayload.provider = options.provider;
+                    }
+                    if (typeof options?.thinking === "boolean") {
+                        bodyPayload.thinking = options.thinking;
+                    }
+                    if (typeof options?.search === "boolean") {
+                        bodyPayload.search = options.search;
                     }
 
                     requestOptions = {

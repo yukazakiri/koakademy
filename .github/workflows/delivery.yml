@@ -66,10 +66,19 @@ jobs:
             printf 'manual_version=\n'
           } >> "${GITHUB_OUTPUT}"
 
+      - name: Check out repository for manual validation
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: master
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Validate manual delivery request
         id: manual
         if: github.event_name == 'workflow_dispatch'
         env:
+          GH_TOKEN: ${{ github.token }}
           RECOVERY_TAG: ${{ inputs.tag }}
           MANUAL_VERSION: ${{ inputs.version }}
           SOURCE_REF: ${{ github.ref }}
@@ -98,6 +107,36 @@ jobs:
 
             if [[ ! "${source_sha}" =~ ^[0-9a-f]{40}$ ]]; then
               printf 'Tag %s does not exist in %s.\n' "${RECOVERY_TAG}" "${GITHUB_REPOSITORY}" >&2
+              exit 1
+            fi
+
+            # Verify the recovery tag has a published GitHub release created by automation
+            release_info="$(gh release view "${RECOVERY_TAG}" --json isDraft,author 2>/dev/null || echo '{}')"
+            is_published="$(jq -r '.isDraft == false' <<<"${release_info}")"
+            author_login="$(jq -r '.author.login // ""' <<<"${release_info}")"
+            
+            if [[ "${is_published}" != "true" ]] || [[ "${author_login}" != "github-actions[bot]" ]]; then
+              printf 'Recovery tag %s must have a published GitHub release created by automation.\n' \
+                "${RECOVERY_TAG}" >&2
+              printf 'Found: isDraft=%s, author=%s\n' "${is_published}" "${author_login}" >&2
+              exit 1
+            fi
+
+            # Verify the tag commit is reachable from the current master branch
+            master_sha="$(git ls-remote "${remote}" refs/heads/master | awk '{print $1}')"
+            if [[ ! "${master_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+              printf 'Unable to resolve the current master commit.\n' >&2
+              exit 1
+            fi
+
+            # Fetch both the tag commit and master with full history to check ancestry
+            git fetch --unshallow "${remote}" 2>/dev/null || true
+            git fetch "${remote}" "refs/tags/${RECOVERY_TAG}:refs/tags/${RECOVERY_TAG}" 2>/dev/null || true
+            git fetch "${remote}" refs/heads/master 2>/dev/null || true
+            
+            if ! git merge-base --is-ancestor "${source_sha}" "${master_sha}"; then
+              printf 'Recovery tag %s commit must be an ancestor of master.\n' \
+                "${RECOVERY_TAG}" >&2
               exit 1
             fi
 

@@ -53,6 +53,7 @@ import { toast } from "sonner";
 
 import { ApprovalCard } from "./approval-card";
 import { ChatMessageFormatter } from "./chat-message-formatter";
+import { AssistantMessageActions, UserMessageActions } from "./message-actions";
 import { AgentRoleKey, useAiChat } from "./use-ai-chat";
 
 interface AiChatSheetProps {
@@ -141,6 +142,8 @@ export function AiChatSheet({
         clearError,
         sendPrompt,
         submitDecision,
+        resendUserMessage,
+        regenerateAssistant,
         clearChat,
         stop,
     } = useAiChat({
@@ -389,6 +392,32 @@ export function AiChatSheet({
                                                     sources={msg.sources}
                                                     isStreaming={isLoading && msg.id === messages.at(-1)?.id}
                                                 />
+                                            )}
+
+                                            {/* ReUI reply actions: resend / regenerate */}
+                                            {isUser ? (
+                                                <UserMessageActions
+                                                    content={msg.content}
+                                                    disabled={isLoading}
+                                                    className="justify-end [&_button]:text-primary-foreground/70 [&_button:hover]:text-primary-foreground [&_button:hover]:bg-primary-foreground/10"
+                                                    onResend={() =>
+                                                        resendUserMessage(msg.id, {
+                                                            model: selectedModel || undefined,
+                                                        })
+                                                    }
+                                                />
+                                            ) : (
+                                                !(isLoading && msg.id === messages.at(-1)?.id) && (
+                                                    <AssistantMessageActions
+                                                        content={msg.content}
+                                                        disabled={isLoading}
+                                                        onRegenerate={() =>
+                                                            regenerateAssistant(msg.id, {
+                                                                model: selectedModel || undefined,
+                                                            })
+                                                        }
+                                                    />
+                                                )
                                             )}
 
                                             {/* Pending Approvals within Assistant Message */}

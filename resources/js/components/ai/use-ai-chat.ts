@@ -471,6 +471,57 @@ export function useAiChat({
         [agent, targetUrl, conversationId, isLoading, appendMessage, readStream, onError],
     );
 
+    /**
+     * Resend a previously sent user message: truncate the transcript back to
+     * it, then send its content again as a fresh turn. Attachments cannot be
+     * reconstructed from history, so only the text is resent.
+     */
+    const resendUserMessage = React.useCallback(
+        async (messageId: string, options?: PromptOptions) => {
+            if (isLoading || isSendingRef.current) return;
+            const idx = messages.findIndex((m) => m.id === messageId);
+            if (idx < 0) return;
+            const target = messages[idx];
+            if (target.role !== "user" || !target.content.trim()) return;
+            if (target.attachments && target.attachments.length > 0) {
+                toast.info("Resending text only — attachments are not resent.");
+            }
+            setMessages((prev) => prev.slice(0, idx));
+            setLastError(null);
+            setLastPrompt(target.content);
+            await sendPrompt(target.content, undefined, {
+                ...(options ?? {}),
+                agent: options?.agent ?? agent,
+            });
+        },
+        [agent, isLoading, messages, sendPrompt]
+    );
+
+    /**
+     * Regenerate an assistant reply: find the nearest preceding user message,
+     * truncate the transcript back to it, and send it again.
+     */
+    const regenerateAssistant = React.useCallback(
+        async (messageId: string, options?: PromptOptions) => {
+            if (isLoading || isSendingRef.current) return;
+            const idx = messages.findIndex((m) => m.id === messageId);
+            if (idx < 0 || messages[idx].role !== "assistant") return;
+            let userIdx = -1;
+            for (let i = idx - 1; i >= 0; i--) {
+                if (messages[i].role === "user") {
+                    userIdx = i;
+                    break;
+                }
+            }
+            if (userIdx < 0) {
+                toast.info("No earlier message to regenerate from.");
+                return;
+            }
+            await resendUserMessage(messages[userIdx].id, options);
+        },
+        [isLoading, messages, resendUserMessage]
+    );
+
     const submitDecision = React.useCallback(
         async (callId: string, action: "approve" | "reject", result?: string) => {
             if (isLoading || isSendingRef.current) return;
@@ -612,6 +663,8 @@ export function useAiChat({
         clearError,
         sendPrompt,
         submitDecision,
+        resendUserMessage,
+        regenerateAssistant,
         stop,
         clearChat,
         loadConversationMessages,

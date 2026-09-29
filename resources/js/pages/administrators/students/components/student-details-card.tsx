@@ -1,15 +1,15 @@
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useFeatureFlags } from "@/hooks/use-feature-flags";
+import { cn } from "@/lib/utils";
 import { router } from "@inertiajs/react";
-import { useState, useRef, useCallback } from "react";
 import { Camera, Copy, ImageUp, Loader2, User as UserIcon } from "lucide-react";
-import React from "react";
+import React, { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { StudentDetail } from "../types";
-import { TextEntry } from "./text-entry";
-import { Button } from "@/components/ui/button";
+import { StudentInlineEdit } from "./student-inline-edit";
 import { StudentSignaturePad } from "./student-signature-pad";
-import { cn } from "@/lib/utils";
-import { useFeatureFlags } from "@/hooks/use-feature-flags";
+import { TextEntry } from "./text-entry";
 
 interface StudentDetailsCardProps {
     student: StudentDetail;
@@ -32,58 +32,63 @@ export function StudentDetailsCard({ student }: StudentDetailsCardProps) {
                 : `/storage/${picture1x1}`
             : null;
 
-    const uploadFile = useCallback((file: File) => {
-        if (!file.type.startsWith("image/")) {
-            toast.error("Please select a valid image file.");
-            return;
-        }
+    const uploadFile = useCallback(
+        (file: File) => {
+            if (!file.type.startsWith("image/")) {
+                toast.error("Please select a valid image file.");
+                return;
+            }
 
-        if (file.size > 5 * 1024 * 1024) {
-            toast.error("Image must be smaller than 5MB.");
-            return;
-        }
+            if (file.size > 5 * 1024 * 1024) {
+                toast.error("Image must be smaller than 5MB.");
+                return;
+            }
 
-        setProcessing(true);
+            setProcessing(true);
 
-        const optimisticUrl = URL.createObjectURL(file);
+            const optimisticUrl = URL.createObjectURL(file);
 
-        router.optimistic((props) => {
-            const documents = { ...(props.student as StudentDetail).documents };
-            documents.picture_1x1 = optimisticUrl;
+            router
+                .optimistic((props) => {
+                    const documents = { ...(props.student as StudentDetail).documents };
+                    documents.picture_1x1 = optimisticUrl;
 
-            return {
-                ...props,
-                student: {
-                    ...(props.student as StudentDetail),
-                    documents,
-                },
-            };
-        }).post(
-            route("administrators.students.documents.fixed.update", student.id),
-            {
-                document_type: "picture_1x1",
-                file: file,
-            },
-            {
-                forceFormData: true,
-                preserveScroll: true,
-                preserveState: true,
-                onSuccess: () => {
-                    toast.success("Profile photo updated successfully!");
-                },
-                onError: (err) => {
-                    toast.error(err.file || "Failed to upload photo. Please try again.");
-                },
-                onFinish: () => {
-                    setProcessing(false);
-                    URL.revokeObjectURL(optimisticUrl);
-                    if (fileInputRef.current) {
-                        fileInputRef.current.value = "";
-                    }
-                },
-            },
-        );
-    }, [student.id]);
+                    return {
+                        ...props,
+                        student: {
+                            ...(props.student as StudentDetail),
+                            documents,
+                        },
+                    };
+                })
+                .post(
+                    route("administrators.students.documents.fixed.update", student.id),
+                    {
+                        document_type: "picture_1x1",
+                        file: file,
+                    },
+                    {
+                        forceFormData: true,
+                        preserveScroll: true,
+                        preserveState: true,
+                        onSuccess: () => {
+                            toast.success("Profile photo updated successfully!");
+                        },
+                        onError: (err) => {
+                            toast.error(err.file || "Failed to upload photo. Please try again.");
+                        },
+                        onFinish: () => {
+                            setProcessing(false);
+                            URL.revokeObjectURL(optimisticUrl);
+                            if (fileInputRef.current) {
+                                fileInputRef.current.value = "";
+                            }
+                        },
+                    },
+                );
+        },
+        [student.id],
+    );
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -126,9 +131,7 @@ export function StudentDetailsCard({ student }: StudentDetailsCardProps) {
             <CardHeader className="flex flex-row items-center justify-between border-b pb-3">
                 <div>
                     <CardTitle className="text-base">Student Details</CardTitle>
-                    <p className="text-muted-foreground mt-0.5 text-xs">
-                        Personal information and identification
-                    </p>
+                    <p className="text-muted-foreground mt-0.5 text-xs">Personal information and identification</p>
                 </div>
                 <Button variant="ghost" size="sm" onClick={handleCopyName} className="h-8 gap-2 text-xs">
                     <Copy className="h-3.5 w-3.5" />
@@ -142,6 +145,8 @@ export function StudentDetailsCard({ student }: StudentDetailsCardProps) {
                         <TextEntry label="Email" value={student.email} />
                         <TextEntry label="Phone" value={student.contacts?.personal_contact} />
                         <TextEntry label="Birth Date" value={student.birth_date} />
+
+                        <StudentInlineEdit student={student} />
                     </div>
 
                     {hasRightColumn && (
@@ -154,10 +159,10 @@ export function StudentDetailsCard({ student }: StudentDetailsCardProps) {
                                     className={cn(
                                         "group relative h-28 w-28 overflow-hidden rounded-full transition-all",
                                         processing
-                                            ? "pointer-events-none ring-2 ring-primary/30 ring-offset-2"
+                                            ? "ring-primary/30 pointer-events-none ring-2 ring-offset-2"
                                             : isDragOver
-                                              ? "ring-2 ring-primary ring-offset-2"
-                                              : "ring-2 ring-muted-foreground/15 hover:ring-primary/40 ring-offset-2",
+                                              ? "ring-primary ring-2 ring-offset-2"
+                                              : "ring-muted-foreground/15 hover:ring-primary/40 ring-2 ring-offset-2",
                                     )}
                                 >
                                     <input
@@ -170,8 +175,8 @@ export function StudentDetailsCard({ student }: StudentDetailsCardProps) {
                                     />
 
                                     {processing ? (
-                                        <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-muted">
-                                            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                                        <div className="bg-muted flex h-full w-full flex-col items-center justify-center gap-1">
+                                            <Loader2 className="text-primary h-6 w-6 animate-spin" />
                                             <span className="text-primary text-[9px] font-medium">Uploading</span>
                                         </div>
                                     ) : profilePhotoUrl ? (
@@ -181,7 +186,7 @@ export function StudentDetailsCard({ student }: StudentDetailsCardProps) {
                                             className="h-full w-full object-cover transition-all group-hover:scale-105 group-hover:brightness-75"
                                         />
                                     ) : (
-                                        <div className="bg-muted flex h-full w-full items-center justify-center text-muted-foreground transition-colors group-hover:text-primary">
+                                        <div className="bg-muted text-muted-foreground group-hover:text-primary flex h-full w-full items-center justify-center transition-colors">
                                             <UserIcon className="h-10 w-10" />
                                         </div>
                                     )}
@@ -194,12 +199,12 @@ export function StudentDetailsCard({ student }: StudentDetailsCardProps) {
                                             {isDragOver ? (
                                                 <>
                                                     <ImageUp className="h-6 w-6 text-white" />
-                                                    <span className="text-white text-[9px] font-medium">Drop here</span>
+                                                    <span className="text-[9px] font-medium text-white">Drop here</span>
                                                 </>
                                             ) : (
                                                 <>
                                                     <Camera className="h-5 w-5 text-white" />
-                                                    <span className="text-white text-[9px] font-medium">Change</span>
+                                                    <span className="text-[9px] font-medium text-white">Change</span>
                                                 </>
                                             )}
                                         </div>

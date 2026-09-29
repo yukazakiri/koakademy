@@ -557,6 +557,8 @@ export default function AdministratorStudentEdit({ user, student, options, curre
         event.preventDefault();
 
         put(route("administrators.students.update", student.id), {
+            preserveScroll: true,
+            preserveState: true,
             onSuccess: () => {
                 toast.success("Student updated successfully");
             },

@@ -144,6 +144,12 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
     const [isBookmarked, setIsBookmarked] = React.useState(false);
     const [previewWidth, setPreviewWidth] = React.useState<"desktop" | "tablet" | "mobile">("desktop");
     const [isFullscreen, setIsFullscreen] = React.useState(false);
+    // Server-driven global default model (primary provider's default_chat_model).
+    const [serverDefaultModel, setServerDefaultModel] = React.useState<string>("");
+    const [primaryProvider, setPrimaryProvider] = React.useState<string>("");
+    // Actual tools / MCP bound to the selected specialist (not the agent list).
+    const [agentTools, setAgentTools] = React.useState<{ name: string; class?: string; description: string; kind: string }[]>([]);
+    const [toolsLoading, setToolsLoading] = React.useState(false);
     const [isDark, setIsDark] = React.useState<boolean>(() => {
         if (typeof window !== "undefined") {
             return (
@@ -291,13 +297,17 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
         }
     };
 
-    // Fetch analytics summary and available models
+    // Fetch analytics summary and available models.
+    // Priority: saved user preference (if still configured) > server global
+    // default (primary provider's default_chat_model) > first Default badge >
+    // first primary-provider model > first model. Legacy best-free heuristics
+    // are intentionally no longer used.
     React.useEffect(() => {
         fetch("/administrators/ai/analytics-summary", {
             headers: { "X-Requested-With": "XMLHttpRequest" },
         })
             .then((res) => res.json())
-            .then((data: { models?: ModelOption[] }) => {
+            .then((data: { models?: ModelOption[]; default_model?: string; primary_provider?: string }) => {
                 if (Array.isArray(data.models) && data.models.length > 0) {
                     const mapped = data.models.map((model) => ({
                         id: model.id,
@@ -310,25 +320,69 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                     }));
                     setAvailableModels(mapped);
 
+                    if (typeof data.primary_provider === "string") {
+                        setPrimaryProvider(data.primary_provider);
+                    }
+                    if (typeof data.default_model === "string" && data.default_model) {
+                        setServerDefaultModel(data.default_model);
+                    }
+
                     const saved = typeof window !== "undefined" ? localStorage.getItem(PREFERRED_MODEL_KEY) : null;
                     if (saved && mapped.some((m) => m.id === saved)) {
-                        setSelectedModel(saved);
-                    } else if (!selectedModel) {
-                        const recommended =
-                            mapped.find(
-                                (m) =>
-                                    (m.badge?.includes("Default") ||
-                                        m.badge?.includes("Recommended") ||
-                                        m.id.includes("best-free") ||
-                                        m.id.includes("best-chat")) &&
-                                    !m.id.includes("claude-opus-4-6-thinking-high"),
-                            ) || mapped[0];
-                        setSelectedModel(recommended.id);
+                        if (!selectedModel) setSelectedModel(saved);
+                        return;
+                    }
+                    if (!selectedModel) {
+                        const serverDefault = typeof data.default_model === "string" ? data.default_model : "";
+                        const byServerDefault = serverDefault ? mapped.find((m) => m.id === serverDefault) : undefined;
+                        const byDefaultBadge = mapped.find((m) => m.badge?.includes("Default"));
+                        const byPrimary = data.primary_provider
+                            ? mapped.find((m) => m.provider === data.primary_provider)
+                            : undefined;
+                        const recommended = byServerDefault || byDefaultBadge || byPrimary || mapped[0];
+                        if (recommended) setSelectedModel(recommended.id);
                     }
                 }
             })
             .catch(() => undefined);
     }, [selectedModel]);
+
+    // Fetch actual tools / MCP for the selected specialist. The composer
+    // "tools" button must list these — never the specialist agent list.
+    React.useEffect(() => {
+        let cancelled = false;
+        setToolsLoading(true);
+        fetch(`/administrators/ai/agent-tools?agent=${encodeURIComponent(selectedAgent)}`, {
+            headers: { "X-Requested-With": "XMLHttpRequest" },
+        })
+            .then((res) => (res.ok ? res.json() : null))
+            .then((data) => {
+                if (cancelled) return;
+                if (data && Array.isArray(data.tools)) {
+                    setAgentTools(data.tools);
+                } else {
+                    // Fallback to the static catalogue mirrored from app/Ai/Agents.
+                    import("@/components/ai/ai-constants").then((mod) => {
+                        if (!cancelled) setAgentTools(mod.getFallbackTools(selectedAgent));
+                    }).catch(() => {
+                        if (!cancelled) setAgentTools([]);
+                    });
+                }
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    import("@/components/ai/ai-constants").then((mod) => {
+                        setAgentTools(mod.getFallbackTools(selectedAgent));
+                    }).catch(() => setAgentTools([]));
+                }
+            })
+            .finally(() => {
+                if (!cancelled) setToolsLoading(false);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [selectedAgent]);
 
     const handleSelectModel = (id: string) => {
         setSelectedModel(id);
@@ -463,6 +517,8 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
             model: selectedModel.includes(":") ? selectedModel.split(":").slice(1).join(":") : selectedModel || undefined,
             provider: activeModel?.provider,
             supportsDocuments: activeModel?.supports_documents,
+            thinking: isThinkingMode,
+            search: isSearchMode,
         });
         setSelectedFiles([]);
     };
@@ -472,6 +528,8 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
         sendPrompt(suggestion.prompt, undefined, {
             agent: suggestion.agent,
             model: selectedModel || undefined,
+            thinking: isThinkingMode,
+            search: isSearchMode,
         });
     };
 
@@ -794,6 +852,12 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                                 }}
                                 onCloseAutoFocus={(event) => event.preventDefault()}
                             >
+                                {serverDefaultModel && (
+                                    <p className="px-1 pb-2 text-[11px] text-muted-foreground">
+                                        Global default: <span className="font-mono text-foreground">{serverDefaultModel}</span>
+                                        {primaryProvider ? ` (via ${primaryProvider})` : ""} — set per-provider in System Management → AI.
+                                    </p>
+                                )}
                                 {availableModels.length > 0 ? (
                                     <ModelSelector
                                         models={availableModels}
@@ -988,6 +1052,18 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                                         }
 
                                         // Assistant Message: Clean, natural canvas with Avatar on the left and ReUI code blocks
+                                        // Skip the transient empty placeholder bubble while streaming has
+                                        // not yet produced content / reasoning / tool calls — the dedicated
+                                        // thinking indicator below covers that state (fixes empty bubble in screenshot).
+                                        const isStreamingThis = isLoading && message.id === messages.at(-1)?.id;
+                                        const hasVisiblePayload =
+                                            (message.content && message.content.trim().length > 0) ||
+                                            (message.reasoning && message.reasoning.trim().length > 0) ||
+                                            (message.toolCalls && message.toolCalls.length > 0) ||
+                                            (message.pendingApprovals && message.pendingApprovals.length > 0);
+                                        if (!hasVisiblePayload && isStreamingThis) {
+                                            return null;
+                                        }
                                         return (
                                             <div key={message.id} className="flex items-start gap-3.5">
                                                 <div className="size-7 rounded-full bg-zinc-800 dark:bg-zinc-800 border border-zinc-700/60 text-zinc-200 flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
@@ -997,8 +1073,10 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                                                 <div className="flex-1 min-w-0 space-y-3 pt-0.5 text-sm leading-relaxed text-foreground">
                                                     <ChatMessageFormatter
                                                         content={message.content}
+                                                        reasoning={message.reasoning}
                                                         toolCalls={message.toolCalls}
                                                         sources={message.sources}
+                                                        isStreaming={isStreamingThis}
                                                     />
 
                                                     {/* Pending Approvals */}
@@ -1015,13 +1093,24 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                                         );
                                     })}
 
-                                    {/* Thinking / Streaming Indicator */}
+                                    {/* Thinking / Streaming Indicator — shows live reasoning status.
+                                        When thinking mode is on, label it Deep reasoning; when search
+                                        mode is on, label it Searching campus records; otherwise the
+                                        active specialist analysis label. */}
                                     {isLoading && (
                                         <div className="flex items-center gap-3 pl-1 text-xs text-muted-foreground">
                                             <div className="size-7 rounded-full bg-zinc-800 dark:bg-zinc-800 border border-zinc-700/60 text-zinc-200 flex items-center justify-center shrink-0">
                                                 <Sparkles className="size-3.5 text-indigo-400 animate-spin" />
                                             </div>
-                                            <span className="font-medium animate-pulse">{activeAgentMeta.label} is analyzing campus data...</span>
+                                            <span className="font-medium animate-pulse">
+                                                {isThinkingMode && isSearchMode
+                                                    ? `${activeAgentMeta.label} is reasoning and searching campus records...`
+                                                    : isThinkingMode
+                                                      ? `${activeAgentMeta.label} is thinking (deep reasoning)...`
+                                                      : isSearchMode
+                                                        ? `${activeAgentMeta.label} is searching campus records...`
+                                                        : `${activeAgentMeta.label} is analyzing campus data...`}
+                                            </span>
                                         </div>
                                     )}
 
@@ -1049,6 +1138,8 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                                                                 : selectedModel || undefined,
                                                             provider: activeModel?.provider,
                                                             supportsDocuments: activeModel?.supports_documents,
+                                                            thinking: isThinkingMode,
+                                                            search: isSearchMode,
                                                         });
                                                     }}
                                                 >
@@ -1366,7 +1457,7 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                                 <span>Search</span>
                             </Button>
 
-                            {/* Specialist Agent Role Selector */}
+                            {/* Tools bound to the active specialist (fixes "1 tool shows agents" bug) */}
                             <Popover>
                                 <PopoverTrigger asChild>
                                     <Button
@@ -1374,48 +1465,93 @@ export default function AdministratorAiChatPage({ initialConversation, initialCo
                                         variant="ghost"
                                         size="sm"
                                         className="h-7 px-2 rounded-lg text-xs font-medium gap-1 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
+                                        title={`Tools available to ${activeAgentMeta.label}`}
                                     >
                                         <span className="size-1.5 rounded-full bg-emerald-400 inline-block mr-0.5" />
-                                        <span>1 tool</span>
+                                        <span>{toolsLoading ? "…" : `${agentTools.length} ${agentTools.length === 1 ? "tool" : "tools"}`}</span>
                                     </Button>
                                 </PopoverTrigger>
-                                <PopoverContent align="start" className="w-72 p-2 shadow-xl">
-                                    <p className="text-muted-foreground px-2 pt-1 pb-2 text-[11px] font-semibold tracking-wider uppercase">
-                                        Specialist Copilot
+                                <PopoverContent align="start" className="w-80 p-2 shadow-xl max-h-[380px] overflow-y-auto">
+                                    <p className="text-muted-foreground px-2 pt-1 text-[11px] font-semibold tracking-wider uppercase">
+                                        Tools for {activeAgentMeta.label}
                                     </p>
-                                    <div className="grid gap-1">
-                                        {ADMIN_AGENTS.map((agent) => {
-                                            const Icon = agent.icon;
-                                            const isActive = agent.key === selectedAgent;
-
-                                            return (
-                                                <button
-                                                    key={agent.key}
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setSelectedAgent(agent.key);
-                                                        toast.success(`Specialist switched: ${agent.label}`);
-                                                    }}
-                                                    className={cn(
-                                                        "flex items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors",
-                                                        isActive ? "bg-primary/10 text-foreground font-medium" : "hover:bg-muted text-foreground",
-                                                    )}
-                                                >
-                                                    <Icon
+                                    <p className="px-2 pb-2 text-[11px] text-muted-foreground">
+                                        Bound tools & MCP integrations that will be used this turn.
+                                    </p>
+                                    {toolsLoading ? (
+                                        <p className="px-2 py-3 text-xs text-muted-foreground">Loading tools…</p>
+                                    ) : agentTools.length === 0 ? (
+                                        <p className="px-2 py-3 text-xs text-muted-foreground">No tools bound to this specialist.</p>
+                                    ) : (
+                                        <div className="grid gap-1">
+                                            {(["tool", "mcp", "agent"] as const).map((kind) => {
+                                                const group = agentTools.filter((t) => t.kind === kind);
+                                                if (group.length === 0) return null;
+                                                const heading = kind === "tool" ? "KoAkademy tools" : kind === "mcp" ? "MCP integrations" : "Delegated specialists";
+                                                return (
+                                                    <div key={kind} className="space-y-1">
+                                                        <p className="px-2 pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+                                                            {heading} ({group.length})
+                                                        </p>
+                                                        {group.map((tool) => (
+                                                            <div
+                                                                key={`${tool.kind}-${tool.name}`}
+                                                                className="flex items-start gap-2.5 rounded-lg px-2.5 py-1.5 text-left"
+                                                                title={tool.description || tool.name}
+                                                            >
+                                                                <span
+                                                                    className={cn(
+                                                                        "mt-1 size-1.5 shrink-0 rounded-full",
+                                                                        kind === "tool" && "bg-emerald-400",
+                                                                        kind === "mcp" && "bg-sky-400",
+                                                                        kind === "agent" && "bg-violet-400",
+                                                                    )}
+                                                                />
+                                                                <span className="min-w-0">
+                                                                    <span className="block truncate font-mono text-[11px] font-semibold text-foreground">
+                                                                        {tool.name}
+                                                                    </span>
+                                                                    {tool.description && (
+                                                                        <span className="text-muted-foreground mt-0.5 line-clamp-2 block text-[11px] leading-snug">
+                                                                            {tool.description}
+                                                                        </span>
+                                                                    )}
+                                                                </span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                    <div className="mt-2 border-t border-border/60 pt-2">
+                                        <p className="text-muted-foreground px-2 pb-1 text-[11px] font-semibold tracking-wider uppercase">
+                                            Switch specialist
+                                        </p>
+                                        <div className="grid gap-1">
+                                            {ADMIN_AGENTS.map((agent) => {
+                                                const Icon = agent.icon;
+                                                const isActive = agent.key === selectedAgent;
+                                                return (
+                                                    <button
+                                                        key={agent.key}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setSelectedAgent(agent.key);
+                                                            toast.success(`Specialist switched: ${agent.label}`);
+                                                        }}
                                                         className={cn(
-                                                            "mt-0.5 size-4 shrink-0",
-                                                            isActive ? "text-primary" : "text-muted-foreground",
+                                                            "flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors",
+                                                            isActive ? "bg-primary/10 text-foreground font-medium" : "hover:bg-muted text-foreground",
                                                         )}
-                                                    />
-                                                    <span className="min-w-0">
-                                                        <span className="block text-xs font-semibold">{agent.label}</span>
-                                                        <span className="text-muted-foreground mt-0.5 block text-[11px] leading-snug">
-                                                            {agent.description}
-                                                        </span>
-                                                    </span>
-                                                </button>
-                                            );
-                                        })}
+                                                    >
+                                                        <Icon className={cn("size-3.5 shrink-0", isActive ? "text-primary" : "text-muted-foreground")} />
+                                                        <span className="truncate">{agent.label}</span>
+                                                        {isActive && <Check className="ml-auto size-3 text-primary" />}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
                                 </PopoverContent>
                             </Popover>

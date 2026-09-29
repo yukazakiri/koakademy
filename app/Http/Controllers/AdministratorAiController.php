@@ -8,6 +8,8 @@ use App\Ai\Agents\AdminExecutiveAgent;
 use App\Ai\Agents\BursarFinanceAgent;
 use App\Ai\Agents\CampusSupportAgent;
 use App\Ai\Agents\RegistrarAuditAgent;
+use App\Ai\Mcp\ExternalMcpTool;
+use App\Ai\Mcp\ResilientMcpServerTool;
 use App\Models\GeneralSetting;
 use App\Models\Student;
 use App\Models\StudentClearance;
@@ -31,6 +33,7 @@ use Laravel\Ai\Approvals\PendingApproval;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Files\Document;
 use Laravel\Ai\Models\Conversation;
+use Stringable;
 use Throwable;
 
 final class AdministratorAiController extends Controller
@@ -96,6 +99,8 @@ final class AdministratorAiController extends Controller
             ])],
             'provider' => ['nullable', 'string', 'max:64'],
             'model' => ['nullable', 'string', 'max:255'],
+            'thinking' => ['nullable', 'boolean'],
+            'search' => ['nullable', 'boolean'],
             'conversation_id' => ['nullable', 'string', 'max:36'],
             'message' => ['nullable', 'string', 'required_without:decisions', 'prohibits:decisions'],
             'decisions' => ['nullable', 'array', 'required_without:message', 'prohibits:message'],
@@ -104,6 +109,9 @@ final class AdministratorAiController extends Controller
             'attachments' => ['nullable'],
             'attachments.*' => ['file', 'max:20480', 'mimes:pdf,doc,docx,rtf,odt,ods,xlsx,xls,csv,tsv,txt,md,json,sql,log,png,jpg,jpeg,webp,gif,bmp,tif,tiff'],
         ]);
+
+        $thinkingMode = (bool) ($validated['thinking'] ?? false);
+        $searchMode = (bool) ($validated['search'] ?? false);
 
         $agentKey = $validated['agent'] ?? 'admin_executive';
         $agent = $this->resolveAgent($agentKey);
@@ -204,6 +212,30 @@ final class AdministratorAiController extends Controller
             $aiAttachments = $processed['attachments'];
         }
 
+        // Think / Search modes are explicit composer toggles. They must affect
+        // this turn without polluting persisted transcripts: RemembersConversations
+        // stores the streamed prompt as the user message, so we stream an
+        // augmented copy while remembering the faithful version to restore
+        // afterwards. Reopening a conversation must show what the administrator
+        // actually submitted, not internal `[Modes: ...]` directives.
+        $promptForPersistence = is_string($prompt) ? $prompt : null;
+        if (is_string($prompt) && $prompt !== '' && ($thinkingMode || $searchMode)) {
+            $prefixes = [];
+            if ($thinkingMode) {
+                $prefixes[] = 'Think through this step-by-step with deep reasoning before answering. Show your intermediate reasoning so the UI can display the Thought Process.';
+            }
+            if ($searchMode) {
+                $prefixes[] = 'Ground your answer with current institutional records. Use CampusKnowledgeSearchTool, QueryCampusAnalyticsTool, or SearchStudentsTool (as appropriate for the active specialist) before answering from memory, and cite the tool results.';
+            }
+            if ($prefixes !== []) {
+                $prompt = '[Modes: '.implode(' | ', array_map(
+                    static fn (bool $on, string $label): string => $label.'='.($on ? 'on' : 'off'),
+                    [$thinkingMode, $searchMode],
+                    ['thinking', 'search']
+                ))."]\n".implode("\n", $prefixes)."\n\n".$prompt;
+            }
+        }
+
         $conversationId = $validated['conversation_id'] ?? null;
 
         if ($conversationId) {
@@ -217,7 +249,7 @@ final class AdministratorAiController extends Controller
             $agentInstance = $agent->forUser($user);
         }
 
-        return response()->stream(function () use ($agentInstance, $prompt, $aiAttachments, $selectedProvider, $selectedModel, $agentKey, $aiSettings, $supportsDocumentAttachments) {
+        return response()->stream(function () use ($agentInstance, $prompt, $promptForPersistence, $aiAttachments, $selectedProvider, $selectedModel, $agentKey, $aiSettings, $supportsDocumentAttachments) {
             if (function_exists('set_time_limit')) {
                 @set_time_limit(0);
             }
@@ -335,6 +367,7 @@ final class AdministratorAiController extends Controller
 
                 $resolvedConversationId = $stream?->conversationId ?? $agentInstance->currentConversation() ?? $conversationId;
                 if (filled($resolvedConversationId)) {
+                    $this->restoreFaithfulUserPrompt((string) $resolvedConversationId, $promptForPersistence, is_string($prompt) ? $prompt : null);
                     $conversationTitle = Conversation::query()->where('id', $resolvedConversationId)->value('title');
                     echo 'data: '.json_encode([
                         'type' => 'conversation',
@@ -711,7 +744,216 @@ final class AdministratorAiController extends Controller
             ],
             'models' => $modelOptions,
             'primary_provider' => $primaryKey,
+            'fallback_provider' => (string) ($aiSettings['fallback_provider'] ?? ''),
+            'default_model' => $this->resolveGlobalDefaultModelId($aiSettings, $primaryKey, $modelOptions),
+            'default_provider' => $primaryKey,
+            'provider_defaults' => $this->resolvePerProviderDefaultIds($aiSettings),
         ]);
+    }
+
+    /**
+     * List the actual tools / MCP integrations available to a specialist agent.
+     *
+     * The composer "tools" popover must show tools that will be used, not the
+     * list of specialist agents. This introspects the agent's tools() so custom
+     * MCP servers appear automatically without frontend hard-coding.
+     */
+    public function agentTools(Request $request): JsonResponse
+    {
+        $user = Auth::user();
+        abort_unless($user instanceof User && $user->canAccessAdminPortal(), 403);
+
+        $validated = $request->validate([
+            'agent' => ['nullable', 'string', Rule::in([
+                'admin_executive',
+                'registrar_auditor',
+                'bursar_finance',
+                'campus_support',
+            ])],
+        ]);
+
+        $agentKey = (string) ($validated['agent'] ?? 'admin_executive');
+        $agent = $this->resolveAgent($agentKey);
+
+        $tools = [];
+        try {
+            foreach ($agent->tools() as $tool) {
+                $class = is_object($tool) ? $tool::class : (string) $tool;
+                $short = $class !== '' && str_contains($class, '\\') ? mb_substr($class, mb_strrpos($class, '\\') + 1) : $class;
+
+                $name = $short;
+                $description = '';
+                if (is_object($tool) && method_exists($tool, 'name')) {
+                    try {
+                        $resolved = $tool->name();
+                        $name = is_string($resolved) ? $resolved : (string) $resolved;
+                    } catch (Throwable) {
+                        $name = $short;
+                    }
+                }
+                if (is_object($tool) && method_exists($tool, 'description')) {
+                    try {
+                        $descResolved = $tool->description();
+                        $description = $descResolved instanceof Stringable ? (string) $descResolved : (string) $descResolved;
+                    } catch (Throwable) {
+                        $description = '';
+                    }
+                }
+
+                $kind = 'tool';
+                if (is_object($tool) && $tool instanceof Agent) {
+                    $kind = 'agent';
+                } elseif ($class === ExternalMcpTool::class
+                    || $class === ResilientMcpServerTool::class
+                    || str_contains($class, 'Mcp')
+                    || str_starts_with((string) $name, 'mcp_')) {
+                    $kind = 'mcp';
+                }
+
+                $tools[] = [
+                    'name' => $name,
+                    'class' => $short,
+                    'description' => mb_strimwidth($description, 0, 220, '...'),
+                    'kind' => $kind,
+                ];
+            }
+        } catch (Throwable $e) {
+            Log::warning('Failed to introspect agent tools', ['agent' => $agentKey, 'error' => $e->getMessage()]);
+        }
+
+        usort($tools, static fn (array $a, array $b): int => ['tool' => 0, 'mcp' => 1, 'agent' => 2][$a['kind']] <=> ['tool' => 0, 'mcp' => 1, 'agent' => 2][$b['kind']]);
+
+        return response()->json([
+            'agent' => $agentKey,
+            'count' => count($tools),
+            'tools' => $tools,
+        ]);
+    }
+
+    /**
+     * Explicit global default model id (provider:model) for frontend selection.
+     *
+     * Only returns the primary provider model when that id is actually
+     * selectable (present in $modelOptions). Otherwise the primary may be
+     * disabled or missing credentials while a fallback is usable — clients
+     * would display an unavailable id while silently using another model.
+     *
+     * @param  array<string, mixed>  $aiSettings
+     * @param  list<array<string, mixed>>  $modelOptions
+     */
+    private function resolveGlobalDefaultModelId(array $aiSettings, string $primaryKey, array $modelOptions): string
+    {
+        $primaryConfig = $aiSettings['providers'][$primaryKey] ?? $aiSettings['custom_providers'][$primaryKey] ?? [];
+        $primaryDefaultChat = is_array($primaryConfig) ? (string) ($primaryConfig['default_chat_model'] ?? '') : '';
+        if (filled($primaryDefaultChat)) {
+            $candidate = "{$primaryKey}:{$primaryDefaultChat}";
+            foreach ($modelOptions as $option) {
+                if ((string) ($option['id'] ?? '') === $candidate) {
+                    return $candidate;
+                }
+            }
+        }
+
+        return (string) ($modelOptions[0]['id'] ?? '');
+    }
+
+    /**
+     * Restore the faithful user prompt after a mode-augmented turn.
+     *
+     * The streamed (augmented) prompt is what RemembersConversations persists.
+     * Rewrite the latest user message back to what the administrator actually
+     * submitted so reopened transcripts and future history re-feeds stay clean.
+     */
+    private function restoreFaithfulUserPrompt(string $conversationId, ?string $faithfulPrompt, ?string $streamedPrompt): void
+    {
+        if ($faithfulPrompt === null || $streamedPrompt === null || $faithfulPrompt === $streamedPrompt) {
+            return;
+        }
+
+        if (! str_starts_with($streamedPrompt, '[Modes:')) {
+            return;
+        }
+
+        try {
+            $conversation = Conversation::query()->where('id', $conversationId)->first();
+            if ($conversation === null) {
+                return;
+            }
+
+            $latestUser = $conversation->messages()->where('role', 'user')->latest('id')->first();
+            if ($latestUser === null) {
+                return;
+            }
+
+            $stored = (string) ($latestUser->content ?? '');
+            if ($stored === '' || $stored === $faithfulPrompt) {
+                return;
+            }
+
+            if (! str_starts_with($stored, '[Modes:')) {
+                return;
+            }
+
+            $latestUser->update(['content' => $faithfulPrompt]);
+        } catch (Throwable $restoreException) {
+            Log::warning('Failed to restore faithful admin AI prompt', [
+                'conversation_id' => $conversationId,
+                'error' => $restoreException->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Strip legacy internal mode directives from stored user content.
+     *
+     * Conversations created before the restore above may already persist a
+     * `[Modes: ...]` block. Presentation must show the original submission.
+     */
+    private function stripModeDirectives(string $content): string
+    {
+        if (! str_starts_with($content, '[Modes:')) {
+            return $content;
+        }
+
+        $separator = mb_strpos($content, "\n\n");
+        if ($separator === false) {
+            return $content;
+        }
+
+        $remainder = mb_substr($content, $separator + 2);
+
+        return $remainder !== '' ? $remainder : $content;
+    }
+
+    /**
+     * Per-provider global defaults (provider => provider:model id).
+     *
+     * @param  array<string, mixed>  $aiSettings
+     * @return array<string, string>
+     */
+    private function resolvePerProviderDefaultIds(array $aiSettings): array
+    {
+        $defaults = [];
+        foreach ($aiSettings['providers'] ?? [] as $pKey => $pCfg) {
+            if (! is_array($pCfg)) {
+                continue;
+            }
+            $chat = (string) ($pCfg['default_chat_model'] ?? '');
+            if (filled($chat)) {
+                $defaults[$pKey] = "{$pKey}:{$chat}";
+            }
+        }
+        foreach ($aiSettings['custom_providers'] ?? [] as $cKey => $cCfg) {
+            if (! is_array($cCfg)) {
+                continue;
+            }
+            $chat = (string) ($cCfg['default_chat_model'] ?? '');
+            if (filled($chat)) {
+                $defaults[$cKey] = "{$cKey}:{$chat}";
+            }
+        }
+
+        return $defaults;
     }
 
     private function extractErrorMessage(Throwable $e): string
@@ -993,9 +1235,38 @@ final class AdministratorAiController extends Controller
 
         foreach ($messages as $msg) {
             $toolCalls = [];
-            $rawToolCalls = $msg->tool_calls;
+            // Support both legacy tool_calls column and SDK v1 steps[] structure.
+            $rawToolCalls = $msg->tool_calls ?? [];
+            if (! is_array($rawToolCalls)) {
+                $rawToolCalls = [];
+            }
+            $steps = [];
+            if (isset($msg->steps)) {
+                $steps = is_array($msg->steps) ? $msg->steps : (json_decode((string) $msg->steps, true) ?: []);
+            }
+
+            // Extract reasoning from steps[].reasoning (SDK v1) or meta.reasoning (legacy).
+            $reasoningParts = [];
+            if (is_array($steps)) {
+                foreach ($steps as $step) {
+                    if (is_array($step) && filled($step['reasoning'] ?? null)) {
+                        $reasoningParts[] = (string) $step['reasoning'];
+                    }
+                    // Tool calls may also live inside steps in SDK v1.
+                    if (is_array($step) && ! empty($step['tool_calls']) && is_array($step['tool_calls'])) {
+                        foreach ($step['tool_calls'] as $stepCall) {
+                            if (is_array($stepCall)) {
+                                $rawToolCalls[] = $stepCall;
+                            }
+                        }
+                    }
+                }
+            }
 
             foreach ($rawToolCalls as $tc) {
+                if (! is_array($tc)) {
+                    continue;
+                }
                 $tcId = (string) ($tc['id'] ?? '');
                 $hasResult = array_key_exists('result', $tc);
 
@@ -1037,6 +1308,10 @@ final class AdministratorAiController extends Controller
             }
 
             $meta = is_array($msg->meta) ? $msg->meta : (json_decode((string) $msg->meta, true) ?: []);
+            if (filled($meta['reasoning'] ?? null)) {
+                $reasoningParts[] = (string) $meta['reasoning'];
+            }
+            $reasoning = $reasoningParts !== [] ? implode("\n\n", $reasoningParts) : null;
             $citations = [];
             if (! empty($meta['citations']) && is_array($meta['citations'])) {
                 foreach ($meta['citations'] as $c) {
@@ -1052,7 +1327,10 @@ final class AdministratorAiController extends Controller
             $formatted[] = [
                 'id' => (string) $msg->id,
                 'role' => (string) $msg->role,
-                'content' => (string) ($msg->content ?? ''),
+                'content' => ((string) $msg->role === 'user')
+                    ? $this->stripModeDirectives((string) ($msg->content ?? ''))
+                    : (string) ($msg->content ?? ''),
+                'reasoning' => $reasoning,
                 'toolCalls' => ! empty($toolCalls) ? $toolCalls : null,
                 'pendingApprovals' => ! empty($pendingApprovals) ? $pendingApprovals : null,
                 'attachments' => ! empty($attachments) ? $attachments : null,

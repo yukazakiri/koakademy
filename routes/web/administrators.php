@@ -558,5 +558,7 @@ Route::middleware(['auth', 'administrators.only'])
                 ->name('export-document');
             Route::get('/analytics-summary', [App\Http\Controllers\AdministratorAiController::class, 'analyticsSummary'])
                 ->name('analytics-summary');
+            Route::get('/agent-tools', [App\Http\Controllers\AdministratorAiController::class, 'agentTools'])
+                ->name('agent-tools');
         });
     });

@@ -156,7 +156,10 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
         toast.success(`Active model: ${id}`);
     }, []);
 
-    // Fetch quick KPIs and available models once when opened
+    // Fetch quick KPIs and available models once when opened.
+    // Priority: saved preference (if still configured) > server global default
+    // (primary provider's default_chat_model) > Default badge > primary-provider
+    // model > first model.
     React.useEffect(() => {
         if (isOpen && kpis.length === 0) {
             fetch("/administrators/ai/analytics-summary", {
@@ -177,19 +180,19 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
                         }));
                         setAvailableModels(mapped);
 
-                        // Resolve initial model: prefer localStorage, else recommended, else first
+                        // Resolve initial model: prefer localStorage, else server global default
                         const saved = typeof window !== "undefined" ? localStorage.getItem(PREFERRED_MODEL_KEY) : null;
                         if (saved && mapped.some((m) => m.id === saved)) {
                             setSelectedModel(saved);
                         } else if (!selectedModel) {
-                            // Find best default: skip known dead models, prefer best-free or default badge
-                            const recommended =
-                                mapped.find(
-                                    (m) =>
-                                        (m.badge?.includes("Default") || m.badge?.includes("Recommended") || m.id.includes("best-free") || m.id.includes("best-chat")) &&
-                                        !m.id.includes("claude-opus-4-6-thinking-high")
-                                ) || mapped[0];
-                            setSelectedModel(recommended.id);
+                            const serverDefault = typeof data.default_model === "string" ? data.default_model : "";
+                            const byServerDefault = serverDefault ? mapped.find((m) => m.id === serverDefault) : undefined;
+                            const byDefaultBadge = mapped.find((m) => m.badge?.includes("Default"));
+                            const byPrimary = typeof data.primary_provider === "string"
+                                ? mapped.find((m) => m.provider === data.primary_provider)
+                                : undefined;
+                            const recommended = byServerDefault || byDefaultBadge || byPrimary || mapped[0];
+                            if (recommended) setSelectedModel(recommended.id);
                         }
                     }
                 })
@@ -246,14 +249,10 @@ export function AdminAiFloatingWidget({ user }: AdminAiFloatingWidgetProps) {
         return cleanName.length > 24 ? cleanName.slice(0, 22) + "..." : cleanName;
     }, [availableModels, selectedModel]);
 
-    // Fallback switch to verified recommended model
+    // Fallback switch to server global default model (primary provider's default)
     const switchToRecommendedModel = () => {
         const fallback =
-            availableModels.find(
-                (m) =>
-                    (m.id.includes("best-free") || m.id.includes("best-chat") || m.id.includes("gemini-3.8-flash-high")) &&
-                    !m.id.includes("claude-opus-4-6-thinking-high")
-            ) || availableModels[0];
+            availableModels.find((m) => m.badge?.includes("Default")) || availableModels[0];
 
         if (fallback) {
             handleModelChange(fallback.id);

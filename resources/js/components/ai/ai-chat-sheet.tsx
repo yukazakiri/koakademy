@@ -170,7 +170,8 @@ export function AiChatSheet({
         }
     }, [messages, isLoading, lastError]);
 
-    // Fetch available model options when sheet is opened
+    // Fetch available model options when sheet is opened.
+    // Priority: saved preference > server global default > Default badge > primary > first.
     React.useEffect(() => {
         if (open && availableModels.length === 0) {
             fetch("/administrators/ai/analytics-summary", {
@@ -193,13 +194,14 @@ export function AiChatSheet({
                         if (saved && mapped.some((m) => m.id === saved)) {
                             setSelectedModel(saved);
                         } else if (!selectedModel) {
-                            const recommended =
-                                mapped.find(
-                                    (m) =>
-                                        (m.badge?.includes("Default") || m.badge?.includes("Recommended") || m.id.includes("best-free") || m.id.includes("best-chat")) &&
-                                        !m.id.includes("claude-opus-4-6-thinking-high")
-                                ) || mapped[0];
-                            setSelectedModel(recommended.id);
+                            const serverDefault = typeof data.default_model === "string" ? data.default_model : "";
+                            const byServerDefault = serverDefault ? mapped.find((m) => m.id === serverDefault) : undefined;
+                            const byDefaultBadge = mapped.find((m) => m.badge?.includes("Default"));
+                            const byPrimary = typeof data.primary_provider === "string"
+                                ? mapped.find((m) => m.provider === data.primary_provider)
+                                : undefined;
+                            const recommended = byServerDefault || byDefaultBadge || byPrimary || mapped[0];
+                            if (recommended) setSelectedModel(recommended.id);
                         }
                     }
                 })

@@ -99,6 +99,7 @@ export type StudentDetail = {
     graduation_school_year: string | null;
     graduation_semester: number | null;
     academic_year: string;
+    academic_year_value: number | null;
     course: { id?: number; code: string | null; title: string | null };
     created_at: string | null;
     updated_at: string | null;

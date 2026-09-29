@@ -58,12 +58,25 @@ use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Enum as RulesEnum;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
 final class AdministratorStudentManagementController extends Controller
 {
+    /**
+     * Memoized per-request column listings, keyed by table name.
+     *
+     * Schema::hasColumn() runs a live catalog query on every call — and internally
+     * calls getColumnListing() twice. Checking every attribute of the four related
+     * student tables that way cost ~120 information_schema/pg_catalog queries per
+     * save, which dominated the response time of a single field edit.
+     *
+     * @var array<string, array<int, string>>
+     */
+    private array $columnListings = [];
+
     public function index(Request $request): Response
     {
         $generalSettingsService = app(GeneralSettingsService::class);
@@ -811,6 +824,8 @@ final class AdministratorStudentManagementController extends Controller
                 'graduation_school_year' => $student->graduation_school_year,
                 'graduation_semester' => $student->graduation_semester,
                 'academic_year' => $student->formatted_academic_year,
+                // Raw year level, needed by the inline editor to reconcile optimistic updates.
+                'academic_year_value' => $student->academic_year,
                 'course' => [
                     'id' => $student->Course?->id,
                     'code' => $student->Course?->code,
@@ -1210,6 +1225,7 @@ final class AdministratorStudentManagementController extends Controller
             $student->save();
 
             $this->syncStudentRelations($student, $validated);
+            $student->save();
             $this->syncCurrentStudentStatus($student, $status);
 
             return $student;
@@ -1508,11 +1524,11 @@ final class AdministratorStudentManagementController extends Controller
             $student->student_type = $validated['student_type'];
             $student->first_name = $validated['first_name'];
             $student->last_name = $validated['last_name'];
-            $student->middle_name = $validated['middle_name'];
+            $student->middle_name = $validated['middle_name'] ?? null;
             $student->suffix = $validated['suffix'] ?? null;
             $student->gender = $validated['gender'];
             $student->birth_date = $validated['birth_date'];
-            $student->email = $validated['email'];
+            $student->email = $validated['email'] ?? null;
             $student->phone = $validated['phone'] ?? null;
             $student->civil_status = $validated['civil_status'] ?? null;
             $student->nationality = $validated['nationality'] ?? ($validated['citizenship'] ?? null);
@@ -1572,9 +1588,10 @@ final class AdministratorStudentManagementController extends Controller
             // Calculate Age
             $student->age = Carbon::parse($validated['birth_date'])->age;
 
-            $student->save();
-
+            // Sync relations first so the related-record ids are set on the model
+            // before the single save below.
             $this->syncStudentRelations($student, $validated);
+            $student->save();
 
             if (isset($validated['status'])) {
                 $this->syncCurrentStudentStatus($student, StudentStatus::from($validated['status']));
@@ -1586,7 +1603,7 @@ final class AdministratorStudentManagementController extends Controller
             $message .= " Student ID defaulted to {$validated['student_id']}.";
         }
 
-        return redirect()->route('administrators.students.index')
+        return redirect()->route('administrators.students.show', $student)
             ->with('success', $message);
     }
 
@@ -2089,10 +2106,55 @@ final class AdministratorStudentManagementController extends Controller
         return back()->with('success', 'Clearance updated successfully.');
     }
 
+    /**
+     * Lightweight patch endpoint for high-frequency single-field edits
+     * (currently year level and status) performed inline on the show page.
+     *
+     * Deliberately avoids the full form validation, the four related-record
+     * syncs, and any page-level prop rebuild so the round trip stays instant.
+     * Responds with JSON so the client can reconcile optimistic state.
+     */
+    public function quickUpdate(Request $request, Student $student): JsonResponse
+    {
+        $validated = $request->validate([
+            'academic_year' => ['sometimes', 'required', 'integer', 'in:1,2,3,4'],
+            'status' => ['sometimes', 'required', new RulesEnum(StudentStatus::class)],
+        ]);
+
+        if ($validated === []) {
+            return response()->json([
+                'message' => 'No supported fields were provided.',
+                'errors' => [],
+            ], 422);
+        }
+
+        $student->fill($validated);
+
+        if ($student->isDirty()) {
+            DB::transaction(function () use ($student, $validated): void {
+                $student->save();
+
+                if (isset($validated['status'])) {
+                    $this->syncCurrentStudentStatus($student, StudentStatus::from($validated['status']));
+                }
+            });
+        }
+
+        return response()->json([
+            'message' => 'Student updated successfully.',
+            'student' => [
+                'id' => $student->id,
+                'academic_year' => $student->academic_year,
+                'formatted_academic_year' => $student->formatted_academic_year,
+                'status' => $student->status,
+            ],
+        ]);
+    }
+
     public function updateStatus(Request $request, Student $student): RedirectResponse
     {
         $validated = $request->validate([
-            'status' => ['required', new \Illuminate\Validation\Rules\Enum(StudentStatus::class)],
+            'status' => ['required', new RulesEnum(StudentStatus::class)],
             'graduation_school_year' => [
                 'nullable',
                 'string',
@@ -2538,15 +2600,6 @@ final class AdministratorStudentManagementController extends Controller
         if ($studentPersonalInfoId !== null) {
             $student->student_personal_id = $studentPersonalInfoId;
         }
-
-        if ($student->isDirty([
-            'student_contact_id',
-            'student_parent_info',
-            'student_education_id',
-            'student_personal_id',
-        ])) {
-            $student->save();
-        }
     }
 
     private function syncCurrentStudentStatus(Student $student, StudentStatus $status): void
@@ -2573,35 +2626,105 @@ final class AdministratorStudentManagementController extends Controller
     {
         $attributes = $this->existingColumnAttributes($table, $attributes);
 
-        if ($id !== null) {
-            if ($attributes !== []) {
-                if (Schema::hasColumn($table, 'updated_at')) {
-                    $attributes['updated_at'] = now();
-                }
-
-                DB::table($table)
-                    ->where('id', $id)
-                    ->update($attributes);
-            }
-
-            return $id;
+        if ($id === null) {
+            return $this->insertRelatedRecord($table, $attributes);
         }
 
+        // Only write what actually changed, so editing an unrelated field
+        // (e.g. year level) does not rewrite all four related rows.
+        $attributes = $this->changedAttributes($table, $id, $attributes);
+
+        if ($attributes !== [] && $this->hasColumn($table, 'updated_at')) {
+            $attributes['updated_at'] = now();
+        }
+
+        if ($attributes !== []) {
+            DB::table($table)
+                ->where('id', $id)
+                ->update($attributes);
+        }
+
+        return $id;
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    private function insertRelatedRecord(string $table, array $attributes): ?int
+    {
         $attributes = $this->withoutBlankValues($attributes);
 
         if ($attributes === []) {
             return null;
         }
 
-        if (Schema::hasColumn($table, 'created_at')) {
+        if ($this->hasColumn($table, 'created_at')) {
             $attributes['created_at'] = now();
         }
 
-        if (Schema::hasColumn($table, 'updated_at')) {
+        if ($this->hasColumn($table, 'updated_at')) {
             $attributes['updated_at'] = now();
         }
 
         return (int) DB::table($table)->insertGetId($attributes);
+    }
+
+    /**
+     * Return only the attributes whose value differs from the persisted row.
+     *
+     * @param  array<string, mixed>  $attributes
+     * @return array<string, mixed>
+     */
+    private function changedAttributes(string $table, int $id, array $attributes): array
+    {
+        if ($attributes === []) {
+            return [];
+        }
+
+        $current = DB::table($table)->where('id', $id)->first();
+
+        if ($current === null) {
+            return $attributes;
+        }
+
+        $current = (array) $current;
+        $changed = [];
+
+        foreach ($attributes as $column => $value) {
+            if ($this->attributeChanged($current, (string) $column, $value)) {
+                $changed[(string) $column] = $value;
+            }
+        }
+
+        return $changed;
+    }
+
+    /**
+     * @param  array<string, mixed>  $current
+     */
+    private function attributeChanged(array $current, string $column, mixed $value): bool
+    {
+        if (! array_key_exists($column, $current)) {
+            return true;
+        }
+
+        $existing = $current[$column];
+
+        if ($existing === null || $value === null) {
+            return $existing !== $value;
+        }
+
+        if (is_bool($existing) || is_bool($value)) {
+            return (bool) $existing !== (bool) $value;
+        }
+
+        // Drivers may hand back numerics as strings, so compare numerically
+        // first and fall back to a string comparison for anything else.
+        if (is_numeric($existing) && is_numeric($value)) {
+            return (string) $existing !== (string) $value && (float) $existing !== (float) $value;
+        }
+
+        return (string) $existing !== (string) $value;
     }
 
     /**
@@ -2610,10 +2733,11 @@ final class AdministratorStudentManagementController extends Controller
      */
     private function existingColumnAttributes(string $table, array $attributes): array
     {
+        $columns = $this->columnListing($table);
         $filtered = [];
 
         foreach ($attributes as $key => $value) {
-            if (! Schema::hasColumn($table, (string) $key)) {
+            if (! in_array(mb_strtolower((string) $key), $columns, true)) {
                 continue;
             }
 
@@ -2621,6 +2745,22 @@ final class AdministratorStudentManagementController extends Controller
         }
 
         return $filtered;
+    }
+
+    private function hasColumn(string $table, string $column): bool
+    {
+        return in_array(mb_strtolower($column), $this->columnListing($table), true);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function columnListing(string $table): array
+    {
+        return $this->columnListings[$table] ??= array_map(
+            static fn (string $column): string => mb_strtolower($column),
+            Schema::getColumnListing($table)
+        );
     }
 
     /**

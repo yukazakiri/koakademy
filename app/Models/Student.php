@@ -1507,6 +1507,34 @@ final class Student extends Model
         });
     }
 
+    protected function firstName(): Attribute
+    {
+        return Attribute::make(
+            set: fn (?string $value): ?string => $value !== null ? strip_tags($value) : null
+        );
+    }
+
+    protected function middleName(): Attribute
+    {
+        return Attribute::make(
+            set: fn (?string $value): ?string => $value !== null ? strip_tags($value) : null
+        );
+    }
+
+    protected function lastName(): Attribute
+    {
+        return Attribute::make(
+            set: fn (?string $value): ?string => $value !== null ? strip_tags($value) : null
+        );
+    }
+
+    protected function suffix(): Attribute
+    {
+        return Attribute::make(
+            set: fn (?string $value): ?string => $value !== null ? strip_tags($value) : null
+        );
+    }
+
     protected function picture1x1(): Attribute
     {
         return Attribute::make(get: function (): string {

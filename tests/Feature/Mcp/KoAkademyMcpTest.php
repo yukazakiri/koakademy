@@ -15,6 +15,7 @@ use App\Mcp\Tools\GetMyContextTool;
 use App\Mcp\Tools\GetSchoolDetailsTool;
 use App\Mcp\Tools\GetSchoolMetricsTool;
 use App\Mcp\Tools\GetStatementOfAccountTool;
+use App\Mcp\Tools\GetStudentFinancialSummaryTool;
 use App\Mcp\Tools\GetStudentProfileTool;
 use App\Mcp\Tools\GetStudentScheduleTool;
 use App\Mcp\Tools\GetStudentSubjectEnrollmentsTool;
@@ -23,6 +24,7 @@ use App\Mcp\Tools\ListPendingEnrollmentsTool;
 use App\Mcp\Tools\ListStudentEnrollmentsTool;
 use App\Mcp\Tools\SearchFacultyTool;
 use App\Mcp\Tools\SearchStudentsTool;
+use App\Mcp\Tools\TransferStudentSectionTool;
 use App\Mcp\Tools\UpdateEnrollmentRemarksTool;
 use App\Mcp\Tools\UpdateSubjectEnrollmentGradeTool;
 use App\Mcp\Tools\VerifyEnrollmentRequirementTool;
@@ -31,6 +33,7 @@ use App\Models\Classes;
 use App\Models\Course;
 use App\Models\Department;
 use App\Models\EnrollmentRequirement;
+use App\Models\EnrollmentWorkflowEvent;
 use App\Models\Faculty;
 use App\Models\GeneralSetting;
 use App\Models\School;
@@ -124,12 +127,14 @@ it('registers all core mcp tools on the server', function (): void {
             GetStudentSubjectEnrollmentsTool::class,
             ListAcademicOfferingsTool::class,
             GetStatementOfAccountTool::class,
+            GetStudentFinancialSummaryTool::class,
             AdvanceEnrollmentStepTool::class,
             VerifyEnrollmentRequirementTool::class,
             UpdateEnrollmentRemarksTool::class,
             EnrollStudentSubjectTool::class,
             UpdateSubjectEnrollmentGradeTool::class,
             DropStudentSubjectEnrollmentTool::class,
+            TransferStudentSectionTool::class,
             App\Mcp\Tools\QueryTimetableScheduleTool::class,
             App\Mcp\Tools\ManageStudentTool::class,
             App\Mcp\Tools\ManageCurriculumSubjectTool::class,
@@ -435,7 +440,7 @@ it('gates statement of account behind finance permissions', function (): void {
 
 it('verifies an enrollment requirement with mcp:write and domain permissions', function (): void {
     $readOnlyToken = $this->staff->createToken('Read Only Agent', ['mcp:read']);
-    $this->staff->givePermissionTo('Update:StudentEnrollment');
+    $this->staff->givePermissionTo(['View:StudentEnrollment', 'Update:StudentEnrollment']);
 
     $student = Student::factory()->create(['school_id' => $this->school->id]);
     $enrollment = StudentEnrollment::factory()->create([
@@ -492,7 +497,7 @@ it('verifies an enrollment requirement with mcp:write and domain permissions', f
 
 it('blocks mcp mutations when mcp_write_enabled is toggled off in settings', function (): void {
     $this->staff->createToken('Write Agent', ['mcp:read', 'mcp:write']);
-    $this->staff->givePermissionTo('Update:StudentEnrollment');
+    $this->staff->givePermissionTo(['View:StudentEnrollment', 'Update:StudentEnrollment']);
 
     app(GeneralSettingsService::class)->updateApiManagementConfig([
         'public_api_enabled' => true,
@@ -771,7 +776,7 @@ it('advances enrollment workflow step for administrators with mcp:write', functi
 it('updates enrollment remarks with mcp:write and domain permissions', function (): void {
     $writeToken = $this->staff->createToken('Staff Write', ['mcp:read', 'mcp:write']);
     $this->staff->withAccessToken($writeToken->accessToken);
-    $this->staff->givePermissionTo('Update:StudentEnrollment');
+    $this->staff->givePermissionTo(['View:StudentEnrollment', 'Update:StudentEnrollment']);
 
     $student = Student::factory()->create(['school_id' => $this->school->id]);
     $enrollment = StudentEnrollment::factory()->create([
@@ -806,7 +811,7 @@ it('retrieves enrollment audit trail of workflow events', function (): void {
         'school_id' => $this->school->id,
     ]);
 
-    App\Models\EnrollmentWorkflowEvent::query()->create([
+    EnrollmentWorkflowEvent::query()->create([
         'student_enrollment_id' => $enrollment->id,
         'actor_id' => $this->staff->id,
         'event_type' => 'step_transition',
@@ -1091,7 +1096,7 @@ it('retrieves student subject enrollments with grades and instructor details', f
 it('enrolls a student in a subject under an enrollment with idempotency and validates curriculum and classes', function (): void {
     $writeToken = $this->staff->createToken('Staff Write', ['mcp:read', 'mcp:write']);
     $this->staff->withAccessToken($writeToken->accessToken);
-    $this->staff->givePermissionTo('Update:StudentEnrollment');
+    $this->staff->givePermissionTo(['View:StudentEnrollment', 'Update:StudentEnrollment']);
 
     $student = Student::factory()->create(['school_id' => $this->school->id]);
     $course = Course::factory()->create([
@@ -1211,10 +1216,493 @@ it('enrolls a student in a subject under an enrollment with idempotency and vali
     expect(SubjectEnrollment::query()->where('enrollment_id', $enrollment->id)->where('subject_id', $subject->id)->count())->toBe(1);
 });
 
+it('previews a section transfer and reports conflicts, seats, and the resulting timetable', function (): void {
+    $writeToken = $this->staff->createToken('Staff Write', ['mcp:read', 'mcp:write']);
+    $this->staff->withAccessToken($writeToken->accessToken);
+    $this->staff->givePermissionTo(['View:StudentEnrollment', 'Update:StudentEnrollment']);
+
+    $student = Student::factory()->create([
+        'school_id' => $this->school->id,
+        'institution_id' => $this->school->id,
+        'student_id' => 2026401,
+        'first_name' => 'Maria',
+        'last_name' => 'Santos',
+    ]);
+
+    $course = Course::factory()->create(['school_id' => $this->school->id, 'lec_per_unit' => 500, 'lab_per_unit' => 0]);
+    $enrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'school_id' => $this->school->id,
+        'school_year' => '2026 - 2027',
+        'semester' => 1,
+    ]);
+
+    $subject = Subject::factory()->create([
+        'course_id' => $course->id,
+        'code' => 'GE-3',
+        'title' => 'Ethics',
+        'units' => 3,
+        'lecture' => 3,
+        'laboratory' => 0,
+    ]);
+
+    // Current section: Tuesday 15:00-16:00. Destination: Wednesday 15:00-16:00.
+    $sectionB = Classes::factory()->create([
+        'school_id' => $this->school->id,
+        'subject_id' => $subject->id,
+        'subject_code' => 'GE-3',
+        'section' => 'B',
+        'school_year' => $enrollment->school_year,
+        'semester' => 1,
+        'maximum_slots' => 40,
+    ]);
+    App\Models\Schedule::factory()->create([
+        'class_id' => $sectionB->id,
+        'day_of_week' => 'Tuesday',
+        'start_time' => '15:00:00',
+        'end_time' => '16:00:00',
+    ]);
+
+    $sectionA = Classes::factory()->create([
+        'school_id' => $this->school->id,
+        'subject_id' => $subject->id,
+        'subject_code' => 'GE-3',
+        'section' => 'A',
+        'school_year' => $enrollment->school_year,
+        'semester' => 1,
+        'maximum_slots' => 40,
+    ]);
+    App\Models\Schedule::factory()->create([
+        'class_id' => $sectionA->id,
+        'day_of_week' => 'Wednesday',
+        'start_time' => '15:00:00',
+        'end_time' => '16:00:00',
+    ]);
+
+    // A second class the student already sits in, on Friday, to prove the
+    // projected timetable carries their other commitments forward.
+    $otherSubject = Subject::factory()->create(['course_id' => $course->id, 'code' => 'PE-1', 'lecture' => 2, 'units' => 2]);
+    $peClass = Classes::factory()->create([
+        'school_id' => $this->school->id,
+        'subject_id' => $otherSubject->id,
+        'subject_code' => 'PE-1',
+        'section' => 'A',
+        'school_year' => $enrollment->school_year,
+        'semester' => 1,
+    ]);
+    App\Models\Schedule::factory()->create([
+        'class_id' => $peClass->id,
+        'day_of_week' => 'Friday',
+        'start_time' => '08:00:00',
+        'end_time' => '10:00:00',
+    ]);
+
+    StudentTuition::query()->create([
+        'student_id' => $student->id,
+        'enrollment_id' => $enrollment->id,
+        'academic_year' => 1,
+        'total_tuition' => 3000.00,
+        'total_balance' => 3000.00,
+        'total_lectures' => 3000.00,
+        'total_laboratory' => 0.00,
+        'total_miscelaneous_fees' => 0.00,
+        'overall_tuition' => 3000.00,
+        'paid' => 1000.00,
+        'status' => 'Pending',
+        'school_year' => $enrollment->school_year,
+        'semester' => $enrollment->semester,
+    ]);
+
+    // The student currently sits in GE-3 Section B and PE-1. Section A is the
+    // open destination, so its roster is empty.
+    foreach ([$sectionB, $peClass] as $class) {
+        SubjectEnrollment::query()->create([
+            'enrollment_id' => $enrollment->id,
+            'student_id' => $student->id,
+            'subject_id' => $class->subject_id,
+            'class_id' => $class->id,
+            'section' => $class->section,
+            'school_year' => $enrollment->school_year,
+            'semester' => $enrollment->semester,
+        ]);
+        ClassEnrollment::factory()->create([
+            'class_id' => $class->id,
+            'student_id' => $student->id,
+            'status' => true,
+        ]);
+    }
+
+    $preview = KoAkademyServer::actingAs($this->staff)
+        ->tool(TransferStudentSectionTool::class, [
+            'action' => 'preview',
+            'student' => '2026401',
+            'subject' => 'GE-3',
+            'to_section' => 'GE-3 Section A',
+        ]);
+
+    $preview->assertOk()
+        ->assertStructuredContent(function ($json) use ($sectionA, $sectionB): void {
+            $json->where('can_transfer', true)
+                ->where('blockers', [])
+                ->where('current.class_id', $sectionB->id)
+                ->where('proposed.class_id', $sectionA->id)
+                ->where('subject_match.matches', true)
+                ->where('seats.available', true)
+                ->where('schedule_conflicts', [])
+                ->where('resulting_timetable', fn ($rows) => count($rows) === 3)
+                ->etc();
+        });
+
+    // The preview is read-only: nothing moved.
+    expect(SubjectEnrollment::query()
+        ->where('enrollment_id', $enrollment->id)
+        ->where('subject_id', $subject->id)
+        ->first()
+        ->class_id)->toBe($sectionB->id);
+
+    $transferred = KoAkademyServer::actingAs($this->staff)
+        ->tool(TransferStudentSectionTool::class, [
+            'action' => 'transfer',
+            'student' => '2026401',
+            'subject' => 'GE-3',
+            'to_section' => 'GE-3 Section A',
+            'reason' => 'Schedule conflict with the original section',
+            'idempotency_key' => 'transfer-ge3-1',
+        ]);
+
+    $transferred->assertOk()
+        ->assertStructuredContent(function ($json) use ($sectionA, $sectionB): void {
+            $json->where('transferred', true)
+                ->where('replayed', false)
+                ->where('from.class_id', $sectionB->id)
+                ->where('to.class_id', $sectionA->id)
+                ->etc();
+        });
+
+    // Both the curricular record and the roster moved together, and the old
+    // roster row is gone so the vacated seat is not double counted.
+    $moved = SubjectEnrollment::query()
+        ->where('enrollment_id', $enrollment->id)
+        ->where('subject_id', $subject->id)
+        ->first();
+
+    expect($moved->class_id)->toBe($sectionA->id)
+        ->and($moved->section)->toBe('A')
+        ->and(ClassEnrollment::query()->where('student_id', $student->id)->where('class_id', $sectionA->id)->exists())->toBeTrue()
+        ->and(ClassEnrollment::query()->where('student_id', $student->id)->where('class_id', $sectionB->id)->exists())->toBeFalse();
+
+    // The move is recorded in the enrollment audit trail.
+    expect(EnrollmentWorkflowEvent::query()
+        ->where('student_enrollment_id', $enrollment->id)
+        ->where('event_type', 'section_transferred')
+        ->count())->toBe(1);
+
+    // Replaying the same idempotency key must not transfer twice.
+    $replayed = KoAkademyServer::actingAs($this->staff)
+        ->tool(TransferStudentSectionTool::class, [
+            'action' => 'transfer',
+            'student' => '2026401',
+            'subject' => 'GE-3',
+            'to_section' => 'GE-3 Section A',
+            'idempotency_key' => 'transfer-ge3-1',
+        ]);
+
+    $replayed->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('replayed', true)->etc();
+        });
+
+    expect(EnrollmentWorkflowEvent::query()
+        ->where('student_enrollment_id', $enrollment->id)
+        ->where('event_type', 'section_transferred')
+        ->count())->toBe(1);
+});
+
+it('blocks a section transfer that would clash and names a non-conflicting alternative', function (): void {
+    $writeToken = $this->staff->createToken('Staff Write', ['mcp:read', 'mcp:write']);
+    $this->staff->withAccessToken($writeToken->accessToken);
+    $this->staff->givePermissionTo(['View:StudentEnrollment', 'Update:StudentEnrollment']);
+
+    $student = Student::factory()->create(['school_id' => $this->school->id, 'institution_id' => $this->school->id, 'student_id' => 2026402]);
+    $course = Course::factory()->create(['school_id' => $this->school->id]);
+    $enrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'school_id' => $this->school->id,
+        'school_year' => '2026 - 2027',
+        'semester' => 1,
+    ]);
+
+    $subject = Subject::factory()->create(['course_id' => $course->id, 'code' => 'MATH1', 'lecture' => 3, 'units' => 3]);
+    $other = Subject::factory()->create(['course_id' => $course->id, 'code' => 'CHEM1', 'lecture' => 3, 'units' => 3]);
+
+    $makeClass = function (Subject $subject, string $section, string $day, string $start) {
+        $class = Classes::factory()->create([
+            'school_id' => $this->school->id,
+            'subject_id' => $subject->id,
+            'subject_code' => $subject->code,
+            'section' => $section,
+            'school_year' => '2026 - 2027',
+            'semester' => 1,
+            'maximum_slots' => 40,
+        ]);
+        App\Models\Schedule::factory()->create([
+            'class_id' => $class->id,
+            'day_of_week' => $day,
+            'start_time' => $start.':00',
+            'end_time' => date('H:i:s', strtotime($start.':00') + 3600),
+        ]);
+
+        return $class;
+    };
+
+    $mathB = $makeClass($subject, 'B', 'Monday', '09:00');
+    $mathA = $makeClass($subject, 'A', 'Monday', '09:00');   // clashes
+    $mathC = $makeClass($subject, 'C', 'Thursday', '13:00'); // free
+    $chemA = $makeClass($other, 'A', 'Monday', '10:00');
+
+    foreach ([$mathB, $chemA] as $class) {
+        SubjectEnrollment::query()->create([
+            'enrollment_id' => $enrollment->id,
+            'student_id' => $student->id,
+            'subject_id' => $class->subject_id,
+            'class_id' => $class->id,
+            'section' => $class->section,
+            'school_year' => '2026 - 2027',
+            'semester' => 1,
+        ]);
+        ClassEnrollment::factory()->create(['class_id' => $class->id, 'student_id' => $student->id, 'status' => true]);
+    }
+
+    $preview = KoAkademyServer::actingAs($this->staff)
+        ->tool(TransferStudentSectionTool::class, [
+            'action' => 'preview',
+            'student' => '2026402',
+            'subject' => 'MATH1',
+            'to_section' => 'MATH1 Section A',
+        ]);
+
+    $preview->assertOk()
+        ->assertStructuredContent(function ($json) use ($mathB): void {
+            $json->where('can_transfer', false)
+                ->where('current.class_id', $mathB->id)
+                ->where('schedule_conflicts', fn ($rows) => count($rows) === 1)
+                ->etc();
+        });
+
+    // Without force the transfer refuses and leaves the record untouched.
+    $blocked = KoAkademyServer::actingAs($this->staff)
+        ->tool(TransferStudentSectionTool::class, [
+            'action' => 'transfer',
+            'student' => '2026402',
+            'subject' => 'MATH1',
+            'to_section' => 'MATH1 Section A',
+        ]);
+
+    $blocked->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('transferred', false)->etc();
+        });
+
+    expect(SubjectEnrollment::query()->where('subject_id', $subject->id)->first()->class_id)->toBe($mathB->id);
+
+    // The free section is transferrable and the preview says so.
+    $free = KoAkademyServer::actingAs($this->staff)
+        ->tool(TransferStudentSectionTool::class, [
+            'action' => 'preview',
+            'student' => '2026402',
+            'subject' => 'MATH1',
+            'to_section' => 'MATH1 Section C',
+        ]);
+
+    $free->assertOk()
+        ->assertStructuredContent(function ($json) use ($mathC): void {
+            $json->where('can_transfer', true)
+                ->where('proposed.class_id', $mathC->id)
+                ->etc();
+        });
+});
+
+it('keeps the subject enrollment when a section is removed and refuses a subject swap', function (): void {
+    $writeToken = $this->staff->createToken('Staff Write', ['mcp:read', 'mcp:write']);
+    $this->staff->withAccessToken($writeToken->accessToken);
+    $this->staff->givePermissionTo(['View:StudentEnrollment', 'Update:StudentEnrollment']);
+
+    $student = Student::factory()->create(['school_id' => $this->school->id, 'institution_id' => $this->school->id, 'student_id' => 2026403]);
+    $course = Course::factory()->create(['school_id' => $this->school->id]);
+    $enrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'school_id' => $this->school->id,
+        'school_year' => '2026 - 2027',
+        'semester' => 1,
+    ]);
+
+    $math = Subject::factory()->create(['course_id' => $course->id, 'code' => 'MATH2', 'lecture' => 3, 'units' => 3]);
+    $english = Subject::factory()->create(['course_id' => $course->id, 'code' => 'ENG2', 'lecture' => 3, 'units' => 3]);
+
+    $makeClass = function (Subject $subject, string $section) {
+        $class = Classes::factory()->create([
+            'school_id' => $this->school->id,
+            'subject_id' => $subject->id,
+            'subject_code' => $subject->code,
+            'section' => $section,
+            'school_year' => '2026 - 2027',
+            'semester' => 1,
+            'maximum_slots' => 40,
+        ]);
+        App\Models\Schedule::factory()->create([
+            'class_id' => $class->id,
+            'day_of_week' => 'Monday',
+            'start_time' => '09:00:00',
+            'end_time' => '10:00:00',
+        ]);
+
+        return $class;
+    };
+
+    $mathA = $makeClass($math, 'A');
+    $englishA = $makeClass($english, 'A');
+
+    SubjectEnrollment::query()->create([
+        'enrollment_id' => $enrollment->id,
+        'student_id' => $student->id,
+        'subject_id' => $math->id,
+        'class_id' => $mathA->id,
+        'section' => 'A',
+        'school_year' => '2026 - 2027',
+        'semester' => 1,
+    ]);
+    ClassEnrollment::factory()->create(['class_id' => $mathA->id, 'student_id' => $student->id, 'status' => true]);
+
+    // A destination in a different subject is not a section move; the tool must
+    // say so instead of silently relabelling the student's load.
+    $mismatch = KoAkademyServer::actingAs($this->staff)
+        ->tool(TransferStudentSectionTool::class, [
+            'action' => 'preview',
+            'student' => '2026403',
+            'subject' => 'MATH2',
+            'to_section' => 'ENG2 Section A',
+        ]);
+
+    $mismatch->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('can_transfer', false)
+                ->where('subject_match.matches', false)
+                ->where('recommendation', fn ($text) => str_contains($text, 'EnrollStudentSubjectTool'))
+                ->etc();
+        });
+
+    // Omitting the destination removes the section but keeps the subject.
+    $removed = KoAkademyServer::actingAs($this->staff)
+        ->tool(TransferStudentSectionTool::class, [
+            'action' => 'transfer',
+            'student' => '2026403',
+            'subject' => 'MATH2',
+            'reason' => 'Dropped the class, keeps the credit',
+        ]);
+
+    $removed->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('transferred', true)
+                ->where('to.class_id', null)
+                ->etc();
+        });
+
+    $kept = SubjectEnrollment::query()->where('subject_id', $math->id)->first();
+
+    expect($kept)->not->toBeNull()
+        ->and($kept->class_id)->toBeNull()
+        ->and(ClassEnrollment::query()->where('student_id', $student->id)->where('class_id', $mathA->id)->exists())->toBeFalse();
+});
+
+it('requires write access to move a student and only exposes the read-only preview', function (): void {
+    $readToken = $this->staff->createToken('Staff Read', ['mcp:read']);
+    $this->staff->withAccessToken($readToken->accessToken);
+    $this->staff->givePermissionTo(['View:StudentEnrollment', 'Update:StudentEnrollment']);
+
+    $denied = KoAkademyServer::actingAs($this->staff)
+        ->tool(TransferStudentSectionTool::class, [
+            'action' => 'transfer',
+            'student' => '2026499',
+            'subject' => 'GE-3',
+            'to_section' => 'GE-3 Section A',
+        ]);
+
+    $denied->assertHasErrors(['does not have mcp:write access']);
+});
+
+it('returns a student financial summary without needing an enrollment id', function (): void {
+    $this->staff->createToken('Staff Agent', ['mcp:read']);
+    $this->staff->givePermissionTo('view_tuition_fees');
+
+    $student = Student::factory()->create([
+        'school_id' => $this->school->id,
+        'institution_id' => $this->school->id,
+        'student_id' => 2026501,
+        'first_name' => 'Maria',
+        'last_name' => 'Santos',
+    ]);
+
+    $course = Course::factory()->create(['school_id' => $this->school->id]);
+    $enrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'school_id' => $this->school->id,
+        'school_year' => '2026 - 2027',
+        'semester' => 1,
+    ]);
+
+    StudentTuition::query()->create([
+        'student_id' => $student->id,
+        'enrollment_id' => $enrollment->id,
+        'academic_year' => 1,
+        'total_tuition' => 20000.00,
+        'total_lectures' => 16000.00,
+        'total_laboratory' => 4000.00,
+        'total_miscelaneous_fees' => 0.00,
+        'overall_tuition' => 25000.00,
+        'paid' => 10000.00,
+        'status' => 'Pending',
+        'school_year' => '2026 - 2027',
+        'semester' => 1,
+    ]);
+
+    $response = KoAkademyServer::actingAs($this->staff)
+        ->tool(GetStudentFinancialSummaryTool::class, [
+            'student' => '2026501',
+        ]);
+
+    $response->assertOk()
+        ->assertStructuredContent(function ($json) use ($enrollment): void {
+            $json->where('student.student_number', '2026501')
+                ->where('account_count', 1)
+                ->where('accounts.0.enrollment_id', $enrollment->id)
+                ->where('accounts.0.assessment.total_assessed', 25000)
+                ->where('accounts.0.total_paid', 10000)
+                ->where('accounts.0.balance_due', 15000)
+                ->where('accounts.0.payment_status', 'Downpayment')
+                ->where('totals.balance_due', 15000)
+                ->etc();
+        });
+});
+
+it('gates the student financial summary behind a finance permission', function (): void {
+    $this->staff->createToken('Staff Agent', ['mcp:read']);
+
+    $unpermitted = KoAkademyServer::actingAs($this->staff)
+        ->tool(GetStudentFinancialSummaryTool::class, [
+            'student' => '2026501',
+        ]);
+
+    $unpermitted->assertHasErrors(['not permitted to view tuition']);
+});
+
 it('resolves student and subject dynamically and supports batch subject enrollment in EnrollStudentSubjectTool', function (): void {
     $writeToken = $this->staff->createToken('Staff Write', ['mcp:read', 'mcp:write']);
     $this->staff->withAccessToken($writeToken->accessToken);
-    $this->staff->givePermissionTo('Update:StudentEnrollment');
+    $this->staff->givePermissionTo(['View:StudentEnrollment', 'Update:StudentEnrollment']);
 
     $student = Student::factory()->create(['school_id' => $this->school->id]);
     $course = Course::factory()->create(['school_id' => $this->school->id]);
@@ -1286,7 +1774,7 @@ it('resolves student and subject dynamically and supports batch subject enrollme
 it('updates grades and remarks on a subject enrollment with idempotency and evaluates policy outcomes', function (): void {
     $writeToken = $this->staff->createToken('Staff Write', ['mcp:read', 'mcp:write']);
     $this->staff->withAccessToken($writeToken->accessToken);
-    $this->staff->givePermissionTo('Update:StudentEnrollment');
+    $this->staff->givePermissionTo(['View:StudentEnrollment', 'Update:StudentEnrollment']);
 
     $student = Student::factory()->create(['school_id' => $this->school->id]);
     $enrollment = StudentEnrollment::factory()->create([
@@ -1355,7 +1843,7 @@ it('updates grades and remarks on a subject enrollment with idempotency and eval
 it('drops an enrolled subject releasing the record and recalculating tuition with idempotency', function (): void {
     $writeToken = $this->staff->createToken('Staff Write', ['mcp:read', 'mcp:write']);
     $this->staff->withAccessToken($writeToken->accessToken);
-    $this->staff->givePermissionTo('Update:StudentEnrollment');
+    $this->staff->givePermissionTo(['View:StudentEnrollment', 'Update:StudentEnrollment']);
 
     $student = Student::factory()->create(['school_id' => $this->school->id]);
     $course = Course::factory()->create(['school_id' => $this->school->id, 'lec_per_unit' => 300]);

@@ -10,6 +10,7 @@ use App\Models\Faculty;
 use App\Models\Room;
 use App\Models\Schedule;
 use App\Models\Subject;
+use App\Services\Ai\InstitutionEntityResolver;
 use App\Services\GeneralSettingsService;
 use Carbon\Carbon;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -27,9 +28,12 @@ final class ManageClassScheduleTool extends Tool
 {
     use AuthorizesMcpRequests;
 
-    public function __construct(private ?GeneralSettingsService $settings = null)
-    {
+    public function __construct(
+        private ?GeneralSettingsService $settings = null,
+        private ?InstitutionEntityResolver $entities = null,
+    ) {
         $this->settings ??= app(GeneralSettingsService::class);
+        $this->entities ??= app(InstitutionEntityResolver::class);
     }
 
     public function handle(Request $request): ResponseFactory
@@ -92,8 +96,8 @@ final class ManageClassScheduleTool extends Tool
                     'start_time' => $s->string()->description('Start time (HH:MM).'),
                     'end_time' => $s->string()->description('End time (HH:MM).'),
                     'room_id' => $s->integer()->description('Room ID.'),
-                    'room_name' => $s->string()->description('Room name.'),
-                    'faculty_id' => $s->string()->description('Faculty ID.'),
+                    'room_name' => $s->string()->description('Room name or number.'),
+                    'faculty_id' => $s->string()->description('Faculty UUID or employee number.'),
                     'faculty_name' => $s->string()->description('Faculty name.'),
                 ])
             ),
@@ -104,8 +108,66 @@ final class ManageClassScheduleTool extends Tool
             'start_time' => $schema->string()->description('Start time (HH:MM).'),
             'end_time' => $schema->string()->description('End time (HH:MM).'),
             'room_id' => $schema->integer()->description('Room ID.'),
-            'faculty_id' => $schema->string()->description('Faculty ID or UUID.'),
+            'room_name' => $schema->string()->description('Room name or number (e.g. "Room 501").'),
+            'faculty_id' => $schema->string()->description('Faculty reference: the internal UUID or the employee/faculty ID number (e.g. 800188). Do not assume it is a numeric database key.'),
+            'faculty_name' => $schema->string()->description('Faculty name, used when faculty_id is unavailable.'),
+            'faculty_email' => $schema->string()->description('Faculty email, used when faculty_id is unavailable.'),
         ];
+    }
+
+    /**
+     * Resolve a faculty reference supplied by a model.
+     *
+     * `faculty.id` is a UUID, so handing a numeric employee number straight to
+     * `Faculty::find()` raises a Postgres "invalid input syntax for type uuid"
+     * driver error. Resolution accepts a UUID, an employee number, an email, or
+     * a name, and reports ambiguity instead of guessing.
+     */
+    private function resolveFaculty(mixed $identifier): Faculty
+    {
+        return $this->entities->faculty($identifier, $this->school());
+    }
+
+    private function resolveRoom(mixed $identifier): Room
+    {
+        return $this->entities->room($identifier, $this->school());
+    }
+
+    /**
+     * Resolve an optional faculty reference, preferring the explicit ID over the
+     * name. Returns null when neither was supplied.
+     *
+     * @throws \App\Services\Ai\Exceptions\EntityNotFoundException
+     * @throws \App\Services\Ai\Exceptions\AmbiguousEntityException
+     */
+    private function resolveOptionalFaculty(mixed $identifier, ?string $name): ?Faculty
+    {
+        if (filled($identifier)) {
+            return $this->resolveFaculty($identifier);
+        }
+
+        if (filled($name)) {
+            return $this->resolveFaculty($name);
+        }
+
+        return null;
+    }
+
+    /**
+     * @throws \App\Services\Ai\Exceptions\EntityNotFoundException
+     * @throws \App\Services\Ai\Exceptions\AmbiguousEntityException
+     */
+    private function resolveOptionalRoom(mixed $identifier, ?string $name): ?Room
+    {
+        if (filled($identifier)) {
+            return $this->resolveRoom($identifier);
+        }
+
+        if (filled($name)) {
+            return $this->resolveRoom($name);
+        }
+
+        return null;
     }
 
     private function handleCreateClass(Request $request): ResponseFactory
@@ -117,7 +179,9 @@ final class ManageClassScheduleTool extends Tool
             'start_time' => ['nullable', 'string'],
             'end_time' => ['nullable', 'string'],
             'room_id' => ['nullable', 'integer'],
+            'room_name' => ['nullable', 'string'],
             'faculty_id' => ['nullable'],
+            'faculty_name' => ['nullable', 'string'],
             'maximum_slots' => ['nullable', 'integer', 'between:1,150'],
             'school_year' => ['nullable', 'string'],
             'semester' => ['nullable', 'integer', 'in:1,2'],
@@ -127,15 +191,22 @@ final class ManageClassScheduleTool extends Tool
         $semester = $validated['semester'] ?? $this->settings->getCurrentSemester();
         $subject = Subject::query()->where('code', $validated['subject_code'])->first();
 
-        $class = DB::transaction(function () use ($validated, $schoolYear, $semester, $subject) {
+        $roomId = $validated['room_id'] ?? null;
+        if (! $roomId && filled($validated['room_name'] ?? null)) {
+            $roomId = $this->resolveRoom($validated['room_name'])->id;
+        }
+
+        $facultyId = $this->resolveOptionalFaculty($validated['faculty_id'] ?? null, $validated['faculty_name'] ?? null);
+
+        $class = DB::transaction(function () use ($validated, $schoolYear, $semester, $subject, $roomId, $facultyId) {
             $newClass = Classes::query()->create([
                 'subject_code' => mb_strtoupper(mb_trim($validated['subject_code'])),
                 'section' => mb_trim($validated['section']),
                 'subject_id' => $subject?->id,
                 'school_year' => $schoolYear,
                 'semester' => $semester,
-                'room_id' => $validated['room_id'] ?? null,
-                'faculty_id' => $validated['faculty_id'] ?? null,
+                'room_id' => $roomId,
+                'faculty_id' => $facultyId,
                 'maximum_slots' => (int) ($validated['maximum_slots'] ?? 40),
             ]);
 
@@ -144,14 +215,14 @@ final class ManageClassScheduleTool extends Tool
                 $startTime = Carbon::parse($validated['start_time'])->format('H:i:s');
                 $endTime = Carbon::parse($validated['end_time'])->format('H:i:s');
 
-                $this->guardScheduleConflicts($validated['room_id'] ?? null, $validated['faculty_id'] ?? null, $dayOfWeek, $startTime, $endTime, $schoolYear, $semester);
+                $this->guardScheduleConflicts($roomId, $facultyId, $dayOfWeek, $startTime, $endTime, $schoolYear, $semester);
 
                 Schedule::query()->create([
                     'class_id' => $newClass->id,
                     'day_of_week' => $dayOfWeek,
                     'start_time' => $startTime,
                     'end_time' => $endTime,
-                    'room_id' => $validated['room_id'] ?? null,
+                    'room_id' => $roomId,
                 ]);
             }
 
@@ -204,18 +275,10 @@ final class ManageClassScheduleTool extends Tool
 
                 $roomId = $cData['room_id'] ?? null;
                 if (! $roomId && filled($cData['room_name'] ?? null)) {
-                    $room = Room::query()->where('name', 'like', "%{$cData['room_name']}%")->first();
-                    $roomId = $room?->id;
+                    $roomId = $this->resolveRoom($cData['room_name'])->id;
                 }
 
-                $facultyId = null;
-                if (filled($cData['faculty_id'] ?? null)) {
-                    $faculty = Faculty::query()->find($cData['faculty_id']);
-                    $facultyId = $faculty?->id;
-                } elseif (filled($cData['faculty_name'] ?? null)) {
-                    $faculty = Faculty::query()->whereRaw("TRIM(CONCAT_WS(' ', first_name, last_name)) LIKE ?", ["%{$cData['faculty_name']}%"])->first();
-                    $facultyId = $faculty?->id;
-                }
+                $facultyId = $this->resolveOptionalFaculty($cData['faculty_id'] ?? null, $cData['faculty_name'] ?? null);
 
                 $subject = Subject::query()->where('code', $subjectCode)->first();
 
@@ -337,22 +400,44 @@ final class ManageClassScheduleTool extends Tool
     {
         $validated = $request->validate([
             'class_id' => ['required', 'integer'],
-            'faculty_id' => ['required'],
+            'faculty_id' => ['nullable'],
+            'faculty_name' => ['nullable', 'string', 'max:120'],
+            'faculty_email' => ['nullable', 'email', 'max:190'],
         ]);
 
         $class = Classes::query()->find($validated['class_id']);
-        $faculty = Faculty::query()->find($validated['faculty_id']);
 
-        if (! $class instanceof Classes || ! $faculty instanceof Faculty) {
-            return Response::structured(['error' => true, 'message' => 'Class or faculty not found.']);
+        if (! $class instanceof Classes) {
+            return Response::structured(['error' => true, 'message' => "Class #{$validated['class_id']} not found."]);
         }
 
+        $faculty = $this->resolveOptionalFaculty(
+            $validated['faculty_id'] ?? $validated['faculty_email'] ?? null,
+            $validated['faculty_name'] ?? null,
+        );
+
+        if (! $faculty instanceof Faculty) {
+            return Response::structured([
+                'error' => true,
+                'message' => 'No faculty reference supplied. Pass faculty_id (UUID or employee number), faculty_name, or faculty_email.',
+            ]);
+        }
+
+        $previous = $class->faculty?->full_name;
         $class->update(['faculty_id' => $faculty->id]);
 
         return Response::structured([
             'success' => true,
             'action' => 'assign_faculty',
             'message' => "Assigned {$faculty->full_name} to {$class->subject_code} ({$class->section}).",
+            'class_id' => $class->id,
+            'instructor' => [
+                'id' => $faculty->id,
+                'faculty_id_number' => (string) $faculty->faculty_id_number,
+                'name' => $faculty->full_name,
+                'email' => $faculty->email,
+            ],
+            'previous_instructor' => $previous ?? 'TBA',
         ]);
     }
 
@@ -360,14 +445,23 @@ final class ManageClassScheduleTool extends Tool
     {
         $validated = $request->validate([
             'class_id' => ['required', 'integer'],
-            'room_id' => ['required', 'integer'],
+            'room_id' => ['nullable', 'integer'],
+            'room_name' => ['nullable', 'string', 'max:120'],
         ]);
 
         $class = Classes::query()->find($validated['class_id']);
-        $room = Room::query()->find($validated['room_id']);
 
-        if (! $class instanceof Classes || ! $room instanceof Room) {
-            return Response::structured(['error' => true, 'message' => 'Class or room not found.']);
+        if (! $class instanceof Classes) {
+            return Response::structured(['error' => true, 'message' => "Class #{$validated['class_id']} not found."]);
+        }
+
+        $room = $this->resolveOptionalRoom($validated['room_id'] ?? null, $validated['room_name'] ?? null);
+
+        if (! $room instanceof Room) {
+            return Response::structured([
+                'error' => true,
+                'message' => 'No room reference supplied. Pass room_id or room_name.',
+            ]);
         }
 
         $class->update(['room_id' => $room->id]);
@@ -377,6 +471,8 @@ final class ManageClassScheduleTool extends Tool
             'success' => true,
             'action' => 'assign_room',
             'message' => "Assigned {$room->name} to {$class->subject_code} ({$class->section}).",
+            'class_id' => $class->id,
+            'room' => ['id' => $room->id, 'name' => $room->name],
         ]);
     }
 

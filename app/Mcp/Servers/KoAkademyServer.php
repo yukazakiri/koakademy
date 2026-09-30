@@ -15,6 +15,7 @@ use App\Mcp\Tools\GetMyContextTool;
 use App\Mcp\Tools\GetSchoolDetailsTool;
 use App\Mcp\Tools\GetSchoolMetricsTool;
 use App\Mcp\Tools\GetStatementOfAccountTool;
+use App\Mcp\Tools\GetStudentFinancialSummaryTool;
 use App\Mcp\Tools\GetStudentProfileTool;
 use App\Mcp\Tools\GetStudentScheduleTool;
 use App\Mcp\Tools\GetStudentSubjectEnrollmentsTool;
@@ -23,6 +24,7 @@ use App\Mcp\Tools\ListPendingEnrollmentsTool;
 use App\Mcp\Tools\ListStudentEnrollmentsTool;
 use App\Mcp\Tools\SearchFacultyTool;
 use App\Mcp\Tools\SearchStudentsTool;
+use App\Mcp\Tools\TransferStudentSectionTool;
 use App\Mcp\Tools\UpdateEnrollmentRemarksTool;
 use App\Mcp\Tools\UpdateSubjectEnrollmentGradeTool;
 use App\Mcp\Tools\VerifyEnrollmentRequirementTool;
@@ -62,12 +64,14 @@ final class KoAkademyServer extends Server
         GetStudentSubjectEnrollmentsTool::class,
         ListAcademicOfferingsTool::class,
         GetStatementOfAccountTool::class,
+        GetStudentFinancialSummaryTool::class,
         AdvanceEnrollmentStepTool::class,
         VerifyEnrollmentRequirementTool::class,
         UpdateEnrollmentRemarksTool::class,
         EnrollStudentSubjectTool::class,
         UpdateSubjectEnrollmentGradeTool::class,
         DropStudentSubjectEnrollmentTool::class,
+        TransferStudentSectionTool::class,
         \App\Mcp\Tools\QueryTimetableScheduleTool::class,
         \App\Mcp\Tools\ManageStudentTool::class,
         \App\Mcp\Tools\ManageCurriculumSubjectTool::class,

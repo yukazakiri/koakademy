@@ -4,10 +4,17 @@ declare(strict_types=1);
 
 namespace App\Ai\Tools;
 
+use App\Models\School;
+use App\Models\Student;
+use App\Models\User;
+use App\Services\Ai\Exceptions\AmbiguousEntityException;
+use App\Services\Ai\Exceptions\EntityNotFoundException;
 use App\Services\Ai\InstitutionEntityResolver;
 use App\Services\Ai\StudentFinancialSummaryService;
+use App\Services\ApiIdentityService;
 use App\Services\TenantContext;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\Support\Facades\Auth;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
@@ -55,10 +62,32 @@ final class ExplainStatementOfAccountTool implements Tool
             ], JSON_PRETTY_PRINT);
         }
 
+        // This tool is reachable from BursarFinanceAgent, which students can
+        // use. Without a gate, a student could name any classmate and read
+        // their real assessments and payments.
+        $user = Auth::user();
+
+        if (! $user instanceof User) {
+            return $this->encode(['error' => true, 'message' => 'Authentication is required.']);
+        }
+
+        if (! $this->mayViewFinance($user)) {
+            return $this->encode([
+                'error' => true,
+                'message' => 'You are not permitted to view tuition, balances, or payment records. Ask an authorised staff member to run this check.',
+            ]);
+        }
+
         try {
             $student = $this->entities->student($identifier, $this->currentSchool());
-        } catch (\App\Services\Ai\Exceptions\EntityNotFoundException|\App\Services\Ai\Exceptions\AmbiguousEntityException $e) {
-            return json_encode(['error' => true, 'message' => $e->getMessage()], JSON_PRETTY_PRINT);
+        } catch (EntityNotFoundException|AmbiguousEntityException $e) {
+            return $this->encode(['error' => true, 'message' => $e->getMessage()]);
+        }
+
+        $denied = $this->selfAccessDenial($user, $student);
+
+        if ($denied !== null) {
+            return $this->encode(['error' => true, 'message' => $denied]);
         }
 
         $summary = $this->summary->summarize(
@@ -85,10 +114,56 @@ final class ExplainStatementOfAccountTool implements Tool
         ];
     }
 
-    private function currentSchool(): ?\App\Models\School
+    private function currentSchool(): ?School
     {
         $school = app(TenantContext::class)->getCurrentSchool();
 
-        return $school instanceof \App\Models\School ? $school : null;
+        return $school instanceof School ? $school : null;
+    }
+
+    /**
+     * Mirrors the finance gate on GetStudentFinancialSummaryTool.
+     */
+    private function mayViewFinance(User $user): bool
+    {
+        return $user->hasRole('super_admin')
+            || $user->can('View:Cashier')
+            || $user->can('view_tuition_fees');
+    }
+
+    /**
+     * Students may read their own account and nothing else.
+     */
+    private function selfAccessDenial(User $user, Student $student): ?string
+    {
+        if (! $user->isStudentRole()) {
+            return null;
+        }
+
+        $own = app(ApiIdentityService::class)->studentFor($user);
+
+        if (! $own instanceof Student) {
+            return 'No student profile is associated with your account.';
+        }
+
+        if ((int) $own->id !== (int) $student->id) {
+            return 'You can only view your own statement of account.';
+        }
+
+        $school = $this->currentSchool();
+
+        if ($school instanceof School && ! $student->belongsToSchool($school) && (int) $student->institution_id !== (int) $school->id) {
+            return 'Your student profile belongs to a different school.';
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function encode(array $payload): string
+    {
+        return json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 }

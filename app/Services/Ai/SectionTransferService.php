@@ -8,6 +8,7 @@ use App\Models\ClassEnrollment;
 use App\Models\Classes;
 use App\Models\EnrollmentWorkflowEvent;
 use App\Models\Schedule;
+use App\Models\School;
 use App\Models\Student;
 use App\Models\StudentEnrollment;
 use App\Models\Subject;
@@ -15,6 +16,7 @@ use App\Models\SubjectEnrollment;
 use App\Models\User;
 use App\Services\ClassEnrollmentService;
 use App\Services\EnrollmentBillingService;
+use App\Services\TenantContext;
 use DateTimeInterface;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -67,7 +69,7 @@ final class SectionTransferService
             return $this->failure($resolutionError ?? 'The subject enrollment could not be located.', $subjectEnrollment);
         }
 
-        $destination = $this->resolveDestination($destinationIdentifier);
+        $destination = $this->resolveDestination($destinationIdentifier, $student);
 
         if ($destination['error'] !== null) {
             return $this->failure($destination['error'], $subjectEnrollment);
@@ -79,7 +81,7 @@ final class SectionTransferService
             return $this->unassignPreview($student, $subjectEnrollment, $sourceClass);
         }
 
-        $period = $this->periodFor($subjectEnrollment);
+        $period = $this->periodFor($subjectEnrollment, $destinationClass);
         $seatCheck = $this->seatAvailability($destinationClass, $student);
         $subjectCheck = $this->subjectMatch($subjectEnrollment, $destinationClass);
         $scheduleConflicts = $this->scheduleConflicts($student, $subjectEnrollment, $destinationClass);
@@ -94,7 +96,7 @@ final class SectionTransferService
             'can_transfer' => $blockers === [],
             'blockers' => $blockers,
             'warnings' => $this->warnings($seatCheck, $subjectCheck, $scheduleConflicts, $financial, $period),
-            'recommendation' => $this->recommendation($blockers, $seatCheck, $subjectCheck, $scheduleConflicts, $destinationClass),
+            'recommendation' => $this->recommendation($blockers, $seatCheck, $subjectCheck, $scheduleConflicts, $destinationClass, $period),
             'student' => $this->studentSummary($student),
             'subject' => [
                 'subject_enrollment_id' => $subjectEnrollment->id,
@@ -150,11 +152,35 @@ final class SectionTransferService
             return $assessment;
         }
 
+        // Some blockers are operational and an administrator may knowingly
+        // accept them (a full section, a genuine time clash). Others are
+        // structural: forcing them would write a record that contradicts
+        // itself, because the transfer only moves class_id and section while
+        // subject_id, units, and the term stay tied to the original subject.
+        $structural = [];
+
+        if (($assessment['subject_match']['matches'] ?? true) === false) {
+            $structural[] = (string) ($assessment['subject_match']['message'] ?? 'The destination section covers a different subject.');
+        }
+
+        if (($assessment['academic_period']['mismatch'] ?? null) !== null) {
+            $structural[] = (string) $assessment['academic_period']['mismatch'];
+        }
+
+        if ($structural !== []) {
+            return [
+                ...$assessment,
+                'transferred' => false,
+                'force_ignored' => $force,
+                'message' => 'Transfer refused and force=true was ignored. '.implode(' ', $structural).' Use EnrollStudentSubjectTool and DropStudentSubjectEnrollmentTool instead.',
+            ];
+        }
+
         if (($assessment['can_transfer'] ?? false) !== true && ! $force) {
             return [
                 ...$assessment,
                 'transferred' => false,
-                'message' => 'Transfer blocked. Resolve the blockers above, or retry with force=true to override schedule and seat warnings.',
+                'message' => 'Transfer blocked. Resolve the blockers above, or retry with force=true to override seat and schedule warnings.',
             ];
         }
 
@@ -418,19 +444,59 @@ final class SectionTransferService
     }
 
     /**
+     * Resolve the destination section within the student's own school.
+     *
+     * The student lookup is tenant-scoped, so an unscoped destination lookup
+     * would let a numeric class ID from another school resolve uniquely and
+     * disclose its schedule, instructor, and seat count — and, because the
+     * transfer writes a roster row, could attach the student to a foreign class.
+     *
      * @return array{class: ?Classes, error: ?string}
      */
-    private function resolveDestination(mixed $identifier): array
+    private function resolveDestination(mixed $identifier, Student $student): array
     {
         if ($identifier === null || (is_string($identifier) && mb_trim($identifier) === '')) {
             return ['class' => null, 'error' => null];
         }
 
-        try {
-            return ['class' => $this->entities->class($identifier), 'error' => null];
-        } catch (Exceptions\EntityNotFoundException|Exceptions\AmbiguousEntityException $e) {
-            return ['class' => null, 'error' => $e->getMessage()];
+        $school = $this->schoolFor($student);
+
+        if (! $school instanceof School) {
+            return ['class' => null, 'error' => 'No school context is available, so the destination section cannot be resolved safely.'];
         }
+
+        $candidates = $this->entities->classCandidates($identifier, null, null, $school);
+
+        if ($candidates === []) {
+            return ['class' => null, 'error' => Exceptions\EntityNotFoundException::for('class in your school', (string) $identifier)->getMessage()];
+        }
+
+        if (count($candidates) > 1) {
+            return [
+                'class' => null,
+                'error' => Exceptions\AmbiguousEntityException::for(
+                    'class',
+                    (string) $identifier,
+                    array_map(
+                        fn (Classes $class): string => sprintf('class_id=%d (%s %s)', $class->id, (string) $class->subject_code, (string) $class->section),
+                        array_slice($candidates, 0, 5),
+                    ),
+                )->getMessage(),
+            ];
+        }
+
+        return ['class' => $candidates[0], 'error' => null];
+    }
+
+    private function schoolFor(Student $student): ?School
+    {
+        $tenantSchool = app(TenantContext::class)->getCurrentSchool();
+
+        if ($tenantSchool instanceof School) {
+            return $tenantSchool;
+        }
+
+        return $student->school;
     }
 
     /**
@@ -491,19 +557,19 @@ final class SectionTransferService
     private function scheduleConflicts(Student $student, SubjectEnrollment $subjectEnrollment, Classes $destination): array
     {
         // Every class the student already sits in, including the one they are
-        // leaving. The leaving section is dropped from the comparison so the
-        // source class is never reported as a clash with itself, but the source
-        // stays in the roster set for the projected timetable.
+        // The source class is excluded outright. Parallel sections of one
+        // subject routinely meet at the same time, and the student is leaving
+        // the source, so comparing the destination against it would report a
+        // self-clash and block the most ordinary transfer there is.
+        $sourceClassId = (int) $subjectEnrollment->class_id;
+
         $rosterClassIds = ClassEnrollment::query()
             ->where('student_id', (int) $student->id)
             ->pluck('class_id')
             ->filter()
             ->unique()
             ->values()
-            ->reject(fn ($id): bool => (int) $id === (int) $destination->id)
-            ->merge([(int) $subjectEnrollment->class_id])
-            ->filter()
-            ->unique()
+            ->reject(fn ($id): bool => in_array((int) $id, [$sourceClassId, (int) $destination->id], true))
             ->values();
 
         if ($rosterClassIds->isEmpty()) {
@@ -603,11 +669,19 @@ final class SectionTransferService
             ->unique()
             ->values();
 
-        if ($destination instanceof Classes) {
-            $classIds = $classIds->push($destination->id)->unique()->values();
-        } else {
-            $classIds = $classIds->reject(fn ($id): bool => (int) $id === (int) $subjectEnrollment->class_id)->values();
-        }
+        // The source class always leaves the timetable, whether the destination
+        // is another section or nothing at all. Keeping it alongside the
+        // destination would show the student two sections of one subject.
+        $sourceClassId = (int) $subjectEnrollment->class_id;
+
+        $classIds = $classIds
+            ->reject(fn ($id): bool => (int) $id === $sourceClassId)
+            ->when(
+                $destination instanceof Classes,
+                fn (Collection $ids): Collection => $ids->push($destination->id),
+            )
+            ->unique()
+            ->values();
 
         if ($classIds->isEmpty()) {
             return [];
@@ -761,8 +835,9 @@ final class SectionTransferService
      * @param  array<string, mixed>  $seatCheck
      * @param  array{matches: bool, message: string}  $subjectCheck
      * @param  array<int, array<string, mixed>>  $scheduleConflicts
+     * @param  array<string, mixed>  $period
      */
-    private function recommendation(array $blockers, array $seatCheck, array $subjectCheck, array $scheduleConflicts, Classes $destination): string
+    private function recommendation(array $blockers, array $seatCheck, array $subjectCheck, array $scheduleConflicts, Classes $destination, array $period = []): string
     {
         if ($blockers === []) {
             return sprintf('Safe to transfer into %s (%s).', (string) $destination->section, (string) $seatCheck['message']);
@@ -770,6 +845,10 @@ final class SectionTransferService
 
         if ($subjectCheck['matches'] === false) {
             return 'Do not transfer. Use EnrollStudentSubjectTool for the destination subject instead, then resolve the duplicate with DropStudentSubjectEnrollmentTool if the student should not keep the old one.';
+        }
+
+        if (($period['mismatch'] ?? null) !== null) {
+            return 'Do not transfer. A section from a different term cannot be swapped in place; use the enrollment tools so the assessment and transcript follow the new term.';
         }
 
         if ($seatCheck['available'] === false) {
@@ -833,20 +912,51 @@ final class SectionTransferService
     }
 
     /**
-     * @return array{mismatch: ?string, warning: ?string, school_year: ?string, semester: ?int}
+     * Compare the destination section's term with the subject enrollment's.
+     *
+     * Moving a student into a section from a past or future term would leave a
+     * subject enrollment whose recorded period disagrees with both the class
+     * and the roster row, which then breaks the assessment and transcript.
+     *
+     * @return array{mismatch: ?string, warning: ?string, school_year: ?string, semester: ?int, destination_school_year: ?string, destination_semester: ?int}
      */
-    private function periodFor(SubjectEnrollment $subjectEnrollment): array
+    private function periodFor(SubjectEnrollment $subjectEnrollment, ?Classes $destination): array
     {
         $schoolYear = $subjectEnrollment->school_year === null ? null : (string) $subjectEnrollment->school_year;
         $semester = $subjectEnrollment->semester === null ? null : (int) $subjectEnrollment->semester;
 
+        $destinationYear = $destination?->school_year === null ? null : (string) $destination->school_year;
+        $destinationSemester = $destination?->semester === null ? null : (int) $destination->semester;
+
+        $mismatch = null;
+
+        if ($destination instanceof Classes) {
+            if ($schoolYear !== null && ! in_array(mb_trim($destinationYear ?? ''), $this->entities->schoolYearVariants($schoolYear), true)) {
+                $mismatch = sprintf(
+                    'The destination section runs in SY %s Semester %s, but this subject enrollment is for SY %s Semester %s. Moving a student between terms changes the assessment and transcript, so use the enrollment tools for a term change instead.',
+                    (string) $destinationYear,
+                    (string) $destinationSemester,
+                    $schoolYear,
+                    (string) $semester,
+                );
+            } elseif ($semester !== null && $destinationSemester !== null && $destinationSemester !== $semester) {
+                $mismatch = sprintf(
+                    'The destination section runs in Semester %s, but this subject enrollment is for Semester %s. Use the enrollment tools to change terms.',
+                    (string) $destinationSemester,
+                    (string) $semester,
+                );
+            }
+        }
+
         return [
-            'mismatch' => null,
+            'mismatch' => $mismatch,
             'warning' => $schoolYear === null
                 ? 'This subject enrollment has no academic period recorded, so period validation was skipped.'
                 : null,
             'school_year' => $schoolYear,
             'semester' => $semester,
+            'destination_school_year' => $destinationYear,
+            'destination_semester' => $destinationSemester,
         ];
     }
 
@@ -942,7 +1052,11 @@ final class SectionTransferService
         return [
             'success' => false,
             'preview' => true,
+            // Keep the response shape identical whether the call failed early
+            // or was refused after the assessment, so the agent never has to
+            // guess whether a move happened.
             'can_transfer' => false,
+            'transferred' => false,
             'blockers' => [$message],
             'warnings' => [],
             'recommendation' => 'Resolve the identifier, then retry the preview before transferring.',

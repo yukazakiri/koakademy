@@ -145,7 +145,7 @@ final class ManageClassEnrollmentTool implements Tool
         }
 
         return Approval::required(
-            "Move {$student} from {$subject} into {$destination}? The roster, timetable, and tuition assessment will be updated."
+            "Move {$student} from {$subject} into {$destination}? The roster, timetable, and tuition assessment will be updated. Run action='preview' first to confirm there are no conflicts."
         );
     }
 

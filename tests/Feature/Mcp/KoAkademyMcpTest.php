@@ -1350,7 +1350,7 @@ it('previews a section transfer and reports conflicts, seats, and the resulting 
                 ->where('subject_match.matches', true)
                 ->where('seats.available', true)
                 ->where('schedule_conflicts', [])
-                ->where('resulting_timetable', fn ($rows) => count($rows) === 3)
+                ->where('resulting_timetable', fn ($rows) => count($rows) === 2)
                 ->etc();
         });
 
@@ -1458,9 +1458,11 @@ it('blocks a section transfer that would clash and names a non-conflicting alter
     };
 
     $mathB = $makeClass($subject, 'B', 'Monday', '09:00');
-    $mathA = $makeClass($subject, 'A', 'Monday', '09:00');   // clashes
-    $mathC = $makeClass($subject, 'C', 'Thursday', '13:00'); // free
-    $chemA = $makeClass($other, 'A', 'Monday', '10:00');
+    $mathA = $makeClass($subject, 'A', 'Monday', '09:00');   // clashing candidate
+    $mathC = $makeClass($subject, 'C', 'Thursday', '13:00'); // free alternative
+    // The student's *other* class genuinely overlaps mathA, which is what must
+    // block the transfer. The source section (mathB) is no longer compared.
+    $chemA = $makeClass($other, 'A', 'Monday', '09:30');
 
     foreach ([$mathB, $chemA] as $class) {
         SubjectEnrollment::query()->create([
@@ -1615,6 +1617,241 @@ it('keeps the subject enrollment when a section is removed and refuses a subject
     expect($kept)->not->toBeNull()
         ->and($kept->class_id)->toBeNull()
         ->and(ClassEnrollment::query()->where('student_id', $student->id)->where('class_id', $mathA->id)->exists())->toBeFalse();
+});
+
+it('allows a transfer between parallel sections that meet at the same time', function (): void {
+    $writeToken = $this->staff->createToken('Staff Write', ['mcp:read', 'mcp:write']);
+    $this->staff->withAccessToken($writeToken->accessToken);
+    $this->staff->givePermissionTo(['View:StudentEnrollment', 'Update:StudentEnrollment']);
+
+    $student = Student::factory()->create([
+        'school_id' => $this->school->id,
+        'institution_id' => $this->school->id,
+        'student_id' => 2026410,
+    ]);
+
+    $course = Course::factory()->create(['school_id' => $this->school->id]);
+    $enrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'school_id' => $this->school->id,
+        'school_year' => '2026 - 2027',
+        'semester' => 1,
+    ]);
+
+    $subject = Subject::factory()->create(['course_id' => $course->id, 'code' => 'GE-3', 'lecture' => 3, 'units' => 3]);
+
+    // Both sections meet Monday 09:00. Parallel sections of one subject
+    // routinely share a time slot, and that is the ordinary reason to move a
+    // student between them, so the destination must not be reported as
+    // clashing with the section being left behind.
+    $sectionB = Classes::factory()->create([
+        'school_id' => $this->school->id, 'subject_id' => $subject->id, 'subject_code' => 'GE-3',
+        'section' => 'B', 'school_year' => '2026 - 2027', 'semester' => 1, 'maximum_slots' => 40,
+    ]);
+    App\Models\Schedule::factory()->create(['class_id' => $sectionB->id, 'day_of_week' => 'Monday', 'start_time' => '09:00:00', 'end_time' => '10:00:00']);
+
+    $sectionA = Classes::factory()->create([
+        'school_id' => $this->school->id, 'subject_id' => $subject->id, 'subject_code' => 'GE-3',
+        'section' => 'A', 'school_year' => '2026 - 2027', 'semester' => 1, 'maximum_slots' => 40,
+    ]);
+    App\Models\Schedule::factory()->create(['class_id' => $sectionA->id, 'day_of_week' => 'Monday', 'start_time' => '09:00:00', 'end_time' => '10:00:00']);
+
+    SubjectEnrollment::query()->create([
+        'enrollment_id' => $enrollment->id, 'student_id' => $student->id, 'subject_id' => $subject->id,
+        'class_id' => $sectionB->id, 'section' => 'B', 'school_year' => '2026 - 2027', 'semester' => 1,
+    ]);
+    ClassEnrollment::factory()->create(['class_id' => $sectionB->id, 'student_id' => $student->id, 'status' => true]);
+
+    $preview = KoAkademyServer::actingAs($this->staff)
+        ->tool(TransferStudentSectionTool::class, [
+            'action' => 'preview',
+            'student' => '2026410',
+            'subject' => 'GE-3',
+            'to_section' => 'GE-3 Section A',
+        ]);
+
+    $preview->assertOk()
+        ->assertStructuredContent(function ($json) use ($sectionB, $sectionA): void {
+            $json->where('can_transfer', true)
+                ->where('blockers', [])
+                ->where('schedule_conflicts', [])
+                ->where('current.class_id', $sectionB->id)
+                ->where('proposed.class_id', $sectionA->id)
+                // The projected timetable must show the destination once, not
+                // both the section being left and the section being joined.
+                ->where('resulting_timetable', fn ($rows) => count($rows) === 1)
+                ->where('resulting_timetable.0.section', 'A')
+                ->etc();
+        });
+});
+
+it('refuses a forced transfer across different subjects or academic periods', function (): void {
+    $writeToken = $this->staff->createToken('Staff Write', ['mcp:read', 'mcp:write']);
+    $this->staff->withAccessToken($writeToken->accessToken);
+    $this->staff->givePermissionTo(['View:StudentEnrollment', 'Update:StudentEnrollment']);
+
+    $student = Student::factory()->create([
+        'school_id' => $this->school->id,
+        'institution_id' => $this->school->id,
+        'student_id' => 2026411,
+    ]);
+
+    $course = Course::factory()->create(['school_id' => $this->school->id]);
+    $enrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'school_id' => $this->school->id,
+        'school_year' => '2026 - 2027',
+        'semester' => 1,
+    ]);
+
+    $math = Subject::factory()->create(['course_id' => $course->id, 'code' => 'MATH3', 'lecture' => 3, 'units' => 3]);
+    $english = Subject::factory()->create(['course_id' => $course->id, 'code' => 'ENG3', 'lecture' => 3, 'units' => 3]);
+
+    $schoolId = $this->school->id;
+
+    $makeClass = function (Subject $subject, string $section, string $schoolYear = '2026 - 2027', int $semester = 1) use ($schoolId) {
+        $class = Classes::factory()->create([
+            'school_id' => $schoolId, 'subject_id' => $subject->id, 'subject_code' => $subject->code,
+            'section' => $section, 'school_year' => $schoolYear, 'semester' => $semester, 'maximum_slots' => 40,
+        ]);
+        App\Models\Schedule::factory()->create(['class_id' => $class->id, 'day_of_week' => 'Monday', 'start_time' => '09:00:00', 'end_time' => '10:00:00']);
+
+        return $class;
+    };
+
+    $mathA = $makeClass($math, 'A');
+    $englishA = $makeClass($english, 'A');
+    // A MATH3 section offered for a different term.
+    $mathNextTerm = $makeClass($math, 'B', '2027 - 2028', 1);
+
+    SubjectEnrollment::query()->create([
+        'enrollment_id' => $enrollment->id, 'student_id' => $student->id, 'subject_id' => $math->id,
+        'class_id' => $mathA->id, 'section' => 'A', 'school_year' => '2026 - 2027', 'semester' => 1,
+    ]);
+    ClassEnrollment::factory()->create(['class_id' => $mathA->id, 'student_id' => $student->id, 'status' => true]);
+
+    // A subject mismatch is structural: forcing it would leave subject_id and
+    // the assessed units tied to MATH3 while the roster says ENG3.
+    $forcedMismatch = KoAkademyServer::actingAs($this->staff)
+        ->tool(TransferStudentSectionTool::class, [
+            'action' => 'transfer',
+            'student' => '2026411',
+            'subject' => 'MATH3',
+            'to_section' => 'ENG3 Section A',
+            'force' => true,
+        ]);
+
+    $forcedMismatch->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('transferred', false)
+                ->where('force_ignored', true)
+                ->etc();
+        });
+
+    expect(SubjectEnrollment::query()->where('subject_id', $math->id)->first()->class_id)->toBe($mathA->id);
+    expect(ClassEnrollment::query()->where('student_id', $student->id)->where('class_id', $englishA->id)->exists())->toBeFalse();
+
+    // So is a term change, even for the same subject.
+    $forcedTerm = KoAkademyServer::actingAs($this->staff)
+        ->tool(TransferStudentSectionTool::class, [
+            'action' => 'transfer',
+            'student' => '2026411',
+            'subject' => 'MATH3',
+            'to_section' => (string) $mathNextTerm->id,
+            'force' => true,
+        ]);
+
+    $forcedTerm->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('transferred', false)
+                ->where('force_ignored', true)
+                ->where('academic_period.mismatch', fn ($text) => str_contains((string) $text, '2027 - 2028'))
+                ->etc();
+        });
+
+    expect(SubjectEnrollment::query()->where('subject_id', $math->id)->first()->class_id)->toBe($mathA->id);
+});
+
+it('refuses to move a student into a class belonging to another school', function (): void {
+    $writeToken = $this->staff->createToken('Staff Write', ['mcp:read', 'mcp:write']);
+    $this->staff->withAccessToken($writeToken->accessToken);
+    $this->staff->givePermissionTo(['View:StudentEnrollment', 'Update:StudentEnrollment']);
+
+    $otherSchool = School::factory()->create();
+    $otherCourse = Course::factory()->create(['school_id' => $otherSchool->id]);
+    // `subject.code` is globally unique, so the foreign school uses its own
+    // subject record while presenting the same code on the class row.
+    $otherSubject = Subject::factory()->create(['course_id' => $otherCourse->id, 'code' => 'MATH3-FOREIGN', 'lecture' => 3, 'units' => 3]);
+
+    $foreignClass = Classes::factory()->create([
+        'school_id' => $otherSchool->id, 'subject_id' => $otherSubject->id, 'subject_code' => 'MATH3',
+        'section' => 'Z', 'school_year' => '2026 - 2027', 'semester' => 1, 'maximum_slots' => 40,
+    ]);
+    App\Models\Schedule::factory()->create(['class_id' => $foreignClass->id, 'day_of_week' => 'Monday', 'start_time' => '09:00:00', 'end_time' => '10:00:00']);
+
+    $student = Student::factory()->create([
+        'school_id' => $this->school->id,
+        'institution_id' => $this->school->id,
+        'student_id' => 2026412,
+    ]);
+
+    $course = Course::factory()->create(['school_id' => $this->school->id]);
+    $enrollment = StudentEnrollment::factory()->create([
+        'student_id' => $student->id,
+        'course_id' => $course->id,
+        'school_id' => $this->school->id,
+        'school_year' => '2026 - 2027',
+        'semester' => 1,
+    ]);
+
+    $subject = Subject::factory()->create(['course_id' => $course->id, 'code' => 'MATH3', 'lecture' => 3, 'units' => 3]);
+    $mathA = Classes::factory()->create([
+        'school_id' => $this->school->id, 'subject_id' => $subject->id, 'subject_code' => 'MATH3',
+        'section' => 'A', 'school_year' => '2026 - 2027', 'semester' => 1, 'maximum_slots' => 40,
+    ]);
+
+    SubjectEnrollment::query()->create([
+        'enrollment_id' => $enrollment->id, 'student_id' => $student->id, 'subject_id' => $subject->id,
+        'class_id' => $mathA->id, 'section' => 'A', 'school_year' => '2026 - 2027', 'semester' => 1,
+    ]);
+
+    // The foreign class shares the subject code, so a code-only match would
+    // resolve it and disclose its schedule while writing a cross-school roster
+    // row. Tenant scoping must reject it before any of that happens.
+    $preview = KoAkademyServer::actingAs($this->staff)
+        ->tool(TransferStudentSectionTool::class, [
+            'action' => 'preview',
+            'student' => '2026412',
+            'subject' => 'MATH3',
+            'to_section' => (string) $foreignClass->id,
+        ]);
+
+    $preview->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('can_transfer', false)
+                ->where('error', true)
+                ->where('blockers', fn ($rows) => str_contains((string) $rows[0], 'your school'))
+                ->etc();
+        });
+
+    $transfer = KoAkademyServer::actingAs($this->staff)
+        ->tool(TransferStudentSectionTool::class, [
+            'action' => 'transfer',
+            'student' => '2026412',
+            'subject' => 'MATH3',
+            'to_section' => (string) $foreignClass->id,
+            'force' => true,
+        ]);
+
+    $transfer->assertOk()
+        ->assertStructuredContent(function ($json): void {
+            $json->where('transferred', false)->etc();
+        });
+
+    expect(SubjectEnrollment::query()->where('subject_id', $subject->id)->first()->class_id)->toBe($mathA->id);
+    expect(ClassEnrollment::query()->where('class_id', $foreignClass->id)->exists())->toBeFalse();
 });
 
 it('requires write access to move a student and only exposes the read-only preview', function (): void {

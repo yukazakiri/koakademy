@@ -195,6 +195,11 @@ it('explains student statement of account breakdown from the billing ledger', fu
     $school = App\Models\School::factory()->create();
     app(App\Services\TenantContext::class)->setCurrentSchool($school);
 
+    Spatie\Permission\Models\Permission::firstOrCreate(['name' => 'view_tuition_fees', 'guard_name' => 'web']);
+    $staff = User::factory()->create(['role' => App\Enums\UserRole::Admin, 'school_id' => $school->id]);
+    $staff->givePermissionTo('view_tuition_fees');
+    $this->actingAs($staff);
+
     $student = Student::factory()->create([
         'first_name' => 'Maria',
         'last_name' => 'Santos',
@@ -232,10 +237,20 @@ it('explains student statement of account breakdown from the billing ledger', fu
 });
 
 it('never invents a balance for a student without an assessment', function (): void {
+    $school = App\Models\School::factory()->create();
+    app(App\Services\TenantContext::class)->setCurrentSchool($school);
+
+    Spatie\Permission\Models\Permission::firstOrCreate(['name' => 'view_tuition_fees', 'guard_name' => 'web']);
+    $staff = User::factory()->create(['role' => App\Enums\UserRole::Admin, 'school_id' => $school->id]);
+    $staff->givePermissionTo('view_tuition_fees');
+    $this->actingAs($staff);
+
     $student = Student::factory()->create([
         'first_name' => 'Juan',
         'last_name' => 'Dela Cruz',
         'student_id' => 2026100,
+        'school_id' => $school->id,
+        'institution_id' => $school->id,
     ]);
 
     $tool = new ExplainStatementOfAccountTool;
@@ -260,6 +275,48 @@ it('requires a student identifier before explaining a statement of account', fun
 
     expect($data['error'])->toBeTrue()
         ->and($data['message'])->toContain('student number, name, or email is required');
+});
+
+it('refuses to expose one student financial records to another', function (): void {
+    Spatie\Permission\Models\Permission::firstOrCreate(['name' => 'view_tuition_fees', 'guard_name' => 'web']);
+    $staff = User::factory()->create(['role' => App\Enums\UserRole::Admin]);
+    $staff->givePermissionTo('view_tuition_fees');
+    $this->actingAs($staff);
+
+    $school = App\Models\School::factory()->create();
+    app(App\Services\TenantContext::class)->setCurrentSchool($school);
+
+    $victim = Student::factory()->create([
+        'first_name' => 'Maria',
+        'last_name' => 'Santos',
+        'student_id' => 2026801,
+        'school_id' => $school->id,
+        'institution_id' => $school->id,
+    ]);
+    Database\Factories\StudentTuitionFactory::new()->create([
+        'student_id' => $victim->id,
+        'school_year' => '2026-2027',
+        'semester' => 1,
+        'overall_tuition' => 31000.00,
+        'paid' => 1000.00,
+    ]);
+
+    // A student-role caller may reach this tool through BursarFinanceAgent, so
+    // the self-access rule has to be enforced inside the tool itself.
+    $tool = new ExplainStatementOfAccountTool;
+
+    $this->actingAs($staff);
+    $permitted = json_decode((string) $tool->handle(new Request(['student' => '2026801'])), true);
+    expect($permitted['student']['student_number'])->toBe('2026801');
+
+    // No finance permission at all.
+    $unprivileged = User::factory()->create(['role' => App\Enums\UserRole::Admin]);
+    $this->actingAs($unprivileged);
+    $denied = json_decode((string) $tool->handle(new Request(['student' => '2026801'])), true);
+
+    expect($denied['error'])->toBeTrue()
+        ->and($denied['message'])->toContain('not permitted to view tuition');
+    expect($denied)->not->toHaveKey('accounts');
 });
 
 it('validates tuition adjustment spreadsheet and catches duplicate rows', function (): void {

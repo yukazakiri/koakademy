@@ -671,6 +671,36 @@ it('reports an actionable error instead of a driver crash for an unknown faculty
         ->and($class->refresh()->faculty_id)->toBe($before);
 });
 
+it('resolves compound class labels without losing the subject code', function (): void {
+    $school = App\Models\School::factory()->create();
+    $course = App\Models\Course::factory()->create(['school_id' => $school->id]);
+
+    // A catalog where the codes share a prefix, so a resolver that reads "GE"
+    // as the subject and "3" as the section will misfire.
+    foreach (['GE-1', 'GE-2', 'GE-3'] as $code) {
+        $subject = App\Models\Subject::factory()->create(['course_id' => $course->id, 'code' => $code]);
+        App\Models\Classes::factory()->create([
+            'school_id' => $school->id,
+            'subject_id' => $subject->id,
+            'subject_code' => $code,
+            'section' => 'A',
+            'school_year' => '2026-2027',
+            'semester' => 1,
+        ]);
+    }
+
+    $resolver = new App\Services\Ai\InstitutionEntityResolver();
+
+    // "GE-3 Section A" must not match GE-1 A or GE-2 A.
+    expect($resolver->class('GE-3 Section A', '2026-2027', 1, $school)->subject_code)->toBe('GE-3');
+
+    // A bare code must not be read as subject "GE" plus section "3".
+    expect($resolver->class('GE-3', '2026-2027', 1, $school)->subject_code)->toBe('GE-3');
+
+    // The short form resolves too.
+    expect($resolver->class('GE-2 A', '2026-2027', 1, $school)->subject_code)->toBe('GE-2');
+});
+
 it('lists ambiguous faculty candidates so the agent can ask which one is meant', function (): void {
     $school = App\Models\School::factory()->create();
 
@@ -783,7 +813,7 @@ it('gates a section transfer behind an approval and previews it without writing'
     expect($preview['can_transfer'])->toBeTrue()
         ->and($preview['current']['class_id'])->toBe($sectionB->id)
         ->and($preview['proposed']['class_id'])->toBe($sectionA->id)
-        ->and($preview['resulting_timetable'])->toHaveCount(2)
+        ->and($preview['resulting_timetable'])->toHaveCount(1)
         ->and(App\Models\SubjectEnrollment::query()->where('subject_id', $subject->id)->first()->class_id)->toBe($sectionB->id);
 
     // A transfer always requires a reviewable confirmation before it runs.

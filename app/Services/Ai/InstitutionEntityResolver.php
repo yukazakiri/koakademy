@@ -288,41 +288,36 @@ final class InstitutionEntityResolver
             }
         }
 
-        $clean = $this->cleanClassLabel($raw);
-        $tokens = $this->tokens($clean);
+        [$subjectPart, $sectionPart] = $this->splitClassLabel($raw);
 
-        if ($tokens === []) {
+        if ($subjectPart === null) {
             return [];
         }
 
-        $first = $this->codeToken($tokens[0]);
-        $hasSection = count($tokens) > 1;
-        $sectionToken = $hasSection ? $this->codeToken($tokens[count($tokens) - 1]) : null;
+        $subject = $this->codeToken($subjectPart);
+        $section = $sectionPart === null ? null : $this->codeToken($sectionPart);
 
         return (clone $query)
-            ->where(function (Builder $q) use ($first, $hasSection, $sectionToken): void {
-                if (! $hasSection) {
-                    // Bare subject code: every section of it is a candidate, and
+            ->where(function (Builder $q) use ($subject, $section): void {
+                if ($section === null) {
+                    // Bare subject code: every section of it is a candidate and
                     // the ambiguity guard makes the caller pick.
-                    $q->whereRaw('LOWER(REPLACE(REPLACE(subject_code, \'-\', \'\'), \' \', \'\')) LIKE ?', [$first['compactLike']])
-                        ->orWhereRaw('LOWER(subject_code) LIKE ?', [$first['like']]);
+                    $q->whereRaw("LOWER(REPLACE(REPLACE(subject_code, '-', ''), ' ', '')) LIKE ?", [$subject['compactLike']])
+                        ->orWhereRaw('LOWER(subject_code) LIKE ?', [$subject['like']]);
 
                     return;
                 }
 
-                // A compound label names both halves, so both must match. A
-                // loose code-only match here would return every section of the
-                // subject and report a bogus ambiguity for "GE-3 Section A".
-                $q->where(function (Builder $sub) use ($first, $sectionToken): void {
-                    $sub->whereRaw('LOWER(REPLACE(REPLACE(subject_code, \'-\', \'\'), \' \', \'\')) LIKE ?', [$first['compactLike']])
-                        ->whereRaw('LOWER(REPLACE(section, \'-\', \'\')) LIKE ?', [$sectionToken['compactLike']]);
-                })->orWhere(function (Builder $sub) use ($first, $sectionToken): void {
-                    $sub->whereRaw('LOWER(subject_code) LIKE ?', [$first['like']])
-                        ->whereRaw('LOWER(section) LIKE ?', [$sectionToken['like']]);
-                })->orWhereRaw(
-                    "LOWER(REPLACE(REPLACE(subject_code || ' ' || section, '-', ' '), '  ', ' ')) LIKE ?",
-                    [$first['spacedLike'].' '.$sectionToken['spacedLike']],
-                );
+                // Both halves are named, so both must match. A loose code-only
+                // match here would return every section of the subject and
+                // report a bogus ambiguity for "GE-3 Section A".
+                $q->where(function (Builder $sub) use ($subject, $section): void {
+                    $sub->whereRaw("LOWER(REPLACE(REPLACE(subject_code, '-', ''), ' ', '')) LIKE ?", [$subject['compactLike']])
+                        ->whereRaw("LOWER(REPLACE(section, '-', '')) LIKE ?", [$section['compactLike']]);
+                })->orWhere(function (Builder $sub) use ($subject, $section): void {
+                    $sub->whereRaw('LOWER(subject_code) LIKE ?', [$subject['like']])
+                        ->whereRaw('LOWER(section) LIKE ?', [$section['like']]);
+                });
             })
             ->orderByDesc('id')
             ->limit(self::MAX_SUGGESTIONS + 1)
@@ -419,9 +414,44 @@ final class InstitutionEntityResolver
     }
 
     /**
+     * Split a class label into its subject code and section.
+     *
+     * The section is only taken from a trailing token when an explicit marker
+     * ("section", "sec") or a clear trailing letter separates it. Without that
+     * guard a code like "GE-3" would be read as subject "GE" plus section "3",
+     * and "GE-3 Section A" as subject "GE" plus section "A" — matching GE-1 A
+     * and GE-2 A as well.
+     *
+     * @return array{0: ?string, 1: ?string}
+     */
+    private function splitClassLabel(string $raw): array
+    {
+        $normalized = mb_trim((string) preg_replace('/\s+/', ' ', $raw));
+
+        // Explicit marker: "GE-3 Section A", "GE3 sec B".
+        if (preg_match('/^(.*?)\s*(?:section|sec)\.?\s+(\S+)$/iu', $normalized, $matches) === 1) {
+            return [mb_trim($matches[1]), mb_trim($matches[2])];
+        }
+
+        // Trailing standalone token after a space: "GE-3 A", "BSCS 1A",
+        // "GE 2 A". A hyphen inside the trailing token means it belongs to the
+        // code ("GE-3-A"), not to a section.
+        if (preg_match('/^(.+?)[\s]+([A-Za-z0-9]{1,4})$/u', $normalized, $matches) === 1
+            && ! str_contains(mb_trim($matches[2]), '-')) {
+            return [mb_trim($matches[1]), mb_trim($matches[2])];
+        }
+
+        // Bare code, or an identifier with no separable section.
+        return [$this->cleanBareSubjectCode($normalized), null];
+    }
+
+    /**
      * Pre-escaped LIKE patterns for a single code or section token.
      *
-     * @return array{like: string, compactLike: string, spacedLike: string}
+     * `compactLike` drops hyphens and spaces so "GE-3" also matches a catalog
+     * that stores it as "GE3" or "GE 3".
+     *
+     * @return array{like: string, compactLike: string}
      */
     private function codeToken(string $token): array
     {
@@ -430,7 +460,6 @@ final class InstitutionEntityResolver
         return [
             'like' => '%'.$this->escapeLike($lower).'%',
             'compactLike' => '%'.$this->escapeLike(str_replace(['-', ' ', '/'], '', $lower)).'%',
-            'spacedLike' => $this->escapeLike(str_replace('-', ' ', $lower)),
         ];
     }
 
@@ -529,11 +558,13 @@ final class InstitutionEntityResolver
     }
 
     /**
-     * Strip conversational noise: "class", "section", "sec.", "subject".
+     * Strip conversational noise that can wrap a bare subject code, e.g.
+     * "subject GE-3" or "class GE-3". Section markers are handled separately
+     * by splitClassLabel(), which needs to see them.
      */
-    private function cleanClassLabel(string $raw): string
+    private function cleanBareSubjectCode(string $raw): string
     {
-        $cleaned = str_ireplace(['section', 'sec.', 'sec', 'class', 'subject'], ' ', $raw);
+        $cleaned = str_ireplace(['class', 'subject'], ' ', $raw);
 
         return mb_trim((string) preg_replace('/\s+/', ' ', $cleaned));
     }

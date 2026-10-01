@@ -82,9 +82,11 @@ export type DeskProps = {
     context: DeskContext;
     kpis: DeskKpi[];
     queues: DeskQueueItem[];
-    trends: DeskTrend[];
-    tables: DeskTable[];
-    activity: unknown[];
+    /** Deferred group: undefined until the desk-secondary request resolves. */
+    trends?: DeskTrend[];
+    /** Deferred group: undefined until the desk-secondary request resolves. */
+    tables?: DeskTable[];
+    activity?: unknown[];
 };
 
 /** Trend windows the backend understands (see DashboardContext::resolveRange). */

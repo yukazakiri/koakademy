@@ -333,3 +333,72 @@ it('renders a desk with no queues or tables without error', function (): void {
 
     $this->get('/administrators/desks/it-admin')->assertOk();
 });
+
+it('defers charts and tables out of the first paint', function (): void {
+    $this->actingAs(deskUser(UserRole::Dean));
+
+    $response = $this->get('/administrators/desks/executive');
+
+    $page = json_decode(
+        preg_replace('/^.*?<script data-page="app" type="application\/json">(.*?)<\/script>.*$/s', '$1', $response->getContent()) ?: '{}',
+        true,
+    );
+
+    // KPI strip and attention queue are what a user acts on immediately.
+    expect($page['props'])->toHaveKeys(['kpis', 'queues', 'desk', 'context', 'desks']);
+
+    expect($page['deferredProps']['desk-secondary'] ?? null)->toBe(['trends', 'tables', 'activity']);
+
+    // Stripped from the initial payload.
+    expect($page['props'])->not->toHaveKey('trends');
+    expect($page['props'])->not->toHaveKey('tables');
+    expect($page['props'])->not->toHaveKey('activity');
+});
+
+it('serves the deferred group on a partial reload', function (): void {
+    $user = deskUser(UserRole::Dean);
+
+    $this->actingAs($user);
+    $full = json_decode(
+        preg_replace('/^.*?<script data-page="app" type="application\/json">(.*?)<\/script>.*$/s', '$1', $this->get('/administrators/desks/executive')->getContent()) ?: '{}',
+        true,
+    );
+
+    $partial = $this->get('/administrators/desks/executive', [
+        'X-Inertia' => 'true',
+        'X-Inertia-Version' => $full['version'],
+        'X-Inertia-Partial-Data' => 'trends,tables,activity',
+        'X-Inertia-Partial-Component' => 'administrators/desks/show',
+    ])->assertOk();
+
+    $props = json_decode($partial->getContent(), true)['props'];
+
+    expect(array_keys($props))->toEqualCanonicalizing(['errors', 'trends', 'tables', 'activity']);
+    expect($props['trends'])->toBeArray();
+    expect($props['tables'])->toBeArray();
+});
+
+it('still authorizes a desk on the deferred request', function (): void {
+    $user = deskUser(UserRole::Cashier);
+
+    $this->actingAs($user);
+    $full = json_decode(
+        preg_replace('/^.*?<script data-page="app" type="application\/json">(.*?)<\/script>.*$/s', '$1', $this->get('/administrators/desks/accounting')->getContent()) ?: '{}',
+        true,
+    );
+
+    $this->get('/administrators/desks/accounting', [
+        'X-Inertia' => 'true',
+        'X-Inertia-Version' => $full['version'],
+        'X-Inertia-Partial-Data' => 'trends,tables',
+        'X-Inertia-Partial-Component' => 'administrators/desks/show',
+    ])->assertOk();
+
+    // Same route, a desk this user cannot see.
+    $this->get('/administrators/desks/executive', [
+        'X-Inertia' => 'true',
+        'X-Inertia-Version' => $full['version'],
+        'X-Inertia-Partial-Data' => 'trends,tables',
+        'X-Inertia-Partial-Component' => 'administrators/desks/show',
+    ])->assertForbidden();
+});

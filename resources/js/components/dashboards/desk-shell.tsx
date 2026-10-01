@@ -13,8 +13,13 @@ type DeskShellProps = {
     context: DeskContext;
     kpis: DeskKpi[];
     queues: DeskQueueItem[];
-    trends: DeskTrend[];
-    tables: DeskTable[];
+    /**
+     * Deferred: absent until the desk-secondary group resolves on first paint, so these are
+     * optional on purpose. Defaulting to [] is what stops a `.map()` on undefined during
+     * the window between first paint and the deferred request completing.
+     */
+    trends?: DeskTrend[];
+    tables?: DeskTable[];
 };
 
 /**
@@ -73,11 +78,11 @@ export function DeskShell({ desk, desks, context, kpis, queues, trends, tables }
             <AttentionQueue items={queues} />
 
             {/* Deferred payload. */}
-            {trends.map((trend) => (
+            {(trends ?? []).map((trend) => (
                 <TrendCard key={trend.id} trend={trend} range={context.range} />
             ))}
 
-            {tables.map((table) => (
+            {(tables ?? []).map((table) => (
                 <QueueTable key={table.id} table={table} />
             ))}
         </Frame>

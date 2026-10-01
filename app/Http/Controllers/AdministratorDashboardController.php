@@ -22,6 +22,14 @@ use Inertia\Response;
  */
 final class AdministratorDashboardController extends Controller
 {
+    /**
+     * Inertia defer group for everything below the KPI strip and attention queue.
+     *
+     * `rescue: true` so the group is still requested on a partial reload; without it a visit
+     * that only asks for one prop would drop the charts entirely.
+     */
+    private const string SECONDARY_GROUP = 'desk-secondary';
+
     public function __construct(
         private readonly DashboardRegistry $registry,
     ) {}
@@ -54,6 +62,10 @@ final class AdministratorDashboardController extends Controller
      *
      * An unknown desk id and a desk the user may not see both 403, so the response never
      * reveals which desks exist to someone without access to them.
+     *
+     * Charts and tables are deferred behind the `desk-secondary` group so the first paint
+     * only carries the heading, KPI strip and attention queue. Both groups are resolved from
+     * the same cached payload, so deferring costs no extra queries.
      */
     public function show(Request $request, string $desk): Response|RedirectResponse
     {
@@ -92,13 +104,25 @@ final class AdministratorDashboardController extends Controller
                 'range_label' => $context->rangeLabel(),
                 'range' => $request->string('range')->toString() ?: 'year',
             ],
-            // First paint: KPIs and the attention queue.
+            // First paint: the two things a user acts on immediately.
             'kpis' => $payload['kpis'] ?? [],
             'queues' => $payload['queues'] ?? [],
-            // Streamed after first paint; mirrors DashboardRegistry::DEFERRED_KEYS.
-            'trends' => $payload['trends'] ?? [],
-            'tables' => $payload['tables'] ?? [],
-            'activity' => $payload['activity'] ?? [],
+            // Streamed right after first paint.
+            'trends' => Inertia::defer(
+                fn (): array => $payload['trends'] ?? [],
+                self::SECONDARY_GROUP,
+                true,
+            ),
+            'tables' => Inertia::defer(
+                fn (): array => $payload['tables'] ?? [],
+                self::SECONDARY_GROUP,
+                true,
+            ),
+            'activity' => Inertia::defer(
+                fn (): array => $payload['activity'] ?? [],
+                self::SECONDARY_GROUP,
+                true,
+            ),
         ]);
     }
 

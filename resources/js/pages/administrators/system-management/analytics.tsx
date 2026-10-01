@@ -30,7 +30,14 @@ interface AnalyticsFormData {
     providers: ProviderRow[];
 }
 
-export default function SystemManagementAnalyticsPage({ user, general_settings, access, analytics_catalog, analytics_providers }: SystemManagementPageProps) {
+export default function SystemManagementAnalyticsPage({
+    user,
+    general_settings,
+    access,
+    analytics,
+    analytics_catalog,
+    analytics_providers,
+}: SystemManagementPageProps) {
     const catalog = (analytics_catalog ?? []) as AnalyticsProviderDefinition[];
     const providersByKey = useMemo(() => new Map(catalog.map((provider) => [provider.key, provider])), [catalog]);
     const [addingProvider, setAddingProvider] = useState<string>("");
@@ -140,9 +147,7 @@ export default function SystemManagementAnalyticsPage({ user, general_settings, 
                                     {analyticsForm.data.analytics_enabled ? "Tracking on" : "Tracking off"}
                                 </Badge>
                             </div>
-                            <p className="text-muted-foreground text-sm">
-                                Applies to Inertia pages and the Filament admin panel.
-                            </p>
+                            <p className="text-muted-foreground text-sm">Applies to Inertia pages and the Filament admin panel.</p>
                         </div>
                     </div>
                     <Button
@@ -262,6 +267,7 @@ export default function SystemManagementAnalyticsPage({ user, general_settings, 
                             key={row.id ?? `new-${row.provider}-${index}`}
                             definition={definition}
                             row={row}
+                            index={index}
                             fallbackLabel={fallbackLabel}
                             onToggle={(enabled) => updateRow(index, { enabled })}
                             onLabelChange={(label) => updateRow(index, { label })}
@@ -279,6 +285,7 @@ export default function SystemManagementAnalyticsPage({ user, general_settings, 
 interface ProviderCardProps {
     definition: AnalyticsProviderDefinition | undefined;
     row: ProviderRow;
+    index: number;
     fallbackLabel: string;
     onToggle: (enabled: boolean) => void;
     onLabelChange: (label: string) => void;
@@ -290,6 +297,7 @@ interface ProviderCardProps {
 function ProviderCard({
     definition,
     row,
+    index,
     fallbackLabel,
     onToggle,
     onLabelChange,
